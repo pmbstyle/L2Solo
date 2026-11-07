@@ -3,6 +3,7 @@
 const Commit = require('./EconomyCommit');
 const Diagnostics = require('./EconomyDiagnostics');
 const SavedStats = require('../SavedStats');
+const InventorySummary = require('../Population/InventorySummary');
 const MAX_LINES = 12;
 
 // No result history: bounded observations use the admission and returned receipt.
@@ -20,9 +21,17 @@ function refusalReason(error) {
         case 'economy_intent_changed': case 'economy_sequence_changed': case 'economy_operation_in_flight':
         case 'economy_admission_pressure': case 'npc_seller_changed': case 'npc_quote_changed':
         case 'npc_item_template_changed': case 'invalid npc basket': case 'invalid npc purchase':
+        case 'arrow_stock_limit':
             return error.message;
         default: return 'native_error';
     }
+}
+// A refusal the next pass cannot change: the plan and the writer disagree, or the
+// seller moved. It ends this purchase, never the visit; the rest clears by itself.
+const PASSING = new Set(['economy_owner_changed', 'economy_intent_changed', 'economy_sequence_changed',
+    'economy_operation_in_flight', 'economy_admission_pressure', 'native_error']);
+function finalRefusal(error) {
+    return !PASSING.has(refusalReason(error));
 }
 function sellerFacts(seller) {
     return Object.freeze({ sourceId: Number(seller?.sourceId), town: seller?.town });
@@ -61,7 +70,7 @@ function acceptResult(state, result, previousGoal, observation = null) {
     } catch (error) {
         const row = result.coldLifeRow;
         if (row) current = { ...current, phase: row.phase, adena: Number(row.adena),
-            inventory: JSON.parse(row.inventorySummary || '{}'), stats: SavedStats.merge(row.statsJson, row.mindJson),
+            inventory: InventorySummary.read(row.inventorySummary), stats: SavedStats.merge(row.statsJson, row.mindJson),
             simulation: { ...current.simulation, revision: Number(row.simulationRevision) }, updatedAt: Number(row.updatedAt) };
         if (observation && Diagnostics.active()) diagnostic(current, observation.command, 'npc_delivery', 'state_deferred', resultFields(result, observation.seller));
         utils.infoWarn('BotMarket', 'committed NPC state delivery deferred: %s', error.message);
@@ -155,4 +164,4 @@ async function purchaseForActor(actor, options = {}) {
     return result;
 }
 
-module.exports = { MAX_LINES, sellerFor, acceptResult, purchase, purchaseForActor };
+module.exports = { MAX_LINES, sellerFor, acceptResult, purchase, purchaseForActor, finalRefusal };

@@ -81,14 +81,18 @@ assert.strictEqual(RestPolicy.needsRest(fighter, 0.95, 0.1, { locked: true }), f
 assert.strictEqual(RestPolicy.needsRest(mystic, 1, 0.94, { locked: true }), true, 'a locked mage rests to 95% MP');
 assert.strictEqual(RestPolicy.needsRest(mystic, 1, 0.95, { locked: true }), false);
 assert.strictEqual(RestPolicy.needsRest(bot(TANK, ratios(1, 1)), 1, 0.17, { party: true }), true);
-assert.strictEqual(RestPolicy.needsRest(bot(TANK, ratios(1, 1)), 1, 0.17), false);
+// T106: alone a tank rests for MP only when it heals itself with MP (a
+// Paladin), not a Shillien Knight.
+assert.strictEqual(RestPolicy.needsRest(bot(TANK, ratios(1, 1)), 1, 0.17), true);
+assert.strictEqual(RestPolicy.needsRest(bot(33, ratios(1, 1)), 1, 0.17), false);
 
 // Rest: the cold solo rule.
 const soloRest = (state) => BackgroundResolver.needsRest(state, state.vitals);
 assert.strictEqual(soloRest(bot(FIGHTER, ratios(0.34, 1))), true);
 assert.strictEqual(soloRest(bot(FIGHTER, ratios(0.35, 1))), false);
 assert.strictEqual(soloRest(bot(FIGHTER, ratios(1, 0.05))), false, 'a fighter does not rest for MP');
-assert.strictEqual(soloRest(bot(TANK, ratios(1, 0.05))), false, 'a solo tank does not rest for MP');
+assert.strictEqual(soloRest(bot(33, ratios(1, 0.05))), false, 'a solo tank does not rest for MP');
+assert.strictEqual(soloRest(bot(TANK, ratios(1, 0.05))), true, 'a solo Paladin sits for the MP of its heals');
 assert.strictEqual(soloRest(bot(MYSTIC, ratios(1, 0.19))), true);
 assert.strictEqual(soloRest(bot(MYSTIC, ratios(1, 0.2))), false);
 

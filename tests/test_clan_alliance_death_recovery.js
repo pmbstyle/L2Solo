@@ -32,9 +32,9 @@ function actor(id, x = 10000) {
         fetchLocX: () => a.x, fetchLocY: () => a.y, fetchLocZ: () => a.z,
         fetchHp: () => a.hp, fetchMaxHp: () => 100, fetchMp: () => a.mp, fetchMaxMp: () => 50,
         isDead: () => a.state.dead,
-        fillupVitals() { a.hp = 100; a.mp = 50; }, clearDestId() {}, unselect() {}, destructor() {},
+        setHp(v) { a.hp = v; }, clearDestId() {}, unselect() {}, destructor() {},
         attack: { abortCast() {}, clearTimers() {} },
-        automation: { abortAll() {}, stopReplenish() {}, replenishVitals() { assert.fail('must restore vitals immediately'); } },
+        automation: { abortAll() {}, replenishVitals() {} },
         state: { dead: false, casts: false, hits: false, seated: false,
             setDead(v) { this.dead = v; }, setCasts(v) { this.casts = v; }, setHits(v) { this.hits = v; },
             fetchCasts() { return this.casts; }, fetchSeated() { return this.seated; }, setSeated(v) { this.seated = v; },
@@ -67,7 +67,9 @@ const world = {
 const mocks = {
     Database: {}, 'GameServer/World/World': world,
     'GameServer/Bot/Population/BotLifeState': invoke('GameServer/Bot/Population/BotLifeState'),
+    'GameServer/Formulas': invoke('GameServer/Formulas'),
     'GameServer/Bot/Economy/EconomyContext': invoke('GameServer/Bot/Economy/EconomyContext'),
+    'GameServer/Bot/Economy/EconomicValuation': invoke('GameServer/Bot/Economy/EconomicValuation'),
     'GameServer/Bot/BotManager': { botPartySay: (s, message) => { lifecycle.push('report'); return true; } },
     'GameServer/Bot/BotAI': {
         clearTacticalState: BotAI.clearTacticalState,
@@ -133,8 +135,8 @@ assert.deepStrictEqual(lifecycle, ['die', 'report'], 'the client receives death 
 advance(0);
 assert.strictEqual(courier.actor.isDead(), false, 'courier revives without advancing the death wait timer');
 assert.deepStrictEqual(packets.map(p => p.type), ['die', 'revive', 'stand', 'teleport']);
-assert.strictEqual(courier.actor.hp, 100);
-assert.strictEqual(courier.actor.mp, 50);
+assert.strictEqual(courier.actor.hp, 70, 'the restart gives the C4 70% of max HP');
+assert.strictEqual(courier.actor.mp, 50, 'the restart leaves MP as death left it');
 assert.strictEqual(courier.spotRelocation, undefined);
 assert.strictEqual(courier.incomingThreatId, undefined);
 assert.strictEqual(courier.deathTimerStart, undefined);
@@ -197,4 +199,30 @@ advance(60001);
 assert(courier.actor.isDead(), 'elapsed time does not automatically revive a ritual corpse');
 state.stage = 'failed';
 assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoning the quest releases the ritual corpse');
+// A bot's death prices its lost progress with the death hours its build
+// published (stats.dangerPrice), as the basics with those hours would; no
+// basics are built on main for a bot with the packet.
+{
+    const Economy = mocks['GameServer/Bot/Economy/EconomyContext'];
+    const Valuation = mocks['GameServer/Bot/Economy/EconomicValuation'];
+    mocks['GameServer/Bot/AI/KnowledgeLearning'] = invoke('GameServer/Bot/AI/KnowledgeLearning');
+    const prior = { characterId: 3, level: 20, stats: { dangerPrice: [2, 1], economyClock: now - 3600000,
+        playedHours: 1, frustration: 1 } };
+    const victim = { accountId: 'bot_death_price', actor: actor(3), coldLifeState: prior, populationActivating: true,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    victim.actor.session = victim;
+    const persona = Economy.personal(prior, { timestamp: now }).persona;
+    const expected = Valuation.progressStats(prior, { timestamp: now, losses: 1, lossHours: Valuation.liveDeathHours(2),
+        persona, knowledgeEnabled: mocks['GameServer/Bot/AI/KnowledgeLearning'].knowledgeEnabled(), startedAt: now });
+    const basics = Economy.basics;
+    try {
+        Economy.basics = () => { throw Error('a bot with a danger packet needs no basics at death'); };
+        victim.actor.hp = 0;
+        die(victim, victim.actor);
+    } finally { Economy.basics = basics; }
+    assert(expected.frustration > 1, 'fixture: the death costs progress');
+    // The VM realm's objects: compared by their JSON.
+    assert.strictEqual(JSON.stringify(victim.coldLifeState.stats), JSON.stringify({ ...prior.stats, ...expected }),
+        'the published death hours price the loss');
+}
 console.log('Clan alliance immediate death recovery: native packets, town, continuation, stale landing, cancellation and scope passed');

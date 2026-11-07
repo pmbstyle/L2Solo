@@ -74,12 +74,11 @@ function roll({ spot, kills, killerLevel, rng, spoiler = null, dropOwners = 0 })
 }
 
 // Exp and SP one fighter receives from a base reward (a whole kill or a party
-// share): the spot pressure multiplier, the server rates and the fighter's own
-// exp bonus.
-function scaledProgression({ exp, sp }, { expMultiplier, rates, profile, timestamp }) {
+// share): the server rates and the fighter's own exp bonus.
+function scaledProgression({ exp, sp }, { rates, profile, timestamp }) {
     return {
-        exp: Math.round(exp * expMultiplier * rates.exp * ColdCombatProfile.statMultiplier(profile, 'expMul', timestamp)),
-        sp: Math.round(sp * expMultiplier * rates.sp)
+        exp: Math.round(exp * rates.exp * ColdCombatProfile.statMultiplier(profile, 'expMul', timestamp)),
+        sp: Math.round(sp * rates.sp)
     };
 }
 

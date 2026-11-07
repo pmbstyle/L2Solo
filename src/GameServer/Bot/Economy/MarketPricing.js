@@ -12,6 +12,8 @@ const Profit = require('./CraftProfitPolicy');
 const BidPurchaseAlternative = require('./BidPurchaseAlternative');
 const { npcOwnsPurchase } = require('./TradeIntent');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
+const MeetingPriceRefusals = require('./MeetingPriceRefusals');
+const PartyAdmission = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const BoardLook = require('./BoardLook');
 
@@ -25,41 +27,61 @@ function traderContext(state, deps = {}) {
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
     const economicTrip = deps.tripCost?.details ? deps.tripCost : economy.trip?.details ? economy.trip
-        : Profit.tripFor(state, { ...economy, origin });
+        : Profit.tripFor(state, { hourAdena: hour, origin });
     const trip = economicTrip;
     const persona = deps.persona || economy.persona;
     const trader = PriceDecision.traderOf(persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });
     // The bot's own trip to a town: none to the town it is shopping in.
     const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
     const demandFor = (id, enchant, town, askingPrice) => {
-        const demand = !enchant ? require('./MarketTradeDemand').forecast(id, town, timestamp) : null;
-        if (!demand || !(askingPrice > 0)) return demand;
         const board = deps.board || economy.board;
+        const demand = !enchant ? require('./MarketDemand').forecast(id, town,
+            { board, ownerId: state.characterId, timestamp }) : null;
+        if (!demand || !(askingPrice > 0)) return demand;
         const belief = PriceBelief.prior(id, { board, characterId: Number(state.characterId),
             timestamp, understanding: trader.understanding, marketTrades: state.marketTrades || {} });
         if (!belief) return null;
         const market = PriceDecision.marketFor(id, { board, ownerId: state.characterId, town, timestamp,
             tripCost: trip, npcOffers: deps.npcOffersFor?.(id) || [], demand });
-        return { ...demand, willingUnits: PriceDecision.willingUnitsAt(belief, trader,
-            { price: askingPrice, applicableUnits: demand.applicableUnits,
-                landed: askingPrice + market.ownTrip, npcLanded: market.npcLanded }) };
+        const alternatives = PriceDecision.demandAtPrice(belief, market, trader, askingPrice);
+        const selected = alternatives.sort((a, b) => b.willingUnits * Math.exp(-trader.wait * b.delayHours)
+            - a.willingUnits * Math.exp(-trader.wait * a.delayHours))[0];
+        return selected ? { ...selected.source, applicableUnits: selected.applicableUnits,
+            willingUnits: selected.willingUnits, delayHours: selected.delayHours } : null;
     };
-    let saleAmounts = null;
+    const saleAmounts = new Map();
     const saleCount = line => {
         // Accepted custody keeps its advertised remainder until completion.
-        if (line.storeType !== SELL || line.custodyPolicy !== 1 || state.stats?.tradeMeeting)
+        if (line.storeType !== SELL || state.stats?.tradeMeeting)
             return line.count;
-        if (!saleAmounts) {
+        const backed = line.custodyPolicy !== 1;
+        if (!saleAmounts.has(backed)) {
             const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-            const candidates = Disposition.saleCandidates(state, { unlimited: true,
-                keptAmounts: {
-                    ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, economy),
-                    ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: economy.stock('potions').target }),
-                    ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state)
-                }, reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
-            saleAmounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
+            const board = deps.board || economy.board;
+            const source = backed ? invoke('GameServer/Bot/Economy/MarketListingPolicy')
+                .ownSaleInputs(state, board?.ownerLines?.(Number(state.characterId)) || []).state : state;
+            // The bot's own kept stock, as its listing keeps it (keptStock over the plan's published targets).
+            const candidates = Disposition.saleCandidates(source, { unlimited: true, keptAmounts: Disposition.keptStock(state),
+                reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
+            const amounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
+            const lines = new Map();
+            if (backed) {
+                const remaining = new Map(amounts);
+                const owned = (board?.ownerLines?.(Number(state.characterId)) || [])
+                    .filter(row => row.storeType === SELL && row.custodyPolicy !== 1)
+                    .sort((a, b) => Number(a.lineId) - Number(b.lineId));
+                for (const row of owned) {
+                    const key = `${row.selfId}:${row.enchant || 0}`;
+                    const amount = Math.min(row.count, remaining.get(key) || 0);
+                    lines.set(row.lineId, amount);
+                    remaining.set(key, Math.max(0, Number(remaining.get(key) || 0) - amount));
+                }
+            }
+            saleAmounts.set(backed, { amounts, lines });
         }
-        return Math.min(line.count, saleAmounts.get(`${line.selfId}:${line.enchant || 0}`) || 0);
+        const available = saleAmounts.get(backed);
+        return Math.min(line.count, available.lines.get(line.lineId)
+            ?? available.amounts.get(`${line.selfId}:${line.enchant || 0}`) ?? 0);
     };
     return {
         state,
@@ -73,7 +95,8 @@ function traderContext(state, deps = {}) {
         preparedWorth: deps.preparedWorth || (economy.network?.demands && economy.projection?.values
             ? id => economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
                 ? economy.worth(id) : NaN : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
-        preparedBuffer: deps.preparedBuffer || null,
+        // The version of the card preparedWorth reads (ColdEconomyDecision.usefulnessVersion), main's card reader.
+        preparedVersion: deps.preparedVersion ?? null,
         preparedValue: economy.network?.demands && economy.projection?.values ? id => {
             const key = `item:${id}`;
             return economy.network.demands.has(key) ? economy.network.demands.get(key)
@@ -120,6 +143,9 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
+        if (line.custodyPolicy === 1 && !PartyAdmission.personalOfferAllowed(line, ctx.state)) continue;
+        if (line.custodyPolicy === 1 && MeetingPriceRefusals.rejects(line,
+            Math.min(units, line.count), PartyAdmission.counterpartyState(line.ownerId))) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;
@@ -195,7 +221,7 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
     return {
         price: Math.round(price),
         seenCounter: counter.deals,
-        seenAt: ctx.timestamp,
+        seenAt: Math.ceil(ctx.timestamp),
         seenItem: MarketCounters.itemDeals(selfId).deals,
         rival: ctx.board?.first(selfId, storeType, { excludeOwner: ctx.characterId, enchant })?.price || 0,
         worth: storeType === BUY ? Number(worth) || 0 : 0,
@@ -210,7 +236,8 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
 // monetary value, physical residual and actual trip time/fees before one
 // tendency roll. `gain` is the board's Adena over the NPC for slot selection;
 // answering a bid returns its physical line/count, including partial demand.
-function disposition(item, ctx, { town = null, room = 1, stockQuote = false, standingPrice = 0, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, stockQuote = false, standingPrice = 0, rollKey,
+    selectedAnswerRecord = 0 }) {
     const marketOnly = invoke('GameServer/Bot/Economy/ItemDisposition').isGradeCrystal(item);
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0,
@@ -247,7 +274,7 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
         const share = market.units > 0 ? units / market.units : 0;
         add('list', { receipts: Math.max(0, Number(ask.sold || 0) * ask.price * share),
             monetaryResidual: Math.max(0, Number(ask.residual || 0) * market.buyback * share),
-            delayHours: market.delayHours, riskHours: loss(ask.price, (ask.sold ?? units) * share) });
+            delayHours: ask.delayHours ?? market.delayHours, riskHours: loss(ask.price, (ask.sold ?? units) * share) });
     }
     const residualUnitValue = useful > 0 && room > 0 ? useful : market.buyback;
     const answer = bestAnswer(item.selfId, ctx, { units, enchant: item.enchant, residualUnitValue,
@@ -260,18 +287,23 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
         else fields.actualCashFees = Math.max(0, ctx.travel?.(answer.line.town) || 0);
         add('ad', fields);
     }
-    const chosen = PriceDecision.chooseByValue(options, rollKey);
+    // A previously selected sale has already won its roll. Fresh consent
+    // still needs the exact bid to remain the executable positive-value
+    // answer; a second unrelated roll is not a change in those facts.
+    const selected = Number(selectedAnswerRecord) === Number(answer?.line?.recordId)
+        ? options.find(option => option.action === 'ad') : null;
+    const chosen = selected || PriceDecision.chooseByValue(options, rollKey);
     if (!chosen) return { action: 'keep', priced, gain: 0, answer: null, known: false };
     return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0,
         answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count, receipts: answer.outcome.receipts } : null };
 }
 
 // A buy ad keeps authored worth with its line; the next ad starts fresh.
-function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey }) {
+function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey, preferProvidedWorth = false }) {
     if (ctx.canBuy?.({ selfId, enchant: 0 }) === false) return null;
     const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
-    worth = ctx.economy?.worth(selfId) ?? worth;
+    if (!preferProvidedWorth) worth = ctx.economy?.worth(selfId) ?? worth;
     const meeting = ctx.travelDetails?.(town);
     if (town && !meeting?.known) return null;
     const spendable = Number.isFinite(money) ? Math.max(0, money - (meeting?.known ? meeting.fees : 0)) : money;
@@ -309,8 +341,10 @@ function look(state, lines, ctx) {
             withdrawals.push(move); continue;
         }
         const count = ctx.saleCount?.(line);
-        if (line.storeType === SELL && line.custodyPolicy === 1 && Number.isSafeInteger(count) && count < line.count) {
-            if (!count) withdrawals.push(move);
+        if (line.storeType === SELL && Number.isSafeInteger(count) && count < line.count) {
+            // Return the backed line through native custody before republishing
+            // a smaller surplus; conditional ads can shrink in place.
+            if (!count || line.custodyPolicy !== 1) withdrawals.push(move);
             else reprices.push({ ...move, price: line.price, count,
                 pricing: { ...line.pricing, seenCount: count } });
             continue;

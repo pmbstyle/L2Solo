@@ -91,7 +91,7 @@ function publicScopeDigest(scope) {
 }
 function candidateRow(row) {
     return { characterId: row[0], recipeId: row[1], price: row[2], entryPrice: row[2],
-        townName: row[3], loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7] };
+        townName: row[3], loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7], publicStation: row[8] === 1 };
 }
 const inputOwners = new Map();
 const ownerInputs = new Map();
@@ -295,7 +295,9 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expe
             || expectedRevision !== null && Number(expectedRevision) !== Number(crafter.simulation?.revision || 0)) {
             throw new Error('workshop price changed');
         }
-        const materials = Profit.materials(await database.fetchItems(customerId, 'workshop_craft'), recipe, batches);
+        const inputs = invoke('GameServer/Bot/Economy/CraftShopService').isStationService(crafter)
+            ? require('../../Crafting/StationRecipe').forStation(recipe) : recipe;
+        const materials = Profit.materials(await database.fetchItems(customerId, 'workshop_craft'), inputs, batches);
         if (!materials) throw new Error('workshop materials missing');
         const template = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
         if (!template) throw new Error('workshop product missing');
@@ -443,7 +445,8 @@ function buildPublicRecipeRows(ownerId) {
         if (!state || !entry || !recipe || ![state.loc?.locX, state.loc?.locY, state.loc?.locZ].every(Number.isFinite)) continue;
         const capacity = Math.min(64, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
         result.push([id, recipeId, Number(entry.price),
-            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, capacityBucket(capacity)]);
+            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, capacityBucket(capacity),
+            invoke('GameServer/Bot/Economy/CraftShopService').isStationService(state) ? 1 : 0]);
     }
     return result;
 }
@@ -465,31 +468,4 @@ function boardRecords() {
             entries: state.stats.workshop.entries, revision: state.simulation?.revision || 0 }];
     });
 }
-async function publishDemand(state, recipe, productPrice, context) {
-    for (const material of recipe.materials || []) {
-        const missing = Math.max(0, Number(material.amount) - Number(state.inventory?.[material.selfId]?.amount || 0));
-        if (!missing) continue;
-        let others = 0;
-        for (const other of recipe.materials || []) if (other !== material) {
-            const value = Profit.inputValue(other.selfId, state, context);
-            if (!(value > 0)) return state;
-            others += value * Number(other.amount);
-        }
-        const margin = Profit.margin(recipe, productPrice, others, context);
-        const input = Profit.inputValue(material.selfId, state, context);
-        const cash = missing * input;
-        const r = margin?.profit > 0 && cash > 0 ? margin.profit / context.hourAdena / cash : 0;
-        const budget = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state, 0, { r });
-        const worth = margin && margin.profit / Number(material.amount);
-        if (!(worth > 0)) continue;
-        const price = Math.floor(Math.min(worth, budget / missing));
-        if (price < 1) continue;
-        const result = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(state, {
-            type: 'buy_craft_material', status: 'active', target: { itemId: material.selfId, amount: missing,
-                adena: price }, plan: { estimatedCost: price, valueRate: r, expectedBenefit: 'market_buy_craft_material', priceSource: 'recipe_margin' }
-        });
-        return result.state || state; // One owned money focus; the next input follows its fill event.
-    }
-    return state;
-}
-module.exports = { init, register, registerPlayer, remove, recipesChanged, knownFor, cachedRecipes, bookFor, knowledgeFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };
+module.exports = { init, register, registerPlayer, remove, recipesChanged, knownFor, cachedRecipes, bookFor, knowledgeFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates };

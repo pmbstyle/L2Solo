@@ -37,6 +37,13 @@ function clanDuty(party) {
 }
 // The order owns the roster through its physical return, even after expiry.
 const warDuty = party => !!party?.stats?.warOperation;
+function arrowUnloadNeed(party, member, now, need = undefined) {
+    if (warDuty(party) || clanDuty(party) || party?.stats?.objective?.sourceKind === 'raid'
+        || party?.stats?.objective?.raidBoss) return null;
+    if (!invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(member).length) return null;
+    const bag = need === undefined ? cleanupNeed(member, now) : need;
+    return bag?.reason === 'inventory_overweight' ? bag : null;
+}
 function warSupplyItem(id) {
     // Check the actual item, never a wish/errand label that can name crafting
     // inputs or equipment. Enchant scrolls are not combat supplies.
@@ -60,6 +67,10 @@ function pending(party, now = Date.now()) {
     return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
 }
 function sessionReady(party, member, goal, now, config) {
+    // Excess arrows break a session early, but not again within the cooldown:
+    // a visit that could not sell them must not loop the party town <-> spot.
+    if (arrowUnloadNeed(party, member, now))
+        return now - Number(party.stats?.lastMarketBreakAt || 0) >= config.partyMarketBreakCooldownMs;
     // The hour engine has already selected this quote over earning/farming.
     // An ordinary party's minimum session must not postpone a payable kit.
     if (!warDuty(party) && !clanDuty(party) && party?.stats?.objective?.sourceKind !== 'raid'
@@ -69,7 +80,7 @@ function sessionReady(party, member, goal, now, config) {
             const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
             const assessment = Progression.assess(member);
             const item = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, goal.target?.itemId);
-            const slot = Number(String(goal.plan.wishKey || '').match(/^power:\d+:(\d+)$/)?.[1] || goal.target?.itemSlot);
+            const slot = invoke('GameServer/Bot/Economy/WishNetwork').rootSlot(goal.plan.wishKey) || Number(goal.target?.itemSlot);
             if (item && assessment.required && Progression.priority(item, slot, assessment)) return true;
         }
     }
@@ -77,10 +88,10 @@ function sessionReady(party, member, goal, now, config) {
         && Number(party.stats?.fightsResolved || 0) >= config.partyMarketBreakMinFights
         && now - Number(party.stats?.lastMarketBreakAt || 0) >= config.partyMarketBreakCooldownMs;
 }
-// The bag need a clan-duty break reads; null outside a clan duty. A caller
+// A clan-duty bag need or an ordinary party's excess-arrow unload. A caller
 // that already has it passes it on (`need`) so the bag is walked once.
 function memberNeed(party, member, now = Date.now()) {
-    return clanDuty(party) ? cleanupNeed(member, now) : null;
+    return clanDuty(party) ? cleanupNeed(member, now) : arrowUnloadNeed(party, member, now);
 }
 function shotRestock(party, current) {
     const objective = party?.stats?.objective;
@@ -100,7 +111,10 @@ function allowed(party, member, now = Date.now(), need = undefined, current = nu
 // shot stock. The native purchase/travel gate still checks its quote and cash.
 function goal(party, member, current, now, need = undefined) {
     if (warDuty(party)) return warSupplyGoal(current) ? current : null;
-    if (!clanDuty(party)) return current;
+    if (!clanDuty(party)) {
+        const bag = arrowUnloadNeed(party, member, now, need);
+        return bag ? { ...cleanupGoal(bag), status: 'active' } : current;
+    }
     const bag = need === undefined ? cleanupNeed(member, now) : need;
     if (['inventory_capacity', 'inventory_overweight'].includes(bag?.reason)) return { ...cleanupGoal(bag), status: 'active' };
     return shotRestock(party, current) ? current : null;
@@ -115,7 +129,16 @@ function departure(party, member, travel, now, given = undefined, current = null
         ...(war ? { warOperationId: party.stats.warOperation.id, supplyItemId: Number(current.target.itemId) } : {}),
         slots: need?.slots, limit: need?.limit };
     return { ...travel, stats: { ...travel.stats, partyMarketReturn: token,
-        lastPartyMarketBreak: token, clanPartyObjective: war ? member.stats?.clanPartyObjective || null : token.objective } };
+        clanPartyObjective: war ? member.stats?.clanPartyObjective || null : token.objective } };
+}
+// A personal warehouse visit is a short ordinary-party absence. The same
+// return ticket and membership handoff as market errands restores the roster.
+function warehouseDeparture(party, member, travel, now = Date.now()) {
+    if (warDuty(party) || clanDuty(party) || party?.stats?.objective?.sourceKind === 'raid'
+        || party?.stats?.objective?.raidBoss || pending(party, now).length) return null;
+    const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
+        objective: { ...(party.stats?.objective || {}) }, startedAt: now, cleanupReason: 'craft_warehouse' };
+    return { ...travel, stats: { ...travel.stats, partyMarketReturn: token } };
 }
 function stats(party, departed) {
     const token = departed?.stats?.partyMarketReturn;
@@ -126,5 +149,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { cleanupNeed, forcedCleanupNeed, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed,
+module.exports = { cleanupNeed, forcedCleanupNeed, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed, warehouseDeparture,
     allowed, goal, departure, stats, ready };

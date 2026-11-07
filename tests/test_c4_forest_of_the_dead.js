@@ -1,3 +1,5 @@
+'use strict';
+
 const assert = require('assert');
 
 require('../src/Global');
@@ -8,9 +10,11 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+const World = invoke('GameServer/World/World');
 const skillBindings = require('../data/Npcs/Skills/c4_forest_of_the_dead.json');
 
 DataCache.init();
+World.npc = { spawns: [], grid: {} };
 
 const mobIds = [
     1547, 1548, 1549, 1552, 1553, 1555, 1557, 1559, 1560, 1561, 1562,

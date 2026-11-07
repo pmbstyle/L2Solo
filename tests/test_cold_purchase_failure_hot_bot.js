@@ -47,8 +47,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         const originals = {
             execute: Database.execute,
             updateCharacterLocation: Database.updateCharacterLocation,
-            updateCharacterExperience: Database.updateCharacterExperience,
-            updateCharacterVitals: Database.updateCharacterVitals,
+            updateCharacterProgress: Database.updateCharacterProgress,
             reconcileBotClanMembership: Database.reconcileBotClanMembership,
             reconcileBotClanGoals: Database.reconcileBotClanGoals,
             buyFromShop: AfkTrade.buyFromShop,
@@ -79,8 +78,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         async function run() {
             Database.execute = () => Promise.resolve([]);
             Database.updateCharacterLocation = async () => {};
-            Database.updateCharacterExperience = async () => {};
-            Database.updateCharacterVitals = async () => {};
+            Database.updateCharacterProgress = async () => {};
             Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
             Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
             const goalClears = [];
@@ -139,7 +137,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         }).finally(() => {
             Object.assign(Database, {
                 execute: originals.execute, updateCharacterLocation: originals.updateCharacterLocation,
-                updateCharacterExperience: originals.updateCharacterExperience, updateCharacterVitals: originals.updateCharacterVitals,
+                updateCharacterProgress: originals.updateCharacterProgress,
                 reconcileBotClanMembership: originals.reconcileBotClanMembership, reconcileBotClanGoals: originals.reconcileBotClanGoals
             });
             AfkTrade.buyFromShop = originals.buyFromShop;

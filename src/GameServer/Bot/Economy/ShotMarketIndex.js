@@ -98,7 +98,10 @@ class ShotMarketIndex {
     }
     offersFor(itemId, side = 1, excludedOwner = 0) {
         const result = [];
-        for (const line of this.board()?.list(Number(itemId), Number(side)) || []) {
+        const board = this.board();
+        const lines = Number(side) === 3 ? require('./PriceDecision').productionBids(board, itemId)
+            : board?.list(Number(itemId), Number(side)) || [];
+        for (const line of lines) {
             if (!excludedOwner || Number(line.ownerId) !== Number(excludedOwner)) result.push(offerFields(line));
         }
         return result;
@@ -151,20 +154,16 @@ function native() {
     if (instance) return instance;
     const recipes = invoke('GameServer/Items/C4RecipeItems');
     const catalogue = SHOT_RECIPES.map(id => recipes.resolveByRecipeId(id)).filter(Boolean);
-    let npcRows = null, npcKey = null;
     instance = new ShotMarketIndex({
         itemTemplates: invoke('GameServer/DataCache').items,
         shotProductIds: catalogue.map(recipe => Number(recipe.productId)),
         shotRecipeItemIds: catalogue.map(recipe => Number(recipe.recipeItemId)),
         board: () => invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
-        npcOffers: () => {
-            const key = `${invoke('GameServer/ProgressionRates').profile().multiplier}:${require('./ProductionPolicy').shotsDisabled()}`;
-            if (npcKey !== key) {
-                npcKey = key; npcRows = invoke('GameServer/World/Generics/NpcShopBuyLists').allOffers();
-            }
-            return npcRows;
-        },
-        stockFor: (state, _kind, now) => invoke('GameServer/Bot/Economy/EconomyContext').basics(state,{timestamp:now}).stock('shots'),
+        // The one NPC price table (main's, a worker's snapshot): a scrap
+        // craft's inputs and a gear line cost what a town NPC asks.
+        npcOffers: () => invoke('GameServer/Bot/Economy/BotMarketPricing').npcPriceRows(),
+        // The shots the owner keeps out of its unlisted supply: what its sale keeps (keptTargets).
+        stockFor: (state, _kind, now) => invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { timestamp: now }).shots,
         ...configured
     });
     return instance;

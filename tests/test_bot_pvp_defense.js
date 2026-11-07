@@ -68,6 +68,7 @@ function session(actor, options = {}) {
 
 let now = Date.now();
 let nextId = 2100000;
+let karmaWritesLost = 0;
 function setup(options = {}, mode = 'hunting') {
     const bot = actor(nextId++, options);
     const own = session(bot, { plan: mode });
@@ -306,11 +307,22 @@ function skill(id, type, target, effect, power = 100) {
     marker.mark = (_session, actor) => { actor.flag = 1; flagged++; };
     enemy.flag = 0;
     assert.strictEqual(attack.recordPlayerAggression(attacker, enemy, bot), true);
-    assert.strictEqual(flagged, 1, 'a missed hit or resisted control still flags the actual aggressor');
-    assert(own.pvpAggressors.has(enemy.id));
-    const pet = { fetchKind: () => 'Npc', fetchOwnerId: () => enemy.id, fetchId: () => 100001 };
+    assert(own.pvpAggressors.has(enemy.id), 'a missed hit or resisted control still alerts the victim party');
+    // C4 updatePvPStatus: the attack's start flags the acting player, a
+    // summon's or pet's owner, unless the target has karma.
+    assert.strictEqual(marker.attack(attacker, enemy, bot), true);
+    assert.strictEqual(flagged, 1, 'an attack on a white character flags the aggressor');
+    const pet = { fetchKind: () => 'Pet', fetchIsSummon: () => true, fetchOwnerId: () => enemy.id, fetchId: () => 100001 };
+    assert.strictEqual(marker.attack(attacker, pet, bot), true);
+    assert.strictEqual(flagged, 2, 'a pet\'s attack flags its owner');
+    bot.karma = 500;
+    assert.strictEqual(marker.attack(attacker, enemy, bot), false);
+    assert.strictEqual(marker.attack(attacker, pet, bot), false);
+    assert.strictEqual(flagged, 2, 'an attack on a character with karma flags nobody');
+    bot.karma = 0;
+    const questMonster = { fetchKind: () => 'Monster', fetchOwnerId: () => enemy.id, fetchId: () => 100002 };
+    assert.strictEqual(marker.attack(attacker, questMonster, bot), false, 'an owned quest monster is not its owner\'s summon');
     ReceivedHit(attacker, bot, 1, { source: pet });
-    assert.strictEqual(flagged, 2, 'a summon hit attributes the aggression and PvP flag to its owner');
     tick(own);
     assert.strictEqual(attack.blockedPvpDefense(own, bot, enemy), false);
     enemy.flag = 0;
@@ -340,6 +352,56 @@ function skill(id, type, target, effect, power = 100) {
     assert.strictEqual(invoke('GameServer/Bot/Population/Cooldown').canCooldown(own).reason, 'pvp_active');
     lod.shouldRefreshStatus = refresh;
     BotAI.executePvPCombat = combat;
+}
+// A state that throws on every hot tick gets the cold step's answer (BotFaultHold): each fault
+// is counted (the first logged with its stack) and holds the state off longer, 1 s, 5 s, 30 s,
+// 2 min; at the fifth in a row the bot leaves that plan for its own, which runs at once, and its
+// held decision is taken again. A state tick that returns ends the run.
+{
+    const { own } = setup({}, 'resting');
+    const FailureLog = invoke('FailureLog');
+    const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+    const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+    const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
+    const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+    const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+    const saved = { tick: Resting.tick, hunt: Hunting.tick, refresh: lod.shouldRefreshStatus, warn: utils.infoWarn,
+        upgrade: Upgrade.applyBestUpgrades, now: Date.now };
+    const count = site => FailureLog.snapshot()?.[site] || 0;
+    const logged = [], before = count('ai.state.resting'), leftBefore = count('ai.state_left');
+    const seqBefore = Number(DecisionEvents.statsFor(own).decisionSeq || 0);
+    let clock = saved.now(), restTicks = 0, huntTicks = 0;
+    try {
+        Date.now = () => clock;
+        Upgrade.applyBestUpgrades = () => {};
+        Resting.tick = () => { restTicks++; throw new TypeError('resting state broken'); };
+        Hunting.tick = () => { huntTicks++; };
+        lod.shouldRefreshStatus = () => false;
+        utils.infoWarn = (...line) => { if (line.join(' ').includes('ai.state.resting')) logged.push(line.join(' ')); };
+        BotAI.tick(own); BotAI.tick(own); BotAI.tick(own);
+        assert.strictEqual(restTicks, 1, 'a state that threw is held off, not run on the next ticks');
+        assert.strictEqual(count('ai.state.resting') - before, 1, 'the fault is counted');
+        assert.strictEqual(logged.length, before ? 0 : 1, 'only the first failing tick is logged');
+        if (!before) assert.match(logged[0], /resting state broken/);
+        for (const hold of [1000, 5000, 30000]) {
+            clock += hold - 1; BotAI.tick(own);
+            clock += 1; BotAI.tick(own);
+        }
+        assert.strictEqual(restTicks, 4, 'each fault in a row holds the state longer: 1 s, 5 s, 30 s');
+        assert.strictEqual(own.plan, 'resting', 'four faults in a row keep the plan');
+        clock += 120000; BotAI.tick(own);
+        assert.strictEqual(restTicks, 5);
+        assert.strictEqual(count('ai.state.resting') - before, 5, 'every fault is counted');
+        assert.strictEqual(own.plan, 'hunting', 'the fifth fault in a row leaves the plan for the bot\'s own');
+        assert.strictEqual(count('ai.state_left') - leftBefore, 1, 'leaving the plan is counted');
+        assert(Number(DecisionEvents.statsFor(own).decisionSeq || 0) > seqBefore, 'the held decision is taken again');
+        BotAI.tick(own);
+        assert.strictEqual(huntTicks, 1, 'the bot\'s own plan runs at once');
+        assert.strictEqual(own.stateFault, null, 'a state tick that returns ends the run');
+    } finally {
+        Resting.tick = saved.tick; Hunting.tick = saved.hunt; lod.shouldRefreshStatus = saved.refresh;
+        utils.infoWarn = saved.warn; Upgrade.applyBestUpgrades = saved.upgrade; Date.now = saved.now;
+    }
 }
 {
     const { own, bot, enemy } = setup();
@@ -376,11 +438,13 @@ function skill(id, type, target, effect, power = 100) {
         userInfo: Response.userInfo, charInfo: Response.charInfo, relation: Response.relationChanged };
     try {
         Generics.die = (_session, victim) => { victim.dead = true; };
-        Database.updateCharacterPvpPkKarma = () => Promise.resolve();
+        // The tally's write fails: the fight still settles, the lost write is counted (status swallowed=).
+        karmaWritesLost = invoke('FailureLog').snapshot()?.['db.write:character_karma'] || 0;
+        Database.updateCharacterPvpPkKarma = () => Promise.reject(new Error('disk I/O error'));
         Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);
         own.dataSendToMe = attacker.dataSendToMe = () => {};
         enemy.fetchPvp = enemy.fetchPk = () => 0;
-        enemy.setPvp = () => {};
+        enemy.setPvp = enemy.setPk = enemy.setKarma = () => {};
         bot.setPvpFlag = flag => { bot.flag = flag; };
         ReceivedHit(attacker, bot, 20);
         assert(bot.dead);
@@ -397,4 +461,8 @@ utils.isInPeaceZone = originalPeace;
 BotAI.promoteForPlayerInteraction = originalPromote;
 Response.speak = originalSpeak;
 GlobalChat.announceAttack = originalAnnounce;
-console.log('Bot PvP defense checks passed');
+// The tally write's rejection settled before this microtask.
+queueMicrotask(() => {
+    assert.strictEqual(invoke('FailureLog').snapshot()['db.write:character_karma'] - karmaWritesLost, 1, 'a failed PvP tally write is counted');
+    console.log('Bot PvP defense checks passed');
+});

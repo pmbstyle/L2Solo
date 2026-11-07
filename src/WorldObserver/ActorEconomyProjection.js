@@ -1,3 +1,4 @@
+const Packet = require('../GameServer/Bot/Economy/StatsPacket');
 const finite = value => Number.isFinite(Number(value)) ? Number(value) : null;
 const short = value => typeof value === 'string' ? value.slice(0, 160) : null;
 
@@ -25,10 +26,10 @@ function goal(plan, itemFor) {
 function project(state, { itemFor = id => ({ selfId: id, name: `Item ${id}` }), wishName = () => null, activity = null } = {}) {
     const stats = state?.stats || {}, focus = stats.wishFocus, money = stats.money;
     const funded = [];
-    if (Array.isArray(money)) for (let i = 4, previous = 0; i + 2 < Math.min(money.length, 28); i += 3) {
-        const cumulative = Math.max(0, finite(money[i + 1]) || 0);
-        funded.push({ hoursPerAdena: finite(money[i]), cumulativeCost: cumulative,
-            cost: Math.max(0, cumulative - previous), item: Number(money[i + 2]) > 0 ? itemFor(Number(money[i + 2])) : null });
+    for (let row = 0, previous = 0, rows = Math.min(Packet.fundedRows(money), Packet.MONEY_ROWS); row < rows; row++) {
+        const cumulative = Math.max(0, finite(Packet.fundedCumulative(money, row)) || 0), item = Number(Packet.fundedItem(money, row));
+        funded.push({ hoursPerAdena: finite(Packet.fundedRatio(money, row)), cumulativeCost: cumulative,
+            cost: Math.max(0, cumulative - previous), item: item > 0 ? itemFor(item) : null });
         previous = cumulative;
     }
     return {
@@ -38,9 +39,9 @@ function project(state, { itemFor = id => ({ selfId: id, name: `Item ${id}` }), 
         dormant: (Array.isArray(stats.dormantWishes) ? stats.dormantWishes : []).slice(0, 4).filter(Array.isArray).map(row => ({
             ...wish(row[0], itemFor, state.inventory, wishName), reason: short(row[1]), estimatedPrice: finite(row[3]),
             atPlayedHours: finite(row[4]) })),
-        money: Array.isArray(money) && money.length >= 4 ? { wallet: finite(state.adena),
-            adenaPerHour: finite(money[0]), hoursPerAdena: finite(money[1]), survivalReserve: finite(money[2]),
-            firstUnfundedPrice: finite(money[3]), funded } : null,
+        money: Packet.hasMoney(money) ? { wallet: finite(state.adena),
+            adenaPerHour: finite(Packet.hourAdena(money)), hoursPerAdena: finite(Packet.moneyPrice(money)), survivalReserve: finite(Packet.survivalReserve(money)),
+            firstUnfundedPrice: finite(Packet.firstUnfundedPrice(money)), funded } : null,
         selectedAction: activity ? {
             root: wish(activity.rootKey, itemFor, state.inventory, wishName), inputKey: short(activity.nodeKey),
             activity: short(activity.activity), source: short(activity.sourceType || activity.kind),

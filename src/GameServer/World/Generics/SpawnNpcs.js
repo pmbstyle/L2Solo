@@ -9,18 +9,12 @@ const NpcAggro = invoke('GameServer/Npc/NpcAggro');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
-
-function distanceSquared(first, second) {
-    const dx = first.fetchLocX() - second.fetchLocX();
-    const dy = first.fetchLocY() - second.fetchLocY();
-    return (dx * dx) + (dy * dy);
-}
+const { inClientView } = invoke('GameServer/World/WorldConstants');
 
 function notifyNearby(world, npc, response = ServerResponse) {
     if (!world?.user?.sessions || !npc) return;
-    const radiusSquared = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
     const packet = response.npcInfo(npc);
 
     world.user.sessions.forEach((session) => {
@@ -28,15 +22,39 @@ function notifyNearby(world, npc, response = ServerResponse) {
         if (
             actor?.fetchIsOnline?.() === true &&
             typeof session.dataSendToMe === 'function' &&
-            distanceSquared(actor, npc) <= radiusSquared
+            inClientView(actor.fetchLocX(), actor.fetchLocY(), npc.fetchLocX(), npc.fetchLocY())
         ) {
             session.dataSendToMe(packet);
         }
     });
 }
 
+// An NPC's model inherits its template: the datapack row flattened by crushOb
+// (primitives only, so no inherited value can be edited in place), one per
+// deep-frozen row (DataCache.init), which never changes. Every write to the
+// model (setters, spoil, manor, drop and overhit state) defines a field of the
+// NPC's own: [[Set]] on an inherited writable property does not reach the
+// prototype. The template is therefore not frozen (a frozen prototype refuses
+// those writes, the override mistake) and never leaves this module. Any other
+// row (a quest NPC's edited clone, a test literal) gets a template of its own.
+const sharedTemplates = new WeakMap();
+
+function isDeepFrozen(value) {
+    if (value === null || typeof value !== 'object') return true;
+    return Object.isFrozen(value) && Object.keys(value).every((key) => isDeepFrozen(value[key]));
+}
+
+function npcModel(row, coords) {
+    let template = sharedTemplates.get(row);
+    if (!template) {
+        template = utils.crushOb(row);
+        if (row && isDeepFrozen(row)) sharedTemplates.set(row, template);
+    }
+    return Object.assign(Object.create(template), coords);
+}
+
 function createNpc(world, npc, coords, spawnDefinition = null) {
-    const instance = new Npc(world.npc.nextId++, { ...utils.crushOb(npc), ...coords });
+    const instance = new Npc(world.npc.nextId++, npcModel(npc, coords));
     instance.spawnDefinition = spawnDefinition;
     instance.spawnOrigin = { locX: coords.locX, locY: coords.locY, locZ: coords.locZ };
     if (npc.template?.raidBoss === true) instance.raidInstanceId = `${Date.now()}:${instance.fetchId()}`;
@@ -45,12 +63,41 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     return instance;
 }
 
+// The spawns the spot catalogue counts (T123, SpotService.ensureIndexed):
+// one NPC per spawn definition of the game day, both periods, at its
+// datapack place (a territory's: a point drawn from a stream seeded by the
+// definition's place in the datapack), an ordinary group leader with its
+// minions drawn from the same stream (RaidBossMinionManager.catalogueMinions);
+// raid bosses never hunt. Never added to the world, the grid or a timer. The
+// catalogue, its spot ids (floors, joined fragments) and the generated spot
+// table (scripts/generate-spot-table.js) are the same at every start and in
+// the generator, whatever the period, the deaths or the live random points.
+function catalogueSpawns(world) {
+    const definitions = world?.npc?.definitions || [];
+    const spawns = [];
+    for (let at = 0; at < definitions.length; at++) {
+        const definition = definitions[at];
+        if (isRaidBossDefinition(definition)) continue;
+        const random = TendencyRoll.seeded(`spot-catalogue:${at}`);
+        const coords = utils.size(definition.spawn.coords) > 0 ? { ...definition.spawn.coords[0] }
+            : { ...territoryPoint(definition.bounds, random), head: 0 };
+        const leader = new Npc(-(spawns.length + 1), npcModel(definition.npc, coords));
+        leader.spawnDefinition = definition;
+        spawns.push(leader);
+        for (const minion of MinionManager.catalogueMinions(leader, random)) {
+            const instance = new Npc(-(spawns.length + 1), npcModel(minion.template, minion.coords));
+            Object.assign(instance, minion.link);
+            spawns.push(instance);
+        }
+    }
+    return spawns;
+}
+
 function spawnChildNpc(world, npc, coords, metadata = {}) {
     if (!world?.npc?.spawns || !npc) return null;
     const instance = createNpc(world, npc, coords, null);
     Object.assign(instance, metadata);
-    if (world.addNpcToGrid) world.addNpcToGrid(instance);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(instance);
     notifyNearby(world, instance);
     return instance;
 }
@@ -80,12 +127,22 @@ function randomCoords(definition) {
         };
     }
 
+    return { ...territoryPoint(bounds), head: utils.randomNumber(65536) };
+}
+
+// A point of a territory, drawn by `random` (a seeded stream for the spot
+// catalogue, catalogueSpawns), on the ground under it.
+function territoryPoint(bounds, random = Math.random) {
     const polygon = bounds.map((bound) => [bound.locX, bound.locY]);
-    const pos = require('random-point-in-shape')(polygon);
+    const draw = Math.random;
+    let pos;
+    // random-point-in-shape draws by Math.random (synchronous: restored before any other code runs).
+    Math.random = random;
+    try { pos = require('random-point-in-shape')(polygon); } finally { Math.random = draw; }
     // A territory's maxZ is a layer hint, not the surface at every XY.
     // Keep explicit datapack coordinates above unchanged (towns/dungeon floors).
     const locZ = GeodataEngine.getHeight(pos[0], pos[1], bounds[0].maxZ);
-    return { locX: pos[0], locY: pos[1], locZ, head: utils.randomNumber(65536) };
+    return { locX: pos[0], locY: pos[1], locZ };
 }
 
 function isRaidBossDefinition(definition) {
@@ -163,8 +220,7 @@ function spawnNpc(world, definition, options = {}) {
     const coords = randomCoords(definition);
     const npc = spawnDefinition(world, definition, coords, options);
     if (!npc) return null;
-    if (world.addNpcToGrid) world.addNpcToGrid(npc);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(npc);
     // Respawns happen independently of player movement.  Announce the new
     // object immediately, otherwise it can aggro a nearby player before that
     // player next crosses UpdateEnvironment's movement refresh threshold.
@@ -212,8 +268,7 @@ function spawnQuestNpc(world, {
     if (Number(despawnDelay) > 0) {
         npc.questSpawn.timer = setTimeout(() => despawnQuestNpc(world, npc), Number(despawnDelay));
     }
-    if (world.addNpcToGrid) world.addNpcToGrid(npc);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(npc);
     notifyNearby(world, npc);
     return npc;
 }
@@ -232,23 +287,24 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
     clearQuestSpawn(npc);
     npc.destructor?.(sourceSession || { dataSendToMeAndOthers: () => {}, dataSendToMe: () => {} });
     NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);
-    if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
+    world.removeNpcFromGrid(npc);
     const index = world.npc.spawns.indexOf(npc);
     if (index >= 0) world.npc.spawns.splice(index, 1);
-    if (!world.removeNpcFromGrid) world.indexSpawnsInGrid?.();
     return true;
 }
 
 function spawnNpcs() {
     this.npc.periodDefinitions = [];
+    // Every definition, in datapack order (the spot catalogue's spawns, catalogueSpawns).
+    this.npc.definitions = [];
     // These templates are created only by the quest encounter handler. Keeping
     // C4's old shared duel spawns would duplicate a player's personal opponent.
     const exclusive = new Set(invoke('GameServer/Quest/QuestService').quests()
         .flatMap(quest => quest.exclusiveSpawns || []));
     // Datapack rows are frozen by DataCache.init and never written by an
-    // instance (createNpc flattens a fresh copy), so every definition borrows
-    // them. Only the wrapper is per instance: DayNightSpawnManager and
-    // RaidBossMinionManager key on its identity.
+    // instance (its model inherits one shared flattened copy, npcModel), so
+    // every definition borrows them. Only the wrapper is per instance:
+    // DayNightSpawnManager and RaidBossMinionManager key on its identity.
     const templates = new Set();
     let definitions = 0;
     DataCache.npcSpawns.forEach((item) => {
@@ -266,6 +322,7 @@ function spawnNpcs() {
                     spawn.coords.forEach((info) => {
                         const fixedDefinition = { ...definition, spawn: { ...spawn, coords: [info] } };
                         definitions++;
+                        this.npc.definitions.push(fixedDefinition);
                         if (isPeriodic(spawn)) this.npc.periodDefinitions.push(fixedDefinition);
                         if (isPeriodActive(spawn, this.npc.periodMode)) {
                             spawnDefinition(this, fixedDefinition, {
@@ -278,6 +335,7 @@ function spawnNpcs() {
                 else { // Random location within bounds
                     const randomDefinition = { ...definition };
                     definitions++;
+                    this.npc.definitions.push(randomDefinition);
                     if (isPeriodic(spawn)) this.npc.periodDefinitions.push(randomDefinition);
                     spawnNpc(this, randomDefinition);
                 }
@@ -296,6 +354,7 @@ module.exports.spawnChildNpc = spawnChildNpc;
 module.exports.despawnQuestNpc = despawnQuestNpc;
 module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
+module.exports.catalogueSpawns = catalogueSpawns;
 module.exports.isRaidBossDefinition = isRaidBossDefinition;
 module.exports.raidBossRespawnAt = raidBossRespawnAt;
 module.exports.scheduleRaidBossRespawn = scheduleRaidBossRespawn;

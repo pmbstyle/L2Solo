@@ -103,11 +103,13 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
 }
 
 // ROUTE-ROOM-4: a market return (GoalExecutor.finishMarketVisit) to the spot
-// the bot left goes home while that spot has room; when main's world index
-// holds a full spot there, the return goes to another spot the search picks.
+// the bot left goes home, full or not: main searches no spot, the room is
+// read at arrival by the worker, which then re-routes the bot.
 {
-    const savedCatalogue = SpotService.spots;
+    const savedCatalogue = SpotService.spots, select = IncomeRoute.select;
     SpotService.spots = profiles;
+    // No income route: the return is the list search's, not an income pick that leads elsewhere.
+    IncomeRoute.select = () => null;
     try {
         // No class in the stats: no matchup profile refuses a spot, so the
         // search has other spots to offer (the naked mage survives none).
@@ -131,23 +133,18 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
                 characterName: `Home${i}`, level: 29, phase: 'cold', activity: 'hunting', spotId: homeSpot.id,
                 statsJson: '{}', inventorySummary: '{}' });
         }
-        const elsewhere = GoalExecutor.finishMarketVisit(shopping, at);
-        assert.equal(elsewhere?.stats.travel.reason, 'return_after_market', 'a full saved spot: still a return trip');
-        assert(Index.spotById(profiles, elsewhere.stats.travel.spotId) && elsewhere.stats.travel.spotId !== homeSpot.id,
-            'a full saved spot: the return goes to another spot of the catalogue');
+        const full = GoalExecutor.finishMarketVisit(shopping, at);
+        assert.equal(full?.stats.travel.reason, 'return_after_market', 'a full saved spot: still a return trip');
+        assert.equal(full.stats.travel.spotId, homeSpot.id, 'a full saved spot: the bot goes home, met full at arrival');
 
-        // No other spot to offer: the bot still goes home, the room is read
-        // again at arrival.
-        Spots.cache = [homeSpot];
         // The remembered region name differs from the spot's, so the trip shows
         // which of the two the destination was read from.
         const forgetful = { ...shopping, stats: { ...shopping.stats,
             marketReturn: { ...shopping.stats.marketReturn, regionName: 'Remembered ground' } } };
         const alone = GoalExecutor.finishMarketVisit(forgetful, at);
-        assert.equal(alone?.stats.travel.reason, 'return_after_market', 'a full saved spot alone: still a return trip');
-        assert.equal(alone.stats.travel.spotId, homeSpot.id, 'a full saved spot and no other spot fits: the bot goes home');
+        assert.equal(alone?.stats.travel.spotId, homeSpot.id, 'the bot goes home');
         assert.equal(alone.stats.travel.regionName, homeSpot.name, 'the saved spot itself is the destination');
-    } finally { SpotService.spots = savedCatalogue; }
+    } finally { SpotService.spots = savedCatalogue; IncomeRoute.select = select; }
 }
 
 Spots.cache = originalCache;

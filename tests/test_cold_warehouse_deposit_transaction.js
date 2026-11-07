@@ -48,7 +48,7 @@ async function run() {
         invoke('GameServer/DataCache').init();
         Database.init(); assert(Database.isReady()); await Life.init();
         const first = await seed();
-        const moved = await transfer(first.id, first.items[0], { coldState: first.state });
+        const moved = await transfer(first.id, first.items[0], { coldState: first.state, craftDepositTarget: 300 });
         // On the unfixed code the cache and saved summary still have 20.
         // The next real worker commit can therefore restore that physical bag.
         if (process.argv.includes('--reproduce')) {
@@ -68,6 +68,8 @@ async function run() {
         const after = await facts(first.id);
         assert.equal(after.saved, 0); assert.equal(after.bag, 0); assert.equal(after.stored, 20);
         assert.equal(JSON.parse(after.row.statsJson).fixtureNote, 'keep');
+        assert.equal(JSON.parse(after.row.statsJson).craftWarehouseDepositTarget, 300,
+            'the project marker commits together with the physical deposit');
         const stale = { ...first.state.inventory, [STEM]: { selfId: STEM, name: 'Stem', amount: 21 } };
         const [behind] = await Owner.commitBatch([{ revision: first.state.simulation.revision,
             nextState: { ...first.state, inventory: stale },
@@ -86,9 +88,11 @@ async function run() {
         const rollback = await seed();
         await Database.execute([`CREATE TRIGGER deposit_projection_fault BEFORE UPDATE OF inventorySummary ON bot_life_state
             WHEN NEW.characterId=${rollback.id} BEGIN SELECT RAISE(ABORT,'deposit_projection_fault'); END`]);
-        await assert.rejects(transfer(rollback.id, rollback.items[0], { coldState: rollback.state }), /deposit_projection_fault/);
+        await assert.rejects(transfer(rollback.id, rollback.items[0], { coldState: rollback.state, craftDepositTarget: 300 }), /deposit_projection_fault/);
         let unchanged = await facts(rollback.id);
         assert.deepEqual([unchanged.bag, unchanged.stored, unchanged.saved], [20, 0, 20]);
+        assert.equal(JSON.parse(unchanged.row.statsJson).craftWarehouseDepositTarget, undefined,
+            'a rolled-back deposit cannot leave a phantom return visit');
         await Database.execute(['DROP TRIGGER deposit_projection_fault']);
         // A main write moved the row after the caller read its copy.
         await Database.updateGeneratedBotName(rollback.id, `Moved${rollback.id}`, 3);
@@ -105,6 +109,29 @@ async function run() {
         assert.equal(result.state.simulation.revision, multiple.state.simulation.revision + 2);
         assert.equal(result.state.stats.unsavedVisitNote, 'keep-current-visit', 'projection must preserve caller metadata absent from the cache');
         assert.deepEqual([(await facts(multiple.id)).bag, (await facts(multiple.id)).stored, (await facts(multiple.id)).saved], [0, 7, 0]);
+
+        // Real adventurer selection, physical transfer and marker: the paused
+        // kit stores only its own reserved share, leaving unrelated stock free.
+        const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        const retained = await seed([20]);
+        const retainedPlan = { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 1,
+            target: { selfId: 76, slot: 7 }, materials: [{ selfId: STEM, amount: 7 }], heldInputs: { [STEM]: 7 } };
+        const retainedState = await Life.upsertState({ ...retained.state, stats: { ...retained.state.stats,
+            equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 129, slot: 7 },
+                inputPreparation: retainedPlan } } }, 'fixture_retained_craft');
+        Index.useRowSource(() => undefined, () => true);
+        Disposition.warehouseCandidates = candidates;
+        try {
+            assert.equal(Disposition.warehouseCandidates(retainedState).find(item => item.selfId === STEM)?.amount, 7);
+            const saved = await Warehouse.depositCold(retainedState);
+            assert.equal(saved.count, 7);
+            const actual = await facts(retained.id);
+            assert.deepEqual([actual.bag, actual.stored, actual.saved], [13, 7, 13]);
+            assert.equal(JSON.parse(actual.row.statsJson).craftWarehouseDepositTarget, 76);
+        } finally {
+            Index.useRowSource();
+            Disposition.warehouseCandidates = state => Object.values(state.inventory).filter(item => item.selfId === STEM && item.amount > 0);
+        }
 
         const handoff = await seed([3, 4]);
         let calls = 0;

@@ -55,7 +55,7 @@ function arrived(party, members, timestamp) {
     const Lifecycle = require('./BackgroundPartyLifecycle');
     const states = members.map(state => Lifecycle.releaseMember(state, timestamp, REASON, Material.departureRequest(party, state)));
     return { members: states, party: { ...party, status: 'dissolved', nextResolveAt: null,
-        stats: { ...party.stats, travel: null, pveEncounter: null, partyBreakReason: REASON, dissolvedAt: timestamp } } };
+        stats: { ...party.stats, travel: null, pveEncounter: null, partyBreakReason: REASON } } };
 }
 
 module.exports = { REASON, select, retarget, arrived, evacuating };

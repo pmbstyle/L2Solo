@@ -302,6 +302,20 @@ function attack(session, actor, summon) {
     });
 }
 
+// Whether the pet can land a hit on target (its attack order is the caller's;
+// ordered: it was given this tick and has not started): not a pet that never
+// attacks (attack), not a stopped one: stunned, asleep, rooted out of reach, or
+// short of the mob with no swing or run going.
+function canTake(summon, target, ordered = false) {
+    if (Number(summon.fetchSummonSkillId?.()) === 301) return false;
+    const Restrictions = invoke('GameServer/Effects/EffectRestrictions'); // lazy: as in attackTick, a summon's actor modules load after this one.
+    if (!Restrictions.canAttack(summon)) return false;
+    const AttackRange = invoke('GameServer/Actor/AttackRange'); // lazy: as EffectRestrictions above.
+    if (AttackRange.isWithinRange(summon, target, Math.max(0, Number(summon.fetchAtkRadius?.()) || 40))) return true;
+    if (!Restrictions.canMove(summon)) return false;
+    return ordered || summon.state?.fetchHits?.() === true || summon.state?.inMotion?.() === true;
+}
+
 function attackTick(session, summon, target) {
     if (!target || summon.controlMode !== 'attack' || summon.isDead?.()) {
         stop(session, summon);
@@ -342,19 +356,18 @@ function attackTick(session, summon, target) {
     invoke('GameServer/Bot/AI/BotMobCompetition').record(summon, target);
     session.dataSendToMeAndOthers(ServerResponse.attack(summon, target.fetchId(), hit), summon);
     summon.state.setHits(true);
+    invoke('GameServer/Actor/PvpFlag').attack(session, summon, target);
 
     summon.attack.queueTimer(() => {
         if (summon.controlMode !== 'attack' || summon.isDead?.()
             || target.isDead?.() || target.state?.fetchDead?.() === true) return;
         if (!isValidEnemyTarget(session.actor, target) || !Restrictions.canAttack(summon) ||
-            !AttackRange.isWithinRange(summon, target, range)) return;
+            AttackRange.lostFromView(summon, target)) return;
         if (hitLanded) {
             if (target.fetchKind) invoke(path.npc).receivedHit(session, summon, target, hit.damage);
             else invoke(path.actor).receivedHit(session, target, hit.damage, { source: summon });
             attackHelper.applyDamageAbsorb(session, summon, hit.damage);
-        } else if (!target.fetchKind && invoke('GameServer/Bot/AI/BotPvpThreats').record(target, summon)) {
-            invoke('GameServer/Actor/PvpFlag').mark(session, session.actor);
-        }
+        } else if (!target.fetchKind) invoke('GameServer/Bot/AI/BotPvpThreats').record(target, summon);
     }, speed * 0.644);
 
     summon.attack.queueTimer(() => {
@@ -548,6 +561,7 @@ module.exports = {
     startFollowOwner,
     startLifetime,
     attackTick,
+    canTake,
     isValidEnemyTarget,
     startPetFeed,
     stop,

@@ -1,6 +1,9 @@
 const assert = require('assert');
 
 require('../src/Global');
+// An attack on a character flags the attacker at the swing or the skill's
+// landing (PvpFlag.attack); the flag packets are not under test here.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 
 const Attack = invoke('GameServer/Actor/Attack');
 const SkillModel = invoke('GameServer/Model/Skill');
@@ -28,6 +31,7 @@ function actor() {
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
+        fetchIsOnline: () => true,
         fetchHead: () => 0,
         fetchCollectiveMAtk: () => 100,
         fetchCollectivePAtk: () => 100,
@@ -71,13 +75,17 @@ function npc(id, x, y, dead = false) {
         fetchCollectivePDef: () => 100,
         fetchDex: () => 30,
         fetchHp() { return this.hp; },
+        fetchMaxHp: () => 1000,
+        fetchMp: () => 100,
+        fetchMaxMp: () => 100,
         setHp(value) { this.hp = value; },
         broadcastVitals() {
             this.vitalsBroadcasts += 1;
             invoke('GameServer/Npc/Generics/BroadcastVitals')(this);
         },
         enterCombatState() {
-            this.enteredCombat += 1;
+            if (!this.state.fetchCombats()) this.enteredCombat += 1;
+            this.state.combats = true;
         },
         isDead: () => dead,
         automation: {
@@ -85,7 +93,7 @@ function npc(id, x, y, dead = false) {
         },
         state: {
             fetchDead: () => dead,
-            fetchCombats: () => false
+            fetchCombats() { return !!this.combats; }
         }
     };
 }
@@ -120,6 +128,8 @@ function player(id, x, y, level = 70) {
 
 function session(caster) {
     return {
+        accountId: `player_${caster.fetchId()}`,
+        fetchAccountId() { return this.accountId; },
         actor: caster,
         packets: [],
         dataSendToMe(packet) {
@@ -177,11 +187,14 @@ World.fetchNpcsInRadius = (x, y, radius) => {
 };
 Math.random = () => 0;
 caster.setDestId(primary.fetchId());
-World.user = { sessions: [testSession] };
+// The caster's client sees the NPCs it hit (vitals go to the real players registered near them).
+World.user = { sessions: [], revision: 0 };
+World.insertUser(testSession);
 
 try {
     attack.remoteHit(testSession, primary, flameStrike());
 } finally {
+    World.removeUser(testSession);
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
     World.user = originalWorldUser;
     Math.random = originalRandom;
@@ -199,9 +212,11 @@ assert(launched, 'magic area skill should broadcast MagicSkillLaunched');
 assert.strictEqual(launched.readInt32LE(13), 2, 'MagicSkillLaunched should include every affected target');
 assert.strictEqual(launched.readInt32LE(17), primary.fetchId(), 'MagicSkillLaunched should include primary target first');
 assert.strictEqual(launched.readInt32LE(21), nearby.fetchId(), 'MagicSkillLaunched should include secondary target');
+assert.deepStrictEqual(caster.statusUpdates.map((entry) => entry.id), [caster.fetchId()],
+    'the caster updates its own vitals after paying the cast');
 assert.deepStrictEqual(
-    caster.statusUpdates.map((entry) => entry.id),
-    [caster.fetchId(), primary.fetchId(), nearby.fetchId()],
+    testSession.packets.filter((packet) => packet?.[0] === 0x0e).map((packet) => packet.readInt32LE(1)),
+    [primary.fetchId(), nearby.fetchId()],
     'area damage should send vitals updates for every affected visible NPC, not only the selected primary target'
 );
 
@@ -252,5 +267,71 @@ assert.strictEqual(resistedPlayer.fetchHp(), 1000, 'resisted NPC magic should no
 const resistedMessage = resistedPlayerSession.packets.find((packet) => packet?.[0] === 0x64 && packet.readInt32LE(1) === 159);
 assert(resistedMessage, 'a player should receive the C4 magic-resisted system message for an NPC spell');
 assert.strictEqual(resistedMessage.readInt32LE(9), 0, 'magic-resisted system message should carry the monster name as text');
+assert(!npcSession.packets.some(packet => packet?.[0] === 0x64 && [46, 158].includes(packet.readInt32LE(1))),
+    'an NPC proxy must not send the receiving player cast-use or caster-failure messages');
+
+const debuffCaster = actor();
+const debuffSession = session(debuffCaster);
+const hex = new SkillModel({ selfId: 122, name: 'Hex', level: 1, spell: true, distance: 600, hp: 0 });
+World.user = { sessions: [resistedPlayerSession] };
+Math.random = () => 0.99;
+try {
+    attack.remoteHit(debuffSession, resistedPlayer, hex);
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+    invoke('GameServer/Actor/CombatStance').clear(debuffCaster);
+}
+assert.deepStrictEqual(debuffSession.packets.filter(packet => packet?.[0] === 0x64).map(packet => packet.readInt32LE(1)),
+    [46, 158], 'a resisted player debuff reports its use and failure to its caster');
+assert.strictEqual(resistedPlayerSession.packets.filter(packet => packet?.[0] === 0x64 && packet.readInt32LE(1) === 159).length,
+    1, 'a resisted debuff must not reuse the target-side nuke-resistance message');
+
+const stunVictim = npc(1005010, 100, 0);
+const stun = new SkillModel({ selfId: 100, name: 'Stun Attack', level: 1, spell: false });
+debuffSession.packets.length = 0;
+World.user = { sessions: [debuffSession] };
+Math.random = () => 0.99;
+try {
+    attack.applyRemoteCastEffect(debuffSession, debuffCaster, stunVictim, stun, {
+        magicSkill: false, shotState: attack.captureShotState(debuffCaster)
+    });
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+}
+assert.strictEqual(stunVictim.fetchHp(), 967, 'a resisted secondary stun must preserve the landed skill damage');
+assert.deepStrictEqual(debuffSession.packets.filter(packet => packet?.[0] === 0x64).map(packet => packet.readInt32LE(1)),
+    [158, 35], 'caster failure and damage feedback must both arrive when only the secondary effect resisted');
+
+const Store = invoke('GameServer/Effects/EffectStore');
+const holyAuraData = require('../data/Skills/Active/active.json').find(row => row.selfId === 107);
+for (const hasUndead of [true, false]) {
+    const auraCaster = actor(), auraSession = session(auraCaster);
+    const living = npc(1005020, 50, 0), undead = npc(1005021, 100, 0), neutral = npc(1005022, 75, 0);
+    living.fetchUndead = () => false;
+    undead.fetchUndead = () => true;
+    neutral.fetchUndead = () => true;
+    neutral.fetchAttackable = () => false;
+    const aura = new SkillModel({ selfId: 107, ...holyAuraData.template, ...holyAuraData.time, ...holyAuraData.levels[0] });
+    World.fetchNpcsInRadius = () => hasUndead ? [living, undead, neutral] : [living, neutral];
+    Math.random = () => 0;
+    try {
+        attack.remoteHit(auraSession, auraCaster, aura);
+        assert(auraSession.packets.some(packet => packet[0] === 0x48), 'an undead aura must cast from its living caster');
+        assert.strictEqual(auraCaster.mp, 1000 - aura.fetchConsumedMp(), 'an undead aura pays MP even without eligible targets');
+        assert.strictEqual(living.enteredCombat, 0, 'an undead aura must not provoke living monsters');
+        assert.strictEqual(Store.hasDebuff(living, 'root'), false, 'Holy Aura must not root living monsters');
+        assert.strictEqual(neutral.enteredCombat, 0, 'an undead aura must preserve ordinary enemy eligibility');
+        assert.strictEqual(Store.hasDebuff(neutral, 'root'), false, 'Holy Aura must not root non-hostile undead');
+        assert.strictEqual(Store.hasDebuff(undead, 'root'), hasUndead, 'Holy Aura must still root nearby undead');
+        assert(!auraSession.packets.some(packet => packet[0] === 0x64 && [109, 158].includes(packet.readInt32LE(1))),
+            'living bystanders and an empty undead aura must not report invalid target or a resisted effect');
+    } finally {
+        Store.remove(undead, 'root');
+        World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+        Math.random = originalRandom;
+    }
+}
 
 console.log('Skill area runtime checks passed');

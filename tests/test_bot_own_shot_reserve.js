@@ -82,8 +82,9 @@ assert.strictEqual(hotSale.get(D_SOULSHOT), undefined, 'a hot bot does not offer
 assert.strictEqual(hotSale.get(NG_SOULSHOT), 2000, 'a hot bot offers its old-grade shots');
 
 // A shot crafter's surplus of its own shot starts above the same target.
-// T43 table: below 44 this crafter's D shots have no purchase target (they do not pay); at 50 they do.
-const crafter = (amount) => ({ ...stateWith(amount, { stats: { classId: 57, shotCraft: { productId: D_SOULSHOT } } }), level: 50 });
+// T106 table (class vitals): this crafter's D shots pay (have a purchase target) at every level from 51,
+// only at some below (not at 49-50).
+const crafter = (amount) => ({ ...stateWith(amount, { stats: { classId: 57, shotCraft: { productId: D_SOULSHOT } } }), level: 52 });
 const crafterWithout = (state) => {
     const inventory = { ...state.inventory };
     delete inventory[NG_SOULSHOT];

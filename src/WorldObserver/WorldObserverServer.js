@@ -1,6 +1,7 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ItemTemplateIndex = require('../GameServer/Item/ItemTemplateIndex');
+const InventorySummary = require('../GameServer/Bot/Population/InventorySummary');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,7 @@ const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
@@ -385,7 +387,7 @@ function compactStateBot(state, hotIds, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
     const race = raceMetadata(stats.race ?? state.race, classId);
-    const leaderId = Number(state.party?.leaderId || stats.leaderId || 0) || null;
+    const leaderId = coldLeaderId(state);
     const loc = state.loc || { locX: 0, locY: 0, locZ: 0 };
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
     return {
@@ -568,7 +570,7 @@ function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
     if (!recipe) return { reasonCode: 'clan_craft_recipe_unavailable', craft: null };
     const providers = Object.fromEntries(Object.entries(plan.craftProviders || {}).map(([id, provider]) => [id,
         { ...provider, known: knowledge.some(row => Number(row.characterId) === Number(provider.characterId) && Number(row.recipeId) === Number(id)) }]));
-    const inventory = { ...observerJson(carrier.inventorySummary) };
+    const inventory = InventorySummary.read(carrier.inventorySummary);
     for (const row of warehouse) {
         const id = Number(row.selfId);
         inventory[id] = { selfId: id, amount: Number(inventory[id]?.amount || 0)
@@ -889,7 +891,7 @@ function compactClanMember(row, hotEntry = null, leaderId = 0) {
         locZ: clanNumber(row.lifeLocZ || row.locZ)
     };
     const area = hot?.area || WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
-    const inventory = observerJson(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     const equipment = coldEquipmentValue({ inventory, stats });
     const online = !!hot || Number(row.isOnline) === 1 || String(row.phase || '') === 'hot';
     return {
@@ -1626,8 +1628,14 @@ function compactPartyLeader(leader) {
     };
 }
 
+// The party row owns the leader; a member's copy stands in only while it has no row.
+function coldLeaderId(state) {
+    const row = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId) : null;
+    return Number(row?.leaderId || state.party?.leaderId || state.stats?.leaderId || 0) || null;
+}
+
 function coldPartyLeader(state, leaderState = null) {
-    const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
+    const leaderId = coldLeaderId(state);
     if (!leaderId) return null;
     if (leaderState) {
         return compactPartyLeader({
@@ -1910,7 +1918,6 @@ async function persistedPlayerDetail(characterId) {
 function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
-    const lastResolve = stats.lastResolveDebug || null;
     const compact = compactStateBot(state, new Set(), leaderState);
     return {
         ...compact,
@@ -1931,7 +1938,7 @@ function compactColdDetail(state, leaderState = null) {
         party: state.party?.partyId ? {
             id: state.party.partyId,
             role: state.party.role || stats.role || 'dps',
-            leaderId: Number(state.party.leaderId || stats.leaderId || 0) || null,
+            leaderId: coldLeaderId(state),
             leader: coldPartyLeader(state, leaderState)
         } : null,
         // The build hint follows from class, level and role alone: computed
@@ -1952,13 +1959,6 @@ function compactColdDetail(state, leaderState = null) {
             adenaEarned: Number(stats.adenaEarned || 0),
             partyGearReceived: Number(stats.partyGearReceived || 0)
         },
-        lastResolve: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && lastResolve ? {
-            route: lastResolve.route || null,
-            targetNpcId: Number(lastResolve.targetNpcId || 0) || null,
-            fights: Number(lastResolve.fights || 0),
-            wins: Number(lastResolve.wins || 0),
-            at: lastResolve.at || null
-        } : null,
         plan: compactColdPlan(state),
         travel: stats.travel || null,
         goal: stats.acquisitionGoal || stats.goal || null,
@@ -2037,16 +2037,14 @@ async function collectWorldActors() {
             BotManager.findSessionById(Number(status.id))
         ));
     const hotIds = new Set(hotBots.map((bot) => Number(bot.id)));
-    // The previous 700-item cap made the observer silently report 735 bots
-    // (35 hot + 700 cold) while PopulationStatus already knew about the full
-    // persisted population. Keep the payload bounded by the cache contract,
-    // but do not hide the rest of the world from the map.
-    const states = LifeState.allStates(2000);
+    // Every cached state: a cut here silently hid the least recently written
+    // bots from the map while PopulationStatus counted them.
+    const states = LifeState.everyState();
     const stateById = new Map(states.map((state) => [Number(state.characterId), state]));
     const stateBots = (await mapCooperatively(states, (state) => compactStateBot(
         state,
         hotIds,
-        stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))
+        stateById.get(coldLeaderId(state))
     ))).filter(Boolean);
     const bots = [...hotBots, ...stateBots];
     const players = realPlayerSessions().map(compactPlayer);
@@ -2097,6 +2095,12 @@ function bindColdProjection() {
         if (kind === 'reset') projectionRuntime.coldReset = true;
         else if (Number(characterId) > 0) projectionRuntime.pendingColdIds.add(Number(characterId));
     });
+    // A member's shown leader is the party row's (coldLeaderId): members write first,
+    // so a poll between the two writes would keep the old name without this.
+    BackgroundPartyState.subscribeChanges((party, previous) => {
+        if (Number(previous?.leaderId || 0) === Number(party.leaderId)) return;
+        for (const id of party.memberIds) projectionRuntime.pendingColdIds.add(Number(id));
+    });
 }
 
 function refreshColdProjection() {
@@ -2118,8 +2122,7 @@ function refreshColdProjection() {
             removals.push({ kind: 'bot', id });
             continue;
         }
-        const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
-        const actor = compactStateBot(state, hotIds, LifeState.cachedState(leaderId));
+        const actor = compactStateBot(state, hotIds, LifeState.cachedState(coldLeaderId(state)));
         if (actor) upserts.push(projectionActor(actor, 'bot'));
     }
     projectionRuntime.pendingColdIds.clear();
@@ -2182,8 +2185,7 @@ async function refreshDynamicProjection() {
         if (nextDynamicKeys.has(`bot:${id}`)) continue;
         const state = LifeState.cachedState(id);
         if (!state) continue;
-        const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
-        const actor = compactStateBot(state, new Set(), LifeState.cachedState(leaderId));
+        const actor = compactStateBot(state, new Set(), LifeState.cachedState(coldLeaderId(state)));
         if (actor) upserts.push(projectionActor(actor, 'bot'));
     }
     const removals = [];
@@ -2194,8 +2196,7 @@ async function refreshDynamicProjection() {
         if (kind === 'bot') {
             const state = LifeState.cachedState(id);
             if (state) {
-                const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
-                const actor = compactStateBot(state, new Set(), LifeState.cachedState(leaderId));
+                const actor = compactStateBot(state, new Set(), LifeState.cachedState(coldLeaderId(state)));
                 if (actor) upserts.push(projectionActor(actor, 'bot'));
                 else removals.push({ kind, id });
             } else removals.push({ kind, id });
@@ -2483,7 +2484,7 @@ async function botDetail(characterId) {
     if (!state) return null;
     if (PopulationConfig.developerDiagnostics) await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
 
-    const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
+    const leaderId = coldLeaderId(state);
     let leaderState = leaderId === id ? state : null;
     if (leaderId && !leaderState) {
         const leaderSession = BotManager.findSessionById(leaderId);

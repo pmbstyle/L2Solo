@@ -12,8 +12,6 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
-const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
-
 function stoppedDeposit(warehouse) {
     return { state: warehouse.state, listed: false, reason: warehouse.reason, warehouse, aborted: true };
 }
@@ -45,18 +43,24 @@ function townCenter(name) {
 function marketAwareNpcCandidates(state, options = {}) {
     return MarketListingPolicy.evaluate(state, {
         unlimited: true,
-        allowPreTradeCleanup: options.allowPreTradeCleanup === true
+        allowPreTradeCleanup: options.allowPreTradeCleanup === true,
+        // A conditional quote still weighs down its owner's bag. During a
+        // forced unload it competes with NPC buyback again instead of keeping
+        // the old listing forever. Backed shop stock is not in this bag.
+        ...(options.allowPreTradeCleanup ? { kept: new Map() } : {})
     }).npc;
 }
 
 function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
-    const candidates = marketAwareNpcCandidates(state, { allowPreTradeCleanup: true });
+    const candidates = forcedCleanup.cleanupReason === 'unused_arrows'
+        ? ItemDisposition.unusedArrowCandidates(state)
+        : marketAwareNpcCandidates(state, { allowPreTradeCleanup: true });
     const clearedState = {
         ...state,
         stats: {
             ...(state.stats || {}),
             forcedMarketCleanup: null,
-            marketSellRetryAfter: null
+            marketSellSeen: null
         }
     };
     if (!candidates.length) {
@@ -73,14 +77,15 @@ function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
         cleanupReason: forcedCleanup.cleanupReason || 'inventory_cleanup',
         town: clearedState.currentRegion || null,
         at: timestamp
-    }).then((cleanedState) => ({
-        state: cleanedState || clearedState,
-        listed: false,
-        cleaned: !!cleanedState,
-        reason: 'pre_trade_npc_cleanup',
-        cleanup: forcedCleanup,
-        liquidated: candidates
-    }));
+    }).then(async (cleanedState) => {
+        if (cleanedState) {
+            const ads = await invoke('Database').reconcileConditionalSellAds(state.characterId);
+            for (const ad of ads) invoke('GameServer/AfkTrade/AfkTradeService').refreshRecord(ad);
+        }
+        return { state: cleanedState || clearedState,
+            listed: false, cleaned: !!cleanedState, reason: 'pre_trade_npc_cleanup',
+            cleanup: forcedCleanup, liquidated: candidates };
+    });
 }
 
 function open(state, options = {}) {
@@ -88,24 +93,32 @@ function open(state, options = {}) {
         return Promise.resolve({ state, listed: false, reason: 'not_shopping' });
     }
     const timestamp = Number(options.now) || Date.now();
-    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp) {
-        if (!options.forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
+    // The sale retry: nothing new (goods or a buyer of them) since the last visit.
+    if (ItemDisposition.saleRetryHolds(state)) {
+        // A floor-driven goal may start the trip without the optional forced
+        // cleanup marker. Recheck the arrived bag: refusing its unload sends
+        // the same overweight bot straight back to town on its next step.
+        const floor = options.forcedCleanup ? null : require('../Population/SurvivalFloor').bagFor(state, timestamp);
+        const forcedCleanup = options.forcedCleanup || (floor?.action === 'unload' ? { cleanupReason: floor.reason }
+            : ItemDisposition.unusedArrowCandidates(state).length ? { cleanupReason: 'unused_arrows' } : null);
+        if (!forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
         // Cleanup may bypass the travel delay, but must not open another WTS.
         // Learn recipes first, as the sale path does: a learnable one is not junk.
         return LifeState.learnCraftableRecipes(state)
-            .then((learnedState) => preTradeNpcCleanup(learnedState || state, options.forcedCleanup, timestamp)).then((cleanup) => (
+            .then((learnedState) => preTradeNpcCleanup(learnedState || state, forcedCleanup, timestamp)).then((cleanup) => (
             BotWarehouse.depositCold({
                 ...cleanup.state,
-                stats: { ...cleanup.state.stats, marketSellRetryAfter: state.stats.marketSellRetryAfter }
+                stats: { ...cleanup.state.stats, marketSellSeen: state.stats.marketSellSeen }
             }).then((warehouse) => warehouse.aborted ? stoppedDeposit(warehouse)
                 : ({ ...cleanup, state: warehouse.state, reason: 'sell_retry_cleanup' }))
         ));
     }
+    // The visit's end writes the sale retry on what it could not place.
     const deferSellRetry = (nextState) => ({
         ...nextState,
         stats: {
             ...(nextState?.stats || {}),
-            marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
+            marketSellSeen: ItemDisposition.saleSeen(nextState)
         }
     });
     return ColdSafeEnchantService.enchantSafe(state, options)
@@ -116,7 +129,7 @@ function open(state, options = {}) {
     options = { ...options, stored, now: timestamp };
     state = preparedState || state;
     const forcedCleanup = options.forcedCleanup || null;
-    if (forcedCleanup?.cleanupReason === 'npc_only_inventory') {
+    if (['npc_only_inventory', 'unused_arrows'].includes(forcedCleanup?.cleanupReason)) {
         return preTradeNpcCleanup(state, forcedCleanup, timestamp);
     }
     const initialItems = ItemDisposition.saleCandidates(state, options);
@@ -218,7 +231,7 @@ function open(state, options = {}) {
 function travelToShopTown(state, board, timestamp) {
     // The visit saved its sale retry before answering buy ads (open); the trip
     // to the shop town is not a new sale trip and must not wait behind it.
-    const stats = { ...(state.stats || {}), marketSellRetryAfter: null,
+    const stats = { ...(state.stats || {}), marketSellSeen: null,
         shopTown: state.stats?.shopTown || { town: board.shopTown, at: timestamp } };
     const goal = { type: 'sell_inventory', status: 'active',
         plan: { expectedBenefit: 'market_sale_inventory', marketTown: board.shopTown } };
@@ -230,7 +243,7 @@ function travelToShopTown(state, board, timestamp) {
     const trip = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);
     const travel = trip?.stats?.travel?.townName === board.shopTown ? trip : null;
     if (travel) travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
-    const waiting = travel ? null : { ...state, stats: { ...stats, marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS } };
+    const waiting = travel ? null : { ...state, stats: { ...stats, marketSellSeen: ItemDisposition.saleSeen(state) } };
     const next = travel || GoalExecutor.finishMarketVisit(waiting, timestamp, { recoverMissingReturn: true })
         || waiting;
     return LifeState.upsertState(next, travel ? 'cold_market_shop_town_trip' : 'cold_market_shop_town_unreached')
@@ -266,7 +279,6 @@ function storedAmounts(state) {
 }
 
 module.exports = {
-    SELL_RETRY_DELAY_MS,
     marketStoreTitle,
     marketLocation,
     targetMarketTownName,

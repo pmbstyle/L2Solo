@@ -9,6 +9,7 @@ const Warehouse = invoke('GameServer/Warehouse/PersonalWarehouse');
 const Services = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Item = invoke('GameServer/Item/Item');
+const { GRADES } = invoke('GameServer/Bot/AI/GearGradeRule');
 
 const CACHE_MS = 30000;
 function recipeFor(state, plan = state.stats?.equipmentPlan) {
@@ -18,7 +19,7 @@ function recipeFor(state, plan = state.stats?.equipmentPlan) {
     const role = Roles.inferRole(state);
     const classId = Roles.classIdOf(state);
     if (!recipe || !Compatibility.profileFor(role,classId).weaponKinds.includes('Weapon.Dual')) return null;
-    const ranks = ['none','d','c','b','a','s'];
+    const ranks = GRADES;
     const item = ItemTemplateIndex.findNumericRowRequired(DataCache.items, recipe.productId);
     const rank = invoke('GameServer/Bot/AI/GearAcquisitionPlanner').gradeForLevel(state.level);
     return item && ranks.indexOf(item.etc.rank) <= ranks.indexOf(rank) ? recipe : null;

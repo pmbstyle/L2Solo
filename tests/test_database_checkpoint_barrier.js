@@ -263,6 +263,49 @@ async function run() {
     checks.push('options snapshot and synchronous getter Error boundary');
     checks.push('PASSIVE bypass remains outside the Main reservation');
 
+    // A long drain gives the event loop a turn between jobs (after 12 ms of
+    // them), keeps job order, and a truncate queued behind it still waits.
+    const drained = [], yieldsBefore = Database.stats().queueYields;
+    const slowJob = index => write(1, `test:checkpoint-barrier-drain-${index}`, () => {
+        const end = Date.now() + 3;
+        while (Date.now() < end) { /* a 3 ms job */ }
+        drained.push(index);
+    });
+    const drainJobs = Array.from({ length: 12 }, (_, index) => slowJob(index));
+    let immediateSaw = -1;
+    setImmediate(() => { immediateSaw = drained.length; });
+    setRequest(request => { drained.push(request.mode); return Promise.resolve('drain-reset'); });
+    const drainReset = Database.checkpoint({ mode: 'truncate', busyTimeoutMs: 50 });
+    const drainTail = slowJob(12);
+    assert.equal(await drainReset, 'drain-reset');
+    await Promise.all([...drainJobs, drainTail]);
+    restoreRequest();
+    assert(immediateSaw > 0 && immediateSaw < 12, `a timer runs in the middle of the drain (after ${immediateSaw} jobs)`);
+    assert.deepEqual(drained, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'truncate', 12],
+        'jobs keep their order across yields; the truncate waits for every job queued before it');
+    assert(Database.stats().queueYields > yieldsBefore, 'drain yields are counted');
+    // A caller awaiting each call, with nothing else queued, yields as well.
+    drained.length = 0;
+    let chainImmediateSaw = -1;
+    const chain = (async () => { for (let index = 0; index < 12; index++) await slowJob(index); })();
+    setImmediate(() => { chainImmediateSaw = drained.length; });
+    await chain;
+    assert(chainImmediateSaw > 0 && chainImmediateSaw < 12, `a timer runs in the middle of an awaited chain (after ${chainImmediateSaw} jobs)`);
+    assert.deepEqual(facts(), committed(1));
+    checks.push('long drain and awaited chain yield to timers, keep order, truncate still waits');
+
+    // A single job past the 12 ms slice cannot yield inside itself: it is
+    // counted under its operation with its time; a short job is not.
+    connection.function('spin_ms', (ms) => { const end = Date.now() + ms; while (Date.now() < end) { /* busy */ } return ms; });
+    const overBefore = Database.stats().overBudgetJobs['test:checkpoint-barrier-long-job']?.count || 0;
+    await Database.execute(['SELECT spin_ms(?) AS ms', [25]], 'test:checkpoint-barrier-long-job');
+    await Database.execute(['SELECT spin_ms(?) AS ms', [0]], 'test:checkpoint-barrier-short-job');
+    const over = Database.stats().overBudgetJobs;
+    assert.equal(over['test:checkpoint-barrier-long-job'].count, overBefore + 1);
+    assert(over['test:checkpoint-barrier-long-job'].maxMs >= 25, 'the job time is kept');
+    assert.equal(over['test:checkpoint-barrier-short-job'], undefined, 'a job inside the slice is not counted');
+    checks.push('a job past the drain slice is counted under its operation');
+
     const requestError = Error('fixture coordinator rejected reset');
     const failuresBeforeRequest = Database.stats().failures;
     setRequest(() => Promise.reject(requestError));

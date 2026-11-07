@@ -62,8 +62,8 @@ function facts(state, role) {
         }
         // Allow for party haste while ranking the wallet's shot duration.
         const speed = F.calcAtkSpd(Number(base.dex || 20), Number(weapon?.stats?.atkSpd || 300)) * speedMul * 1.5;
-        const cycle = weapon?.template?.kind === 'Weapon.Bow'
-            ? F.calcBowAttackTimes(speed, weapon.stats?.reuseDelay || 1500).cycleMs : F.calcMeleeAtkTime(speed);
+        const cycle = F.normalAttackMs(speed, { bow: weapon?.template?.kind === 'Weapon.Bow',
+            reuseDelay: weapon?.stats?.reuseDelay || 1500 });
         const shot = Shots.planForState(state);
         const price = Number(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(shot.selfId));
         const stock = Number(state.inventory?.[shot.selfId]?.amount || 0) + Shots.beginnerAmount(state, shot);

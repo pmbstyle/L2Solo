@@ -3,6 +3,7 @@ const BeginnerShots = require('../Items/C4BeginnerShots');
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
+const MeetingAnchor = require('./MeetingAnchor');
 const MAX_COMMITMENTS = 8;
 const ascii = value => typeof value === 'string' && /^[\x20-\x7e]*$/.test(value);
 const safe = (n, positive = false) => Number.isSafeInteger(n) && n >= (positive ? 1 : 0);
@@ -56,12 +57,17 @@ function create(io) {
             UNION ALL SELECT * FROM board_trade_meetings WHERE actorB=?${stateFilter}
             ORDER BY id LIMIT ${MAX_COMMITMENTS}`, [id, id]);
     }
-    const samePoint = (a, b) => a.town === b.town && ['locX', 'locY', 'locZ'].every(k => a[k] === b[k]);
     function anchor(id) { return active(id)[0] || null; }
     function anchorMarker(id) {
         const row = anchor(id);
         write('UPDATE board_trade_participants SET meetingId=? WHERE characterId=?', [row?.id || null, id]);
-        return row ? [row.id, row.revision] : null;
+        return MeetingAnchor.marker(row);
+    }
+    // Boot: a marker saved before it carried its anchor, or left behind by a
+    // meeting that is gone, is rewritten from the actor's accepted meetings.
+    function remark(id, saved) {
+        if (JSON.stringify(MeetingAnchor.marker(anchor(id))) === JSON.stringify(saved ?? null)) return null;
+        return snapshot(id, [], { tradeMeeting: anchorMarker(id) });
     }
     function participant(id) {
         const character = one('SELECT id FROM characters WHERE id=?', [id]);
@@ -103,14 +109,17 @@ function create(io) {
             const party = request.parties[side], commitments = active(id), existing = commitments[0];
             if (active(id, true).length >= MAX_COMMITMENTS) throw Error('trade_meeting_backpressure');
             if (existing) {
-                if (!samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
+                if (!MeetingAnchor.samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
                 if (party.route.method !== `meeting:${existing.id}` || party.route.fee !== 0
                     || party.route.scroll || party.route.durationMs !== 0) throw Error('trade_meeting_route_changed');
             } else if (party.route.method.startsWith('meeting:')) throw Error('trade_meeting_route_changed');
             const life = one("SELECT *, json_extract(statsJson,'$.playerPartyTakeover.playerId') playerPartyId FROM bot_life_state WHERE characterId=?", [id]);
             if (io.canStartTrade && !io.canStartTrade(id, life)) throw Error('trade_meeting_party_busy');
             if (life && io.canReceive) for (const line of request.lines.filter(line => line.payer === side)) {
-                io.canReceive(id, life, line.selfId);
+                const incoming = request.lines.filter(row => row.payer === side);
+                io.canReceive(id, life, line.selfId,
+                    incoming.filter(row => row.selfId === line.selfId).reduce((n, row) => n + row.count, 0),
+                    incoming.filter(row => row.selfId !== line.selfId).map(row => ({ selfId: row.selfId, amount: row.count })));
             }
             if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
@@ -223,6 +232,20 @@ function create(io) {
         if (row.state !== 'accepted') return result(row);
         const actors = ids(row), changed = [], closed = [];
         const lines = all('SELECT * FROM board_trade_meeting_lines WHERE meetingId=? ORDER BY ordinal', [id]);
+        if (completed && io.canCompleteReceive) {
+            try {
+                actors.forEach((actor, side) => {
+                    const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [actor]);
+                    const incoming = lines.filter(line => line.custodyType === 'trade' && line.payer === side && line.heldCount > 0);
+                    for (const line of incoming) io.canCompleteReceive(actor, life, line.selfId,
+                        incoming.filter(other => other.selfId === line.selfId).reduce((n, other) => n + other.heldCount, 0),
+                        incoming.filter(other => other.selfId !== line.selfId).map(other => ({ selfId: other.selfId, amount: other.heldCount })), row.id);
+                });
+            } catch (error) {
+                if (error.message === 'arrow_stock_limit') return terminal(id, false, error.message);
+                throw error;
+            }
+        }
         for (const line of lines) {
             if (!line.heldCount) continue;
             const owner = completed && line.custodyType === 'trade' ? line.payer : 1 - line.payer;
@@ -278,7 +301,7 @@ function create(io) {
         }
         return { acknowledged: true, cleaned: mask === 3 };
     }
-    return { accept, leg, terminal, present, acknowledge, participant, meeting, active, anchor };
+    return { accept, leg, terminal, present, acknowledge, participant, meeting, active, anchor, remark };
 }
 function projectIncoming(incoming) {
     // Leave room for the existing numeric agreement reference inside the

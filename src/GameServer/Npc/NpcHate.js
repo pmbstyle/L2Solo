@@ -1,5 +1,5 @@
 // Whom an NPC attacks: one rule for the live hate table (Npc.aggroList) and the
-// cold party fight (BackgroundResolver.resolvePartyFight).
+// cold fights (BackgroundResolver: resolvePartyFight, a pet's solo fight mobHolder).
 // Lisvus L2Attackable: a hit adds its damage as hate; an actor that engages
 // without hate gets one point; the NPC attacks the entry with the most hate
 // above zero, the earliest entry on a tie.

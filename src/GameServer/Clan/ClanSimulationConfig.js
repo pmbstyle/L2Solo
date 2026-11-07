@@ -15,7 +15,6 @@ const DEFAULTS = {
     contributionMaxFraction: 0.35,
     warehouseDepositBatchSize: 8,
     bloodMarkMaxPrice: 2500000,
-    marketDemandTimeoutMs: 300000,
     bloodMarkItemId: 1419,
     bloodMarkSourceNpcId: 12079,
     operationMinMembers: 3,
@@ -60,7 +59,6 @@ const ENV_KEYS = {
     contributionMaxFraction: 'CLAN_SIMULATION_CONTRIBUTION_MAX_FRACTION',
     warehouseDepositBatchSize: 'CLAN_SIMULATION_WAREHOUSE_DEPOSIT_BATCH_SIZE',
     bloodMarkMaxPrice: 'CLAN_SIMULATION_BLOOD_MARK_MAX_PRICE',
-    marketDemandTimeoutMs: 'CLAN_SIMULATION_MARKET_DEMAND_TIMEOUT_MS',
     bloodMarkItemId: 'CLAN_SIMULATION_BLOOD_MARK_ITEM_ID',
     bloodMarkSourceNpcId: 'CLAN_SIMULATION_BLOOD_MARK_SOURCE_NPC_ID',
     operationMinMembers: 'CLAN_SIMULATION_OPERATION_MIN_MEMBERS',
@@ -137,7 +135,6 @@ config.personalAdenaReserveMultiplier = Math.max(0, config.personalAdenaReserveM
 config.contributionMaxFraction = Math.max(0, Math.min(1, config.contributionMaxFraction));
 config.warehouseDepositBatchSize = Math.max(1, Math.floor(config.warehouseDepositBatchSize));
 config.bloodMarkMaxPrice = Math.max(1, Math.floor(config.bloodMarkMaxPrice));
-config.marketDemandTimeoutMs = Math.max(1000, Math.floor(config.marketDemandTimeoutMs));
 config.operationMinMembers = Math.max(2, Math.min(9, Math.floor(config.operationMinMembers)));
 config.operationMaxMembers = Math.max(
     config.operationMinMembers,

@@ -11,7 +11,7 @@ const { createExportedCatalogue } = require('../src/GameServer/Knowledge/Exporte
 const { create } = require('../src/GameServer/Knowledge/GameDataCatalogue');
 const DataCache = invoke('GameServer/DataCache'), NativeRecipes = require('../src/GameServer/Items/C4RecipeItems');
 const beforeNative = { items: DataCache.items, npcs: DataCache.npcs, spawns: DataCache.npcSpawns, recipes: NativeRecipes.loadedSource() };
-let ownedExport, itemReads = 0, npcReads = 0;
+let ownedExport, sharedExport, npcReads = 0;
 
 const previousPreset = process.env.L2NODE_PROGRESSION_RATE;
 const dataDir = path.join(__dirname, '..', 'data', 'KnowledgeBase');
@@ -22,8 +22,7 @@ const service = createKnowledgeBaseService({
     catalogueFactory: (data, options) => {
         ownedExport = data;
         const catalogue = createExportedCatalogue(data, options);
-        return { ...catalogue, item: id => { itemReads++; return catalogue.item(id); },
-            npc: id => { npcReads++; return catalogue.npc(id); } };
+        return { ...catalogue, npc: id => { npcReads++; return catalogue.npc(id); } };
     }
 });
 
@@ -52,6 +51,7 @@ try {
     assert.strictEqual(skillDetail.name, 'NPC Wind Strike');
     assert(skillDetail.observation.includes('not proof this bot learned'));
     const nativeSkillService = createKnowledgeBaseService({ dataDir, progressionRates: ProgressionRates,
+        catalogueFactory: (data, options) => { sharedExport = data; return createExportedCatalogue(data, options); },
         nativeSkills: () => [{ selfId: 3, template: { name: 'Power Strike', distance: 50 }, levels: [{ level: 1, mp: 10, power: 25 }, { level: 2, mp: 10, power: 27 }] }] });
     assert(nativeSkillService.listSkills({ q: 'Power Strike' }).items.some(skill => skill.id === 3 && skill.name === 'Power Strike'));
     assert.strictEqual(nativeSkillService.skillDetail(3).levelCount, 2);
@@ -106,17 +106,80 @@ try {
         sourceCount: shortSword.sourceCount
     });
     const blackWolf = shortSword.sources.drops.find((npc) => npc.id === 317);
-    assert.strictEqual(blackWolf.chancePercent, 0.6187);
+    assert.strictEqual(blackWolf.chancePercent, 1.0393); // Lisvus 317: 10393 / 1e6
     const exported = service.catalogue();
-    assert.equal(exported.item(1), ownedExport.itemById.get(1));
-    assert.equal(exported.sourcesForItem(1, { kind: 'drop' }), ownedExport.itemById.get(1).sources.drops);
+    nativeSkillService.catalogue();
+    assert.equal(sharedExport, ownedExport, 'services over one data directory share one loaded copy (the game dialogs and the observer)');
+    const raw = (name) => JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8'));
+    const rawItems = raw('items'), rawMobs = raw('mobs'), rawSpawns = raw('spawns');
+    const rawShortSword = rawItems.find((item) => item.id === 1);
+    // Full records are read from disk on demand: each is the generated record (an item's sources through
+    // sourcesForItem only), for every 20th record and the first and last.
+    const sampled = (rows) => rows.filter((row, index) => index % 20 === 0 || index === rows.length - 1);
+    sampled(rawItems).forEach((item) => assert.deepStrictEqual(exported.item(item.id), { ...item, sources: null }, `item ${item.id} record`));
+    sampled(rawSpawns).forEach((spawn) => assert.deepStrictEqual(exported.spawn(spawn.id), spawn, `spawn ${spawn.id} record`));
+    const rawSpawnById = new Map(rawSpawns.map((spawn) => [spawn.id, spawn]));
+    sampled(rawMobs).forEach((mob) => {
+        assert.deepStrictEqual(exported.npc(mob.id), mob, `mob ${mob.id} record`);
+        assert.deepStrictEqual(exported.spawnsForNpc(mob.id), mob.spawnIds.map((id) => rawSpawnById.get(id)), `mob ${mob.id} spawns`);
+        // Reward groups are kept compact in memory: the same rolls as the generated groups, at the generated x1 rates.
+        const detail = service.npcDetail(mob.id);
+        for (const [field, kind] of [['drops', 'drop'], ['spoils', 'spoil']]) {
+            assert.deepStrictEqual(detail[field].map((group) => [group.groupIndex, group.items.map((item) => [item.itemId, item.name])]),
+                mob[field].map((group) => [group.groupIndex, group.items.map((item) => [item.itemId, item.sourceName])]), `mob ${mob.id} ${kind} groups`);
+            detail[field].forEach((group, groupIndex) => group.items.forEach((item, itemIndex) => {
+                const generated = mob[field][groupIndex].items[itemIndex].rateProfiles.x1;
+                assert.ok(Math.abs(item.chancePercent - generated.chancePercent) <= 1e-8
+                    && Math.abs(item.expectedAmountPerKill - generated.expectedAmountPerKill) <= 1e-8, `mob ${mob.id} ${kind} ${item.itemId} x1 rate`);
+            }));
+        }
+        assert.deepStrictEqual([detail.dropCount, detail.spoilCount, detail.spawnCount],
+            [mob.drops.flatMap((group) => group.items).length, mob.spoils.flatMap((group) => group.items).length, mob.spawnIds.length]);
+    });
+    const mobIdRecords = (records) => records.map(({ mobId }) => ({ mobId }));
+    assert.deepEqual(exported.sourcesForItem(1, { kind: 'drop' }), mobIdRecords(rawShortSword.sources.drops));
     assert.equal(exported.sourcesForItem(1), null);
-    assert.equal(exported.potentialSpawnData().definitions, ownedExport.spawns);
+    assert.deepStrictEqual(exported.potentialSpawnData().definitions, rawSpawns);
     assert.deepEqual(service.relations('item', 1, { spots: [] }), { kind: 'item', id: 1, origin: 'exported',
         recipes: { available: false, origin: null, revision: null, producedBy: null, usedBy: null },
         sources: { available: true, origin: 'exported', revision: ownedExport.manifest?.generatedAt || null,
-            drops: ownedExport.itemById.get(1).sources.drops, spoils: ownedExport.itemById.get(1).sources.spoils },
+            drops: mobIdRecords(rawShortSword.sources.drops), spoils: mobIdRecords(rawShortSword.sources.spoils) },
         selectedSources: { available: false, origin: null, revision: null, rows: null } });
+
+    // The service keeps only the mob id and count of each generated source record: the item answers must be the
+    // ones the full records give. Every item's counts and source mobs; full detail for a sample and the largest.
+    const summaryKeys = Object.keys(service.listNpcs({ limit: 1 }).items[0]);
+    const round8 = (value) => Number(Number(value).toFixed(8));
+    const expectedSourceRows = (itemId, kind, records) => records
+        .map(({ mobId }) => service.npcDetail(mobId)).filter(Boolean)
+        .map((npc) => {
+            const rolls = npc[kind].flatMap((group) => group.items).filter((roll) => roll.itemId === itemId);
+            const miss = rolls.reduce((left, roll) => left * (1 - Math.max(0, Math.min(100, roll.chancePercent)) / 100), 1);
+            return { ...Object.fromEntries(summaryKeys.map((key) => [key, npc[key]])),
+                chancePercent: round8((1 - miss) * 100),
+                expectedAmountPerKill: round8(rolls.reduce((sum, roll) => sum + roll.expectedAmountPerKill, 0)) };
+        })
+        .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name));
+    let detailedItems = 0;
+    rawItems.forEach((raw, index) => {
+        const { drops, spoils } = raw.sources;
+        const overview = service.itemOverview(raw.id);
+        assert.deepStrictEqual([overview.hasDropSources, overview.hasSpoilSources, overview.sourceCount],
+            [drops.length > 0, spoils.length > 0, drops.length + spoils.length], `item ${raw.id} source counts`);
+        for (const kind of ['drops', 'spoils']) {
+            assert.deepStrictEqual(exported.sourcesForItem(raw.id, { kind }), mobIdRecords(raw.sources[kind]),
+                `item ${raw.id} ${kind} mobs in catalogue order`);
+        }
+        if (index % 25 && drops.length + spoils.length < 300) return;
+        const detail = service.itemDetail(raw.id);
+        for (const kind of ['drops', 'spoils']) {
+            assert.deepStrictEqual(detail.sources[kind], expectedSourceRows(raw.id, kind, raw.sources[kind]),
+                `item ${raw.id} ${kind} detail`);
+        }
+        detailedItems++;
+    });
+    assert.ok(detailedItems > 200, 'a sample of item details, incl. the largest source lists');
+    service.listItems({ q: 'sword', limit: 100 }).items.forEach((row) => assert.deepStrictEqual(row, service.itemOverview(row.id)));
     assert.equal(exported.recipesForProduct(1), null, 'missing recipe data is unavailable, not an empty recipe list');
     const fixtureRecipes = [{ recipeId: 7, productId: 1 }], fixtureSpots = [{ spot: { id: 'selected' }, count: 0 }];
     const nativeFixture = create({ origin: 'native-fixture',
@@ -126,9 +189,9 @@ try {
     const combined = createExportedCatalogue(ownedExport, { nativeCatalogue: nativeFixture });
     assert.equal(combined.recipesForProduct(1), fixtureRecipes);
     assert.equal(combined.relations('npc', 317, { spots: [] }).selectedSpots.rows, fixtureSpots);
-    assert.equal(combined.item(1), exported.item(1), 'explicit native relations do not replace exported legacy detail rows');
+    assert.deepStrictEqual(combined.item(1), exported.item(1), 'explicit native relations do not replace exported legacy detail rows');
 
-    const mobs = require('../data/KnowledgeBase/mobs.json');
+    const mobs = rawMobs;
     const mobById = new Map(mobs.map(npc => [npc.id, npc]));
     let checkedRelations = 0;
     for (const npc of mobs.filter(npc => npc.minions?.length || npc.minionOf?.length)) {
@@ -158,8 +221,9 @@ try {
     const gremlinX50 = service.npcDetail(1);
     assert.strictEqual(gremlinX50.rateProfile.drop, 50);
     assert.strictEqual(gremlinX50.drops[1].items[0].chancePercent, 33.49182068);
-    assert.strictEqual(gremlinX50.spoils[0].items[0].chancePercent, 12.0603);
+    assert.strictEqual(gremlinX50.spoils[0].items[0].chancePercent, 100);
     assert.strictEqual(gremlinX50.spoils[0].items[0].expectedAmountPerKill, 6.03015);
+    assert.deepStrictEqual([gremlinX50.spoils[0].items[0].minAmount, gremlinX50.spoils[0].items[0].maxAmount], [6, 7]);
     const keltirAdena = service.npcDetail(481).drops.flatMap((group) => group.items)
         .find((item) => item.itemId === 57);
     assert.deepStrictEqual({
@@ -167,7 +231,7 @@ try {
         max: keltirAdena.maxAmount,
         chance: keltirAdena.chancePercent,
         expected: keltirAdena.expectedAmountPerKill
-    }, { min: 245, max: 350, chance: 100, expected: 297.5 });
+    }, { min: 280, max: 420, chance: 100, expected: 350 }); // Lisvus 8-12 at 70 %, x50: 35 rolls
 
     assert.deepStrictEqual(spawnMapPoints({ possibleLocations: [{ locX: 10, locY: 20, locZ: -30 }] }), [
         { locX: 10, locY: 20, locZ: -30, source: 'location' }
@@ -204,7 +268,7 @@ try {
         'NPC detail stat grids must render whole values');
     assert.match(mapHtml, /href="\/observer\/database\/items"/);
     assert.match(mapHtml, /id="npcSpawnLayer"/);
-    assert(itemReads > 1 && npcReads > 1, 'actual reference detail readers call the common interface');
+    assert(npcReads > 1, 'npcDetail reads the mob record through the common interface');
     assert.deepEqual({ items: DataCache.items, npcs: DataCache.npcs, spawns: DataCache.npcSpawns, recipes: NativeRecipes.loadedSource() }, beforeNative,
         'standalone exported reference never initializes the native datapack/recipe source');
 } finally {

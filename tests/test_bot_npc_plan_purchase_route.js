@@ -25,6 +25,8 @@ const base = {
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };
+// Its healing potions at the stock's own target, whatever use the table gives them.
+base.inventory = { 1061: { selfId: 1061, amount: invoke('GameServer/Bot/Economy/EconomyContext').stockFor(base, 'potions').target } };
 const plan = GearAcquisitionPlanner.staticNpcUpgradePlan(base);
 assert.strictEqual(plan?.market?.sourceType, 'npc', 'the fixture must plan an NPC purchase');
 const state = { ...base, stats: { ...base.stats, equipmentPlan: plan } };

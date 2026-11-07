@@ -36,6 +36,35 @@ function nextClass(classId, level, seed) {
     return null;
 }
 
+// The second class a first class will take at 40 (the same pick nextClass
+// makes then), or null for a class with no second profession ahead. Read on
+// every role question of a split-kit bot (BotRoles.kitClassId), so the pick is
+// kept per (class, seed): it never changes. Bounded: cleared when it outgrows
+// any population.
+const FUTURE_MEMO_LIMIT = 1 << 16;
+const futureMemo = new Map();
+let futureMemoSize = 0;
+
+function futureClass(classId, seed) {
+    const current = Number(classId);
+    if (!ClassProgression.secondProfMap[current]) return null;
+    if (typeof seed !== 'number' && typeof seed !== 'string') return nextClass(current, 40, seed);
+    let bySeed = futureMemo.get(current);
+    if (!bySeed) futureMemo.set(current, bySeed = new Map());
+    let future = bySeed.get(seed);
+    if (future === undefined) {
+        if (futureMemoSize >= FUTURE_MEMO_LIMIT) {
+            futureMemo.clear();
+            futureMemoSize = 0;
+            futureMemo.set(current, bySeed = new Map());
+        }
+        future = nextClass(current, 40, seed);
+        bySeed.set(seed, future);
+        futureMemoSize++;
+    }
+    return future;
+}
+
 function plan({ classId, level, seed } = {}) {
     let resolvedClassId = Number(classId);
     const transitions = [];
@@ -89,4 +118,4 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     return { classId: resolvedClassId, transitions, ...training };
 }
 
-module.exports = { nextClass, plan, reconcile };
+module.exports = { nextClass, futureClass, plan, reconcile };

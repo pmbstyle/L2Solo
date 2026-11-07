@@ -73,7 +73,7 @@ async function main() {
     states[0] = await Life.upsertState({ ...states[0], stats: { ...states[0].stats, partyRequest: objective } }, 'material_trip_need');
     const prepared = Parties.prepareCommit({ partyId: 'material-trip', leaderId: states[0].characterId,
         memberIds: states.map(state => state.characterId), status: 'active', spotId: 'old-source', startedAt: timestamp,
-        nextResolveAt: timestamp, cohesion: 1, stats: { objective, sessionExpiresAt: timestamp + 3600000,
+        nextResolveAt: timestamp, cohesion: 1, stats: { objective,
             agreement: Agreement.propose(states[0], states, objective) } });
     const assigned = states.map(state => Life.preparePartyAssignment(state, prepared.row.partyId, state.stats.role,
         prepared.row.leaderId, timestamp, 'old-source'));

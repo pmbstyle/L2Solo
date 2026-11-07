@@ -151,7 +151,7 @@ try {
 
 async function workerReturn() {
     const now = op.expiresAt + 1, messages = [];
-    const expired = { ...party, stats: { ...party.stats, sessionExpiresAt: at - 1 } };
+    const expired = { ...party, stats: { ...party.stats, sessionReview: { at: at - 300000, nextAt: at - 1 } } }; // its review clock ran out
     const there = members.map(s => ({ ...s, loc: { ...target } }));
     const kernel = new ColdSimulationKernel({ now: () => now,
         equipmentBridgeReason: () => { throw Error('equipment review must wait for military return'); },

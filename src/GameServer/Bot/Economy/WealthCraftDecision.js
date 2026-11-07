@@ -37,7 +37,7 @@ function staticExits(recipe, template) {
     }
     return result;
 }
-function exitsFor(state, recipe, template, trip, options) {
+function exitsFor(state, recipe, template, trip, options, existingOutput) {
     const result = [];
     for (const offer of options.offersFor?.(recipe.productId, 3, state.characterId) || []) {
         const exit = { type: 'afk', conditional: !!offer.conditional, price: Number(offer.price), count: Number(offer.count), offer,
@@ -46,6 +46,10 @@ function exitsFor(state, recipe, template, trip, options) {
     }
     for (const exit of (options.staticExits || staticExits)(recipe, template)) result.push({ ...exit,
         trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
+    if (options.board) result.push(...Policy.drain(require('./ProductionSalePolicy').exits(state, recipe, {
+        board: options.board, timestamp: options.timestamp, trip,
+        npcOffersFor: id => require('../Population/ColdOccupationSources').npcOffersFor(id),
+        existing: existingOutput })));
     return result;
 }
 function eligible(state, { ownLines = [], now = Date.now() } = {}) {
@@ -55,7 +59,7 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state) || CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
-        && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
+        && ['component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
     const previous = state.stats?.wealthCraft;
     if (previous?.outcome === 'waiting_for_buyer') {
         const id = Number(previous.productId);
@@ -65,13 +69,42 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
     return true;
 }
 function freeAmount(state, item, reserved = {}) {
+    return freeUnits(state, item, reserved, item.equippedCount, item.starterMobLootAmount);
+}
+// freeAmount with the worn copies and the protected starter loot given beside
+// the row (the sale's own reading of them), not copied onto it.
+function freeUnits(state, item, reserved, equippedCount, starterMobLootAmount) {
     if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return 0;
     const count = value => Math.max(0, Number(value) || 0);
     return Math.max(0, Math.floor(Number(item.amount ?? item.count ?? 0))
-        - Math.max(count(item.equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
+        - Math.max(count(equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
             count(reserved[item.selfId]), count(state.stats?.clanMaterialDemand?.[item.selfId]),
-            count(item.protectedAmount), count(item.starterMobLootAmount), count(item.reservedAmount)));
+            count(item.protectedAmount), count(starterMobLootAmount), count(item.reservedAmount)));
 }
+// A craft refused at the act is not picked again until the bot reads the market
+// anew: its next town look ends the mark, no clock. A visit counts its look as it
+// ends (GoalExecutor), so a refusal on a visit outlives that visit.
+const lookOf = state => Number(state.stats?.townLook?.n || 0);
+const refusals = state => {
+    const mark = state.stats?.wealthRefused;
+    return mark && lookOf(state) <= mark.look ? mark.recipes : [];
+};
+const refused = (state, recipeId) => refusals(state).includes(Number(recipeId));
+function refusedMark(state, recipeId) {
+    return { look: lookOf(state) + Number(state.activity === 'shopping'), recipes: [...new Set([...refusals(state), Number(recipeId)])] };
+}
+// The exit a step chose, read anew: a bid by its line and revision, a fixed buyer by
+// its row, public interest by its town and origin (the price and the curve are today's).
+function chosenExit(exit, [recordId, lineId, price, revision]) {
+    if (exit.offer) return Number(exit.offer.lineId) === Number(lineId) && Number(exit.offer.revision) === Number(revision)
+        && (recordId === null || Number(exit.offer.recordId) === Number(recordId) && Number(exit.price) === Number(price));
+    if (recordId === -2 || recordId === -3) return exit.type === 'listing' && exit.town === townForCode(lineId)
+        && exit.forecast?.origin === (recordId === -3 ? 'public_buy_interest' : 'public_item_trades')
+        && (recordId === -3 || exit.forecast.authority.revision >= Number(revision));
+    return exit.type === 'static' && exit.staticId === Number(lineId) && Number(exit.price) === Number(price);
+}
+// lazy: cycle ShotCraftPolicy reads this module at its load
+const townForCode = code => require('./ShotCraftPolicy').townForCode(code);
 function* decisionSearch(state, knownRecipes, context, options, mode) {
     const budgetState = { ...state, adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) };
     const trip = context.trip || Profit.tripFor(state, context);
@@ -112,6 +145,9 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
     const learned = new Set((knownRecipes || []).map(row => Number(row.recipeId ?? row)));
     const seen = new Set();
     function* candidates() {
+        // A meeting rechecks one already selected production job. It must
+        // not scan or admit other recipes while certifying its input.
+        if (options.onlyRecipeId) { yield Number(options.onlyRecipeId); return; }
         yield* knownRecipes || [];
         for (const key in state.inventory || {}) {
             const recipe = Recipes.resolve(Number(state.inventory[key].selfId || key));
@@ -123,13 +159,22 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         const id = Number(known.recipeId ?? known);
         if (seen.has(id)) { yield 'recipe'; continue; }
         seen.add(id);
+        if (!options.onlyRecipeId && refused(state, id)) { yield 'recipe'; continue; }
         const recipe = Recipes.resolveByRecipeId(id);
         yield 'recipe';
-        if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
+        if (!recipe || !options.onlyRecipeId && recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         if (!template || !recipe.materials?.length) continue;
-        const exits = options.prepareExits ? yield* options.prepareExits(state, recipe, template, trip)
-            : exitsFor(state, recipe, template, trip, options);
+        // Shot production has its own demand-aware executor and batch sizing.
+        // Keep an explicitly selected legacy job eligible for meeting rechecks.
+        if (mode === 'action' && String(template.template?.kind || '').startsWith('Other.Shot')
+            && (!options.onlyRecipeId || !learned.has(id))) continue;
+        const existingOutput = Number(ownStock.get(Number(recipe.productId))?.count || 0)
+            + Number(outputStock.get(Number(recipe.productId)) || 0)
+            + Number(state.acceptedIncoming?.[recipe.productId] || 0);
+        const open = options.prepareExits ? yield* options.prepareExits(state, recipe, template, trip)
+            : exitsFor(state, recipe, template, trip, options, existingOutput);
+        const exits = options.heldExit ? open.filter(exit => chosenExit(exit, options.heldExit)) : open;
         if (!options.prepareExits) yield 'exits';
         for (const exit of exits) {
             for (const price of outputPrices.get(Number(recipe.productId)) || []) {
@@ -138,27 +183,24 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
             }
         }
         const learning = !learned.has(id);
-        // Unknown shot acquisition already belongs to the shared shot route;
-        // retain that executor and its existing compact recipeTarget command.
-        if (learning && String(template.template?.kind || '').startsWith('Other.Shot')) continue;
         if (learning && !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) continue;
+        if (!exits.length && options.heldExit) { options.refusal.reason = 'exit_gone'; continue; }
         const recipeContext = { ...evaluationContext,
             ...(learning ? { recipeInput: Number(recipe.recipeItemId),
                 recipeStock: ownStock.get(Number(recipe.recipeItemId)),
                 ...(options.preparePurchase ? { preparePurchase: (itemId, missing) => options.preparePurchase(state, itemId, missing,
                     { npc: Number(itemId) !== Number(recipe.recipeItemId), cost: trip }) } : {}) } : {}),
-            existingOutput: Number(ownStock.get(Number(recipe.productId))?.count || 0)
-                + Number(outputStock.get(Number(recipe.productId)) || 0)
-                + Number(state.acceptedIncoming?.[recipe.productId] || 0) };
+            existingOutput };
         const candidate = yield* Policy.searchQuantity({ state: budgetState, recipe,
             planFor: (id, missing) => options.planPurchase?.(state, id, missing, { npc: true, cost: trip }),
-            exits, ownedFor, context: recipeContext, mode });
+            exits, ownedFor, context: recipeContext, mode, refusal: options.refusal });
         if (!candidate) continue;
         const cash = candidate.basket.cashCost + candidate.basket.actualCashFees;
         const r = cash > 0 ? candidate.valueHours / cash : Infinity;
         const score = mode === 'occupation' ? candidate.incomePerHour : candidate.valueHours;
         if (cash <= PurchaseFunding.spendable(state, 0, { r }) && score > 0
             && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = { ...candidate, template, r, learning };
+        else if (options.refusal) options.refusal.reason = 'no_cash';
         yield 'funding';
     }
     return best;
@@ -170,6 +212,13 @@ function occupationResult(row) {
     return row && row.incomePerHour > 0 && row.hours > 0 ? { known: true, recipeId: Number(row.recipe.recipeId),
         productId: Number(row.recipe.productId), incomePerHour: row.incomePerHour, cycleHours: row.hours }
         : { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 };
+}
+// One question, the build's and the act's: can this step be done. The build's own
+// search on the step's recipe, batches and exit, with the build's reads as they stand
+// now. refusal names what stopped it.
+function stepStands(state, recipe, { knownRecipes, batches, exit = null, prepared, refusal }) {
+    return Policy.drain(decisionSearch(state, knownRecipes, { ...prepared.context, fixedBatches: batches },
+        { ...prepared.options, onlyRecipeId: recipe.recipeId, heldExit: exit, refusal }, 'action'));
 }
 function createOccupation(state, knownRecipes, context, options = {}) {
     return { iterator: decisionSearch(state, knownRecipes, context, options, 'occupation'), done: false, value: null,
@@ -242,4 +291,4 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
 }
 module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, chooseOccupation,
     createOccupation, stepOccupation, resultOccupation, createAction, stepAction: stepOccupation,
-    resultAction, recipePaths, freeAmount };
+    resultAction, recipePaths, freeAmount, freeUnits, refused, refusedMark, stepStands };

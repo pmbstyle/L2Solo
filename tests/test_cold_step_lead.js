@@ -81,6 +81,20 @@ function world() {
 
 (async () => {
     {
+        // Recovery and potion durations can contain sub-millisecond parts.
+        // A scheduled round waits until the next whole ms and publishes an
+        // integer checkpoint usable by the following trade command.
+        const { kernel, resolvedAt, tickAt, commit } = world();
+        const T = 100000;
+        kernel.upsert({ state: soloState(1, T + .125) });
+        assert.deepStrictEqual(await tickAt(T), [], 'fractional deadlines never execute early');
+        assert.deepStrictEqual(await tickAt(T + 1), [1]);
+        assert.strictEqual(resolvedAt.get(1), T + 1);
+        const row = commit(1, 1500, T + 1);
+        assert.strictEqual(row.timing.lastResolvedAt, T + 1);
+        assert.strictEqual(row.timing.nextResolveAt, T + 1 + ROUND_MS);
+    }
+    {
         // No ack measured yet: the lead is 0 and a bot starts at its due, as before.
         const { kernel, resolvedAt, tickAt, commit } = world();
         const T = 100000;
@@ -110,6 +124,14 @@ function world() {
         assert.strictEqual(row.timing.nextResolveAt, T + PROBE_ROUND_MS, 'the next round counts from the due');
         assert.strictEqual(row.updatedAt, T - 1000, 'the row write stamp is the real start, never the future due');
         assert.deepStrictEqual(await tickAt(T + 1), [], 'a step started early is not started again at its due');
+
+        // A due read from a saved fraction: the step is stamped whole, so the
+        // bot's clocks still pass the command checkpoint.
+        const F = gap() + 0.5;
+        kernel.upsert({ state: soloState(5, F) });
+        assert.deepStrictEqual(await tickAt(F - 1000.5), [5], 'a fractional due starts on its lead');
+        assert.strictEqual(resolvedAt.get(5), Math.ceil(F), 'the step time is whole milliseconds, never before the due');
+        commit(5, 1500, F - 1000.5);
 
         // Fast commits afterwards: the lead falls back slowly, not at once.
         for (let i = 0; i < 3; i++) await round(1, FLUSH_MS);

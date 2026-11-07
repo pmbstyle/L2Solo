@@ -1,29 +1,27 @@
 'use strict';
 
 const BuffPolicy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
+const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 const Rewards = require('../Economy/SpotRewardExpectation');
+const Packet = require('../Economy/StatsPacket');
 const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
+const WalkBack = require('../Economy/WalkBack');
 const HOUR_MS = 3600000;
+// An active party's income review cadence (PartyGoalPolicy.joint).
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
-const soloChoices = new WeakMap();
-// Party formation hydrates fresh row copies every call, so the per-object hold
-// above never spans calls; this one holds the same choice for an unchanged row.
-const soloHolds = new Map();
-const SOLO_HOLD_LIMIT = 4096;
-const soloHoldCounts = { hits: 0, misses: 0 };
+// The solo side's own searches, by bot (soloChoice): at most SOLO_SEARCH_LIMIT,
+// the least recently read out; each its route as the hold keeps one
+// (EconomyContext.searchInputs) and its key.
+const SOLO_SEARCH_LIMIT = 2048;
+const soloChoices = new Map();
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
 const soloState = state => ({ ...state, activity: 'hunting', partyId: null,
     party: { ...state.party, partyId: null }, stats: { ...state.stats, backgroundPartyId: null, routeMode: 'solo' } });
-function tableRole(state) {
-    const Roles = invoke('GameServer/Bot/AI/BotRoles');
-    const role = state.stats?.role || state.party?.role || Roles.inferRole(state.stats?.classId ?? state.classId);
-    return Roles.isSpoiler(state) ? 'spoiler' : ({ melee: 'dps', nuker: 'mage', crafter: 'dps' }[role] || role);
-}
 
 // Pure comparison in the same units as fundingDelay. No XP reward enters
 // admission. Random/turn loot uses the member's expectation, never group cash.
@@ -68,30 +66,63 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
         soloSpotId: solo?.spotId || null, soloBuffPrice: positive(solo?.buffPrice) };
 }
 
-function soloRoute(state, spots, timestamp, peers = []) {
-    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-    const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+// The solo side's earning route: { route, own }. The spot the bot's held
+// build earns at (decision 10-30), read each time (no search, and no memo of
+// it here); else a search of its own (own: its held record). Either takes its
+// numbers at the inputs now (EquipmentIncomeRoute.liveRoute). A held forming
+// verdict keys the route's answer, whichever search gave it
+// (PartyGoalPolicy.verdictInputs).
+function soloChoice(state, spots, timestamp) {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext'); // lazy: EconomyContext reads this module
     const standalone = soloState(state);
-    let held = soloChoices.get(state);
-    if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
-        const input = rowInput(state);
-        const byId = input && soloHolds.get(Number(state.characterId));
-        if (byId && byId.input === input && byId.spots === spots && timestamp >= byId.at && timestamp - byId.at < REVIEW_MS) {
-            held = { spots, at: byId.at, choice: byId.choice };
-            soloHoldCounts.hits += 1;
-        } else {
-            held = { spots, at: timestamp, choice: Route.select(standalone,
-                { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS }) };
-            if (input) soloHoldCounts.misses += 1;
-            if (input) holdById(Number(state.characterId), { input, spots, at: timestamp, choice: held.choice }, timestamp);
-        }
-        soloChoices.set(state, held);
+    const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
+    // The search key's versions on the solo copy, read once: the hold's read,
+    // the own answer's check and a new search's key all read this moment.
+    options.versions = Economy.incomeVersions(standalone, options, timestamp);
+    const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
+    if (route) return { route, own: null };
+    const id = Number(state.characterId) || 0;
+    let own = soloChoices.get(id), kept = null;
+    if (!own || own.spots !== spots || timestamp < own.at
+        || (kept = Economy.searchRead(own, standalone, timestamp, options)).why
+        || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
+        const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
+        own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
+            spots, at: timestamp };
+    } else if (kept.route !== own.route) own = { ...own, route: kept.route };
+    // Least recently used: a read moves the bot to the newest end.
+    soloChoices.delete(id); soloChoices.set(id, own);
+    if (soloChoices.size > SOLO_SEARCH_LIMIT) {
+        soloChoices.delete(soloChoices.keys().next().value);
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo_search', 'evicted');
     }
-    const choice = held.choice;
+    return { route: own.route, own };
+}
+
+// The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
+// reads, by the held earning spot's own key (EconomyContext.searchInputs,
+// searchRead: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
+// soloState, the weights its answer stands over and what else it stands on:
+// its prices, frustration range and crowd key; a kept choice takes its
+// numbers at the inputs now, its earner the replay's); its own samples and time on
+// the spot by the observation event's rule
+// (DecisionSections.observationChanged), as the observation bit reaches the
+// hold.
+function observed(state, timestamp) {
+    return { sample: invoke('GameServer/Bot/Economy/DecisionSections').sample(state, timestamp),
+        share: invoke('GameServer/Bot/AI/BotHuntEfficiency').onSpotShare(state),
+        incomeError: Math.max(positive(state.stats?.wishSections?.incomeError), invoke('GameServer/Bot/AI/KnowledgeLearning').INCOME_ERROR_FLOOR) };
+}
+
+// side: the member's soloChoice when its caller already read it.
+function soloRoute(state, spots, timestamp, peers = [], side = soloChoice(state, spots, timestamp)) {
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const standalone = soloState(state);
+    const choice = side.route;
     if (!choice) return null;
     const row = choice.row;
-    let best = { ...row, income: row.income * Hunt.onSpotShare(state), spotId: choice.spot.id,
-        travelHours: walkHours(state, choice.spot), source: 'solo_route', buffPrice: 0 };
+    let best = { ...row, income: choice.earning * Hunt.onSpotShare(state), spotId: choice.spot.id,
+        travelHours: WalkBack.tripHours(state.loc, choice.spot, state, spots), source: 'solo_route', buffPrice: 0 };
     // At most one physically available provider: compare buying its native
     // useful effects at the existing price with the unbuffed earning route.
     const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
@@ -116,35 +147,11 @@ function soloRoute(state, spots, timestamp, peers = []) {
     return best;
 }
 
-// Cold rows only: every write to a far row moves its revision.
-function rowInput(state) {
-    if (state.phase !== 'cold' || !(Number(state.simulation?.revision) > 0) || !(Number(state.characterId) > 0)) return null;
-    return Number(state.simulation.revision);
-}
-let soloHoldSpots = null;
-function holdById(characterId, entry, timestamp) {
-    // A rebuilt spot table (SpotProfiles.reset) voids every hold; keep no old table reachable from here.
-    if (entry.spots !== soloHoldSpots) { soloHolds.clear(); soloHoldSpots = entry.spots; }
-    // Delete before set: the Map order follows `at`, so the oldest entry is the front.
-    soloHolds.delete(characterId);
-    soloHolds.set(characterId, entry);
-    for (const [id, held] of soloHolds) {
-        if (soloHolds.size <= SOLO_HOLD_LIMIT && timestamp - held.at < REVIEW_MS) break;
-        soloHolds.delete(id);
-    }
-}
-const soloHoldStats = () => ({ ...soloHoldCounts, size: soloHolds.size });
-
 function withEffects(state, effects) {
     const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
     const families = new Set(effects.map(effect => Loadout.family(effect.key)));
     return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats?.coldCombat,
         effects: [...(state.stats?.coldCombat?.effects || []).filter(effect => !families.has(Loadout.family(effect.key))), ...effects] } } };
-}
-function walkHours(state, spot) {
-    const origin = state.loc, destination = spot?.center;
-    return origin && destination ? Math.hypot(Number(origin.locX || 0) - Number(destination.locX || 0),
-        Number(origin.locY || 0) - Number(destination.locY || 0)) / (120 * 3600) : 0;
 }
 
 // One bounded forecast for a complete roster. Static point lookups are
@@ -173,7 +180,7 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         return member;
     });
     const values = members.map((member, index) => {
-        const row = Table.value(spot.id, tableRole(member), member.level, true,
+        const row = Table.value(spot.id, Table.roleFor(member), member.level, true,
             { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         if (!row || buffed[index] === member) return row;
         const damage = Match.damageRate(Match.stateProfiles(member, { timestamp, buffed: true }));
@@ -204,13 +211,13 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
             spoilerLevel: member.level });
         const drop = expected ? expected.drop : (gross.dropLoot ?? gross.loot) / gross.kills;
         // Spoil stays with its spoiler under the native party agreement.
-        const raw = Table.value(spot.id, tableRole(member), member.level, true,
+        const raw = Table.value(spot.id, Table.roleFor(member), member.level, true,
             { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         const spoil = expected?.spoil || 0;
         const income = kills * ((expected?.adena ?? gross.adena / gross.kills) / members.length + drop / members.length + spoil
             - share * (raw.shots * costs.shots + raw.potions * costs.potions) / raw.kills);
         rows.set(member.characterId, { income: income * Hunt.onSpotShare(member), kills, spotId,
-            source: 'table_party', travelHours: walkHours(member, spot) });
+            source: 'table_party', travelHours: WalkBack.tripHours(member.loc, spot, member, spots) });
     }
     return { rows, spots, timestamp, spot, roster: key,
         workshops: new Map((memberContexts || []).map(context => [context.state.characterId, context.workshop])) };
@@ -262,7 +269,44 @@ function soloItemRouteHours(state, spots, goal, timestamp) {
     const choices = [true, false].map(shots => evaluateSpot(spot, shots)).filter(row => row?.income > 0)
         .map(row => itemHours(state, spot, row.kills * Hunt.onSpotShare(state), goal, [state]))
         .filter(hours => hours !== null);
-    return choices.length ? Math.min(...choices) + walkHours(state, spot) : null;
+    return choices.length ? Math.min(...choices) + WalkBack.tripHours(state.loc, spot, state, spots) : null;
+}
+
+// The focused gear's item (a power focus), else 0.
+function focusedItem(state) {
+    const focus = state.stats?.wishFocus?.[0];
+    return String(focus).startsWith('power:') ? Network.rootItem(focus) : 0;
+}
+
+// The goal the comparison times for one member (compare): a material party's
+// need of it, else its party request, its gear plan's next step, the
+// objective; final: the goal is the focused gear itself (a recipe or
+// component delivery is not the completion of the final gear purchase: only
+// the focused equipment compares direct item time).
+function goalOf(state, members, objective, agreement) {
+    const materialParty = Material.isObjective(objective);
+    const materialGoal = materialParty ? Material.needs(members, objective, agreement)
+        .find(row => row.characterId === Number(state.characterId)) : null;
+    const goal = materialGoal || state.stats?.partyRequest || state.stats?.equipmentPlan?.next || objective;
+    const focused = focusedItem(state);
+    return { materialGoal, goal, final: materialParty ? !!materialGoal
+        : Number(goal?.itemId) > 0 && (!focused || focused === Number(goal.itemId)) };
+}
+
+// The direct solo drop's hours for a goal of goalOf: a material need's own
+// quote; else, for the final gear, the goal's known camp (it may differ from
+// the best cash route's), checked there without searching the source atlas
+// (soloItemRouteHours); null otherwise. Kept on the solo side (side: its
+// soloChoice): its own search's record, on that search's inputs, or a held
+// side's read.
+function soloGoalHours(state, side, aim, spots, timestamp) {
+    const goal = aim.goal, kept = side.own || side;
+    const goalKey = aim.final ? `${goal.spotId}:${goal.npcId}:${goal.itemId}:${goal.strategy}:${goal.amount || 1}` : null;
+    if (kept.goalKey !== goalKey) {
+        kept.goalKey = goalKey;
+        kept.itemHours = aim.final ? soloItemRouteHours(state, spots, goal, timestamp) : null;
+    }
+    return aim.materialGoal?.materialSoloHours ?? (aim.final ? kept.itemHours ?? null : null);
 }
 
 function compare(state, peers, options = {}) {
@@ -270,7 +314,8 @@ function compare(state, peers, options = {}) {
     if (!state.spotId || !Number.isFinite(Number(state.stats?.classId ?? state.classId))) return null;
     const members = [state, ...peers];
     const prepared = options.prepared || prepare(members, options);
-    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers);
+    const side = options.solo?.get(Number(state.characterId)) || soloChoice(state, prepared.spots, prepared.timestamp);
+    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, side);
     // A guarded existing production quote can beat hunting. This is a read
     // of an already prepared native result, never a market/recipe scan here.
     const workshop = prepared.workshops?.get(state.characterId)
@@ -284,31 +329,15 @@ function compare(state, peers, options = {}) {
     const materialParty = Material.isObjective(options.objective);
     const agreement = materialParty ? options.party?.stats?.agreement || Material.agreement(members, options.objective)
         : options.party?.stats?.agreement;
-    const materialGoal = materialParty ? Material.needs(members, options.objective, agreement)
-        .find(row => row.characterId === Number(state.characterId)) : null;
-    const goal = materialGoal || state.stats?.partyRequest || state.stats?.equipmentPlan?.next || options.objective;
+    const aim = goalOf(state, members, options.objective, agreement), { materialGoal, goal } = aim;
     const cash = materialParty ? materialGoal?.materialCash ?? null : positive(focus?.[2]) || null;
-    const spendable = Math.max(0, positive(state.adena) - positive(state.stats?.money?.[2]));
+    const spendable = Math.max(0, positive(state.adena) - positive(Packet.survivalReserve(state.stats?.money)));
     const help = options.party?.stats?.agreement?.help || options.objective?.helpDeal;
     const payer = Number(help?.payerId) === Number(state.characterId);
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;
-    // A recipe/component delivery is not the completion of the final gear
-    // purchase. Only compare direct item time for the focused equipment.
-    const focusedItem = String(focus?.[0] || '').match(/^power:(\d+):/);
-    const finalItem = materialParty ? !!materialGoal
-        : Number(goal?.itemId) > 0 && (!focusedItem || Number(focusedItem[1]) === Number(goal.itemId));
-    const partyItemHours = finalItem
+    const partyItemHours = aim.final
         ? itemHours(state, prepared.spot, party?.kills, goal, members, agreement) : null;
-    // The direct solo drop may be at a different camp from the best cash
-    // route. Check just that known camp, without searching the source atlas.
-    const held = soloChoices.get(state);
-    const goalKey = finalItem ? `${goal.spotId}:${goal.npcId}:${goal.itemId}:${goal.strategy}:${goal.amount || 1}` : null;
-    if (held && held.goalKey !== goalKey) {
-        held.goalKey = goalKey;
-        held.itemHours = finalItem ? soloItemRouteHours(state, prepared.spots, goal, prepared.timestamp) : null;
-    }
-    const soloItemHours = materialGoal?.materialSoloHours ?? (finalItem ? (held ? held.itemHours : soloItemRouteHours(state,
-        prepared.spots, goal, prepared.timestamp)) ?? null : null);
+    const soloItemHours = soloGoalHours(state, side, aim, prepared.spots, prepared.timestamp);
     const payerState = members.find(member => Number(member.characterId) === Number(help?.payerId));
     const deliveryGoal = materialParty ? Material.needs(members, options.objective, agreement)
         .find(row => row.characterId === Number(help?.payerId)) : options.objective;
@@ -325,4 +354,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { soloHoldStats, compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };
+module.exports = { compare, prepare, evaluate, soloChoice, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS, SOLO_SEARCH_LIMIT, soloState };

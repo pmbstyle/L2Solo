@@ -7,7 +7,7 @@ function begin(session, actor) {
         pet.teleportFollow = following;
         pet.ownerTeleport = true;
         Control.stop(session, pet);
-        World.removeNpcFromGrid?.(pet);
+        World.removeNpcFromGrid(pet);
         World.npc.spawns = World.npc.spawns.filter(npc => npc !== pet);
         session.dataSendToMeAndOthers(Response.deleteOb(pet.fetchId()), pet);
         return { pet, following };
@@ -18,11 +18,11 @@ function finish(session, actor, moved, coords) {
         pet.ownerTeleport = false;
         delete pet.teleportFollow;
         if (actor.pet !== pet && actor.summon !== pet) continue;
-        World.removeNpcFromGrid?.(pet);
+        World.removeNpcFromGrid(pet);
         pet.setLocXYZ(coords);
         if (actor.fetchMounted?.() || actor.mounted) continue;
         if (!World.npc.spawns.includes(pet)) World.npc.spawns.push(pet);
-        World.addNpcToGrid?.(pet);
+        World.addNpcToGrid(pet);
         session.dataSendToMeAndOthers(Response.npcInfo(pet), pet);
         if (pet.petData) invoke('GameServer/Pets/PetRuntime').publish(pet);
         if (following && !pet.state.fetchDead()) Control.startFollowOwner(session, actor, pet);

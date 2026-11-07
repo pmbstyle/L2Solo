@@ -13,11 +13,20 @@ const MASK_BY_KIND = Object.freeze({
     'Weapon.BigBlunt': 16384
 });
 
+// The C4 weapon type of a worn weapon (L2WeaponType): the datapack names a
+// two-handed blunt 'Weapon.Blunt' in the two-handed slot; C4 types it BIGBLUNT,
+// as the two-handed weapon mastery (293) and the weaponsAllowed masks ask (T119).
+const TWO_HANDED_SLOT = 14;
+function weaponType(kind, slot) {
+    return kind === 'Weapon.Blunt' && Number(slot) === TWO_HANDED_SLOT ? 'Weapon.BigBlunt' : kind;
+}
+
 function weaponMaskFor(actor) {
-    const kind = actor?.backpack?.fetchTotalWeaponKind?.() || '';
+    const weapon = actor?.backpack?.fetchEquippedWeapon?.();
+    const kind = weaponType(actor?.backpack?.fetchTotalWeaponKind?.() || '', weapon?.fetchSlot?.());
     const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
         .some(item => item?.fetchKind?.() === 'Armor.Shield');
     return (MASK_BY_KIND[kind] || 0) | (hasShield ? 1048576 : 0);
 }
 
-module.exports = { weaponMaskFor };
+module.exports = { weaponMaskFor, weaponType, MASK_BY_KIND };

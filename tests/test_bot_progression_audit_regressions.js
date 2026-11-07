@@ -1,4 +1,8 @@
+// The author's fixed shot merchant sells shots here (off by default since T116); set in the
+// environment, which the economy worker copies.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'false';
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('progression-native-leaf');
 require('../src/Global');
@@ -128,8 +132,10 @@ assert(decorated.warehouseMaterials.some(m => m.selfId === 2060 && m.amount === 
 const supplied = { ...beneficiary, stats: { ...beneficiary.stats, equipmentPlan: decorated },
     inventory: Object.fromEntries(decorated.warehouseMaterials.map(m => [m.selfId, m])) };
 assert.strictEqual(Craft.beginTravel(beneficiary), null, 'the original stranded plan has nothing to craft');
-assert.strictEqual(Craft.beginTravel(supplied).stats.travel.stationId, 'clan_crafter_99',
-    'the planned warehouse handoff actually unlocks component crafting at the assigned clan crafter');
+assert.strictEqual(Craft.beginTravel(supplied).stats.travel.stationId, Craft.stationForRecipe(component.recipeId, supplied).id,
+    'the planned warehouse handoff unlocks component crafting at the published alternative station');
+assert(!Craft.stationForRecipe(component.recipeId, supplied).clan,
+    'automatic clan equipment uses the stationary public service instead of chasing a field crafter');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 assert.strictEqual(Disposition.reservedCraftAmounts(supplied)[2060], 8,
     'materials withdrawn for dual-sword components must remain reserved until crafting');
@@ -145,7 +151,7 @@ async function checkWorkerSafety() {
         simulation: { revision: 3 },
         stats: { ...m.stats, clanPartyObjective: objective } }));
     const party = { partyId: 'unsafe', leaderId: 1, memberIds: [1, 2, 3], spotId: 'tower',
-        stats: { objective, sessionExpiresAt: at + 3600000 } };
+        stats: { objective } };
     const kernel = new ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw new Error('party review must not run a solo fight'); },
         resolveParty: () => { throw new Error('an unsafe clan party must be released before combat'); },
@@ -204,8 +210,8 @@ async function checkMissingSpotRecovery() {
         // an unsupported wish before the root keeps its place without a row.
         const queuePosition = native.queue.filter(row => row.funded).findIndex(row => row.key === leaf.rootKey);
         assert(queuePosition >= 0 && queuePosition < 8, 'the selected root has an exact native funded money triplet');
-        const ratio = native.statsPacket.money[4 + queuePosition * 3];
-        assert(Number.isFinite(ratio) && ratio >= native.statsPacket.money[1]);
+        const ratio = Packet.fundedRatio(native.statsPacket.money, queuePosition);
+        assert(Number.isFinite(ratio) && ratio >= Packet.moneyPrice(native.statsPacket.money));
         assert(Funding.spendable(buyer, 0, { r: ratio }) >= selectedGoal.plan.estimatedCost,
             'the material quote fits its actual parent wish budget after reserve and higher-valued wishes');
         assert.deepStrictEqual(Needs.evaluate({ ...buyer, updatedAt: at + 1 }, { now: at, decisions }), [],
@@ -247,7 +253,7 @@ async function checkMissingSpotRecovery() {
         });
         assert(craftResult.ok);
         assert.strictEqual(savedReason, 'cold_craft_travel');
-        assert.strictEqual(craftResult.state.stats.travel.stationId, 'clan_crafter_99');
+        assert.strictEqual(craftResult.state.stats.travel.stationId, Craft.stationForRecipe(component.recipeId, supplied).id);
         assert.strictEqual(craftResult.state.stats.travel.reason, 'component_craft',
             'a stale worker hunt must not overwrite an executable component craft trip');
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);

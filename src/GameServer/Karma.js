@@ -12,11 +12,15 @@ function pkKillKarma(actor, victim) {
     return Math.min(MAX_KARMA, MIN_KARMA * pkCountMultiplier * levelMultiplier);
 }
 
+// The karma an amount of EXP washes before it is capped by the karma held.
+function karmaWashForExperience(exp) {
+    return Math.max(MIN_KARMA_LOST, Math.floor(Math.abs(Number(exp) || 0) / XP_DIVIDER));
+}
+
 function karmaLostForExperience(actor, exp) {
     const current = Math.max(0, Number(actor.fetchKarma?.()) || 0);
     if (!current) return 0;
-    const lost = Math.max(MIN_KARMA_LOST, Math.floor(Math.abs(Number(exp) || 0) / XP_DIVIDER));
-    return Math.min(current, lost);
+    return Math.min(current, karmaWashForExperience(exp));
 }
 
 // A character with karma is kept out of towns: a bot takes no town trip and
@@ -34,4 +38,5 @@ function townFor(karma, town) {
     return closesTowns(karma) ? TOWN_NAME : town;
 }
 
-module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, TOWN_NAME, pkKillKarma, karmaLostForExperience, closesTowns, townFor };
+module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, TOWN_NAME, pkKillKarma, karmaWashForExperience, karmaLostForExperience,
+    closesTowns, townFor };

@@ -11,10 +11,10 @@ function actor(id, clanId) {
         fetchHp() { return this.hp; }, setHp(v) { this.hp = v; }, fetchMaxHp: () => 100,
         fetchLevel: () => 40, fetchCp: () => 0, fetchMaxCp: () => 0,
         fetchLocX: () => 50000, fetchLocY: () => 15000, fetchLocZ: () => -5000,
-        fetchPvpFlag: () => 0, fetchIsOnline: () => true,
+        flag: 0, fetchPvpFlag() { return this.flag; }, fetchIsOnline: () => true,
         fetchKarma() { return this.karma; }, setKarma(v) { this.karma = v; },
         fetchPk() { return this.pk; }, setPk(v) { this.pk = v; },
-        fetchPvp() { return this.pvp; }, setPvp(v) { this.pvp = v; }, setPvpFlag() {},
+        fetchPvp() { return this.pvp; }, setPvp(v) { this.pvp = v; }, setPvpFlag(v) { this.flag = v; },
         statusUpdateVitals() {}, automation: { replenishVitals() {} },
         state: { fetchDead: () => false, fetchSeated: () => false, fetchCombats: () => true } };
     a.session = { actor: a, accountId: `human_war_${id}`, dataSendToMe() {}, dataSendToOthers() {} };
@@ -33,12 +33,12 @@ try {
     let killer = actor(1, 10), victim = actor(2, 20);
     ReceivedHit(killer.session, victim, 30);
     assert.equal(killer.pk, 1, 'one-sided declaration does not permit killing a white victim');
-    assert(killer.karma > 0); assert(kills[0].pk);
+    assert(killer.karma > 0); assert.equal(kills[0].outcome, 'pk');
     War.view.accept({ fromClanId: 20, toClanId: 10, active: 1, revision: 2 });
     killer = actor(3, 10); victim = actor(4, 20);
     ReceivedHit(killer.session, victim, 30);
     assert.equal(killer.pk, 0); assert.equal(killer.karma, 0); assert.equal(killer.pvp, 1);
-    assert.equal(kills[1].pk, false, 'live PvP journal agrees with the actual kill classification');
+    assert.equal(kills[1].outcome, 'pvp', 'live PvP journal agrees with the actual kill classification');
     assert.deepEqual(journal.snapshot().map(r => r.warFacts[0]).map(r => [r.fromClanId, r.toClanId, r.victimId, r.killed]),
         [[10, 20, 2, 1], [10, 20, 4, 1]], 'both unilateral PK and mutual PvP report actual clan casualties');
     ReceivedHit(killer.session, victim, 30);
@@ -50,6 +50,31 @@ try {
     killer = actor(7, 10); victim = actor(8, 20);
     ReceivedHit(killer.session, victim, 30);
     assert.equal(killer.pk, 1, 'war withdrawal takes effect at the native impact');
+    // C4 onKillUpdatePvPKarma outside a war.
+    const tally = a => [a.pvp, a.pk, a.karma];
+    killer = actor(201, 0); victim = actor(202, 0); killer.karma = 500; victim.flag = 1;
+    ReceivedHit(killer.session, victim, 30);
+    assert.deepEqual(tally(killer), [0, 0, 500], 'a killer with karma gets nothing for a flagged victim');
+    assert.equal(kills.at(-1).outcome, 'none');
+    assert.equal(victim.flag, 0, 'a killed character loses its flag');
+    killer = actor(203, 0); victim = actor(204, 0); victim.karma = 300;
+    ReceivedHit(killer.session, victim, 30);
+    assert.deepEqual(tally(killer), [1, 0, 0], 'killing a character with karma is PvP, no karma');
+    killer = actor(205, 0); victim = actor(206, 0); victim.flag = 1;
+    ReceivedHit(killer.session, victim, 30);
+    assert.deepEqual(tally(killer), [1, 0, 0], 'a white killer of a flagged character gets PvP');
+    {
+        // A summon's death: karma without a PK count for a white owner's, nothing for a flagged one's.
+        const owner = actor(207, 0), summon = { fetchId: () => 1000207, fetchKind: () => 'Summon',
+            fetchIsSummon: () => true, fetchOwnerId: () => 207 };
+        patch(invoke('GameServer/World/World'), 'registeredActorById', id => id === 207 ? { actor: owner } : null);
+        killer = actor(208, 0);
+        ReceivedHit.creditKill(killer.session, killer, summon);
+        assert.deepEqual(tally(killer), [0, 0, 240], 'killing a white character\'s summon gives PK karma but no PK');
+        killer = actor(209, 0); owner.flag = 1;
+        ReceivedHit.creditKill(killer.session, killer, summon);
+        assert.deepEqual(tally(killer), [0, 0, 0], 'killing a flagged character\'s summon counts nothing');
+    }
     const beforeExcluded = kills.length, npc = actor(99, 0);
     npc.fetchKind = () => 'Monster';
     ReceivedHit(npc.session, actor(100, 20), 30);

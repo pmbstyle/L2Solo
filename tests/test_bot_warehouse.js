@@ -33,7 +33,6 @@ const originals = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     findByCharacterId: LifeState.findByCharacterId,
     statesByIds: LifeState.statesByIds,
-    allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
     activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
     saleDecision: BotMarket.saleDecision,
@@ -355,9 +354,20 @@ async function run() {
         'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant'
     ], 'transfer now includes atomic projection/metadata persistence without a later lifecycle overwrite');
 
+    warehouseRows = [{ id: 73, selfId: 5220, name: 'Metal Hardener', amount: 60 }];
+    withdrawals.length = 0;
+    const pausedOwner = { characterId: 60, phase: 'cold', activity: 'shopping', level: 40,
+        currentRegion: 'Giran', loc: { locX: 83396, locY: 147904, locZ: -3400 }, inventory: {}, timing: {},
+        stats: { classId: 0, equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 129, slot: 7 },
+            inputPreparation: { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 1,
+                target: { selfId: 76, slot: 7 }, materials: [{ selfId: 5220, amount: 60 }], heldInputs: { 5220: 60 } } } } };
+    const protectedStored = await BotWarehouse.releaseCold(pausedOwner, { inTown: true });
+    assert.equal(protectedStored.released, false, 'market demand cannot sell the paused kit from its warehouse');
+    assert.equal(warehouseRows[0].amount, 60);
+
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;
-    const marketRelease = await BotWarehouse.releaseCold({
+    const seller = {
         characterId: 59,
         name: 'WarehouseSeller',
         phase: 'cold',
@@ -366,12 +376,16 @@ async function run() {
         loc: { locX: 83396, locY: 147904, locZ: -3400 },
         inventory: {},
         timing: {},
-        stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }
-    }, { inTown: true });
+        stats: { marketSellSeen: { items: [1864], buyers: [[0, 0]] } }
+    };
+    const shopping = { ...seller, activity: 'shopping' };
+    const pastLook = await BotWarehouse.releaseCold(shopping, { inTown: true, before: shopping });
+    assert.equal(pastLook.released, false, 'what a visit fetches to sell is read once, as it arrives');
+    const marketRelease = await BotWarehouse.releaseCold(seller, { inTown: true });
     assert.deepStrictEqual(marketRelease.items.map((item) => [item.reason, item.amount]), [['market', 50]],
         'warehouse release must expose only the currently funded WTB quantity');
     assert.strictEqual(warehouseRows[0].amount, 50, 'unfunded warehouse surplus must remain stored');
-    assert.strictEqual(marketRelease.state.stats.marketSellRetryAfter, null,
+    assert.strictEqual(marketRelease.state.stats.marketSellSeen, null,
         'new funded WTB demand must clear a stale no-demand sale cooldown');
     const adena = liveItem(50, { selfId: 57, name: 'Adena', amount: 100, stackable: true });
     adena.setAmount = (amount) => { adena.amount = amount; };
@@ -420,7 +434,6 @@ run().catch((err) => {
     LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeState.findByCharacterId = originals.findByCharacterId;
     LifeState.statesByIds = originals.statesByIds;
-    LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;
     BotMarket.saleDecision = originals.saleDecision;

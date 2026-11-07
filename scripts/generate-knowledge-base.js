@@ -54,6 +54,7 @@ function canonicalize(value) {
         .filter(([, entry]) => entry !== undefined));
 }
 
+// The server reads items/mobs/spawns record by record in this layout (src/WorldObserver/KnowledgeBaseRecords.js).
 function jsonText(value) {
     return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
 }
@@ -120,19 +121,18 @@ function buildRateProfiles() {
 function rateResult(group, item, itemIndex, kind, preset, npcLevel) {
     process.env.L2NODE_PROGRESSION_RATE = preset;
     ProgressionRates.reset();
+    if (kind === 'spoil') {
+        const plan = ProgressionRates.spoilItemPlan(group, item, { npcLevel, killerLevel: npcLevel });
+        return { chancePercent: round(plan.chance * 100), expectedAmountPerKill: round(plan.expectedYield) };
+    }
     const roll = ProgressionRates.rewardGroupRoll(group, kind, {
         npcLevel,
         killerLevel: npcLevel,
         attackerLevels: []
     }, () => 0);
     const groupChance = Number(roll.chance || 0) / 100;
-    const selectionChance = kind === 'drop'
-        ? ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate)
-        : ProgressionRates.spoilItemChance(item);
-    const expectedConditionalAmount = kind === 'drop'
-        ? ProgressionRates.expectedDropAmount(group, item, roll.itemRate)
-        : ((Number(item.min || 1) + Number(item.max || item.min || 1)) / 2)
-            * Number(roll.amountMultiplier || 1);
+    const selectionChance = ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate);
+    const expectedConditionalAmount = ProgressionRates.expectedDropAmount(group, item, roll.itemRate);
 
     return {
         chancePercent: round(groupChance * selectionChance * 100),
@@ -502,7 +502,28 @@ function serializeOutputs(database) {
 
 function writeOutputs(outputs) {
     fs.mkdirSync(outputDir, { recursive: true });
-    outputs.forEach((text, name) => fs.writeFileSync(path.join(outputDir, name), text));
+    // Replace each file by rename: a running server keeps reading the file it loaded through its open descriptor.
+    outputs.forEach((text, name) => {
+        const target = path.join(outputDir, name), temporary = `${target}.tmp`;
+        fs.writeFileSync(temporary, text);
+        try {
+            renameWithRetry(temporary, target);
+        } finally {
+            fs.rmSync(temporary, { force: true });
+        }
+    });
+}
+
+// Windows refuses a rename for a moment while a scanner or indexer holds the target: retry for up to ~2 s.
+function renameWithRetry(from, to) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return fs.renameSync(from, to);
+        } catch (error) {
+            if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt >= 20) throw error;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+        }
+    }
 }
 
 function checkOutputs(outputs) {

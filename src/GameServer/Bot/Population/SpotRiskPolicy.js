@@ -215,19 +215,41 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
     };
 }
 
+// The spots one holder's marks exclude, added to `excluded`: its active
+// death and "was full" marks, its competition avoid and its death pressure.
+// Returns the holder's step at which the first of those marks ends (Infinity:
+// none ends by itself; death pressure ends only by a resolve).
+function addExclusions(state, excluded) {
+    let untilStep = Infinity;
+    const mark = (spotId, entry) => { excluded.add(spotId); untilStep = Math.min(untilStep, Number(entry.untilStep)); };
+    activeBackoffs(state).forEach((entry) => mark(entry.spotId, entry));
+    (state.stats?.capacityBackoffs || []).filter(entry => markActive(entry, state))
+        .forEach(entry => mark(String(entry.spotId), entry));
+    const avoid = state.stats?.coldCompetition?.avoid;
+    if (normalizedSpotId(avoid?.spotId) && markActive(avoid, state)) mark(normalizedSpotId(avoid.spotId), avoid);
+    const pressure = deathPressure(state);
+    if (pressure) excluded.add(pressure.spotId);
+    return untilStep;
+}
+
 // Callers still pass a time as the second argument; marks no longer read it.
 function excludedSpotIdsForStates(states = []) {
     const excluded = new Set();
-    (states || []).forEach((state) => {
-        activeBackoffs(state).forEach((entry) => excluded.add(entry.spotId));
-        (state.stats?.capacityBackoffs || []).filter(entry => markActive(entry, state))
-            .forEach(entry => excluded.add(String(entry.spotId)));
-        const avoid = state.stats?.coldCompetition?.avoid;
-        if (normalizedSpotId(avoid?.spotId) && markActive(avoid, state)) excluded.add(normalizedSpotId(avoid.spotId));
-        const pressure = deathPressure(state);
-        if (pressure) excluded.add(pressure.spotId);
-    });
+    (states || []).forEach((state) => addExclusions(state, excluded));
     return excluded;
+}
+
+// The version of one holder's exclusions (a bot, or a party's state), for a
+// reader that holds a result over them: revision names the excluded set
+// (its sorted ids), so a mark added, removed or expired moves it; untilStep
+// is the holder's step (stats.stepCount) at which the set next changes by
+// itself by a mark's end, Infinity for none. A reader keeps its result while
+// the revision it read stands and compares it at every read: death pressure
+// has no end step, it moves with the bot's spot and its risk window.
+function exclusionVersion(state = {}) {
+    const excluded = new Set();
+    const untilStep = addExclusions(state, excluded);
+    return { revision: [...excluded].sort().join(','), untilStep };
 }
 
 function withCapacityBackoff(state, spotId) {
@@ -310,6 +332,7 @@ module.exports = {
     activeBackoffs,
     backoffForStates,
     excludedSpotIdsForStates,
+    exclusionVersion,
     stepCount,
     markActive,
     withBackoff

@@ -18,7 +18,7 @@ function normalizeRow(row) {
 
 async function load() {
     states = new Map();
-    if (Database.isReady?.()) {
+    if (Database.isReady()) {
         const rows = await Database.fetchRaidBossStates();
         (rows || []).map(normalizeRow).filter(Boolean).forEach((row) => states.set(row.npcId, row));
     }
@@ -54,7 +54,7 @@ function markDefeated(npcOrId, respawnTime, hp = null, mp = null) {
         updatedAt: Date.now()
     };
     states.set(npcId, next);
-    if (!Database.isReady?.()) return Promise.resolve(true);
+    if (!Database.isReady()) return Promise.resolve(true);
     return Database.upsertRaidBossState(npcId, at, next.hp, next.mp)
         .then(() => true)
         .catch((error) => {
@@ -67,7 +67,7 @@ function markSpawned(npcId) {
     const id = Number(npcId);
     if (!Number.isInteger(id) || id <= 0) return Promise.resolve(false);
     states.delete(id);
-    if (!Database.isReady?.()) return Promise.resolve(true);
+    if (!Database.isReady()) return Promise.resolve(true);
     return Database.clearRaidBossState(id)
         .then(() => true)
         .catch((error) => {

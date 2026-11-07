@@ -43,7 +43,7 @@ async function sessionFor(id) {
             fetchExp() { return this.exp; },
             fetchSp() { return this.sp; },
             setExpSp(exp, sp) { this.exp = exp; this.sp = sp; },
-            backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: {} })
+            backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} })
         },
         dataSendToMe(packet) { this.packets.push(packet); }
     };

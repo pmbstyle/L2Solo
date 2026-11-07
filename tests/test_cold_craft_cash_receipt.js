@@ -206,17 +206,23 @@ async function verifyAuthoredPhysicalCraft() {
         const publishedWorkshop = await Workshop.review(workshopOwner);
         assert(publishedWorkshop.stats.workshop.entries.some(row => row.recipeId === recipe.recipeId),
             'the physical learned recipe produces a native public workshop offer');
-        const workshopCustomer = await seed('bot_native_gear_workshop_customer', 'NativeGearWorkshopBuyer',
+        let workshopCustomer = await seed('bot_native_gear_workshop_customer', 'NativeGearWorkshopBuyer',
             10, 40, [item(57, 1000000), ...[...inputs].map(([id, amount]) => item(id, amount))], {
                 equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: recipe.recipeId,
                     target: { selfId: recipe.productId } }
             });
+        await Database.execute(['INSERT INTO clans(id, name, leaderId) VALUES (?, ?, ?)',
+            [6300002, 'WorkshopCustomerClan', workshopCustomer.characterId]]);
+        await Database.execute(['UPDATE characters SET clanId = ? WHERE id = ?', [6300002, workshopCustomer.characterId]]);
+        workshopCustomer = await Life.upsertState({ ...workshopCustomer, clanId: 6300002,
+            stats: { ...workshopCustomer.stats, clanId: 6300002 } }, 'external_workshop_customer_clan');
         try {
             populationConfig.staticBuyersDisabled = true;
             workshopCustomer.stats.equipmentPlan.craftProviders = { [recipe.recipeId]: { workshop: true,
                 characterId: workshopOwner.characterId, revision: publishedWorkshop.simulation.revision } };
             const selectedWorkshop = ColdCraftingService.stationForRecipe(recipe.recipeId, workshopCustomer);
-            assert.strictEqual(selectedWorkshop.characterId, workshopOwner.characterId);
+            assert.strictEqual(selectedWorkshop.characterId, workshopOwner.characterId,
+                'a personal craft may use an outside-clan public workshop');
             assert.strictEqual(selectedWorkshop.workshop, true);
             assert(Number.isSafeInteger(selectedWorkshop.price) && selectedWorkshop.price > 0);
             const workshopIds = [workshopCustomer.characterId, workshopOwner.characterId];

@@ -6,7 +6,6 @@ const Data = invoke('GameServer/DataCache'); Data.init();
 const Sources = require('../src/GameServer/Bot/Population/ColdOccupationSources');
 const Trip = require('../src/GameServer/Bot/Population/ColdTrip');
 const Towns = require('../src/GameServer/World/TownRespawn');
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 Sources.initialise();
 function drain(iterator) {
@@ -40,19 +39,15 @@ const state = { characterId: 900004, phase: 'cold', activity: 'hunting', level: 
     adena: 1000000, loc: { locX: 117000, locY: 76000, locZ: -2800 }, currentRegion: "Hunter's Village",
     inventory: { 736: { selfId: 736, amount: 1 }, 1864: { selfId: 1864, amount: 100 } },
     stats: { classId: 57, money: [1000, .001, 0, 0] } };
-const savedHonest = Config.coldHonestTravel;
-try {
-    for (const honest of [false, true]) {
-        Config.coldHonestTravel = honest;
-        const streamed = drain(Sources.tripDetails(state, 'Giran'));
-        const destination = Towns.towns.giran_town;
-        const forward = Trip.townPlan(state, destination);
-        const back = Trip.spotTripMs({ ...state, loc: Trip.point(destination) }, state.loc);
-        assert.equal(streamed.value.hours, (forward.durationMs + back) / 3600000);
-        assert.equal(streamed.value.fees, forward.route.fee);
-        if (honest) assert(streamed.stages.filter(stage => stage === 'edge').length >= Sources.catalogCounts().teleportEdges);
-    }
-} finally { Config.coldHonestTravel = savedHonest; }
+{
+    const streamed = drain(Sources.tripDetails(state, 'Giran'));
+    const destination = Towns.towns.giran_town;
+    const forward = Trip.townPlan(state, destination);
+    const back = Trip.spotPlan({ ...state, loc: Trip.point(destination) }, state.loc).durationMs;
+    assert.equal(streamed.value.hours, (forward.durationMs + back) / 3600000);
+    assert.equal(streamed.value.fees, forward.route.fee);
+    assert(streamed.stages.filter(stage => stage === 'edge').length >= Sources.catalogCounts().teleportEdges);
+}
 const board = new BoardIndex();
 for (let at = 0; at < 6; at++) board.put({ id: 200 + at, ownerId: 400 + at, storeType: 1,
     kind: 'sell_ad', town: 'Giran', revision: 1,
@@ -63,8 +58,15 @@ const prepared = drain(Sources.prepare(owner, { board, timestamp: 1000, read: id
 assert(prepared && read.has(1864));
 assert.equal(prepared.options.ownStock.get(1864).count, 100);
 const bounded = drain(prepared.options.preparePurchase(owner, 1864, 6, { npc: false }));
-assert.equal(bounded.value.units, 5, 'native purchase view admits only the first five indexed rows');
-assert.equal(bounded.value.whole, false);
+assert.equal(bounded.value.units, 6, 'the purchase view reads the asks until the amount is met');
+assert.equal(bounded.value.whole, true);
+assert.equal(drain(prepared.options.preparePurchase(owner, 1864, 7, { npc: false })).value.whole, false);
+// The stack past the first asks is in a town no first ask names: its trip is known too.
+for (let at = 0; at < 5; at++) board.put({ id: 210 + at, ownerId: 410 + at, storeType: 1, kind: 'sell_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 310 + at, selfId: 1866, count: 1, price: 100 + at }] });
+board.put({ id: 216, ownerId: 416, storeType: 1, kind: 'sell_ad', town: 'Dion', revision: 1, lines: [{ lineId: 316, selfId: 1866, count: 8, price: 200 }] });
+const elsewhere = drain(Sources.prepare(owner, { board, timestamp: 1000, read: () => {} })).value;
+assert.equal(drain(elsewhere.options.preparePurchase(owner, 1866, 8, { npc: false })).value.town, 'Dion');
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
 assert(npc.whole && npc.npc === 1 && npc.repeatable && npc.town);
@@ -99,6 +101,15 @@ assert(drain(staleSources.options.preparePurchase(state, 1864, 1, { npc: false }
 const protectedState = { ...owner, stats: { ...owner.stats, equipmentPlan: { strategy: 'craft', status: 'active',
     target: { selfId: 3000 }, materials: [{ selfId: 1864, amount: 40 }] } } };
 assert.equal(drain(Sources.reservations(protectedState)).value[1864], 40);
+{ // The build holds back what the commit holds back: the owner's whole reading, a chosen dye too.
+    const Henna = invoke('GameServer/Henna/HennaRules');
+    const symbol = Henna.availableForClass(1)[0];
+    const dyed = { ...owner, stats: { ...owner.stats, classId: 1, wishFocus: [`henna:${symbol.id}`] } };
+    assert.equal(drain(Sources.reservations(dyed)).value[symbol.dyeSelfId], Number(symbol.dyeAmount));
+    assert.deepEqual(drain(Sources.reservations(dyed)).value, invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(dyed));
+    const clanCraft = { ...owner, stats: { ...owner.stats, equipmentPlan: { strategy: 'craft', status: 'active', recipeId: 1, clanGoal: { clanId: 7 } } } };
+    assert.equal(drain(Sources.reservations(clanCraft)).value, null, 'a clan allocation has no forecast here');
+}
 const listed = new BoardIndex();
 listed.put({ id: 1, ownerId: owner.characterId, storeType: 1, kind: 'sell_ad', town: 'Giran', revision: 2,
     lines: [{ lineId: 1, selfId: 1864, count: 10, price: 100 }] });
@@ -114,6 +125,18 @@ assert.deepEqual(publication.feasibility, mask);
 assert.equal(publication.workshop.known, false, 'missing recipe evidence cannot erase independently known protection');
 assert.equal(Look.feasibilityPredicate(allocated, [{ ...lines[0], revision: 3 }], mask)(lines[0]), undefined,
     'a changed physical line does not reuse an accepted old protection mask');
+// A cold look answers on the state it looks at: a reservation that ends or
+// begins after the build (its workshop and mask held, the lines unchanged)
+// flips whether the listed stock may stay on sale.
+const released = { ...allocated, stats: { ...allocated.stats, equipmentPlan: null } };
+assert.equal(Look.feasibilityPredicate(released, lines, mask)(lines[0]), false, 'fixture: the held mask keys only the lines');
+assert.equal(Sources.canSell(released, lines)(lines[0]), true, 'a released reservation lets the listed stock stay on sale');
+assert.equal(Sources.canSell(allocated, lines)(lines[0]), false, 'a reservation made since protects the listed stock');
+const freeMask = drain(Sources.feasibility(released, { board: listed })).value;
+assert.equal(Look.feasibilityPredicate(allocated, lines, freeMask)(lines[0]), true, 'fixture: a mask from before the reservation keeps it on sale');
+for (const value of [allocated, released])
+    assert.equal(Sources.canSell(value, lines)(lines[0]), Look.feasibilityPredicate(value, lines,
+        drain(Sources.feasibility(value, { board: listed })).value)(lines[0]), 'the look answers as a mask built on its own state');
 assert.equal(drain(Sources.prepare({ ...owner, stats: {} }, { board })).value, null);
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
 const Shots = require('../src/GameServer/Bot/Economy/ShotCraftPolicy');
@@ -131,6 +154,11 @@ const packedDecision = Publication.compact(structuredClone(Publication.capture({
 assert.deepEqual(packedDecision.shot, step);
 assert.equal(packedDecision.workshop.cycleHours, 0.01);
 assert.equal(Plan.MAX_PLAN_PAYLOAD_BYTES + Publication.COMMAND_HEADER_BYTES + 32 + 8, Plan.MAX_BYTES);
+{ // A batch that fit alone can overflow beside the rest: it waits whole, no error.
+    const room = { sell: [], withdraw: [], travel: null, buyAds: ['x'.repeat(Plan.MAX_PLAN_PAYLOAD_BYTES)], buyKit: [], buyCaps: [] };
+    Plan.fit(room);
+    assert.deepEqual([room.buyAds, room.buyKit, room.d], [undefined, undefined, 1], 'the buy batch leaves as one, marked not prepared');
+}
 console.log('PASS native town/NPC authority parity, streamed routes/reservations and five-quote purchase view');
 
 // Public wishes keep all quotes; the executable worker sources use current
@@ -192,6 +220,13 @@ assert.equal(releasedPurchase.lines[0].line.recordId, 701, 'leaving the party op
     assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 6)), [701]);
     assert.equal(flipping.byAmount.size, 1, 'the flip cleared the memo, only the amount asked since is held');
     assert(!flipping.byAmount.has(5));
+    sourceOwner = { characterId: 701, phase: 'cold', activity: 'hunting', adena: 1000000,
+        loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [702], 'a paid route cannot spend a seller\'s protected money');
+    sourceOwner = { ...sourceOwner, stats: { money: [1000, .001, 0, 0] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [701], 'the same memoized offer reopens when the seller can pay');
+    sourceOwner = { ...sourceOwner, loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [701], 'the seller can meet locally without spending protected money');
     // A memoized null: nothing fills under maxPrice 0; the second call does not walk the rows again.
     const nothing = OfferQuery.townTable(admissionBoard, 1864, { quoteDepth: 5, maxPrice: 0 });
     const rows = nothing.rows;

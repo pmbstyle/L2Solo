@@ -60,12 +60,15 @@ function sessionFor(accountId, row, items) {
     return session;
 }
 
+// The life-state row mirrors the bag: its adena is the Adena the DB bag holds.
 async function coldBot(characterId, name) {
+    const items = await Database.fetchItems(characterId);
+    const adena = items.filter((row) => Number(row.selfId) === 57).reduce((sum, row) => sum + Number(row.amount), 0);
     return BotLifeState.upsertState({
         characterId, accountName: `bot_${name.toLowerCase()}`, name, level: 40,
-        adena: 0, phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
+        adena, phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
         loc: { locX: 83100, locY: 148100, locZ: -3400 },
-        inventory: BotLifeState.inventorySummaryFromItems(await Database.fetchItems(characterId)),
+        inventory: BotLifeState.inventorySummaryFromItems(items),
         stats: { generatedCold: true, money: [36000,0,0,0] }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }
     }, 'test_seed');
 }

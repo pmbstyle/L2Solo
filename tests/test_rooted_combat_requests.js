@@ -1,3 +1,5 @@
+'use strict';
+
 const assert = require('assert');
 require('../src/Global');
 const AttackRequest = invoke('GameServer/Actor/Generics/AttackRequest');
@@ -8,6 +10,7 @@ const Automation = invoke('GameServer/Automation');
 const State = invoke('GameServer/Model/State');
 const Store = invoke('GameServer/Effects/EffectStore');
 const World = invoke('GameServer/World/World');
+const Attack = invoke('GameServer/Actor/Attack');
 
 async function run() {
     const saved = { npc: World.fetchNpc, user: World.fetchUser, peace: utils.isInPeaceZone };
@@ -23,7 +26,7 @@ async function run() {
         isDead: () => false, isBlocked() { return this.state.isBlocked(); }, canUseSkill: () => true,
         backpack: { fetchTotalWeaponKind: () => 'Weapon.DualFist' },
         skillset: { fetchSkill: () => skill },
-        attack: { meleeHit() { hits.push(target.x); }, remoteHit() { casts.push(target.x); } } };
+        attack: Object.assign(new Attack(), { meleeHit() { hits.push(target.x); }, remoteHit() { casts.push(target.x); } }) };
     const session = { actor, dataSendToMe(packet) { packets.push(packet); },
         dataSendToMeAndOthers(packet) { packets.push(packet); } };
     actor.session = session;

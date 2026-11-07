@@ -42,7 +42,7 @@ function fromPlayer(offer) {
 // What the trip to each town costs the buyer in Adena (б5): the round trip's
 // time at the buyer's hour value plus the gatekeeper fee, for a trip from
 // `origin` (its farming place, else its position) as the bot's trip builder
-// plans it (ColdTrip.townPlan) and back to that place (ColdTrip.spotTripMs).
+// plans it (ColdTrip.townPlan) and back to that place (ColdTrip.spotPlan).
 // A function of the town's name, each town computed once; null for a buyer
 // without a location (no trip to weigh). A town no route reaches, or one a
 // bot with karma may not enter, costs Infinity. Kept per state object and

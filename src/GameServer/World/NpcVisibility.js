@@ -29,7 +29,8 @@ function sendNpcMotionAfterInfo(session, packet) {
     if (packet?.[0] !== NPC_INFO_OPCODE || packet.length < 25
         || typeof session?.dataSendToMe !== 'function') return false;
     const npc = NpcObjectIndex.find(invoke('GameServer/World/World'), objectId(packet));
-    const move = npc?.automation?.moveInterpolation;
+    // Only an NPC that ever moved has a walk: a resting one keeps no automation (Npc).
+    const move = npc?.builtAutomation?.()?.moveInterpolation;
     if (!move || move.actor !== npc || npc.state?.fetchTowards?.() !== 'wander'
         || npc.state.fetchDead() || npc.state.fetchCombats()
         || Date.now() - move.startedAt >= move.duration) return false;

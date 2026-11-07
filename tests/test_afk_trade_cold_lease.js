@@ -256,6 +256,19 @@ async function writeDuringStep({ label, storeType, lines, ownerItems, counterpar
             lines: [{ objectId: owner.ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 4, price: 50, stackable: true }] })
     });
 
+    { // An ad holds no goods: nothing moved, a far bot's step stands.
+        const ad = await makeCharacter('bot_ad_owner', 'adOwner', [item(57, 1000, 'Adena')]);
+        const far = await coldBot(ad.id, 'bot_ad_owner', 'adOwner');
+        await LifeState.upsertState({ ...far, stats: { ...far.stats, money: [36000, 0.001, 0, 0, 0.001, 1000, IRON_ORE] } }, 'test_money_packet');
+        const revision = LifeState.cachedState(ad.id).simulation.revision;
+        const opened = await Database.openBoardRecords(ad.id, 'buy_ad', [{ storeType: AfkTrade.BUY, title: 'ad', town: 'Giran',
+            locX: 83000, locY: 148000, locZ: -3400, appearance: { model: character('adOwner') },
+            lines: [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }] }]);
+        assert.strictEqual(opened.opened.length, 1, 'the ad stands');
+        assert.deepStrictEqual(opened.coldLifeRows, {}, 'an ad fences nobody');
+        assert.strictEqual(LifeState.cachedState(ad.id).simulation.revision, revision);
+    }
+
     await AfkTrade._resetForTests();
     await Database.close();
     clean();

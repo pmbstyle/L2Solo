@@ -50,6 +50,7 @@ const spoilSkill = skill(254, { name: 'Spoil', mp: 5 });
 const spoiler = bot(55, spoilSkill, mpRef);
 const target = {
     fetchId: () => 22001,
+    fetchSelfId: () => 777,
     fetchHp: () => 1000,
     fetchCollectivePDef: () => 100,
     fetchLocX: () => 400,
@@ -57,6 +58,9 @@ const target = {
     fetchAttackable: () => true,
     isDead: () => false
 };
+const noList = { ...target, fetchId: () => 22002, fetchSelfId: () => 778 };
+invoke('GameServer/DataCache').fetchNpcRewardsFromSelfId = (selfId, callback) => callback(
+    { spoils: selfId === 777 ? [{ items: [{}] }] : [] });
 const session = {};
 const generics = {
     skills: [],
@@ -76,5 +80,9 @@ mpRef.value = 100;
 BotAI.executeCombat(session, spoiler, target, generics);
 assert.deepStrictEqual(generics.skills[0], { id: 22001, selfId: 254, ctrl: true },
     'Spoil must be retried after MP recovers during the same encounter');
+
+generics.skills.length = 0;
+BotAI.executeCombat(session, spoiler, noList, generics);
+assert.strictEqual(generics.skills.length, 0, 'a bot spends no MP on Spoil against a monster with no spoil list');
 
 console.log('test_bot_spoil_retry: ok');

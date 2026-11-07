@@ -1,6 +1,7 @@
 'use strict';
 
 const LastOperations = require('./LastOperations');
+const SavedSkills = require('./SavedSkills');
 function significant(value) { return Number.isFinite(value) ? Number(value.toPrecision(3)) : value; }
 function compact(stats = {}) {
     const next = { ...stats };
@@ -9,6 +10,7 @@ function compact(stats = {}) {
         delete next.equipmentPlan.economyInputKey; delete next.equipmentPlan.inputKey;
     }
     delete next.marketTrades; delete next.priceBeliefs;
+    if (next.coldCombat) next.coldCombat = SavedSkills.packKit(next.coldCombat);
     // ARCH-NOTE: existing worlds retain old operation lists (91 withdrawals,
     // 57 NPC sales in the saved-current fixture). Bound them on an ordinary
     // save too, so bots need no new withdrawal/liquidation or startup pass.
@@ -28,7 +30,7 @@ function compact(stats = {}) {
 // and published card). It is saved in its own column (bot_life_state.mindJson),
 // so a refused body write never takes the decision with it.
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
-    'dormantWishes', 'money', 'stockTargets', 'wishAdvisory']);
+    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
 function split(stats = {}) {
@@ -52,10 +54,18 @@ function parsedObject(json) {
     }
 }
 
+// A saved body (text or its parse) as a stats object, its kit's skill records
+// unpacked (SavedSkills): a copy, the given object is not changed.
+function body(statsJson) {
+    const stats = parsedObject(statsJson);
+    if (SavedSkills.packed(stats.coldCombat?.skills)) stats.coldCombat = SavedSkills.unpackKit(stats.coldCombat);
+    return stats;
+}
+
 // The one stats object of a saved row: the mind over the body. A row without
 // a mind column (a transient row, an older fixture) is its body alone.
 function merge(statsJson, mindJson) {
-    const stats = parsedObject(statsJson);
+    const stats = body(statsJson);
     if (!mindJson || mindJson === '{}') return stats;
     return Object.assign(stats, parsedObject(mindJson));
 }
@@ -66,4 +76,4 @@ function statsColumns(stats) {
     return { statsJson: JSON.stringify(body), mindJson: JSON.stringify(mind) };
 }
 
-module.exports = { compact, MIND_KEYS, split, merge, statsColumns };
+module.exports = { compact, MIND_KEYS, split, parsedObject, body, merge, statsColumns };

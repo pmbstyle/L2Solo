@@ -3,6 +3,7 @@ const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const Karma = invoke('GameServer/Karma');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 
 const MOVE_TO_SPOT_COOLDOWN = 15000;
 const EMPTY_HUNT_SCANS = 3;
@@ -18,6 +19,72 @@ function now() {
 
 function canMoveToSpot(session) {
     return !session.lastSpotMoveAt || (now() - session.lastSpotMoveAt) > MOVE_TO_SPOT_COOLDOWN;
+}
+
+// A hot solo hunter's look at its ground, the cold round's rule (BackgroundResolver:
+// a spot whose spawns admit none of its fights raises unhuntable): once the scans of
+// the whole spot found no fight (EMPTY_HUNT_SCANS), it asks once per empty streak
+// whether any spawn group admits one at its whole bar (TargetMatchup.spotShares), as
+// it stands and in the route's view (actorReadyProfiles: its pet up and whole;
+// self-buffs unread, the route judges spots unbuffed); none in both: it raises the
+// ground and the worker chooses another ('raised'). Short only of what the route
+// counts whole, it gets ready as the cold round does (getReady): a summoner with no
+// pet raises it out of the fight ('summon', C4: before it engages); short of the
+// summon's MP, or with a pet only its regeneration makes whole, it sits ('rest');
+// a summon or a pet heal on its reuse waits on its feet (''). Each looks again
+// after a fresh streak of empty scans; a second summon or wait on the stay that
+// changed nothing raises (groundReadying). When nothing it can do helps, it raises.
+// stats.emptyGround, the stay's memory the cold round shares: one raise per stay,
+// cleared by a streak's end. A spot only emptied for now (killed out, other
+// hunters) admits its spawns: the bot waits there ('').
+function groundLook(session, spot) {
+    const stats = DecisionEvents.statsFor(session);
+    if (Number(session.noTargetTicks || 0) < EMPTY_HUNT_SCANS) {
+        session.groundLookedAt = null;
+        if (stats.emptyGround != null) stats.emptyGround = null;
+        return '';
+    }
+    if (!spot?.id || !session.actor || session.hotBackgroundPartyId || session.followPlayerSession
+        || session.partyCompanion === true || session.huntTargetScanPending || session.groundLookedAt === spot.id
+        || String(stats.emptyGround ?? '') === String(spot.id)) return '';
+    session.groundLookedAt = spot.id;
+    const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup'), actor = session.actor, options = { soloSafety: true };
+    if (!Matchup.admitsNone(Matchup.spotShares(Matchup.actorProfiles([actor]), spot, options))) {
+        session.groundReadying = null;
+        return '';
+    }
+    if (!Matchup.admitsNone(Matchup.spotShares(Matchup.actorReadyProfiles(actor), spot, options))) {
+        const look = readyLook(actor), tried = session.groundReadying;
+        // A summon or a wait that left it as it was (no pet came; silenced, a zone
+        // or a condition holds the cast) ends the stay's readying: the ground is
+        // raised. Each look comes after a fresh streak of empty scans.
+        const again = (look === 'summon' || look === 'wait') && String(tried?.spotId) === String(spot.id) && tried.look === look;
+        if (look && !again) {
+            session.groundReadying = look === 'rest' ? null : { spotId: spot.id, look, at: Date.now() };
+            session.groundLookedAt = null;
+            session.noTargetTicks = 0;
+            return look === 'wait' ? '' : look;
+        }
+    }
+    session.groundReadying = null;
+    stats.emptyGround = String(spot.id);
+    DecisionEvents.raiseDecision(session, 'unhuntable');
+    return 'raised';
+}
+// What gets the body ready (groundLook): 'summon', 'rest', 'wait' (a summon or
+// its pet heal on its reuse) or '' (nothing it can do).
+function readyLook(actor) {
+    const Tactics = invoke('GameServer/Bot/AI/SummonerTactics');
+    const pet = Tactics.petRestView(actor);
+    // A pet its owner heals: the heal between fights ran before the scan, so one
+    // still wanted waits on its reuse.
+    if (pet) return !RestPolicy.petRested(pet) ? 'rest' : Tactics.petHealWaits(actor) ? 'wait' : '';
+    const skills = Tactics.summonSkills(actor);
+    if (!skills.length) return '';
+    if (Tactics.summonSkill(actor)) return 'summon';
+    const mp = Number(actor.fetchMp?.() || 0);
+    // A rest that gets up before its MP is back (RestPolicy.restWaitsForMana) would not refill it: it waits standing.
+    return skills.every(skill => Number(skill.fetchConsumedMp?.() || 0) > mp) && RestPolicy.restWaitsForMana(actor) ? 'rest' : 'wait';
 }
 
 function physicalLocation(status, session) {
@@ -126,7 +193,10 @@ const BotDecisionService = {
             // Both arrival and a later return from town use that same ground;
             // a remembered currentSpot or an old status location is no arrival.
             if (leaf?.activity === 'hunting' && plannedOn(physical?.id ?? null)) {
-                return { action: 'search_locally', reason: 'selected_hunting_ground' };
+                const look = groundLook(session, physical);
+                if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
+                if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
+                return { action: 'search_locally', reason: look === 'raised' ? 'ground_unhuntable' : 'selected_hunting_ground' };
             }
             const standIn = stats.standIn;
             let spot = leaf?.activity === 'hunting' && standIn?.ground != null && plannedOn(standIn.ground)

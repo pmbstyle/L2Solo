@@ -123,7 +123,7 @@ async function cancelUnopened(party, reason) {
     if (!current || current.status !== 'active' || held(current) || !same(markerFor(current), markerFor(party))
         || Number(current.revision) !== Number(party.revision)) return false;
     const saved = await Parties.createOrUpdate({ ...current, status: 'dissolved', nextResolveAt: null,
-        stats: { ...current.stats, partyBreakReason: reason, dissolvedAt: Date.now() } });
+        stats: { ...current.stats, partyBreakReason: reason } });
     if (!saved) return false;
     await invoke('GameServer/Bot/Population/BotLifeState').releaseDissolvedPartyMembers(party.partyId, reason);
     wakeCancelled(current, reason);

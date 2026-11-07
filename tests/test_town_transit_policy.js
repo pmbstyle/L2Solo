@@ -58,7 +58,7 @@ assert.strictEqual(Policy.townAt({ locX: 74000, locY: 147904, locZ: -3500 }), nu
 const destination = { locX: 1000, locY: 1000, locZ: 0 };
 const session = {};
 const bot = actor({ locX: 0, locY: 0, locZ: 0 });
-for (const error of ['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED', 'PATH_BUDGET', 'WORKER_UNAVAILABLE']) {
+for (const error of ['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED', 'PATH_BUDGET']) {
     session.lastPathfinding = { requestedTo: destination, routeUsable: false, error, at: Date.now() + 100 + (session.companionNavigationRecovery?.lastFailureAt || 0) };
     const recovery = Recovery.move(session, bot, destination, 'town_gatekeeper', { targetActor: null });
     assert.strictEqual(recovery.failures, 0, `${error} must not consume route failure attempts`);

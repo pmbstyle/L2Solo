@@ -44,8 +44,7 @@ async function recruit({ participants, event, parties, life, memory, composition
     if (recruits.length !== 1) return { rejected: 'party_composition' };
     const allMembers = [...members.map(s => s.characterId === representative.characterId ? representative : s), solo];
     const nextParty = { ...party, memberIds: allMembers.map(s => s.characterId),
-        roleCoverage: composition.roleCoverage(allMembers), stats: { ...party.stats,
-            memberNames: allMembers.map(s => s.name), lastRecruitAt: timestamp } };
+        roleCoverage: composition.roleCoverage(allMembers), stats: { ...party.stats } };
     const result = await commit(nextParty, allMembers, {
         characterId: party.leaderId, eventType: 'party_recruit',
         summary: `${solo.name} joined a party hunting the same target`,

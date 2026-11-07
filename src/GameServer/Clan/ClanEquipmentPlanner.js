@@ -247,11 +247,25 @@ function planForMember(member, spots = [], warehouseRows = [], options = {}) {
     const matchesTarget = !target || Number(previous?.target?.selfId) === Number(target.itemId)
         && Number(previous?.target?.slot) === Number(target.slot);
     if (previous?.strategy === 'craft' || !matchesTarget) delete state.stats.equipmentPlan;
+    const oldRecipeId = Number(previous?.recipeId || 0);
+    // A saved clan plan can refer to a 60% recipe that no live provider
+    // offers. Keep the equipment target, but let the published alternative
+    // recipe replace it instead of pinning an unavailable workshop forever.
+    const offeredIds = options.allowedRecipeIds;
+    const recipeAvailable = offeredIds ? (typeof offeredIds.has === 'function' ? offeredIds.has(oldRecipeId)
+        : offeredIds.includes(oldRecipeId))
+        : !options.craftRecipes || options.craftRecipes.some(recipe => Number(recipe.recipeId) === oldRecipeId);
+    const oldProvider = options.craftProviders?.[oldRecipeId];
+    const oldRecipe = oldProvider && !oldProvider.known && Crafting.resolveRecipe(oldRecipeId);
+    const publicAlternative = oldRecipe && options.craftRecipes?.some(recipe => Number(recipe.productId) === Number(oldRecipe.productId)
+        && Number(recipe.recipeId) !== oldRecipeId && (!options.craftProviders?.[recipe.recipeId]
+            || options.craftProviders[recipe.recipeId].publicStation));
     const retainedRecipe = previous?.strategy === 'craft' && previous.status !== 'blocked' && !options.ignoreExistingPlan
         && matchesTarget
+        && recipeAvailable && !publicAlternative
         && GearAcquisitionPlanner.acquisitionTargetAllowed(state, previous)
         && !(options.excludedTargetIds || []).map(Number).includes(Number(previous.target?.selfId))
-        ? Number(previous.recipeId) : null;
+        ? oldRecipeId : null;
     const plan = calculate(state, spots, [], { ...options, recipeId: retainedRecipe });
     if (target && (Number(plan?.target?.selfId) !== Number(target.itemId)
         || Number(plan?.target?.slot) !== Number(target.slot))) return {

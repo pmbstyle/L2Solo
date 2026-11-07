@@ -104,7 +104,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1032020
     },
     "travel": {
       "from": {
@@ -126,8 +126,22 @@
       "arrivalActivity": "hunting",
       "clearMarketReturn": true,
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 115113,
+          "locY": -178212,
+          "locZ": -901
+        },
+        "to": {
+          "locX": 116100,
+          "locY": -180000,
+          "locZ": -900
+        },
+        "startAt": 1015000,
+        "endAt": 1032020
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1032020
     },
     "marketReturn": {
       "loc": {
@@ -151,7 +165,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1074533
     },
     "travel": {
       "from": {
@@ -176,7 +190,7 @@
         "fee": 8100
       },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1074533
     },
     "marketReturn": null,
     "craftReturn": {
@@ -200,7 +214,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1112800
     },
     "travel": {
       "from": {
@@ -221,8 +235,22 @@
       "arrivalActivity": "hunting",
       "reason": "dual_sword_combine_return",
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 15631,
+          "locY": 142885,
+          "locZ": -2704
+        },
+        "to": {
+          "locX": 22000,
+          "locY": 140000,
+          "locZ": -3000
+        },
+        "startAt": 1054533,
+        "endAt": 1112800
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1112800
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -238,13 +266,13 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1083574
     },
     "travel": {
       "from": {
-        "locX": 83396,
-        "locY": 147904,
-        "locZ": -3400
+        "locX": 80971,
+        "locY": 148143,
+        "locZ": -3466
       },
       "arrivalEvent": "returned_to_spot",
       "to": {
@@ -259,8 +287,22 @@
       "arrivalActivity": "hunting",
       "reason": "component_craft_return",
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 15631,
+          "locY": 142885,
+          "locZ": -2704
+        },
+        "to": {
+          "locX": 22000,
+          "locY": 140000,
+          "locZ": -3000
+        },
+        "startAt": 1025307,
+        "endAt": 1083574
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1083574
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -276,13 +318,13 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1078286
     },
     "travel": {
       "from": {
-        "locX": 83396,
-        "locY": 147904,
-        "locZ": -3400
+        "locX": 81603,
+        "locY": 147722,
+        "locZ": -3466
       },
       "arrivalEvent": "returned_to_spot",
       "to": {
@@ -297,8 +339,22 @@
       "arrivalActivity": "hunting",
       "reason": "equipment_craft_return",
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 15631,
+          "locY": 142885,
+          "locZ": -2704
+        },
+        "to": {
+          "locX": 22000,
+          "locY": 140000,
+          "locZ": -3000
+        },
+        "startAt": 1020019,
+        "endAt": 1078286
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1078286
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -314,7 +370,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1036373
     },
     "travel": {
       "from": {
@@ -339,7 +395,7 @@
         "fee": 8100
       },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1036373
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -363,7 +419,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1107144
     },
     "travel": {
       "from": {
@@ -384,8 +440,22 @@
       "arrivalActivity": "hunting",
       "reason": "mammon_unseal_return",
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 15631,
+          "locY": 142885,
+          "locZ": -2704
+        },
+        "to": {
+          "locX": 22000,
+          "locY": 140000,
+          "locZ": -3000
+        },
+        "startAt": 1048877,
+        "endAt": 1107144
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1107144
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -401,7 +471,7 @@
     },
     "timing": {
       "activityStartedAt": 1000000,
-      "nextResolveAt": 1025000
+      "nextResolveAt": 1046633
     },
     "travel": {
       "from": {
@@ -420,8 +490,22 @@
       "arrivalActivity": "hunting",
       "reason": "level_replan",
       "method": "gatekeeper_spot",
+      "run": {
+        "from": {
+          "locX": 115113,
+          "locY": -178212,
+          "locZ": -901
+        },
+        "to": {
+          "locX": 116000,
+          "locY": -180000,
+          "locZ": -900
+        },
+        "startAt": 1030000,
+        "endAt": 1046633
+      },
       "startedAt": 1000000,
-      "arrivalAt": 1025000
+      "arrivalAt": 1046633
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -492,6 +576,20 @@
       "regionName": "Wash",
       "arrivalActivity": "hunting",
       "method": "walk",
+      "run": {
+        "from": {
+          "locX": 22000,
+          "locY": 140000,
+          "locZ": -3000
+        },
+        "to": {
+          "locX": 39872,
+          "locY": 140009,
+          "locZ": -2544
+        },
+        "startAt": 1000000,
+        "endAt": 1148934
+      },
       "startedAt": 1000000,
       "arrivalAt": 1148934
     },

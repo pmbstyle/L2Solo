@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { WishNetwork, moneyQueue } = require('../src/GameServer/Bot/Economy/WishNetwork');
 
 const queue = moneyQueue([
@@ -68,6 +69,30 @@ const stock = network.build({ actorKey: 'stock', inputKey: 'quantity', wallet: 1
 assert.equal(stock.activity.amount, 10);
 assert.equal(stock.activity.price, 100, 'funded leaf spends the complete required quantity');
 console.log('wish funding, complete progress hour and acquisition quantity: PASS');
+
+// A craft keeps its full recipe for cost and public demand, but cannot farm
+// ordinary resources ahead of its missing key part or learning scroll.
+const staged = missingKey => ({ actorKey: 'staged-craft', inputKey: `key:${missingKey}`,
+    remembered: false, wallet: 10000, hourAdena: 100, roots: ['gear'], nodes: [
+        { key: 'gear', need: 'power', valueHours: 10, paths: [{ kind: 'craft', activity: 'crafting',
+            costHours: 1, keyInputs: ['part'], requirements: [
+                ...(missingKey ? [{ key: 'part', amount: 12 }] : []), { key: 'ore', amount: 50 }
+            ] }] },
+        { key: 'part', object: 10, paths: [{ kind: 'drop', activity: 'hunting', costHours: 10 }] },
+        { key: 'ore', object: 11, paths: [{ kind: 'drop', activity: 'hunting', costHours: 0.01 }] }
+    ] });
+assert.equal(network.build(staged(true)).activity.object, 10, 'key part precedes a much cheaper raw resource');
+assert.equal(network.build(staged(false)).activity.object, 11, 'raw resources resume after the part is acquired');
+const TradeIntent = require('../src/GameServer/Bot/Economy/TradeIntent');
+const tradePlan = partMissing => ({ quantityPrepared: true, queue: [{ key: 'power:300:14', valueHours: 10, ratio: 1,
+    object: { itemId: 300 }, plan: { kind: 'craft', missingAmount: 1, keyInputs: ['item:10'], requirements: [
+        ...(partMissing ? [{ key: 'item:10', amount: 12, plan: { kind: 'drop', missingAmount: 12 } }] : []),
+        { key: 'item:11', amount: 50, plan: { kind: 'drop', missingAmount: 50 } }
+    ] } }] });
+assert.deepEqual(TradeIntent.project({}, tradePlan(true), null, () => 1, 8).map(row => row.itemId), [10],
+    'standing bids cannot start buying raw resources before the key parts');
+assert.deepEqual(TradeIntent.project({}, tradePlan(false), null, () => 1, 8).map(row => row.itemId), [11],
+    'resource orders appear once the parts are complete');
 
 const overpriced = moneyQueue([{ key: 'luxury', valueHours: .5, price: 1000 }], 50000, 0, .001);
 assert.equal(overpriced.queue[0].funded, false);
@@ -184,7 +209,7 @@ console.log('PASS finite liquidation / partial gap / fees / unknown route / rece
 const { packetFor, PACKET_ROWS } = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const rowItems = result => {
     const packet = packetFor(result, result.hourAdena, 0), items = [];
-    for (let index = 4; index + 2 < packet.length; index += 3) if (packet[index + 2]) items.push(packet[index + 2]);
+    for (let row = 0; row < Packet.fundedRows(packet); row++) if (Packet.fundedItem(packet, row)) items.push(Packet.fundedItem(packet, row));
     return items;
 };
 const manyWishes = count => ({ wallet: 1e6, hourAdena: 1000, remembered: false,
@@ -216,3 +241,102 @@ for (let seed = 0; seed < 40; seed++) {
 }
 assert(exactRows.has(100 + PACKET_ROWS - 1), 'with exactly PACKET_ROWS funded wishes the last one owns a row and stays selectable');
 console.log('PASS selected purchase is payable by the money packet rows (FX-E3 row bound)');
+
+// Two gear goals that replace each other never stand in one agenda: the better stands,
+// goods of other slots follow it (a two-hander and a shield, an armour beside them).
+{
+    require('../src/Global');
+    const buy = (key, itemId, value) => ({ key, need: 'power', object: { itemId }, valueHours: value, price: 100,
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, town: 'Giran', itemId, price: 100, costHours: .01, availableUnits: 1 }] });
+    const shop = new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: 'agenda', previous: { focus: null, dormant: [] },
+        roots: ['power:101:14', 'power:102:8', 'power:103:6'],
+        nodes: [buy('power:101:14', 101, 30), buy('power:102:8', 102, 20), buy('power:103:6', 103, 10)] });
+    const steps = [shop.activity, ...shop.agenda].map(step => step.rootKey);
+    assert.equal(steps.includes('power:101:14') && steps.includes('power:102:8'), false, 'a two-hander and a shield never stand together');
+    assert.equal(steps.includes('power:103:6'), true, 'another slot follows');
+
+    // A review reads a craft to its end: the stages after the key, marked as resting on it.
+    const part = id => ({ key: `item:${id}`, object: { itemId: id },
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, town: 'Giran', itemId: id, price: 50, costHours: .01, availableUnits: 9 }] });
+    const staged = new WishNetwork().build({ characterId: 7, ...input, wallet: 1000, inputKey: 'stages', previous: { focus: null, dormant: [] }, roots: ['power:104:7'],
+        nodes: [part(11), part(12), { key: 'power:104:7', need: 'power', object: { itemId: 104 }, valueHours: 30, price: 100,
+            paths: [{ kind: 'craft', activity: 'crafting', executable: true, town: 'Giran', costHours: .01, keyInputs: ['item:11'],
+                requirements: [{ key: 'item:11', amount: 1 }, { key: 'item:12', amount: 5 }] }] }] });
+    assert.equal(staged.activity.itemId, 11, 'fixture: the key comes first');
+    assert.deepEqual(staged.agenda.map(step => [step.itemId, step.staged]), [[12, true]], 'the next stage waits on it in the agenda');
+}
+// One look a visit: a buy elsewhere goes only where the visit pays its one trip.
+{
+    const far = hours => ({ key: 'power:105:6', need: 'power', object: { itemId: 105 }, valueHours: 1, price: 100,
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran', itemId: 105, price: 100,
+            unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: hours, tripFees: 0 }] });
+    const build = hours => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: `visit:${hours}`,
+        previous: { focus: null, dormant: [] }, roots: ['power:105:6'], nodes: [far(hours)] });
+    const near = build(0), away = build(50);
+    assert.equal(near.activity?.itemId, 105, 'in town the step stands');
+    assert.notEqual(away.activity?.itemId, 105, 'a road dearer than the visit is not taken');
+    // Required kit is worth what the queue pays for it: a road to its seller pays,
+    // though its own benefit is below its price at the money price.
+    const kit = new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: 'visit:kit',
+        previous: { focus: null, dormant: [] }, roots: ['power:105:6'], nodes: [{ ...far(0.5), progressionPriority: 3 }] });
+    assert.equal(kit.activity?.itemId, 105, 'a funded required piece goes to its seller in another town');
+    // Required stock pays a road only for the share of the need a seller can fill.
+    const stock = units => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: `visit:stock:${units}`,
+        previous: { focus: null, dormant: [] }, roots: ['stock:potions'], nodes: [
+            { key: 'stock:potions', need: 'power', object: { itemId: 107, amount: 10 }, valueHours: 1, price: 100, progressionPriority: 4,
+                paths: [{ requirements: [{ key: 'item:107', amount: 10 }] }] },
+            { key: 'item:107', object: { itemId: 107 }, paths: [{ kind: 'buy', activity: 'shopping', executable: true, town: 'Giran',
+                itemId: 107, price: 10, unitPrice: 10, costHours: .01, availableUnits: units, tripHours: 0.5, tripFees: 0 }] }] });
+    assert.deepEqual([stock(10).activity?.itemId, stock(10).activity?.amount], [107, 10], 'a seller of the whole need is worth the road');
+    assert.notEqual(stock(1).activity?.itemId, 107, 'a seller of a tenth of it is not');
+    // At a real hour (10k Adena) a few potions never carry a road: they stop holding the
+    // bot, it goes for its kit piece and buys them in the same town.
+    const sold = (id, unitPrice, units) => ({ key: `item:${id}`, object: { itemId: id }, paths: [{ kind: 'buy', activity: 'shopping', executable: true,
+        quoted: true, town: 'Giran', itemId: id, price: unitPrice, unitPrice, costHours: .01, availableUnits: units, tripHours: .5, tripFees: 3000 }] });
+    const errand = new WishNetwork().build({ ...input, characterId: 7, wallet: 100000, hourAdena: 10000, inputKey: 'visit:kit:potions',
+        previous: { focus: null, dormant: [] }, roots: ['stock:potions', 'power:110:6'], nodes: [
+            { key: 'stock:potions', need: 'power', object: { itemId: 111, amount: 10 }, valueHours: .05, price: 400, progressionPriority: 4,
+                paths: [{ requirements: [{ key: 'item:111', amount: 10 }] }] },
+            { key: 'power:110:6', need: 'power', object: { itemId: 110, slot: 6 }, valueHours: 1, price: 15480, progressionPriority: 3,
+                paths: [{ requirements: [{ key: 'item:110', amount: 1 }] }] },
+            sold(110, 15480, 1), sold(111, 40, 100)] });
+    assert.deepEqual([errand.activity?.itemId, errand.activity?.town], [110, 'Giran'], 'the bot goes for its kit piece');
+    assert.deepEqual(errand.agenda?.filter(step => step.itemId === 111).map(step => step.town), ['Giran'], 'and buys the potions there');
+    // A seller of part of the stock is weighed on what it fills: its goods do not carry the
+    // road, so the stock holds no tier and the kit trip goes on (shots 1000 of 1553 at 9.2).
+    const partial = new WishNetwork().build({ ...input, characterId: 7, wallet: 100000, hourAdena: 10000, inputKey: 'visit:kit:shots',
+        previous: { focus: null, dormant: [] }, roots: ['stock:shots', 'power:110:6'], nodes: [
+            { key: 'stock:shots', need: 'power', object: { itemId: 112, amount: 1553 }, valueHours: 1, price: 14288, progressionPriority: 4,
+                paths: [{ requirements: [{ key: 'item:112', amount: 1553 }] }] },
+            { key: 'power:110:6', need: 'power', object: { itemId: 110, slot: 6 }, valueHours: 1, price: 15480, progressionPriority: 3,
+                paths: [{ requirements: [{ key: 'item:110', amount: 1 }] }] },
+            { ...sold(110, 15480, 1), paths: [{ ...sold(110, 15480, 1).paths[0], tripHours: .4, tripFees: 6000 }] },
+            { ...sold(112, 9.2, 1000), paths: [{ ...sold(112, 9.2, 1000).paths[0], tripHours: .4, tripFees: 6000 }] }] });
+    assert.deepEqual([partial.activity?.itemId, partial.activity?.town], [110, 'Giran'], 'a part seller of the stock does not hold the kit trip');
+    const farKit = new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: 'visit:kit:far',
+        previous: { focus: null, dormant: [] }, roots: ['power:105:6'], nodes: [{ ...far(50), progressionPriority: 3 }] });
+    assert.notEqual(farKit.activity?.itemId, 105, 'no road dearer than the piece it brings');
+    // The next seller of a required piece goes on up to its funded price, not beyond,
+    // though its own benefit is worth less than that price.
+    const cheapKit = new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: 'visit:kit:cheap',
+        previous: { focus: null, dormant: [] }, roots: ['power:105:6'], nodes: [{ ...far(0.5), valueHours: .5, progressionPriority: 3 }] });
+    const Agenda = require('../src/GameServer/Bot/Economy/Agenda');
+    const Valuation = require('../src/GameServer/Bot/Economy/EconomicValuation');
+    const shopping = { characterId: 7, phase: 'cold', activity: 'shopping', stats: {} };
+    assert.equal(cheapKit.activity?.itemId, 105, 'fixture: the piece is the step');
+    const sellerAt = unitPrice => Agenda.advance({ plan: { network: cheapKit, eventProof: {}, statsPacket: {} } }, shopping, 'check:offer_none', {}, {
+        refused: () => null, progress: () => 0, held: () => 0, identity: () => 'step', visitPays: (leaf, rest) =>
+            Valuation.visitPays({ moneyPrice: cheapKit.moneyPrice }, [leaf, ...rest], { known: true, hours: 0, fees: 0 }),
+        bestOffer: () => ({ town: 'Giran', unitPrice, availableUnits: 1, sourceType: 'npc', tripFees: 0 }) });
+    assert.equal(sellerAt(100)?.plan.network.activity.unitPrice, 100, 'a seller at the funded price takes the piece');
+    assert.equal(sellerAt(150), null, 'a dearer seller than the funded price is refused');
+    // An earning craft's input gets no such pass, though the craft holds a kit priority.
+    const crafted = (key, object) => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: `visit:craft:${key}`,
+        previous: { focus: null, dormant: [] }, roots: [key], nodes: [
+            { key, need: 'power', object, valueHours: 1, price: 100, progressionPriority: 3,
+                paths: [{ kind: 'craft', activity: 'crafting', executable: true, costHours: .01, requirements: [{ key: 'item:301', amount: 1 }] }] },
+            { key: 'item:301', object: { itemId: 301 }, paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran',
+                itemId: 301, price: 100, unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: 0.5, tripFees: 0 }] }] });
+    assert.equal(crafted('power:300:6', { itemId: 300, slot: 6 }).activity?.itemId, 301, 'fixture: a kit piece\'s input goes to its seller');
+    assert.notEqual(crafted('resale:300', { itemId: 300, kind: 'resale' }).activity?.itemId, 301, 'a resale craft\'s input is weighed on its value');
+}

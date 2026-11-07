@@ -13,7 +13,10 @@ const dependencies = {
     'GameServer/Bot/Population/PartyMarketBreak': require(root + '/src/GameServer/Bot/Population/PartyMarketBreak'),
     'GameServer/Inventory/ShotStock': { SHOT_IDS: [1463] },
     'GameServer/Bot/Population/BotLifeState': {
-        cachedState: () => current, hotRow: () => null, marketPurchaseBlocker: () => null,
+        // The purchase gate keeps its war-ticket rule (the gear rules are out of this scene).
+        cachedState: () => current, hotRow: () => null, planWants: () => false,
+        marketPurchaseBlocker: (state, offer) => require(root + '/src/GameServer/Bot/Population/PartyMarketBreak')
+            .warSupplyPurchaseBlocker(state, offer.selfId),
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},
         upsertState: async next => (current = next)
     },
@@ -38,6 +41,7 @@ const Decision = { economyFor: () => { throw Error('arrival builds no economy vi
     remainingToOrder: require(root + '/src/GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder };
 const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoWarn: () => {} }, Date, Promise, console,
     require: name => name === './EconomyDiagnostics' ? { active: () => false, enabled: () => false }
+        : name === '../../Inventory/ArrowStock' ? require(root + '/src/GameServer/Inventory/ArrowStock')
         : name === '../Population/ColdEconomyDecision' ? Decision
         : name === '../Population/CombinedErrandPolicy' ? { pending: () => [], ERRAND_MS: 1 }
         : name === './OfferOrder' ? { farmingOrigin: () => null, tripCost: () => () => 0 }

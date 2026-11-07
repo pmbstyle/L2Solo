@@ -1,8 +1,8 @@
 const SpotRiskPolicy = require('./SpotRiskPolicy');
 const ColdTrip = require('./ColdTrip');
 
-// A trip to a hunting spot (gatekeeper, or a walk for a red bot) takes this long.
-const HUNTING_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
+// A party's arrival when its route carries no trip time (ColdSimulationKernel).
+const HUNTING_TRAVEL_MS = ColdTrip.FALLBACK_TRIP_MS;
 
 function hasFiniteCoordinate(value) {
     return value !== null
@@ -44,7 +44,6 @@ function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {
         // The held leaf's spot this trip stands in for (BotRoute.trip).
         ...(route.leafSpotId != null ? { leafSpotId: route.leafSpotId } : {})
     }, timestamp, {
-        durationMs: Number(route.travelMs) || HUNTING_TRAVEL_MS,
         // A party travels as one: every member arrives at the party's time.
         sharedMs: isPartyRoute ? Number(route.travelMs) || 0 : 0,
         extraStats: { pveEncounter: null }

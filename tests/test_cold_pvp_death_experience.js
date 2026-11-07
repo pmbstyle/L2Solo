@@ -24,15 +24,15 @@ const LEVEL = 40;
 const KILLER = 1, VICTIM = 2;
 const personaFor = () => ({ traits: { caution: 0 } });
 
-async function insertBot(id, { hp, pAtk, exp }) {
-    const stats = { classId: 0, coldCombat: { version: 1, classId: 0, cp: 0, cpAt: at,
+async function insertBot(id, { hp, pAtk, exp, karma = 0 }) {
+    const stats = { classId: 0, karma, coldCombat: { version: 1, classId: 0, cp: 0, cpAt: at,
         base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
         equipment: { weaponKind: 'Weapon.Sword', pAtk, pAtkRnd: 0, mAtk: 100, atkSpd: 379, critical: 0,
             accur: 0, pDef: 200, mDef: 100, evasion: 0 },
         effects: [], skills: [] } };
     await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_pvpexp_${id}`, 'test']]);
-    await Database.execute([`INSERT INTO characters(id,username,name,classId,race,level,exp,hp,maxHp,mp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
-        VALUES (?,?,?,0,0,?,?,?,1000,500,500,0,0,0,0,50000,15000,-5000)`, [id, `bot_pvpexp_${id}`, `PvpExp${id}`, LEVEL, exp, hp]]);
+    await Database.execute([`INSERT INTO characters(id,username,name,classId,race,level,exp,hp,maxHp,mp,maxMp,karma,sex,face,hair,hairColor,locX,locY,locZ)
+        VALUES (?,?,?,0,0,?,?,?,1000,500,500,?,0,0,0,0,50000,15000,-5000)`, [id, `bot_pvpexp_${id}`, `PvpExp${id}`, LEVEL, exp, hp, karma]]);
     await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,exp,
         locX,locY,locZ,nextResolveAt,lastResolvedAt,updatedAt,statsJson)
         VALUES (?,?,?,'cold','hunting','test',?,1000,500,500,?,?,50000,15000,-5000,?,?,?,?)`,
@@ -53,7 +53,8 @@ async function main() {
     // Just above the level 40 threshold, so the penalty drops the bot to 39.
     const victimExp = levelStart + 100;
     await insertBot(KILLER, { hp: 1000, pAtk: 5000, exp: levelStart });
-    await insertBot(VICTIM, { hp: 20, pAtk: 1, exp: victimExp });
+    // The victim has karma: its death washes 1 karma per 260 EXP lost (C4 PcStat.addExp).
+    await insertBot(VICTIM, { hp: 20, pAtk: 1, exp: victimExp, karma: 1000 });
     await Life.init();
     const killer = Life.cachedState(KILLER), victim = Life.cachedState(VICTIM);
 
@@ -106,9 +107,12 @@ async function main() {
         proposal: { ...InventorySummary.bagChange(state.inventory, result.updates.get(state.characterId).inventory), durable: { pvpKills: result.fighters.find(f => f.id === state.characterId).kills } }
     })), { timestamp: at + 10, journalReason: 'pvp' });
     assert(commit.every(r => r.ok), JSON.stringify(commit));
-    const [character] = await Database.execute(['SELECT level, exp FROM characters WHERE id = ?', [VICTIM]]);
+    const [character] = await Database.execute(['SELECT level, exp, karma FROM characters WHERE id = ?', [VICTIM]]);
     assert.deepStrictEqual({ level: Number(character.level), exp: Number(character.exp) },
         { level: LEVEL - 1, exp: victimExp - expectedLoss });
+    const washedKarma = 1000 - Math.floor(expectedLoss / 260);
+    assert.strictEqual(Number(character.karma), washedKarma, 'the cold commit washes karma by the EXP the death took');
+    assert.strictEqual(Life.cachedState(VICTIM).stats.karma, washedKarma, 'the cold state sees the same karma');
     const stored = await Database.fetchCharacterDeathExperience(VICTIM);
     assert.deepStrictEqual({ before: Number(stored.expBeforeDeath), lost: Number(stored.expLost),
         pending: Number(stored.pendingRestoration), at: Number(stored.penaltyAppliedAt) },

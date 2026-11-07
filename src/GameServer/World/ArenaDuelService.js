@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const { isAutomaticArenaBuff } = require('./ArenaBuffEligibility');
@@ -172,7 +173,7 @@ function candidateCatalog(playerSession, minLevel = 1, maxLevel = 80, classId = 
     const catalog = BotAvailability.catalogForPlayer(
         playerSession,
         BotManager.sessions || [],
-        LifeState.allStates?.(2000) || []
+        LifeState.everyState()
     );
     return catalog.filter((candidate) => {
         const level = Number(candidate.level || candidate.subject?.level || 1);
@@ -244,7 +245,7 @@ function applySelfBuffs(session, actor) {
     const skills = actor?.skillset?.fetchSkills?.() || [];
     skills.filter(isAutomaticArenaBuff)
         .forEach((skill) => {
-            try { SkillEffects.execute(session, actor, actor, skill, { selfEffectOnly: true }); } catch (_) {}
+            try { SkillEffects.execute(session, actor, actor, skill, { selfEffectOnly: true }); } catch (error) { FailureLog.note('arena.self_effect', error); }
         });
 }
 
@@ -615,7 +616,7 @@ function handleBypass(session, parts = []) {
             Number.isFinite(classId) ? classId : null
         );
     }
-    if (command === 'select') return select(session, Number(parts[2])).catch(() => false);
+    if (command === 'select') return select(session, Number(parts[2])).catch((error) => { FailureLog.note('arena.select', error); return false; });
     if (command === 'buff') return applyBuffMode(session, String(parts[2] || 'self').toLowerCase());
     if (command === 'heal') return heal(session);
     return render(session);

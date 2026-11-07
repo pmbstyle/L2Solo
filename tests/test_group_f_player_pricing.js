@@ -21,8 +21,6 @@ const Sell = invoke('GameServer/Network/Request/Sell');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const World = invoke('GameServer/World/World');
-const BuyHtml = invoke('GameServer/World/Generics/NpcBypasses/BuyMerchantItem');
-const SellHtml = invoke('GameServer/World/Generics/NpcBypasses/SellToMerchantItem');
 
 const MATERIAL = 1864;
 const SHOT = 1835;
@@ -167,7 +165,7 @@ test('zero executable SELL is the best ask while zero BUY never establishes a bi
         NpcSellRules.npcBuyPrice(TradeService.itemBasePrice(MATERIAL)));
 });
 
-test('native packet omits an oversized quote and cannot execute it; HTML retains the exact price', async () => {
+test('native packet omits an oversized quote and cannot execute it', async () => {
     const session = await player('FNativeWidePrice');
     const adena = session.actor.backpack.fetchItemFromSelfId(57);
     const money = 6000000000;
@@ -209,9 +207,6 @@ test('native packet omits an oversized quote and cannot execute it; HTML retains
     assert.strictEqual(wallet(session), money);
     assert.strictEqual(amount(session, MATERIAL), 20);
     assert.strictEqual(records.length, 0);
-    session.viewedPrivateStoreSeller = seller;
-    await BuyHtml(session, ['buy-merchant-item']);
-    assert(session.sent.at(-1).args[1].includes('5,000,000,000a'), 'HTML shows the exact safe integer price');
     const closed = await Database.closeBoardRecord(oversizedBid.ownerId, oversizedBid.id);
     AfkTrade.refreshRecord(closed.record);
 });
@@ -264,32 +259,12 @@ test('native buyer window uses current bid and rejects stale native sale', async
     assert.strictEqual(records.length, 0, 'the board transaction journals its own deal once');
 });
 
-test('HTML windows and both trades read current prices and journal executed price once', async () => {
-    const session = await player('FHtml');
-    const store = staticStore(Configs.IslandMats);
-    session.viewedPrivateStoreSeller = merchant(store);
-    const configured = Pricing.botPriceFor(Configs.IslandMats, materialLine(Configs.IslandMats));
-    line(40, 1, configured + 123);
-    await BuyHtml(session, ['buy-merchant-item']);
-    assert(session.sent.at(-1).args[1].includes(`${configured + 123}a`));
-    const money = wallet(session);
-    line(40, 1, configured + 124);
-    await BuyHtml(session, ['buy-merchant-item', String(MATERIAL), '1']);
-    assert.strictEqual(wallet(session), money - configured - 124);
-    assert.strictEqual(records.length, 1);
-    assert.strictEqual(records[0].unitPrice, configured + 124);
-    const buyerStore = staticStore(Configs['4manda']);
-    session.viewedPrivateStoreSeller = merchant(buyerStore, 82001, '4manda');
-    await fundedBid(701);
-    await SellHtml(session, ['sell-to-merchant-item']);
-    assert(session.sent.at(-1).args[1].includes('701a'));
-    await fundedBid(702);
-    await SellHtml(session, ['sell-to-merchant-item', String(MATERIAL), '1']);
-    assert.strictEqual(wallet(session), money - configured - 124 + 702);
-    assert.strictEqual(records.length, 1, 'the HTML caller journals only the static purchase; the board journals its sale');
-});
-
 test('bot shots retain authored price after player refresh; other static purchases are denied', async () => {
+    // The author's fixed shot offers (off by default since T116: no C4 NPC sells D+ shots).
+    const Population = invoke('GameServer/Bot/Population/PopulationConfig');
+    const disabled = Population.staticShotsDisabled;
+    Population.staticShotsDisabled = false;
+    try {
     const session = await player('FBotShots', { bot: true });
     const store = staticStore(Configs.IslandMats, SHOT);
     const source = Configs.IslandMats.items.find(item => item.selfId === SHOT);
@@ -305,6 +280,7 @@ test('bot shots retain authored price after player refresh; other static purchas
     await assert.rejects(TradeService.buyFromStore(session.actor, materialStore, MATERIAL, 1), /static.*unavailable/i);
     const ordinary = { storeType: 1, items: [{ selfId: MATERIAL, price: 7, count: 2 }] };
     assert.strictEqual((await TradeService.buyFromStore(session.actor, ordinary, MATERIAL, 1)).totalAdena, 7);
+    } finally { Population.staticShotsDisabled = disabled; }
 });
 
 test('bot static buy-back remains old price; a failing player write restores stock and money', async () => {
@@ -366,25 +342,6 @@ test('fixed supply is cached by configuration/rate without world session reads',
     }
 });
 
-test('legacy HTML cannot trade an AFK projection around its record and escrow', async () => {
-    const session = await player('FHtmlBoardGuard');
-    const money = wallet(session);
-    const units = amount(session, MATERIAL);
-    const store = { afkTrade: true, storeType: 1, items: [{ selfId: MATERIAL, count: 3, price: 17 }] };
-    session.viewedPrivateStoreSeller = merchant(store);
-    await BuyHtml(session, ['buy-merchant-item', String(MATERIAL), '1']);
-    assert.strictEqual(wallet(session), money);
-    assert.strictEqual(amount(session, MATERIAL), units);
-    assert.strictEqual(store.items[0].count, 3);
-    store.storeType = 3;
-    await SellHtml(session, ['sell-to-merchant-item', String(MATERIAL), '1']);
-    assert.strictEqual(wallet(session), money);
-    assert.strictEqual(amount(session, MATERIAL), units);
-    assert.strictEqual(store.items[0].count, 3);
-    assert.strictEqual(records.length, 0);
-    assert.strictEqual(session.sent.filter(packet => packet.kind === 'actionFailed').length, 2);
-});
-
 test('bot gear sale to a static buyer is rejected before mutation; player and ordinary sales stay available', async () => {
     const bot = await player('FHotGearSeller', { bot: true });
     await giveGear(bot);
@@ -443,19 +400,19 @@ test('hot buyer selection and inventory sale keep only static materials at the o
     assert.strictEqual(gear.items[0].count, stock);
 });
 
-test('all four accepted native/HTML player trades persist once with executed prices', async () => {
+test('accepted native player trades persist once with executed prices', async () => {
     const history = await Database.fetchMarketTradeOverview();
     const playerTrades = history.recent.filter(trade => [
         'private_store_player_purchase', 'private_buy_store_player_sale'
     ].includes(trade.sourceType));
     const values = trades => trades.map(({ sourceType, unitPrice, quantity }) => ({ sourceType, unitPrice, quantity }))
         .sort((left, right) => left.unitPrice - right.unitPrice);
-    assert.strictEqual(allRecords.length, 2, 'only the two static purchases use caller telemetry');
+    assert.strictEqual(allRecords.length, 1, 'only the static purchase uses caller telemetry');
     assert.deepStrictEqual(values(playerTrades), values(allRecords));
     // fundedBid is a player's escrow-held buy ad (bot buy ads pay only at a meeting).
     const boardTrades = history.recent.filter(trade => trade.sourceType === 'afk_player_buy_store');
     assert.deepStrictEqual(boardTrades.map(trade => [trade.unitPrice, trade.quantity]).sort((a, b) => a[0] - b[0]),
-        [[502, 1], [702, 1]], 'the two static-buyer fills appear once through native board settlement');
+        [[502, 1]], 'the static-buyer fill appears once through native board settlement');
 });
 
 (async () => {

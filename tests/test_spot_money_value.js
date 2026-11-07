@@ -26,16 +26,27 @@ try {
         close(experience({ id }).valueHours, rows[id].exp / 40270);
     }
     assert(money({ id: 'near' }).valueHours > 10.2 && money({ id: 'middle' }).valueHours > 4.2);
-    assert.equal(Economics.moneyWeight({ ...state, stats: { money: [3719, 1, 0, 900000], wishFocus: [1, 0, 5000] }, adena: 10000 }), 1);
+    // The board look's flag: money is short for a wish the bot wants now.
+    assert.equal(Economics.moneyShort({ ...state, stats: { money: [3719, 1, 0, 900000], wishFocus: [1, 0, 5000] }, adena: 10000 }), 1);
     for (const stats of [{ money: [3719, 1, 0, 0] }, {}, { wishFocus: [1, 0, 0] },
         { wishFocus: [1, 0, null] }, { wishFocus: [1, 0, Infinity] }, { wishFocus: [1, 0, 3000] }]) {
-        assert.equal(Economics.moneyWeight({ ...state, stats }), 0);
+        assert.equal(Economics.moneyShort({ ...state, stats }), 0);
     }
-    assert.equal(Economics.moneyWeight({ ...state, stats: { wishFocus: [1, 0, 900000] } }), 1);
+    assert.equal(Economics.moneyShort({ ...state, stats: { wishFocus: [1, 0, 900000] } }), 1);
+    // The spot's share of money follows the bot's own money price, continuously
+    // (decision 10-28): an hour of income at it against an hour of progress
+    // (no drive, caution 0.5: 1 hour; a drive to progress: 1.5).
+    const weight = (hour, moneyPrice, drive = null) => Economics.moneyWeight({ ...state, stats: { money: [hour, moneyPrice, 0, 0] } },
+        { traits: {}, primaryDrive: drive });
+    close(weight(4000, 1 / 4000), 1 / 2);
+    close(weight(4000, 3 / 4000), 3 / 4);
+    close(weight(4000, 1 / 4000, 'progression'), 1 / 2.5);
+    close(weight(4000, 0), 1 / 2);
+    close(Economics.moneyWeight({ ...state, stats: {} }, { traits: {} }), 1 / 2);
     Table.best = () => ({ adena: 6000, loot: 4000 });
     Hunt.huntIncome = () => ({ perHour: 0, expPerHour: 40270 });
     const unsampled = Economics.create({ ...state, stats: { classId: 2, wishFocus: [1, 0, 900000] } },
-        { persona, deathHours: 0 });
+        { persona, deathHours: 0, moneyWeight: 1 });
     close(unsampled({ id: 'near' }).valueHours, 38294 / 10000);
     Table.best = () => null;
     close(Economics.create({ ...state, stats: { classId: 2 } }, { persona, deathHours: 0, moneyWeight: 1 })({ id: 'grey' }).valueHours, 3719);
@@ -43,7 +54,7 @@ try {
     Table.value = saved.value; Table.best = saved.best; Hunt.huntIncome = saved.income; Hunt.sampledRows = saved.samples;
     Config.knowledgeErrorsEnabled = oldKnowledge;
 }
-console.log('PASS saved money gap, unfunded-focus fallback and shared spot-value units');
+console.log('PASS the money gap flag, the money share of a spot and shared spot-value units');
 
 // Build the server's real catalogue with the generator's deterministic spawn.
 // This fixture uses no Database.init(): every world actor is process-local.
@@ -91,10 +102,12 @@ try {
         const row = Table.value(s.id, 'dps', 50, true);
         return row ? Hunt.netIncome(row, Hunt.consumablePrices(fighter)) : 0;
     };
-    const bestIncome = Math.max(...oracle.map(income));
-    assert(bestIncome > 0);
-    const grey = oracle.filter(s => s.maxLevel <= 35 && income(s) > 0)
-        .sort((a, b) => income(a) - income(b))[0];
+    // The table ends at the deep-blue gap (drops at 30%, user 10-29): every camp a naked
+    // L50 survives lies past it, so none pays and the fallback takes the closest safe ground.
+    assert.equal(Math.max(...oracle.map(income)), 0, 'no camp past the deep-blue gap carries table income');
+    const distance = s => Math.abs(s.avgLevel - fighter.level);
+    const closest = Math.min(...oracle.map(distance));
+    const grey = oracle.filter(s => s.maxLevel <= 35).sort((a, b) => a.avgLevel - b.avgLevel)[0];
     assert(grey, 'fixture needs a real grey camp');
     fighter.spotId = grey.id;
     let fallbackChecks = 0;
@@ -112,13 +125,19 @@ try {
     const picked = Spots.findForState(fighter, options);
     assert(fallbackChecks > 0 && fallbackChecks <= 128, `fallback checks ${fallbackChecks}`);
     assert(picked, 'the full catalogue must provide a surviving camp within the fixed fallback budget');
-    assert.notEqual(picked.id, grey.id, 'a cheaper grey camp cannot pin this money-saving fighter');
-    assert(income(picked) >= bestIncome * 0.5, `${income(picked)} < half of ${bestIncome}`);
+    assert.notEqual(picked.id, grey.id, 'a far grey camp cannot pin this fighter');
+    assert.equal(distance(picked), closest, `picked ${picked.id} at ${picked.avgLevel}, closest safe gap ${closest}`);
     const upper = Match.soloSpotUpperBound(options.matchupProfiles);
     assert(oracle.every(spot => upper(spot)), 'cheap bound must retain every exact-safe camp');
     assert(Match.soloSpotUpperBound([{ survivalKnown: false }])(catalogue[0]), 'unknown kits remain neutral');
+    const unplaced = { ...fighter, spotId: null, loc: {} };
+    assert.equal(Spots.findForState(unplaced, { ...options, hasRoom: () => false }), null,
+        'the weak-kit fallback cannot send an unplaced bot to a full camp');
+    const other = Spots.findForState(unplaced, { ...options, hasRoom: id => id !== picked.id });
+    assert(other && other.id !== picked.id, 'a full easy camp is skipped for another surviving camp');
+    assert(savedGate(other, unplaced, options), 'the alternative still passes native combat admission');
     console.log(`PASS full catalogue: ${world.npc.spawns.length} spawns, near=${near.length}, `
-        + `fallback=${fallbackChecks}, picked=${picked.id}, income ratio=${income(picked) / bestIncome}`);
+        + `fallback=${fallbackChecks}, picked=${picked.id} at ${picked.avgLevel}`);
 } finally {
     Math.random = savedRandom;
     World.npc = savedWorld.npc; World.user = savedWorld.user;

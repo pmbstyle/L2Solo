@@ -1,6 +1,6 @@
 'use strict';
 
-const { trait, stageHours, decisionHorizon, resale } = require('./EconomicValuation');
+const { trait, stageHours, decisionHorizon, resale, liveDeathHours, powerWeight: progressWorth } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
@@ -13,6 +13,7 @@ const DualSwords = require('../../Items/C4DualSwordCombinations');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const DataCache = invoke('GameServer/DataCache');
+const { GRADES: GEAR_RANKS } = invoke('GameServer/Bot/AI/GearGradeRule');
 // A module read inside a hot function: require() walks the module path on
 // every call, so each path is resolved once here. The relative require keeps
 // the module's dependency boundary (tests pass their own require).
@@ -33,29 +34,34 @@ const GEAR_FINALISTS_PER_SLOT = 8;
 // review can hold as roots adds cost without a reachable choice.
 const WISH_ROOTS = 12;
 const PRODUCER_PRICED = WISH_ROOTS;
-const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 // MVP-6 (PLAN "Admission and placement"): four gear roots, four admission
 // rounds (the initial evaluation plus three affected re-evaluations).
 const GEAR_ROOTS = 4;
 const GEAR_ROUNDS = 4;
 const SOLVER_LIMITS = new Set(['missing_wish_requirement', 'cyclic_wish_network', 'invalid_wish_node', 'wish_network_depth']);
-function nominationBasis(state) {
-    const focus = String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/);
-    const supply = state.stats?.equipmentPlan?.clanGoal?.clanId && need('./ClanCrystalSupply').requirement(state);
-    return Object.freeze([Number(state.stats?.equipmentPlan?.target?.selfId || 0), Number(focus?.[1] || 0),
-        ...(supply ? [supply.plan.clanGoal.goalKey, supply.selfId, supply.amount] : [])]);
+// The gear a bot is after: its plan's target and the focus of its wishes, the one reading
+// of a review and of a quiet build (EconomyContext).
+function followedGear(state) {
+    const focus = state.stats?.wishFocus?.[0];
+    return [Number(state.stats?.equipmentPlan?.target?.selfId || 0), String(focus).startsWith('power:') ? Network.rootItem(focus) : 0];
 }
-function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null) {
+// The class a bot's gear is weighed for (its stats' class, else its root
+// one): the one reading of the kit, the weighing and a kept list's digest.
+const classOf = state => Number(state.stats?.classId || state.classId || 0);
+// budgetBoundary: hears each price compared with the purchase budget as
+// (threshold with the reserve, price, item id); the context's by default.
+function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null,
+    budgetBoundary = ctx?.budgetBoundary) {
     const Data = invoke('GameServer/DataCache');
     const revision = Sources.revision();
     const role = Planner.roleFor(state);
-    const classId = Number(state.stats?.classId || state.classId || 0);
+    const classId = classOf(state);
     const kits = invoke('GameServer/Bot/AI/BotGear').wishKitsFor(Data.items, revision, classId, role, Planner, Sources);
     const maxRank = GEAR_RANKS.indexOf(ctx && progression?.rank === 3
         ? Planner.gradeForLevel(state.level) : Progression.acquisitionRankFor(state, progression || undefined));
     const result = new Map();
     const budget = Math.max(0, Number(ctx?.wallet ?? Funding.budget(state)) - Number(ctx?.survivalReserve || 0));
-    const [target, held] = ctx?.nominationBasis || nominationBasis(state);
+    const [target, held] = followedGear(state);
     const slotKits = new Map(kits);
     for (const [first, second] of [[1, 2], [4, 5]]) if (slotKits.has(first) && !slotKits.has(second)) slotKits.set(second, slotKits.get(first));
     for (const [slot, kit] of slotKits) {
@@ -73,11 +79,12 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         const better = (a, b) => !b || a.ratio > b.ratio || a.ratio === b.ratio && cheaper(a, b);
         for (const at of allowed) {
             const item = kit.itemAt(at);
+            if (ctx.heldGear && !ctx.heldGear.has(Number(item.selfId))) continue;
             if (progression?.required && !Progression.priority(item, slot, progression)) continue;
             if (acquisitionAllowed && !acquisitionAllowed(item.selfId)) continue;
             const price = Number(ctx.price(item.selfId));
             if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
-            ctx.budgetBoundary?.(price + Number(ctx.survivalReserve || 0));
+            budgetBoundary?.(price + Number(ctx.survivalReserve || 0), price, item.selfId);
             const score = kit.scoreAt(at);
             const row = { item, price, score, ratio: Math.max(0, score - before) / price };
             if (Number(item.selfId) === target || Number(item.selfId) === held) retained = row;
@@ -173,7 +180,7 @@ function gearGain(state, item, timestamp = Date.now(), threatMask = 3) {
 function gearGainReader(state, timestamp, options = {}, caster = require('./BotImprovementPolicy').isCaster(state), threatMask = 3) {
     threatMask = threatMask === 1 ? 1 : 3;
     let candidates, ownWeapon;
-    const role = Planner.roleFor(state), classId = Number(state.stats?.classId || state.classId || 0);
+    const role = Planner.roleFor(state), classId = classOf(state);
     const selectedWeapon = item => {
         if (!Planner.equipmentCandidate(item, state, role)) return false;
         if (ownWeapon === undefined) {
@@ -256,17 +263,27 @@ function build(state, ctx, deps = {}) {
     }
     return result;
 }
+// The real graph's item cap (`NODE_CAP`) and the builds that met it: a recipe or
+// material dropped there is gone from the tree of every candidate sharing it.
+const NODE_CAP = 36;
+let nodeCapBuilds = 0;
+// The scope reads of a kept source fact: none (KeptSourceFacts keeps no other).
+const NO_INPUTS = Object.freeze({ items: Object.freeze([]), bag: Object.freeze([]) });
 function buildProjection(state, ctx, deps) {
     // Diagnostics only: wall time per block (provider:<block>); a lazy source
     // closure counts in the block that calls it. Null while diagnostics are off.
     const blocks = Diagnostics.laps('provider:');
     const nativeQuantities = quantityReaders(state), quantityInputs = ctx.quantityInputs;
+    // The gear candidates being weighed for keeping (KeptGearCandidates), null
+    // outside that: their bag answers and offers are noted as they are read.
+    let gearCapture = null;
     const physical = id => {
         const value = nativeQuantities.physical(id);
         quantityInputs?.physical(id, value); return value;
     };
     const present = id => {
         const value = nativeQuantities.physical(id);
+        gearCapture?.bag(id, value > 0);
         quantityInputs?.present(id, value); return value > 0;
     };
     const free = id => {
@@ -297,18 +314,13 @@ function buildProjection(state, ctx, deps) {
     // identical nodes. ARCH-NOTE: dies at return; at most the 64-node cap
     // per target, no owner store.
     // Sources are plain descriptors, independent of the wallet-dependent
-    // arena admission below. Only the previous final cut (<=40 nodes) is
-    // kept, in EconomyContext's held build entry while no source section is
-    // raised. A missing/evicted descriptor is calculated normally; this never
-    // limits alternatives.
-    const keptSources = (deps.sourceSections?.nodes || []).filter(row => (!quantityInputs
-        || !(row.inputs.bag || []).some(([id]) => id === -1)) && ctx.nodeInputs?.holds(row.inputs));
-    const descriptors = new Map(keptSources.map(row => [row.node.key, row.node]));
-    const descriptorInputs = new Map(keptSources.map(row => [row.node.key, row.inputs]));
+    // arena admission below.
+    const descriptors = new Map();
+    const descriptorInputs = new Map();
     // The read scope of the candidate whose arena built each descriptor;
     // only scopes with a descriptor in the final cut become inputs.
     const builtBy = new Map();
-    let readScope = null;
+    let readScope = null, nodeCapped = false;
     const include = key => {
         if (nodeKeys.has(key)) return;
         const node = descriptors.get(key);
@@ -337,7 +349,7 @@ function buildProjection(state, ctx, deps) {
     const crystalSupply = clanSupply?.selfId === 1459
         || Number(state.level) >= 52 && !cProgression.required && Progression.adventurer?.(state);
     const luxuryInputs = new Map();
-    const powerWeight = (ctx.persona.primaryDrive === 'progression' ? 1 : 0.5) + trait(ctx.persona, 'caution');
+    const powerWeight = progressWorth(ctx.persona);
     const statusWeight = trait(ctx.persona, 'ambition') * (1 + Number(ctx.persona.primaryDrive === 'wealth'));
     const sourceIndex = deps.spots?.length ? Planner.sourceIndexFor(deps.spots) : null;
     // ARCH-NOTE: PERF: Native repeated source reads fell 7004→1395 / 7229→1408;
@@ -346,11 +358,27 @@ function buildProjection(state, ctx, deps) {
     // This local map dies at return: ~468 KB transient per measured build,
     // zero ArrayBuffers and zero maps retained after return + GC; no owner store.
     const sourceValues = new Map();
+    // The crowd reads of the fact being built (KeptSourceFacts): each spot whose
+    // value it read once, as [spot ordinal, hunters] (null: a spot off the list).
+    let crowdReads = null;
+    const sourceHunters = new Map();
+    const huntersOn = spot => {
+        if (!sourceHunters.has(spot)) sourceHunters.set(spot, ctx.spotValue.hunters(spot));
+        return sourceHunters.get(spot);
+    };
+    const readCrowd = spot => {
+        if (!crowdReads || crowdReads.seen.has(spot)) return;
+        crowdReads.seen.add(spot);
+        const at = need('../AI/SpotIndex').ordinalFor(deps.spots, spot);
+        if (at < 0 || !crowdReads.pairs) { crowdReads.pairs = null; return; }
+        crowdReads.pairs.push(at, huntersOn(spot));
+    };
     // ARCH-NOTE: PERF: native same-input provider replay (60 builds/variant)
     // 124.56 -> 27.28 ms; nine complete projections byte-equal. Reuse the
     // existing 16,384-entry yield bound and atlas counts, no per-bot retention.
     // Shared-host offline result only; not a live throughput/budget claim.
     const spotValue = spot => {
+        readCrowd(spot);
         if (!sourceValues.has(spot)) sourceValues.set(spot, ctx.spotValue(spot));
         return sourceValues.get(spot);
     };
@@ -366,18 +394,42 @@ function buildProjection(state, ctx, deps) {
     // source section moved (deps.sourceGround, EconomyContext's).
     const sourceGround = Planner.sourceGround(deps.spots || [], deps.sourceGround);
     const routeAllowed = Planner.sourceRouteReader(state, { timestamp, matchupProfiles: deps.soloProfiles, ground: sourceGround });
+    // The source facts the held build kept, each served while what it read
+    // is the same (KeptSourceFacts). The inputs every fact reads: the band's
+    // progression, the hour, the bot's Spoil, the trip rows and what the walk,
+    // the route reader and the spot values read. A spot value reader that
+    // names neither its inputs nor its crowd keeps nothing.
+    const factTrip = deps.tripCost || ctx.trip;
+    const keptFacts = sourceIndex && ctx.spotValue?.inputs && ctx.spotValue.hunters ? need('./KeptSourceFacts').session(deps.keptFacts || null, {
+        spots: deps.spots, index: sourceIndex, cells: sourceGround.cells, fields: () => {
+            const routes = !factTrip ? 'none' : Array.isArray(factTrip.rows) ? factTrip.rows : null;
+            if (routes === null || !routeAllowed.inputs) return null;
+            const spoils = !!invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) });
+            return [['required', !!progression.required], ['hourAdena', ctx.hourAdena], ['spoils', spoils], ['routes', routes],
+                ...Planner.sourceFactInputs(state), ...routeAllowed.inputs(), ...ctx.spotValue.inputs()];
+        } }) : null;
     const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
     const purchaseFor = need('./WishPurchaseEvidence').reader(state, ctx, deps);
     const crystalPurchaseFor = luxury || crystalSupply || clanSupply
         ? need('./WishPurchaseEvidence').reader(state, ctx, deps, { npcOnly: true, town: 'Giran' }) : null;
     const purchases = new Map();
+    // What an offer reads beside the trip: the arrow room, the NPC and fixed
+    // offers (catalogue arrays, the same while the catalogue is) and the
+    // item's lines; only a first ask reads the lines (whether the memo held
+    // it is noted too).
+    const offerBoard = ctx.board || deps.board;
+    const offerRefs = id => ({ npc: need('./ProductionPolicy').allowsNpcShot(id) ? deps.npcOffersFor?.(id) || null : null,
+        fixed: need('./ProductionPolicy').allowsFixedShot(id) ? need('./FixedShotOffers').offers(id) : null });
+    const arrowRoom = id => need('../../Inventory/ArrowStock').admitted(state, id, Infinity);
     const observedPurchase = id => {
-        if (!purchases.has(id)) {
+        const asked = purchases.has(id);
+        if (!asked) {
             const item = crystalPurchaseFor && need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
             const retail = crystalPurchaseFor && need('./BotCrystallization').reward(item) ? crystalPurchaseFor(id) : null;
             purchases.set(id, retail || purchaseFor(id));
         }
+        gearCapture?.offer({ id, room: arrowRoom(id), asked, ...offerRefs(id), offer: purchases.get(id) });
         return purchases.get(id);
     };
     let cCrystalChoices;
@@ -395,6 +447,31 @@ function buildProjection(state, ctx, deps) {
         return cCrystalChoices;
     };
     blocks?.lap('build');
+    // One source fact walked: the best ready one, and what its scope read.
+    const freshFact = (id, spoilOnly, input, spoilerSeen, kept) => {
+        // Only the best ready fact comes back; with diagnostics every record is
+        // also counted as ready or by its reason (refusals only as counts).
+        const diagnostic = Diagnostics.active(), reasons = diagnostic ? new Map() : null;
+        const started = diagnostic ? performance.now() : 0;
+        if (keptFacts) crowdReads = { seen: new Set(), pairs: [] };
+        const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue,
+            trips: sourceTrips, trip: factTrip || { details: () => ({ known: false }) }, spoiler, timestamp,
+            economicLower: progression.required || !!spoiler, readyOnly: true, counts: reasons, routeAllowed,
+            bestForWish: { spoilOnly, progressionRequired: progression.required, hourAdena: ctx.hourAdena } });
+        let step;
+        do step = steps.next(); while (!step.done);
+        const best = step.value[0] || null;
+        const fact = { best, inputs: input && { items: [...input.items], bag: [...input.bag] } };
+        // One count per reason and item: a per-fact count cost 4% of the worker.
+        if (diagnostic) {
+            for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
+            Diagnostics.count('provider', 'source_path', best ? 'ready' : reasons.size ? 'refused' : 'no_source');
+            Diagnostics.duration('provider:fact', performance.now() - started);
+        }
+        keptFacts?.built(spoilOnly ? `spoil:${id}` : Number(id), spoilerSeen, best, fact.inputs, crowdReads.pairs, kept);
+        crowdReads = null;
+        return fact;
+    };
     // The farm or spoil path reads GearAcquisitionPlanner.sourceFacts: the
     // hunt rules the bot hunts by (D4-D6), an hour at its net cost (D7). The
     // trip is one row per town in the network, never once per unit.
@@ -405,25 +482,16 @@ function buildProjection(state, ctx, deps) {
         if (!farmFacts.has(factsKey)) {
             const input = ctx.nodeInputs?.begin();
             try {
-            if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
-                spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
-            // Only the best ready fact comes back; with diagnostics every record is
-            // also counted as ready or by its reason (refusals only as counts).
-            const diagnostic = Diagnostics.active(), reasons = diagnostic ? new Map() : null;
-            const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue,
-                trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp,
-                economicLower: progression.required || !!spoiler, readyOnly: true, counts: reasons, routeAllowed,
-                bestForWish: { spoilOnly, progressionRequired: progression.required, hourAdena: ctx.hourAdena } });
-            let step;
-            do step = steps.next(); while (!step.done);
-            const best = step.value[0] || null;
-            // One count per reason and item: a per-fact count cost 4% of the worker.
-            if (diagnostic) {
-                for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
-                Diagnostics.count('provider', 'source_path', best ? 'ready' : reasons.size ? 'refused' : 'no_source');
-            }
-            farmFacts.set(factsKey, { best, inputs: input && { items: [...input.items], bag: [...input.bag] } });
-            } finally { if (input) ctx.nodeInputs.end(); }
+                if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
+                    spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
+                // The spoiler as this fact reads it: the band widens for a spoiler
+                // once the build has read one (economicLower).
+                const spoilerSeen = spoiler === undefined ? 0 : spoiler ? 2 : 1;
+                // A kept fact read no item: its scope keeps none (the replay is empty).
+                const kept = keptFacts?.take(factsKey, spoilerSeen, at => huntersOn(deps.spots[at])) || null;
+                farmFacts.set(factsKey, kept && !kept.verify ? { best: kept.best, inputs: input && NO_INPUTS }
+                    : freshFact(id, spoilOnly, input, spoilerSeen, kept));
+            } finally { crowdReads = null; if (input) ctx.nodeInputs.end(); }
         }
         const { best, inputs } = farmFacts.get(factsKey);
         // A later retained candidate may reuse a fact first read in a rejected
@@ -438,7 +506,6 @@ function buildProjection(state, ctx, deps) {
     // incoming units once), native commands and labour hours. Held inputs are
     // valued by the network at their exit value, never here.
     const craftPath = (recipe, id, depth = 0, ownOnly = false) => {
-        if (!Sources.allowsRecipe(recipe)) return null;
         const dual = recipe?.kind === 'dual_sword_combine';
         const ownCapable = recipe && (dual || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
         const earlyCustomer = !ownCapable && state.level < 40 && Progression.personal(state) && !preparation;
@@ -448,9 +515,12 @@ function buildProjection(state, ctx, deps) {
             || Number(need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(id))?.etc?.slot) > 0)) return null;
         const own = ownCapable ? Profit.craftFacts(recipe, { batches: 1, ...craftLabour() }) : null;
         let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
-        if (workshop && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
+        const ownAllowed = Sources.allowsRecipe(recipe);
+        if (workshop && ownAllowed && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
             && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
-        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < 36) {
+        if (!ownAllowed && !(workshop?.publicStation && Sources.allowsRecipe(recipe, { station: true }))) return null;
+        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length >= NODE_CAP) nodeCapped = true;
+        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < NODE_CAP) {
             const learned = !!workshop || dual || knownRecipes.has(Number(recipe.recipeId));
             ctx.nodeInputs?.bag(recipe.recipeItemId);
             let scrollAvailable = learned || hasFree(recipe.recipeItemId);
@@ -464,7 +534,8 @@ function buildProjection(state, ctx, deps) {
             }
             if (!scrollAvailable) scrollAvailable = Sources.hasNonRaidSource(recipe.recipeItemId);
             if (!scrollAvailable) return null;
-            const facts = workshop ? Profit.craftFacts(recipe, { batches: 1, executor: 'workshop',
+            const inputs = workshop?.publicStation ? need('../../Crafting/StationRecipe').forStation(recipe) : recipe;
+            const facts = workshop ? Profit.craftFacts(inputs, { batches: 1, executor: 'workshop',
                 capacityBatches: workshop.capacityBatches, fee: workshop.price, recipeInput: 0 })
                 : Profit.craftFacts(recipe, { batches: 1, ...craftLabour(),
                     recipeInput: learned ? 0 : recipe.recipeItemId });
@@ -480,12 +551,24 @@ function buildProjection(state, ctx, deps) {
                 if (!key) return null;
                 grossRequirements.push({ key, amount, ...(facts.once.has(selfId) ? { once: true } : {}) });
             }
+            // Equipment recipes put their unique part first after the recipe
+            // scroll. Keep the complete input tree for costing and bids, but
+            // start acquisition with that part and any required scroll.
+            const product = need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(id));
+            const part = recipe.type === 'dwarven' && GEAR_RANKS.indexOf(product?.etc?.rank) >= 3
+                && Number(product?.etc?.slot) > 0
+                ? recipe.materials.find(row => Number(row.selfId) !== Number(recipe.recipeItemId)) : null;
+            const partItem = part && need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(part.selfId));
+            const keyInputs = partItem?.template?.kind === 'Other.Material'
+                ? grossRequirements.filter(row => row.key === `item:${Number(part.selfId)}`
+                    || row.key === `item:${Number(recipe.recipeItemId)}`).map(row => row.key) : [];
             return { kind: 'craft', activity: 'crafting', itemId: Number(id), recipeId: recipe.recipeId,
                 ...(workshop ? { workshop, price: facts.fee, town: workshop.townName,
                     tripHours: workshop.tripHours, tripFees: workshop.tripFees,
                     executable: workshop.capacityBatches > 0, availableUnits: workshop.capacityBatches * facts.productCount, quoted: true } : {}),
                 requiresRecipeLearning: !learned, successProbability: facts.successProbability, perCommand: facts.perCommand,
-                costHours: cycleHours, productCount: facts.productCount, grossRequirements };
+                costHours: cycleHours, productCount: facts.productCount, grossRequirements,
+                ...(keyInputs.length ? { keyInputs } : {}) };
         }
         return null;
     };
@@ -493,7 +576,8 @@ function buildProjection(state, ctx, deps) {
         if (!Sources.hasSource(id)) return null;
         const key = `item:${id}`;
         if (nodeKeys.has(key)) return key;
-        if (depth >= (crystalSupply ? 6 : 3) || nodes.length >= 36 || preparingItems.has(key)) return null;
+        if (depth >= (crystalSupply ? 6 : 3) || preparingItems.has(key)) return null;
+        if (nodes.length >= NODE_CAP) { nodeCapped = true; return null; }
         // A memoized subgraph enters the real graph under the same 36-node
         // cap as a fresh build: its whole missing closure is counted first.
         // A candidate's scratch arena copies it whole, so its witness reads
@@ -504,9 +588,7 @@ function buildProjection(state, ctx, deps) {
                 ctx.nodeInputs.keep(inputs);
                 // Descriptor reuse must not erase the bag dependencies that
                 // its original native construction recorded before pruning.
-                if (quantityInputs) for (const [inputId] of inputs.bag || []) {
-                    if (inputId !== -1) { present(inputId); hasFree(inputId); }
-                }
+                if (quantityInputs) for (const inputId of inputs.bag) { present(inputId); hasFree(inputId); }
                 if (scratch && readScope) builtBy.set(key, readScope);
             }
             const missing = new Set();
@@ -519,7 +601,7 @@ function buildProjection(state, ctx, deps) {
                 }
             };
             collect(key);
-            if (!scratch && nodes.length + missing.size > 36) return null;
+            if (!scratch && nodes.length + missing.size > NODE_CAP) { nodeCapped = true; return null; }
             include(key); return key;
         }
         const local = ctx.nodeInputs?.begin();
@@ -604,8 +686,12 @@ function buildProjection(state, ctx, deps) {
             exitValue = step.value;
         }
         const template = need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
-        if (GEAR_RANKS.indexOf(template?.etc?.rank) >= 3 && Number(template?.etc?.slot) > 0)
-            for (const path of paths) path.acquisitionOrder = ['craft', 'mammon_unseal'].includes(path.kind) ? 1 : path.kind === 'buy' ? 2 : 3;
+        if (GEAR_RANKS.indexOf(template?.etc?.rank) >= 3 && Number(template?.etc?.slot) > 0) {
+            // A real affordable listing wins while the item is being prepared.
+            // An absent or unaffordable listing must not stall the craft.
+            for (const path of paths) path.acquisitionOrder = path.kind === 'buy' && observed ? 1
+                : ['craft', 'mammon_unseal'].includes(path.kind) ? 2 : path.kind === 'buy' ? 3 : 4;
+        }
         const node = { key, object: Number(id), price: price(id), ...(exitValue === undefined ? {} : { exitValue }), paths: paths.slice(0, 4) };
         descriptors.set(key, node);
         if (local) descriptorInputs.set(key, { items: [...local.items], bag: [...local.bag] });
@@ -642,7 +728,8 @@ function buildProjection(state, ctx, deps) {
     };
     const production = new Map(), seenProduction = new Set();
     const investment = state.stats?.shotRecipeDemand;
-    const investmentId = Number(investment?.at) + 30 * 60 * 1000 > timestamp ? Number(investment.itemId) : 0;
+    // A recipe investment lives until its clear event (ColdShotEconomyService: learned or dropped).
+    const investmentId = Number(investment?.itemId) || 0;
     const productionBatches = recipe => {
         const setup = investmentId === Number(recipe.recipeItemId) ? investment
             : [state.stats?.shotCraft?.preparing, state.stats?.wealthCraft].find(row => row
@@ -650,7 +737,7 @@ function buildProjection(state, ctx, deps) {
                 && Number(row.recipeId) === Number(recipe.recipeId) && Number(row.at) + 30 * 60 * 1000 > timestamp);
         const batches = Number(setup?.batches);
         return Number.isSafeInteger(batches) && batches > 0
-            ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, batches) : 1;
+            ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, batches) : null;
     };
     const serviceCraft = invoke('GameServer/Bot/Economy/CraftShopService');
     if (ctx.board && ctx.hourAdena > 0 && serviceCraft.isServiceCrafter(state)
@@ -696,13 +783,23 @@ function buildProjection(state, ctx, deps) {
             if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
             const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
             const shot = need('./ShotTradeDemand').isShot(id);
-            let best = exitCeiling(ctx.board.list(id, 3), ownSales, 0);
-            if (material) best = exitCeiling(deps.fixedProductionOffersFor?.(id) || [], ownSales, best);
+            const publicBids = ctx.board.list(id, 3);
+            const fixedBids = material ? deps.fixedProductionOffersFor?.(id) || [] : [];
+            let best = exitCeiling(publicBids, ownSales, 0);
+            if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
             if (!(best > 0)) continue;
-            const earningPreference = shot ? Number(recipe.recipeItemId) === investmentId ? 2 : 1 : 0;
+            // A finite setup retains priority through recipe and material
+            // purchases. Ordinary shots and materials compete on finite value.
+            const earningPreference = shot && productionBatches(recipe) ? 2 : 0;
+            const demand = material ? [...publicBids.slice(0, 5), ...fixedBids.slice(0, 5)]
+                .reduce((max, offer) => offer.type !== 'static' && usableExit(offer, ownSales)
+                    ? Math.max(max, Number(offer.count || 0)) : max, 0) : 0;
+            const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
+            const lots = productionBatches(recipe) || (demand > oldUnits
+                ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil((demand - oldUnits) / count)) : 1);
             admitted.push({ recipe, count, id, ownSales, oldUnits, material, shot, earningPreference, known: knownRecipes.has(Number(recipe.recipeId)),
-                ceiling: positive(count * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
+                ceiling: positive(count * lots * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
         }
         // E303: the priced producers cap of 12.
         if (Diagnostics.active()) {
@@ -721,10 +818,18 @@ function buildProjection(state, ctx, deps) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
         const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
-        const listingOffers = shot ? need('./WealthCraftPolicy').drain(need('./ShotSalePolicy').exits(state, recipe, {
-            board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits })) : [];
-        const batches = productionBatches(recipe), units = count * batches;
+        const listingOffers = need('./WealthCraftPolicy').drain(need('./ProductionSalePolicy').exits(state, recipe, {
+            board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits }));
         for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {
+            const preparedBatches = productionBatches(recipe);
+            // Compare a real bounded material lot to a shot lot. A single
+            // material unit systematically lost to a 476-shot recipe even
+            // when the board needed hundreds of intermediates.
+            const demand = source.type === 'static' ? 0 : Math.max(0, Number(source.count || 0) - oldUnits);
+            const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
+            const batches = preparedBatches || (material && demand > 0
+                ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil(demand / count)) : 1);
+            const units = count * batches;
             const offer = source.forQuantity ? source.forQuantity(batches) : source;
             if (!offer) continue;
             if (!usableExit(offer, ownSales)) continue;
@@ -833,7 +938,7 @@ function buildProjection(state, ctx, deps) {
         for (const material of materials) values.set(material.selfId,
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
-    const candidates = [];
+    let candidates = [];
     const planningState = preparation || state;
     const acquisitionRank = Progression.acquisitionRankFor(planningState, preparation ? undefined : progression);
     const wornFor = wornReader(planningState), gainFor = gearGainReader(state, timestamp, {}, magic, ctx.gearThreatMask ?? 3);
@@ -844,34 +949,148 @@ function buildProjection(state, ctx, deps) {
             const offer = observedPurchase(id);
             if (!offer || !(offer.availableUnits >= 1)) return false;
             // The wallet threshold this answer turns on, as every cash comparison of the build.
-            ctx.walletBoundary?.(offer.price + offer.tripFees + positive(ctx.survivalReserve));
-            return offer.price + offer.tripFees <= Math.max(0, state.adena - ctx.survivalReserve);
+            const cost = offer.price + offer.tripFees, threshold = cost + positive(ctx.survivalReserve);
+            ctx.walletBoundary?.(threshold);
+            gearCapture?.cash(cost, threshold, cashHolds(cost));
+            return cashHolds(cost);
         }
         return Sources.hasNonRaidSource(id) || present(id) || !!observedPurchase(id);
     };
-    for (const [slot, items] of gearCandidates(planningState, ctx, wornFor, acquisitionAllowed, progression, luxury)) for (const item of items) {
-        if (!Planner.considerable(item, planningState, Planner.roleFor(planningState),
-            Progression.marketOnly?.(state, item, progression) && acquisitionAllowed(item.selfId) ? Planner.gradeForLevel(state.level) : acquisitionRank)) continue;
-        const current = replacementWorn(wornFor, slot);
-        if (Number(current?.selfId) === Number(item.selfId)) continue;
+    // The gear candidates the held build weighed are served while what they
+    // read is the same (KeptGearCandidates, decision links S4). The wallet
+    // enters only through its comparisons: each is noted with its answer.
+    // A candidate as the network reads it: its value and gain, and what follows
+    // from its item and slot (the preparation's C piece starts later).
+    const candidateFor = (item, slot, value, gain) => {
         const early = !!preparation && item.etc?.rank === 'c';
-        const gain = early ? (futureGain ||= gearGainReader(preparation, timestamp,
-            { preparation: true }, magic, ctx.gearThreatMask ?? 3))(item, slot) : gainFor(item, slot);
-        const benefitHorizon = early ? futureHorizon : horizon;
-        const currentPrice = current ? price(current.selfId) : 0;
-        const market = invoke('GameServer/Bot/Economy/MarketCounters');
-        const future = resale(price(item.selfId), { trend: market.moveOf(market.counterOf(item.selfId)),
-            hours: benefitHorizon, understanding: ctx.persona.understanding, assertiveness: trait(ctx.persona, 'assertiveness'),
-            caution: trait(ctx.persona, 'caution'), nextBuyerUse: price(item.selfId) * Math.min(1, gain.attack + gain.defence),
-            npcFloor: ctx.buyback(item.selfId) });
-        const value = Math.max(Progression.priority(item, slot, progression) ? 1 : 0, (gain.attack + gain.defence * ctx.deathHours) * benefitHorizon
-            + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0));
-        if (!(value > 0) || !(price(item.selfId) > 0)) continue;
-        candidates.push({ item, slot, value, gain, notBeforeHours: early ? horizon : 0,
+        return { item, slot, value, gain, notBeforeHours: early ? horizon : 0,
             horizonHours: early ? horizon + futureHorizon : horizon,
             firstWeaponGrade: Equipment.isWeaponSlot(slot) && Progression.gapFor(slot, progression)?.rank === 1
                 && Progression.gapFor(slot, progression)?.priority === 3,
-            progressionPriority: Progression.priority(item, slot, progression) });
+            progressionPriority: Progression.priority(item, slot, progression) };
+    };
+    const budgetNow = () => Math.max(0, Number(ctx.wallet ?? Funding.budget(state)) - Number(ctx.survivalReserve || 0));
+    const cashHolds = cost => cost <= Math.max(0, state.adena - ctx.survivalReserve);
+    const Kept = Object.hasOwn(deps, 'keptGear') ? need('./KeptGearCandidates') : null;
+    // What the weighing reads of a bot (or of the preparation it plans for):
+    // its level, class and role, combat view (its kit profile's key) with the
+    // hot capture's equipment, its worn rows and its weapon rows (the weapon
+    // a gain compares with), the gear it follows. Other bag gear is read
+    // through present() (the bag answers).
+    const kitOf = kit => {
+        const Index = need('../../Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
+        const rows = kit.inventory && typeof kit.inventory === 'object' ? {} : null;
+        for (const [key, row] of Object.entries(rows ? kit.inventory : {})) {
+            const weapon = Equipment.isWeaponSlot(row?.slot) || !(Number(row?.slot) > 0) && Equipment.isWeaponSlot(Index.find(items, row?.selfId)?.etc?.slot);
+            if (row?.equipped || row?.equippedCount > 0 || row?.equippedSlots?.length || Number(row?.amount) > 0 && weapon) rows[key] = row;
+        }
+        return [Number(kit.level), classOf(kit), Planner.roleFor(kit), Profile.combatView(kit),
+            kit.stats?.coldCombat?.equipment ?? null, rows, followedGear(kit)];
+    };
+    // What the weighing reads beside its items, offers, bag answers, wallet
+    // comparisons and trends; null (nothing kept) when a reader is not named.
+    const gearFields = () => {
+        if (deps.tripCost || ctx.trip && !Array.isArray(ctx.trip.rows) || !ctx.nodeInputs?.read || !ctx.peekPrice) return null;
+        return [['sources', Sources.revision()], ['owner', Number(state.characterId)], ['kit', kitOf(state)],
+            ['progression', progression], ['preparation', preparation ? kitOf(preparation) : 0], ['crystalShop', !!crystalPurchaseFor], ['held', ctx.heldGear ? [...ctx.heldGear].sort((a, b) => a - b) : null], ['luxury', !!luxury],
+            ['threat', ctx.gearThreatMask ?? 3], ['caster', !!magic], ['horizon', [horizon, futureHorizon]], ['death', ctx.deathHours],
+            ['hour', [ctx.hunt.perHour, ctx.hourAdena]], ['reserve', ctx.survivalReserve], ['trips', ctx.trip?.rows || null],
+            ['shots', need('./ProductionPolicy').shotsDisabled()],
+            ['persona', [ctx.persona.understanding, trait(ctx.persona, 'assertiveness'), trait(ctx.persona, 'caution')]]];
+    };
+    const keptGear = Kept?.session(deps.keptGear, gearFields, !!ctx.heldGear) || null;
+    // Whether the held list would be weighed again the same: why ('' it
+    // would) and the bag answers its replay writes. Reads nothing into the build.
+    const gearHolds = record => {
+        const no = why => ({ why, raws: null });
+        if (!Kept.boardHolds(record, offerBoard)) return no('board');
+        const budget = budgetNow();
+        for (const item of Kept.items(record)) {
+            if (item.priced && !Object.is(ctx.peekPrice(item.id), item.price)) return no('price');
+            if (item.compared && (item.price <= budget) !== item.within) return no('budget');
+        }
+        const asked = new Set();
+        for (const offer of Kept.offers(record)) {
+            const now = offerRefs(offer.id);
+            if (arrowRoom(offer.id) !== offer.room || now.npc !== offer.npc || now.fixed !== offer.fixed
+                || !Kept.linesHold(offerBoard, offer)) return no('offer');
+            if ((purchases.has(offer.id) || asked.has(offer.id)) !== offer.asked) return no('order');
+            asked.add(offer.id);
+        }
+        if (Kept.cash(record).some(row => cashHolds(row.cost) !== row.holds)) return no('cash');
+        const market = invoke('GameServer/Bot/Economy/MarketCounters');
+        if (Kept.moves(record).some(row => !Object.is(market.moveOf(market.counterOf(row.id)), row.trend))) return no('trend');
+        const raws = [];
+        for (const answer of Kept.bag(record)) {
+            const raw = nativeQuantities.physical(answer.id);
+            if ((raw > 0) !== answer.held) return no('bag');
+            raws.push(raw);
+        }
+        return { why: '', raws };
+    };
+    // A held list served: its reads (prices through the price reader), bag
+    // answers and wallet thresholds into the build, as the weighing did them.
+    const replayGear = (record, raws) => {
+        for (const item of Kept.items(record)) {
+            if (item.priced) ctx.price(item.id); else ctx.nodeInputs.read(item.id);
+            if (item.compared) ctx.budgetBoundary?.(item.price + Number(ctx.survivalReserve || 0));
+        }
+        for (const { id, offer } of Kept.offers(record)) if (!purchases.has(id)) purchases.set(id, offer);
+        Kept.bag(record).forEach((answer, at) => quantityInputs?.present(answer.id, raws[at]));
+        for (const row of Kept.cash(record)) ctx.walletBoundary?.(row.threshold);
+        const Index = need('../../Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
+        return Kept.candidates(record).map(({ id, slot, value, gain }) => candidateFor(Index.find(items, id), slot, value, gain));
+    };
+    const priorGear = keptGear?.held() || null;
+    const gearHeld = priorGear && gearHolds(priorGear);
+    const gearVerify = gearHeld && keptGear.judged(gearHeld.why);
+    let gearRecord = null;
+    if (gearHeld && !gearHeld.why && !gearVerify) { candidates = replayGear(priorGear, gearHeld.raws); gearRecord = keptGear.keep(priorGear); }
+    else {
+        // The weighing reads through a node scope (its items and prices).
+        const local = keptGear && ctx.nodeInputs?.begin();
+        if (local) gearCapture = Kept.capture(offerBoard);
+        // A captured weighing also notes each budget answer. A reader, not a
+        // context derived from ctx: making each build's context a prototype
+        // (new hidden classes per build) slowed the worker's unrelated
+        // searches, a craft build by ~30-40 %.
+        const budgetBoundary = !gearCapture ? ctx.budgetBoundary : (threshold, value, id) => {
+            ctx.budgetBoundary?.(threshold);
+            gearCapture.budget(id, value <= budgetNow());
+        };
+        let weighed = false;
+        try {
+            for (const [slot, items] of gearCandidates(planningState, ctx, wornFor, acquisitionAllowed, progression, luxury, budgetBoundary)) for (const item of items) {
+                if (!Planner.considerable(item, planningState, Planner.roleFor(planningState),
+                    Progression.marketOnly?.(state, item, progression) && acquisitionAllowed(item.selfId) ? Planner.gradeForLevel(state.level) : acquisitionRank)) continue;
+                const current = replacementWorn(wornFor, slot);
+                if (Number(current?.selfId) === Number(item.selfId)) continue;
+                const early = !!preparation && item.etc?.rank === 'c';
+                const gain = early ? (futureGain ||= gearGainReader(preparation, timestamp,
+                    { preparation: true }, magic, ctx.gearThreatMask ?? 3))(item, slot) : gainFor(item, slot);
+                const benefitHorizon = early ? futureHorizon : horizon;
+                const currentPrice = current ? price(current.selfId) : 0;
+                const market = invoke('GameServer/Bot/Economy/MarketCounters'), trend = market.moveOf(market.counterOf(item.selfId));
+                gearCapture?.move(item.selfId, trend);
+                const future = resale(price(item.selfId), { trend,
+                    hours: benefitHorizon, understanding: ctx.persona.understanding, assertiveness: trait(ctx.persona, 'assertiveness'),
+                    caution: trait(ctx.persona, 'caution'), nextBuyerUse: price(item.selfId) * Math.min(1, gain.attack + gain.defence),
+                    npcFloor: ctx.buyback(item.selfId) });
+                const value = Math.max(Progression.priority(item, slot, progression) ? 1 : 0, (gain.attack + gain.defence * ctx.deathHours) * benefitHorizon
+                    + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0));
+                if (!(value > 0) || !(price(item.selfId) > 0)) continue;
+                candidates.push(candidateFor(item, slot, value, gain));
+            }
+            weighed = true;
+        } finally {
+            if (local) ctx.nodeInputs.end();
+            const capture = gearCapture;
+            gearCapture = null;
+            if (capture && weighed) {
+                for (const id of local.items) capture.item(id, local.priced.has(id) ? ctx.peekPrice(id) : null);
+                gearRecord = keptGear.keep(capture.done(candidates), gearVerify ? priorGear : null);
+            }
+        }
     }
     // MVP-6: every nominated candidate is valued by the same path solver
     // the network uses, over its own scratch arena of item descriptors. A
@@ -880,10 +1099,11 @@ function buildProjection(state, ctx, deps) {
     blocks?.lap('benefits');
     const admission = { candidates: 0, evaluations: 0, maxScratch: 0, rounds: 0, pending: [], admitted: [] };
     const solverOptions = { hourAdena: ctx.hourAdena, riskWeight: ctx.riskWeight, stockFor: ctx.stockFor || null,
-        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve };
+        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve, scratch: Network.buildScratch(true) };
     // A rare piece's status value is part of its gear root from the start,
     // so admission scores the value the network later reads.
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
+    admission.rare = rare ? Number(rare.item.selfId) : 0;
     const real = nodes, realKeys = nodeKeys, gear = [];
     for (const candidate of candidates) {
         nodes = []; nodeKeys = new Set(); scratch = true; readScope = ctx.readScope?.open() || null;
@@ -904,6 +1124,7 @@ function buildProjection(state, ctx, deps) {
                 paths: [{ requirements: [{ key, amount: 1 }] }] } });
         admission.maxScratch = Math.max(admission.maxScratch, keys.length);
     }
+    blocks?.lap('arenas');
     admission.candidates = gear.length;
     // A throw of the solver's own bounds or an arena over forty descriptors
     // is `limit`: unresolved, never an unavailable item or a zero cost.
@@ -1101,7 +1322,9 @@ function buildProjection(state, ctx, deps) {
         const heldStock = nativeQuantities.physical(stock.itemId);
         quantityInputs?.stockPhysical(`stock:${kind}`, stock.itemId, heldStock);
         root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount, kind },
-            progressionPriority: progression.required && stock.survivalMissing > 0 ? 4 : 0,
+            // A scroll saves time, not a life: it never outranks the kit, the
+            // visit's restock brings it along (user 11-01, T177).
+            progressionPriority: progression.required && kind !== 'scrolls' && stock.survivalMissing > 0 ? 4 : 0,
             valueHours: amount * stock.benefitPerUnit * powerWeight, price: amount * stock.unitPrice,
             // The survival tranche is the kit's cost (kitCost), already held
             // by the survival reserve; the money queue charges only the rest.
@@ -1119,7 +1342,8 @@ function buildProjection(state, ctx, deps) {
         price: 0, paths: [{ activity: 'helping', targetId: friend.targetId, costHours: 1 }] });
     if (enemy) root({ key: `scores:${enemy.targetId}`, need: 'scores', object: { targetId: enemy.targetId },
         valueHours: positive(enemy.hostility ?? enemy.anger) * trait(ctx.persona, 'assertiveness'), price: 0,
-        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: ctx.deathHours + ctx.karmaHours }] });
+        // A PvP death is a live one (it waits for its respawn).
+        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: liveDeathHours(ctx.deathHours) + ctx.karmaHours }] });
     // Only known concrete items enter the small resale watch list. The
     // board is queried by item, never by copying every owner's offers.
     const known = new Set([...candidates.map(row => Number(row.item.selfId)), ...rows(state).map(row => Number(row.selfId))]);
@@ -1207,27 +1431,12 @@ function buildProjection(state, ctx, deps) {
         Diagnostics.count('provider', 'admission', 'round', admission.rounds);
         Diagnostics.count('provider', 'admission', 'gear_root', admittedGear.length);
         for (const row of admission.pending) Diagnostics.count('provider', 'admission_pending', row.reason);
-        // On a source memo hit: descriptors offered, kept by their input fence, and built anew.
-        if (deps.sourceSections) {
-            Diagnostics.count('source_memo', 'descriptors', 'offered', deps.sourceSections.nodes?.length || 0);
-            Diagnostics.count('source_memo', 'descriptors', 'kept', keptSources.length);
-            Diagnostics.count('source_memo', 'descriptors', 'built', descriptorInputs.size - keptSources.length);
-        }
     }
     const keptNodes = nodes.filter(node => cut.kept.has(node.key));
-    let sourceSections = null, sourceBytes = -1;
-    // structuredClone rejects an extension that supplied a function/closure;
-    // such an input falls back to calculation instead of retaining a caller.
-    try {
-        const candidate = { nodes: keptNodes.filter(node => node.key.startsWith('item:') && descriptorInputs.has(node.key))
-            .map(node => ({ node, inputs: descriptorInputs.get(node.key) })) };
-        sourceBytes = Buffer.byteLength(JSON.stringify(candidate));
-        if (sourceBytes <= 8192) sourceSections = structuredClone(candidate);
-    } catch (_) { /* An uncloneable candidate falls back to calculation. */ }
-    if (Diagnostics.active()) Diagnostics.count('source_memo', 'size', sourceBytes < 0 ? 'unmeasured'
-        : sourceBytes > 8192 || sourceSections ? Diagnostics.sizeBucket(sourceBytes) : 'uncloneable');
+    if (nodeCapped) nodeCapBuilds++;
     blocks?.lap('tail'); blocks?.done();
-    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceSections, sourceGround };
+    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceGround,
+        keptFacts: keptFacts?.finish() || null, keptGear: gearRecord };
 }
 // Only public recipe rows and a prepared route can prove a usable service.
 // This bounded indexed read is shared by visible and distant bots. No private
@@ -1254,23 +1463,26 @@ function knownWorkshop(recipe, state, ctx, deps) {
 }
 // Translate the chosen shared wish into the existing equipment craft owner
 // or an opt-in hot stock visit, using the already built graph.
-function personalCraftPlan(state, context, { allowStock = false } = {}) {
-    const leaf = context?.network?.activity;
+function personalCraftPlan(state, context, { allowStock = false, wishKey = null } = {}) {
+    // An equipment project may retain its inputs while a survival wish owns
+    // the action. Read its existing graph without assigning it that action.
+    const leaf = wishKey ? null : context?.network?.activity;
+    const rootKey = wishKey || leaf?.rootKey;
     const paidInputs = state.stats?.equipmentPlan?.crystalPreparation && need('./BotCrystallization').preparation(state);
     if (paidInputs && leaf?.rootKey === paidInputs.key) return paidInputs.plan;
-    if (!leaf || !leaf.rootKey || !['crafting', 'shopping', 'hunting', 'improving'].includes(leaf.activity)) return null;
-    const wish = context.network.queue.find(row => row.key === leaf.rootKey)
-        || { object: context.projection?.nodes?.find(row => row.key === leaf.rootKey)?.object,
-            plan: context.network.plans.get(leaf.rootKey) };
-    const targetId = Number(wish?.object?.itemId || leaf.rootKey.split(':')[1]);
-    const stock = allowStock && state.phase === 'hot' && /^stock:(shots|potions|scrolls)$/.test(leaf.rootKey);
+    if (!rootKey || !wishKey && !['crafting', 'shopping', 'hunting', 'improving'].includes(leaf?.activity)) return null;
+    const wish = context.network.queue.find(row => row.key === rootKey)
+        || { object: context.projection?.nodes?.find(row => row.key === rootKey)?.object,
+            plan: context.network.plans.get(rootKey) };
+    const targetId = Number(wish?.object?.itemId || Network.rootItem(rootKey));
+    const stock = allowStock && state.phase === 'hot' && /^stock:(shots|potions|scrolls)$/.test(rootKey);
     const clanSupply = wish.object?.clanSupply && need('./ClanCrystalSupply').requirement(state);
-    if (!targetId || !leaf.rootKey.startsWith('power:') && !stock && !clanSupply) return null;
+    if (!targetId || !rootKey.startsWith('power:') && !stock && !clanSupply) return null;
     if (stock && (leaf.activity !== 'crafting' || leaf.funding || !wish?.funded)) return null;
     // Ready blacksmith exchanges cost no money, so their root need not be in
     // the spending queue. Route the native selected leaf to the equipment
     // owner; it cannot be executed by the dwarf workshop/production owner.
-    const dual = leaf.kind === 'craft' && leaf.activity === 'crafting' && leaf.executable && !leaf.funding
+    const dual = leaf?.kind === 'craft' && leaf.activity === 'crafting' && leaf.executable && !leaf.funding
         ? DualSwords.resolveByRecipeId(leaf.recipeId) : null;
     if (dual?.productId === targetId && dual.materials.every(row =>
         Number(state.inventory?.[row.selfId]?.amount || 0) >= row.amount)) return {
@@ -1284,7 +1496,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
     };
     const providers = {}, components = {}, visited = new Set(), crystalInputs = new Map();
     let finalRecipe = null, crystalExchange = null, unseal = null;
-    let exchange = leaf.kind === 'luxury_exchange' && Number(leaf.improvement?.itemId) === targetId ? leaf.improvement : null;
+    let exchange = leaf?.kind === 'luxury_exchange' && Number(leaf.improvement?.itemId) === targetId ? leaf.improvement : null;
     const visit = (plan, depth = 0) => {
         if (!plan || depth > 8 || visited.has(plan)) return;
         visited.add(plan);
@@ -1305,12 +1517,13 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
             if (Number(recipe.productId) === Number(unseal?.sourceId || targetId)) finalRecipe = recipe;
             components[recipe.productId] = Number(recipe.recipeId);
             providers[recipe.recipeId] = { workshop: true, characterId: Number(plan.workshop.characterId),
+                ...(plan.workshop.publicStation ? { publicStation: true } : {}),
                 price: Number(plan.workshop.price),
                 loc: plan.workshop.loc, townName: plan.workshop.townName, known: true };
         }
         for (const row of plan.requirements || []) visit(row.plan || context.network.plans.get(row.key), depth + 1);
     };
-    visit(wish?.plan || context.network.plans.get(`item:${targetId}`));
+    visit(wish?.plan || context.network.plans.get(rootKey) || context.network.plans.get(`item:${targetId}`));
     if (clanSupply) {
         const plan = clanSupply.plan;
         const inputs = [...crystalInputs].map(([selfId, amount]) => ({ selfId, amount }));
@@ -1321,20 +1534,22 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
                     materials: [...(crystalExchange?.materials || []).map(row => ({ ...row })), ...inputs] } } : {}) };
     }
     if (exchange) return { strategy: 'luxury_exchange', status: 'active',
-        target: { selfId: targetId, slot: Number(wish.object?.slot || leaf.rootKey.split(':')[2]) }, exchange,
+        target: { selfId: targetId, slot: Number(wish.object?.slot || Network.rootSlot(rootKey)) }, exchange,
         materials: [...exchange.materials.map(row => ({ ...row })),
             ...[...crystalInputs].map(([selfId, amount]) => ({ selfId, amount }))],
-        ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
+        ...(leaf?.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         valueRate: Number(wish.ratio || 0), source: 'wish_network' };
     if (!finalRecipe && !unseal) return null;
     return { strategy: 'craft', status: 'active',
-        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || leaf.rootKey.split(':')[2]) },
-        ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
+        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || Network.rootSlot(rootKey)) },
+        ...(leaf?.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         recipeId: Number(finalRecipe?.recipeId) || null,
         outputAmount: Number(wish.object?.amount || 1) + (stock ? Math.max(0, Number(state.inventory?.[targetId]?.amount) || 0) : 0),
-        materials: finalRecipe ? finalRecipe.materials.map(row => ({ ...row })) : [{ selfId: unseal.sourceId, amount: 1 }],
+        materials: finalRecipe ? (providers[finalRecipe.recipeId]?.publicStation
+            ? need('../../Crafting/StationRecipe').forStation(finalRecipe) : finalRecipe).materials.map(row => ({ ...row }))
+            : [{ selfId: unseal.sourceId, amount: 1 }],
         ...(unseal ? { unseal: { ...unseal } } : {}), craftProviders: providers,
         ...(crystalInputs.size ? { crystalPreparation: { exchange: crystalExchange,
             materials: [...(crystalExchange?.materials || []).map(row => ({ ...row })),
@@ -1401,4 +1616,4 @@ function unpackLiquidationInputs(read) {
     const rows = Object.freeze(read.list(() => Object.freeze([read.uint(), read.number()])));
     return Object.freeze({ basis: Object.freeze({ shots, potions, excluded }), rows });
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, nominationBasis, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { followedGear, nodeCapBuildCount: () => nodeCapBuilds, GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

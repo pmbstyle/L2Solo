@@ -11,7 +11,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Shots = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 const Policy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const Lot = invoke('GameServer/Bot/Economy/MarketLotPolicy');
-const originalStates = Life.allStates;
+const originalStates = Life.everyState;
 (async () => {
     // No fixed lot minimum by quantity or value (45a13735): every safe
     // physical count reaches the seller's economic decision.
@@ -33,7 +33,7 @@ const originalStates = Life.allStates;
     // The shot catalogue subscribes before native lifecycle publications.
     // Its index receives each owner delta; snapshots do not rescan a roster.
     Shots.marketSnapshot(now);
-    Life.allStates = () => { scans++; throw Error('market snapshot enumerated the population'); };
+    Life.everyState = () => { scans++; throw Error('market snapshot enumerated the population'); };
     const rows = Array.from({ length: 1779 }, (_, i) => ({ characterId: i + 1,
         phase: 'cold', adena: i === 0 ? 0 : 100, inventorySummary: '{}',
         statsJson: JSON.stringify({ shotDemand: { itemId: 1463, amount: 3000, maxSpend: 100, at: now } }),
@@ -62,6 +62,6 @@ const originalStates = Life.allStates;
     assert.strictEqual(scans, 0, 'repeated snapshots, time passage and owner deltas never rescan the population');
     console.log('Market lots, material lots for the market, public-only production demand and incremental native snapshot passed');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
-    Life.allStates = originalStates; Shots._resetForTests();
+    Life.everyState = originalStates; Shots._resetForTests();
     fs.rmSync(isolated.directory, { recursive: true, force: true });
 });

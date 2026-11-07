@@ -66,10 +66,15 @@ const state = {
     levelBand: '1-3',
     activity: 'hunting',
     vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 },
+    // A Human Fighter's starter Squire's Sword: unarmed, a level 1 bot does
+    // not take a Gremlin (BotEncounterReadiness: the fight must end above its
+    // potion line with a margin).
+    inventory: { 2369: { selfId: 2369, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7 } },
     stats: {},
     party: { role: 'dps' }
 };
-const result = BackgroundResolver.resolveSolo({ state, spot, elapsedMs: 12000, rng: () => 0 });
+// 40 s: the walk to the spot's mobs alone takes longer than the old 12 s window (T106 spot walk).
+const result = BackgroundResolver.resolveSolo({ state, spot, elapsedMs: 40000, rng: () => 0 });
 assert.strictEqual(result.materialize.items.length, 2);
 assert.strictEqual(result.materialize.items[0].selfId, 1121);
 assert.strictEqual(result.materialize.items[0].name, "Apprentice's Shoes");

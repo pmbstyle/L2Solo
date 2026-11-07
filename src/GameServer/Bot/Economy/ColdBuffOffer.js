@@ -117,5 +117,5 @@ function project(provider, recipients, timestamp = Date.now()) {
 function expand(effects, timestamp) {
     return effectsFor(effects.map(([selfId, level]) => skillAdapter({ selfId, level })), timestamp);
 }
-module.exports = { available, skillAdapter, select, effectsFor, project, expand,
+module.exports = { available, skillAdapter, select, choose, effectsFor, project, expand,
     BUYER_COOLDOWN_MS, MAX_RECIPIENTS, MAX_OFFER_BYTES };

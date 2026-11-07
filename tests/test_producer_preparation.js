@@ -24,6 +24,7 @@ const adapters = {
     'GameServer/Progression/ProgressionCap': { effectiveLevelCap: () => 40 },
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/BotGear': { wishKitsFor: require('../src/GameServer/Bot/AI/BotGear').wishKitsFor },
+    'GameServer/Bot/AI/GearGradeRule': require('../src/GameServer/Bot/AI/GearGradeRule'),
     'GameServer/Bot/AI/GearAcquisitionPlanner': { sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn() },
     'GameServer/Bot/Population/ColdCombatProfile': { candidateProfiles: () => ({
@@ -79,7 +80,9 @@ const network = load('WishNetwork.js', name => {
     if (name === 'node:worker_threads') return require('node:worker_threads');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
+    if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
+    if (name === '../../../FailureLog') return require('../src/FailureLog');
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return tendency;
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };
@@ -94,6 +97,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === '../../Items/SoulCrystalProgression') return adapters['GameServer/Items/SoulCrystalProgression'];
     if (name === '../../Items/C4DualSwordCombinations') return adapters['GameServer/Items/C4DualSwordCombinations'];
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
+    if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     // Admitted synthetic origins (a missing recipe is never admitted, as in the real
     // catalogue) and the shared equipment rule (82e5323c, d300b1b7).
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true,
@@ -108,6 +112,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
     if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './PriceDecision') return producerPrice;
+    if (name === './ProductionSalePolicy') return require('../src/GameServer/Bot/Economy/ProductionSalePolicy');
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './ShotTradeDemand') return require('../src/GameServer/Bot/Economy/ShotTradeDemand');
     if (name === './EconomyDiagnostics') return { active: () => false, laps: () => null };
@@ -341,3 +346,9 @@ assert.notEqual(unfundedFixed.result.activity?.activity, 'shopping', 'an unfunde
 state.adena = 1000; item.template.kind = 'Armor.Chest';
 assert(!prepare({ deps: fixedDeps }).projection.roots.includes('resale:101'), 'fixed material buyers do not buy arbitrary equipment');
 console.log('PASS supported fixed buyer -> finite recipe/material queue, disabled/funding/material controls');
+state.adena = 1000; state.vitals = { mp: 4 }; item.template.kind = 'Other.Material';
+put(20, 101, 10, 100, 3);
+const materialDemand = prepare({ deps: beginnerDeps });
+assert.equal(materialDemand.projection.nodes.find(row => row.key === 'resale:101')?.object.amount, 4,
+    'real intermediate demand proposes a finite lot limited by the crafter’s MP');
+board.remove(20);

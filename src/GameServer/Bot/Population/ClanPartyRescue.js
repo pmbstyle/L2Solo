@@ -68,8 +68,7 @@ async function rescue({ requester, objective, rows, entry, commit, create, relea
     let party;
     if (target) {
         const result = await commit({ ...target, memberIds: help.memberIds,
-            roleCoverage: Composition.roleCoverage(moved), stats: { ...target.stats, clanHelp: help,
-                memberNames: moved.map(state => state.name), lastRecruitAt: now } }, moved, {
+            roleCoverage: Composition.roleCoverage(moved), stats: { ...target.stats, clanHelp: help } }, moved, {
             characterId: target.leaderId, eventType: 'party_recruit', summary: `Clan reinforced the hunt for ${requester.name}`,
             meta: { partyId: target.partyId, reason: 'clan_rescue', memberIds: help.memberIds }, weight: 3, createdAt: now
         });

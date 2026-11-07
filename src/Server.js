@@ -1,4 +1,4 @@
-const HEADER_SIZE = 2;
+const { HEADER_SIZE } = require('./Packet/Frame');
 
 function packetReceiver(onPacket, onInvalidPacket = () => {}) {
     let pending = Buffer.alloc(0);
@@ -30,8 +30,10 @@ class Server {
         const parameters = { name: name, callback: callback };
 
         // Create a new listening `Server`
-        require('net').createServer(this.onSocket.bind(parameters)).listen(optn.port, optn.hostname, () => {
+        const listener = require('net').createServer(this.onSocket.bind(parameters));
+        listener.listen(optn.port, optn.hostname, () => {
             utils.infoSuccess(name, 'successful init for %s:%d', optn.hostname, optn.port);
+            if (process.env.L2NODE_UPDATE_TRIAL === '1' && process.connected) process.send({ type: 'launcher:listening', service: name, port: listener.address().port }, () => {});
         });
     }
 
@@ -51,7 +53,9 @@ class Server {
             // A throwing handler used to take the whole process with it, so a
             // malformed packet only ever costs the connection that sent it.
             // A handler that fails later, through the Promise it returns, is
-            // dropped the same way: an unobserved rejection ends the server.
+            // dropped the same way, not left to the process backstop
+            // (NodeL2), which only counts it while the client stays on a
+            // half-handled packet.
             const drop = (err) => {
                 utils.infoWarn(this.name, 'dropped a packet from %s:%d: %s', socket.remoteAddress, socket.remotePort, err?.stack || err?.message || err);
                 socket.destroy();

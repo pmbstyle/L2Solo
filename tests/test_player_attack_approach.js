@@ -10,14 +10,16 @@ const Range = invoke('GameServer/Actor/AttackRange');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Formulas = invoke('GameServer/Formulas');
+const PvpFlag = invoke('GameServer/Actor/PvpFlag');
 
 (async () => {
     const saved = { npc: World.fetchNpc, user: World.fetchUser, start: Timer.start, clear: Timer.clear,
         chance: Formulas.calcHitChance, peace: utils.isInPeaceZone, now: Date.now,
-        timeout: global.setTimeout, clearTimeout: global.clearTimeout };
+        timeout: global.setTimeout, clearTimeout: global.clearTimeout, mark: PvpFlag.mark };
     let starts = 0;
     let now = 10000;
     try {
+        PvpFlag.mark = () => {}; // a swing on a player flags the attacker; its packets are not under test
         Date.now = () => now;
         global.setTimeout = (callback, ms) => ({ callback, ms });
         global.clearTimeout = () => {};
@@ -112,6 +114,7 @@ const Formulas = invoke('GameServer/Formulas');
         World.fetchNpc = saved.npc; World.fetchUser = saved.user; Timer.start = saved.start; Timer.clear = saved.clear;
         Formulas.calcHitChance = saved.chance; utils.isInPeaceZone = saved.peace;
         Date.now = saved.now; global.setTimeout = saved.timeout; global.clearTimeout = saved.clearTimeout;
+        PvpFlag.mark = saved.mark;
     }
     console.log('Player attack approach and repeated-click checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

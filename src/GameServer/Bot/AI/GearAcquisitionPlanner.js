@@ -1,3 +1,4 @@
+const { isDeepStrictEqual } = require('node:util');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ClanCrafting = require('../../Clan/ClanCraftingPolicy');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
@@ -11,9 +12,8 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
-const { gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { GRADES: RANKS, rankOf: rankIndex, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 // Common materials have hundreds of sources. Retain only their sorted index
 // positions per shared input key, rather than a plain source object per row.
 // ARCH-NOTE: PERF on 1,000 native states/2,045 spots: retained heap plus
@@ -48,7 +48,6 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
-const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
@@ -58,8 +57,11 @@ const RATE_MODEL_VERSION = 17;
 const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
-const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
 const PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT = 2;
+// A party route set aside waits on who could join it, which has no event (the
+// recruit pool, bots near the bot's level coming online): its entry also ends
+// after this window (limits.md "Party route set aside").
+const PARTY_ROUTE_RETRY_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 
@@ -101,22 +103,16 @@ function isRealCatalogItem(item = {}) {
     // Catalog classification wins over old inventory/worker projections.
     if (item.template?.kind === 'Other.Quest'
         || catalogItem(selfId)?.template?.kind === 'Other.Quest') return false;
-    const name = String(item.template?.name || '').trim();
-    // A loaded row is not automatically a usable game item.  The datapack has
-    // legacy placeholder rows (for example, the D-grade weapon named "0").
-    // Do not let an anonymous or malformed catalog record become a bot goal,
-    // party-loot candidate, or equipped item just because its combat stats are
-    // otherwise present.
-    return Number.isInteger(selfId) && selfId > 0
-        && name.length > 0
-        && name !== '0'
-        && !/^_+$/.test(name);
+    // A loaded row is not automatically a usable game item: an anonymous
+    // placeholder (BotGear.isNamedItem) never becomes a bot goal, party-loot
+    // candidate, or equipped item just because its combat stats are present.
+    return Number.isInteger(selfId) && selfId > 0 && BotGear.isNamedItem({ template: { name: item.template?.name } });
 }
 
 function roleFor(state = {}) {
     if (BotRoles.isSpoiler(state)) return 'spoiler';
     return state.party?.role || state.stats?.role || BotRoles.inferRole({
-        fetchClassId: () => Number(state.stats?.classId || state.classId || 0)
+        classId: Number(state.stats?.classId || state.classId || 0), characterId: state.characterId
     }) || 'dps';
 }
 
@@ -205,20 +201,20 @@ function itemScore(item, role, classId) {
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
 }
 
-function rankIndex(rank) {
-    const index = RANKS.indexOf(String(rank || 'none').toLowerCase());
-    return index < 0 ? 0 : index;
-}
-
+// A failed route's wake: the inputs whose move makes it worth trying again
+// (level, the equipped weapon's grade, being in a party), kept on its
+// recovery entry; the entry stands while they hold, however long.
 function recoveryWake(state = {}) {
     const weapon = equippedInventoryItems(state.inventory).find(item => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot)));
     return [Number(state.level || 1), weapon ? rankIndex(weapon.etc?.rank) : -1, state.party?.partyId ? 1 : 0];
 }
 
 function recoveryEntryLive(entry, state, timestamp, wake) {
+    // An entry saved before wakes were kept keeps its stored expiry.
     if (!Array.isArray(entry.wake)) return Number(entry.until || 0) > timestamp;
     const current = wake || recoveryWake(state);
-    return entry.wake.length === 3 && entry.wake.every((value, n) => Number(value) === current[n]);
+    return entry.wake.length === 3 && entry.wake.every((value, n) => Number(value) === current[n])
+        && (entry.until === undefined || Number(entry.until) > timestamp);
 }
 
 // One planner decision judges the same bot against every candidate source
@@ -427,7 +423,7 @@ function candidateEffort(candidate, state, options = {}) {
     const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
     let missingRoute = false;
     const materialEffort = missingMaterials(candidate.recipe, state.inventory)
-        .filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId))
+        .filter((material) => material.missing > 0)
         .reduce((sum, material) => {
             const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), options);
             if (!source) {
@@ -498,9 +494,75 @@ function equipmentItemBetter(item, current, role, classId) {
             && Number(item.template?.price || 0) < Number(current.template?.price || 0);
 }
 
+// An entry equipping never touches: no paperdoll slot in its template or its
+// own record, worn in no slot, no per-copy instances (InventorySummary.
+// completeInstances skips a stackable one). It is never a candidate, never
+// a conflict and never worn, so its answer is its copy (passCopy).
+function passesThrough(value, item) {
+    return !(Number(item?.etc?.slot || 0) > 0) && !(Number(value?.slot || 0) > 0)
+        && !(Array.isArray(value?.equippedSlots) && value.equippedSlots.some(slot => Number(slot) > 0))
+        && (value?.stackable === true || !Array.isArray(value?.instances));
+}
+function passCopy(value) {
+    return { ...value, ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {}) };
+}
+// A deep copy of plain data (an inventory entry: its slots, its instances).
+function plainCopy(value) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(plainCopy);
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = plainCopy(value[key]);
+    return out;
+}
+// The answers of the latest equips (equipInventoryUpgrades), newest last. One
+// reads, besides the catalogue: the role (roleFor), the class, the grade of
+// the level, whether the state's own bag wears a two-handed weapon (a
+// shield's suitability: read only for a shield user whose bag holds one) and the bag's
+// gear entries (in order, by value; the others pass through, passesThrough).
+// A cold hunt window equips the same gear each round, twice
+// (BotLifeState.prepareResolve). Kept by count, not by bot; a new catalogue
+// (DataCache.items or newbieItems replaced or grown) drops them all.
+const EQUIP_ANSWERS = 16;
+let equipAnswers = { items: null, length: 0, newbie: null, rows: [] };
 function equipInventoryUpgrades(state = {}, inventory = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
+    const entries = Object.entries(inventory || {});
+    const gear = [];
+    let shield = false;
+    for (const [key, value] of entries) {
+        const item = ItemTemplateIndex.find(DataCache.items, value?.selfId);
+        if (passesThrough(value, item)) continue;
+        // A gear entry under another key than its id: equip writes its id's key.
+        if (key !== String(value?.selfId)) return equipUpgradesOf(state, inventory, role, classId);
+        if (Number(item?.etc?.slot) === 8) shield = true;
+        gear.push([key, value]);
+    }
+    const grade = gradeForLevel(state.level);
+    const twoHanded = shield && BotEquipmentCompatibility.usesShield(role, classId) ? hasEquippedTwoHandedWeapon(state) : null;
+    if (equipAnswers.items !== DataCache.items || equipAnswers.length !== DataCache.items?.length
+        || equipAnswers.newbie !== DataCache.newbieItems) {
+        equipAnswers = { items: DataCache.items, length: DataCache.items?.length, newbie: DataCache.newbieItems, rows: [] };
+    }
+    const rows = equipAnswers.rows;
+    let row = null;
+    for (let at = rows.length - 1; at >= 0 && !row; at--) {
+        const held = rows[at];
+        if (held.role === role && held.classId === classId && held.grade === grade && held.twoHanded === twoHanded
+            && held.gear.length === gear.length
+            && held.gear.every(([key, value], index) => key === gear[index][0] && isDeepStrictEqual(value, gear[index][1]))) row = held;
+    }
+    if (Diagnostics.active()) Diagnostics.count('equip_upgrades', 'answers', row ? 'hit' : 'built');
+    if (row) {
+        return Object.fromEntries(entries.map(([key, value]) => [key, row.out.has(key) ? plainCopy(row.out.get(key)) : passCopy(value)]));
+    }
+    const next = equipUpgradesOf(state, inventory, role, classId);
+    rows.push({ role, classId, grade, twoHanded, gear: gear.map(([key, value]) => [key, plainCopy(value)]),
+        out: new Map(gear.map(([key]) => [key, plainCopy(next[key])])) });
+    if (rows.length > EQUIP_ANSWERS) rows.shift();
+    return next;
+}
+function equipUpgradesOf(state, inventory, role, classId) {
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
         const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
@@ -564,10 +626,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         for (const slot of ArmorPolicy.ARMOR_SLOTS) best.delete(String(slot));
         for (const item of chosen) best.set(String(item.etc.slot),availableArmor.find(candidate => candidate.item === item));
     }
-    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, {
-        ...value,
-        ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {})
-    }]));
+    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, passCopy(value)]));
     const setUnequipped = (owned) => {
         owned.equipped = false;
         owned.equippedCount = 0;
@@ -644,6 +703,10 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     return next;
 }
 
+function allowedCraftRecipe(recipe, provider) {
+    return Sources.allowsRecipe(recipe, { station: !provider || provider.publicStation === true });
+}
+
 function preferredTarget(state = {}, options = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
@@ -652,17 +715,32 @@ function preferredTarget(state = {}, options = {}) {
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
     const craftRecipes = options.craftRecipes
-        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven' && Sources.allowsRecipe(recipe))
+        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven' && allowedCraftRecipe(recipe, options.craftProviders?.[recipe.recipeId]))
         : CraftShopService.publishedStationRecipes().recipes;
     // Origin admission sees the canonical recipe. A real clan provider's
     // learning scroll is the existing material cost, added only afterwards.
-    const canonicalRecipes = [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()].filter(recipe => Sources.allowsRecipe(recipe));
+    const canonicalRecipes = [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()].filter(recipe => allowedCraftRecipe(recipe, options.craftProviders?.[recipe.recipeId]));
     const learningRecipe = recipe => require('../../Clan/ClanCraftingPolicy').recipeForProvider(recipe, options.craftProviders?.[recipe.recipeId]);
     const recipes = canonicalRecipes.map(learningRecipe);
     const recipeRank = options.recipeId
         ? String(ItemTemplateIndex.findRequired(DataCache.items || [], recipes.find((recipe) => Number(recipe.recipeId) === Number(options.recipeId))?.productId)?.etc?.rank || '')
         : null;
-    const recipesByProduct = new Map(recipes.map((recipe) => [Number(recipe.productId), recipe]));
+    const recipesByProduct = new Map();
+    for (const recipe of recipes) {
+        const product = Number(recipe.productId), previous = recipesByProduct.get(product);
+        if (!previous) { recipesByProduct.set(product, recipe); continue; }
+        if (options.recipeId) {
+            if (Number(recipe.recipeId) === Number(options.recipeId)) recipesByProduct.set(product, recipe);
+            continue;
+        }
+        if (!options.clanCrafting) { recipesByProduct.set(product, recipe); continue; }
+        const rank = candidate => {
+            const provider = options.craftProviders?.[candidate.recipeId];
+            return !provider || provider.publicStation ? 2 : provider.known ? 1 : 0;
+        };
+        if (rank(recipe) > rank(previous) || rank(recipe) === rank(previous)
+            && Number(recipe.successRate || 0) > Number(previous.successRate || 0)) recipesByProduct.set(product, recipe);
+    }
     const excluded = excludedTargetIds(options);
     if (!options.recipeId && !options.wishTargetId && progression.required && progression.rank === 3
         && rankIndex(gradeForLevel(state.level)) >= 4) {
@@ -887,7 +965,6 @@ function marketPlan(state = {}, target, offer, options = {}) {
         grade: Progression.acquisitionRankFor(state),
         role,
         strategy: 'market',
-        soloSafe: true,
         partyNeed: 'solo_ok',
         partyNeedReason: options.reason || 'market_fallback',
         requiresParty: false,
@@ -1301,15 +1378,17 @@ function sourceMinLevelGap(economicLower) {
     return economicLower ? -15 : BotTargetScorer.MIN_LEVEL_GAP;
 }
 
-function isPlanSourceViableForState(state = {}, plan = {}) {
+function isPlanSourceViableForState(state = {}, plan = {}, options = {}) {
     if (!isPlanSourceEligible(plan)) return false;
     if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return true;
     const npcId = Number(plan?.next?.npcId || 0);
     if (!npcId) return true;
     const npc = catalogNpc(npcId);
-    return sourceWithinVoluntaryHuntBand(state, {
+    if (!sourceWithinVoluntaryHuntBand(state, {
         npcLevel: Number(npc?.template?.level || npc?.level || 0)
-    });
+    })) return false;
+    const allowed = options.spots && soloPlanSourceReader(state, plan, options.spots, options);
+    return !allowed || allowed(SpotIndex.spotById(options.spots, plan.next.spotId), npcId);
 }
 
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
@@ -1385,10 +1464,10 @@ function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'mar
     const wake = recoveryWake(state);
     const recoveryTargets = (plan.recoveryTargets || []).filter((entry) => (
         recoveryEntryLive(entry, state, timestamp, wake)
-            && (Array.isArray(entry.wake) || Number(entry.targetId) !== Number(plan.target.selfId))
+            && (entry.reason === 'combat_unviable' || Number(entry.targetId) !== Number(plan.target.selfId))
     ));
     recoveryTargets.push({ targetId: Number(plan.target.selfId), itemId: Number(itemId),
-        reason, failedAt: timestamp, until: timestamp + acquisitionCooldown(state) });
+        reason, failedAt: timestamp, wake });
     return { ...state, stats: { ...state.stats, partyRequest: null, marketWanted: null,
         equipmentPlan: { status: 'abandoned', strategy: 'none', grade: gradeForLevel(state.level),
             reason, recoveryTargets, target: null, next: null, materials: [] } } };
@@ -1402,7 +1481,6 @@ function craftProgress(state, plan) {
         if (!recipe || seen.has(recipe.recipeId)) return;
         const nextSeen = new Set(seen).add(recipe.recipeId);
         for (const material of recipe.materials || []) {
-            if (CraftSupplementMaterials.isSupplementalMaterial(material.selfId)) continue;
             const required = Number(material.amount || 0) * crafts;
             requirements[material.selfId] = (requirements[material.selfId] || 0) + required;
             const component = C4RecipeItems.resolveByProductId(material.selfId);
@@ -1448,8 +1526,8 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const wake = recoveryWake(state);
     const recoveryTargets = (previousPlan?.recoveryTargets || [])
         .filter((entry) => recoveryEntryLive(entry, state, timestamp, wake) && Number(entry.targetId || 0) > 0);
-    // A retained route can fail on either side of a grade threshold. Keep
-    // its failure and cooldown until expiry, even after another level-up.
+    // A retained route can fail on either side of a grade threshold: its
+    // failure is judged even after another level-up.
     // ARCH-NOTE: the old active plan may survive a replan; replaying its
     // recorded failure immediately recreates dormancy on a wake event. Wait
     // for the new plan to stamp its baseline before judging that route again.
@@ -1467,14 +1545,14 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
             failedAt: timestamp,
             // ARCH-NOTE: dormantWishes does not exclude a gear target yet;
             // keep its numeric wake inputs in the planner's recovery list (max4).
-            ...(failure.reason === 'combat_unviable' ? { wake }
-                : { until: timestamp + (failure.itemId ? acquisitionCooldown(state) : DIRECT_ROUTE_COOLDOWN_MS) })
+            wake,
+            ...(failure.reason === 'party_route_unavailable' ? { until: timestamp + PARTY_ROUTE_RETRY_MS } : {})
         };
         const index = recoveryTargets.findIndex((entry) => Number(entry.targetId) === failure.targetId);
         if (index >= 0) recoveryTargets[index] = recovery;
         else recoveryTargets.push(recovery);
     }
-    const dormant = recoveryTargets.filter(entry => entry.reason === 'combat_unviable' && Array.isArray(entry.wake))
+    const dormant = recoveryTargets.filter(entry => Array.isArray(entry.wake))
         .sort((a, b) => Number(b.failedAt) - Number(a.failedAt));
     const dropped = new Set(dormant.slice(4));
     for (let n = recoveryTargets.length - 1; n >= 0; n--) if (dropped.has(recoveryTargets[n])) recoveryTargets.splice(n, 1);
@@ -1482,7 +1560,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
         ? recoveryTargets.find((entry) => Number(entry.targetId) === Number(previousPlan.target?.selfId || 0))
         : null;
     const targetSupported = (!previousPlan?.target?.selfId || Sources.hasSource(previousPlan.target.selfId))
-        && (!previousPlan?.recipeId || Sources.allowsRecipe(previousPlan.recipeId));
+        && (!previousPlan?.recipeId || allowedCraftRecipe(previousPlan.recipeId, previousPlan.craftProviders?.[previousPlan.recipeId]));
     const acquisitionAllowed = acquisitionTargetAllowed(state, previousPlan);
     const targetAllowed = targetSupported && acquisitionAllowed;
     return {
@@ -1553,7 +1631,7 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
             npcId: null,
             reason: 'market_alternative',
             failedAt: timestamp,
-            until: timestamp + DIRECT_ROUTE_COOLDOWN_MS
+            wake: recoveryWake(state)
         });
     }
     const amounts = rawPlan?.strategy === 'craft' ? craftProgress(state, rawPlan) : null;
@@ -1572,7 +1650,6 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
         ...(sameClanTarget ? { clanGoal: { ...previousPlan.clanGoal } } : {}),
         startedAt: samePlan ? Number(previousPlan?.startedAt || timestamp) : timestamp,
         plannedForLevel: Number(state.level || 1),
-        plannedForGrade: gradeForLevel(state.level),
         progressionBaseline: samePlan && previousPlan?.progressionBaseline
             ? previousPlan.progressionBaseline
             : { level: Number(state.level || 1), exp: Number(state.exp || 0) },
@@ -1581,15 +1658,18 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     };
 }
 
-// The equipment plan's own leveling-recovery window (not a spot mark): one
-// hour, the value it shared with the former spot death mark.
-const LEVELING_RECOVERY_MS = 60 * 60 * 1000;
+// The equipment plan's leveling recovery: it stands until the bot regains the
+// level and EXP it lost (its events), and while its route's spot still holds
+// the bot off (the spot's backoff, counted in the bot's own steps) or still
+// presses with deaths; then the plan is judged afresh.
 function levelingRecoveryFor(state = {}, plan = state.stats?.equipmentPlan, timestamp = Date.now()) {
     const stored = plan?.levelingRecovery;
     if (stored) {
-        return timestamp < Number(stored.until || 0)
-            || Number(state.exp || 0) < Number(stored.resumeExp || 0)
-            || Number(state.level || 1) < Number(stored.resumeLevel || 1) ? stored : null;
+        const spotId = stored.spotId ? String(stored.spotId) : null;
+        return Number(state.exp || 0) < Number(stored.resumeExp || 0)
+            || Number(state.level || 1) < Number(stored.resumeLevel || 1)
+            || spotId && (SpotRiskPolicy.activeBackoffs(state).some(entry => entry.spotId === spotId)
+                || !!SpotRiskPolicy.deathPressure(state, spotId)) ? stored : null;
     }
     if (plan?.status !== 'active' || !['direct_drop', 'craft'].includes(plan.strategy)) return null;
     const level = Number(state.level || 1);
@@ -1608,7 +1688,6 @@ function levelingRecoveryFor(state = {}, plan = state.stats?.equipmentPlan, time
     return {
         reason: deleveled ? 'level_regression' : pressure.reason || 'death_pressure',
         startedAt: timestamp,
-        until: timestamp + LEVELING_RECOVERY_MS,
         resumeLevel: deleveled ? Math.max(level, baselineLevel) : level,
         resumeExp: Math.max(Number(state.exp || 0), Number(plan.progressionBaseline?.exp || 0),
             Number(death?.expBeforeDeath || 0)),
@@ -1634,10 +1713,10 @@ function itemDropChance(reward, itemId, kind = 'drop') {
 
 function itemDropYield(reward, itemId, kind = 'drop', context = {}) {
     return (reward?.[kind === 'spoil' ? 'spoils' : 'rewards'] || []).reduce((sum, group) => {
-        const roll = ProgressionRates.rewardGroupRoll(group, kind, context, () => 0);
-        const groupChance = Number(roll.chance || 0) / 100;
         const matchingItems = (group.items || []).filter((item) => Number(item.selfId) === Number(itemId));
         if (kind === 'drop') {
+            const roll = ProgressionRates.rewardGroupRoll(group, kind, context, () => 0);
+            const groupChance = Number(roll.chance || 0) / 100;
             const selectionChance = matchingItems.reduce((itemSum, item) => (
                 itemSum + ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate)
             ), 0);
@@ -1652,15 +1731,10 @@ function itemDropYield(reward, itemId, kind = 'drop', context = {}) {
             };
         }
 
-        const selectionChance = (group.items || [])
-            .filter((item) => Number(item.selfId) === Number(itemId))
-            .reduce((itemSum, item) => itemSum + ProgressionRates.spoilItemChance(item), 0);
-        const averageAmount = (group.items || [])
-            .filter((item) => Number(item.selfId) === Number(itemId))
-            .reduce((itemSum, item) => itemSum + ProgressionRates.spoilItemChance(item) * ((Number(item.min || 1) + Number(item.max || item.min || 1)) / 2), 0);
+        const plans = matchingItems.map(item => ProgressionRates.spoilItemPlan(group, item, context));
         return {
-            chance: sum.chance + groupChance * selectionChance,
-            expectedYield: sum.expectedYield + groupChance * averageAmount * Number(roll.amountMultiplier || 1)
+            chance: sum.chance + plans.reduce((total, plan) => total + plan.chance, 0),
+            expectedYield: sum.expectedYield + plans.reduce((total, plan) => total + plan.expectedYield, 0)
         };
     }, { chance: 0, expectedYield: 0 });
 }
@@ -1799,8 +1873,10 @@ function bestSourceForState(sources = [], state = {}, options = {}) {
         .filter((source) => !sourceIsExcluded(source, options))
         .filter((source) => sourceWithinVoluntaryHuntBand(state, source));
     const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
-    // A full source is met at arrival, not skipped here (ARCH-08-b).
-    return options.clanCrafting ? allowedSources[0] || null : safeSources[0] || allowedSources[0] || null;
+    // A route caller can refuse ground, targets or full camps before choosing
+    // the first source. Keep walking the ordered sources after a refusal.
+    const pick = rows => options.sourceAllowed ? rows.find(options.sourceAllowed) || null : rows[0] || null;
+    return options.clanCrafting ? pick(allowedSources) : pick(safeSources) || pick(allowedSources);
 }
 
 function itemIdForPlan(plan = {}) {
@@ -1814,13 +1890,34 @@ function plannedMaterialAcquired(state, plan) {
         && Number(state.inventory?.[plan.next.itemId]?.amount || 0) >= Number(plan.next.requiredTotal);
 }
 
+// Ordinary solo acquisition and routing must choose the same executable
+// source: its field, target and room. Group objectives retain their own
+// admission and recruitment rules, including explicit clan raids.
+function soloPlanSourceReader(state, plan, spots, options = {}) {
+    if (plan?.status !== 'active' || !['direct_drop', 'craft'].includes(plan.strategy)
+        || !plan.next?.spotId || !plan.next?.npcId || state.party?.partyId || state.partyId
+        || ['party', 'duo'].includes(LevelingRoutes.modeForState(state, options))
+        || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
+        || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
+    const allowed = sourceRouteReader(state, { ...options, spots });
+    // The crowd is read at arrival (design rules): only the spot search asks for room.
+    return (spot, npcId) => !!spot && allowed(spot, npcId)
+        && (!options.hasRoom || String(state.spotId) === String(spot.id)
+            && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
+            || options.hasRoom(spot.id));
+}
+
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
     if (!acquisitionTargetAllowed(state, plan)) return null;
     if (levelingRecoveryFor(state, plan, options.timestamp)) return null;
     if (plan?.status !== 'active' || plannedMaterialAcquired(state, plan)) return null;
     const itemId = itemIdForPlan(plan);
     if (!itemId) return null;
-    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
+    const allowed = soloPlanSourceReader(state, plan, spots, options);
+    const sourceAllowed = options.sourceAllowed;
+    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, allowed ? { ...options,
+        sourceAllowed: source => allowed(SpotIndex.spotById(spots, source.spotId), source.npcId)
+            && (!sourceAllowed || sourceAllowed(source)) } : options);
 }
 
 function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -1863,7 +1960,6 @@ function retargetPlanSource(state = {}, plan = {}, source = null) {
         ...plan,
         next,
         materials,
-        soloSafe: assessment.need === 'solo_ok',
         partyNeed: assessment.need,
         partyNeedReason: assessment.reason,
         requiresParty: assessment.need === 'required',
@@ -1903,13 +1999,19 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
     const targetId = Number(previousPlan?.target?.selfId || 0);
     const excluded = new Set((options.excludedTargetIds || []).map(Number).filter(Boolean));
     if (!excluded.has(targetId) && acquisitionTargetAllowed(state, previousPlan)) {
+        // Check before refreshing collected inputs: a newly listed finished
+        // item is still a valid shortcut while the recipe is in preparation.
+        if (!options.finishedOfferChecked && previousPlan.strategy === 'craft' && ['active', 'component_ready'].includes(previousPlan.status)) {
+            const market = fundedMarketPlanForTarget(state, targetId, offerOptions);
+            if (market) return market;
+        }
         if (plannedMaterialAcquired(state, previousPlan)) {
             const refreshed = planFor(state, { ...options, spots, recipeId: previousPlan.recipeId });
             if (['active', 'component_ready', 'ready_to_craft', 'complete'].includes(refreshed?.status)) return refreshed;
         }
         // A new funded listing can replace a retained farm or craft route on
         // the next resolve, without waiting for that route to fail first.
-        if (['direct_drop', 'craft'].includes(previousPlan.strategy)
+        if (['direct_drop', 'craft'].includes(previousPlan.strategy) && !(options.finishedOfferChecked && previousPlan.strategy === 'craft')
             && previousPlan.status === 'active') {
             const market = fundedMarketPlanForTarget(state, targetId, offerOptions);
             if (market) return market;
@@ -2102,12 +2204,15 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // bot's wish focus), the matchup's highest target level (LevelingRoutes
 // safetyOptions: the recovery penalty, whose clean wins move no section, and
 // the route mode), the party ground flag (BotHuntingGroundPolicy) and the
-// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it).
+// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it,
+// the kind of shot), read with the bot ready (BotTargetMatchup.readyProfiles).
 // The spot exclusions (step-counted marks, no section) are never kept.
 const GROUND_ALLOWED = 1, GROUND_REFUSED = 2;
+// Kept verdicts dropped because shots ended or came back (the health line).
+let sourceShotFlips = 0;
 function sourceGround(spots = [], kept = null) {
-    return kept?.spots === spots ? kept : { spots, length: -1, economicHunt: null, targetLevel: -1, grouped: null,
-        solo: null, cells: null };
+    return kept?.spots === spots ? kept : { spots, length: -1, targetLevel: -1, grouped: null,
+        solo: null, cells: null, economicCells: null, species: null };
 }
 // Diagnostics only: one reused reader in 64 also checks its kept cells
 // against a fresh verdict (source_route:ground:checked|disagree).
@@ -2116,6 +2221,24 @@ let groundShadows = 0;
 // source_route:ground:reuse|build); without one a call-local record over
 // options.spots. options.matchupProfiles: the state's solo profiles at this
 // timestamp, when the caller already read them (the build's income route).
+// Each (spot, species) of a spot list has one ordinal: a kept ground holds two
+// bits per pair, shared by no bot, indexed by this one table per list.
+const SPECIES_SPOT_SHIFT = 2 ** 20;
+const speciesIndexes = new WeakMap();
+function speciesPairs(spots) {
+    let index = speciesIndexes.get(spots);
+    if (!index) {
+        index = new Map();
+        spots.forEach((spot, at) => {
+            for (const id of spot.npcEntries?.length ? spot.npcEntries.map(row => row.selfId) : spot.npcSelfIds || [])
+                if (!index.has(at * SPECIES_SPOT_SHIFT + Number(id))) index.set(at * SPECIES_SPOT_SHIFT + Number(id), index.size);
+        });
+        speciesIndexes.set(spots, index);
+    }
+    return index;
+}
+const speciesPair = (spots, at, npcId) => speciesPairs(spots).get(at * SPECIES_SPOT_SHIFT + Number(npcId));
+
 function sourceRouteReader(state, options = {}) {
     const timestamp = options.timestamp ?? Date.now();
     const excluded = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
@@ -2128,17 +2251,29 @@ function sourceRouteReader(state, options = {}) {
     const level = Number(state.level || 1);
     // The solo profiles, read once per reader: up front for a kept record
     // (their key is one of its copies), else at the first matchup clause.
-    let profiles = options.matchupProfiles || (options.ground ? BotTargetMatchup.stateProfiles(state, soloOptions) : null);
+    // A source is a spot picked ahead: the bot's side reads ready, so a
+    // fight's HP and MP move no verdict and shots only when they end or return.
+    const readProfiles = () => BotTargetMatchup.readyProfiles(
+        options.matchupProfiles || BotTargetMatchup.stateProfiles(state, soloOptions), state, timestamp);
+    let profiles = options.matchupProfiles || options.ground ? readProfiles() : null;
     const solo = profiles && BotTargetMatchup.profileKey(profiles);
     const ground = options.ground || sourceGround(options.spots || []);
     const spots = ground.spots;
+    // The level clause reads the economic hunt, which turns with the bot's
+    // focus: each side keeps its own cells, so the turn moves neither.
     const reused = ground.cells !== null && ground.length === spots.length
-        && ground.economicHunt === economicHunt && ground.targetLevel === targetLevel
-        && ground.grouped === grouped && ground.solo === solo;
-    if (!reused) Object.assign(ground, { length: spots.length, economicHunt, targetLevel, grouped, solo,
-        cells: new Uint8Array((spots.length + 3) >> 2) });
-    const cells = ground.cells, diagnostic = Diagnostics.active();
+        && ground.targetLevel === targetLevel && ground.grouped === grouped && ground.solo === solo;
+    // Diagnostics: what moved the kept cells.
+    const moved = Diagnostics.active() && !reused ? ground.cells === null ? 'first'
+        : ground.targetLevel !== targetLevel ? 'target_level' : ground.grouped !== grouped ? 'grouped' : ground.solo !== solo ? 'kit' : 'spots' : '';
+    if (!reused && ground.cells !== null && ground.solo >= 0 && solo >= 0
+        && BotTargetMatchup.shotKindOfKey(ground.solo) !== BotTargetMatchup.shotKindOfKey(solo)) sourceShotFlips++;
+    if (!reused) Object.assign(ground, { length: spots.length, targetLevel, grouped, solo,
+        cells: new Uint8Array((spots.length + 3) >> 2), economicCells: null, species: null });
+    const cells = economicHunt ? ground.economicCells ||= new Uint8Array(ground.cells.length) : ground.cells;
+    const diagnostic = Diagnostics.active();
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
+    if (diagnostic && options.ground && !reused) Diagnostics.count('source_route', 'ground_moved', moved);
     // A sampled reader notes the ordinals it checked or filled itself.
     const shadow = diagnostic && reused && (Diagnostics.enabled(state.characterId) || (++groundShadows & 63) === 0)
         ? new Set() : null;
@@ -2150,11 +2285,11 @@ function sourceRouteReader(state, options = {}) {
         if (spot.raidBoss === true) return 'raid';
         if (!Spots.isSuitable(spot, level, soloOptions)
             && !(economicHunt && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)) return 'level';
-        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
+        profiles ||= readProfiles();
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
-    return spot => {
+    const reader = (spot, npcId = 0) => {
         const at = SpotIndex.ordinalFor(spots, spot), shift = (at & 3) << 1;
         let cell = at < 0 ? 0 : cells[at >> 2] >> shift & 3;
         if (shadow && cell && !shadow.has(at)) {
@@ -2176,10 +2311,50 @@ function sourceRouteReader(state, options = {}) {
             cell = refused ? GROUND_REFUSED : GROUND_ALLOWED;
             if (at >= 0) { cells[at >> 2] |= cell << shift; shadow?.add(at); }
         }
-        return cell === GROUND_ALLOWED;
+        if (cell !== GROUND_ALLOWED) return false;
+        if (!npcId) return true;
+        // A safe field may contain a species whose every pull the native
+        // fight refuses. That species cannot supply this item, even when
+        // the other mobs make the field's overall safety fraction pass.
+        const entry = spot.npcEntries?.length
+            ? spot.npcEntries.find(row => Number(row.selfId) === Number(npcId))
+            : spot.npcSelfIds?.some(id => Number(id) === Number(npcId)) ? { selfId: npcId, count: 1 } : null;
+        if (!entry) return false;
+        const verdict = () => BotTargetMatchup.speciesPulls(profiles, entry,
+            { soloSafety: true, maxTargetLevel: targetLevel || null })?.canHunt === true;
+        const pair = options.ground && at >= 0 ? speciesPair(spots, at, npcId) : undefined;
+        if (pair !== undefined) {
+            ground.species ||= new Uint8Array((speciesPairs(spots).size + 3) >> 2);
+            const known = ground.species[pair >> 2] >> ((pair & 3) << 1) & 3;
+            if (known) {
+                if (shadow) {
+                    Diagnostics.count('source_route', 'species', 'checked');
+                    if ((verdict() ? GROUND_ALLOWED : GROUND_REFUSED) !== known) Diagnostics.count('source_route', 'species', 'disagree');
+                }
+                return known === GROUND_ALLOWED;
+            }
+        }
+        profiles ||= readProfiles();
+        if (!profiles.length) return true;
+        const can = verdict();
+        if (pair !== undefined) ground.species[pair >> 2] |= (can ? GROUND_ALLOWED : GROUND_REFUSED) << ((pair & 3) << 1);
+        return can;
     };
+    // What a verdict reads beside the ground's own cells (kept, or filled by
+    // this reader: their identity is the rest): named, for a holder of facts
+    // made with this reader (KeptSourceFacts).
+    reader.inputs = () => [['economicHunt', economicHunt], ['excluded', [...excluded].map(String).sort().join(',')]];
+    return reader;
 }
 
+// What a wish's sourceFacts walk reads of the bot and the world beside its
+// options (the spot values, the route reader, trips, the spoiler and the band
+// it is given): named, for a holder of its facts (KeptSourceFacts).
+function sourceFactInputs(state = {}) {
+    return [['rates', sourceYieldRatesKey()], ['level', Number(state.level || 0)],
+        ['readiness', JSON.stringify(combatReadiness(state))],
+        ['current', String(state.stats?.travel?.spotId || state.spotId || null)]];
+}
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
     const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
@@ -2318,7 +2493,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
                     if (readyOnly) continue;
                     reason = 'party_needed';
                 }
-                if (!reason && !routeAllowed(spot)) reason = 'route_ineligible';
+                if (!reason && !routeAllowed(spot, Number(entry.reward.selfId))) reason = 'route_ineligible';
             }
             let row = null, perHour = 0, trip = null, town = null;
             if (!reason) {
@@ -2690,7 +2865,9 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
     const directRoute = direct ? { ...direct, itemId: Number(itemId), requiredAmount,
         requiredTotal: requiredAmount + Number(state.inventory?.[itemId]?.amount || 0),
         effort: requiredAmount * sourceEffort(direct, state, options) } : null;
-    const component = options.recipeCatalog?.get(Number(itemId)) || C4RecipeItems.resolveByProductId(itemId);
+    const preparedComponent = options.recipeCatalog?.get(Number(itemId));
+    const nativeComponent = preparedComponent || C4RecipeItems.resolveByProductId(itemId);
+    const component = preparedComponent || nativeComponent && ClanCrafting.recipeForProvider(nativeComponent, options.craftProviders?.[nativeComponent.recipeId]);
     if (!component || !allowedRecipeIds.has(Number(component.recipeId))) return directRoute;
     const nextVisited = new Set(visited).add(Number(itemId));
     const crafts = Math.max(1, Math.ceil(requiredAmount / Math.max(1, Number(component.productCount || 1))));
@@ -2698,7 +2875,7 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
     for (const ingredient of component.materials || []) {
         const owned = Number(state.inventory?.[ingredient.selfId]?.amount || 0);
         const required = Number(ingredient.amount || 0) * crafts;
-        if (owned >= required || CraftSupplementMaterials.isSupplementalMaterial(ingredient.selfId)) continue;
+        if (owned >= required) continue;
         const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited, options);
         // A recipe is viable only if every missing ingredient has a route.
         if (!source) return directRoute;
@@ -2716,7 +2893,9 @@ function hasReadyCraftComponent(recipe, state, allowedRecipeIds, visited = new S
     for (const material of recipe.materials || []) {
         const owned = Number(inventoryMap(state.inventory).get(Number(material.selfId)) || 0);
         if (owned >= Number(material.amount || 0)) continue;
-        const component = options.recipeCatalog?.get(Number(material.selfId)) || C4RecipeItems.resolveByProductId(material.selfId);
+        const preparedComponent = options.recipeCatalog?.get(Number(material.selfId));
+        const nativeComponent = preparedComponent || C4RecipeItems.resolveByProductId(material.selfId);
+        const component = preparedComponent || nativeComponent && ClanCrafting.recipeForProvider(nativeComponent, options.craftProviders?.[nativeComponent.recipeId]);
         if (!component || !allowedRecipeIds.has(Number(component.recipeId))) continue;
         if ((component.materials || []).every((ingredient) => (
             Number(inventoryMap(state.inventory).get(Number(ingredient.selfId)) || 0) >= Number(ingredient.amount || 0)
@@ -2798,7 +2977,7 @@ function dualSwordBridgePlan(state, options = {}) {
     return { status: 'ready_to_craft', strategy: 'craft', role, phase: GearLifecycle.phaseFor(state),
         target: { selfId: Number(target.item.selfId), name: target.item.template.name, slot: Number(target.item.etc.slot) },
         recipeId: target.recipe.recipeId, materials: target.materials, next: null,
-        soloSafe: true, requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
+        requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
         rateModelVersion: RATE_MODEL_VERSION, ...common };
 }
 
@@ -2828,7 +3007,7 @@ function combinationBladeMarketPlan(target, materials, state, planningOptions) {
 
 function rawPlanFor(state = {}, options = {}) {
     if (options.wishTargetId && !Sources.hasSource(options.wishTargetId)
-        || options.recipeId && !Sources.allowsRecipe(options.recipeId)) return {
+        || options.recipeId && !allowedCraftRecipe(options.recipeId, options.craftProviders?.[options.recipeId])) return {
         status: 'blocked', reason: 'unsupported_item_source', strategy: 'none', target: null,
         recipeId: null, materials: [], next: null
     };
@@ -2852,7 +3031,7 @@ function rawPlanFor(state = {}, options = {}) {
     const planningOptions = {
         ...options,
         allowedRecipeIds: options.allowedRecipeIds || stationRecipeIds(),
-        recipeCatalog: options.craftRecipes ? new Map(options.craftRecipes.filter(recipe => Sources.allowsRecipe(recipe)).map(recipe =>
+        recipeCatalog: options.craftRecipes ? new Map(options.craftRecipes.filter(recipe => allowedCraftRecipe(recipe, options.craftProviders?.[recipe.recipeId])).map(recipe =>
             [Number(recipe.productId), require('../../Clan/ClanCraftingPolicy').recipeForProvider(recipe, options.craftProviders?.[recipe.recipeId])])) : null,
         sourceCache: options.sourceCache || new Map()
     };
@@ -2861,7 +3040,7 @@ function rawPlanFor(state = {}, options = {}) {
         : null;
     const preparedCraftReady = preparedTarget?.recipe
         && missingMaterials(preparedTarget.recipe, state.inventory)
-            .every((material) => material.missing <= 0 || CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
+            .every((material) => material.missing <= 0);
     const forcedMarketPlan = marketRecoveryPlanForTarget(state, options.forceMarketTargetId, options);
     if (forcedMarketPlan) return forcedMarketPlan;
     if (!options.recipeId && !options.wishTargetId && !preparedCraftReady) {
@@ -2884,14 +3063,14 @@ function rawPlanFor(state = {}, options = {}) {
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
-            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
+            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', requiresParty: false,
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(marketEffort(offer, state)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
             market: marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
             recipeId: null, materials: [], next: null
         } : source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop',
             partyNeed: sourceAssessment.need,
             partyNeedReason: sourceAssessment.reason,
             requiresParty: sourceAssessment.need === 'required',
@@ -2918,8 +3097,14 @@ function rawPlanFor(state = {}, options = {}) {
             ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), planningOptions)
             : null
     }));
-    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
-    const nextMaterial = missingMaterialPlans.slice().sort((a, b) => (
+    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0);
+    const canonical = target.recipe && C4RecipeItems.resolveByRecipeId(target.recipe.recipeId);
+    const part = canonical?.materials?.find(row => Number(row.selfId) !== Number(canonical.recipeItemId));
+    const partItem = part && catalogItem(part.selfId);
+    const keyIds = rankIndex(target.item.etc?.rank) >= 3 && partItem?.template?.kind === 'Other.Material'
+        ? new Set([Number(part.selfId), Number(canonical.recipeItemId)]) : null;
+    const keyMissing = keyIds ? missingMaterialPlans.filter(row => keyIds.has(Number(row.selfId))) : [];
+    const nextMaterial = (keyMissing.length ? keyMissing : missingMaterialPlans).slice().sort((a, b) => (
         (b.source?.effort ?? Infinity) - (a.source?.effort ?? Infinity)
     ))[0] || null;
     const directKills = direct ? 1 / Math.max(direct.expectedYield, 0.000001) : Infinity;
@@ -2930,7 +3115,9 @@ function rawPlanFor(state = {}, options = {}) {
     const offer = marketOfferForTarget(target.item, state, planningOptions);
     const clanRaid = options.clanCrafting && direct?.raidBoss === true;
     const craftFirst = !clanRaid && rankIndex(target.item.etc?.rank) >= 3 && target.recipe && Number.isFinite(craftKills);
-    const buy = offer && !craftFirst && marketEffort(offer, state) <= Math.min(directEffort, craftKills);
+    const buy = offer && (rankIndex(target.item.etc?.rank) >= 3
+        && Number(offer.price) <= PurchaseFunding.spendable(state, planningOptions.buyOrderEscrow, { upperBound: true })
+        || !craftFirst && marketEffort(offer, state) <= Math.min(directEffort, craftKills));
     const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
     const soloSafe = direct && directAssessment.need === 'solo_ok';
     const strategy = buy ? 'market'
@@ -2946,6 +3133,7 @@ function rawPlanFor(state = {}, options = {}) {
     const readyToCraft = strategy === 'craft' && missingMaterialPlans.length === 0;
     const componentReady = strategy === 'craft'
         && !readyToCraft
+        && !keyMissing.length
         && hasReadyCraftComponent(target.recipe, state, allowedRecipeIds, new Set(), planningOptions);
     // A ready final recipe or component is a station action, not a request to
     // fight at the next (possibly unsafe) material source.  Let it leave the
@@ -2967,7 +3155,6 @@ function rawPlanFor(state = {}, options = {}) {
         target: { selfId: Number(target.item.selfId), name: target.item.template?.name || `Item ${target.item.selfId}`, slot: Number(target.slot || target.item.etc?.slot || 0) },
         recipeId: target.recipe ? Number(target.recipe.recipeId) : null,
         strategy,
-        soloSafe,
         partyNeed,
         partyNeedReason,
         requiresParty,
@@ -3063,8 +3250,10 @@ module.exports.acquisitionTargetAllowed = acquisitionTargetAllowed;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 module.exports.sourceFacts = sourceFacts;
+module.exports.sourceFactInputs = sourceFactInputs;
 module.exports.sourceRouteReader = sourceRouteReader;
 module.exports.sourceGround = sourceGround;
+module.exports.sourceShotFlipCount = () => sourceShotFlips;
 
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',

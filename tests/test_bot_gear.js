@@ -64,6 +64,34 @@ const fighterInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
 assert.strictEqual(fighterInventory[String(noGradeShield.selfId)].equipped, true,
     'shield-compatible fighters must retain an equipped shield');
 
+// A cold hunt equips the same gear every round while its loot, shots and
+// Adena move: the same answer each time, a new one when a gear entry moves.
+{
+    const fighter = { level: 10, stats: { classId: 0, role: 'dps' } };
+    const entry = (selfId, amount = 1) => ({ selfId, name: itemTemplate(selfId).template.name, amount });
+    const bag = (extra = {}) => ({ ...shieldInventory, 1: entry(1), 57: { selfId: 57, name: 'Adena', amount: 100 }, ...extra });
+    const first = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, bag());
+    assert.strictEqual(first['1'].equipped, true, 'the short sword is worn');
+    const looted = bag({ 57: { selfId: 57, name: 'Adena', amount: 900 }, 1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: 40, stackable: true } });
+    const again = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted);
+    assert.deepStrictEqual(again, { ...first, 57: looted['57'], 1835: looted['1835'] },
+        'loot beside the gear: the same gear answer, the loot copied');
+    again['1'].equipped = false;
+    again['1'].equippedSlots.push(14);
+    assert.deepStrictEqual(GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted)['1'], first['1'],
+        'an answer is the caller\'s own: editing it changes no later answer');
+    const fresh = DataCache.items;
+    DataCache.items = [...fresh];
+    assert.deepStrictEqual(GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted), { ...first, 57: looted['57'], 1835: looted['1835'] },
+        'a fresh equip (a new catalogue) gives the kept answer');
+    DataCache.items = fresh;
+    const upgraded = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, bag({ 68: entry(68) }));
+    assert.strictEqual(upgraded['68'].equipped, true, 'a looted falchion is worn');
+    assert.strictEqual(upgraded['1'].equipped, false, 'the short sword comes off');
+    assert.strictEqual(GearAcquisitionPlanner.equipInventoryUpgrades({ ...fighter, stats: { classId: 10, role: 'mage' } }, looted)[String(noGradeShield.selfId)].equipped,
+        false, 'another class on the same bag is answered anew');
+}
+
 const noviceDagger = BotGear.planFor({ classId: 7, level: 16 });
 const weapon = itemTemplate(bySlot(noviceDagger, 7).selfId);
 assert.ok(Number(weapon.stats.pAtk || 0) < 1000, 'no-grade bot gear should ignore anomalous weapon stats');
@@ -151,8 +179,11 @@ assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weap
     'Titan must inherit the full Destroyer weapon profile through its normalized parent class');
 assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
     'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
-assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
-    'Dominator must inherit Overlord caster compatibility through its normalized parent class');
+// Overlord keeps the Orc Shaman's melee blunt (user 10-29).
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), false,
+    'Dominator must inherit the Overlord melee kit through its normalized parent class: no caster sword');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon('Weapon.Blunt', 'buffer', 115), true,
+    'Dominator fights with the Overlord blunt');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
     'Sword Singer must reject caster staves stored under the shared blunt family');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Bone Staff', 39, 35, 'dps', 47), false,
@@ -456,4 +487,9 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 }));
 assert.strictEqual(upgrades.length, 0, 'low-level bot should not auto-equip gear above its grade band');
 
+// Placeholder rows (Flail 163, Heavy Flail 170, named '_': no C4 source) are never planned (T118).
+for (const classId of [0, 4, 5, 46]) for (const level of [62, 66, 70]) {
+    assert(!BotGear.planFor({ classId, level }).items.some(item => [163, 170].includes(Number(item.selfId))),
+        `no placeholder weapon in the class ${classId} level ${level} kit`);
+}
 console.log('Bot gear checks passed');

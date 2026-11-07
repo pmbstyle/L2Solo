@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const DEFAULT_EFFECT_LEVEL = 1;
 const BUFF_LIMIT = 20;
 const DEBUFF_RESERVED_SLOTS = 10;
@@ -104,7 +105,7 @@ function removeStored(actor, key, clearTimer = true) {
     if (clearTimer) {
         try {
             invoke('GameServer/Effects/EffectTicker').clear(actor, key);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.effect_timer_clear', error); } // its expiry timer may stay armed
     }
     delete actor.effects[key];
     clearLegacyMarker(actor, key);

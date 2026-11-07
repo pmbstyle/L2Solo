@@ -42,11 +42,15 @@ function merchantDemandRows(actor, store) {
     return rows;
 }
 
+function sendNotTrading(session) {
+    session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant is not trading right now." }));
+    session.dataSendToMe(ServerResponse.actionFailed());
+}
+
 function openMerchantTradeWindow(session, merchant) {
     const store = merchant.fetchPrivateStore && merchant.fetchPrivateStore();
     if (!store || !store.items || store.items.length === 0) {
-        session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant is not trading right now." }));
-        session.dataSendToMe(ServerResponse.actionFailed());
+        sendNotTrading(session);
         return;
     }
 
@@ -174,6 +178,11 @@ function select(session, actor, data) {
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
             }
+            return;
+        }
+        // A configured merchant with its store closed (restocking) is not a target.
+        if (botSession.plan === 'merchant') {
+            sendNotTrading(session);
             return;
         }
         Generics.attackRequest(session, actor, data);

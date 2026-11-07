@@ -108,10 +108,12 @@ async function run() {
     leader.online = false;
     assert.equal((await send(leader, 0x4d, 'PlayerWarB')).code, 'actor_changed');
     leader.online = true;
-    for (const body of [Buffer.from([0x4d]), packet(0x4d, 'x'.repeat(17)),
-        Buffer.concat([packet(0x4d, 'PlayerWarB'), Buffer.from([1])]),
-        packet(0x4d, 'PlayerWarB').subarray(0, -1)]) {
+    for (const body of [packet(0x4d, 'x'.repeat(17)), Buffer.concat([packet(0x4d, 'PlayerWarB'), Buffer.from([1])])]) {
         assert.equal((await Opcodes.table[0x4d](leader, body)).code, 'invalid_clan_name');
+    }
+    // A name without its terminator fails the packet (the connection drops it, Packet/Frame).
+    for (const body of [Buffer.from([0x4d]), packet(0x4d, 'PlayerWarB').subarray(0, -1)]) {
+        assert.throws(() => Opcodes.table[0x4d](leader, body), { code: 'PACKET_STRING_UNTERMINATED' });
     }
     const events = await DB.execute(['SELECT actorId,action,reason FROM clan_war_events ORDER BY id']);
     assert.deepEqual(events.map(e => [e.actorId, e.action, e.reason]),

@@ -4,8 +4,8 @@ const world = require('./fixtures/native_stock_world')();
 require('../src/Global');
 
 // H12 with H3: a bot keeps the consumables its class uses and the NPC buys the
-// rest, on the cold visit as on the hot one. No bot spends arrows, reads a
-// scroll of resurrection, opens a chest with a key or drinks an antidote; it
+// rest, on the cold visit as on the hot one. Archers retain only their bounded bow stock.
+// No bot reads a scroll of resurrection, opens a chest with a key or drinks an antidote; it
 // drinks healing potions and reads Scrolls of Escape for town trips (step 3.2,
 // H12 narrowed 2026-10-05), so it keeps them up to their restock targets.
 // Enchant scrolls, crystals and Adena are not spare.
@@ -19,12 +19,14 @@ DataCache.init();
 async function run() {
     invoke('Database').init();
     assert(invoke('Database').isReady());
-    world.usePotionSpot();
+    // A level-30 fighter at -10_31 drinking a bottle every twenty kills (the fixture's
+    // use, not the table's): the two-hour stock exceeds the three-potion mixed stock below.
+    world.usePotionSpot('-10_31');
 
     const line = (selfId, amount) => ({ selfId, amount, name: DataCache.items.find((entry) => entry.selfId === selfId)?.template?.name });
     const state = {
-        // The one available canonical spot consumes potions without changing its values.
-        characterId: 9500001, level: 30, spotId: '-10_30', adena: 1000, phase: 'cold', activity: 'shopping',
+        // The one available canonical spot, with the fixture's potion use.
+        characterId: 9500001, level: 30, spotId: '-10_31', adena: 1000, phase: 'cold', activity: 'shopping',
         currentRegion: 'Giran', loc: world.town(),
         stats: { classId: 0, role: 'dps' },
         inventory: Object.fromEntries([
@@ -62,7 +64,7 @@ async function run() {
     const young = { ...state, level: 15, adena: 100000, inventory: { 57: line(57, 100000), 1060: line(1060, 3) } };
     assert.deepStrictEqual(HealingPotionStock.stockAmounts(young, { targetAmount: 3 }), { 1060: 3 }, 'below 20 the Lesser Healing Potion is the stock');
     for (const selfId of [17, 736, 1661, 1831, 1060]) {
-        assert(ItemDisposition.isSpareConsumable({ selfId }), `${selfId} is a consumable no bot keeps`);
+        assert(ItemDisposition.isSpareConsumable({ selfId }), `${selfId} is a potentially spare consumable`);
     }
     // A recipe material (Rope of Magic, a compressed-shot input) and an item the NPC
     // pays nothing for (Ancient Adena, a soul crystal) are not spare consumables.

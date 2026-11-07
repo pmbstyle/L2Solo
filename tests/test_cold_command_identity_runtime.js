@@ -85,11 +85,14 @@ async function run() {
         assert.deepEqual(result.state, currentRows.get(1)); assert.equal(result.commandId, input.commandId);
         assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
     });
-    await check('current command error preserves retry and original identity', async () => {
+    // The worker's fault tracker sets the retry (backoff, quarantine) and logs the stack once.
+    await check('current command error sends its stack and original identity', async () => {
         const h = fixture({ error: Error('current_operation_error') }), input = command(currentRows.get(1));
         await h.submit([input]); await h.coordinator.commandTail;
         const result = acknowledgements(h)[0].message.payload.results[0];
-        assert.equal(result.ok, false); assert.equal(result.reason, 'current_operation_error'); assert.equal(result.retryAfterMs, 5000);
+        assert.equal(result.ok, false); assert.equal(result.reason, 'current_operation_error');
+        assert.match(result.fault.stack, /current_operation_error/); assert.equal(result.retryAfterMs, undefined);
+        assert.equal(h.coordinator.refusals.commandDbErrors, 0);
         assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
         assert.equal(h.coordinator.counters.commandErrors, 1); assert.equal(h.coordinator.commandInflight.size, 0);
     });
@@ -122,7 +125,9 @@ async function run() {
             await h.submit([input]); await h.coordinator.commandTail;
             assert.equal(h.calls.length, 0);
             const result = acknowledgements(h)[0].message.payload.results[0];
+            // A failed write wait is not the bot's: a plain retry, counted once on main, no bot fault.
             assert.equal(result.ok, false); assert.equal(result.reason, 'pending_write_error'); assert.equal(result.retryAfterMs, 5000);
+            assert.equal(result.fault, undefined); assert.equal(h.coordinator.refusals.commandDbErrors, 1);
             assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
         } finally { LifeState.settleWrites = oldSettle; }
     });

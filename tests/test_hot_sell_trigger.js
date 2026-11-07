@@ -6,7 +6,6 @@ invoke('GameServer/DataCache').init();
 
 const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 
 // A hot solo hunter goes to town to sell on the cold rule
 // (ItemDisposition.inventoryCleanupNeed) on its live bag (U10, step 1.5).
@@ -38,9 +37,15 @@ assert.strictEqual(due(hunter(40, { session: { hotBackgroundPartyId: 'party' } }
     'a party member makes no half-full trip');
 assert.strictEqual(due(hunter(40, { level: 9 }))?.reason, 'inventory_half_full', 'young bots use the same stock-based sale trigger');
 assert.strictEqual(due(hunter(3, { level: 5 })), null, 'lifting the level gate creates no small-bag town trip');
-const paused = hunter(40, { stats: { marketSellRetryAfter: now + 60000 } });
+// The sale retry: the last visit tried these goods and nothing new came since.
+const paused = hunter(40, { stats: { marketSellSeen: { items: materials(40).map(item => item.selfId), buyers: null } } });
 assert.strictEqual(due(paused), null, 'the sell pause is respected');
-assert.strictEqual(due(paused, now + 60000)?.reason, 'inventory_half_full', 'the trip comes when the pause ends');
+assert.strictEqual(due(paused, now + 6 * 3600000), null, 'time alone does not end it');
+paused.bot.backpack.items.push({ id: 8899998, selfId: 1950, amount: 1, equipped: false, slot: 0 });
+assert.strictEqual(due(paused), null, 'one new kind does not fill the half with the unsold goods');
+paused.bot.backpack.items = paused.bot.backpack.items.slice(10);
+paused.bot.backpack.items.push(...materials(39).map(item => ({ ...item, id: item.id + 1000, selfId: item.selfId + 100 })));
+assert.strictEqual(due(paused)?.reason, 'inventory_half_full', 'the trip comes when goods the last visit did not try fill the half');
 
 // The rule is asked again only when something it reads changes.
 const original = ItemDisposition.inventoryCleanupNeed;
@@ -64,10 +69,10 @@ try {
     ItemDisposition.inventoryCleanupNeed = original;
 }
 
-// Starting the trip starts the cold sell pause.
+// Starting the trip starts the cold sell pause on the goods it carries.
 const goer = hunter(40);
-HuntingState.pauseSelling(goer.session, now);
-assert.strictEqual(goer.session.coldLifeState.stats.marketSellRetryAfter, now + ColdMarket.SELL_RETRY_DELAY_MS);
+HuntingState.pauseSelling(goer.session);
+assert.deepStrictEqual(goer.session.coldLifeState.stats.marketSellSeen.items, materials(40).map(item => item.selfId));
 assert.strictEqual(goer.session.coldLifeState.stats.generatedCold, true);
 assert.strictEqual(due(goer), null, 'no second half-full trip during the pause');
 
@@ -81,10 +86,10 @@ try {
     assert.equal(due(seller)?.reason, 'wish_funding');
     seller.bot.backpack.inventoryRevision = 1;
     assert.equal(due(seller)?.reason, 'wish_funding', 'loot reuses the held selling choice without a context build');
-    HuntingState.pauseSelling(seller.session, now);
+    HuntingState.pauseSelling(seller.session);
     assert.equal(due(seller), null, 'a held selling leaf cannot bypass the sale retry after hot activation');
-    assert.equal(due(seller, now + ColdMarket.SELL_RETRY_DELAY_MS)?.reason, 'wish_funding',
-        'the held sale can resume when its existing pause expires');
+    seller.bot.backpack.items.push({ id: 8899997, selfId: 1950, amount: 1, equipped: false, slot: 0 });
+    assert.equal(due(seller)?.reason, 'wish_funding', 'the held sale can resume on goods the last visit did not try');
     // The next decision the body receives (DecisionEvents.receive) replaces the held one.
     seller.session.coldLifeState.stats.decisionSeq = 13;
     seller.session.heldEconomy = { network: { activity: null } };

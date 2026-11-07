@@ -57,6 +57,8 @@ function useScroll(itemId, karma, clanId) {
     captured = null;
     const { actor, session } = actorAt(karma, clanId);
     const backpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    actor.backpack = backpack;
+    actor.attack = { queueTimer: (callback, delay) => setTimeout(callback, delay) };
     let consumed = 0;
     backpack.deleteItem = (_session, _id, amount, callback) => { consumed += amount; callback(); };
     const realTimeout = global.setTimeout;

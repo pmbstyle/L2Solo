@@ -47,17 +47,26 @@ try {
             assert.deepStrictEqual(actual, expected.map((r) => [r.kind, String(r.group), String(r.itemId), r.name, r.amount, r.chance]));
         }
     }
-    // Full shipped dataset fits the packet and renderer, with both reward types.
+    // Full shipped dataset fits the packet and renderer, with both reward types,
+    // but Antharas: its 90 C4 (Lisvus) rows pass the 64-row bound and the target
+    // shows the tooltip as unavailable (debt: the tooltip has no pages).
     const mobs = require('../data/KnowledgeBase/mobs.json'); let maxRows = 0;
-    const fixtures = [];
+    const fixtures = [], oversize = [];
     for (const mob of mobs) {
         const detail = knowledge.npcDetail(mob.id), rows = Native.rewardRows(detail);
+        if (rows.length > 64) {
+            oversize.push(mob.id);
+            assert.throws(() => Protocol.encode({ rows }), /bounds/);
+            continue;
+        }
         const encoded = Protocol.encode({ request: 1, objectId: 40001, npcId: mob.id, name: detail.name,
             status: rows.length ? 'ok' : 'empty', rows });
         maxRows = Math.max(maxRows, rows.length); assert(encoded.length <= 8192);
         assert(rows.every((r) => /^\d+(?:-\d+)?$/.test(r.amount) && r.amount.length <= 25 && Number(r.chance) <= 100));
         fixtures.push(encoded);
     }
+    assert.deepStrictEqual(oversize, [12211]);
+    template = 12211; request(); assert(body().includes('\tunavailable\t'), 'an oversize list is sent as unavailable');
     assert(maxRows <= 35); // 39 display lines including empty-section labels fit 800x600.
     if (process.argv[3]) fs.writeFileSync(process.argv[3], Buffer.from(fixtures.join('\0'), 'utf16le'));
     attackable = false; request(); assert(body().includes('\tunavailable\t'));

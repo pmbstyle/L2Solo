@@ -28,8 +28,7 @@ async function reclaim(objective, { parties, life, database, metrics }, now = Da
     for (const party of candidates) {
         const members = await life.statesForParty(party.partyId);
         if (!safeMembers(party, members)) continue;
-        const preparedParty = parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [],
-            stats: { ...party.stats, dissolvedReason: 'clan_priority', replacedForClan: objective.clanId }, updatedAt: now });
+        const preparedParty = parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [], updatedAt: now });
         const prepared = members.map(member => life.preparePartyReview(member,
             Lifecycle.releaseMember(member, now, 'clan_priority')));
         if (!preparedParty || prepared.some(member => !member)) continue;

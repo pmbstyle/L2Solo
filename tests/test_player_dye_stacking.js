@@ -22,7 +22,7 @@ async function player(id, account) {
     return { accountId: account, activeNpcTalk: { objectId: 7005001, selfId: 7005 },
         actor: { fetchId: () => id, fetchLocX: () => 0, fetchLocY: () => 0,
             fetchRace: () => 0, fetchMaxLoad: () => 1000000,
-            backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: {} }) },
+            backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} }) },
         sent: [], dataSendToMe(packet) { this.sent.push(packet); }, dataSendToMeAndOthers() {} };
 }
 function transferPacket(items, amount) {

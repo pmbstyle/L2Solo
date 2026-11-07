@@ -1,6 +1,7 @@
 'use strict';
 
 const ClanRules = require('./ClanRules');
+const SavedSkills = require('../Bot/SavedSkills');
 
 // Addressed planning inputs, never clan/member snapshots. Native rows stay in
 // the lifecycle and warehouse; this queue only remembers which clan to visit.
@@ -218,7 +219,7 @@ function savedCapabilitiesChanged(classId, level, available, clanId, before, aft
     if (!watchedCandidate(classId, level, available, clanId) || before === after) return;
     const learned = raw => {
         const [skills, source] = JSON.parse(raw);
-        return Array.isArray(skills) && !['tree', 'unresolved'].includes(source) ? skills : [];
+        return Array.isArray(skills) && !['tree', 'unresolved'].includes(source) ? SavedSkills.unpack(skills) : [];
     };
     // Two compact arrays, one transient native skill-id map. No state/body
     // snapshots retained and no all-pairs comparison of learned records.

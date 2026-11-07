@@ -1,9 +1,9 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
-const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
 const ClanActionService = invoke('GameServer/Clan/ClanActionService');
@@ -18,6 +18,10 @@ const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobReg
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const NpcDecay = invoke('GameServer/World/Generics/NpcDecay');
 const Npc = invoke('GameServer/Npc/Npc');
+const NpcWander = invoke('GameServer/Npc/NpcWander');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
+const Attack = invoke('GameServer/Actor/Attack');
 const PvpEncounterRuntime = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
 const { heapRecord, heapsLine } = require('./WorkerHeapTelemetry');
 const { performance } = require('node:perf_hooks');
@@ -27,6 +31,7 @@ const HistoryDatabase = invoke('HistoryDatabase');
 const CheckpointCoordinator = invoke('DatabaseCheckpointCoordinator');
 const MarketTradeOverviewReader = invoke('MarketTradeOverviewReader');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
+const PacketFrame = invoke('Packet/Frame');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
@@ -118,23 +123,131 @@ const PopulationStatus = {
     },
 
     goalText(queue = {}, coordinator) {
-        const worker = coordinator?.worker || {}, mb = bytes => bytes ? Math.round(bytes / 1024 / 1024) : '-';
+        const worker = coordinator?.worker || {}, failures = coordinator?.failures || {}, mb = bytes => bytes ? Math.round(bytes / 1024 / 1024) : '-';
         const mainElu = performance.eventLoopUtilization(mainEluMark);
         mainEluMark = performance.eventLoopUtilization();
         const pvp = PvpEncounterRuntime.passPeak();
         const geodata = GeodataEngine.storageStats();
+        // noCheckpoint: commands a bot could not begin, its state refused by the
+        // command checkpoint (a fractional clock); 0 in a healthy world.
+        // stepsRefused: steps main sent back since the start (the row moved).
+        // botFaults=<backing off>/<quarantined>/<faults since start>: bots whose steps or
+        // commands throw, held off until one succeeds (ColdSimulationKernel FAULT_*); 0/0/0 when healthy.
+        // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
+        // swallowed: swallowedText; pathPool, pathCrashes: pathPoolText; packetRefused: packetRefusedText.
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
+            + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
+            + ` botFaults=${failures.faultBackoff || 0}/${failures.faultQuarantined || 0}/${failures.workerFaults || 0}`
+            + ` ${this.swallowedText(failures.swallowed)}`
+            + ` commandDbErrors=${failures.commandDbErrors || 0} ${this.pathPoolText()} ${this.packetRefusedText()}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
-            + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`;
+            + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
+            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
     },
 
-    // Mobs that forgot a chase (out of reach / no path) and mobs left out of combat still hating.
+    // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
+    // a catch that kept its fallback, a lost write, an unhandled rejection), each site's first one
+    // logged with its stack; 0/0 when healthy.
+    swallowedText(swallowed = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').failureSnapshot().swallowed) {
+        const counts = Object.values(swallowed || {});
+        return `swallowed=${counts.reduce((sum, count) => sum + count, 0)}/${counts.length}`;
+    },
+
+    // pathPool=<slots up>/<size> ('-' before the first path request starts the pool);
+    // pathCrashes=<crashes>/<respawns> since start (PathfindingWorkerPool: a crashed slot respawns at
+    // once, then with the shared worker backoff); 0/0 when healthy.
+    pathPoolText(paths = PathfindingWorkerPool.stats()) {
+        return `pathPool=${paths.started ? paths.workers || 0 : '-'}/${paths.size || 0}`
+            + ` pathCrashes=${paths.crashes || 0}/${paths.respawns || 0}`;
+    },
+
+    // packetRefused=<inbound frames>/<outbound packets>/<strings without a terminator> refused since
+    // start (Packet/Frame: a bad inbound frame or string fails its packet, an outbound packet over
+    // 65535 B is not sent); 0/0/0 when healthy.
+    packetRefusedText() {
+        const refused = PacketFrame.refusals();
+        return `packetRefused=${refused.inbound}/${refused.outbound}/${refused.unterminated}`;
+    },
+
+    // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
+    // started (T120, ColdSoloWindow); windowEnd: what ended the windows.
+    soloWindowText(w) {
+        if (!w) return '';
+        const rate = w.huntMs > 0 ? (3.6e6 * w.steps / w.huntMs).toFixed(1) : '-';
+        const ended = Object.entries(w.ended || {}).map(([why, count]) => `${why}:${count}`).join(',') || '-';
+        return ` huntSteps=${rate}/${w.steps > 0 ? (w.rounds / w.steps).toFixed(1) : '-'} windowEnd=${ended}`;
+    },
+
+    // doors=<caller>:<built>:<served>:<left to the step>:<read as held>:<moved down its agenda>: every door since the worker started.
+    // raised=<link>@<place>:<n>: what woke a review (Reaction). rejected=<why>:<n>: what main refused at the act.
+    doorsText(doors, raised) {
+        const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
+        return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
+    },
+
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>;event:<input>=<n>+...;party<kept>/<missed>: held
+    // earning spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics
+    // off too: event the searches each input of the search's key asked (a build's own and a read's; observation: the
+    // bot's own samples; prices, frustration, crowd: what its answer stands on), most first.
+    incomeHoldText(h) {
+        if (!h) return '';
+        const events = Object.entries(h.event || {}).sort((a, b) => b[1] - a[1]).map(([input, n]) => `${input}=${n}`).join('+');
+        return ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0}`
+            + `;event:${events || 0};party${h.partyKept || 0}/${h.partyMissed || 0}`;
+    },
+
+    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],verify<mismatch>/<row>/<checked>,new<n>;...;search=<n>/<ms>ms: the
+    // decision links since the worker started (EconomyContext incomeShadow, buildShadow, workshopShadow; developerDiagnostics
+    // only): rebuilt/kept as the link's key decides (a link still on masks: as it would decide); mask (those only): today's
+    // mask rebuilt what the key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); verify:
+    // held answers checked against a fresh one (mismatch: another spot or recipe, row: another income); new: answers
+    // with nothing to compare; search: the earning spot searches and their time.
+    linksText(links) {
+        if (!links) return '';
+        const rows = Object.entries(links).filter(([link]) => link !== 'search').map(([link, r]) =>
+            `${link}:${r.rebuilt}/${r.kept}${r.maskOnly === undefined ? '' : `,mask${r.maskOnly},key${r.keyOnly}`},verify${r.mismatch}/${r.row}/${r.verified},new${r.unjudged}`);
+        if (links.search) rows.push(`search=${links.search.searches}/${Math.round(links.search.ms)}ms`);
+        return ` links=${rows.join(';')}`;
+    },
+
+    // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of
+    // combat still hating, mobs sent home unseen or with a blocked way, melee swings kept on a target
+    // that stepped away, started attacks dropped because the target left the view, and Spoil casts
+    // bots left out on monsters with no list.
     npcHateText() {
         const hate = Npc.hateStats();
-        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i`;
+        const home = NpcWander.homeTeleportStats();
+        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${home.unseen}h/${home.blocked}b`
+            + ` keptSwings=${Attack.keptSwings()} lostView=${AttackRange.lostFromViewCount()}`
+            + ` spoilNoList=${SpoilSweep.sparedSpoils()}`;
+    },
+
+    // What a long recording needs every 30 s, diagnostics on or off, each from its owner (the same
+    // readings the status line prints): bots, players, main's lag, the database queue and checkpoint,
+    // the path pool, geodata, main's heap (after GC once WorkerHeapTelemetry observes), repairs and
+    // background jobs. src/Perf/LiveRecorder stores it (PopulationService.logSummary).
+    vitals() {
+        const database = invoke('Database').stats();
+        const paths = PathfindingWorkerPool.stats();
+        const jobs = BackgroundJobRegistry.snapshot();
+        const pick = (object, keys) => Object.fromEntries(keys.filter(key => object?.[key] !== undefined).map(key => [key, object[key]]));
+        return {
+            bots: LifeState.counts(),
+            players: invoke('GameServer/Bot/Population/PopulationService').realPlayerSessions().length,
+            lag: { nowMs: Math.round(Metrics.currentEventLoopLag()), sustainedMs: Math.round(Metrics.sustainedEventLoopLag()) },
+            database: { ...pick(database, ['path', 'historyPath', 'pending', 'maxPending', 'failures', 'avgWaitMs', 'avgRunMs', 'operations', 'overBudgetJobs']),
+                checkpoint: pick(database.checkpoint, ['inFlight', 'last', 'lastReset', 'lastResetAttempt']),
+                maintenance: database.maintenance || null },
+            pathWorkers: pick(paths, ['workers', 'size', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight', 'crashes', 'respawns']),
+            geodata: GeodataEngine.storageStats(),
+            mainHeap: heapRecord(),
+            safetyRepairs: Metrics.lastSafetyRepairs || null,
+            jobs: jobs.enabled === false ? null : { ...pick(jobs, ['registered', 'inFlight']), jobs: Object.fromEntries(Object.entries(jobs.jobs || {})
+                .map(([name, job]) => [name, pick(job, ['inFlight', 'started', 'completed', 'deferred', 'errors', 'lastStartedAt', 'lastCompletedAt'])])) }
+        };
     },
 
     summary() {
@@ -155,6 +268,9 @@ const PopulationStatus = {
         const stateRetention = metrics.stateRetention || {};
         const partyFormationStages = metrics.partyFormationStages || {};
         const skipReasons = Object.entries(metrics.skippedResolveReasons || {})
+            .map(([reason, count]) => `${reason}:${count}`)
+            .join('|') || 'none';
+        const refusalReasons = Object.entries(metrics.activationRefusalReasons || {})
             .map(([reason, count]) => `${reason}:${count}`)
             .join('|') || 'none';
         const market = MarketTelemetry.snapshot();
@@ -208,13 +324,19 @@ const PopulationStatus = {
         const coldOwnerRejectReasons = Object.entries(coldOwner.rejectReasons || {})
             .map(([reason, count]) => `${reason}:${count}`)
             .join('|') || 'none';
-        const stateRetentionDeferrals = Object.entries(stateRetention.deferralReasons || {})
-            .map(([reason, count]) => `${reason}:${count}`)
-            .join('|') || 'none';
         const stateRetentionPolicyRows = Object.entries(stateRetention.policyRows || {})
             .map(([policy, count]) => `${policy}:${count}`)
             .join('|') || 'none';
         const database = invoke('Database').stats();
+        // Maintenance tries refused since start (state retention, WAL truncate), job:reason.
+        const maintenanceRefusals = Object.entries(database.maintenance?.refusals || {})
+            .map(([reason, count]) => `${reason}:${count}`)
+            .join('|') || 'none';
+        // DB jobs that ran past the queue's drain slice since start, the three most frequent: op:count:maxMs.
+        const databaseOverBudget = Object.entries(database.overBudgetJobs || {})
+            .sort((left, right) => right[1].count - left[1].count || left[0].localeCompare(right[0])).slice(0, 3)
+            .map(([operation, entry]) => `${operation}:${entry.count}:${entry.maxMs}ms`)
+            .join('|') || 'none';
         const databaseFailureOps = Object.entries(database.operations || {})
             .filter(([, value]) => Number(value.failures || 0) > 0)
             .sort((left, right) => Number(right[1].failures || 0) - Number(left[1].failures || 0)
@@ -267,11 +389,10 @@ const PopulationStatus = {
             backgroundJobs,
             opportunisticRaids: invoke('GameServer/Bot/Population/PopulationService').opportunisticRaids?.snapshot() || null,
             clanSimulation,
-            director: Director.snapshot(),
             market,
             hotLod,
             hotDispatch,
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerP95=${scheduler.p95Ms || 0}ms schedulerBudget=${scheduler.budgetMs || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} coldBatch=${scheduler.coldBatch || 0}/${scheduler.coldBatchLimit || 0} schedulerLag=${scheduler.lagMs || 0}ms schedulerSkips=${metrics.delta.schedulerSkips || 0} backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} schedulerOverruns=${metrics.delta.schedulerOverruns || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms ${Director.statusLine()}`
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} activationRefusals=${metrics.delta.activationRefusals || 0} refusalReasons=${refusalReasons} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} schedulerLag=${scheduler.lagMs || 0}ms backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale ${this.pathPoolText(pathWorkers)} ${this.packetRefusedText()} ${this.swallowedText()} raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms`
         };
         const missingTotal = require('../Economy/PurchaseFunding').summary().moneyPacketMissing;
         summary.moneyPacketMissing = Math.max(0, missingTotal - lastMoneyPacketMissing);
@@ -291,8 +412,8 @@ const PopulationStatus = {
         summary.boardReviewWakeups = metrics.delta.boardReviewWakeups || 0;
         summary.line += ` boardReviewWakeups=${summary.boardReviewWakeups}`;
         summary.line += ` hotDispatch=${hotDispatch.depth || 0}/${hotDispatch.urgentDepth || 0}/${hotDispatch.maxDepth || 0} hotDispatchFlow=${hotDispatch.enqueued || 0}/${hotDispatch.completed || 0}/${hotDispatch.coalesced || 0}/${hotDispatch.canceled || 0}/${hotDispatch.errors || 0} hotDispatchWait=${hotDispatch.waitP95Ms || 0}/${hotDispatch.waitMaxMs || 0}ms hotDispatchRun=${hotDispatch.runP95Ms || 0}/${hotDispatch.runMaxMs || 0}ms`;
-        summary.line += ` coldOwner=${metrics.delta.coldOwnerCommitted || 0} coldOwnerRejected=${metrics.delta.coldOwnerRejected || 0} coldOwnerErrors=${metrics.delta.coldOwnerErrors || 0} coldOwnerLegacy=${metrics.delta.coldOwnerLegacyDeferred || 0} legacyConflicts=${metrics.delta.legacyOwnershipConflicts || 0} coldOwnerLegacyReasons=${coldOwnerLegacyReasons} coldOwnerRejectReasons=${coldOwnerRejectReasons} coldOwnerCommitP95=${coldOwner.commit?.p95Ms || 0}ms coldOwnerHandoffs=${metrics.delta.coldOwnerHandoffs || 0} farmCapacity=${farmCapacity.spots}/${farmCapacity.violations}/${farmCapacity.maxReserved}/${farmCapacity.maxExcess} farmWorst=${farmCapacity.worstSpot}:${farmCapacity.worstReserved}/${farmCapacity.worstCapacity} dbQueue=${database.pending || 0}/${database.maxPending || 0} dbSnapshots=${database.snapshots || 0} dbFailures=${database.failures || 0} dbFailureOps=${databaseFailureOps} dbBusy=${metrics.delta.coldOwnerDbBusy || 0} dbRetries=${metrics.delta.coldOwnerDbRetries || 0} checkpoint=${checkpoint.ready ? 'ready' : checkpoint.started ? 'starting' : 'stopped'}/${checkpoint.inFlight ? 'busy' : 'idle'} checkpointRuns=${checkpoint.completed || 0}/${checkpoint.skipped || 0}/${checkpoint.busy || 0}/${checkpoint.errors || 0} checkpointP95=${checkpoint.p95Ms || 0}ms checkpointFrames=${checkpoint.frames || 0} checkpointDebt=${checkpointDebt} checkpointWal=${Math.round(Number(checkpointLast.afterBytes || 0) / 1024 / 1024)}MB checkpointResets=${checkpoint.resets || 0}/${checkpoint.resetBusy || 0}/${checkpoint.resetErrors || 0} checkpointRestarts=${checkpoint.restarts || 0}`;
-        summary.line += ` stateRetention=${metrics.delta.stateRetentionRuns || 0}/${metrics.delta.stateRetentionRows || 0}/${stateRetention.policy || 'none'} stateRetentionNext=${stateRetention.nextPolicy || 'none'} stateRetentionP95=${stateRetention.p95Ms || 0}ms stateRetentionRows=${stateRetentionPolicyRows} stateRetentionDeferrals=${metrics.delta.stateRetentionDeferrals || 0}:${stateRetentionDeferrals} stateRetentionErrors=${metrics.delta.stateRetentionErrors || 0} stateRetentionOverruns=${metrics.delta.stateRetentionOverruns || 0}`;
+        summary.line += ` coldOwner=${metrics.delta.coldOwnerCommitted || 0} coldOwnerRejected=${metrics.delta.coldOwnerRejected || 0} coldOwnerErrors=${metrics.delta.coldOwnerErrors || 0} coldOwnerLegacy=${metrics.delta.coldOwnerLegacyDeferred || 0} legacyConflicts=${metrics.delta.legacyOwnershipConflicts || 0} coldOwnerLegacyReasons=${coldOwnerLegacyReasons} coldOwnerRejectReasons=${coldOwnerRejectReasons} coldOwnerCommitP95=${coldOwner.commit?.p95Ms || 0}ms coldOwnerHandoffs=${metrics.delta.coldOwnerHandoffs || 0} farmCapacity=${farmCapacity.spots}/${farmCapacity.violations}/${farmCapacity.maxReserved}/${farmCapacity.maxExcess} farmWorst=${farmCapacity.worstSpot}:${farmCapacity.worstReserved}/${farmCapacity.worstCapacity} dbQueue=${database.pending || 0}/${database.maxPending || 0} dbSnapshots=${database.snapshots || 0} dbFailures=${database.failures || 0} dbFailureOps=${databaseFailureOps} dbOverBudget=${databaseOverBudget} dbBusy=${metrics.delta.coldOwnerDbBusy || 0} checkpoint=${checkpoint.ready ? 'ready' : checkpoint.started ? 'starting' : 'stopped'}/${checkpoint.inFlight ? 'busy' : 'idle'} checkpointRuns=${checkpoint.completed || 0}/${checkpoint.skipped || 0}/${checkpoint.busy || 0}/${checkpoint.errors || 0} checkpointP95=${checkpoint.p95Ms || 0}ms checkpointFrames=${checkpoint.frames || 0} checkpointDebt=${checkpointDebt} checkpointWal=${Math.round(Number(checkpointLast.afterBytes || 0) / 1024 / 1024)}MB checkpointResets=${checkpoint.resets || 0}/${checkpoint.resetBusy || 0}/${checkpoint.resetErrors || 0} checkpointRestarts=${checkpoint.restarts || 0}`;
+        summary.line += ` stateRetention=${metrics.delta.stateRetentionRuns || 0}/${metrics.delta.stateRetentionRows || 0}/${stateRetention.policy || 'none'} stateRetentionNext=${stateRetention.nextPolicy || 'none'} stateRetentionP95=${stateRetention.p95Ms || 0}ms stateRetentionRows=${stateRetentionPolicyRows} maintenanceRefusals=${maintenanceRefusals} stateRetentionErrors=${metrics.delta.stateRetentionErrors || 0} stateRetentionOverruns=${metrics.delta.stateRetentionOverruns || 0}`;
         summary.line += ` clanSim=${clanSimulation.founder.founderCreated || 0}/${clanSimulation.founder.existingClanJoins || 0}/${clanSimulation.founder.founderBlocked || 0} clanActions=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.succeeded || 0}/${clanSimulation.actions.failed || 0}/${clanSimulation.actions.queueAgeAvgMs || 0}ms clanActionFlow=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.resolved || 0}/${clanSimulation.actions.releasedUnstarted || 0}/${clanSimulation.actions.deferred || 0} clanActionQueue=${clanSimulation.actions.queuePending || 0}/${clanSimulation.actions.queueReady || 0}/${clanSimulation.actions.queueRunning || 0}/${Math.round(Number(clanSimulation.actions.queueOldestReadyAgeMs || 0) / 1000)}s clanActionLease=${clanSimulation.actions.leaseRecoveries || 0}/${clanSimulation.actions.releaseConflicts || 0}/${clanSimulation.actions.budgetOverruns || 0} clanActionP95=${clanActionStages} clanActionTypeP95=${clanActionTypeStages} clanActionDeferP95=${clanActionDeferP95}ms clanFounderP95=${clanFounderStages} clanFounderBudget=${clanSimulation.founder.budgetStops || 0}/${clanSimulation.founder.budgetOverruns || 0} clanLevels=${clanSimulation.economy.levelUps || 0} clanDeposits=${clanSimulation.warehouse.depositsApplied || 0} clanGoals=${clanSimulation.goals.activeGoals || 0}/${clanSimulation.goals.replans || 0} clanLlm=${clanSimulation.goals.llm?.requested || 0}/${clanSimulation.goals.llm?.selected || 0}/${clanSimulation.goals.llm?.fallback || 0}/${clanSimulation.goals.llm?.pendingEntries || 0} clanLlmTokens=${clanSimulation.goals.llm?.promptTokensActual || clanSimulation.goals.llm?.promptTokensEstimated || 0}/${clanSimulation.goals.llm?.completionTokens || 0} clanContext=${clanSimulation.goals.context?.builds || 0}/${Math.round(clanSimulation.goals.context?.tokenAvg || 0)}/${clanSimulation.goals.candidates?.cacheHits || 0} clanTitles=${clanSimulation.titles.appliedClans || 0}/${clanSimulation.titles.appliedTitles || 0}/${clanSimulation.titles.llm?.requested || 0}/${clanSimulation.titles.llm?.pendingEntries || 0} clanTitleTokens=${clanSimulation.titles.llm?.promptTokensActual || clanSimulation.titles.llm?.promptTokensEstimated || 0}/${clanSimulation.titles.llm?.completionTokens || 0} clanMarket=${clanSimulation.market.purchases || 0}/${clanSimulation.market.deposited || 0} clanParty=${clanSimulation.party.operationsStarted || 0}/${clanSimulation.party.operationsSucceeded || 0}/${clanSimulation.party.operationsFailed || 0}`;
         summary.line += ` bgGovernor=${governor.mode || 'idle'}/${governor.usedMs || 0}/${governor.capMs || 0}/${Object.keys(governor.resources || {}).length} bgGovernorFlow=${governor.admitted || 0}/${governor.deferred || 0}/${governor.completed || 0}/${governor.overruns || 0} bgGovernorDeferrals=${governorDeferrals}`;
         const delay = metrics.eventLoop.delay || {};
@@ -341,8 +462,6 @@ const PopulationStatus = {
             summary.line += ` workerCaches=s:${s.memo || 0}/${s.best || 0}/${s.income || 0}/${s.bases || 0}/${s.cells || 0}:${s.memoHits || 0}/${s.memoMisses || 0}:${s.memoEvictions || 0}/${s.incomeEvictions || 0}/${s.baseEvictions || 0}/${s.resets || 0}:${s.bestHits || 0}/${s.bestMisses || 0}:${s.incomeHits || 0}/${s.incomeMisses || 0},k:${worker.caches.kitProfiles || 0}`;
         }
         summary.line += ` mainKits=${ColdCombatProfile.kitStoreSize()}`;
-        const soloHolds = coldWorker.soloHolds || {};
-        summary.line += ` soloHolds=${soloHolds.hits || 0}/${soloHolds.misses || 0}/${soloHolds.size || 0}`;
         summary.line += ` snapshot=${snapshots.dirty || 0}/${snapshots.critical || 0}/${snapshots.inFlight ? 1 : 0} snapshotLast=${lastSnapshot.mode || 'none'}/${lastSnapshot.rows || 0}/${lastSnapshot.pages || 0}/${lastSnapshot.durationMs || 0}ms snapshotRuns=${snapshots.fullRuns || 0}/${snapshots.dirtyRuns || 0}/${snapshots.criticalRuns || 0} snapshotDeferrals=${snapshots.deferrals || 0} snapshotYields=${snapshots.yields || 0}`;
         summary.line += ` ${this.nearText(coldWorker)}`;
         return summary;

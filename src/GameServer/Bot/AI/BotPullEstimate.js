@@ -1,41 +1,98 @@
 // How many mobs come when one is hit (E72, F20; design 13.8, 13.12): the
 // target, its same-clan helpers inside its help radius (SocialAggro), the
 // aggressive mobs within the aggro radius (NpcAggro) and a leader's minion
-// group. One answer for hot target choice and cold fights. The table is one
-// mean per spawn group (a spot's npc entry), computed once from the spawns at
-// start; mobs of a neighbouring spot cell are not counted.
+// group. One answer for hot target choice and cold fights: a hot bot counts the
+// mobs it sees (SpotService.livePull); a cold one rolls a size from the table,
+// per spawn group (a spot's npc entry) the share of its spawns by pull size
+// (and their mean), computed once from the spawns at start; mobs of a
+// neighbouring spot cell are not counted. BotTargetMatchup.pullVerdict judges
+// either.
 // Pure: the cold worker loads this module without the live world.
+const AggroRange = invoke('GameServer/Npc/NpcAggroRange');
 
 // The record of a live npc for pullSize.
 function record(npc) {
     return {
+        id: npc.fetchId?.(),
         selfId: Number(npc.fetchSelfId?.() || 0),
         clan: String(npc.fetchClanName?.() || '').trim(),
         helpRadius: Math.max(0, Number(npc.fetchClanHelpRadius?.()) || 0),
         hostile: npc.fetchHostile?.() === true,
-        // Minions come through their leader's group (minionJoiners).
+        // Minions come through their leader's group (minionJoiners, liveMinions).
         minion: !!npc.minionLeader,
+        leader: npc.minionLeader?.fetchId?.(),
         x: npc.fetchLocX(), y: npc.fetchLocY(), z: npc.fetchLocZ()
     };
 }
 
-// Records: { selfId, clan, helpRadius, hostile, minion, x, y, z }.
-// rules: { assistZ, aggroRadius, aggroZ } from SocialAggro and NpcAggro.
+// Records: { id, leader (a live one's), selfId, clan, helpRadius, hostile, minion, x, y, z }.
+// rules: { assistZ, aggroRadius, aggroZ } from SocialAggro and NpcAggro;
+// an aggressive NPC joins within its own C4 range (NpcAggroRange, T114),
+// rules.aggroRadius for one without.
 function pullSize(target, neighbours = [], rules = {}, minions = 0) {
     const helpRadius = Number(target.helpRadius) || 0;
     let joiners = 0;
     for (const npc of neighbours) {
-        if (npc === target || npc.minion) continue;
+        if (npc === target || npc.minion || (npc.id !== undefined && (npc.id === target.id || npc.id === target.leader))) continue;
         const dx = npc.x - target.x, dy = npc.y - target.y;
         const dz = Math.abs(npc.z - target.z);
         const distanceSq = dx * dx + dy * dy;
         const helps = !!target.clan && npc.clan === target.clan && helpRadius > 0
             && distanceSq <= helpRadius * helpRadius && dz <= rules.assistZ;
-        const aggro = npc.hostile === true && distanceSq <= rules.aggroRadius * rules.aggroRadius
+        const range = AggroRange.of(npc.selfId, rules.aggroRadius);
+        const aggro = npc.hostile === true && distanceSq <= range * range
             && dz <= rules.aggroZ;
         if (helps || aggro) joiners++;
     }
     return 1 + joiners + Math.max(0, Number(minions) || 0);
+}
+
+// A live target's group among records: its minions, or the minion's leader
+// and the rest of its group (minionJoiners, as the bot sees them).
+function liveMinions(target, records) {
+    const leader = target.leader ?? target.id;
+    let count = 0;
+    for (const npc of records) if (npc.id !== target.id && (npc.leader === leader || npc.id === leader)) count++;
+    return count;
+}
+
+// One scan's records for many reads: a read walks the cells its pull can reach
+// and its minion group, so a scan costs its records once plus, per candidate,
+// the mobs in reach, not candidates x records. A cell is the widest reach of
+// the scan, so the 3 x 3 cells round a target hold every joiner.
+function packIndex(records, rules) {
+    let reach = 1;
+    for (const npc of records) reach = Math.max(reach, npc.helpRadius, AggroRange.of(npc.selfId, rules.aggroRadius));
+    const cells = new Map(), groups = new Map();
+    const push = (map, key, npc) => {
+        const list = map.get(key);
+        if (list) list.push(npc);
+        else map.set(key, [npc]);
+    };
+    for (const npc of records) {
+        push(cells, cellKey(npc.x, npc.y, reach), npc);
+        push(groups, npc.leader ?? npc.id, npc);
+    }
+    return { records, rules, reach, cells, groups };
+}
+
+function cellKey(x, y, reach) {
+    return Math.floor(x / reach) * 0x400000 + Math.floor(y / reach);
+}
+
+// pullSize of one target against an indexed scan. A target outside the scan may
+// reach past its cells: it reads the whole scan.
+function packPull(target, pack) {
+    const { reach, cells } = pack;
+    let near = pack.records;
+    if (target.helpRadius <= reach) {
+        near = [];
+        for (let dx = -reach; dx <= reach; dx += reach) for (let dy = -reach; dy <= reach; dy += reach) {
+            const list = cells.get(cellKey(target.x + dx, target.y + dy, reach));
+            if (list) near.push(...list);
+        }
+    }
+    return pullSize(target, near, pack.rules, liveMinions(target, pack.groups.get(target.leader ?? target.id) || []));
 }
 
 // Lisvus minion rows (RaidBossMinionManager.groupsByBoss): a leader brings the
@@ -53,53 +110,88 @@ function minionJoiners(groupsByBoss) {
     return joiners;
 }
 
-// Sets entry.pull (one decimal) on each spot entry whose mean pull is above
-// one, from the spot's spawn records, and drops the records.
+// Sets, on each spot entry with a spawn whose pull is above one, entry.pulls
+// ([[size, share], ...] by size, shares to three decimals: user 10-29, a
+// spot is a mix of lone mobs, pairs and packs) and entry.pull (their mean,
+// one decimal), from the spot's spawn records, and drops the records.
 function annotate(spots, rules, joiners = new Map()) {
     let entries = 0, pulls = 0;
     for (const spot of spots) {
         const records = spot.records || [];
-        const sums = new Map();
+        const sizes = new Map();
         for (const record of records) {
             const size = pullSize(record, records, rules, joiners.get(Number(record.selfId)));
-            const sum = sums.get(record.selfId) || { size: 0, count: 0 };
-            sum.size += size;
-            sum.count += 1;
-            sums.set(record.selfId, sum);
+            const bySize = sizes.get(record.selfId) || new Map();
+            bySize.set(size, (bySize.get(size) || 0) + 1);
+            sizes.set(record.selfId, bySize);
         }
         for (const entry of spot.npcEntries || []) {
             entries++;
-            const sum = sums.get(entry.selfId);
-            const pull = sum ? Math.round(sum.size / sum.count * 10) / 10 : 1;
-            if (pull > 1) {
-                entry.pull = pull;
-                pulls++;
-            }
+            const bySize = sizes.get(entry.selfId);
+            if (!bySize || ![...bySize.keys()].some(size => size > 1)) continue;
+            const count = [...bySize.values()].reduce((sum, n) => sum + n, 0);
+            entry.pulls = [...bySize].sort((a, b) => a[0] - b[0]).map(([size, n]) => [size, Math.round(n / count * 1000) / 1000]);
+            entry.pull = Math.round([...bySize].reduce((sum, [size, n]) => sum + size * n, 0) / count * 10) / 10;
+            pulls++;
         }
         delete spot.records;
     }
     return { entries, pulls };
 }
 
-function entryPull(spot, selfId) {
-    const id = Number(selfId);
-    const entry = spot?.npcEntries?.find(item => Number(item.selfId) === id);
-    return Number(entry?.pull) > 1 ? Number(entry.pull) : 1;
+// The mobs of a pull of k that hit the fighter, on average over the fight:
+// (k + 1) / 2 while single-target hits fell them one by one, all k while an
+// area skill wears them down together; areaShare: the share of the
+// fighter's damage dealt by area skills.
+function packFactor(k, areaShare = 0) {
+    const share = Math.min(1, Math.max(0, Number(areaShare) || 0));
+    return (k + 1) / 2 * (1 - share) + k * share;
 }
 
-// A pull of k as one mob: k times the HP, and the attack of the mobs still
-// standing on average while they fall one by one, (k + 1) / 2 of one mob.
-// The view keeps k for the area skills that hit every mob of it.
-function pullView(target, k) {
+// A pull of k as one mob: k times the HP, and the attack of its mobs still
+// standing on average (packFactor). The view keeps k for the area skills
+// that hit every mob of it, its pack for its skills' damage (coldMobAction)
+// and one mob's attack (unitPAtk) to be packed anew (repack).
+function pullView(target, k, areaShare = 0) {
     if (!(k > 1)) return target;
-    return { ...target, maxHp: target.maxHp * k, pAtk: target.pAtk * (k + 1) / 2, pull: k };
+    const pack = packFactor(k, areaShare);
+    return { ...target, maxHp: target.maxHp * k, pAtk: target.pAtk * pack, pull: k, pack, unitPAtk: target.pAtk };
 }
 
-// A whole number of mobs for one new fight, from the spot's mean.
-function rollPull(mean, rng) {
-    const whole = Math.max(1, Math.floor(Number(mean) || 1));
-    const part = (Number(mean) || 1) - whole;
-    return part > 0 && rng() < part ? whole + 1 : whole;
+// A pull view packed for another area share (the same one mob).
+function repack(view, areaShare = 0) {
+    if (!(Number(view?.pull) > 1) || !Number.isFinite(Number(view.unitPAtk))) return view;
+    const pack = packFactor(view.pull, areaShare);
+    return pack === view.pack ? view : { ...view, pAtk: view.unitPAtk * pack, pack };
 }
 
-module.exports = { record, pullSize, minionJoiners, annotate, entryPull, pullView, rollPull };
+// The mobs that hit as one of a view (1 for a lone mob; a saved encounter
+// of an older view: (k + 1) / 2).
+function packOf(view) {
+    if (Number(view?.pack) > 0) return Number(view.pack);
+    return Number(view?.pull) > 1 ? packFactor(Number(view.pull)) : 1;
+}
+
+// An entry's pulls by size, [[size, share], ...]: its measured ones, else the
+// two whole sizes around its mean, else one mob.
+function pullsOf(entry) {
+    if (Array.isArray(entry?.pulls) && entry.pulls.length) return entry.pulls;
+    const mean = Number(entry?.pull) || 1;
+    if (!(mean > 1)) return [[1, 1]];
+    const whole = Math.floor(mean), part = mean - whole;
+    return part > 0 ? [[whole, 1 - part], [whole + 1, part]] : [[whole, 1]];
+}
+
+// One size from pulls [[size, share], ...] (shares need not sum to one).
+function rollPulls(pulls, rng) {
+    const total = pulls.reduce((sum, [, share]) => sum + share, 0);
+    if (pulls.length === 1 || !(total > 0)) return pulls[0]?.[0] || 1;
+    let needle = rng() * total;
+    for (const [size, share] of pulls) {
+        needle -= share;
+        if (needle < 0) return size;
+    }
+    return pulls[pulls.length - 1][0];
+}
+
+module.exports = { record, pullSize, liveMinions, packIndex, packPull, minionJoiners, annotate, packFactor, pullView, repack, packOf, pullsOf, rollPulls };

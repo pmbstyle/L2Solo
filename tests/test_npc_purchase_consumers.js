@@ -64,15 +64,15 @@ async function run() {
     const requirements = [{ selfId: 1785, amount: 6, options: { towns: ['Dion'], r: 1, purpose: 'craft_input' } },
         { selfId: 3031, amount: 7, options: { towns: ['Dion'], r: 1, purpose: 'wealth_craft' } }];
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    const baseEconomics = Economy.basics;
+    const baseEconomics = Economy.keptKit;
     let preparations = 0;
     try {
-        Economy.basics = (...args) => { preparations++; return baseEconomics(...args); };
+        Economy.keptKit = (...args) => { preparations++; return baseEconomics(...args); };
         const raw = Npc.collect(state, { town: 'Dion', potions: false, scrolls: false, shots: false,
             extras: requirements.map(row => ({ selfId: row.selfId, amount: row.amount, funding: { r: 1 } })) });
         assert.equal(raw.length, 1); assert.equal(raw[0].lines.length, 2);
         assert.equal(preparations, 0, 'ordinary selected craft inputs do not rebuild survival economics');
-    } finally { Economy.basics = baseEconomics; }
+    } finally { Economy.keptKit = baseEconomics; }
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const prepareReservations = Disposition.reservedEquipmentAmounts;
     let reservations = 0, materials;
@@ -110,9 +110,13 @@ async function run() {
     assert(!separateSellers.some(row => row.lines.some(line => line.selfId === 24)
         && row.lines.some(line => line.selfId === 1785)), 'weapon shop and grocer never become one seller');
 
-    state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 2 }]);
+    state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 10 }]);
+    // Its healing potions at the stock's own target, whatever use the table gives them: the goal alone pays.
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(state, 'potions');
+    await DB.setItem(9619, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target });
+    state = await Life.upsertState({ ...state, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(9619)) }, 'consumer_potions');
     const Goals = invoke('GameServer/Bot/Goals/GoalState');
-    const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6 },
+    const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6, adena: first.price },
         plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
     const activated = await Market.tryPurchase(state, goal);
     assert.equal(activated.hot, true, 'cold caller propagates activation after the committed NPC await');
@@ -158,7 +162,7 @@ async function run() {
 
         state = await seed(9624, 3000000);
         const selected = (await Goals.set(9624, { type: 'buy_craft_material', status: 'active',
-            target: { itemId: 1463, amount: 125 }, plan: { expectedBenefit: 'market_buy_craft_material',
+            target: { itemId: 1463, amount: 125, adena: configured.price }, plan: { expectedBenefit: 'market_buy_craft_material',
                 marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
         const configuredGoal = await Market.tryPurchase(state, selected);
         assert.equal(configuredGoal.units, 125);
@@ -167,7 +171,7 @@ async function run() {
         assert.equal(Goals.snapshot(9624).current.status, 'completed', 'singleton owns goal progress atomically');
 
         state = await seed(9626, 3000000);
-        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125 } })).current;
+        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125, adena: configured.price } })).current;
         const primeGoal = Goals.prime;
         let paid;
         try {
@@ -232,6 +236,11 @@ async function run() {
         assert.equal(again.reason, 'craft_rejected');
         assert.equal(captured.filter(row => row.id === 9621).length, 1,
             'selected unchanged two-batch wealth craft re-entry uses already purchased free inputs');
+        DB.craftInventoryItems = async () => { throw Error('economy_material_protected'); };
+        const calm = await Life.upsertState({ ...again.state, stats: { ...again.state.stats, wishDirty: 0 } }, 'fixture_raise_read');
+        const protectedInputs = await Wealth.execute(calm, opportunity);
+        assert.equal(protectedInputs.reason, 'craft_rejected');
+        assert(protectedInputs.state.stats.wishDirty, 'what the commit protects is heard: the plan does not ask it again');
         state = again.state;
     } finally { DB.craftInventoryItems = craftOwner; }
     const wealthCraft = await Wealth.execute(state, opportunity);
@@ -242,7 +251,7 @@ async function run() {
     state = await crafter(9622);
     const candidate = { recipe, batches: 2, maxBatches: 2, requiredCrystals: 1, crystalId: 1458,
         ore: recipe.materials.find(row => row.selfId === 1785), orePrice: first.price, r: 1,
-        basket: { purchases: [source] }, output, profit: 1, salePrice: 1 };
+        basket: { purchases: [source] }, output, profit: 1, salePrice: 1, exit: { type: 'afk', town: 'Giran' } };
     try {
         DB.craftInventoryItems = async () => { throw Error('fixture_selected_shot_waits'); };
         await assert.rejects(Shots.craft(state, candidate, {}, at), /fixture_selected_shot_waits/);
@@ -308,14 +317,21 @@ async function run() {
         shoppingTarget: { town: 'Dion' }, dataSendToOthers() {}, dataSendToMe() {} };
     actor.session = session;
     const timeouts = [], timer = global.setTimeout;
+    // Its spiritshots pay whatever the table says (the grocer's no-grade ones, beside the
+    // scrolls): two needs of one NPC, as the coalescing below asks.
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), realPlan = ShotStock.planForState, realUse = ShotStock.usePolicy;
+    ShotStock.planForState = (shotState, shotOptions = {}) => realPlan(shotState, { blessed: false, ...shotOptions });
+    ShotStock.usePolicy = (shotState, prepared = {}) => ({ ...realUse(shotState, prepared), usePerHour: 1000, paidUsePerHour: 1000, purchaseUsePerHour: 1000 });
     try {
-        global.setTimeout = (callback, delay, ...args) => {
-            if (delay === 4000 || delay === 5000) { timeouts.push({ callback, delay }); return {}; }
-            return timer(callback, delay, ...args);
-        };
-        invoke('GameServer/Bot/AI/States/ShoppingState').scheduleRestock(session, actor, {}, { getClosestTown: () => ({ name: 'Dion' }) });
-    } finally { global.setTimeout = timer; }
-    await timeouts.find(row => row.delay === 4000).callback();
+        try {
+            global.setTimeout = (callback, delay, ...args) => {
+                if (delay === 4000 || delay === 5000) { timeouts.push({ callback, delay }); return {}; }
+                return timer(callback, delay, ...args);
+            };
+            invoke('GameServer/Bot/AI/States/ShoppingState').scheduleRestock(session, actor, {}, { getClosestTown: () => ({ name: 'Dion' }) });
+        } finally { global.setTimeout = timer; }
+        await timeouts.find(row => row.delay === 4000).callback();
+    } finally { ShotStock.planForState = realPlan; ShotStock.usePolicy = realUse; }
     const hot = captured.filter(row => row.id === 9614);
     assert.equal(hot.length, 1, 'scheduled visible-bot restock reaches one SQL basket');
     assert(hot[0].lines.length >= 2, 'current consumable needs of the same NPC coalesce');

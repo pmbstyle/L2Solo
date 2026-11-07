@@ -8,6 +8,8 @@ require('./helpers/databaseIsolation');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 isolated.assertConfigured(options.default);
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const World = invoke('GameServer/World/World');
 const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
@@ -131,9 +133,13 @@ function authoredKitInputs(actor, session) {
     const escapeHeld = positive(state.inventory[736]?.amount);
     const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats.karma) ? 0
         : escapePrice * Math.max(0, 1 - escapeHeld);
-    // The protected survival kit is one hour of use in whole purchasable units.
-    const survivalReserve = escapeCost + Math.max(0, Math.ceil(shotUse) - shotHeld) * shotPrice
-        + Math.max(0, Math.ceil(potionUse) - potionHeld) * potionPrice;
+    // The protected survival kit is one hour of use in whole purchasable units, at
+    // the NPC's list price (the bot's estimate where no NPC sells it).
+    const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
+        return Number.isFinite(list) && list > 0 ? list : price(id); };
+    const survivalReserve = (escapeCost > 0 ? listPrice(736) * Math.max(0, 1 - escapeHeld) : 0)
+        + Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
+        + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,
@@ -151,6 +157,15 @@ function fundAuthoredKit(actor, session, extraCost, label) {
     console.log('AUTHORED_FUNDED_INPUTS', JSON.stringify({ label, characterId: actor.fetchId(), level: actor.fetchLevel(),
         ...values, fundedAdena: amount }));
     return inputs;
+}
+
+// A companion's town purchase is budgeted on the money packet its worker
+// decision writes (CompanionEquipmentShopping.companionBudget): with none it
+// plans nothing. The packet's reserve is the authored survival reserve.
+function workerMoneyPacket(session, inputs) {
+    const previous = session.coldLifeState || {};
+    session.coldLifeState = { ...previous, stats: { ...previous.stats, money: [Math.round(inputs.hourAdena),
+        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.survivalReserve), 0] } };
 }
 
 function publishNativeEquipmentShop(actor, town) {
@@ -1775,6 +1790,25 @@ try {
     assert.strictEqual(lowManaMeleeSession.plan, 'following', 'a melee companion already resting only for MP should immediately return to the party');
     assert.strictEqual(lowManaMelee.state.fetchSeated(), false, 'the stale MP-rest state must stand the melee companion up');
 
+    // T107: the mana rule of a self-healer is solo only. A companion Paladin
+    // sitting at whole HP gets up and follows, whatever its MP; alone it rests on.
+    const companionPaladin = fakeActor(2000113, { locX: 80, locY: 0, classId: 5, level: 46, hp: 100, maxHp: 100, mp: 30, maxMp: 100 });
+    const companionPaladinSession = fakeSession('bot_companion_paladin_rest', companionPaladin);
+    companionPaladinSession.followPlayerSession = manaLeaderSession;
+    companionPaladinSession.partyCompanion = true;
+    companionPaladinSession.plan = 'resting';
+    companionPaladin.state.setSeated(true);
+    publishSessions([manaLeaderSession, companionPaladinSession]);
+    RestingState.tick(companionPaladinSession, companionPaladin, {}, { say() {} });
+    assert.strictEqual(companionPaladinSession.plan, 'following', 'a companion Paladin at whole HP does not wait for 95% MP');
+    assert.strictEqual(companionPaladin.state.fetchSeated(), false, 'it stands up to follow');
+    const soloPaladin = fakeActor(2000114, { locX: 80, locY: 0, classId: 5, level: 46, hp: 100, maxHp: 100, mp: 30, maxMp: 100 });
+    const soloPaladinSession = fakeSession('bot_solo_paladin_rest', soloPaladin);
+    soloPaladinSession.plan = 'resting';
+    soloPaladin.state.setSeated(true);
+    RestingState.tick(soloPaladinSession, soloPaladin, {}, { say() {} });
+    assert.strictEqual(soloPaladinSession.plan, 'resting', 'alone the same Paladin rests on for its MP');
+
     const lowManaArcherRest = fakeActor(2000106, { locX: 80, locY: 0, classId: 9, hp: 100, maxHp: 100, mp: 1, maxMp: 100 });
     const lowManaArcherRestSession = fakeSession('bot_low_mana_archer_rest', lowManaArcherRest);
     lowManaArcherRestSession.followPlayerSession = manaLeaderSession;
@@ -2424,8 +2458,9 @@ try {
     zeroWalletErrandSession.followPlayerSession = errandLeaderSession;
     zeroWalletErrandSession.partyCompanion = true;
     zeroWalletErrandSession.plan = 'following';
-    // T43 table: C soulshots no longer pay at 40 (lower loot after the Mobius spawns); at 46 they do.
-    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404, level: 46 });
+    // T43 table: C soulshots no longer pay at 40 (lower loot after the Mobius spawns); at 46 they did.
+    // T106 tables (per mob, 592ca459b): bought C soulshots pay at 42-47 and 51+, not at 48-50.
+    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404, level: 44 });
     const cWeapon = DataCache.items.find(row => row.etc?.rank === 'c' && row.template?.kind === 'Weapon.Sword');
     assert(cWeapon, 'the native C-grade sword catalog must exist');
     equippedErrandKit(errandBot, cWeapon.selfId);
@@ -2480,7 +2515,7 @@ try {
     assert(physicalShotQuote && physicalShotQuote.price > 0);
     const authoredShotInputs = fundAuthoredKit(errandBot, errandSession, inputs => {
         assert(inputs.shotUse > 0, 'the equipped native C weapon must have positive authored shot use');
-        assert.strictEqual(inputs.potionUse, 0, 'this original DPS actor has no potion expense in the authored hunt table');
+        // The regenerated T106 table gives this DPS actor potion use too: fundAuthoredKit funds its reserve.
         return Math.ceil(inputs.shotUse) * physicalShotQuote.price;
     }, 'Giran stock: one authored hour at the actual Squeesh quote');
     const desiredShotQuantity = Math.ceil(authoredShotInputs.shotUse);
@@ -2524,7 +2559,7 @@ try {
     marketSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
     const giranAd = publishNativeEquipmentShop(marketSeller, 'Giran');
     marketSeller = giranAd.projection.actor;
-    fundAuthoredKit(marketBot, marketSession, () => giranAd.lines[0].price, 'Giran physical Short Sword ask');
+    workerMoneyPacket(marketSession, fundAuthoredKit(marketBot, marketSession, () => giranAd.lines[0].price, 'Giran physical Short Sword ask'));
     const assertMarketKitUnchanged = recordPhysicalKit(marketBot, marketSession.accountId);
     publishSessions([errandLeaderSession, marketSession]);
     FollowingState.tick(marketSession, marketBot, {}, {
@@ -2550,7 +2585,7 @@ try {
     starterTownSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
     const elvenAd = publishNativeEquipmentShop(starterTownSeller, 'Elven Village');
     starterTownSeller = elvenAd.projection.actor;
-    fundAuthoredKit(starterTownBot, starterTownSession, () => elvenAd.lines[0].price, 'Elven Village physical Short Sword ask');
+    workerMoneyPacket(starterTownSession, fundAuthoredKit(starterTownBot, starterTownSession, () => elvenAd.lines[0].price, 'Elven Village physical Short Sword ask'));
     const assertStarterKitUnchanged = recordPhysicalKit(starterTownBot, starterTownSession.accountId);
     publishSessions([starterTownLeaderSession, starterTownSession]);
     World.fetchNpcsInRadius = () => [];
@@ -2571,8 +2606,9 @@ try {
     fieldNearStarterSession.followPlayerSession = fieldNearStarterLeaderSession;
     fieldNearStarterSession.partyCompanion = true;
     fieldNearStarterSession.plan = 'following';
-    fundAuthoredKit(fieldNearStarterBot, fieldNearStarterSession, () => elvenAd.lines[0].price, 'Field negative control with the same physical ask');
+    const fieldInputs = fundAuthoredKit(fieldNearStarterBot, fieldNearStarterSession, () => elvenAd.lines[0].price, 'Field negative control with the same physical ask');
     fieldNearStarterSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
+    workerMoneyPacket(fieldNearStarterSession, fieldInputs);
     const assertFieldKitUnchanged = recordPhysicalKit(fieldNearStarterBot, fieldNearStarterSession.accountId);
     publishSessions([fieldNearStarterLeaderSession, fieldNearStarterSession]);
     FollowingState.tick(fieldNearStarterSession, fieldNearStarterBot, {}, {

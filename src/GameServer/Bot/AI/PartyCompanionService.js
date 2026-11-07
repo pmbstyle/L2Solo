@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
@@ -5,6 +6,7 @@ const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const Karma = invoke('GameServer/Karma');
+const GroundItems = require('../../World/GroundItems');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
 const DEFAULT_PARTY_SETTINGS = {
@@ -117,7 +119,7 @@ function updateSettings(leaderSession, patch = {}) {
     membersForLeader(leaderSession).forEach((companionSession) => {
         companionSession.autoTaunt = next.pullMode !== 'off';
         if (next.lootPickupEnabled === false) cancelGroundPickup(companionSession);
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             playerId: leaderSession?.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
             eventType: 'policy_change',
@@ -126,7 +128,7 @@ function updateSettings(leaderSession, patch = {}) {
             dedupeKey: `policy:${leaderSession.actor?.fetchId?.()}:${JSON.stringify(patch)}`,
             coalesceWindowMs: 15000,
             meta: { patch, settings: next }
-        })).catch(() => {});
+        });
     });
     if (hasOwn(patch, 'lootPickupEnabled')) leaderSession.lastGroundLootScanAt = 0;
     return next;
@@ -144,7 +146,7 @@ function setDistribution(leaderSession, distribution) {
         // Turn order is meaningful only for the currently selected rule.
         settings.itemLastLootIndex = -1;
         membersForLeader(leaderSession).forEach((companionSession) => {
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 playerId: leaderSession?.actor?.fetchId?.(),
                 botId: companionSession.actor?.fetchId?.(),
                 eventType: 'policy_change',
@@ -153,7 +155,7 @@ function setDistribution(leaderSession, distribution) {
                 dedupeKey: `distribution:${leaderSession.actor?.fetchId?.()}:${next}`,
                 coalesceWindowMs: 15000,
                 meta: { distribution: next }
-            })).catch(() => {});
+            });
         });
     }
     return settings.distribution;
@@ -261,15 +263,19 @@ function randomMember(members) {
     return members[index];
 }
 
-function nextTurnMember(leaderSession, members) {
+function nextTurnMember(leaderSession, members, canReceive = () => true) {
     if (members.length === 0) return null;
 
     const settings = settingsForLeader(leaderSession);
     const rawLastIndex = Number(settings.itemLastLootIndex);
     const lastIndex = Number.isFinite(rawLastIndex) ? rawLastIndex : -1;
-    const nextIndex = (lastIndex + 1) % members.length;
-    settings.itemLastLootIndex = nextIndex;
-    return members[nextIndex];
+    for (let offset = 1; offset <= members.length; offset++) {
+        const nextIndex = (lastIndex + offset) % members.length;
+        if (!canReceive(members[nextIndex])) continue;
+        settings.itemLastLootIndex = nextIndex;
+        return members[nextIndex];
+    }
+    return null;
 }
 
 function canPickupLoot(session) {
@@ -325,13 +331,14 @@ function groundLootPickers(leaderSession) {
     return [...(autonomousLootBot(leaderSession) ? [leaderSession] : []), ...membersForLeader(leaderSession)];
 }
 
-function partyGroundLootLeaderId(item) {
-    return Number(item?.model?.partyLootLeaderId ?? item?.partyLootLeaderId ?? 0);
-}
-
 function isOwnedPartyGroundLoot(leaderSession, item) {
     const leaderId = Number(leaderSession?.actor?.fetchId?.() || 0);
-    return leaderId > 0 && partyGroundLootLeaderId(item) === leaderId;
+    return leaderId > 0 && GroundItems.leaderOf(item) === leaderId;
+}
+
+// The drops on the ground made for this leader's party (GroundItems).
+function ownedGroundLoot(leaderSession) {
+    return GroundItems.ownedBy(world().items, Number(leaderSession?.actor?.fetchId?.() || 0));
 }
 
 function isInsidePartyGroundLootLeash(leaderSession, item) {
@@ -369,14 +376,25 @@ function queuedGroundLootIds(leaderSession) {
         .filter(Boolean));
 }
 
+// The party's bags as the pickup claim reads them (PickupCapacity): a drop the
+// claim refused for room (PickupItem) waits until this changes, instead of
+// sending a companion to it again on every scan.
+function lootBagsKey(leaderSession) {
+    return [leaderSession, ...membersForLeader(leaderSession)].map(member => {
+        const backpack = member?.actor?.backpack;
+        return `${backpack?.fetchItems?.().length}:${backpack?.fetchTotalLoad?.()}:${member?.actor?.fetchMaxLoad?.()}`;
+    }).join('|');
+}
+
 function availableGroundLoot(leaderSession) {
     const members = [leaderSession, ...membersForLeader(leaderSession)]
         .filter(isAliveOnline);
     const queuedIds = queuedGroundLootIds(leaderSession);
-    return (world().items?.spawns || [])
+    let bags;
+    return [...ownedGroundLoot(leaderSession)]
         .filter((item) => item?.fetchId && item?.fetchLocX && item?.fetchLocY)
         .filter((item) => !queuedIds.has(Number(item.fetchId())))
-        .filter((item) => isOwnedPartyGroundLoot(leaderSession, item))
+        .filter((item) => item.partyLootRefusedBags === undefined || item.partyLootRefusedBags !== (bags ??= lootBagsKey(leaderSession)))
         .filter((item) => isInsidePartyGroundLootLeash(leaderSession, item))
         .filter((item) => members.some((memberSession) => distance2d(memberSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS))
         .sort((a, b) => Number(a.fetchId()) - Number(b.fetchId()));
@@ -401,6 +419,10 @@ function hasCampThreat(leaderSession) {
 function reconcileGroundLoot(looterSession) {
     const leaderSession = partyLeaderSession(looterSession);
     if (!leaderSession || settingsForLeader(leaderSession).lootPickupEnabled === false) return 0;
+    // Nothing of the party's on the ground and no pickup queued: no work, and
+    // no combat or threat question to ask (most hot hunters, most ticks).
+    if (ownedGroundLoot(leaderSession).size === 0
+        && !groundLootPickers(leaderSession).some(member => member.partyGroundPickupQueue?.length)) return 0;
 
     const now = Date.now();
     if (now - Number(leaderSession.lastGroundLootScanAt || 0) < GROUND_LOOT_SCAN_INTERVAL_MS) return 0;
@@ -421,9 +443,11 @@ function reconcileGroundLoot(looterSession) {
         }
     }
     const items = availableGroundLoot(leaderSession);
-    // This shared timestamp protects the hot party from every companion
-    // walking the entire world-item list on every AI tick. Fresh NPC drops do
-    // not wait for this scan: NpcRewards queues them directly at spawn.
+    // While the party has drops nobody could take (combat, out of the leash,
+    // no room), they are retried at most every GROUND_LOOT_SCAN_INTERVAL_MS
+    // for the whole party: what frees them (combat end, a picker walking
+    // back) has no one event. Fresh NPC drops do not wait for this scan:
+    // NpcRewards queues them directly at spawn; a finished pickup reconciles.
     leaderSession.lastGroundLootScanAt = now;
     if (items.length === 0) return 0;
 
@@ -709,7 +733,7 @@ function beginRegroup(leaderSession, options = {}) {
         member.currentTargetId = undefined;
         member.lastFollowMoveTarget = null;
         member.actor?.unselect?.();
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             playerId: leader.fetchId?.(),
             botId: member.actor?.fetchId?.(),
             eventType: 'party_regroup',
@@ -717,7 +741,7 @@ function beginRegroup(leaderSession, options = {}) {
             weight: 3,
             dedupeKey: `regroup:${leader.fetchId?.()}:${leaderSession.partyRegroupDirective.startedAt}`,
             meta: { radius, affected: members.length }
-        })).catch(() => {});
+        });
     });
     return {
         ok: true,
@@ -859,7 +883,7 @@ function cancelCompanionAction(companionSession) {
 }
 
 function detachState(companionSession, plan = 'hunting', preserveTakeover = false, preserveConstActivity = false) {
-    try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (_) { /* optional hot trade modules */ }
+    try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (error) { FailureLog.note('ai.cleanup.trade', error); }
     invoke('GameServer/Bot/AI/HotBotPolicyOverlay').clearForPartyDetach(companionSession);
     cancelCompanionAction(companionSession);
     companionSession.plan = plan;
@@ -977,7 +1001,7 @@ const PartyCompanionService = {
         return false;
     },
 
-    resolveLootSession(looterSession, selfId, target, { spoil = false } = {}) {
+    resolveLootSession(looterSession, selfId, target, { spoil = false, canReceive = () => true } = {}) {
         const leaderSession = partyLeaderSession(looterSession);
         const members = lootMembersForLeader(leaderSession, target);
         if (!leaderSession || members.length <= 1) return looterSession;
@@ -990,8 +1014,8 @@ const PartyCompanionService = {
                 ? members.find(member => Number(member.actor.fetchId()) === Number(agreement.help.payerId)) : null;
             if (payer) return payer;
             if (spoil && agreement.spoil === 'spoiler') return looterSession;
-            if (agreement.mode === 'turn') return nextTurnMember(leaderSession, members) || looterSession;
-            if (agreement.mode === 'random') return randomMember(members) || looterSession;
+            if (agreement.mode === 'turn') return nextTurnMember(leaderSession, members, canReceive);
+            if (agreement.mode === 'random') return randomMember(members.filter(canReceive));
             if (agreement.mode === 'need') {
                 // Each bot's item value from the decision its body holds
                 // (DecisionEvents.held): an item outside its listed values
@@ -999,18 +1023,18 @@ const PartyCompanionService = {
                 // (reached only with a party agreement, which player parties do not carry).
                 // lazy: cycle DecisionEvents loads this module through its economy imports.
                 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
-                const scores = members.map(session => ({ session, value: world().isBotSession(session)
+                const scores = members.filter(canReceive).map(session => ({ session, value: world().isBotSession(session)
                     ? DecisionEvents.held(session).itemUsefulness(Number(selfId)) : 0 }));
                 const best = Math.max(...scores.map(entry => Number(entry.value) || 0));
-                return randomMember(scores.filter(entry => Number(entry.value) === best).map(entry => entry.session)) || looterSession;
+                return randomMember(scores.filter(entry => Number(entry.value) === best).map(entry => entry.session));
             }
         }
         const distribution = distributionForLeader(leaderSession);
         if (distribution === 1 || distribution === 2) {
-            return randomMember(members) || looterSession;
+            return randomMember(members.filter(canReceive));
         }
         if (distribution === 3 || distribution === 4) {
-            return nextTurnMember(leaderSession, members) || looterSession;
+            return nextTurnMember(leaderSession, members, canReceive);
         }
         return members.includes(looterSession) ? looterSession : (leaderSession || looterSession);
     },
@@ -1042,6 +1066,7 @@ const PartyCompanionService = {
 
     reconcileGroundLoot,
     groundLootLeader: partyLeaderSession,
+    lootBagsKey,
 
     bringToLeader(leaderSession, companionSession) {
         if (!isActiveCompanion(companionSession, leaderSession)) return false;
@@ -1156,7 +1181,7 @@ const PartyCompanionService = {
 
         roster.forEach((companionSession) => {
             const bot = companionSession.actor;
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 playerId: leader.fetchId(),
                 botId: bot.fetchId(),
                 eventType: 'party_join',
@@ -1165,7 +1190,7 @@ const PartyCompanionService = {
                 dedupeKey: `party_takeover:${leader.fetchId()}:${bot.fetchId()}`,
                 coalesceWindowMs: 5000,
                 meta: { backgroundPartyId: options.expectedBackgroundPartyId || null }
-            })).catch(() => {});
+            });
         });
         return { ok: true, reason: 'party_taken_over', count: roster.length };
     },
@@ -1224,7 +1249,7 @@ const PartyCompanionService = {
         if (!arrivalPending) {
             invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
         }
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leader.fetchId(),
             botId: bot.fetchId(),
             eventType: 'party_join',
@@ -1232,7 +1257,7 @@ const PartyCompanionService = {
             weight: 5,
             dedupeKey: `party_join:${leader.fetchId()}:${bot.fetchId()}`,
             coalesceWindowMs: 5000
-        })).catch(() => {});
+        });
         return true;
     },
 
@@ -1256,7 +1281,7 @@ const PartyCompanionService = {
         }
 
         refreshLeaderView(leaderSession, options);
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leaderSession.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
             eventType: 'party_leave',
@@ -1265,7 +1290,7 @@ const PartyCompanionService = {
             dedupeKey: `party_leave:${leaderSession.actor?.fetchId?.()}:${companionSession.actor?.fetchId?.()}`,
             coalesceWindowMs: 5000,
             meta: { event: event || null, source }
-        })).catch(() => {});
+        });
         return true;
     },
 

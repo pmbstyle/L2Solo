@@ -80,19 +80,6 @@ function currentActorRecord(runtime, record) {
         && record.session.actor === record.actor && runtime.index.getSource(record.id, 'actor') === record;
 }
 
-function rawCoordinate(value) {
-    if (value !== null && !['number', 'string', 'boolean'].includes(typeof value)) return null;
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-}
-
-function rawActorLoc(actor) {
-    if (typeof actor.fetchLocX !== 'function' || typeof actor.fetchLocY !== 'function') return null;
-    const rawX = actor.fetchLocX(), rawY = actor.fetchLocY();
-    const locX = rawCoordinate(rawX), locY = rawCoordinate(rawY);
-    return locX !== null && locY !== null ? { locX, locY } : null;
-}
-
 function refreshActorPresence(runtime, record) {
     if (!currentActorRecord(runtime, record)) return false;
     const targetId = Number(record.actor.fetchDestId?.() || 0);
@@ -223,8 +210,7 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
-const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE } = invoke('GameServer/World/WorldConstants');
-const CLIENT_VISIBILITY_RADIUS_SQUARED = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
+const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE, inClientView } = invoke('GameServer/World/WorldConstants');
 
 function isBotSession(session) {
     return !!session && (
@@ -235,17 +221,18 @@ function isBotSession(session) {
 }
 
 function isVisibleFrom(creature, candidate) {
-    const dx = Number(candidate.actor.fetchLocX() ?? 0) - Number(creature.fetchLocX());
-    const dy = Number(candidate.actor.fetchLocY() ?? 0) - Number(creature.fetchLocY());
-    return (dx * dx) + (dy * dy) < CLIENT_VISIBILITY_RADIUS_SQUARED;
+    return inClientView(Number(creature.fetchLocX()), Number(creature.fetchLocY()),
+        Number(candidate.actor.fetchLocX() ?? 0), Number(candidate.actor.fetchLocY() ?? 0));
 }
 
+// realOnly reads the index's real-player cells (online, finite XYZ, PlayerActivitySignal's
+// real session, kept by updateUserLocation): a bot packet no longer walks the hot bots around it.
 function visibleUserSessions(user, session, creature, realOnly) {
     const runtime = currentUserLocationIndex(user);
     if (!runtime) return [];
     const loc = { locX: Number(creature?.fetchLocX?.()), locY: Number(creature?.fetchLocY?.()), locZ: 0 };
     if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY)) return [];
-    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: 'all',
+    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: realOnly ? 'player' : 'all',
         accept: (record) => !record.retired
             && record.session !== session && (!realOnly || !isBotSession(record.session))
             && record.actor.fetchIsOnline?.() === true })
@@ -272,21 +259,22 @@ function nameDistance(left, right) {
     return previous[b.length];
 }
 
+// One pass over hot and cold names keeping the closest (a tie: the smaller name).
 function nearestBotName(lookup, BotManager, LifeState) {
-    const hotNames = (BotManager.sessions || [])
-        .map((session) => session?.actor?.fetchName?.())
-        .filter(Boolean);
-    const coldNames = typeof LifeState.allStates === 'function'
-        ? LifeState.allStates(2000).map((state) => state?.name).filter(Boolean)
-        : [];
-    const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
-    const ranked = names
-        .map((name) => ({ name, distance: nameDistance(lookup, name) }))
-        .sort((left, right) => left.distance - right.distance || left.name.localeCompare(right.name));
-    const best = ranked[0];
-    if (!best) return null;
-    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.name.length) * 0.3));
-    return best.distance <= maxDistance ? best.name : null;
+    let best = null, bestDistance = Infinity;
+    const consider = (value) => {
+        if (!value) return;
+        const name = String(value), distance = nameDistance(lookup, name);
+        if (distance < bestDistance || (distance === bestDistance && name < best)) {
+            best = name;
+            bestDistance = distance;
+        }
+    };
+    for (const session of BotManager.sessions || []) consider(session?.actor?.fetchName?.());
+    for (const state of LifeState.everyState()) consider(state?.name);
+    if (best === null) return null;
+    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.length) * 0.3));
+    return bestDistance <= maxDistance ? best : null;
 }
 
 function unknownBotReply(session, lookup, BotManager, LifeState) {
@@ -349,7 +337,7 @@ const World = {
         };
         RaidEntityIndex.reset(this);
         this.npc.raidBossState = await RaidBossState.load();
-        this.items = { spawns   : [], nextId: 5000000 };
+        this.items = { spawns   : [], nextId: 5000000, byLeader: new Map() };
 
         World.spawnNpcs();
         RaidBossMinionManager.start(this);
@@ -504,28 +492,6 @@ const World = {
             }
         }
         return { record, session: record?.session ?? null, distance: Math.sqrt(distanceSquared), count: runtime.index.presenceSize() };
-    },
-
-    botRealPlayerIndex: true,
-
-    botVisibleRealPlayers(session, bot) {
-        if (!session || !bot) return [];
-        const point = rawActorLoc(bot);
-        if (!point) return [];
-        const runtime = currentUserLocationIndex(this.user);
-        if (!runtime) return [];
-        const records = runtime.index.nearSources({ ...point, locZ: 0 }, CLIENT_VISIBILITY_RADIUS, {
-            view: 'actor', kind: 'all',
-            accept: record => {
-                if (record.retired || record.session === session) return false;
-                const candidate = record.session, actor = record.actor;
-                return !!actor.fetchIsOnline?.() && !!candidate.accountId
-                    && !String(candidate.accountId).startsWith('bot_')
-                    && !!rawActorLoc(actor);
-            }
-        });
-        records.sort((left, right) => left.order - right.order);
-        return records.map(record => record.session);
     },
 
     pvpPartyMembershipKeys: PvpPartyMembershipKeys,
@@ -1171,26 +1137,28 @@ const World = {
         utils.infoSuccess('SpawnsGrid', 'Indexed %d npcs in 2D spatial grid', this.npc.spawns.length);
     },
 
+    // The NPCs within a 2D radius, from the 3x3 cells around the point (an
+    // NPC stays in the cell it was indexed in while it moves, so the ring of
+    // cells is kept at any radius). One pass, no copies: every aggro sweep,
+    // visibility refresh and hazard scan runs through it.
     fetchNpcsInRadius(locX, locY, radius) {
         const bgx = Math.floor(locX / NPC_GRID_SIZE);
         const bgy = Math.floor(locY / NPC_GRID_SIZE);
         const npcs = [];
-        
+
         for (let dx = -1; dx <= 1; dx++) {
             for (let dy = -1; dy <= 1; dy++) {
-                const key = `${bgx + dx}_${bgy + dy}`;
-                const sector = this.npc.grid[key];
-                if (sector) {
-                    npcs.push(...sector);
+                const sector = this.npc.grid[`${bgx + dx}_${bgy + dy}`];
+                if (!sector) continue;
+                for (let index = 0; index < sector.length; index++) {
+                    const npc = sector[index];
+                    const offX = locX - npc.fetchLocX();
+                    const offY = locY - npc.fetchLocY();
+                    if (Math.sqrt((offX ** 2) + (offY ** 2)) <= radius) npcs.push(npc);
                 }
             }
         }
-        
-        const SpeckMath = invoke('GameServer/SpeckMath');
-        const pt = new SpeckMath.Point(locX, locY);
-        return npcs.filter(npc => {
-            return new SpeckMath.Point(npc.fetchLocX(), npc.fetchLocY()).distance(pt) <= radius;
-        });
+        return npcs;
     },
 
     fetchNpc        : invoke(path.world + 'FetchNpc'),

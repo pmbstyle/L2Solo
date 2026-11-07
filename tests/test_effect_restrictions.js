@@ -16,7 +16,6 @@ function actor() {
         fetchLocZ: () => 30,
         fetchHead: () => 40,
         aborted: false,
-        combatAborted: false,
         queue: false,
         automation: {
             abortAll(target) {
@@ -46,9 +45,6 @@ function actor() {
             setHits(value) { this.hits = value; },
             setCasts(value) { this.casts = value; },
             setCombats(value) { this.combats = value; }
-        },
-        abortCombatState() {
-            this.combatAborted = true;
         }
     };
 }
@@ -77,7 +73,7 @@ assert.strictEqual(rootedSession.moveTimer, null, 'Root must stop an active rout
 assert.strictEqual(rooted.attack.timersCleared, false, 'Root must preserve active attack and cast timers');
 assert.strictEqual(rooted.state.hits, true, 'Root must not cancel an in-range swing');
 assert.strictEqual(rooted.state.casts, true, 'Root must not cancel a stationary cast');
-assert.strictEqual(rooted.combatAborted, false, 'Root must preserve the combat loop');
+assert.strictEqual(rooted.state.combats, true, 'Root must preserve the combat stance');
 
 const silenced = actor();
 EffectStore.apply(silenced, { key: 'silence', id: 1064, type: 'debuff', durationMs: 10000 });
@@ -107,7 +103,7 @@ assert.strictEqual(stunned.aborted, true, 'Control debuff should abort current m
 assert.strictEqual(stunned.attack.timersCleared, true, 'Control debuff should clear active attack timers');
 assert.strictEqual(stunned.state.hits, false, 'Control debuff should clear active hit state');
 assert.strictEqual(stunned.state.casts, false, 'Control debuff should clear active cast state');
-assert.strictEqual(stunned.combatAborted, true, 'Control debuff should abort NPC-style combat loops when available');
+assert.strictEqual(stunned.state.combats, false, 'Control debuff should stop a player combat stance');
 assert.strictEqual(stunnedSession.moveTimer, null, 'Control debuff should clear active move timer');
 assert(stunnedSession.packets.some((packet) => packet[0] === 0x47), 'Control debuff should send StopMove to halt an in-flight client move');
 
@@ -170,7 +166,7 @@ const fearSession = session();
 const fearEffect = EffectStore.apply(fearTarget, { key: 'fear', id: 1092, type: 'debuff', durationMs: 10000 });
 EffectRestrictions.interruptOnApply(fearSession, fearTarget, fearEffect, fearSource);
 assert.strictEqual(fearTarget.aborted, true, 'Fear should abort current target automation');
-assert.strictEqual(fearTarget.combatAborted, true, 'Fear should abort NPC-style combat loops');
+assert.strictEqual(fearTarget.state.combats, false, 'Fear should stop a player combat stance');
 assert.strictEqual(fearTarget.isAfraid, true, 'Fear should mark the target as afraid');
 const fearMove = fearSession.packets.find((packet) => packet[0] === 0x01);
 assert(fearMove, 'Fear should broadcast a flee MoveToLocation packet');

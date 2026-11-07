@@ -35,16 +35,19 @@ assert(Math.abs(Resolver.soloShareMobs(gremlins({ npcEntries: [{ selfId: 1, coun
     { selfId: 2, count: 1, production: 60 }] }), 60000, 1) - 1) < 1e-9, 'a mixed spot is shared by its producing spawns');
 const zero = Resolver.resolveSolo({ state: hunter(), spot: gremlins({ npcEntries: [{ selfId: 1, count: 2, production: 0 }] }),
     spotHunters: 9, elapsedMs: 60000, rng: () => 0 });
-assert.strictEqual(zero.debug.wins, 1, 'a bot on a zero-production spot still fights');
+// T106: the walk between the two gremlins (17 s) leaves room for three per minute.
+assert(zero.debug.wins >= 2, 'a bot on a zero-production spot still fights');
 assert.strictEqual(zero.debug.shareCut, 0);
 
 const before = { ...Metrics.counters };
 const first = Resolver.resolveSolo({ state: hunter(), spot: gremlins(), spotHunters: 9, elapsedMs: 60000, rng: () => 0 });
 assert.strictEqual(first.debug.wins, 0, 'a crowded bot does not kill above its share');
-assert.strictEqual(first.debug.shareCut, 1);
+// T106: the cut counts the fights its walk would have allowed in the minute.
+const walkMs = Resolver.soloWalkMs(2, invoke('GameServer/Bot/Population/ColdTrip').RUN_SPEED);
+assert.strictEqual(first.debug.shareCut, Math.ceil(60000 / walkMs));
 Metrics.recordCombat(first.debug);
 assert.strictEqual(Metrics.counters.coldShareBoundResolves - (before.coldShareBoundResolves || 0), 1);
-assert.strictEqual(Metrics.counters.coldShareCutFights - (before.coldShareCutFights || 0), 1);
+assert.strictEqual(Metrics.counters.coldShareCutFights - (before.coldShareCutFights || 0), Math.ceil(60000 / walkMs));
 
 // The unused part of the share carries to the next round on the same spot, so the bot is not starved.
 let state = hunter();
@@ -65,7 +68,7 @@ const pullSpot = gremlins({ density: 3, npcEntries: [{ selfId: 1, count: 3, pull
 const startedAt = 1_750_000_000_000;
 const pullView = { selfId: 1, level: 1, maxHp: 24, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1,
     accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333, pull: 3 };
-const opened = PveEncounter.save(null, PveEncounter.key([hunter()], pullSpot, 0), pullView, 1, startedAt,
+const opened = PveEncounter.save(null, PveEncounter.key([hunter()], pullSpot), pullView, 1, startedAt,
     { botReadyAt: 0, mobReadyAt: 0 });
 const closed = Resolver.resolveSolo({ state: hunter({ pveEncounter: opened, coldShare: { spotId: pullSpot.id, carry: 0 } }),
     spot: pullSpot, spotHunters: 1, elapsedMs: 60000, rng: () => 0, timestamp: startedAt + 60000 });
@@ -76,8 +79,8 @@ assert.strictEqual(closed.patch.stats.coldShare.carry, 2 - 3, 'the share is char
 
 // A lone bot on the same spot has the whole spot's production.
 const alone = Resolver.resolveSolo({ state: hunter(), spot: gremlins(), spotHunters: 1, elapsedMs: 60000, rng: () => 0 });
-assert.strictEqual(alone.debug.wins, 1);
-assert.strictEqual(alone.debug.shareCut, 0);
+assert.strictEqual(alone.debug.wins, 2, 'its share is 2 mobs a minute');
+assert(alone.debug.shareCut > 0, 'the walk would allow more');
 
 // The bots that split a spot: the index counts the bots on it and the ones
 // on their way there; a gear plan or a party request elsewhere holds no place

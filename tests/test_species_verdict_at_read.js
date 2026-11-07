@@ -1,5 +1,5 @@
 'use strict';
-// A species verdict is computed when asked from the profiles and the species:
+// A spawn group's verdict (speciesPulls) is computed when asked from the profiles and the species:
 // profile arrays of different strength get their own answers, with no store
 // shared between arrays.
 const assert = require('node:assert/strict');
@@ -13,13 +13,13 @@ assert(mob, 'the datapack must contain a level 40 monster');
 const fighter = (pAtk, maxHp, pDef) => ({ classId: 0, role: 'dps', level: 40, pAtk, mAtk: 10, maxMp: 100,
     atkSpd: 300, castSpd: 333, weaponMask: 4, maxHp, pDef, equipment: { weaponKind: 'Weapon.Sword' }, skills: [] });
 const options = { soloSafety: true };
-const strong = Matchup.speciesVerdict([fighter(900, 3000, 600)], mob.selfId, options);
-const weak = Matchup.speciesVerdict([fighter(15, 150, 40)], mob.selfId, options);
+const strong = Matchup.speciesPulls([fighter(900, 3000, 600)], { selfId: mob.selfId }, options);
+const weak = Matchup.speciesPulls([fighter(15, 150, 40)], { selfId: mob.selfId }, options);
 assert.equal(strong.canHunt, true, 'a strong fighter can hunt the species');
 assert.equal(weak.canHunt, false, 'a weak fighter cannot');
 // Equal numbers in another array: the same answer, computed again for that
 // array (a store shared by equal numbers would hand back the first object).
-const again = Matchup.speciesVerdict([fighter(15, 150, 40)], mob.selfId, options);
+const again = Matchup.speciesPulls([fighter(15, 150, 40)], { selfId: mob.selfId }, options);
 assert.deepEqual(again, weak);
 assert.notStrictEqual(again, weak, 'another array gets its own verdict');
-console.log('PASS species verdict at read');
+console.log('PASS spawn group verdict at read');

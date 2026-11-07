@@ -1,5 +1,7 @@
 const DiagnosticConfig = require('./PopulationConfig');
+const FailureLog = require('../../../FailureLog');
 const Protocol = require('./ColdSimulationProtocol');
+const InventorySummary = require('./InventorySummary');
 const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
 // Admission and batch sizing must agree on the cost of one ordinary row.
@@ -89,6 +91,9 @@ class ColdCommitQueue {
         this.stepSamples = {};
         this.flushReasons = {};
         this.lastBatchReason = null;
+        // Counted always (cheap): an afterCommit that throws (economy review, training, events) does
+        // not fail the commit, and its error was kept only on the result (POP-2).
+        this.failures = { afterCommitErrors: 0, lastAfterCommitError: null };
         this.counters = {
             enqueued: 0,
             coalesced: 0,
@@ -223,6 +228,9 @@ class ColdCommitQueue {
                 }
                 this.bytes -= previous.bytes;
                 queued.queuedAt = previous.queuedAt;
+                // One commit for both steps: its bag fields name what either moved.
+                const { bagChanged, changedItemIds, removedItemIds } = InventorySummary.mergeBagChange(previous, proposal);
+                Object.assign(queued, { bagChanged, changedItemIds, removedItemIds });
                 DiagnosticConfig.developerDiagnostics && (this.counters.coalesced += 1);
             }
             this.p2.set(Number(proposal.characterId), queued);
@@ -459,8 +467,11 @@ class ColdCommitQueue {
                         } catch (error) {
                             // Persistence already succeeded. A failed journal or
                             // world notification must never become a rejected ACK.
+                            FailureLog.note('cold.after_commit', error);
                             DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1);
                             result.afterCommitError = error?.message || 'after_commit_error';
+                            this.failures.afterCommitErrors += 1;
+                            this.failures.lastAfterCommitError = { reason: result.afterCommitError, at: Date.now() };
                         } finally {
                             if (DiagnosticConfig.developerDiagnostics) afterCommitMs += this.now() - afterStartedAt;
                         }
@@ -571,6 +582,7 @@ class ColdCommitQueue {
             oldestMs: this.size() ? Math.max(0, now - oldestAt) : 0,
             paused: this.paused,
             flushing: this.flushing,
+            failures: { ...this.failures },
             ...(DiagnosticConfig.developerDiagnostics ? {
             flushReasons: { ...this.flushReasons },
             stages: Object.fromEntries(Object.entries(this.stageSamples).map(([stage, samples]) => [stage, {

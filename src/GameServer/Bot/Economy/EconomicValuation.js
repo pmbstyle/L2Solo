@@ -73,6 +73,65 @@ function acquisition(context, plan, route) {
         cycleHours: Number(route?.hours) }]);
 }
 
+// A required purchase (kit, survival stock: a funded required root's step) is bought
+// whatever its value: the money queue funds its price, fees in it, and the solver
+// chose its source with the road. Its road needs no value of its own on a full fill.
+// A part fill leaves a road to make again for the rest: it carries its road while its
+// share of the benefit beats that, share x benefit > (1 - share) x road (valueHours:
+// the part's own value, the share of the benefit). No road dearer than the goods it
+// brings (fees and hours at the money price over their cost): a far seller of a cheap
+// need is no reason to cross the map.
+// step: what one seller fills, as a visit's step reads it: unitPrice × amount (else
+// price) its goods, amount of wanted (the whole need still to buy) its share,
+// valueHours its own value. One reading for the visit, the trip and the network's
+// tier (WishNetwork roadless), so their answers cannot drift.
+function roadCarried(context, step, route) {
+    const amount = positive(step.amount);
+    const cost = positive(step.unitPrice) > 0 ? positive(step.unitPrice) * amount : positive(step.price);
+    const share = Math.min(1, amount / (positive(step.wanted) || amount || 1));
+    const moneyPrice = positive(context.moneyPrice);
+    const road = moneyPrice * positive(route.fees) + positive(route.hours);
+    if (!(road <= moneyPrice * cost)) return false;
+    return share >= 1 || positive(step.valueHours) > (1 - share) * road;
+}
+// One new-purchase journey question: the quantity pays its trip. The originating
+// finite utility is for the requested quantity: a partial feasible fill gets
+// only its proportional value, never all of it; no value given: its place in
+// the money queue (r), else the reader's own usefulness. required: a required
+// purchase (roadCarried), its share of wanted (the root's whole need still to
+// buy, as a visit's step reads it; else the requested amount).
+function tripPays(context, plan, route, { valueHours, r, required, wanted } = {}) {
+    if (!route?.known) return false;
+    if (route.hours === 0 && route.fees === 0) return true;
+    if (required === true) {
+        const units = positive(plan.units);
+        if (roadCarried(context, { price: plan.cost, amount: units, wanted: positive(wanted) || positive(plan.amount),
+            valueHours: positive(valueHours) * Math.min(1, units / Math.max(1, positive(plan.amount))) }, route)) return true;
+    }
+    const total = Number(valueHours), rate = Number(r);
+    const valuation = valueHours !== undefined && Number.isFinite(total) && total >= 0
+        ? { ...context, itemUsefulness: () => total / Math.max(1, Number(plan.amount)) }
+        : r !== undefined && Number.isFinite(rate) && rate >= 0
+            ? { ...context, itemUsefulness: () => rate * plan.cost / plan.units } : context;
+    const result = acquisition(valuation, plan, route);
+    return result.known && result.valueHours > 0;
+}
+
+// A town visit pays its one trip: the plan's steps there, their value against
+// their cost, the road's hours and fees; a required step there carries the road
+// (roadCarried), the others ride along. Asked by the build of the step it chooses
+// and by the agenda of the step it moves to (Reaction, one look a visit).
+function visitPays(context, steps, route) {
+    if (!route?.known) return false;
+    let cost = 0, valueHours = 0, carried = false;
+    for (const step of steps) {
+        cost += positive(step.unitPrice) > 0 ? positive(step.unitPrice) * positive(step.amount) : positive(step.price);
+        valueHours += positive(step.valueHours);
+        carried ||= step.required === true && roadCarried(context, step, route);
+    }
+    return carried || tripPays(context, { selfId: Number(steps[0]?.itemId), units: 1, amount: 1, cost }, route, { valueHours });
+}
+
 // MVP-4: hours spent earning a cash shortfall at the net income rate. No
 // shortfall waits nothing even without income; a shortfall without income is
 // unknown (null), never free time.
@@ -97,6 +156,11 @@ function riskWeight(state, persona) {
     return (1 + trait(persona, 'caution')) / (0.5 + trait(persona, 'resilience'))
         * (1 + positive(state.stats?.frustration));
 }
+// What an hour of a bot's progress is worth to it, in hours (the level wish's
+// value, its spot value's side against money).
+function powerWeight(persona) {
+    return (persona?.primaryDrive === 'progression' ? 1 : 0.5) + trait(persona, 'caution');
+}
 function stageHours(state, expPerHour, persona) {
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Data = invoke('GameServer/DataCache');
@@ -113,11 +177,23 @@ function decisionHorizon(state, context) {
     return Number.isFinite(context.horizonHours) ? context.horizonHours
         : stageHours(state, context.hunt.expPerHour, context.persona);
 }
+// The respawn wait of a death (BackgroundResolver.resolveDeathRecovery: 90 s).
+const RESPAWN_HOURS = 90 / 3600;
+// A death's price in hours: the exp it loses, the walk back, the gear it may
+// drop. A table row's deaths (spot and hunt tables, read by SpotEconomics and
+// EconomyContext) already cost their kills the respawn wait (the generator
+// runs the real respawn, T126); a live death adds it (liveDeathHours).
 function deathHours(state, { expPerHour = 0, walkBackHours, returnHours, lostGearHours = 0, spotId } = {}) {
     const Death = invoke('GameServer/Progression/DeathExperience');
     const loss = Death.calculateLoss({ ...state, exp: state.stats?.exp ?? state.exp ?? 0 });
     const downtime = walkBackHours ?? returnHours ?? WalkBack.hours(spotId || state.spotId, state);
-    return (expPerHour > 0 ? loss.expLost / expPerHour : 0) + 90 / 3600 + positive(downtime) + positive(lostGearHours);
+    return (expPerHour > 0 ? loss.expLost / expPerHour : 0) + positive(downtime) + positive(lostGearHours);
+}
+// The price of one live death (a kill, a death in a fight, a PvP risk) from a
+// table row's (deathHours, EconomyContext.basics' deathHours): it also waits
+// for its respawn.
+function liveDeathHours(tableDeathHours) {
+    return positive(tableDeathHours) + RESPAWN_HOURS;
 }
 function karmaHours(state, { expPerHour = 0, lostGearHours = 0, exposureHours = 0, deathsPerHour = 0 } = {}) {
     const karma = positive(state.stats?.karma);
@@ -146,5 +222,5 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         frustration: Math.max(0, frustration - positive(kills) / Math.max(1, positive(stats.lifelongKills) + positive(kills))),
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
-module.exports = { riskWeight, stageHours, decisionHorizon, deathHours, karmaHours, pkDropValue, resale, progressStats, trait,
-    opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };
+module.exports = { riskWeight, powerWeight, stageHours, decisionHorizon, deathHours, liveDeathHours, karmaHours, pkDropValue, resale, progressStats, trait,
+    opportunity, acquisition, tripPays, visitPays, roadCarried, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };

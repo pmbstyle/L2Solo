@@ -62,23 +62,55 @@ function heapsLine(heaps) {
     return Object.entries(heaps).map(([name, heap]) => `${name}:${heap
         ? `${heap.used}/${heap.total}/${heap.external}/${heap.limit}/${heap.afterGc ?? '-'}/${heap.afterGcMax ?? '-'}/${heap.late ?? '-'}` : '-'}`).join(',');
 }
-// The major-GC observer of this isolate; every thread that reports v8Heap starts it once when developer
-// diagnostics are on, and heapRecord() reads its window.
+// GC pauses by V8 kind: the CPU profile's GC time does not say whether a long turn waited for scavenges
+// (young generation) or for a mark-compact (old).
+const GC_KINDS = { [constants.NODE_PERFORMANCE_GC_MINOR]: 'minor', [constants.NODE_PERFORMANCE_GC_MAJOR]: 'major',
+    [constants.NODE_PERFORMANCE_GC_INCREMENTAL]: 'incremental', [constants.NODE_PERFORMANCE_GC_WEAKCB]: 'weak' };
+function addPause(pauses, entry) {
+    const kind = GC_KINDS[entry.detail?.kind] || 'other';
+    const sum = pauses[kind] ||= { count: 0, ms: 0, maxMs: 0 };
+    sum.count += 1;
+    sum.ms += entry.duration;
+    if (entry.duration > sum.maxMs) sum.maxMs = entry.duration;
+}
+// The GC observer of this isolate; every thread that reports v8Heap starts it once when developer
+// diagnostics are on, the perf live recorder starts it on main, and heapRecord() reads its window. Each
+// observe() gets its own handle on the one observer; it stops when the last handle is closed, so
+// PopulationMetrics stopping does not end the recorder's window. A handle opened with { pauses: true }
+// (the recorder) also has the isolate's GC pauses summed by kind: cumulative { kind: { count, ms, maxMs } }
+// from the first such handle while the observer lives (the reader takes deltas); with none open the
+// observer only tests a count per GC entry.
 let active = null;
-function observe() {
-    if (active) return active;
-    const window = new MajorGcHeap();
-    const observer = new PerformanceObserver(list => {
-        for (const entry of list.getEntries()) {
-            if (entry.detail.kind !== constants.NODE_PERFORMANCE_GC_MAJOR) continue;
-            const at = entry.startTime + entry.duration;
-            if (performance.now() - at > LATE_MS) { window.late++; continue; }
-            window.record(process.memoryUsage().heapUsed, at);
-        }
-    });
-    observer.observe({ entryTypes: ['gc'] });
-    const handle = { window, snapshot: at => ({ ...window.snapshot(at), v8Heap: heapRecord(at) }),
-        close: () => { observer.disconnect(); if (active === handle) active = null; } };
-    return (active = handle);
+function observe({ pauses: wantsPauses = false } = {}) {
+    if (!active) {
+        const window = new MajorGcHeap();
+        const shared = { window, observer: null, handles: 0, pauseHandles: 0, pauses: {} };
+        shared.observer = new PerformanceObserver(list => {
+            for (const entry of list.getEntries()) {
+                if (shared.pauseHandles) addPause(shared.pauses, entry);
+                if (entry.detail.kind !== constants.NODE_PERFORMANCE_GC_MAJOR) continue;
+                const at = entry.startTime + entry.duration;
+                if (performance.now() - at > LATE_MS) { window.late++; continue; }
+                window.record(process.memoryUsage().heapUsed, at);
+            }
+        });
+        shared.observer.observe({ entryTypes: ['gc'] });
+        active = shared;
+    }
+    const shared = active;
+    shared.handles += 1;
+    if (wantsPauses) shared.pauseHandles += 1;
+    let open = true;
+    return { window: shared.window, snapshot: at => ({ ...shared.window.snapshot(at), v8Heap: heapRecord(at) }),
+        pauses: () => (wantsPauses ? Object.fromEntries(Object.entries(shared.pauses).map(([kind, sum]) => [kind,
+            { count: sum.count, ms: Math.round(sum.ms), maxMs: Math.round(sum.maxMs * 10) / 10 }])) : null),
+        close: () => {
+            if (!open) return;
+            open = false;
+            if (wantsPauses) shared.pauseHandles -= 1;
+            if (--shared.handles > 0) return;
+            shared.observer.disconnect();
+            if (active === shared) active = null;
+        } };
 }
 module.exports = { MAX_SAMPLES, WINDOW_MS, LATE_MS, MajorGcHeap, observe, heapRecord, heapsLine };

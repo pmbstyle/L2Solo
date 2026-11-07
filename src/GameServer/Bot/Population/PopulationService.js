@@ -1,4 +1,6 @@
+const FailureLog = require('../../../FailureLog');
 const PartyMarketBreak = require('./PartyMarketBreak');
+const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, priority: admissionPriority } = require('./PartyAdmission');
 const partyAdmission = new PartyAdmission();
@@ -16,7 +18,6 @@ const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver'
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
-const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
@@ -48,6 +49,17 @@ const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkG
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const STATE_RETENTION_KEY = Symbol('state-retention');
+// The WAL truncate's budget before one was measured: under the governor's 50 ms
+// player budget, so the first truncate (and its measurement) can happen in play.
+const WAL_TRUNCATE_FIRST_ESTIMATE_MS = 40;
+// A player stays online for hours: a truncate estimated over the player budget
+// is tried again once per this period (its new measurement replaces the
+// estimate), and past this WAL size it runs anyway (one bounded pause is
+// better than an unbounded file). The size, not the period, bounds the file:
+// at ~55 MB/min (hot run, 1731 bots) 10 min is ~550 MB, the ceiling holds it
+// at 512 MB whatever the write rate, about one ~80 ms pause per 9 min there.
+const WAL_TRUNCATE_ESTIMATE_RETRY_MS = 10 * 60 * 1000;
+const WAL_TRUNCATE_FORCE_WAL_BYTES = 512 * 1024 * 1024;
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const PartyGoalCalculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
 const PartyGoalPolicy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
@@ -104,28 +116,25 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
-// A walker a player comes near (honest travel, ColdTrip) shows itself at the
-// teleport point it ran from or at the spot edge it runs to, whichever is
-// nearer its place on the road, never on the straight line between them; the
-// author's hot movement takes over from there. At the spot edge the trip is
-// done (resolveTravel's arrival); at the teleport point the bot stands with
-// its destination spot and hunts or walks on as a hot bot decides.
-function walkerAppearance(state, timestamp = Date.now()) {
+// A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
+// endpoint of its run, never on the straight line between them (a walker on its
+// road is open work): at the spot edge it runs to when that is within the
+// activation radius of the player, else at the teleport point it ran from when
+// that is; the author's hot movement takes over from there. Either way the trip
+// is done (resolveTravel's arrival: activity, spot, region, a detour's standIn);
+// at the teleport point only its place differs, where the bot hunts or walks on
+// as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
+// run longer than twice the radius, a player by its middle), it stays cold.
+function walkerAppearance(state, playerLoc) {
     const travel = state?.stats?.travel;
     const run = travel?.run;
     if (state?.activity !== 'traveling' || !run) return null;
-    if ((timestamp - run.startAt) / Math.max(1, run.endAt - run.startAt) >= 0.5) {
-        const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
-        return { ...state, ...arrival.patch };
-    }
-    return {
-        ...state,
-        activity: travel.arrivalActivity || 'hunting',
-        loc: { ...run.from },
-        spotId: travel.spotId || state.spotId,
-        currentRegion: travel.regionName || state.currentRegion,
-        stats: { ...state.stats, travel: null, ...(travel.clearMarketReturn ? { marketReturn: null } : {}) }
-    };
+    const inReach = (loc) => !!loc && !!playerLoc && Math.hypot(Number(loc.locX) - Number(playerLoc.locX),
+        Number(loc.locY) - Number(playerLoc.locY)) <= Config.activationRadius;
+    const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
+    const shown = { ...state, ...arrival.patch };
+    if (inReach(shown.loc)) return shown;
+    return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
 }
 
 // Main's trip to a spot it chose itself: the trip a coordinator route to the
@@ -342,13 +351,39 @@ async function marketTravelWithRefund(state, goal, timestamp = Date.now(), econo
     const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp, { economy });
     if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
-    const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
+    const remote = await BotAfkMarketService.reconcile(state, goal).catch((error) => {
+        if (!FailureLog.refusal(error)) FailureLog.note('economy.trip_refund', error);
+    });
     const refunded = remote?.withdrawn ? remote.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
-    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
+    // The refund moves money only: the trip keeps the caller's retry stamp (a
+    // buyer's wake lifted it on the caller's state, not on the saved row).
+    return GoalExecutor.beginMarketTravel({ ...refunded,
+        stats: { ...refunded.stats, marketRetryAfter: state.stats?.marketRetryAfter ?? null } }, goal, timestamp);
 }
 
-function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWakeup = false } = {}) {
+// What the bot may pay for its market plan's target: the wallet with the
+// plan's own buy-order escrow, after the higher wishes (a weapon bridge: all).
+function marketPlanBudget(state, plan) {
+    const escrow = PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId));
+    return plan.weaponBridge ? PurchaseFunding.budget(state, escrow)
+        : PurchaseFunding.spendable(state, escrow, { itemId: plan.target?.selfId });
+}
+
+// A buyer's wake (MarketBuyerWaiters → the lifecycle command's marketWakeup,
+// [{ itemId, price }]) lifts a failed visit's retry stamp only for a new offer
+// of the market plan's own target within the bot's budget: the event the stamp
+// waits for (ColdMarketService.retryAfterFailedPurchase). A wake for another
+// item it wants (shots, a recipe) leaves the stamp.
+function wakeLiftsMarketRetry(state, offers) {
+    const plan = state?.stats?.equipmentPlan;
+    const targetId = Number(plan?.target?.selfId || 0);
+    const offer = Array.isArray(offers) && targetId > 0 && plan?.strategy === 'market'
+        ? offers.find(row => Number(row?.itemId) === targetId) : null;
+    return !!offer && Number(offer.price) > 0 && marketPlanBudget(state, plan) >= Number(offer.price);
+}
+
+function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
     const targetSlot = Number(plan?.target?.slot || 0);
@@ -358,13 +393,11 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWa
         || plan?.strategy !== 'market'
         || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
         || targetId <= 0
-        || (!marketWakeup && Number(state.stats?.marketRetryAfter || 0) > timestamp)) return false;
+        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)))
-            : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)),
-                { itemId: plan.target?.selfId })) < price) return false;
+    if (price <= 0 || marketPlanBudget(state, plan) < price) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -472,6 +505,20 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         // decides whether this is a supply break or ordinary shopping now.
         party = BackgroundPartyState.find(party.partyId) || party;
         if (party.status !== 'active') return { party, reviewed, departed };
+        // A complete personal warehouse stage gets an ordinary, fenced party
+        // absence and rejoin ticket. Never interrupt a raid, clan duty or fight.
+        if (!departed && !party.stats?.pveEncounter && !party.stats?.travel
+            && !members.some(row => row.stats?.pvpEncounter || row.stats?.travel)
+            && PartyMarketBreak.sessionReady(party, member, null, timestamp, Config)) {
+            const current = LifeState.cachedState(member.characterId) || member;
+            if (DecisionSections.partyIdOf(current) === String(party.partyId)
+                && current.phase === 'cold' && Number(current.vitals?.hp) > 0
+                && ['hunting', 'grouped', 'resting', 'party_wait'].includes(current.activity)) {
+                const travel = BotWarehouse.beginCraftReturn({ ...current, activity: 'hunting' }, timestamp, { allowParty: true });
+                const ticket = travel && PartyMarketBreak.warehouseDeparture(party, current, travel, timestamp);
+                if (ticket) departed = await LifeState.leaveParty(ticket, 'craft_warehouse', { ownerHandoff: true });
+            }
+        }
         if (departed || !canTakePartyMarketBreak(party, members, member, timestamp, cleanupNeeded, goalSnapshot?.current)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
@@ -506,20 +553,18 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
             && !currentMembers.some(member => member.stats?.tradeMeeting || member.activity === 'traveling' || member.activity === 'dead')) {
             const member = LifeState.cachedState(incomeDeparture.characterId);
             if (member && DecisionSections.partyIdOf(member) === String(party.partyId)) {
-                const detached = await LifeState.leaveParty({ ...member, stats: { ...member.stats,
-                    partyIncomeDecision: incomeDeparture } }, 'better_solo_income', { ownerHandoff: true });
+                const detached = await LifeState.leaveParty(member, 'better_solo_income', { ownerHandoff: true });
                 if (detached) {
-                    const retained = currentMembers.filter(member => member.characterId !== detached.characterId);
+                    const retained = retainedMembers(party, detached.characterId);
                     if (retained.length < Config.partyMinSize) {
                         const dissolved = await dissolveBackgroundParty(party, 'better_solo_income', retained.length);
                         return { party: dissolved.party || party, reviewed, departed: detached, dissolved: true };
                     }
-                    const leader = retained.find(member => member.characterId === party.leaderId) || PartyComposition.chooseLeader(retained);
-                    const updated = await BackgroundPartyState.createOrUpdate({ ...party,
-                        leaderId: leader.characterId, memberIds: retained.map(member => member.characterId),
-                        roleCoverage: PartyComposition.roleCoverage(retained), stats: { ...party.stats, ...joint,
-                            memberGoals: retained.map(invoke('GameServer/Bot/Population/PartyGoalPolicy').declaration),
-                            agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null } });
+                    const nextParty = partyWithRoster(party, retained, { ...joint,
+                        memberGoals: retained.map(PartyGoalPolicy.declaration),
+                        agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null });
+                    await syncPartyLeader(retained, nextParty, nextParty.leaderId);
+                    const updated = await BackgroundPartyState.createOrUpdate(nextParty);
                     return { party: updated || party, reviewed, departed: detached };
                 }
             }
@@ -534,28 +579,20 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
     }
     party = BackgroundPartyState.find(party.partyId) || party;
     if (party.status !== 'active') return { party, reviewed, departed, dissolved: party.status === 'dissolved' };
-    const activeMembers = party.memberIds.filter(id => Number(id) !== Number(departed.characterId))
-        .map(id => LifeState.cachedState(id)).filter(Boolean);
-    if (activeMembers.length < Config.partyMinSize && !departed.stats?.partyMarketReturn) {
+    const activeMembers = retainedMembers(party, departed.characterId);
+    // A return token keeps no party below the minimum: the row refuses that
+    // roster (prepareCommit), which left the rest attached to a stale row. A
+    // returning bot finds its party gone and waits (resumePartyMarketBreak).
+    if (activeMembers.length < Config.partyMinSize) {
         const dissolved = await dissolveBackgroundParty(party, 'market_break', activeMembers.length);
         return { party: dissolved.party || party, reviewed, departed, dissolved: true };
     }
 
-    const leader = activeMembers.find((member) => Number(member.characterId) === Number(party.leaderId))
-        || PartyComposition.chooseLeader(activeMembers)
-        || activeMembers[0];
-    const updatedParty = await BackgroundPartyState.createOrUpdate({
-        ...party,
-        leaderId: Number(leader.characterId),
-        memberIds: activeMembers.map((member) => Number(member.characterId)),
-        roleCoverage: PartyComposition.roleCoverage(activeMembers),
-        stats: {
-            ...(party.stats || {}),
-            lastMarketBreakAt: timestamp,
-            ...PartyMarketBreak.stats(party, departed)
-        },
-        updatedAt: timestamp
-    }, { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
+    const nextParty = partyWithRoster(party, activeMembers,
+        { lastMarketBreakAt: timestamp, ...PartyMarketBreak.stats(party, departed) });
+    await syncPartyLeader(activeMembers, nextParty, nextParty.leaderId);
+    const updatedParty = await BackgroundPartyState.createOrUpdate(nextParty,
+        { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
     return { party: updatedParty || party, reviewed, departed, dissolved: false };
 }
 
@@ -563,7 +600,9 @@ async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
     const war = !!token.warOperationId;
+    const warehouse = token.cleanupReason === 'craft_warehouse';
     const matching = war ? party?.stats?.warOperation?.id === token.warOperationId
+        : warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
         : party?.stats?.objective?.clanGoalKey === token.objective.clanGoalKey;
     if (war && (!matching || !['active', 'hot'].includes(party?.status))) {
         const saved = await LifeState.upsertState({ ...state, activity: 'hunting', stats: { ...state.stats,
@@ -571,7 +610,8 @@ async function resumePartyMarketBreak(state, timestamp) {
         return { ok: !!saved, state: saved || state, reason: 'war_supply_operation_ended' };
     }
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
-        partyMarketReturn: null, clanPartyObjective: war ? null : token.objective, partyRequest: war ? null : token.objective } };
+        partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : war ? null : token.objective,
+        partyRequest: warehouse ? state.stats.partyRequest : war ? null : token.objective } };
     const maxSize = war ? require('../../Clan/ClanWarConfig').maxMembers : partyLimitsForObjective(party?.stats?.objective).maxSize;
     if (party?.status === 'active' && matching && party.memberIds.length < maxSize) {
         const members = await LifeState.statesForParty(party.partyId);
@@ -582,13 +622,19 @@ async function resumePartyMarketBreak(state, timestamp) {
         const result = await commitPartyMembership({ ...party,
             memberIds: roster.map(member => member.characterId),
             roleCoverage: PartyComposition.roleCoverage(roster),
-            nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences,
-                memberNames: roster.map(member => member.name) } }, roster, null,
+            nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences } }, roster, null,
             war ? { expectedPartyRevision: party.revision } : {});
         return { ok: !!result.party, state: LifeState.cachedState(state.characterId) || state,
             reason: result.party ? 'returned_to_clan_party' : 'party_return_retry' };
     }
     if (war) return { ok: false, state, reason: 'party_return_retry' };
+    if (warehouse) {
+        // An ordinary party may fill or dissolve while its member shops. It
+        // has no clan request to wait on, so resume the personal route.
+        const solo = { ...prepared, activity: 'hunting', timing: { ...(prepared.timing || {}), nextResolveAt: timestamp + 30000 } };
+        const saved = await LifeState.upsertState(solo, 'craft_warehouse_party_unavailable');
+        return { ok: !!saved, state: saved || state, reason: 'craft_warehouse_party_unavailable' };
+    }
     // A dissolved or full party must not turn the clan assignment into solo combat.
     const saved = await LifeState.upsertState(prepared, 'clan_party_return_wait');
     return { ok: !!saved, state: saved || state, reason: 'clan_party_return_wait' };
@@ -638,9 +684,18 @@ function saleVisit(state) {
 }
 
 function marketListingIntent(state, goal = null) {
-    const forcedCleanup = state?.stats?.forcedMarketCleanup || null;
     const ordinaryVisit = state?.phase === 'cold' && state.activity === 'shopping'
         && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state);
+    const floor = ordinaryVisit && state.stats?.townVisit?.reason === 'sell_inventory'
+        && !state.stats?.forcedMarketCleanup ? SurvivalFloor.bagFor(state) : null;
+    // A prepared board plan does not unload the physical bag. Keep a hard
+    // slot/weight floor on the native sale path even when an earlier pass
+    // already ended the visit or its departure marker was not retained.
+    const forcedCleanup = state?.stats?.forcedMarketCleanup
+        || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null)
+        // Arrows the sale takes (its own lines): sold at the NPC beside the worker's board plan.
+        || (ordinaryVisit && invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(state).length
+            ? { cleanupReason: 'unused_arrows' } : null);
     const selling = saleVisit(state);
     if (!forcedCleanup && goal?.type !== 'sell_inventory' && !ordinaryVisit && !selling) {
         return { shouldOpen: false, state };
@@ -731,11 +786,9 @@ function joinPartyRecruits(party, members, recruits, joint) {
             : party.stats?.agreement;
     const stats = {
         ...(party.stats || {}),
-        memberNames: allMembers.map((member) => member.name),
         ...(joint ? { lastIncomeReviewAt: joint.lastIncomeReviewAt, incomeReviews: joint.incomeReviews } : {}),
         memberGoals: joint?.memberGoals || allMembers.map(PartyGoalPolicy.declaration),
-        agreement: agreement ? { ...agreement, memberIds: allMembers.map(member => member.characterId) } : null,
-        lastRecruitAt: Date.now()
+        agreement: agreement ? { ...agreement, memberIds: allMembers.map(member => member.characterId) } : null
     };
     delete stats.pendingRecruits;
     const nextParty = {
@@ -758,33 +811,22 @@ function joinPartyRecruits(party, members, recruits, joint) {
         createdAt: Date.now()
     };
     // Validate and persist the complete resulting membership in one
-    // transaction, including retained members. This makes recruitment
-    // resilient to a simultaneous party release.
-    const changedMembers = [
-        ...(Number(finalLeaderId) !== Number(party.leaderId)
-            ? members.filter((member) => Number(member.party?.leaderId || 0) !== Number(finalLeaderId))
-            : []),
-        ...recruits
-    ];
-    const commitMembers = Database.isReady() ? allMembers : changedMembers;
-    return commitPartyMembership(nextParty, commitMembers, recruitEvent, { expectedPartyRevision: party.revision })
-        .then(({ party: updatedParty, failed, eventCommitted }) => {
+    // transaction, including retained members, with the recruit event. This
+    // makes recruitment resilient to a simultaneous party release.
+    return commitPartyMembership(nextParty, allMembers, recruitEvent, { expectedPartyRevision: party.revision })
+        .then(({ party: updatedParty, failed }) => {
             if (!updatedParty || failed.length) return null;
-            const eventWrite = eventCommitted
-                ? Promise.resolve()
-                : LifeEvents.record(
-                    recruitEvent.characterId,
-                    recruitEvent.eventType,
-                    recruitEvent.summary,
-                    recruitEvent.meta,
-                    recruitEvent.weight
-                );
-            return eventWrite.then(() => {
-                Config.developerDiagnostics && Metrics.recordPartyRecruit(recruits.length);
-                Config.developerDiagnostics && console.info('BotPopulation :: recruited %d bot(s) into %s near %s', recruits.length, party.partyId, party.spotId || 'none');
-                return updatedParty;
-            });
+            Config.developerDiagnostics && Metrics.recordPartyRecruit(recruits.length);
+            Config.developerDiagnostics && console.info('BotPopulation :: recruited %d bot(s) into %s near %s', recruits.length, party.partyId, party.spotId || 'none');
+            return updatedParty;
         });
+}
+
+// Developer diagnostics: a healer or buffer without solo ground
+// (PartyRequestPlanner.seeksParty) that a committed membership puts in a party.
+function countSeekersFound(members) {
+    const found = Config.developerDiagnostics ? members.filter(PartyRequestPlanner.seeksParty).length : 0;
+    if (found) Diagnostics.count('party_seek', PartyRequestPlanner.NO_SOLO_GROUND, 'found_party', found);
 }
 
 function commitPartyMembership(party, members = [], event = null, options = {}) {
@@ -802,19 +844,8 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         return Promise.resolve({ party: null, assigned: [], failed: selected, reason: 'clan_party_unsafe' });
     }
 
-    // Unit harnesses and startup fall back to the legacy composition API.
-    // The live path below is one SQLite queue item and one bounded transaction.
-    if (!Database.isReady()
-        || typeof Database.commitBackgroundPartyMembership !== 'function'
-        || typeof BackgroundPartyState.prepareCommit !== 'function'
-        || typeof LifeState.preparePartyAssignment !== 'function') {
-        return BackgroundPartyState.createOrUpdate(party).then((savedParty) => {
-            if (!savedParty) return { party: null, assigned: [], failed: selected, eventCommitted: false };
-            return assignPartyMembers(selected, savedParty)
-                .then(({ assigned, failed }) => ({ party: savedParty, assigned, failed, eventCommitted: false }));
-        });
-    }
-
+    // One SQLite queue item and one bounded transaction: party and members
+    // commit together or not at all.
     const preparedParty = BackgroundPartyState.prepareCommit(party);
     if (!preparedParty) return Promise.resolve({ party: null, assigned: [], failed: selected });
     const preparedMembers = selected.map((member) => {
@@ -837,7 +868,7 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         event,
         expectedPartyRevision: options.expectedPartyRevision ?? null
     }).then((result) => {
-        if (!result?.ok) return { party: null, assigned: [], failed: selected, eventCommitted: false, reason: result?.reason || 'commit_failed' };
+        if (!result?.ok) return { party: null, assigned: [], failed: selected, reason: result?.reason || 'commit_failed' };
         const committedParty = BackgroundPartyState.acceptRow(result.partyRow);
         for (const row of result.lifeRows || []) {
             const entry = preparedMembers.find(member => Number(member.row.characterId) === Number(row.characterId));
@@ -845,13 +876,14 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         }
         const assigned = LifeState.acceptPartyAssignments(preparedMembers);
         assigned.forEach(() => Config.developerDiagnostics && Metrics.recordDbFlush());
+        countSeekersFound(selected);
         invoke('GameServer/Bot/AI/BotClanChat').onClanTask?.(committedParty, assigned);
-        return { party: committedParty, assigned, failed: [], eventCommitted: !!event };
+        return { party: committedParty, assigned, failed: [] };
     }).catch((error) => {
         if (error?.code !== 'BOT_PARTY_MEMBERSHIP_CONFLICT') {
             utils.infoWarn('BotPopulation', 'atomic party membership commit failed for %s: %s', party.partyId, error.message);
         }
-        return { party: null, assigned: [], failed: selected, eventCommitted: false, reason: error?.code || 'commit_failed' };
+        return { party: null, assigned: [], failed: selected, reason: error?.code || 'commit_failed' };
     });
 }
 
@@ -867,12 +899,7 @@ async function releaseForClanHelp(state) {
     if (remaining.length < Config.partyMinSize) {
         await dissolveBackgroundParty(previous, 'clan_rescue', remaining.length);
     } else {
-        const leaderId = leaderIdForMembers(previous, remaining);
-        await commitPartyMembership({ ...previous, leaderId,
-            memberIds: remaining.map(member => member.characterId),
-            roleCoverage: PartyComposition.roleCoverage(remaining),
-            stats: { ...previous.stats, memberNames: remaining.map(member => member.name) }
-        }, remaining);
+        await commitPartyMembership(partyWithRoster(previous, remaining), remaining);
     }
     return LifeState.cachedState(state.characterId) || released;
 }
@@ -905,12 +932,19 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
 // asked like its goals (jointPartyGoals: main for an all-near roster, the worker otherwise). A busy
 // or failed worker defers the roster to the next assembly: no main thought and no build for a far
 // roster. The roster's id is its member set, so a refusal repeated per attempt logs once (logPartyFailure).
+// An answer is held while every member's source identity (PartyGoalCalculation.source: its
+// revision, update stamp, phase and party) and the requested objective stand: a refused roster
+// the assembly asks again (its retry) is not sent again until one of its members changes.
 async function formingVerdict(members, requested, options) {
     const memberIds = members.map(member => Number(member.characterId));
+    const asked = askedVerdicts.inputs(members, requested, { spots: SpotProfiles.ensure() });
+    const timestamp = Date.now(), held = askedVerdicts.read(asked, timestamp);
+    if (held) return held;
     const verdict = await jointPartyGoals({ partyId: `forming_${[...memberIds].sort((a, b) => a - b).join('_')}`,
-        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, Date.now(), options);
-    return Array.isArray(verdict?.formingAccepted) ? verdict : null;
+        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, timestamp, options);
+    return Array.isArray(verdict?.formingAccepted) ? askedVerdicts.write(asked, verdict) : null;
 }
+const askedVerdicts = PartyGoalPolicy.formingHold(member => JSON.stringify(PartyGoalCalculation.source(member)), 'ask');
 
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
@@ -950,11 +984,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         roleCoverage: coverage,
         stats: {
             formedAt: timestamp,
-            memberNames: members.map((state) => state.name),
-            personaFormation: Object.fromEntries(members.map((member) => [
-                member.characterId,
-                PersonaPartyPolicy.explain(member, members.filter((peer) => peer !== member), coverage)
-            ])),
             route: partySpot?.route || null,
             objective: objective || null,
             clanHelp: objective?.reason === 'clan_help' || objective?.rescue
@@ -985,33 +1014,43 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         createdAt: timestamp
     };
 
-    return commitPartyMembership(party, members, partyEvent).then(({ party: savedParty, assigned, failed, eventCommitted }) => {
+    // The formation event commits in the same transaction as the party.
+    return commitPartyMembership(party, members, partyEvent).then(({ party: savedParty, assigned, failed }) => {
         if (!savedParty || failed.length || assigned.length !== members.length) {
             return savedParty
                 ? dissolveBackgroundParty(savedParty, 'party_assignment_failed', assigned.length).then(() => null)
                 : null;
         }
-        const eventWrite = eventCommitted
-            ? Promise.resolve()
-            : LifeEvents.record(
-                partyEvent.characterId,
-                partyEvent.eventType,
-                partyEvent.summary,
-                partyEvent.meta,
-                partyEvent.weight
-            );
-        return eventWrite.then(() => {
-            Config.developerDiagnostics && Metrics.recordPartyFormation();
-            Config.developerDiagnostics && console.info(
-                'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
-                savedParty.partyId,
-                savedParty.spotId || 'none',
-                savedParty.memberIds.length,
-                leader.name
-            );
-            return savedParty;
-        });
+        Config.developerDiagnostics && Metrics.recordPartyFormation();
+        Config.developerDiagnostics && console.info(
+            'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
+            savedParty.partyId,
+            savedParty.spotId || 'none',
+            savedParty.memberIds.length,
+            leader.name
+        );
+        return savedParty;
     });
+}
+
+// The members a party keeps after a departure, the owner's newest copies
+// (syncPartyLeader writes a member whole). One who left meanwhile is not
+// written back in.
+function retainedMembers(party, departedId) {
+    return (party.memberIds || []).filter(id => Number(id) !== Number(departedId))
+        .map(id => LifeState.cachedState(id))
+        .filter(member => member && DecisionSections.partyIdOf(member) === String(party.partyId));
+}
+
+// The party row with the members it keeps: the one roster of every path that
+// drops a member or repairs the list. Each path keeps its own save: a clan
+// release or a repair commits row and members in one transaction; the others
+// write the members first.
+function partyWithRoster(party, retained, stats = {}) {
+    return { ...party, leaderId: leaderIdForMembers(party, retained),
+        memberIds: retained.map(member => Number(member.characterId)),
+        roleCoverage: PartyComposition.roleCoverage(retained),
+        stats: { ...party.stats, ...stats } };
 }
 
 function syncPartyLeader(members = [], party, leaderId) {
@@ -1055,18 +1094,18 @@ const PopulationService = {
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
-    nextColdCombatProfileMigrationAt: 0,
     nextStateRetentionAt: 0,
     stateRetentionPassRows: 0,
-    walResetTimer: null,
+    walResetUnsubscribe: null,
     walResetRunning: false,
+    walResetEstimateRetryAt: 0,
+    // The last completed truncate's hold on main's DB queue (ms, 0 = none yet).
+    walTruncateEstimateMs: 0,
     nextWalResetAt: 0,
-    lastWalResetResult: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
     resolving: false,
     classProgressionMigrationRunning: false,
-    coldCombatProfileMigrationRunning: false,
     stateRetentionRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
@@ -1094,7 +1133,6 @@ const PopulationService = {
             .catch(error => utils.infoWarn('ClanReview', 'startup: %s', error.message));
         LifeEvents.init();
         BackgroundPartyState.init();
-        Director.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
         return this.lifeReadyPromise;
@@ -1128,7 +1166,8 @@ const PopulationService = {
 
         if (Config.backgroundResolverEnabled !== false) {
             // Cold simulation is owned by ColdSimulationCoordinator and runs
-            // in its worker. This timer is telemetry only.
+            // in its worker. This timer publishes the player-activity and lag
+            // signal that the worker pressure and work admissions read.
             this.refreshSchedulerTelemetry();
             this.schedulerTimer = setInterval(() => {
                 this.refreshSchedulerTelemetry();
@@ -1165,15 +1204,7 @@ const PopulationService = {
                 () => this.nextStateRetentionAt, timestamp => this.runStateRetention(timestamp));
         }
 
-        // The WAL reset stays a poll: its gate (WAL bytes past a threshold, an
-        // idle write queue, no checkpoint in flight) has no event to wait for.
-        const walResetIntervalMs = Math.max(1000, Number(options.default.Database?.checkpointResetIntervalMs) || 5000);
-        if (Number(options.default.Database?.checkpointResetWalBytes) > 0) {
-            this.walResetTimer = setInterval(() => {
-                this.runAdaptiveWalReset();
-            }, walResetIntervalMs);
-            if (typeof this.walResetTimer.unref === 'function') this.walResetTimer.unref();
-        }
+        this.armWalReset();
 
         if (Config.phasePolicyEnabled !== false) {
             this.phasePolicyTimer = setInterval(() => {
@@ -1188,7 +1219,6 @@ const PopulationService = {
         this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
         this.schedulePersonaBackfill();
 
-        Director.start();
     },
 
     stop() {
@@ -1200,6 +1230,7 @@ const PopulationService = {
         this.stopPartyAssemblyEvents();
         this.stopLifecycleSafetySweep();
         this.stopHotBoardReviews();
+        invoke('GameServer/Bot/AI/BotTownTravel').stopSupplyReturns();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
             clearTimeout(this.initialSummaryTimer);
@@ -1224,13 +1255,12 @@ const PopulationService = {
         this.stateRetentionRunning = false;
         this.stateRetentionPassRows = 0;
         this.nextStateRetentionAt = 0;
-        if (this.walResetTimer) {
-            clearInterval(this.walResetTimer);
-            this.walResetTimer = null;
-        }
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
         this.walResetRunning = false;
         this.nextWalResetAt = 0;
-        this.lastWalResetResult = null;
+        this.walResetEstimateRetryAt = 0;
+        this.walTruncateEstimateMs = 0;
         PersistentStateRetention.reset();
         this.nextProtectedPartyFormationAt = 0;
         this.protectedPartyFormationFailures = 0;
@@ -1248,13 +1278,11 @@ const PopulationService = {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
         }
-        this.nextColdCombatProfileMigrationAt = 0;
         if (this.personaBackfillTimer) {
             clearInterval(this.personaBackfillTimer);
             this.personaBackfillTimer = null;
         }
         this.personaBackfillRunning = false;
-        Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
         return coldStop;
@@ -1361,39 +1389,6 @@ const PopulationService = {
             });
     },
 
-    migrateLegacyColdCombatProfiles() {
-        if (this.playerActivityProfile().protected) {
-            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
-            return Promise.resolve([]);
-        }
-        if (this.coldCombatProfileMigrationRunning || this.resolving || this.classProgressionMigrationRunning || Config.enabled === false) {
-            return Promise.resolve([]);
-        }
-        this.coldCombatProfileMigrationRunning = true;
-        return LifeState.migrateLegacyColdCombatProfiles(Config.coldCombatProfileMigrationBatchSize)
-            .then((migrated) => {
-                if (migrated.length) {
-                    Config.developerDiagnostics && console.info('BotPopulation :: migrated cold combat profiles for %d bot(s)', migrated.length);
-                }
-                return migrated;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'legacy cold combat profile migration failed: %s', err.message);
-                return [];
-            })
-            .finally(() => {
-                this.coldCombatProfileMigrationRunning = false;
-            });
-    },
-
-    maybeMigrateLegacyColdCombatProfiles(timestamp = Date.now()) {
-        if (this.coldCombatProfileMigrationRunning || timestamp < this.nextColdCombatProfileMigrationAt) {
-            return Promise.resolve([]);
-        }
-        this.nextColdCombatProfileMigrationAt = timestamp + Config.coldCombatProfileMigrationIntervalMs;
-        return this.migrateLegacyColdCombatProfiles();
-    },
-
     recordHotTick(session) {
         if (Config.enabled === false) return;
         if (!session || !session.accountId || !String(session.accountId).startsWith('bot_')) return;
@@ -1461,7 +1456,8 @@ const PopulationService = {
 
     refreshSchedulerTelemetry() {
         if (Config.enabled === false || Config.backgroundResolverEnabled === false) return null;
-        const profile = this.schedulerProfile();
+        const activity = this.playerActivityProfile();
+        const profile = { idle: !activity.protected, activity, lagMs: Math.max(0, Number(Metrics.currentEventLoopLag()) || 0) };
         Metrics.recordSchedulerProfile(profile);
         return profile;
     },
@@ -1755,17 +1751,26 @@ const PopulationService = {
             return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
         }
         if (this.partyFormationRunning || this.resolving) return { deferred: true };
-        const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
-            && !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
+        // A member cooling down or deferred wakes its group at its own end (the
+        // record's dueAt: partyAssemblyInput, refreshPartyAssemblyRequest), so it
+        // asks no retry; a state replaced since the page was read does.
+        const current = candidates.filter(state => LifeState.cachedState(state.characterId) === state);
+        const stale = current.length < candidates.length;
+        const eligible = current.filter(state => !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
             && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil || 0) > timestamp));
-        if (!eligible.length) return { deferred: candidates.length > 0 };
+        if (!eligible.length) return { deferred: stale };
         const protectedActivity = this.playerActivityProfile(timestamp).protected;
         if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
         if (protectedActivity && !eligible.some(state => RequiredPartyFormation.objectiveFor(state))) return {};
         const result = protectedActivity
             ? await this.formProtectedRequiredParty(timestamp, eligible)
             : await this.formBackgroundParties(eligible);
-        return { deferred: this.partyFormationPending || eligible.length < candidates.length
+        // Retried (PartyAssemblyEvents.retryMs): a busy formation, or a refused roster
+        // (partyFormationPending; the group index wakes on no member's level, kit or
+        // wallet, so the retry asks again and the held refusal answers while its
+        // members stand: formingVerdict), a replaced state, a material group that
+        // formed nothing (the next page offers other supports).
+        return { deferred: this.partyFormationPending || stale
                 || !result.length && eligible.some(state => CraftMaterialParty.isObjective(state.stats?.partyRequest)),
             continuation: result.length > 0,
             retryAt: protectedActivity ? this.nextProtectedPartyFormationAt : 0 };
@@ -2084,9 +2089,7 @@ const PopulationService = {
                                 }
                             })
                         ), Promise.resolve());
-                        return Config.coldHonestTravel === true
-                            ? shown.then(() => this.showWalkersNear(loc, activated, ambientActivated))
-                            : shown;
+                        return shown.then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });
             });
         });
@@ -2100,9 +2103,9 @@ const PopulationService = {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            const shown = walkerAppearance(state, timestamp);
-            if (!shown) return null;
-            return this.requestActivation(shown, 'near_player', { readyOnActivation: true, preferAnchor: true })
+            // HotActivation leaves the trip at walkerAppearance's endpoint in reach of this
+            // player, read after its fence; with neither in reach the walker stays cold.
+            return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
                     activated.push(result);
@@ -2470,48 +2473,6 @@ const PopulationService = {
         return Math.max(25, baseBudget);
     },
 
-    schedulerProfile() {
-        const activity = this.playerActivityProfile();
-        const idle = !activity.protected;
-        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const configured = idle
-            ? Config.schedulerIdleBudgetMs
-            : activity.activeParty ? Config.schedulerPartyBudgetMs : Config.schedulerPlayerBudgetMs;
-        const baseBudget = Math.max(25, Number(configured) || 250);
-        const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
-        const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
-        let budget = baseBudget;
-
-        if (lagAbort > 0 && lagMs >= lagAbort) {
-            budget = 0;
-        } else if (lagAbort > lagThrottle && lagMs > lagThrottle) {
-            const pressure = Math.min(1, (lagMs - lagThrottle) / (lagAbort - lagThrottle));
-            budget = Math.round(baseBudget * (1 - pressure));
-        } else if (lagAbort === 0 && lagThrottle > 0 && lagMs > lagThrottle) {
-            const pressure = Math.min(1, (lagMs - lagThrottle) / lagThrottle);
-            budget = Math.round(baseBudget * (1 - pressure));
-        }
-
-        return {
-            idle,
-            players: activity.realPlayers,
-            activity,
-            lagMs,
-            budgetMs: budget > 0
-                ? Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25))
-                : 0,
-            maxResolvesPerTick: Math.min(100, Math.max(1, Number(idle
-                ? Config.schedulerIdleMaxResolvesPerTick
-                : Config.schedulerPlayerMaxResolvesPerTick) || 25)),
-            allowBackgroundParties: !activity.protected,
-            allowAuxiliaryBackground: !activity.protected
-        };
-    },
-
-    schedulerBudgetMs() {
-        return this.schedulerProfile().budgetMs;
-    },
-
     groupPartyCandidatesByObjective(states = [], options = {}) {
         const timestamp = options.timestamp ?? Date.now();
         const objectiveOf = options.objectiveOf || partyObjectiveMemo();
@@ -2633,23 +2594,14 @@ const PopulationService = {
             member.stats?.equipmentPlan?.partyNeed === 'required'
         )) || retainedMembers.find((member) => partyObjectiveForState(member));
         const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
-        const nextLeaderId = leaderIdForMembers(party, retainedMembers);
-        const nextParty = {
-            ...party,
-            leaderId: nextLeaderId,
-            memberIds: retainedMembers.map((member) => member.characterId),
-            roleCoverage: PartyComposition.roleCoverage(retainedMembers),
-            spotId: objective?.spotId || party.spotId,
-            stats: {
-                ...(party.stats || {}),
-                objective: objective || null,
-                acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
-                    ? objectiveMember.stats.equipmentPlan
-                    : null
-            }
-        };
-        if (Number(nextLeaderId) !== Number(party.leaderId)) {
-            await syncPartyLeader(retainedMembers, nextParty, nextLeaderId);
+        const nextParty = { ...partyWithRoster(party, retainedMembers, {
+            objective: objective || null,
+            acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
+                ? objectiveMember.stats.equipmentPlan
+                : null
+        }), spotId: objective?.spotId || party.spotId };
+        if (Number(nextParty.leaderId) !== Number(party.leaderId)) {
+            await syncPartyLeader(retainedMembers, nextParty, nextParty.leaderId);
         }
         await BackgroundPartyState.createOrUpdate(nextParty);
         // After the last write: it also erases the marks of this apply's own
@@ -2692,10 +2644,22 @@ const PopulationService = {
         const facts = new Map(candidates.map(state => {
             const objective = objectiveOf(state);
             return [state, { objective, key: partyObjectiveKeyForState(state, objective),
-                spotId: partyObjectiveSpotForState(state, objective) }];
+                spotId: partyObjectiveSpotForState(state, objective), seeking: PartyRequestPlanner.seeksParty(state) }];
         }));
+        // A healer or buffer without solo ground (PartyRequestPlanner.seeksParty)
+        // joins a party of its level wherever the party hunts: the party's spot
+        // is its own search's pick, ground the party hunts; the level range,
+        // the shared experience and the recruit check judge the roster as for
+        // any recruit. A clan, raid or material roster keeps its own members.
+        // The stored leader's level is read before any hydration, so a pass
+        // with a seeker hydrates only the parties of its level.
+        const openRoster = objective => !objective || !(objective.clanGoalKey || objective.sourceKind === 'raid'
+            || objective.fullRoster || objective.opportunisticRaid || CraftMaterialParty.isObjective(objective));
+        const ofLevel = (party, state) => Math.abs(Number(LifeState.cachedState(party.leaderId)?.level || 0)
+            - Number(state.level || 0)) <= PartyComposition.DEFAULT_LEVEL_RANGE;
         const matches = (party, state) => {
             const partyObjective = party.stats?.objective || null, fact = facts.get(state);
+            if (fact.seeking && openRoster(partyObjective) && ofLevel(party, state)) return true;
             return partyObjective
                 ? (fact.key === partyObjectiveGroupingKey(partyObjective)
                     || partyObjectivesShareRoute(partyObjective, fact.objective)
@@ -2741,18 +2705,7 @@ const PopulationService = {
                     || members.some((member) => !persistedMemberIds.has(Number(member.characterId)));
                 if (members.length >= partyLimits.maxSize) {
                     if (!membershipMismatch) return null;
-                    const electedLeaderId = leaderIdForMembers(party, members);
-                    const reconciledParty = {
-                        ...party,
-                        leaderId: electedLeaderId,
-                        memberIds: members.map((member) => member.characterId),
-                        roleCoverage: PartyComposition.roleCoverage(members),
-                        stats: {
-                            ...(party.stats || {}),
-                            memberNames: members.map((member) => member.name),
-                            lastMembershipRepairAt: Date.now()
-                        }
-                    };
+                    const reconciledParty = partyWithRoster(party, members, { lastMembershipRepairAt: Date.now() });
                     return commitPartyMembership(reconciledParty, members).then(({ party: repaired, failed }) => {
                         if (!repaired || failed.length) return null;
                         Config.developerDiagnostics && console.info('BotPopulation :: reconciled background party %s members=%d', party.partyId, members.length);
@@ -2824,37 +2777,113 @@ const PopulationService = {
         };
     },
 
+    // The WAL truncate is tried when a passive checkpoint finishes (every
+    // checkpointIntervalMs while the WAL is past checkpointMinWalBytes): the
+    // gate wants that fresh, complete result and no checkpoint in flight. Not a
+    // poll: one on the checkpoint's own period phase-locks with it after a long
+    // main turn (both due in one timer pass, the checkpoint first), then sees a
+    // checkpoint in flight on every try and the WAL never truncates.
+    armWalReset() {
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
+        if (!(Number(options.default.Database?.checkpointResetWalBytes) > 0)) return;
+        this.walResetUnsubscribe = Database.onCheckpoint((result) => {
+            if (result?.mode === 'passive' && result.ok && !result.skipped) this.runAdaptiveWalReset();
+        });
+    },
+
+    // Admission of a DB maintenance pass (state retention, the WAL truncate)
+    // on the governor's 'db_maintenance' resource. With a player online and
+    // the governor off (BOT_BACKGROUND_GOVERNOR_ENABLED=false) nothing bounds
+    // the pass, so it is refused. A refusal is counted with its reason.
+    admitMaintenance(job, activity, admit) {
+        if (activity.protected && Config.backgroundGovernorEnabled === false) {
+            Database.noteMaintenanceRefusal(job, 'governor_off');
+            return null;
+        }
+        const admission = BackgroundWorkGovernor.admit({
+            ...admit, job, resource: 'db_maintenance',
+            playerProtected: !!activity.protected, realPlayers: activity.realPlayers
+        });
+        if (admission.ok) return admission;
+        Database.noteMaintenanceRefusal(job, `governor_${admission.reason}`);
+        return null;
+    },
+
+    // The WAL truncate, during play too. It runs on the checkpoint worker, but
+    // Database.checkpoint queues it behind main's DB queue, which waits for the
+    // whole of it: the IPC round trip, the busy wait for readers (20 ms with a
+    // player, 50 idle), backfill, fsync and ftruncate. Its budget is the hold on
+    // main of the last completed truncate, queued to resolved (a busy or failed
+    // try keeps the previous; at least the busy wait;
+    // WAL_TRUNCATE_FIRST_ESTIMATE_MS before any), and with a player a
+    // truncate estimated over the governor's player budget is skipped, retried
+    // every WAL_TRUNCATE_ESTIMATE_RETRY_MS and forced past
+    // WAL_TRUNCATE_FORCE_WAL_BYTES. The
+    // gates kept here are about the WAL: big and grown enough, the last passive
+    // checkpoint complete, none in flight. Every refusal is counted
+    // (Database.noteMaintenanceRefusal); a failed truncate goes to FailureLog.
     runAdaptiveWalReset(timestamp = Date.now()) {
         const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
-        if (!resetWalBytes || this.walResetRunning || timestamp < Number(this.nextWalResetAt || 0)) {
+        if (!resetWalBytes) return Promise.resolve(null);
+        const refuse = (reason) => {
+            Database.noteMaintenanceRefusal('wal_truncate', reason);
             return Promise.resolve(null);
-        }
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) return Promise.resolve(null);
-        if (this.resolving || this.stateRetentionRunning || this.partyFormationRunning) {
-            return Promise.resolve(null);
-        }
-
+        };
+        if (this.walResetRunning) return refuse('running');
         const pressure = this.checkpointPressure();
         const { checkpoint, last, lastReset, walBytes, growthBytes, resetGrowthBytes } = pressure;
-        if (walBytes < resetWalBytes || Number(Database.pending() || 0) > 0 || checkpoint.inFlight) {
-            return Promise.resolve(null);
-        }
-        if (lastReset.at && growthBytes < resetGrowthBytes) return Promise.resolve(null);
+        // Past the ceiling only the WAL's own correctness gates hold it back
+        // (one in flight, the last passive checkpoint incomplete).
+        const forced = walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES;
+        if (!forced && timestamp < Number(this.nextWalResetAt || 0)) return refuse('retry_window');
+        if (walBytes < resetWalBytes) return refuse('wal_below_threshold');
+        if (checkpoint.inFlight) return refuse('checkpoint_in_flight');
+        if (!forced && lastReset.at && growthBytes < resetGrowthBytes) return refuse('growth_below_threshold');
         const logFrames = Math.max(0, Number(last.logFrames || 0));
         const checkpointedFrames = Math.max(0, Number(last.checkpointedFrames || 0));
         if (!last.ok || last.mode !== 'passive' || Number(last.busy || 0) > 0 || checkpointedFrames < logFrames) {
-            return Promise.resolve(null);
+            return refuse('passive_incomplete');
         }
+
+        const activity = this.playerActivityProfile(timestamp);
+        const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
+        const estimateMs = Math.ceil(Math.max(busyTimeoutMs, this.walTruncateEstimateMs || WAL_TRUNCATE_FIRST_ESTIMATE_MS));
+        const playerBudgetMs = Math.max(1, Number(Config.backgroundGovernorPlayerBudgetMs) || 50);
+        // Over budget with a player: skipped, but tried once per retry period
+        // (with the player budget; the governor records the overrun).
+        let ranAs = forced ? 'forced_over_ceiling' : null;
+        if (!forced && activity.protected && estimateMs > playerBudgetMs) {
+            if (!this.walResetEstimateRetryAt) {
+                this.walResetEstimateRetryAt = timestamp + WAL_TRUNCATE_ESTIMATE_RETRY_MS;
+                return refuse('estimate_over_budget');
+            }
+            if (timestamp < this.walResetEstimateRetryAt) return refuse('estimate_over_budget');
+            ranAs = 'estimate_retry';
+        }
+        const budgetMs = activity.protected ? Math.min(estimateMs, playerBudgetMs) : estimateMs;
+        const admission = forced
+            ? BackgroundWorkGovernor.admit({ job: 'wal_truncate', force: true, requestedBudgetMs: estimateMs,
+                playerProtected: !!activity.protected, realPlayers: activity.realPlayers })
+            : this.admitMaintenance('wal_truncate', activity, { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
+        if (!admission) return Promise.resolve(null);
+        this.walResetEstimateRetryAt = 0;
 
         const retryMs = Math.max(1000, Number(options.default.Database?.checkpointResetRetryMs) || 5000);
         const cooldownMs = Math.max(retryMs, Number(options.default.Database?.checkpointResetCooldownMs) || 60000);
-        const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const startedAt = Date.now();
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
         return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
-            this.lastWalResetResult = { ...result, requestedAt: timestamp };
-            if (result?.ok && Number(result.busy || 0) === 0) {
+            // A forced or retried truncate is counted once it ran, whatever its result.
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
+            if (!result?.ok) {
+                FailureLog.note('db.wal_truncate', new Error(result?.error || 'wal_truncate_failed'));
+            } else if (Number(result.busy || 0) > 0) {
+                Database.noteMaintenanceRefusal('wal_truncate', 'busy');
+            } else {
+                this.walTruncateEstimateMs = Math.max(1, Date.now() - startedAt);
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 Config.developerDiagnostics && console.info(
                     'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
@@ -2866,44 +2895,48 @@ const PopulationService = {
             }
             return result;
         }).catch((error) => {
-            this.lastWalResetResult = { ok: false, error: error?.message || String(error), requestedAt: timestamp };
-            utils.infoWarn('DB', 'adaptive WAL restart failed: %s', error?.message || error);
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
+            FailureLog.note('db.wal_truncate', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.walResetRunning = false;
         });
     },
 
+    // One retention step (PersistentStateRetention: one policy, at most two
+    // statements, each bounded by construction to fit the slice) per 1 s
+    // alarm, during play too: it runs on main's DB queue, where the player's
+    // writes wait behind it, so it goes through the governor ('db_maintenance',
+    // with a player at most its 50 ms per second), its cooperative slice is the
+    // granted budget (<= 12 ms; the queue yields between its statements) and
+    // it waits while main lags past schedulerLagThrottleMs. Refusals are
+    // counted (Database.noteMaintenanceRefusal), failures go to FailureLog.
     runStateRetention(timestamp = Date.now()) {
         if (Config.stateRetentionEnabled === false || Config.enabled === false
             || this.stateRetentionRunning
             || timestamp < Number(this.nextStateRetentionAt || 0)) {
             return Promise.resolve(null);
         }
-
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) {
-            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('player_protected');
-            return Promise.resolve(null);
-        }
         if (this.checkpointPressure().resetDue) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('wal_pressure');
-            return this.runAdaptiveWalReset(timestamp);
+            // A truncate that starts takes this tick; one refused (counted
+            // there, e.g. over budget for up to 10 min) leaves it to retention.
+            const reset = this.runAdaptiveWalReset(timestamp);
+            if (this.walResetRunning) {
+                Database.noteMaintenanceRefusal('state_retention', 'wal_pressure');
+                return reset;
+            }
         }
-        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
-        if (lagMs >= lagLimit) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('event_loop_lag');
-            return Promise.resolve(null);
-        }
-        if (Database.pending() > 0) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('database_queue');
-            return Promise.resolve(null);
-        }
+        const activity = this.playerActivityProfile(timestamp);
+        const requestedBudgetMs = Math.max(4, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const admission = this.admitMaintenance('state_retention', activity, {
+            requestedBudgetMs, minimumBudgetMs: 4,
+            maxLagMs: Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)
+        });
+        if (!admission) return Promise.resolve(null);
 
-        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
-        const budgetMs = Math.max(1, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const startedAt = Date.now();
+        const budgetMs = admission.budgetMs;
         this.stateRetentionRunning = true;
         return Database.cooperatively(() => PersistentStateRetention.runNextBatch({
             timestamp,
@@ -2917,13 +2950,13 @@ const PopulationService = {
             staleLlmTurnMs: Config.staleLlmTurnMs,
             compactedConversationRetentionMs: Config.compactedConversationRetentionMs,
             conversationMaxUncompactedRows: Config.conversationMaxUncompactedRows
-        }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
-            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
+        }), budgetMs).then((result) => {
+            const durationMs = Date.now() - startedAt;
             this.stateRetentionPassRows += Math.max(0, Number(result?.rowsRemoved || 0));
             if (result?.cycleComplete) {
                 const pauseMs = this.stateRetentionPassRows > 0
                     ? Math.max(1000, Number(Config.stateRetentionPassPauseMs) || 60000)
-                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (6 * 60 * 60 * 1000));
+                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (10 * 60 * 1000));
                 this.stateRetentionPassRows = 0;
                 this.nextStateRetentionAt = Date.now() + pauseMs;
             }
@@ -2931,9 +2964,10 @@ const PopulationService = {
             return result;
         }).catch((error) => {
             Config.developerDiagnostics && Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
-            utils.infoWarn('BotPopulation', 'bounded persistent-state retention failed: %s', error?.message || error);
+            FailureLog.note('db.state_retention', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.stateRetentionRunning = false;
         });
     },
@@ -2976,7 +3010,7 @@ const PopulationService = {
             && !!inventoryCleanupGoal(state, startedAt);
         const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) return this.resolveColdCleanupTravel(state, cleanupState, startedAt);
-        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
+        const elapsedMs = stepElapsedMs(state, startedAt);
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
         if (cleanupAfterFight || state.activity === 'traveling'
@@ -3067,7 +3101,6 @@ const PopulationService = {
             state: effectiveState,
             spot,
             spotHunters: SpotProfiles.spotHunters(spot),
-            pressure: Director.pressureForState(state),
             targetNpcId: partyRouteWaiting
                 ? Number(partyFallback?.npcId || 0)
                 : directDropTargetNpcId(acquisitionPlan),
@@ -3105,7 +3138,7 @@ const PopulationService = {
             const result = BackgroundResolver.resolveSolo({ state: karmaPlan.plannedState,
                 spot: karmaPlan.spot, spotHunters: SpotProfiles.spotHunters(karmaPlan.spot),
                 targetNpcId: karmaPlan.targetNpcId, timestamp: startedAt,
-                elapsedMs: Math.max(1000, startedAt - Number(state.timing?.lastResolvedAt || startedAt - 60000)) });
+                elapsedMs: stepElapsedMs(state, startedAt) });
             return LifeState.applyResolve(karmaPlan.plannedState, result, options)
                 .then(saved => ({ ok: !!saved, state: saved || state, debug: result.debug }));
         }
@@ -3137,7 +3170,6 @@ const PopulationService = {
         const result = precomputedResult || BackgroundResolver.resolveSolo({
             state: requestLifecycleState,
             spot: null,
-            pressure: Director.pressureForState(state),
             elapsedMs,
             timestamp: startedAt
         });
@@ -3241,8 +3273,14 @@ const PopulationService = {
                 }
                 : craft.state || plannedState;
             if (!completed && ['materials_changed', 'missing_product', 'missing_station', 'insufficient_adena'].includes(craft.reason))
-                recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState);
-            return LifeState.upsertState(recoveredState, reason).then((saved) => {
+                recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState, `craft:${craft.reason}`);
+            return LifeState.upsertState(recoveredState, reason).then(async (saved) => {
+                if (saved && craft.reason === 'component_crafted' && saved.activity !== 'crafting'
+                    && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(saved)
+                    && require('../Economy/CraftWarehousePolicy').planFor(saved)) {
+                    const deposit = await BotWarehouse.depositCold(saved);
+                    saved = deposit.state || saved;
+                }
                 const supplemented = craft.supplementedMaterials || [];
                 const supplyEvent = supplemented.length
                     ? LifeEvents.record(state.characterId, 'craft_supplemented', `${state.name} received ${supplemented.map((item) => `${item.amount} ${item.name}`).join(', ')} for crafting`, {
@@ -3357,9 +3395,14 @@ const PopulationService = {
             .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
             .then(async (wealthCraft) => {
                 const current = wealthCraft.state || updatedState;
-                const released = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current)
-                    ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
-                return ColdMarketListingService.resolve(LifeState.cachedState(current.characterId) || released.state || current);
+                const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
+                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true, before: state }) : { state: current };
+                const afterRelease = released.state || current;
+                const deposited = inTown && !released.aborted && (afterRelease.stats?.equipmentPlan?.inputPreparation
+                    || require('../Economy/CraftWarehousePolicy').planFor(afterRelease))
+                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(afterRelease)
+                    ? await BotWarehouse.depositCold(afterRelease) : { state: afterRelease };
+                return ColdMarketListingService.resolve(deposited.state || afterRelease);
             });
         return preparation.then((marketLifecycle) => GoalService.currentForMarket(marketLifecycle.state, {
                 spot: SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId) || spot
@@ -3374,7 +3417,9 @@ const PopulationService = {
                 return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
                     .then(() => finalState);
             })
-            .then((finalState) => {
+            .then(async (finalState) => {
+                const trip = !LifeState.hotRow(finalState.characterId) && BotWarehouse.beginCraftReturn(finalState);
+                if (trip) finalState = await LifeState.upsertState(trip, 'craft_warehouse_return') || finalState;
                 // A bot that went hot meanwhile speaks through its own AI.
                 if (finalState.phase !== 'hot') GlobalChat.maybeAnnounce(finalState, result.events);
                 return {
@@ -3415,7 +3460,7 @@ const PopulationService = {
                 .then((saved) => saved || batchState);
         }
         const listingIntent = marketListingIntent(purchasedState, goal);
-        // A sale trip must reach the buyers and its 30-min retry, which only open does.
+        // A sale trip must reach the buyers and its sale retry, which only open does.
         const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
             && (!workerPlan?.economyPlan || listingIntent.cleanup || listingIntent.saleVisit)
             ? openMarketListing(listingIntent, goal)
@@ -3480,7 +3525,11 @@ const PopulationService = {
         }).then(async (goalSnapshot) => {
             const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
             const current = remote.state || marketState;
-            const travelState = tripEdge || SurvivalFloor.forState(current)?.action === 'unload'
+            // forState unloads only where the bag alone does (the mana floor comes first), so
+            // the cheap bag floor answers the common no; one moment for both reads.
+            const now = Date.now();
+            const travelState = tripEdge || (SurvivalFloor.bagFor(current, now)?.action === 'unload'
+                && SurvivalFloor.forState(current, now)?.action === 'unload')
                 ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current, Date.now(),
                     { economy: current === marketState ? goalSnapshot?.economy : null }) : null;
             return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
@@ -3528,14 +3577,16 @@ const PopulationService = {
             // Worker-owned recovery finishes before the main economy command.
             // Reconsider a funded weapon purchase before applying another fight,
             // which could immediately put the buyer back into recovery again.
+            const buyer = state.stats?.marketRetryAfter && wakeLiftsMarketRetry(state, request.marketWakeup)
+                ? { ...state, stats: { ...state.stats, marketRetryAfter: null } } : state;
             if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
-                && canResumeAffordableMarketPlan(state, Date.now(), { marketWakeup: request.marketWakeup === true })) {
+                && canResumeAffordableMarketPlan(buyer)) {
                 const goal = await GoalService.review(state);
                 const current = LifeState.cachedState(state.characterId) || state;
                 if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                     return { ok: false, reason: 'state_changed', state: current };
                 }
-                const travel = await marketTravelWithRefund(current, goal?.current, Date.now(), goal?.economy);
+                const travel = await marketTravelWithRefund(buyer, goal?.current, Date.now(), goal?.economy);
                 const latest = LifeState.cachedState(state.characterId) || current;
                 if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
                 if (travel) {
@@ -3599,8 +3650,7 @@ const PopulationService = {
             const party = { partyId: `war_${timestamp.toString(36)}_${leader.characterId}`, leaderId: leader.characterId,
                 memberIds: ids, spotId: leader.spotId, status: 'active', startedAt: timestamp, nextResolveAt: timestamp + 1000,
                 roleCoverage: PartyComposition.roleCoverage(current), cohesion: 0.75, risk: 0.3,
-                stats: { formedAt: timestamp, warOperation: home,
-                    memberNames: current.map(s => s.name), memberGoals: current.map(PartyGoalPolicy.declaration) } };
+                stats: { formedAt: timestamp, warOperation: home, memberGoals: current.map(PartyGoalPolicy.declaration) } };
             const result = await commitPartyMembership(party, current, { characterId: leader.characterId, eventType: 'clan_war_assembly',
                 summary: 'Clan assembled a war party', meta: { operationId: operation.id, enemyClanId: operation.enemyClanId }, weight: 3, createdAt: timestamp });
             this.lastClanWarFormation = { at: timestamp, clanId: operation.clanId, reason: result.party ? 'formed' : result.reason || 'membership_refused' };
@@ -3647,20 +3697,30 @@ const PopulationService = {
     logSummary(reason = 'summary') {
         // Without diagnostics only the cheap cold-queue scan runs, for the line below.
         const summary = Config.developerDiagnostics ? this.summary() : { enabled: false, coldQueue: LifeState.coldDueSummary() };
+        const coordinator = summary.line ? null : ColdSimulationCoordinator.snapshot();
         if (summary.line) console.info('BotPopulation :: %s %s', reason, summary.line);
-        else {
-            const coordinator = ColdSimulationCoordinator.snapshot();
-            console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));
-        }
+        else console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));
+        invoke('Perf/LiveRecorder').recordSummary(reason, summary, () => coordinator || ColdSimulationCoordinator.snapshot(),
+            () => Status.vitals());
         // A bot due for over a minute is not normal (user 2026-10-17): name it
         // and say why it waits, one line per summary.
         const queue = summary.coldQueue || {};
         if (queue.oldest && queue.oldestAgeMs >= 60000) {
             const bot = queue.oldest, at = Date.now();
             const reason = ColdSimulationCoordinator.overdueReason(bot.characterId);
-            console.info('BotPopulation :: overdue %s(%d) %s due %ds ago, last step %ds ago, reason %s, due total %d',
+            // What the bot carries that makes the worker hold it on purpose.
+            const held = LifeState.cachedState(bot.characterId);
+            if (Config.developerDiagnostics) {
+                Database.traceRevisions(bot.characterId);
+                ColdSimulationCoordinator.traceBot(bot.characterId, { at, activity: bot.activity, nextResolveAt: held?.timing?.nextResolveAt,
+                    lastResolvedAt: held?.timing?.lastResolvedAt, updatedAt: held?.updatedAt, revision: held?.simulation?.revision });
+            }
+            const carried = ['pvpEncounter', 'pveEncounter', 'tradeMeeting', 'travel', 'constPartySession']
+                .filter(key => held?.stats?.[key]).join('+');
+            console.info('BotPopulation :: overdue %s(%d) %s due %ds ago, last step %ds ago, reason %s%s, due total %d',
                 bot.name, bot.characterId, bot.activity, Math.round(queue.oldestAgeMs / 1000),
-                bot.lastResolvedAt > 0 ? Math.round((at - bot.lastResolvedAt) / 1000) : -1, reason, queue.due);
+                bot.lastResolvedAt > 0 ? Math.round((at - bot.lastResolvedAt) / 1000) : -1, reason,
+                carried ? ` carries ${carried}` : '', queue.due);
         }
         return summary;
     }

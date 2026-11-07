@@ -109,7 +109,8 @@ check('saved level-19 build: survival shots, then armour gaps; empty jewel slots
     const physical = Economy.forState(bot, deps);
     assert.equal(physical.gearThreatMask, 1);
     const physicalGear = physical.network.queue.filter(wish => wish.need === 'power' && wish.object?.itemId);
-    assert.ok(physicalGear.some(wish => [42, 51, 38, 34].includes(wish.object.itemId)), 'armour competes in the existing queue');
+    // The armour gaps the T123 hunt tables price best (helmet, gloves, pants, breastplate).
+    assert.ok(physicalGear.some(wish => [43, 50, 30, 23].includes(wish.object.itemId)), 'armour competes in the existing queue');
     assert.ok(!physicalGear.some(wish => [1, 2, 3, 4, 5].includes(wish.object.slot)), 'absent magic is not a defensive gain');
     Economy.reset();
     for (const row of Object.values(bot.inventory)) if (row.kind === 'Armor.Jewel') {

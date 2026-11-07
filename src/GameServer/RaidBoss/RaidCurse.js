@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
@@ -25,7 +26,8 @@ function combatLevel(actor) {
             .map((session) => session?.actor)
             .find((candidate) => actorId(candidate) === ownerId);
         return Math.max(ownLevel, Number(owner?.fetchLevel?.() || 0));
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('raid.curse_lookup', error);
         return ownLevel;
     }
 }
@@ -52,19 +54,9 @@ function currentCombatTargetId(target) {
 
 function isCurrentlyAttackingBoss(target, boss) {
     const bossId = Number(boss?.fetchId?.() || 0);
-    const currentTargetId = currentCombatTargetId(target);
-    if (currentTargetId !== null) return currentTargetId === bossId;
-
-    // Real actors expose at least one live target API. Once that API reports
-    // no combat target, a historical raidBossAttackTargetId must not keep
-    // cursing support casters after they retarget or leave combat.
-    const hasTargetApi = typeof target?.automation?.fetchDestId === 'function'
-        || typeof target?.fetchDestId === 'function'
-        || typeof target?.state?.fetchCombats === 'function';
-    if (hasTargetApi) return false;
-
-    // Keep compatibility with lightweight actors used by isolated tests.
-    return Number(target?.model?.raidBossAttackTargetId || 0) === bossId;
+    // Only the live combat target counts: a support caster that retargets or
+    // leaves combat stops counting as attacking the boss.
+    return currentCombatTargetId(target) === bossId;
 }
 
 function raidBossesAttackedBy(target) {
@@ -80,7 +72,8 @@ function raidBossesAttackedBy(target) {
                 ? boss.model.raidAttackers.has(targetId)
                 : Array.isArray(boss.model?.raidAttackers) && boss.model.raidAttackers.includes(targetId))
         ));
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('raid.curse_lookup', error);
         return [];
     }
 }
@@ -97,7 +90,7 @@ function applyEffect(session, target, effect) {
     if (Object.keys(applied.stats || {}).length > 0 || applied.removedEffects.some((removed) => Object.keys(removed.stats || {}).length > 0)) {
         try {
             invoke('GameServer/Actor/Generics/CalculateStats')(target?.session || session, target);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
     EffectTicker.refreshEffects(session, target);
     return applied;

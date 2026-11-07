@@ -1,3 +1,4 @@
+const EconomicValuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 const sessions = new WeakMap();
 
 function stateOf(source) {
@@ -23,7 +24,7 @@ function enrich(event, source, target = null) {
     let hours = Number(event.hours);
     if (!Number.isFinite(hours) && state) {
         const income = invoke('GameServer/Bot/AI/BotHuntEfficiency').huntIncome(state, event.at);
-        if (event.type === 'killed') hours = invoke('GameServer/Bot/Economy/EconomicValuation').deathHours(state, income);
+        if (event.type === 'killed') hours = EconomicValuation.liveDeathHours(EconomicValuation.deathHours(state, income));
         else if (Number(event.lossExp) > 0 && income.expPerHour > 0) hours = event.lossExp / income.expPerHour;
         else if (Number(event.valueAdena) > 0 && income.perHour > 0) hours = event.valueAdena / income.perHour;
     }

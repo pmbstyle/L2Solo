@@ -33,10 +33,10 @@ function eligible(state, event, participant, now) {
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
     constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
-        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, retreatRoute = () => null, now = Date.now, budgetNow = () => performance.now(),
+        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, now = Date.now, budgetNow = () => performance.now(),
         releaseForecasts = () => {} }) {
         Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
-        Object.assign(this, { incrementalPvp, onEncounter, retreatRoute, budgetNow, releaseForecasts });
+        Object.assign(this, { incrementalPvp, onEncounter, budgetNow, releaseForecasts });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
@@ -86,7 +86,7 @@ class ColdCompetitionActions {
                     DiagnosticConfig.developerDiagnostics && (this.report.pvpFights++);
                     const kills = result.combat.fighters.flatMap(f => f.kills);
                     DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
-                    DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+                    DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => k.outcome === 'pk').length);
                     if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
                 }
                 if (DiagnosticConfig.developerDiagnostics && result.ok && event.spotId) {
@@ -222,7 +222,7 @@ class ColdCompetitionActions {
         }
         const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
         DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
-        DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+        DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => k.outcome === 'pk').length);
         if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
         DiagnosticConfig.developerDiagnostics && (this.report.lastPvpStep = { at: this.now(), ...result });
     }

@@ -57,11 +57,10 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
         for (const [name, keys] of Object.entries(noops)) for (const key of keys) stub(invoke(name), key, () => undefined);
         stub(invoke('GameServer/Bot/AI/BotPvpDefense'), 'tick', () => defending);
         const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
-        stub(lod, 'evaluate', () => ({ tier: 'full' }));
+        stub(lod, 'evaluate', () => ({ tier: 'full', playerVisible: true }));
         stub(lod, 'shouldRefreshStatus', () => false);
         stub(lod, 'budgetExceeded', () => false);
         stub(invoke('GameServer/World/World'), 'actorPresenceCount', () => 1);
-        stub(AI, 'visibleRealPlayers', () => [{}]);
         stub(invoke('GameServer/Bot/AI/BotBuffs'), 'needsNewbieRefresh', () => true);
         // The meeting spot is far from every start village: place a guide in its town.
         stub(AI, 'getClosestNewbieGuide', () => ({ locX: 2000, locY: 0, locZ: 0 }));

@@ -149,6 +149,8 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const ownUse = Math.min(Math.max(0, full.residual - without.residual), Math.max(0, Number(exit.ownUseUnits || 0)));
     const ownBenefit = ownUse * Number(exit.ownUseUnitHours || 0)
         + reservedOutput * Number(context.reservedOutputUnitHours || 0);
+    // Valuable leftover inputs alone need not justify manufacturing output.
+    if (context.requireOutputBenefit === true && !(full.sold > without.sold || ownBenefit > 0)) return null;
     const base = { cashNow: basket.cashCost, ownInputOpportunityValue: basket.ownedValue,
         actualCashFees: basket.actualCashFees + exitFees,
         foregoneBenefitHours: mpHours + activeHours + basket.travelHours + exitHours
@@ -187,7 +189,7 @@ function evaluateBasket(args, recipe, planFor, exit, ownedFor, context, batches 
     const basket = input.basket || basketFor(input.recipe, input.planFor, input.ownedFor, input.batches ?? 1, input.context);
     return drain(evaluatePrepared({ ...input, basket }));
 }
-function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, mode = 'action' }) {
+function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, mode = 'action', refusal = null }) {
     let best = null;
     // Complete bounded search also handles discontinuous quote/fee breakpoints.
     // Zero is the without-case; never force production when every value is <=0.
@@ -203,7 +205,7 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
         // input supply infinite. Price the actual replenished cycle separately.
         const inputsFor = mode === 'occupation' ? () => null : ownedFor;
         const basket = yield* prepareBasket(recipe, planFor, inputsFor, batches, context);
-        if (!basket) continue;
+        if (!basket) { if (refusal) refusal.reason = 'no_basket'; continue; }
         for (const exit of exits) {
             yield 'exit';
             const pricedExit = typeof exit.forQuantity === 'function' ? exit.forQuantity(batches) : exit;
@@ -215,10 +217,60 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
             const candidate = yield* evaluatePrepared({ state, recipe, batches, basket, exit: pricedExit, ownedFor, context });
             const score = mode === 'occupation' ? candidate?.incomePerHour : candidate?.valueHours;
             if (candidate && score > 0 && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = candidate;
+            else if (refusal) refusal.reason = candidate ? 'no_value' : 'no_outcome';
         }
         yield 'candidate';
     }
     return best;
+}
+// A crafter's MP enters a craft decision only through thresholds: a recipe's
+// batches floor(mp / mpCost), at most MAX_BATCHES (searchQuantity, the wish's
+// producer capacity); a basket's mpCost x batches + its gear craft's MP <= mp
+// (evaluatePrepared: a shot's crystals from a scrap craft); a scrap recipe
+// only below the bot's MP (mp > its mpCost, ShotCraftPolicy). craftMpBand is
+// the band of MP values on which every such check answers as at mp, over
+// every recipe the bot could craft at its craft level (the catalogue's: a
+// recipe in the bag or on the board is a candidate too), every dwarven 100 %
+// one-product recipe taken as a scrap: [low, lowIncluded, high, highIncluded].
+const bandCosts = new Map();
+function costsAt(level) {
+    let costs = bandCosts.get(level);
+    if (costs) return costs;
+    const shots = new Set(require('./ShotCraftPolicy').SHOT_RECIPE_IDS); // lazy: ShotCraftPolicy reads this module at its load
+    const all = new Set(), shot = new Set(), scrap = new Set();
+    for (const recipe of require('../../Items/C4RecipeItems').nativeSource().rows) {
+        const mp = Math.max(1, Number(recipe.mpCost) || 0), required = Number(recipe.level);
+        if (!(required > 0) || required > level) continue;
+        all.add(mp);
+        if (shots.has(Number(recipe.recipeId))) shot.add(mp);
+        if (recipe.type === 'dwarven' && Number(recipe.successRate) === 100 && Number(recipe.productCount) === 1) scrap.add(mp);
+    }
+    bandCosts.set(level, costs = { all: [...all], shot: [...shot], scrap: [...scrap] });
+    return costs;
+}
+function craftMpBand(craftLevel, mp) {
+    mp = Number(mp) || 0;
+    const band = [-Infinity, false, Infinity, false];
+    const below = (value, included) => { if (value > band[0] || value === band[0] && !included) { band[0] = value; band[1] = included; } };
+    const above = (value, included) => { if (value < band[2] || value === band[2] && !included) { band[2] = value; band[3] = included; } };
+    // mp >= at for at = base + k x cost, k = 1..MAX_BATCHES.
+    const steps = (base, cost) => {
+        const k = Math.floor((mp - base) / cost);
+        if (k >= 1) below(base + Math.min(k, MAX_BATCHES) * cost, true);
+        if (k + 1 <= MAX_BATCHES) above(base + Math.max(1, k + 1) * cost, false);
+    };
+    const { all, shot, scrap } = costsAt(Number(craftLevel) || 0);
+    for (const cost of all) steps(0, cost);
+    for (const gear of scrap) {
+        if (mp > gear) below(gear, false); else above(gear, true);
+        for (const cost of shot) steps(gear, cost);
+    }
+    return band;
+}
+const inMpBand = (band, mp) => (mp > band[0] || band[1] && mp === band[0]) && (mp < band[2] || band[3] && mp === band[2]);
+// Whether every craft check answers the same at both MP values.
+function sameCraftMp(craftLevel, mp, other) {
+    return Number(mp) === Number(other) || inMpBand(craftMpBand(craftLevel, mp), Number(other) || 0);
 }
 function chooseQuantity(input) { return drain(searchQuantity(input)); }
 function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => null, context = {}) {
@@ -226,4 +278,4 @@ function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => nul
     return chooseQuantity({ state, recipe, planFor, exits, ownedFor, context });
 }
 module.exports = { MAX_BATCHES, basketFor, craftMargin, evaluateBasket, chooseQuantity,
-    opportunityFor, prepareBasket, evaluatePrepared, searchQuantity, drain };
+    opportunityFor, prepareBasket, evaluatePrepared, searchQuantity, drain, craftMpBand, sameCraftMp };

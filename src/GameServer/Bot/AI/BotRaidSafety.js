@@ -3,6 +3,7 @@ const RAID_MINION_TEMPLATE_IDS = new Set(
         .map((entry) => Number(entry.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );
+const FailureLog = require('../../../FailureLog');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 
 const DEFAULT_RETREAT_DISTANCE = 1100;
@@ -435,7 +436,7 @@ function retreat(session, bot, threat, options = {}) {
         try {
             const ServerResponse = invoke('GameServer/Network/Response');
             session.dataSendToOthers?.(ServerResponse.sitAndStand(bot), bot);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('ai.raid_stand', error); }
     }
 
     if (session.plan !== 'fleeing') {

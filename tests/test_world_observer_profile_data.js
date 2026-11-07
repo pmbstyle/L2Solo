@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { project } = require('../src/WorldObserver/ActorEconomyProjection');
 const { createActorCollections } = require('../src/WorldObserver/ActorCollections');
 const UI = require('../src/WorldObserver/public/profileData');
@@ -23,7 +24,7 @@ assert.equal(economy.selectedAction.root.item.selfId, 673);
 assert.equal(economy.selectedAction.item.selfId, 1872, 'an input step must remain distinct from its desired product');
 assert.ok(JSON.stringify(economy.selectedAction).length < 600, 'the full network must never enter an Observer response');
 assert.equal(project(state, { itemFor }).selectedAction, null, 'a missing publication must not trigger a fresh economic choice');
-assert.equal(state.stats.money[5], 120, 'inspection must not alter the saved allocation');
+assert.equal(Packet.fundedCumulative(state.stats.money, 0), 120, 'inspection must not alter the saved allocation');
 const henna = project({ ...state, stats: { wishFocus: ['henna:124', 1, 50] } }, { wishName: () => 'STR +4 · CON -4' });
 assert.match(UI.renderEconomy(henna), /Install henna · STR \+4 · CON -4/);
 assert.match(UI.renderEconomy(economy), /Avadon Shield/);

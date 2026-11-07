@@ -10,12 +10,14 @@
 // - record: the trip from where the bot stands now (destinations, travel
 //   time, the reason fields), built per read and never kept.
 // leafChoice: the spot the step's own decision names, when it may go there
-// (leafFitReader: the one fit test, the economy's leaf reads it too).
+// (leafFitReader: the one fit test, the economy's leaf reads it too). The
+// trip keeps its ground and matchup verdicts on the same record, each keyed
+// on what it reads (heldVerdict).
 // Callers: the worker's trip start (planLifecycle: trip), the party run (the
-// worker's partyRoute, ColdSimulationKernel), the competition retreat on main
-// (ColdSimulationCoordinator retreatRoute). Worker-safe: every spot lookup
+// worker's partyRoute, ColdSimulationKernel). Worker-safe: every spot lookup
 // reads the catalog the caller passes (`spots`, the spot profile array: the
 // worker's planning catalog, SpotProfiles.ensure() on main).
+const FailureLog = invoke('FailureLog');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -27,6 +29,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const ClanPartyDuty = invoke('GameServer/Bot/Population/ClanPartyDuty');
 const BotCrystallization = invoke('GameServer/Bot/Economy/BotCrystallization');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
 const PartyHuntingAssembly = require('./PartyHuntingAssembly');
@@ -51,7 +54,7 @@ function routable(state, party, partyMembers) {
 // here would schedule another 25-second trip to the same coordinates forever.
 function currentSpotId(state, currentSpot, party, spots) {
     let physical = null;
-    try { physical = SpotService.findCurrentSpot(state.loc, spots); } catch (_) { physical = null; }
+    try { physical = SpotService.findCurrentSpot(state.loc, spots); } catch (error) { FailureLog.note('route.current_spot', error); }
     const declaredSpotId = party?.spotId || state.spotId || null;
     const declaredSpot = declaredSpotId ? SpotIndex.spotById(spots, declaredSpotId) : null;
     return declaredSpot?.raidBoss === true ? declaredSpot.id : physical?.id || currentSpot?.id || declaredSpotId;
@@ -78,28 +81,62 @@ function groundOf(state, currentSpot) {
 // hasRoom: the worker's room filter for the spot search (ROUTE-ROOM): the
 // solo trip's for the bot, the party run's for the whole party; main passes
 // none (a search on main reads main's world index for the routed members in
-// SpotProfiles.findForState, ROUTE-ROOM-4).
-function frameFor(state, party, partyMembers = [], timestamp, hasRoom = null) {
+// SpotProfiles.findForState, ROUTE-ROOM-4). spotHunters: the worker's hunters
+// count for the search's spot values (ColdSimulationKernel.spotHunters; main
+// passes none: SpotEconomics reads main's).
+function frameFor(state, party, partyMembers = [], timestamp, hasRoom = null, spotHunters = null) {
     const partyRoute = !!party;
     const routedMembers = partyRoute ? partyMembers : [state];
     const excludedSpotIds = partyRoute ? PartySpotRiskPolicy.excludedSpotIds(party, timestamp)
         : SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
     const role = partyRoute ? PartyComposition.roleForState(state) : null;
     const options = { capacityStates: routedMembers, excludedSpotIds, timestamp,
-        ...(partyRoute ? { mode: 'party', role } : {}), ...(hasRoom ? { hasRoom } : {}) };
+        ...(partyRoute ? { mode: 'party', role } : {}), ...(hasRoom ? { hasRoom } : {}), ...(spotHunters ? { spotHunters } : {}) };
     let soloProfiles = null;
     const solo = () => {
         soloProfiles = soloProfiles || BotTargetMatchup.stateProfiles(state, { ...options, mode: 'solo' });
         return { ...options, mode: 'solo', matchupProfiles: soloProfiles };
     };
-    return { partyRoute, routedMembers, excludedSpotIds, role, options, solo, unsafe: undefined };
+    // owner: the solo trip's kernel record, where its spot verdicts are kept (heldVerdict).
+    return { partyRoute, routedMembers, excludedSpotIds, role, options, solo, unsafe: undefined, owner: null };
 }
 
 function unsafeSoloGround(state, currentSpot, frame) {
     if (frame.unsafe !== undefined) return frame.unsafe;
     const ground = !frame.partyRoute ? groundOf(state, currentSpot) : null;
-    frame.unsafe = !!ground && !LevelingRoutes.isSpotAllowedForState(ground, state, frame.solo());
+    frame.unsafe = !!ground && !heldVerdict(frame, 'ground', ground === currentSpot ? ground : null, state, false,
+        () => LevelingRoutes.isSpotAllowedForState(ground, state, frame.solo()));
     return frame.unsafe;
+}
+
+// A solo bot's ground and matchup verdict over one catalog spot (the leaf's
+// spot read ready, slot 'leaf'; the ground it stands on as it is, 'ground'),
+// kept on its kernel record (frame.owner, the trip's: owner.spotFit[slot])
+// while what the verdict reads stands: the spot (the catalog's object), the
+// bot's side (BotTargetMatchup.soloVerdictKey: kit, shot kind, servitor) and
+// the matchup's safety target level (LevelingRoutes.safetyOptions: the
+// recovery penalty). It reads no crowd and no exclusion. Party-only ground
+// (BotHuntingGroundPolicy) also reads the worn gear: there a solo bot is
+// judged each time, a grouped one keeps it. No owner (the economy's read, a
+// party route, main) or no key: judged each time. Counted as
+// route:spot_fit:<slot>_kept|<slot>_judged.
+function heldVerdict(frame, slot, spot, state, ready, judge) {
+    const owner = frame.owner;
+    if (!owner || !spot) return judge();
+    const grouped = BotHuntingGroundPolicy.isParty(state, { mode: 'solo' });
+    if (!grouped && BotHuntingGroundPolicy.isDangerousSoloGround(spot, { tags: LevelingRoutes.tagsForSpot(spot) })) return judge();
+    const side = BotTargetMatchup.soloVerdictKey(state, frame.options.timestamp, ready);
+    if (side === null) return judge();
+    const key = `${side}|${LevelingRoutes.safetyOptions(state, { mode: 'solo' }).maxTargetLevel ?? ''}|${grouped ? 1 : 0}`;
+    const held = owner.spotFit?.[slot];
+    if (held?.spot === spot && held.key === key) {
+        EconomyDiagnostics.count('route', 'spot_fit', `${slot}_kept`);
+        return held.allowed;
+    }
+    const allowed = judge();
+    owner.spotFit = { ...owner.spotFit, [slot]: { spot, key, allowed } };
+    EconomyDiagnostics.count('route', 'spot_fit', `${slot}_judged`);
+    return allowed;
 }
 
 // The search: { spotId (null: none found), materialRoute, materialSources }
@@ -114,8 +151,8 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
     if (!partyRoute && PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) {
         try {
             fallbackSpot = PartyWaitFallback.spotFor(state, state.stats?.equipmentPlan, spots,
-                { excludedSpotIds, timestamp, hasRoom: options.hasRoom })?.spot || null;
-        } catch (_) { fallbackSpot = null; }
+                { excludedSpotIds, timestamp, hasRoom: options.hasRoom, spotHunters: options.spotHunters })?.spot || null;
+        } catch (error) { FailureLog.note('route.wait_fallback', error); fallbackSpot = null; }
     }
     const routeState = partyRoute
         ? {
@@ -143,7 +180,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
             && LevelingRoutes.modeForState(routeState, options) !== 'party'
             ? { ...options, profiles: spots, matchupProfiles: frame.solo().matchupProfiles }
             : { ...options, profiles: spots });
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('route.search', error); return null; }
     if (unsafe && selected) {
         const repeatsCurrentGround = String(selected.id || '') === String(currentId || '');
         if (repeatsCurrentGround || !LevelingRoutes.isSpotAllowedForState(selected, state, frame.solo())) selected = null;
@@ -164,14 +201,9 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
 function evacuationSpot(state, currentId, spots, frame) {
     const level = Number(state.level || 1);
     const emergencyOptions = frame.solo();
-    const nearLevel = spots
-        .filter((profile) => profile.raidBoss !== true)
+    const nearLevel = SpotProfiles.spotsNearLevel(spots, level)
         .filter((profile) => String(profile.id) !== String(currentId || ''))
-        .filter((profile) => !frame.excludedSpotIds.has(String(profile.id)))
-        .filter((profile) => (
-            Number(profile.minLevel || 1) <= level + 4
-            && Number(profile.maxLevel || profile.minLevel || 1) >= level - 4
-        ));
+        .filter((profile) => !frame.excludedSpotIds.has(String(profile.id)));
     const emergencyCandidates = nearLevel.filter((profile) => (
         LevelingRoutes.isSpotAllowedForState(profile, state, emergencyOptions)
     ));
@@ -196,10 +228,12 @@ function leafFitReader(state, { spots, timestamp, frame = null }) {
         if (!spot) return 'missing';
         if (spot.raidBoss === true) return 'raid';
         if (frame.excludedSpotIds.has(String(spot.id))) return 'excluded';
-        allowed ||= LevelingRoutes.spotAllowedReaderFor(state, frame.solo());
-        return allowed(spot) && (SpotService.isSuitable(spot, level, frame.options)
-            || EquipmentIncomeRoute.economicHunt(state) && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)
-            ? 'fit' : 'unfit';
+        if (!SpotService.isSuitable(spot, level, frame.options)
+            && !(EquipmentIncomeRoute.economicHunt(state) && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)) return 'unfit';
+        // The ground and matchup clause, the costly one, last; kept on the
+        // trip's record (heldVerdict).
+        return heldVerdict(frame, 'leaf', spot, state, true,
+            () => (allowed ||= LevelingRoutes.readySpotReaderFor(state, frame.solo()))(spot)) ? 'fit' : 'unfit';
     };
 }
 
@@ -209,10 +243,11 @@ function leafFitReader(state, { spots, timestamp, frame = null }) {
 // own with no room for it is no leaf trip either: returned with full: true
 // (counted as route:trip:leaf_full), the kept route decides and its trip
 // stands in for it (trip); the room is checked again at arrival. Null: the
-// kept route decides.
-function leafChoice(state, leaf, { spots, timestamp, frame = null }) {
+// kept route decides. owner: the bot's kernel record, where the verdict is
+// kept (heldVerdict; the trip's frame carries it).
+function leafChoice(state, leaf, { spots, timestamp, frame = null, owner = null }) {
     if (leaf?.activity !== 'hunting' || !leaf.spotId || !routable(state, null, [])) return null;
-    frame = frame || frameFor(state, null, [], timestamp);
+    if (!frame) { frame = frameFor(state, null, [], timestamp); frame.owner = owner; }
     const verdict = leafFitReader(state, { spots, timestamp, frame })(leaf.spotId);
     if (verdict === 'missing') { EconomyDiagnostics.count('route', 'trip', 'leaf_missing'); return null; }
     if (verdict === 'unfit') { EconomyDiagnostics.count('route', 'trip', 'leaf_unfit'); return null; }
@@ -254,7 +289,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
     if (!destinations) return null;
     for (const member of partyRoute ? [] : members) {
         let destination = null;
-        try { destination = SpotService.arrivalPointForState(member, selected); } catch (_) { destination = null; }
+        try { destination = SpotService.arrivalPointForState(member, selected); } catch (error) { FailureLog.note('route.arrival', error); }
         if (!destination) return null;
         destinations[String(member.characterId)] = destination;
     }
@@ -270,7 +305,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
         spotId: selected.id,
         regionName: selected.name || state.currentRegion || 'Hunting Ground',
         // The routed bot's trip time; a party's members all take it.
-        travelMs: ColdTrip.spotTripMs(state, destinations[String(state.characterId)] || selected.center),
+        travelMs: ColdTrip.spotPlan(state, destinations[String(state.characterId)] || selected.center).durationMs,
         reason: partyRoute
             ? 'party_spot_replan'
             : unsafe ? 'unsafe_ground_evacuation'
@@ -286,12 +321,43 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
 }
 
 // One search and its trip, nothing kept: the party run (the worker's room
-// filter in hasRoom) and the retreat (main: none, the search reads main's index).
-function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, hasRoom = null }) {
+// filter in hasRoom).
+function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, hasRoom = null, spotHunters = null }) {
     if (!routable(state, party, partyMembers)) return null;
-    const frame = frameFor(state, party, partyMembers, timestamp, hasRoom);
+    const frame = frameFor(state, party, partyMembers, timestamp, hasRoom, spotHunters);
     return record(state, choose(state, currentSpot, party, partyMembers, { spots, timestamp, frame }), party, partyMembers,
         { spots, currentSpot, timestamp, frame });
+}
+
+// No solo ground (decision 10-30, T106): a solo bot hunts ground its level
+// does not fit. The spot search keeps a fitting current spot and walks the
+// fitting spots first, so the spot it leaves the bot on fails that same level
+// fit (SpotService.isSuitable at the search's solo target level) only when
+// its solo gate admitted no spot near the level. A bot whose own spot fits
+// has ground; else the search decides (T126: a levelled-up healer on its old
+// spot whose search moves it to fitting ground has ground): the route kept on
+// its record (`owner`, the worker's kernel record), else one search kept
+// there, so the trip start reads it and never searches again. Without an
+// owner (no search inputs), its own spot decides. A gear plan's own source is
+// an errand there. search: { owner, timestamp, hasRoom, spotHunters } as trip's.
+function soloGroundMissing(state, spots, search = null) {
+    if (!state?.spotId || state.party?.partyId || state.stats?.travel) return false;
+    const plan = state.stats?.equipmentPlan;
+    if (plan?.status === 'active' && String(plan.next?.spotId || '') === String(state.spotId)) return false;
+    const spot = SpotIndex.spotById(spots, state.spotId);
+    const level = LevelingRoutes.targetLevelForState(state, { mode: 'solo' });
+    if (!spot || spot.raidBoss === true || SpotService.isSuitable(spot, level)) return false;
+    if (!search?.owner) return true;
+    const { owner, timestamp = Date.now(), hasRoom = null, spotHunters = null } = search;
+    const frame = frameFor(state, null, [], timestamp, hasRoom, spotHunters);
+    frame.owner = owner;
+    const chosen = owner.route || choose(state, SpotService.standingSpot(state, spots), null, [], { spots, timestamp, frame });
+    // No search now (choose: a bot on a rest, a trip, a duty): no verdict. Only
+    // a search that found nothing, { spotId: null }, means no ground.
+    if (chosen === null) return false;
+    if (!owner.route) owner.route = chosen;
+    const routed = chosen?.spotId ? SpotIndex.spotById(spots, chosen.spotId) : null;
+    return !routed || routed.raidBoss === true || !SpotService.isSuitable(routed, level);
 }
 
 // The solo trip of a step: to the spot the step's own leaf names when the
@@ -311,9 +377,10 @@ function route(state, currentSpot, party, partyMembers = [], { spots, timestamp,
 // and the detour of a leaf that hunts a material at its monster (only that
 // monster brings the material in).
 const DETOUR_REASONS = new Set(['level_replan', 'equipment_source_replan']);
-function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoom = null }) {
+function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoom = null, spotHunters = null }) {
     if (!routable(state, null, [])) return null;
-    const frame = frameFor(state, null, [], timestamp, hasRoom);
+    const frame = frameFor(state, null, [], timestamp, hasRoom, spotHunters);
+    frame.owner = owner || null;
     // The accepted occupation owns this round. A routine hunting replan
     // must not turn a pending purchase/craft/sale into another field trip
     // before the native economy executor gets to carry it out.
@@ -364,4 +431,4 @@ function dropReason(sectionsMoved, before = {}, after = {}) {
     return planKey(before.plan, before.request) !== planKey(after.plan, after.request) ? 'plan' : '';
 }
 
-module.exports = { choose, record, leafChoice, leafFitReader, route, trip, drop, dropReason };
+module.exports = { choose, record, leafChoice, leafFitReader, route, trip, drop, dropReason, soloGroundMissing };

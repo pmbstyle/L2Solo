@@ -1,4 +1,4 @@
-const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcAttacked = invoke('GameServer/Npc/Attacked');
 
 function receivedHit(session, actor, npc, hit, options = {}) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(npc, 'petrification')) return;
@@ -13,9 +13,6 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     invoke('GameServer/Quest/QuestService').onAttack(questSession, npc, actor, hit).catch(error => utils.infoWarn('Quest', 'pet attack: %s', error.message));
     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
-    const SocialAggro = invoke('GameServer/Npc/SocialAggro');
-    const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
-    const World = invoke('GameServer/World/World');
 
     invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, npc);
     BotSocialMemory.recordCombatHelp(session, npc, `hit ${npc.fetchName()} for ${hit}`);
@@ -31,8 +28,6 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         const playerId = Number(session?.actor?.fetchId?.() || 0);
         if (actorId) dropState.raidAttackers.add(actorId);
         if (playerId) dropState.raidAttackers.add(playerId);
-        if (actor?.model) actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
-        if (session?.actor?.model) session.actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
     }
     if (levels.length > 0) {
         dropState.dropAttackerLevels ??= [];
@@ -55,30 +50,13 @@ function receivedHit(session, actor, npc, hit, options = {}) {
 
     if (npc.fetchHp() <= 0) {
         invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc);
-        // C4 notifies the minion's master before the killed NPC is removed.
-        // Keep the same ordering so a lethal hit still pulls the boss and its
-        // surviving minions into combat.
-        if (npc.minionBossObjectId || npc.minionLeader) {
-            MinionManager.onMinionAttacked(World, npc, actor, session);
-        }
+        NpcAttacked(session, actor, npc, hit, options.npcAttacked);
         invoke(path.npc).die(session, actor, npc);
         return;
     }
 
     npc.automation.replenishVitals(npc);
-    if (npc.canEngageCombat?.() === false) return;
-    if (typeof npc.addDamageHate === 'function') {
-        npc.addDamageHate(session, actor, hit, NpcHate.fromDamage(hit));
-    }
-    else {
-        npc.enterCombatState(session, actor);
-    }
-    if (npc.fetchIsRaidBoss?.() === true || npc.minionState) {
-        MinionManager.onBossAttacked(World, npc, actor, session);
-    } else if (npc.minionBossObjectId || npc.minionLeader) {
-        MinionManager.onMinionAttacked(World, npc, actor, session);
-    }
-    SocialAggro.notifyClan(session, npc, actor);
+    NpcAttacked(session, actor, npc, hit, options.npcAttacked);
 }
 
 module.exports = receivedHit;

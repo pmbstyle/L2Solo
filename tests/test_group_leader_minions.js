@@ -13,13 +13,18 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const RuntimeWorld = invoke('GameServer/World/World');
 const ActorGenerics = invoke(path.actor);
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const Skill = invoke('GameServer/Model/Skill');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 DataCache.init();
 
 const world = {
     user: { sessions: [] },
     npc: { spawns: [], grid: {}, nextId: 3000000, periodMode: 'night', periodRevision: 0, periodDefinitions: [] },
-    indexSpawnsInGrid() {}
+    addNpcToGrid() {},
+    removeNpcFromGrid() {}
 };
 const session = { dataSendToMeAndOthers() {}, dataSendToMe() {} };
 
@@ -115,6 +120,23 @@ assert.strictEqual(leader.state.fetchCombats(), true, 'the leader answers a mini
 assert.strictEqual(leader.fetchDestId(), attacker.fetchId());
 assert.strictEqual(guards[1].fetchDestId(), attacker.fetchId());
 
+for (const [id, resisted] of [[122, false], [115, true]]) {
+    leader.abortCombatState(session);
+    guards.forEach((guard) => guard.abortCombatState(session));
+    const skill = new Skill({ selfId: id, level: 1, spell: true });
+    try {
+        const result = withRuntimeWorld(() => SkillEffects.execute(session, attacker, guards[0], skill,
+            { rng: () => resisted ? 1 : 0, magicSkill: true }));
+        assert.strictEqual(result.effectResisted, resisted);
+        assert.strictEqual(leader.fetchCombatTarget(), attacker, 'a debuff on an ordinary minion engages its leader');
+        assert(guards.every((guard) => guard.state.fetchCombats() && guard.fetchCombatTarget() === attacker),
+            'ordinary groups assist on a landed or resisted debuff, just like raid groups');
+    } finally {
+        EffectTicker.clearAll(guards[0]);
+        EffectStore.remove(guards[0], skill.fetchSemantic().effect);
+    }
+}
+
 // Lisvus replaces raid minions only: a killed guard stays dead while its leader lives.
 const originalNpcDied = ActorGenerics.npcDied;
 ActorGenerics.npcDied = () => {};
@@ -152,7 +174,9 @@ assert.strictEqual(change.removed, 3, 'the night leader and its two minions leav
 assert.ok(!inWorld(lord) && behemoths.every((npc) => !inWorld(npc)));
 assert.ok(newGuards.every(inWorld), 'other groups stay');
 
-// The hunting spot catalogue (cold bots' view) counts minions as spot monsters.
+// The hunting spot catalogue (cold bots' view, built from the spawn
+// definitions) counts a leader's minions as spot monsters.
+world.npc.definitions = [definition];
 withRuntimeWorld(() => {
     SpotService.reset();
     const spot = SpotService.ensureIndexed().find((entry) => entry.npcEntries.some((row) => row.selfId === 1369));

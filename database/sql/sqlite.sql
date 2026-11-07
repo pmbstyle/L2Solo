@@ -5,6 +5,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     appliedAt INTEGER NOT NULL
 );
 
+-- Migrations after 83 (src/Database.js applySchemaMigrations, namedMigrations).
+CREATE TABLE IF NOT EXISTS named_migrations (
+    name TEXT PRIMARY KEY,
+    appliedAt INTEGER NOT NULL
+);
+
 -- History rows on their way to the history file (src/HistoryStore.js,
 -- database/sql/history.sql): written in the world transaction, moved and
 -- deleted by the history thread.
@@ -491,7 +497,6 @@ CREATE TABLE IF NOT EXISTS bot_market_counts (
 );
 CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
 CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS bot_life_state_market_reconcile ON bot_life_state(phase, updatedAt, characterId);
 CREATE TABLE IF NOT EXISTS bot_goal_state (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     goalJson TEXT,

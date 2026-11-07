@@ -16,6 +16,18 @@ const id = 9761, slots = [133, 37, 124], loc = { locX: 83396, locY: 147904, locZ
 async function stored() {
     return JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]))[0].statsJson).hennas;
 }
+// The cache a lifecycle save leaves is the state its stored row reads back as,
+// whether SQL rewrote the stats on the way (the symbols) or kept them as sent.
+async function assertCachedAsStored(saved) {
+    const [row] = await DB.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]);
+    const stored = Life.acceptLifecycleRow(row);
+    assert.deepEqual(saved.stats, stored.stats);
+    assert.deepEqual(saved.inventory, stored.inventory);
+    assert.equal(saved.simulation.revision, stored.simulation.revision);
+    // Both are what the stored texts parse to now (a parse handed on is that parse).
+    assert.deepEqual(stored.inventory, Life.normalizeInventoryStackability(InventorySummary.read(row.inventorySummary)));
+    for (const [key, value] of Object.entries(JSON.parse(row.mindJson || '{}'))) assert.deepEqual(stored.stats[key], value, key);
+}
 async function run() {
     try {
         await DB.init();
@@ -37,6 +49,17 @@ async function run() {
 
         state = await Life.upsertState({ ...state, stats: { ...state.stats, hennas: [] } }, 'stale_actor_snapshot');
         assert.deepEqual(state.stats.hennas, slots, 'a generic lifecycle save cannot erase physical symbols');
+        await assertCachedAsStored(state);
+        state = await Life.upsertState(Life.cachedState(id), 'kit_unchanged');
+        assert.deepEqual(state.stats.hennas, slots);
+        await assertCachedAsStored(state);
+        // A save that moves the bag and the mind reads back the moved ones.
+        state = await Life.upsertState({ ...state, inventory: { ...state.inventory, 1835: { selfId: 1835, amount: 100 } },
+            stats: { ...state.stats, decisionSeq: Number(state.stats.decisionSeq || 0) + 1 } }, 'bag_and_mind_moved');
+        assert.equal(state.inventory[1835].amount, 100);
+        assert.equal(state.inventory[1835].stackable, true);
+        assert.equal(Life.cachedState(id).stats.decisionSeq, state.stats.decisionSeq);
+        await assertCachedAsStored(state);
         const stepped = Life.cachedState(id);
         // The worker writes the kit of the row it stepped from: a henna writer
         // moves the revision, so a proposal with older symbols is refused, not merged.
@@ -54,6 +77,7 @@ async function run() {
         await DB.deleteCharacterHenna(id, 2);
         state = await Life.upsertState({ ...state, stats: { ...state.stats, hennas: slots } }, 'stale_before_removal');
         assert.deepEqual(state.stats.hennas, [133, null, 124], 'a genuine native removal is not restored by a stale writer');
+        await assertCachedAsStored(state);
         const symbol = Henna.symbolForClass(55, 37);
         assert(symbol);
         await DB.setItem(id, { selfId: symbol.dyeSelfId, name: 'Dye', amount: symbol.dyeAmount });

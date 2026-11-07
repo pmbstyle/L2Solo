@@ -160,7 +160,7 @@ async function run() {
     assert(persisted.every(r => JSON.parse(r.statsJson).marketReturn === null), 'cleanup commits atomically with the battle');
     const kills = result.combat.fighters.flatMap(f => f.kills);
     assert.equal(kills.length, 2, 'war continues past the first casualty to the remaining tagged enemy');
-    assert(kills.every(k => k.pvp), 'white mutual-war victims grant PvP without PK');
+    assert(kills.every(k => k.outcome === 'pvp'), 'white mutual-war victims grant PvP without PK');
     assert.equal(state(31).vitals.hp, 1000, 'a neutral party companion is not a war target');
     await DB.flushJournals();
     const pressure = await DB.fetchClanWarPressure(20, at - 60000, at + 1);

@@ -1,3 +1,4 @@
+const FailureLog = require('../FailureLog');
 const Database = invoke('Database');
 const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -62,7 +63,9 @@ async function transfer(session, targetClassId, options = {}) {
         return { ok: true, targetClassId: check.targetClassId, requiredLevel: check.requiredLevel };
     } catch (error) {
         actor.setClassId(check.currentClassId);
-        await Database.updateCharacterClassId(actor.fetchId(), check.currentClassId).catch(() => {});
+        // A lost rollback leaves the saved class ahead of the one in play.
+        await Database.updateCharacterClassId(actor.fetchId(), check.currentClassId)
+            .catch(rollback => FailureLog.note('db.write:class_rollback', rollback));
         utils.infoWarn('Character', 'class change failed for %s: %s', actor.fetchName(), error.message);
         return { ok: false, reason: 'persistence', error };
     }

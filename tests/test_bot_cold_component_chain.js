@@ -80,19 +80,26 @@ async function run() {
         };
     };
 
-    const result = await ColdCraftingService.craft({
+    const customer = {
         characterId: 42,
         name: 'ComponentProbe',
         phase: 'cold',
         level: 30,
         activity: 'crafting',
-        loc: { locX: 83396, locY: 147904, locZ: -3400 },
+        loc: ColdCraftingService.stationForRecipe(componentRecipe.recipeId).loc,
         inventory,
         stats: {
             equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId },
             craftReturn: { loc: { locX: -8200, locY: 11300, locZ: -3100 }, spotId: '2_-24', regionName: 'Wandering' }
         }
-    }, () => 0);
+    };
+    const redirected = await ColdCraftingService.craft({ ...customer,
+        loc: { locX: 83396, locY: 147904, locZ: -3400 } }, () => 0);
+    assert.strictEqual(redirected.reason, 'craft_station_changed', 'a customer away from the station must travel first');
+    assert.strictEqual(exchange, null, 'no remote crafting transaction is executed');
+    assert.strictEqual(redirected.state.stats.travel.stationId,
+        ColdCraftingService.stationForRecipe(componentRecipe.recipeId).id);
+    const result = await ColdCraftingService.craft(customer, () => 0);
 
     assert.strictEqual(result.reason, 'component_crafted', 'the ready nested resource must be crafted before the final equipment');
     assert.strictEqual(exchange.crafterMp, 1, 'a public crafting station must not consume its MP for a cold manufacture');

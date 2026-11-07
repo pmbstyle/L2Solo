@@ -98,6 +98,14 @@ async function tradeDone(session, buffer) {
                             : "I need more inventory space to receive these items."
                 );
             }
+            if (result.reason === 'inventory_weight' && confirmation.trade?.botSession) {
+                BotManager.botTell(confirmation.trade.botSession, session,
+                    result.weightBlocked?.player && result.weightBlocked?.bot
+                        ? 'These items would overload both of us. Reduce the trade amounts.'
+                        : result.weightBlocked?.player
+                            ? 'These items would overload you. Reduce the trade amounts.'
+                            : 'These items would overload me. Reduce the trade amounts.');
+            }
             BotTradeService.cancel(session);
             session.dataSendToMe(ServerResponse.actionFailed());
             session.dataSendToMe(ServerResponse.tradeDone(false));
@@ -141,7 +149,7 @@ async function tradeDone(session, buffer) {
             lootRequest ? 'gave_useful_loot' : 'trade_completed',
             detail
         );
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: session.actor?.fetchId?.(),
             botId: result.partnerSession?.actor?.fetchId?.(),
             eventType: 'trade_completed',
@@ -150,7 +158,7 @@ async function tradeDone(session, buffer) {
             dedupeKey: `trade:${session.actor?.fetchId?.()}:${result.partnerSession?.actor?.fetchId?.()}:${detail}`,
             coalesceWindowMs: 30 * 1000,
             meta: { itemCount: result.moved?.length || 0 }
-        })).catch(() => {});
+        });
         BotManager.botTell(
             result.partnerSession,
             session,

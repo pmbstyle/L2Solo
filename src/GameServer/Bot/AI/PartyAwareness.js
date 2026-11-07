@@ -2,6 +2,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
+const ActorQueries = require('../../World/ActorSpatialQueries');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
 // Hot companions are dispatched serially, but several services inside one
@@ -90,12 +91,16 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function uniqueNpcsAround(actors, radius) {
+// The NPCs within radius of a member whose target is a member: the only ones a
+// party threat can be (both threat kinds below require it), kept while the
+// scans are walked instead of collecting every NPC around each member.
+function npcsTargetingMembers(actors, radius, memberIds) {
     const seen = new Set();
     const npcs = [];
 
     actors.forEach((actor) => {
         world().fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), radius).forEach((npc) => {
+            if (!memberIds.has(Number(npc.fetchDestId?.()))) return;
             const id = actorId(npc);
             if (seen.has(id)) return;
             seen.add(id);
@@ -104,6 +109,31 @@ function uniqueNpcsAround(actors, radius) {
     });
 
     return npcs;
+}
+
+function hostilePlayer(actor) {
+    return actor.fetchKarma?.() > 0 || actor.fetchPvpFlag?.() > 0;
+}
+
+// The first registered session (the world's session order) whose online
+// actor, not a member, targets a member, is attackable (karma or flag) and
+// stands within radius of a member. One spatial query around the leader covers
+// every member's circle; each candidate is then held to a member's radius.
+function playerTargetingMembers(members, memberIds, radius) {
+    const center = members[0];
+    let reach = 0;
+    for (const member of members) {
+        const away = distance2d(actorLoc(member), actorLoc(center));
+        if (Number.isFinite(away)) reach = Math.max(reach, away);
+    }
+    return ActorQueries.near(world(), center, reach + radius, (session) => {
+        const actor = session?.actor;
+        const id = actorId(actor);
+        if (!isOnlineActor(actor) || memberIds.has(id)) return false;
+        if (!memberIds.has(actor.fetchDestId && actor.fetchDestId()) || !hostilePlayer(actor)) return false;
+        const actorPoint = actorLoc(actor);
+        return members.some((member) => distance2d(actorPoint, actorLoc(member)) <= radius);
+    })[0] || null;
 }
 
 function recentIncomingNpc(session, npcRadius = 2500) {
@@ -234,15 +264,14 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     const npcRadius = options.npcRadius || NPC_THREAT_RADIUS;
     const playerRadius = options.playerRadius || 1800;
 
-    const nearbyNpcs = uniqueNpcsAround(members, npcRadius);
+    const nearbyNpcs = npcsTargetingMembers(members, npcRadius, memberIds);
     BotRaidSafety.syncPlayerPartyRaid(leaderSession);
     const raidThreat = nearbyNpcs
         .filter((npc) => (
             BotRaidSafety.isProtectedRaidEntity(npc) &&
             !BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc) &&
             npc.fetchAttackable?.() === true &&
-            !npc.isDead?.() &&
-            memberIds.has(Number(npc.fetchDestId?.()))
+            !npc.isDead?.()
         ))
         .sort((a, b) => actorId(a) - actorId(b))[0];
     if (raidThreat) {
@@ -263,8 +292,7 @@ function findThreatTargetingParty(leaderSession, options = {}) {
             !isControlledRaidMinion(leaderSession, npc) &&
             npc.fetchAttackable &&
             npc.fetchAttackable() &&
-            !npc.isDead() &&
-            memberIds.has(npc.fetchDestId && npc.fetchDestId())
+            !npc.isDead()
         ))
         .sort((a, b) => (
             combatTargetPriority(leaderSession, memberSessions, a) - combatTargetPriority(leaderSession, memberSessions, b) ||
@@ -278,18 +306,7 @@ function findThreatTargetingParty(leaderSession, options = {}) {
         };
     }
 
-    const playerThreatSession = (world().user?.sessions || []).find((session) => {
-        const actor = session?.actor;
-        const id = actorId(actor);
-        if (!isOnlineActor(actor) || memberIds.has(id)) return false;
-        if (!memberIds.has(actor.fetchDestId && actor.fetchDestId())) return false;
-
-        const isAttackable = actor.fetchKarma?.() > 0 || actor.fetchPvpFlag?.() > 0;
-        if (!isAttackable) return false;
-
-        const actorPoint = actorLoc(actor);
-        return members.some((member) => distance2d(actorPoint, actorLoc(member)) <= playerRadius);
-    });
+    const playerThreatSession = playerTargetingMembers(members, memberIds, playerRadius);
 
     if (playerThreatSession?.actor) {
         return {
@@ -395,7 +412,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
             : null;
     }
 
-    const targetSession = (world().user?.sessions || []).find((session) => actorId(session?.actor) === targetId);
+    const targetSession = ActorQueries.byId(world(), targetId);
     const target = targetSession?.actor;
     if (target) {
         if (!isOnlineActor(target)) return null;

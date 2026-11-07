@@ -98,8 +98,7 @@ async function processOne({ commit, create, release }, now = Date.now()) {
             || !stillValid([...members, requester])) continue;
         const next = { ...party, memberIds: [...party.memberIds, requester.characterId],
             roleCoverage: Composition.roleCoverage([...members, requester]),
-            stats: { ...party.stats, memberNames: [...members, requester].map(member => member.name),
-                lastRecruitAt: now, clanHelp: { until: now + TTL_MS,
+            stats: { ...party.stats, clanHelp: { until: now + TTL_MS,
                     memberIds: [...members, requester].map(member => member.characterId) } } };
         const result = await commit(next, [...members, requester], {
             characterId: party.leaderId, eventType: 'party_recruit',

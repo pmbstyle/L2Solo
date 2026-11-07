@@ -1,3 +1,4 @@
+const FailureLog = require('../../../../FailureLog');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
@@ -27,6 +28,7 @@ const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
+const InventoryCleanup = require('../CompanionInventoryCleanup');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
 const FOLLOW_RUN_DISTANCE = 250;
@@ -264,6 +266,8 @@ function beginCompanionTownErrand(session, bot, playerSession, errand) {
     session.shoppingTarget = errand.target;
     session.shoppingDoneAnnounced = false;
     session.plan = 'shopping';
+    if (errand.kind === 'unload_inventory') session.shoppingServicePhase = 'warehouse';
+    if (errand.kind === 'sell_unused_arrows') session.shoppingServicePhase = 'merchant';
     session.currentTargetId = undefined;
     bot.unselect();
     bot.automation.abortAll(bot);
@@ -278,7 +282,11 @@ function beginCompanionTownErrand(session, bot, playerSession, errand) {
             ? `sell these resources to ${errand.target.name}`
             : errand.kind === 'sell_junk'
                 ? `sell my loot at ${errand.target.name}`
-                : 'restock my shots';
+                : errand.kind === 'unload_inventory'
+                    ? `store excess weight with ${errand.target.name}`
+                    : errand.kind === 'sell_unused_arrows'
+                        ? `sell unused arrows to ${errand.target.name}`
+                        : 'restock my shots';
     BotPartyChat.announce(session, {
         priority: 'informational',
         key: `town-errand:${bot.fetchId()}:${errand.kind}`,
@@ -833,7 +841,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         return true;
     }
     let partyThreat = null;
-    try { partyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession); } catch (_) { /* lightweight test/session */ }
+    try { partyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession); } catch (error) { FailureLog.note('ai.follow_threat', error); }
     const leaderBusy = !!(
         playerSession.actor.state?.fetchHits?.() ||
         playerSession.actor.state?.fetchCasts?.() ||
@@ -906,6 +914,7 @@ const FollowingState = {
         if (FollowingState.tickCorpseSummonAndDisable(ctx)) return;
         if (FollowingState.tickTravel(ctx)) return;
         if (FollowingState.tickPendingSupport(ctx)) return;
+        if (FollowingState.tickInventoryCleanup(ctx)) return;
         if (FollowingState.tickRest(ctx)) return;
         if (FollowingState.tickBuffsAndErrands(ctx)) return;
         if (FollowingState.tickSupportAndHealing(ctx)) return;
@@ -1114,6 +1123,11 @@ const FollowingState = {
             return true;
         }
         Object.assign(ctx, { impairments });
+        // With no party threat, a summoner heals its pet below its line (PetHealRule).
+        if (!partyThreat && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) {
+            recordRoleDecision(session, bot, 'heal_summon', 'between_fights');
+            return true;
+        }
         return false;
     },
 
@@ -1236,6 +1250,26 @@ const FollowingState = {
             return true;
         }
         return false;
+    },
+
+    // A seated party is a safe chance to unload, rather than a reason to
+    // postpone it forever. Combat, revival and pending support still win.
+    tickInventoryCleanup(ctx) {
+        const { session, bot, BotAI, playerSession, partyThreat, leaderTargetId, pulling } = ctx;
+        if (partyThreat || ctx.personalSupportThreat || session.pvpDefense || leaderTargetId || pulling?.target || isBusy(bot)
+            || ratio(bot.fetchHp?.(), bot.fetchMaxHp?.()) < 0.30) return false;
+        if (!(bot.fetchMaxLoad?.() > 0) || !require('../../Population/SurvivalFloor').bagMarks(bot).weight) return false;
+        if (weakestPartyVitals(playerSession, bot)?.hpRatio < CRITICAL_COMBAT_HP_RATIO) return false;
+        const errand = InventoryCleanup.errand(session, bot, BotAI);
+        if (!errand) return false;
+        if (bot.state.fetchSeated?.()) standUp(session, bot);
+        beginCompanionTownErrand(session, bot, playerSession, errand);
+        invoke('GameServer/Bot/AI/BotTownTravel').request(session, bot, BotAI, 'Unloading inventory.', {
+            allowCompanion: true, preserveShoppingTarget: true, destinationTown: errand.town,
+            announce: false
+        });
+        recordRoleDecision(session, bot, 'town_errand', errand.kind, { town: errand.target.town });
+        return true;
     },
 
     // Vitals, return after support, resting with the leader, low HP/MP recovery.

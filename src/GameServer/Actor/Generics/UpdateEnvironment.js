@@ -20,7 +20,9 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
     if (forceRefresh || new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
         require('../../ClanHall/Doors').sync(session, actor, true);
         invoke('GameServer/AfkTrade/AfkTradeService').refreshVisibility(session, actor);
-        npcs.forEach((npc) => {
+        const sourceIsBot = isBotSession(session);
+        // A bot's session discards packets (BotSession.dataSendToMe): no NpcInfo or timer for it.
+        if (!sourceIsBot) npcs.forEach((npc) => {
             const sendNpcInfo = () => session.dataSendToMe(ServerResponse.npcInfo(npc));
             if (immediateNpcInfo) {
                 sendNpcInfo();
@@ -30,7 +32,6 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
             }
         });
 
-        const sourceIsBot = isBotSession(session);
         // Bot movement only refreshes real clients. A real player entering
         // visibility also wakes dormant preload AI, whose next ordinary tick
         // may still be 30 seconds away. Already active bots keep their cadence.

@@ -3,6 +3,18 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PickupCapacity = require('../../Inventory/PickupCapacity');
 const GroundItemVisibility = require('../GroundItemVisibility');
+const GroundItems = require('../GroundItems');
+
+// A drop refused for room stays on the ground; the party's loot scan leaves
+// it alone until a bag changes (PartyCompanionService.lootBagsKey).
+function rejectCapacity(session, reason, item) {
+    session.dataSendToMe(ServerResponse.actionFailed());
+    if (reason === 'slots' || reason === 'weight') {
+        item.partyLootRefusedBags = PartyCompanionService.lootBagsKey(PartyCompanionService.groundLootLeader(session));
+        ConsoleText.transmit(session, reason === 'slots'
+            ? ConsoleText.caption.inventoryFull : ConsoleText.caption.loadLimitExceeded);
+    }
+}
 
 function pickupItem(session, actor, item) {
     if (!actor || session?.actor !== actor || !actor.backpack ||
@@ -15,24 +27,30 @@ function pickupItem(session, actor, item) {
     const canonicalItem = this.items.spawns[spawnIndex];
     const selfId = canonicalItem.fetchSelfId();
     const amount = canonicalItem.fetchAmount();
+    let capacityFailure;
     const allocations = selfId === 57
         ? PartyCompanionService.adenaAllocations(session, amount, canonicalItem)
-        : [{ session: PartyCompanionService.resolveLootSession(session, selfId, canonicalItem), amount }];
+        : [{ session: PartyCompanionService.resolveLootSession(session, selfId, canonicalItem, {
+            canReceive(recipient) {
+                const { reason } = PickupCapacity.check(recipient?.actor, selfId, amount, canonicalItem);
+                if (reason) capacityFailure ||= reason;
+                return !reason;
+            }
+        }), amount }];
     // Validate every recipient before claiming the drop, so a stale session
     // cannot crash the award or consume loot without receiving it.
     if (!allocations.length || allocations.some((entry) => !entry.session?.actor?.backpack ||
-        entry.session.actor.isDead?.() || entry.session.actor.fetchIsOnline?.() === false)) return false;
+        entry.session.actor.isDead?.() || entry.session.actor.fetchIsOnline?.() === false)) {
+        if (capacityFailure) rejectCapacity(session, capacityFailure, canonicalItem);
+        return false;
+    }
 
     const releases = [];
     for (const entry of allocations) {
         const reservation = PickupCapacity.reserve(entry.session.actor, selfId, entry.amount, canonicalItem);
         if (!reservation.release) {
             releases.forEach(done => done());
-            session.dataSendToMe(ServerResponse.actionFailed());
-            if (reservation.reason === 'slots' || reservation.reason === 'weight') {
-                ConsoleText.transmit(session, reservation.reason === 'slots'
-                    ? ConsoleText.caption.inventoryFull : ConsoleText.caption.loadLimitExceeded);
-            }
+            rejectCapacity(session, reservation.reason, canonicalItem);
             return false;
         }
         releases.push(reservation.release);
@@ -43,7 +61,7 @@ function pickupItem(session, actor, item) {
     // reach this method on adjacent timers. Removing the canonical spawn first
     // makes the claim atomic in the world event loop: only one caller may award
     // the item, distribute Adena, delete the object, or emit pickup text.
-    const [claimedItem] = this.items.spawns.splice(spawnIndex, 1);
+    const claimedItem = GroundItems.take(this.items, spawnIndex);
 
     let scheduled = 0;
     try {

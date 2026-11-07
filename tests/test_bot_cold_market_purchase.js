@@ -51,8 +51,7 @@ const originals = {
     setItem: Database.setItem,
     syncInventorySummary: Database.syncInventorySummary,
     updateCharacterLocation: Database.updateCharacterLocation,
-    updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals,
+    updateCharacterProgress: Database.updateCharacterProgress,
     clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
@@ -80,8 +79,7 @@ async function run() {
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.updateCharacterLocation = async () => {};
-    Database.updateCharacterExperience = async () => {};
-    Database.updateCharacterVitals = async () => {};
+    Database.updateCharacterProgress = async () => {};
     MarketTelemetry.reset();
     Economy.forState = function (value, ...args) {
         if (value?.phase === 'cold') throw new Error('fixture forbids main cold wish builds');
@@ -728,6 +726,13 @@ async function run() {
             lines: [{ line: selectedBoard.list(1864, Afk.SELL, 'Dion')[0], count: 1, price: 1 }] };
         assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
             { npc: false, sourcePlan: staleSource, cost: () => 0 }), null, 'a held worker source is admitted again before travel');
+        // A plan read past the first asks reaches the purchase whole.
+        for (let at = 0; at < 8; at++) selectedBoard.put({ id: 990020 + at, ownerId: 990120 + at, storeType: Afk.SELL, kind: 'shop',
+            town: 'Giran', revision: 1, lines: [{ lineId: 9900200 + at, selfId: 1865, count: 1, price: 5 + at }] });
+        const deepPlan = ColdMarketService.planPurchase(state, 1865, 8, { npc: false, cost: () => 0, quoteDepth: 5 });
+        assert.strictEqual(deepPlan?.whole, true, 'the asks are read until the amount is met');
+        assert.strictEqual(ColdMarketService.planPurchase(state, 1865, 8,
+            { npc: false, sourcePlan: { ...deepPlan, selfId: 1865 }, cost: () => 0 })?.units, 8, 'a held plan of eight lines is bought whole');
         const npcTown = MarketOpportunity.npcOffersAll(1785)[0];
         selectedBoard.put({ id: 990003, ownerId: 990101, storeType: Afk.SELL, custodyPolicy: 1,
             kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });
@@ -753,6 +758,17 @@ async function run() {
         'the same public quote becomes legal immediately after the supplier leaves the party');
         assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
             { economy: admissionEconomy }), true, 'a held context cannot retain a refusal after source-owner membership changes');
+        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
+            loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false, 'the owner cannot spend protected money on the route');
+        const fareRefusedReads = indexedReads;
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false);
+        assert.strictEqual(indexedReads, fareRefusedReads, 'unchanged fare refusal is cached');
+        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), true, 'the held refusal expires when the same seller can afford its route');
         const missingRequest = { selfId: 9999999, amount: 1, town: 'Dion', npc: false, r: .1 };
         assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
         const missingReads = indexedReads;
@@ -788,8 +804,7 @@ run().catch((err) => {
     Database.setItem = originals.setItem;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
-    Database.updateCharacterExperience = originals.updateCharacterExperience;
-    Database.updateCharacterVitals = originals.updateCharacterVitals;
+    Database.updateCharacterProgress = originals.updateCharacterProgress;
     GoalState.clear = originals.clearGoal;
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;

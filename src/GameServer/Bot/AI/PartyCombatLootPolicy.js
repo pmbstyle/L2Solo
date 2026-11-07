@@ -66,8 +66,8 @@ function allowed(session, leaderSession, item, members) {
         || Math.abs(from.locZ-to.locZ)>64 || session.botStay && distance(from,to)>50) return false;
     // Native PickupExec follows this straight segment, not a MoveTo A* route.
     if (Geodata.hasLineOfSight(from.locX,from.locY,from.locZ,to.locX,to.locY,to.locZ)!==true) return false;
-    const clearance=Aggro.AGGRO_RADIUS+100;
-    return !(World.fetchNpcsInRadius(from.locX,from.locY,distance(from,to)+clearance) || []).some(npc => {
+    return !(World.fetchNpcsInRadius(from.locX,from.locY,distance(from,to)+Aggro.MAX_AGGRO_RADIUS+100) || []).some(npc => {
+        const clearance=Aggro.aggroRadius(npc)+100;
         if (npc.isDead?.() || npc.state?.fetchDead?.() || !npc.fetchAttackable?.()) return false;
         if (!npc.fetchHostile?.() && !npc.fetchDestId?.() && !npc.fetchStateAttack?.()) return false;
         const p=position(npc);

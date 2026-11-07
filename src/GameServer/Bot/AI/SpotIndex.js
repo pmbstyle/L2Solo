@@ -18,10 +18,63 @@ function indexFor(spots) {
     return built;
 }
 
+// A cell piece a spot took in (SpotService, T123: an edge fragment) keeps
+// its old id as a name of the spot that took it: a saved spotId of the
+// fragment still finds its field. A spot's own id always wins.
 function tableFor(spots) {
     const built = indexFor(spots);
-    if (!built.table) built.table = new Map(spots.map((spot) => [String(spot.id), spot]));
+    if (!built.table) {
+        built.table = new Map(spots.map((spot) => [String(spot.id), spot]));
+        for (const spot of spots) {
+            for (const piece of spot.joins || []) {
+                if (piece.id && !built.table.has(String(piece.id))) built.table.set(String(piece.id), spot);
+            }
+        }
+    }
     return built.table;
+}
+
+// The cell pieces a spot covers (SpotService, T123): its own cell, or its
+// floor of a cell split by height ({ cell, low, high }: low <= z < high, null
+// for an open end), and the pieces it took in (joins). cell: the grid key
+// `x_y` or `x_y:area`.
+function piecesOf(spot) {
+    const own = spot?.floor || { cell: String(spot?.id ?? ''), low: null, high: null };
+    return spot?.joins?.length ? [own, ...spot.joins] : [own];
+}
+
+function inBand(piece, z) {
+    return (piece.low === null || piece.low === undefined || z >= piece.low)
+        && (piece.high === null || piece.high === undefined || z < piece.high);
+}
+
+// Whether a spot covers a point of the cell at height z.
+function covers(spot, cell, z) {
+    return piecesOf(spot).some((piece) => piece.cell === cell && (!Number.isFinite(z) || inBand(piece, z)));
+}
+
+// The spot of a list that covers a point: the cell key and height z. A cell
+// split by height has one piece per floor, and the floors' bands share their
+// borders, so a height falls in one of them; without a height, the cell's
+// main floor (the spot whose id is the cell). Null for a cell no spot covers.
+function spotAt(spots, cell, z) {
+    if (!Array.isArray(spots)) return null;
+    const built = indexFor(spots);
+    if (!built.cells) {
+        built.cells = new Map();
+        for (const spot of new Set(tableFor(spots).values())) {
+            if (spot.raidBoss === true) continue;
+            for (const piece of piecesOf(spot)) {
+                if (!built.cells.has(piece.cell)) built.cells.set(piece.cell, []);
+                built.cells.get(piece.cell).push({ piece, spot });
+            }
+        }
+    }
+    const rows = built.cells.get(String(cell));
+    if (!rows) return null;
+    if (rows.length === 1) return rows[0].spot;
+    if (!Number.isFinite(z)) return (rows.find((row) => row.spot.id === cell) || rows[0]).spot;
+    return (rows.find((row) => inBand(row.piece, z)) || rows[0]).spot;
 }
 
 // Occupancy's native Map contract: LAST row, SameValueZero keys, no string
@@ -57,7 +110,8 @@ function spotsForNpc(spots, npcId) {
     const table = tableFor(spots), built = tables.get(spots);
     if (!built.byNpc) {
         built.byNpc = new Map();
-        for (const spot of table.values()) {
+        // A spot named also by a piece it took in (tableFor) counts once.
+        for (const spot of new Set(table.values())) {
             const seen = new Set();
             for (const entry of spot.npcEntries || []) {
                 const id = Number(entry.selfId);
@@ -93,4 +147,4 @@ function npcWeights(spot, npcId) {
     return { count: built.byNpc.get(Number(npcId)) || 0, totalCount: built.totalCount };
 }
 
-module.exports = { tableFor, strictTableFor, spotById, ordinalFor, spotsForNpc, npcWeights };
+module.exports = { tableFor, strictTableFor, spotById, ordinalFor, spotsForNpc, npcWeights, piecesOf, covers, spotAt };

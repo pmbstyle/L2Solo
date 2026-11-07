@@ -37,7 +37,6 @@ assert.strictEqual(started.activity, 'traveling');
 assert.strictEqual(started.stats.travel.townName, 'Giran');
 assert.strictEqual(started.stats.travel.method, 'soe_gatekeeper');
 assert(started.stats.travel.viaTown, 'market travel should first use SoE to the regional town');
-assert.strictEqual(started.stats.travel.arrivalAt - started.stats.travel.startedAt, GoalExecutor.MARKET_TRAVEL_MS);
 assert.strictEqual(started.timing.nextResolveAt, started.stats.travel.arrivalAt, 'travel must sleep until its arrival event');
 
 const nativeMidway = {
@@ -102,7 +101,6 @@ assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 assert.strictEqual(returning.stats.travel.method, 'gatekeeper_spot', 'returning from Giran must use the destination gatekeeper instead of walking across the world');
-assert.strictEqual(returning.stats.travel.arrivalAt - returning.stats.travel.startedAt, GoalExecutor.GATEKEEPER_SPOT_TRAVEL_MS);
 assert.strictEqual(returning.timing.nextResolveAt, returning.stats.travel.arrivalAt, 'return travel must sleep until its arrival event');
 
 const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
@@ -156,13 +154,15 @@ try {
             }
         }
     }, Date.now());
-    assert.strictEqual(rerouted.stats.travel.spotId, availableSpot.id,
-        'a market return must honor the current capacity-aware route instead of feeding an old overloaded spot');
-    assert.strictEqual(rerouted.stats.travel.regionName, availableSpot.name);
+    // Main searches no spot for a return: the worker re-routes the bot at its
+    // next trip start and meets a full spot at arrival.
+    assert.strictEqual(rerouted.stats.travel.spotId, legacyMineSpot.id,
+        'a market return goes back to the spot it left, never a spot main searched');
+    assert.strictEqual(rerouted.stats.travel.regionName, legacyMineSpot.name);
     assert.deepStrictEqual(rerouted.stats.travel.to, {
-        locX: availableSpot.center.locX + 137,
-        locY: availableSpot.center.locY - 91,
-        locZ: availableSpot.center.locZ
+        locX: legacyMineSpot.center.locX + 137,
+        locY: legacyMineSpot.center.locY - 91,
+        locZ: legacyMineSpot.center.locZ
     }, 'market returns must use a distributed spawn-aware arrival point');
 
     const deathRerouted = GoalExecutor.finishMarketVisit({

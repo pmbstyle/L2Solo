@@ -1,18 +1,34 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 
 const CASTER_ROLES = new Set(['mage', 'healer']);
-const CASTER_BUFFER_CLASSES = new Set([17, 49, 51, 52]);
+const CASTER_BUFFER_CLASSES = new Set([17, 49]);
+
+// Orc Shamans level through melee while retaining their support role. A
+// physical blunt preserves Stun Attack; one hand leaves room for a shield.
+// Warcryer and Overlord keep it: they fight in melee too
+// (BotRoles.usesCasterWeaponCombat; user 10-29, T106 audit).
+const ORC_SHAMAN_PROFILE = Object.freeze({
+    weaponKinds: ['Weapon.Blunt'],
+    armorStyle: 'heavy',
+    twoHandedWeaponKinds: [],
+    shield: true,
+    weaponHint: 'one_handed_blunt'
+});
 
 const CLASS_PROFILES = {
-    // First-profession Orc Shamans level through melee while retaining their
-    // support role. A physical blunt preserves Stun Attack; one hand leaves
-    // room for a shield. Second professions keep their own support profiles.
-    50: {
-        weaponKinds: ['Weapon.Blunt'],
+    50: ORC_SHAMAN_PROFILE,
+    51: ORC_SHAMAN_PROFILE,
+    52: ORC_SHAMAN_PROFILE,
+    // A Human Warrior fights with a two-handed sword or a polearm, as C4
+    // players did, not the Knight's sword and shield (user 10-29, T106 audit:
+    // the dps rows read a tank's kit below 40). Gladiator's interim kit.
+    1: {
+        weaponKinds: ['Weapon.GreatSword', 'Weapon.Pole'],
+        preferredWeaponKinds: ['Weapon.GreatSword'],
         armorStyle: 'heavy',
-        twoHandedWeaponKinds: [],
-        shield: true,
-        weaponHint: 'one_handed_blunt'
+        twoHandedWeaponKinds: ['Weapon.GreatSword', 'Weapon.Pole'],
+        shield: false,
+        weaponHint: 'two_handed_sword_or_polearm'
     },
     // Gladiator and Bladedancer need a dual sword, which NPCs do not sell.
     // Until they hold one they keep fighting with the weapons of their
@@ -55,13 +71,15 @@ const CLASS_PROFILES = {
         shield: true,
         weaponHint: 'one_handed_blunt'
     },
+    // Orc Raider: the Destroyer's masteries from 20 (two-handed weapon,
+    // polearm, no shield mastery; Mobius C4 skill trees), user 10-30.
     45: {
-        weaponKinds: ['Weapon.Blunt', 'Weapon.Pole'],
-        preferredWeaponKinds: ['Weapon.Blunt'],
+        weaponKinds: ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],
+        preferredWeaponKinds: ['Weapon.GreatSword'],
         armorStyle: 'heavy',
-        twoHandedWeaponKinds: ['Weapon.Pole'],
-        shield: true,
-        weaponHint: 'blunt_or_polearm'
+        twoHandedWeaponKinds: ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],
+        shield: false,
+        weaponHint: 'two_handed_sword_or_blunt'
     },
     46: {
         weaponKinds: ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],

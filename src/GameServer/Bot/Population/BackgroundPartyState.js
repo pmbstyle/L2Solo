@@ -190,17 +190,6 @@ function parseJson(raw, fallback) {
     }
 }
 
-function rotationExpiry(partyId, startedAt) {
-    const maxAge = Math.max(0, Number(Config.partySessionMaxMs) || 0);
-    const jitter = Math.min(maxAge, Math.max(0, Number(Config.partySessionJitterMs) || 0));
-    if (!maxAge || !startedAt) return 0;
-    let hash = 0;
-    for (const char of String(partyId || '')) hash = ((hash * 31) + char.charCodeAt(0)) | 0;
-    const span = jitter * 2 + 1;
-    const offset = jitter ? Math.abs(hash) % span - jitter : 0;
-    return Number(startedAt) + maxAge + offset;
-}
-
 function normalizeMembership(party = {}) {
     const memberIds = Array.from(new Set((party.memberIds || [])
         .map((id) => Number(id))
@@ -215,9 +204,6 @@ function normalizeMembership(party = {}) {
 function normalize(row) {
     const startedAt = Number(row.startedAt || 0);
     const stats = PartyRisk.marksInSteps(parseJson(row.statsJson, {}), row.partyId || '', Date.now());
-    if (row.status === 'active' && startedAt && !Number(stats.sessionExpiresAt || 0)) {
-        stats.sessionExpiresAt = rotationExpiry(row.partyId, startedAt);
-    }
     const membership = normalizeMembership({
         leaderId: row.leaderId,
         memberIds: parseJson(row.memberIdsJson, [])
@@ -296,6 +282,7 @@ const BackgroundPartyState = {
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties')
             .then(() => Database.execute([`UPDATE ${TABLE} SET status = 'active', nextResolveAt = ?, updatedAt = ?, revision = revision + 1 WHERE status = 'hot'`, [now() + 30000, now()]], 'bot-party:startup-recovery'))
+            .then(() => BotLifeState.wholeClocks(TABLE, ['startedAt', 'nextResolveAt', 'updatedAt']))
             .then(() => shiftDueTimesByDowntime())
             .then(() => this.loadActive()).then(() => {
             initialized = true;

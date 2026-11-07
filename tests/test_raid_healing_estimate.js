@@ -21,7 +21,8 @@ const provider = (skill, mp = skill.mp, clanId = 7) => ({
 assert.equal(chant.power, 1);
 assert.equal(Healing.efficiency(chant, 2000), 345 / 103,
     'native Chant of Life 4 heals fifteen 23-HP ticks, not its placeholder power=1');
-assert.equal(Healing.efficiency(heart, 2000), 465 / 202);
+// Heart of Paagrio 1 costs the C4 total 27 initial + 107 consume = 134 MP (L2J Lisvus, T117).
+assert.equal(Healing.efficiency(heart, 2000), 465 / 134);
 assert.equal(Healing.efficiency({ ...chant, power: 0 }, 2000), 345 / 103,
     'authored HoT ticks do not depend on the placeholder power');
 assert.equal(Healing.efficiency(percent, 2000), 400 / percent.mp,
@@ -104,6 +105,12 @@ const byId = new Map(fixture.members.map(row => [row.characterId, { ...row,
 const members = fixture.expected.map(id => byId.get(id));
 const orc = members[2];
 orc.stats.classId = orc.stats.coldCombat.classId = 52;
+// A Warcryer keeps the Orc Shaman melee kit (user 10-29): blunt, heavy armour and a shield.
+const worn = (selfId, slot, kind, rank = 'c') => ({ selfId, amount: 1, equipped: true, equippedCount: 1,
+    equippedSlots: [slot], stackable: false, slot, rank, kind, enchant: 0 });
+delete orc.inventory[325]; delete orc.inventory[437]; delete orc.inventory[466];
+Object.assign(orc.inventory, { 89: worn(89, 7, 'Weapon.Blunt'), 60: worn(60, 15, 'Armor.Chain'),
+    107: worn(107, 8, 'Armor.Shield') });
 delete orc.stats.coldCombat.base;
 orc.stats.coldCombat.skills = [chant];
 const boss = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(`raid:${fixture.bossId}`);

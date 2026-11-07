@@ -1,6 +1,9 @@
+// Hot skill execution for actors, NPCs, cubics and weapon effects. Skill
+// semantics come from C4SkillRules; NPC retaliation uses the shared hate owner.
+const FailureLog = require('../../FailureLog');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
-const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcAttacked = invoke('GameServer/Npc/Attacked');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
@@ -9,10 +12,10 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const ToggleSkills = invoke('GameServer/Skills/ToggleSkills');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const Formulas = invoke('GameServer/Formulas');
+const HitRules = invoke('GameServer/Combat/HitRules');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ConsoleText = invoke('GameServer/ConsoleText');
 
-const COND_BEHIND = 0x0008;
-const COND_CRIT = 0x0010;
 
 function isBotSummonActor(session, actor) {
     const candidate = session || actor?.session;
@@ -41,6 +44,7 @@ function execute(session, actor, target, skill, context = {}) {
         spReward: 0,
         charges: null,
         aggroDamage: 0,
+        npcAttacked: false, // The subsequent HP hit reuses this cast's group notification.
         aggroPointsApplied: 0,
         aggroReduced: false,
         aggroReduction: 0,
@@ -56,7 +60,13 @@ function execute(session, actor, target, skill, context = {}) {
         combat: target?.state?.fetchCombats?.() === true };
     const finish = () => {
         if (result.heal > 0 || result.resurrected) invoke('GameServer/Social/CombatHelpMemory').record(actor, target, result, beforeHelp);
-        return finalizeSkillResult(result, session, actor, target, skill, semantic);
+        // Caster failure (158) also covers a resisted secondary effect on a
+        // damaging skill; target-side resisted magic (159) is a separate packet.
+        if (!actor.fetchKind && session?.dataSendToMe && (result.resisted || result.effectResisted)) {
+            ConsoleText.transmit(session, ConsoleText.caption.attackFailed);
+        }
+        result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);
+        return result;
     };
 
     if (context.selfEffectOnly === true && semantic.selfEffect) {
@@ -66,6 +76,12 @@ function execute(session, actor, target, skill, context = {}) {
             stats: semantic.selfEffect.stats || {}
         }, actor);
         return finish();
+    }
+
+    if (C4SkillRules.provokesNpc(semantic) && actor && target !== actor
+        && target?.fetchAttackable?.() === true && target.isDead?.() !== true
+        && target.state?.fetchDead?.() !== true) {
+        result.npcAttacked = NpcAttacked(session, actor, target);
     }
 
     if (semantic.skillType === C4SkillRules.SUMMON) {
@@ -223,7 +239,7 @@ function execute(session, actor, target, skill, context = {}) {
         return finish();
     }
 
-    if (magicSkill && isOffensive(semantic) && !usesEffectSuccessFormula(semantic) && !rollMagicSuccess(actor, target, skill, semantic, rng)) {
+    if (HitRules.rollsMagicLevel(semantic, magicSkill) && !HitRules.magicLevelLands(semantic, actor.fetchLevel?.(), target.fetchLevel?.(), rng)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.resisted = true;
         return finish();
@@ -394,19 +410,6 @@ function execute(session, actor, target, skill, context = {}) {
     return finish();
 }
 
-function finalizeSkillResult(result, session, actor, target, skill, semantic) {
-    // Poison Blade Dance is hostile on application, even when resisted.
-    // Waiting for its first DOT tick leaves a resisted cast without retaliation.
-    if (Number(skill.fetchSelfId?.()) === 84 && actor && target !== actor
-        && target?.fetchAttackable?.() === true && target.isDead?.() !== true
-        && target.state?.fetchDead?.() !== true) {
-        if (typeof target.addDamageHate === 'function') target.addDamageHate(session, actor, 0, NpcHate.ENGAGE_HATE);
-        else target.enterCombatState?.(session, actor);
-    }
-    result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);
-    return result;
-}
-
 function applyAggroPoints(session, actor, target, skill, semantic) {
     const aggroPoints = Math.max(0, Number(semantic?.aggroPoints) || 0);
     if (aggroPoints <= 0 || !actor || !target) return 0;
@@ -424,7 +427,8 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
     try {
         npcs = fetchNpcsInRadius.call(World, actorX, actorY, 1000) || [];
     }
-    catch {
+    catch (error) {
+        FailureLog.note('combat.npcs_in_radius', error);
         return 0;
     }
     let applied = 0;
@@ -439,7 +443,7 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
 
         const level = Math.max(1, Number(npc.fetchLevel?.()) || 1);
         const hate = Math.floor((150 * aggroPoints) / (level + 7));
-        if (hate <= 0 || !npc.addDamageHate(session, actor, 0, hate)) return;
+        if (hate <= 0 || !npc.addDamageHate(session, actor, 0, hate, { attacked: npc === target })) return;
         applied += hate;
     });
 
@@ -579,7 +583,9 @@ function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null)
 
     target.clearDestId?.();
     target.automation?.abortAll?.(target);
-    target.state?.setCasts?.(false);
+    // A pulled character's cast ends with the move (Lisvus teleToLocation
+    // aborts the cast): its timer is cleared too, so it cannot land later.
+    target.attack?.abortCast?.(targetSession, target);
     target.unselect?.();
     targetSession.currentTargetId = undefined;
     targetSession.dataSendToMeAndOthers?.(
@@ -685,7 +691,7 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         const World = invoke('GameServer/World/World');
         const coords = fetchSummonCoords(actor, target, skill);
         if (skill.fetchTargetKind?.() === 'corpse_mob') {
-            World.removeNpcFromGrid?.(target);
+            World.removeNpcFromGrid(target);
             World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== target?.fetchId?.());
         }
 
@@ -713,8 +719,7 @@ function placeSummon(session, actor, skill, npcData, coords, { hp = null, remain
     if (Number(hp) > 0) npc.setHp(Math.min(Number(hp), npc.fetchMaxHp()));
 
     World.npc.spawns.push(npc);
-    if (World.addNpcToGrid) World.addNpcToGrid(npc);
-    else World.indexSpawnsInGrid?.();
+    World.addNpcToGrid(npc);
 
     actor.summon = npc;
     session.summon = npc;
@@ -1050,12 +1055,7 @@ function applyCancel(session, target, semantic, rng) {
 }
 
 function dotFromSkill(skill, semantic) {
-    if (!semantic.dot) return null;
-    return {
-        count: semantic.dot.count,
-        intervalMs: semantic.dot.intervalMs,
-        damage: semantic.dot.damage ?? damageByLevel(skill, semantic.dot) ?? skill.fetchPower()
-    };
+    return HitRules.dotOf(semantic, skill.fetchLevel(), skill.fetchPower());
 }
 
 function hotFromSkill(skill, semantic) {
@@ -1099,26 +1099,17 @@ function calcAggroDamage(skill, target) {
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {
-    const condition = Number(semantic.requires?.condition) || 0;
-    if ((condition & COND_BEHIND) !== 0 && !attack?.isBehindTarget?.(actor, target)) {
-        return false;
-    }
-
-    if (condition !== 0 && (condition & COND_CRIT) === 0) {
-        return true;
-    }
-
-    if (condition === 0) return true;
-
     const behind = attack?.isBehindTarget?.(actor, target) === true;
+    // The position alone (HitRules.blowLandChance): at no rate a blow that
+    // needs no critical is whole (it lands, no roll); at the base rate a
+    // failed position is none (no roll). Only a critical's roll reads the
+    // facing, DEX and rates.
+    if (HitRules.blowLandChance(semantic, { behind, rateMul: 0 }) >= 100) return true;
+    if (!(HitRules.blowLandChance(semantic, { behind }) > 0)) return false;
     const front = !behind && attack?.isFacing?.(target, actor, 120) === true;
-    const baseChance = behind ? 70 : front ? 50 : 60;
-    const dex = Number(actor?.fetchDex?.()) || 20;
-    const chance = baseChance
-        * (1 + ((dex - 20) / 100))
-        * EffectStats.multiplier(actor, 'blowRateMul')
-        * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front });
-    return Math.max(0, chance) >= rng() * 100;
+    return HitRules.blowLands(semantic, { dex: Number(actor?.fetchDex?.()) || 20, behind, front,
+        rateMul: EffectStats.multiplier(actor, 'blowRateMul')
+            * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front }) }, rng);
 }
 
 function applyNegate(session, target, semantic) {
@@ -1213,108 +1204,38 @@ function clearNpcAggro(session, target, actor) {
     return true;
 }
 
-function rollMagicSuccess(actor, target, skill, semantic, rng) {
-    const chance = Formulas.calcMagicSuccessRate({
-        attackerLevel: actor.fetchLevel?.(),
-        targetLevel: target.fetchLevel?.(),
-        magicLevel: semantic.magicLevel,
-        levelDepend: semantic.levelDepend
-    });
-    return chance >= rng() * 100;
-}
 
 function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
-    const effectTrait = semantic.effectTrait || semantic.trait;
-    // Lisvus calcSkillSuccess defaults unset lvlDepend to 1 for PARALYZE
-    // and FEAR, and to 2 for every other effect type.
-    const levelDepend = semantic.levelDepend || (
-        semantic.effect === 'paralyze' || semantic.effect === 'fear' || effectTrait === 'paralyze' || effectTrait === 'fear'
-            ? 1
-            : 2
-    );
-    const chance = Formulas.calcSkillEffectSuccessRate({
-        baseChance: semantic.baseLandRate,
-        magic: magicSkill,
-        mAtk: actor.fetchCollectiveMAtk?.(),
-        mDef: target.fetchCollectiveMDef?.(),
-        soulshot: !!actor.soulshotLoaded,
-        spiritshot: !!actor.spiritshotLoaded,
-        blessedSpiritshot: !!actor.blessedSpiritshotLoaded,
-        attackerLevel: actor.fetchLevel?.(),
-        targetLevel: target.fetchLevel?.(),
-        magicLevel: semantic.magicLevel,
-        levelDepend,
-        resistModifier: traitResistModifier(target, effectTrait)
-    });
+    const chance = HitRules.effectLandChance(semantic, magicSkill, {
+        level: actor.fetchLevel?.(), mAtk: actor.fetchCollectiveMAtk?.(), soulshot: !!actor.soulshotLoaded,
+        spiritshot: !!actor.spiritshotLoaded, blessedSpiritshot: !!actor.blessedSpiritshotLoaded
+    }, { level: target.fetchLevel?.(), mDef: target.fetchCollectiveMDef?.() },
+    traitResistModifier(target, semantic.effectTrait || semantic.trait));
     return !(chance >= rng() * 100);
 }
 
-const RESIST_FAMILY_BY_TRAIT = {
-    shock: { resist: 'stunResist', vulnerability: 'stunVuln' },
-    warrior_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' },
-    mage_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' }
-};
-
 function traitResistModifier(target, trait) {
-    const family = RESIST_FAMILY_BY_TRAIT[trait] || {
-        resist: `${trait}Resist`,
-        vulnerability: `${trait}Vuln`
-    };
-    const resist = EffectStats.add(target, family.resist);
-    const vulnerability = EffectStats.multiplier(target, family.vulnerability, 1);
-    return Math.max(0, 1 - (resist / 100)) * Math.max(0, vulnerability);
+    const family = HitRules.resistStats(trait);
+    return HitRules.traitResistModifier(EffectStats.add(target, family.resist), EffectStats.multiplier(target, family.vulnerability, 1));
 }
 
 function applyLethal(actor, target, skill, semantic, rng, result) {
-    const lethal = semantic.lethal || {};
-    const maxHp = Number(target.fetchMaxHp?.()) || 0;
-    const currentHp = Number(target.fetchHp?.()) || 0;
-    if (maxHp <= 1 || currentHp <= 1) return false;
-
-    if (lethal.sourceFormula === true) {
-        const protectedTarget = target.fetchIsRaidBoss?.() === true
-            || target.fetchKind?.() === 'Boss'
-            || ['Door', 'SiegeFlag'].includes(target.fetchKind?.());
-        if (protectedTarget) return false;
-        const chance = Formulas.calcLethalStrikeChance(
-            actor.fetchLevel?.(),
-            target.fetchLevel?.(),
-            semantic.magicLevel ?? skill.fetchLevel?.()
-        );
-        if (chance > rng() * 100) {
-            result.forceLethalVitals = true;
-            return true;
-        }
-        return false;
-    }
-
-    const killChance = Number(lethal.killChance) || 0;
-    if (killChance > 0 && killChance >= rng() * 100) {
-        result.damage = Math.max(result.damage, currentHp - 1);
-        return true;
-    }
-
-    const halfKillChance = Number(lethal.halfKillChance) || 0;
-    if (halfKillChance > 0 && halfKillChance >= rng() * 100) {
-        result.damage = Math.max(result.damage, currentHp - Math.max(1, Math.floor(maxHp / 2)));
-        return true;
-    }
-
-    return false;
+    const kind = target.fetchKind?.();
+    const strike = HitRules.lethalStrike(semantic, { level: actor.fetchLevel?.() }, {
+        level: target.fetchLevel?.(), hp: target.fetchHp?.(), maxHp: target.fetchMaxHp?.(),
+        guarded: target.fetchIsRaidBoss?.() === true || kind === 'Boss' || kind === 'Door' || kind === 'SiegeFlag'
+    }, skill.fetchLevel?.(), rng);
+    if (!strike) return false;
+    // A lethal strike leaves the target at 1 HP and 1 CP after the hit (Attack.applyRemoteCastEffect).
+    if (strike.kind === 'lethal') result.forceLethalVitals = true;
+    else result.damage = Math.max(result.damage, (Number(target.fetchHp?.()) || 0) - strike.hp);
+    return true;
 }
 
 function isOffensive(semantic) {
     return semantic.target !== 'self' && semantic.effectType !== 'buff';
 }
 
-function usesEffectSuccessFormula(semantic) {
-    return semantic.skillType === C4SkillRules.EFFECT
-        || semantic.skillType === C4SkillRules.DAMAGE_EFFECT
-        || semantic.skillType === C4SkillRules.CANCEL
-        || semantic.skillType === C4SkillRules.BANE
-        || semantic.skillType === C4SkillRules.AGGRO_REMOVE
-        || semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR;
-}
 
 function isAttackableNpc(target) {
     return target?.fetchAttackable?.() === true;
@@ -1377,7 +1298,7 @@ function refreshStats(session, target) {
     if (target?.session) {
         try {
             invoke(path.actor).calculateStats(target?.session || session, target);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
     target.statusUpdateVitals?.(target);
 }

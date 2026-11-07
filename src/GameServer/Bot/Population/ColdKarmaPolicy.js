@@ -70,12 +70,11 @@ function plan(state, spots, timestamp = Date.now()) {
         return { targetNpcId: 0, plannedState: { ...clean, activity: 'resting' }, spot: null };
     }
     const from = { ...(state.loc || {}) };
-    // A bot with karma walks (ColdTrip.toSpot), with the switch off in the
-    // author's washing walk time: at least 25 s, then 120 units per second.
+    // A bot with karma walks (ColdTrip.toSpot).
     return { targetNpcId: 0, spot, plannedState: ColdTrip.toSpot(clean, {
         from, to, reason: 'karma_washing', spotId: spot.id, regionName: spot.name,
         arrivalActivity: 'hunting', arrivalEvent: 'arrived_hunting_ground'
-    }, timestamp, { durationMs: ColdTrip.authorWalkMs(from, to) }) };
+    }, timestamp) };
 }
 
 module.exports = { active, plan, targetForSpot };

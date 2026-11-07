@@ -39,7 +39,8 @@ async function run() {
     const price = id => Rules.npcBuyPrice(template(id).template.price);
     const cleanup = { now: timestamp, forcedCleanup: { cleanupReason: 'inventory_capacity' } };
     const full = await seed(990420, { hennas: [133, 37, 124], wishFocus: ['stock:shots', 0, 0],
-        marketSellRetryAfter: timestamp + 1800000 });
+        // The sale retry: the last visit could not place these dyes, nothing new came since.
+        marketSellSeen: { items: [4589, 4601], buyers: null } });
     assert.equal((await Database.fetchItems(full.characterId)).length, 102, 'fixture retains legacy separate dye rows');
     const dyeIds = Data.items.filter(row => row.template?.kind === 'Other.Tattoo').map(row => row.selfId);
     assert(dyeIds.every(id => template(id).etc.stackable === true), 'every canonical dye stacks');
@@ -63,7 +64,8 @@ async function run() {
     assert.equal(native.amount(physical, 736), 10, 'the travel reserve stays owned');
     assert.equal(native.amount(physical, 57), 1000000 + 50 * price(4589) + 50 * price(4601), 'NPC pays exactly for the physical surplus');
     assert.equal(result.state.adena, native.amount(physical, 57));
-    assert.equal(result.state.stats.marketSellRetryAfter, full.stats.marketSellRetryAfter);
+    assert.equal(result.reason, 'sell_retry_cleanup', 'the capacity cleanup runs behind the sale retry');
+    assert.deepEqual(result.state.stats.marketSellSeen, full.stats.marketSellSeen);
     assert.equal(Floor.forState({ ...result.state, inventory: Life.inventorySummaryFromItems(physical) }), null,
         'the next resolve no longer demands another capacity trip');
     assert.equal(invoke('GameServer/AfkTrade/AfkTradeService').ownerRecords(full.characterId).length, 0);

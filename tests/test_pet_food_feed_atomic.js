@@ -38,7 +38,7 @@ async function main() {
     options.default.Database.path = dbPath;
     Database.init();
     const read = new DatabaseSync(dbPath);
-    const backpack = new Backpack({ paperdoll: [], items: read.prepare('SELECT * FROM items').all() });
+    const backpack = new Backpack({ id: 2000001, paperdoll: [], items: read.prepare('SELECT * FROM items').all() });
     const session = owner(backpack);
     World.user = { sessions: [session] };
     World.npc = { spawns: [], grid: {}, nextId: 9000001 };

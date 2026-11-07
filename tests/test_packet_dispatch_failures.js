@@ -109,6 +109,44 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
         assert.strictEqual(socket.destroyed, false, 'a resolved handler keeps its connection');
     }
 
+    {
+        // X22: a client packet of 32768-65535 B reaches its handler whole
+        // (the frame length is unsigned); a string field without its
+        // terminator fails the packet instead of shifting the next fields.
+        // A server packet over 32767 B goes out with its length; one over a
+        // frame (65535 B) is not sent and the connection stays. All counted.
+        const Opcodes = invoke('GameServer/Network/Opcodes');
+        const ReceivePacket = invoke('Packet/Receive');
+        const Frame = invoke('Packet/Frame');
+        const speak = Opcodes.table[0x38];
+        const texts = [], before = Frame.refusals();
+        const refusedSince = () => Object.fromEntries(Object.entries(Frame.refusals()).map(([key, value]) => [key, value - before[key]]));
+        Opcodes.table[0x38] = (session, packet) => { texts.push(new ReceivePacket(packet).readS().data[0].length); };
+        try {
+            const big = connectGame('fixture');
+            const text = Buffer.concat([Buffer.from([0x38]), Buffer.from('a'.repeat(19998), 'ucs2'), Buffer.alloc(2)]);
+            big.socket.emit('data', frame(text));
+            assert.deepStrictEqual(texts, [19998], 'a 40000 B packet reaches its handler whole');
+            assert.strictEqual(big.socket.destroyed, false);
+
+            const cut = connectGame('fixture');
+            cut.socket.emit('data', frame(Buffer.concat([Buffer.from([0x38]), Buffer.from('ab', 'ucs2')])));
+            assert.strictEqual(cut.socket.destroyed, true, 'a string without its terminator fails the packet');
+            assert.deepStrictEqual(texts, [19998]);
+
+            big.session.dataSendToMe(Buffer.alloc(40000, 0xf8));
+            assert.strictEqual(big.socket.written.length, 1);
+            assert.strictEqual(big.socket.written[0].readUInt16LE(0), 40002, 'a 40000 B server packet keeps its length');
+            assert.strictEqual(big.socket.written[0].length, 40002);
+            big.session.dataSendToMe(Buffer.alloc(70000, 0xf8));
+            assert.strictEqual(big.socket.written.length, 1, 'a packet over a frame is not sent');
+            assert.strictEqual(big.socket.destroyed, false, 'and the player stays connected');
+            assert.deepStrictEqual(refusedSince(), { inbound: 0, outbound: 1, unterminated: 1 });
+        } finally {
+            Opcodes.table[0x38] = speak;
+        }
+    }
+
     const fetchCharacters = Shared.fetchCharacters;
     try {
         // A character slot the account does not have: the real handlers read
@@ -144,8 +182,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
         const ShotStock = invoke('GameServer/Inventory/ShotStock');
         const HennaService = invoke('GameServer/Henna/HennaService');
         const Database = invoke('Database');
-        const saved = [ShotStock.ensureActorStock, HennaService.restore, Database.fetchMacros, Database.fetchShortcuts];
-        ShotStock.ensureActorStock = () => Promise.resolve();
+        const saved = [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts];
         HennaService.restore = () => Promise.resolve();
         Database.fetchMacros = () => Promise.resolve([]);
         Database.fetchShortcuts = () => Promise.resolve([]);
@@ -165,7 +202,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
             assert.strictEqual(socket.destroyed, false, 'a failed world entry is logged and keeps the connection');
         } finally {
-            [ShotStock.ensureActorStock, HennaService.restore, Database.fetchMacros, Database.fetchShortcuts] = saved;
+            [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts] = saved;
         }
     }
 

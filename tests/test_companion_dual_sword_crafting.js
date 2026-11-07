@@ -52,7 +52,7 @@ async function actorCase({stored = true, second = true} = {}) {
     }
     const items = await Database.fetchItems(id);
     const paperdoll = Object.fromEntries(Array.from({length:16},(_,i)=>[i,{}]));
-    const backpack = new Backpack({items,paperdoll});
+    const backpack = new Backpack({id,items,paperdoll});
     for (const item of backpack.fetchItems()) if(item.fetchEquipped()) backpack.equipPaperdoll(item.fetchSlot(),item.fetchId(),item.fetchSelfId());
     const bot = {backpack,fetchId:()=>id,fetchName:()=>`CompanionDual${serial}`,fetchLevel:()=>64,fetchClassId:()=>34,
         fetchLocX:()=>town.x,fetchLocY:()=>town.y,fetchLocZ:()=>town.z,isDead:()=>false,

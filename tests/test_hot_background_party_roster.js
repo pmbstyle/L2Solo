@@ -83,6 +83,20 @@ try {
     current.leaderId = ++serial; assert.equal(Hot.leader(second), second, 'missing leader keeps the caller fallback');
     console.log('PASS real World/Actor + accepted party: original order/duplicates/leader fallback/dead/offline/badXYZ/wrong party/companion');
 
+    // T126: a hot bot alone in its party (no other living member) fights in solo mode, as the cold fight's party of one.
+    {
+        const Policy = invoke('GameServer/Bot/AI/BotClassPolicy');
+        const alive = member(), fallen = member(undefined, { hp: 0 });
+        const pair = party([alive.actor.fetchId(), fallen.actor.fetchId()]);
+        [alive, fallen].forEach(session => attach(session, pair));
+        assert.equal(Policy.modeFor(alive.actor, { session: alive }), 'solo_pve', 'a living bot beside a fallen one fights solo');
+        const partner = member();
+        attach(partner, pair);
+        pair.memberIds.push(partner.actor.fetchId());
+        assert.equal(Policy.modeFor(alive.actor, { session: alive }), 'party_pve', 'with a living member beside it, party mode');
+        console.log('PASS a hot bot alone in its party fights solo');
+    }
+
     const actorRecord = World.registeredActorById(second.actor.fetchId());
     const cold = Life.acceptLifecycleRow({ characterId: second.actor.fetchId(), phase: 'cold', activity: 'hunting',
         level: 1, hp: 12, maxHp: 100, mp: 31, maxMp: 100, locX: 12000, locY: 0, locZ: 0, updatedAt: 1 });

@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
@@ -53,9 +54,9 @@ async function run() {
     // MVP-1: money waits only behind a path with a step now, so the decision
     // reads prepared routes (as live does) and the gap is a priced seller.
     assert.notStrictEqual(native.read.activity.activity, 'crafting', 'the unchanged original inputs have no funded synthetic craft leaf');
-    assert(native.captured.queue.some(row => !row.funded && Math.round(row.price) === native.state.stats.money[3]),
+    assert(native.captured.queue.some(row => !row.funded && Math.round(row.price) === Packet.firstUnfundedPrice(native.state.stats.money)),
         'the first unfunded priority with a step now is the money gap, including improvements as well as gear');
-    assert(native.state.stats.money[3] > 0, 'the genuine unfunded priority remains a money gap');
+    assert(Packet.firstUnfundedPrice(native.state.stats.money) > 0, 'the genuine unfunded priority remains a money gap');
     const nativePacket = structuredClone(state.stats.money);
     const productId = 999999;
     const recipe = { type: 'dwarven', recipeId: 90001, level: 4, productId,
@@ -87,6 +88,12 @@ async function run() {
     LifeEvents.record = async () => null;
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    const WealthDecision = require('../src/GameServer/Bot/Economy/WealthCraftDecision');
+    for (const status of ['active', 'component_ready', 'ready_to_craft']) {
+        const gear = { ...state, stats: { ...state.stats, equipmentPlan: { strategy: 'craft', status } } };
+        assert.equal(Service.eligible(gear), status === 'active', 'ready gear stages take precedence over side production');
+        assert.equal(WealthDecision.eligible(gear), status === 'active', 'worker and executor use the same gear-stage gate');
+    }
     const pledge = { id: 980010, ownerId: state.characterId, ownerName: state.name,
         ownerAccount: state.accountName, kind: 'buy_ad', storeType: AfkTrade.BUY,
         status: 'active', town: 'Giran', revision: 1, escrowAdena: 1,
@@ -278,6 +285,15 @@ async function run() {
             'an accepted action waits for MP without invalidating the graph');
         assert.strictEqual(currentBasket.basket.purchases[0].lines[0].line.recordId, 991011,
             'main spending recheck skips the cheaper party personal ingredient supplier');
+        // The act reads the bag as the build does: what the build holds back it buys.
+        const material = Number(currentBasket.basket.purchases[0].selfId), needed = Number(currentBasket.basket.purchases[0].count);
+        const saving = { ...fundedCrafter, inventory: { [material]: { selfId: material, amount: 1 } },
+            stats: { ...fundedCrafter.stats, equipmentPlan: { status: 'active', target: { selfId: material } } } };
+        assert.strictEqual(Service.recheck(saving, step, [{ recipeId: 25 }]).basket.purchases[0].count, needed,
+            'one unit kept for the bot\'s own goal is not spent by the craft');
+        const movedBid = {};
+        assert.strictEqual(Service.recheck(fundedCrafter, { ...step, exit: [991013, 9910130, 90000, 2] }, [{ recipeId: 25 }], movedBid), null);
+        assert.strictEqual(movedBid.reason, 'exit_gone', 'a bid that moved since the build is named');
         assert.strictEqual(Service.recheck(fundedCrafter,
             { ...step, exit: [991012, 9910120, 100000, 1] }, [{ recipeId: 25 }]), null,
         'a selected party personal buyer cannot pass spending recheck');
@@ -306,6 +322,11 @@ async function run() {
         assert.strictEqual(await Service.rejectAccepted(state), rejected);
         assert.strictEqual(sourceWrites, 1, 'one accepted failure persists one source event, never a repeated invalidation loop');
     } finally { LifeState.cachedState = beforeCached; LifeState.upsertState = beforePersist; }
+    // A craft refused at the act carries its recipe for the pick to skip.
+    {
+        const refused = await Service.execute(state, forbiddenExit);
+        assert.deepStrictEqual(refused.state.stats.wealthRefused.recipes, [recipe.recipeId], 'the refusal marks its recipe');
+    }
     assert.strictEqual(purchases.length, writesBefore);
     Admission.configureTradeAdmission(id => LifeState.cachedState(Number(id)),
         id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);

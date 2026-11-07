@@ -6,7 +6,7 @@ const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
-const { stateKey } = require('./SpotOccupancyIndex');
+const { stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const { isMainThread } = require('node:worker_threads');
 
 function rewardForLevel(level) {
@@ -46,6 +46,10 @@ function profileFromSpot(spot) {
         levelCounts: { ...(spot.levelCounts || {}) },
         dominantLevels: (spot.dominantLevels || []).map((entry) => ({ ...entry })),
         area: spot.area ? { ...spot.area } : null,
+        spawnArea: Number(spot.spawnArea) || null,
+        // The cell pieces the spot covers (SpotIndex.piecesOf, T123).
+        floor: spot.floor ? { ...spot.floor } : null,
+        joins: spot.joins ? spot.joins.map((piece) => ({ ...piece })) : null,
         tags: [...(spot.tags || [])],
         tagsAuthoritative: spot.tagsAuthoritative === true,
         capacity: Number(spot.capacity || 0) || null,
@@ -90,7 +94,9 @@ function explicitClanRaidSpot(state = {}, profile = null) {
 
 // Level bounds are cheap and independent of the detailed route policy:
 // out-of-range spots are rejected before deriving their tags. The window of
-// one target level is the same for every search of one catalog.
+// one target level is the same for every search of one catalog. Near: the
+// spot's level mix (SpotService.levelMix, T123) meets the level +- 4, so a
+// few high spawns among a field of low ones do not make it near.
 const spotsNearLevelByCatalog = new WeakMap();
 // Catalogue-owned references, at most 80 level arrays; collecting/resetting a
 // catalogue releases its lists. No bot, state or matchup is retained here.
@@ -101,7 +107,8 @@ function lowerSpots(profiles, targetLevel) {
     if (!byLevel) lowerSpotsByCatalog.set(profiles, byLevel = new Map());
     let spots = byLevel.get(targetLevel);
     if (!spots) {
-        spots = profiles.filter(profile => profile.raidBoss !== true && profile.maxLevel < targetLevel - 4);
+        // Below the near window by the same level mix (spotsNearLevel).
+        spots = profiles.filter(profile => profile.raidBoss !== true && SpotService.levelMix(profile).high < targetLevel - 4);
         byLevel.set(targetLevel, spots);
         if (byLevel.size > 80) byLevel.delete(byLevel.keys().next().value);
     }
@@ -113,17 +120,50 @@ function spotsNearLevel(profiles, targetLevel) {
     if (!byLevel) spotsNearLevelByCatalog.set(profiles, byLevel = new Map());
     let spots = byLevel.get(targetLevel);
     if (!spots) {
-        spots = profiles.filter((profile) => profile.raidBoss !== true
-            && profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+        spots = profiles.filter((profile) => {
+            if (profile.raidBoss === true) return false;
+            const mix = SpotService.levelMix(profile);
+            return mix.low <= targetLevel + 4 && mix.high >= targetLevel - 4;
+        });
         byLevel.set(targetLevel, spots);
     }
     return spots;
 }
 
-// The bots on a spot for its kill share (E69), main thread: the world index's
-// physical count, as the worker's ColdSimulationKernel.spotHunters.
-function spotHunters(spot) {
-    return spot?.id ? Math.max(1, BotLifeState.occupancyIndex().physicalCount(spot.id)) : 1;
+// The occupancy index of this thread: main's world index; a cold worker
+// registers its kernel's once at its start (ColdSimulationWorker.startKernel),
+// read at each count, so no reader keeps a replaced kernel's.
+const mainOccupancy = () => BotLifeState.occupancyIndex();
+let threadOccupancy = mainOccupancy;
+function useOccupancy(read) {
+    threadOccupancy = read || mainOccupancy;
+}
+
+// The bots on a spot for its kill share (E69) and a spot value's crowd share
+// (SpotEconomics), in this thread's occupancy (SpotOccupancyIndex.huntersOn),
+// as ColdSimulationKernel.spotHunters; with a state, that bot counted once.
+function spotHunters(spot, state = null) {
+    return huntersOn(threadOccupancy(), spot?.id, state);
+}
+
+// A spot's crowd revision in this thread's occupancy
+// (SpotOccupancyIndex.spotVersion): a result held over the spot's hunters
+// (spotHunters, roomFor) stands while it reads the same.
+function spotVersion(spotId) {
+    return threadOccupancy()?.spotVersion(spotId) ?? 0;
+}
+
+// A spot has room for this bot in this thread's occupancy (roomFilterFor's
+// rule for one bot, with no set per search); its own spot always has.
+function roomFor(spot, state) {
+    if (roomAt(spot, state, spotHunters(spot, state))) return true;
+    Diagnostics.count('spot_list', 'skip', 'full');
+    return false;
+}
+// roomFor's rule at a count of hunters (spotHunters: the bot among them):
+// the earning spot's crowd key judges a held answer's spots by it.
+function roomAt(spot, state, hunters) {
+    return String(spot.id) === String(state.spotId) || hunters <= LevelingRoutes.roomForSpot(spot);
 }
 
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
@@ -205,9 +245,10 @@ const SpotProfiles = {
         ]);
         const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
         const mode = LevelingRoutes.modeForState(state, options);
+        const soloSearch = !['party', 'duo'].includes(mode);
         const routeOptions = { ...options, excludedSpotIds,
             spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-                { timestamp, mode }),
+                { timestamp, mode, members: options.capacityStates, ...(options.spotHunters ? { spotHunters: options.spotHunters } : {}) }),
             matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // A starter field outside the bot's region (locality penalty) asks
@@ -247,10 +288,9 @@ const SpotProfiles = {
         // fallback; a refused candidate counts as absent. A bot's own spot is
         // never full to it; the room is checked again at arrival. The worker
         // passes its own index's filter (options.hasRoom); a search on main
-        // (market return, competition retreat, a command's trip, a party's
-        // formation) reads main's world index (ROUTE-ROOM-4). A party search
-        // counts the whole party (options.capacityStates), its own members
-        // excluded.
+        // (market return, a command's trip, a party's formation) reads main's
+        // world index (ROUTE-ROOM-4). A party search counts the whole party
+        // (options.capacityStates), its own members excluded.
         const hasRoom = options.hasRoom ?? defaultRoomFilter(state, profiles, options.capacityStates);
         const full = (spot) => {
             if (!hasRoom || (currentSpot && spot.id === currentSpot.id)
@@ -263,8 +303,8 @@ const SpotProfiles = {
                 spots: profiles, timestamp, mode, list,
                 required: invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required });
             // The route reads its own risk marks, not the caller's exclusions
-            // (a market return's full saved spot, ROUTE-ROOM-4): an excluded
-            // pick counts as absent, as on the list walk.
+            // (options.excludedSpotIds): an excluded pick counts as absent, as
+            // on the list walk.
             if (incomeRoute && !excludedSpotIds.has(String(incomeRoute.spot.id)) && !full(incomeRoute.spot)) {
                 return incomeRoute.spot;
             }
@@ -275,37 +315,38 @@ const SpotProfiles = {
         }
 
         if (acquisitionPlan?.status === 'active') {
+            const sourceRoute = soloSearch ? GearAcquisitionPlanner.sourceRouteReader(state,
+                { timestamp, spots: profiles, matchupProfiles: routeOptions.matchupProfiles }) : null;
+            const plannedGround = soloSearch ? LevelingRoutes.readySpotReaderFor(state, routeOptions) : homeAllowed;
+            const plannedAllowed = (planned, npcId) => {
+                if (!planned || excludedSpotIds.has(String(planned.id)) || full(planned)
+                    || !plannedGround(planned)) return false;
+                const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
+                    && Number.isFinite(Number(planned.maxLevel));
+                const economicSource = EquipmentIncomeRoute.economicHunt(state)
+                    && Number(planned.avgLevel || planned.minLevel || 1) - state.level >= -15;
+                return (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options) || economicSource)
+                    && (!sourceRoute || planned.raidBoss === true || !npcId || sourceRoute(planned, npcId));
+            };
             // A gear objective may have several valid drop sources: the first
             // allowed one, else the persisted route.
             const plannedSource = GearAcquisitionPlanner.bestSourceForPlan(
                 state,
                 acquisitionPlan,
                 profiles,
-                { excludedSpotIds,
+                { excludedSpotIds, timestamp, mode, hasRoom, matchupProfiles: routeOptions.matchupProfiles,
+                    sourceAllowed: source => plannedAllowed(SpotIndex.spotById(profiles, source.spotId), source.npcId),
                     allowRaidSources: acquisitionPlan.next?.sourceKind === 'raid'
                         && GearAcquisitionPlanner.isClanOwnedPlan(acquisitionPlan) }
             );
             const planned = SpotIndex.spotById(profiles, plannedSource ? plannedSource.spotId : acquisitionPlan.next?.spotId);
-            if (planned && !excludedSpotIds.has(String(planned.id)) && !full(planned)
-                && LevelingRoutes.isSpotAllowedForState(planned, state, routeOptions)) {
-                // A drop source may be valid for the item but still be a
-                // starter-level camp for the bot. Never let an active gear
-                // plan pin an outleveled bot to that source indefinitely.
-                const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
-                    && Number.isFinite(Number(planned.maxLevel));
-                const economicSource = EquipmentIncomeRoute.economicHunt(state)
-                    && Number(planned.avgLevel || planned.minLevel || 1) - state.level >= -15;
-                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options) || economicSource) {
-                    return planned;
-                }
-            }
+            if (plannedAllowed(planned, plannedSource?.npcId || acquisitionPlan.next?.npcId)) return planned;
         }
 
         if (currentSpot && !mustRelocate && SpotService.isSuitable(currentSpot, targetLevel, options)) {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
-        const soloSearch = !['party', 'duo'].includes(mode);
         const withRoute = (spot) => LevelingRoutes.decorateSpot(spot, LevelingRoutes.routeMatchFor(spot, state, routeOptions));
         // The game table's spot list for the bot's role and level (ARCH-08-b):
         // best income first, ties to the closest level. The first spot that
@@ -381,7 +422,7 @@ const SpotProfiles = {
             const maybeSurvives = TargetMatchup.soloSpotUpperBound(routeOptions.matchupProfiles);
             const lower = lowerSpots(profiles, targetLevel)
                 .filter(profile => !excludedSpotIds.has(String(profile.id))
-                    && maybeSurvives(profile))
+                    && !full(profile) && maybeSurvives(profile))
                 .map(profile => ({ profile, value: spotValue(profile)?.valueHours ?? -Infinity }))
                 // Value first, ties as the near-level fallback: closest level, then density.
                 .sort((a, b) => b.value - a.value
@@ -416,6 +457,11 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.spotVersion = spotVersion;
+SpotProfiles.roomFor = roomFor;
+SpotProfiles.roomAt = roomAt;
+SpotProfiles.useOccupancy = useOccupancy;
+SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;
 SpotProfiles.roomFilterFor = roomFilterFor;
 SpotProfiles.defaultRoomFilter = defaultRoomFilter;

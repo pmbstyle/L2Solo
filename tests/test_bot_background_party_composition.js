@@ -59,7 +59,6 @@ assert.strictEqual(PartyComposition.roleForState({ characterId: 31, level: 40, s
 
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Goals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
-const Invite = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
 const original = { forState: Economy.forState, forGroup: Economy.forGroup };
 let builds = 0;
 Economy.forState = Economy.forGroup = () => { builds += 1; throw new Error('party admission must not build a wish network'); };
@@ -71,7 +70,6 @@ try {
     PartyComposition.selectRecruits(twelve.slice(0, 2), twelve.slice(2));
     Goals.decide(twelve[0], twelve.slice(1, 3));
     assert(Goals.formingMembers(twelve, null).length > 0);
-    Invite.evaluate(twelve[0], { playerId: twelve[1].characterId, inviteAttempts: 1 }, { peer: twelve[1] });
     assert.strictEqual(builds, 0);
 } finally { Object.assign(Economy, original); }
 

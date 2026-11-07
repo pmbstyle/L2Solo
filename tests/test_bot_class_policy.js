@@ -56,6 +56,25 @@ assert.ok(Utility.select(healer, {}, 'healer', { mode: 'solo_pve' }));
 assert.strictEqual(Utility.select(healer, {}, 'healer', { mode: 'party_pve' }), null);
 assert.strictEqual(Utility.select(healer, {}, 'healer', { mode: 'party_pvp' }).classMode, 'party_pvp');
 assert.strictEqual(Policy.modeFor(healer, { pvp: true, session: { hotBackgroundPartyId: 'pvp-party' } }), 'party_pvp');
+// T126: a hot party of one fights solo; the developer diagnostics count it.
+{
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+    const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+    const HotParty = invoke('GameServer/Bot/AI/HotBackgroundParty');
+    const roster = HotParty.roster, diagnostics = Config.developerDiagnostics;
+    const self = { fetchId: () => 7 };
+    HotParty.roster = () => [{ actor: self }];
+    Config.developerDiagnostics = true;
+    try {
+        const counted = () => Diagnostics.metrics().counts['class_mode:hot_party_alone:solo'] || 0;
+        const before = counted();
+        assert.strictEqual(Policy.modeFor({ classId: 16 }, { session: { hotBackgroundPartyId: 'alone', actor: self } }), 'solo_pve');
+        assert.strictEqual(counted(), before + 1, 'the switch to solo is counted');
+    } finally {
+        HotParty.roster = roster;
+        Config.developerDiagnostics = diagnostics;
+    }
+}
 healer.canUseSkill = () => false;
 assert.strictEqual(Utility.select(healer, {}, 'healer', { pvp: true, skillPriorities: { 1000: 999 } }), null);
 const hpGated = { ...attackSkill, fetchSemantic: () => ({ condition: { actorHpPercentAtMost: 30 } }) };

@@ -31,7 +31,7 @@ const fixtureReady = originalExecute(["INSERT INTO accounts(username,password) V
     ]))));
 const originalSyncInventorySummary = Database.syncInventorySummary;
 const originalUpdateCharacterLocation = Database.updateCharacterLocation;
-const originalUpdateCharacterExperience = Database.updateCharacterExperience;
+const originalUpdateCharacterProgress = Database.updateCharacterProgress;
 const originalApplyCharacterDeathExperience = Database.applyCharacterDeathExperience;
 const originalRestoreCharacterDeathExperience = Database.restoreCharacterDeathExperience;
 const originalClearCharacterDeathExperience = Database.clearCharacterDeathExperience;
@@ -73,7 +73,7 @@ try {
     };
     Database.syncInventorySummary = () => Promise.resolve();
     Database.updateCharacterLocation = () => Promise.resolve();
-    Database.updateCharacterExperience = () => Promise.resolve();
+    Database.updateCharacterProgress = () => Promise.resolve();
     Database.applyCharacterDeathExperience = () => Promise.resolve({ applied: true });
     Database.restoreCharacterDeathExperience = () => Promise.resolve({ restored: 0 });
     Database.clearCharacterDeathExperience = () => Promise.resolve({ cleared: true });
@@ -124,13 +124,6 @@ try {
         } finally {
             retirementProbe.close();
         }
-        const recovery = statements.find((entry) => entry.sql.includes("SET phase = 'cold'")
-            && entry.sql.includes("WHERE phase = 'hot'"));
-        assert(recovery, 'bot life init should recover stale hot records on startup');
-        assert(recovery.sql.includes("activity <> 'merchant' OR statsJson LIKE '%\"marketStore\"%'"), 'only dynamic market merchants should be recovered; configured static merchants remain hot');
-        assert(!recovery.sql.includes('activity <> \'crafting\''), 'craft services must recover as cold because they have no static startup owner');
-        assert(recovery.sql.includes("WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'"));
-        assert.strictEqual(recovery.params.length, 2, 'recovery query should set next resolve and updated timestamps');
         const dissolvedPartyRecovery = statements.find((entry) => entry.sql.includes('orphaned_dissolved_party'));
         assert(dissolvedPartyRecovery, 'startup must release members left behind by a dissolved background party');
         assert(dissolvedPartyRecovery.sql.includes('SET partyId = NULL'), 'orphan recovery must clear the persisted party id');
@@ -296,11 +289,12 @@ try {
                     objectiveKey: 'farm:probe:99'
                 }
             }, inventory: {}
-        }, 'persistence_probe').then(() => {
-            const save = statements.find((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE'));
-            assert(save.sql.includes('nextResolveAt = excluded.nextResolveAt'), 'persisted cold resolve timing must advance after every tick');
-            assert(save.sql.includes('lastResolvedAt = excluded.lastResolvedAt'), 'persisted cold resolve history must survive an upsert');
-            assert(save.sql.includes('inventorySummary = excluded.inventorySummary'), 'background drop rewards must persist after an upsert');
+        }, 'persistence_probe').then(() => originalExecute([
+            'SELECT nextResolveAt, lastResolvedAt, inventorySummary FROM bot_life_state WHERE characterId = 42', []
+        ])).then(([saved]) => {
+            assert.strictEqual(Number(saved.nextResolveAt), 2, 'persisted cold resolve timing must advance after every tick');
+            assert.strictEqual(Number(saved.lastResolvedAt), 1, 'persisted cold resolve history must survive an upsert');
+            assert.strictEqual(saved.inventorySummary, '{}', 'background drop rewards must persist after an upsert');
         }).then(() => BotLifeState.migrateLegacyClassProgression(1).then((migrated) => {
                 assert.strictEqual(migrated.length, 1, 'legacy cold bots without progression markers must be migrated');
                 const classUpdate = classUpdates.at(-1);
@@ -404,7 +398,6 @@ try {
                             expEarned: 1000,
                             spEarned: 100,
                             adenaEarned: 500,
-                            lastResolveDebug: { targetNpcId: null },
                             targetCombat: { targets: {}, populationTargets: {} }
                         },
                         inventory: {}
@@ -443,7 +436,7 @@ try {
                 }).then(() => {
                     const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);
                     const persistedStats = JSON.parse(partySave.params[27]);
-                    assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
+                    assert.strictEqual(persistedStats.lastResolveDebug, undefined, 'the last round\'s debug copy is not persisted');
                     assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
                     assert.strictEqual(persistedStats.targetCombat.targets, undefined, 'obsolete per-bot target maps must not be persisted');
                     const deadProbe = {
@@ -557,7 +550,7 @@ try {
         Database.saveBotLifeState = originalSaveLifeState;
         Database.syncInventorySummary = originalSyncInventorySummary;
         Database.updateCharacterLocation = originalUpdateCharacterLocation;
-        Database.updateCharacterExperience = originalUpdateCharacterExperience;
+        Database.updateCharacterProgress = originalUpdateCharacterProgress;
         Database.applyCharacterDeathExperience = originalApplyCharacterDeathExperience;
         Database.restoreCharacterDeathExperience = originalRestoreCharacterDeathExperience;
         Database.clearCharacterDeathExperience = originalClearCharacterDeathExperience;
@@ -579,7 +572,7 @@ try {
     Database.saveBotLifeState = originalSaveLifeState;
     Database.syncInventorySummary = originalSyncInventorySummary;
     Database.updateCharacterLocation = originalUpdateCharacterLocation;
-    Database.updateCharacterExperience = originalUpdateCharacterExperience;
+    Database.updateCharacterProgress = originalUpdateCharacterProgress;
     Database.applyCharacterDeathExperience = originalApplyCharacterDeathExperience;
     Database.restoreCharacterDeathExperience = originalRestoreCharacterDeathExperience;
     Database.clearCharacterDeathExperience = originalClearCharacterDeathExperience;

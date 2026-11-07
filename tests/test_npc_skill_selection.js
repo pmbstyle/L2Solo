@@ -215,7 +215,7 @@ assert.strictEqual(
 const marshZombieSpell = marshZombie.fetchCombatSkills().find((skill) => skill.fetchSelfId() === 4248);
 assert(marshZombieSpell, 'Marsh Zombie must retain its sourced magic skill');
 assert.strictEqual(
-    marshZombie.fetchCombatSkillChance(marshZombieSpell, 'damage', marshZombie.fetchAiType(), 'fighter'),
+    invoke('GameServer/Npc/NpcCombatChoice').chance(marshZombieSpell, 'damage', marshZombie.fetchAiType(), 'fighter'),
     5,
     'BALANCED NPCs must use the low ranged damage-skill chance instead of mage spam'
 );

@@ -17,7 +17,7 @@ function member(id, skills = []) {
     const actor = { state, x: 0, mp: 100, fetchId: () => id, fetchName: () => `test_${id}`,
         fetchLocX() { return this.x; }, fetchLocY: () => 0, fetchLocZ: () => 0, fetchHead: () => 0,
         fetchIsOnline: () => true, isDead: () => state.fetchDead(), fetchClassId: () => 0,
-        fetchHp: () => 100, fetchMaxHp: () => 100, fetchMaxMp: () => 100, fetchMp() { return this.mp; },
+        hp: 100, fetchHp() { return this.hp; }, setHp(value) { this.hp = value; }, fetchMaxHp: () => 100, fetchMaxMp: () => 100, fetchMp() { return this.mp; },
         canUseSkill: () => true, skillset: { skills }, fetchDestId() { return this.dest; },
         select({id}) { this.dest = id; }, unselect() { this.dest = undefined; },
         automation: { abortAll() {}, replenishVitals() {} }, attack: { clearTimers() {}, resetQueuedEvent() {} } };
@@ -70,6 +70,7 @@ try {
     assert(fallen.packets.some(p => p[0] === 0x07));
     nativeTimers.forEach(fn => fn());
     assert.strictEqual(fallen.actor.isDead(), false);
+    assert.strictEqual(fallen.actor.fetchHp(), 70, 'C4 doRevive: a resurrection gives 70% of max HP');
     assert.strictEqual(fallen.deathTimerStart, undefined);
     assert.strictEqual(fallen.hotRaidCasualtyAt, undefined, 'a real resurrection returns a tolerated casualty to the raid');
     assert.strictEqual(fallen.hotRaidCasualtyRole, undefined);

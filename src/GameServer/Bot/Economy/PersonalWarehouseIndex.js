@@ -2,6 +2,7 @@
 const { isMainThread } = require('node:worker_threads');
 const { createHash } = require('node:crypto');
 const CONTENT_IDENTITY = Symbol('warehouse_content_identity');
+const STOCK_INCLUDED = Symbol('warehouse_stock_included');
 const EMPTY_IDENTITY = createHash('sha256').update('[]').digest('hex');
 let ItemTemplateIndex = null;
 const records = new Map(), pending = new Set();
@@ -88,24 +89,41 @@ function inventory(state) {
 if (isMainThread) require('../Population/ColdTableChannel').shared.register('personal_warehouse', {
     key: row => row[0], allRows: () => records.values(), eventDriven: true, ready: () => initialized
 });
-module.exports = { init, inventory, LIMIT, prepareRow,
+const saleViews = new WeakMap();
+function saleView(state) {
+    const stored = inventory(state), rows = Object.entries(stored);
+    if (!rows.length) return state;
+    const bag = { ...state.inventory };
+    for (const [id, item] of rows) {
+        const held = bag[id];
+        bag[id] = { ...item, ...held, amount: Number(held?.amount || 0) + item.amount,
+            ...(item.instances ? { instances: [...(held?.instances || (held ? [{ id: 0, amount: held.amount,
+                enchant: held.enchant || 0, equipped: held.equipped }] : [])), ...item.instances] } : {}) };
+    }
+    return { ...state, inventory: bag, [STOCK_INCLUDED]: true };
+}
+module.exports = { init, inventory, LIMIT, prepareRow, STOCK_INCLUDED,
     ready() { return sourceReady() === true; },
     contentIdentity(state) {
         if (sourceReady() !== true) return null;
         const row = source(Number(state?.characterId));
         return row ? row[CONTENT_IDENTITY] ?? null : EMPTY_IDENTITY;
     },
+    // One view per state object, warehouse row and item table (what it reads):
+    // the wish's liquidation asks it several times in a step (the card's check,
+    // the held build's verdict, the build), and its sale list is kept per bag
+    // (ItemDisposition.saleCandidates). The view dies with its state.
     saleState(state) {
-        const stored = inventory(state), bag = { ...state.inventory };
-        for (const [id, item] of Object.entries(stored)) {
-            const held = bag[id];
-            bag[id] = { ...item, ...held, amount: Number(held?.amount || 0) + item.amount,
-                ...(item.instances ? { instances: [...(held?.instances || (held ? [{ id: 0, amount: held.amount,
-                    enchant: held.enchant || 0, equipped: held.equipped }] : [])), ...item.instances] } : {}) };
-        }
-        return { ...state, inventory: bag };
+        if (!state || typeof state !== 'object') return saleView(state);
+        const row = source(Number(state.characterId)), items = invoke('GameServer/DataCache').items;
+        const held = saleViews.get(state);
+        if (held && held.row === row && held.items === items) return held.view;
+        const view = saleView(state);
+        saleViews.set(state, { row, items, view });
+        return view;
     },
     version(state) { return Number(source(Number(state?.characterId))?.[1] || 0); },
+    hasItems(state) { return !!source(Number(state?.characterId))?.[2]?.length; },
     changed(id) { if (isMainThread) { pending.add(Number(id)); if (initialized) setImmediate(drain); } },
     useRowSource(reader, isReady) {
         source = reader || (id => records.get(id));

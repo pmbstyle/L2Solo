@@ -10,13 +10,18 @@ const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const ReceivedHit = invoke('GameServer/Npc/Generics/ReceivedHit');
 const RuntimeWorld = invoke('GameServer/World/World');
 const ActorGenerics = invoke(path.actor);
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const Skill = invoke('GameServer/Model/Skill');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 DataCache.init();
 
 const world = {
     user: { sessions: [] },
     npc: { spawns: [], nextId: 3000000 },
-    indexSpawnsInGrid() {}
+    addNpcToGrid() {},
+    removeNpcFromGrid() {}
 };
 const bossTemplate = DataCache.npcs.find((npc) => npc.selfId === 10001);
 const boss = new Npc(world.npc.nextId++, {
@@ -95,6 +100,39 @@ assert.strictEqual(boss.fetchDestId(), attacker.fetchId(),
     'the raid boss must target the minion attacker');
 assert(initialMinions.every((minion) => minion.fetchDestId() === attacker.fetchId()),
     'a minion hit must call the rest of the live group to assist');
+
+// Hostile casts are attacks on the group even without HP damage or a landed
+// effect. Exercise both the leader and a minion with the real C4 NPCs.
+RuntimeWorld.npc = world.npc;
+RuntimeWorld.user = world.user;
+try {
+    for (const target of [boss, initialMinions[0]]) {
+        for (const [id, name] of [[122, 'Hex'], [115, 'Power Break']]) {
+            for (const resisted of [false, true]) {
+                boss.abortCombatState(combatSession);
+                initialMinions.forEach((minion) => minion.abortCombatState(combatSession));
+                const skill = new Skill({ selfId: id, name, level: 1, spell: true });
+                const hpBefore = target.fetchHp();
+                try {
+                    const result = SkillEffects.execute(combatSession, attacker, target, skill,
+                        { rng: () => resisted ? 1 : 0, magicSkill: true, attack: { clearLoadedShot() {} } });
+                    assert.strictEqual(result.effectResisted, resisted);
+                    assert.strictEqual(target.fetchHp(), hpBefore, 'a hostile debuff must call assistance without inventing damage');
+                    assert.strictEqual(boss.state.fetchCombats(), true, `${name} must engage the leader even on resist`);
+                    assert.strictEqual(boss.fetchCombatTarget(), attacker);
+                    assert(initialMinions.every((minion) => minion.state.fetchCombats()
+                        && minion.fetchCombatTarget() === attacker), `${name} must call all idle minions even on resist`);
+                } finally {
+                    EffectTicker.clearAll(target);
+                    EffectStore.remove(target, skill.fetchSemantic().effect);
+                }
+            }
+        }
+    }
+} finally {
+    RuntimeWorld.npc = originalWorldNpc;
+    RuntimeWorld.user = originalWorldUser;
+}
 
 const dead = initialMinions[0];
 dead.state.setDead(true);

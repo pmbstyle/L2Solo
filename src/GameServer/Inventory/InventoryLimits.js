@@ -14,7 +14,7 @@ function forActor(actor) {
 
 function forState(state = {}, inputs = {}) {
     const stats = state.stats || {};
-    const classId = stats.coldCombat?.classId ?? stats.classId ?? state.classId;
+    const classId = stats.classId ?? stats.coldCombat?.classId ?? state.classId;
     const template = typeof invoke === 'function'
         ? invoke('GameServer/DataCache').classTemplates?.find(row => Number(row.classId) === Number(classId)) : null;
     const race = inputs.race ?? template?.template?.race ?? stats.race ?? state.race;

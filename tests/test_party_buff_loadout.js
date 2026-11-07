@@ -15,7 +15,7 @@ Ticker.refreshEffects=()=>{};
 function skill(id,level=1) {
     const semantic=Rules.resolve({selfId:id,level});
     return {fetchSelfId:()=>id,fetchLevel:()=>level,fetchName:()=>semantic.effect,
-        fetchSemantic:()=>semantic,fetchPassive:()=>false,fetchConsumedMp:()=>10,
+        fetchSemantic:()=>semantic,fetchPassive:()=>false,fetchConsumedMp:()=>10,fetchPower:()=>0,
         fetchTargetKind:()=>semantic.target,fetchDistance:()=>semantic.target==='party'?-1:600,
         fetchBuffTime:()=>semantic.isDance?120000:semantic.durationMs||1200000};
 }

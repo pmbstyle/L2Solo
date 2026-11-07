@@ -82,8 +82,10 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party }) => {
     const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const entry = kernel.states.get(id), now = Date.now();
     const to = { locX: 50000, locY: -176000, locZ: -1000 };
+    // A solo trip takes its own time: started that long ago, it has arrived by now.
+    const tripMs = require('./ColdTrip').spotPlan(entry.state, to).durationMs;
     const traveling = beginHuntingTrip(entry.state, { needed: true, mode: 'solo', spotId, regionName: 'Room',
-        to, destinations: { [id]: to }, travelMs: 1000, reason }, now - 5000);
+        to, destinations: { [id]: to }, travelMs: 1000, reason }, now - 5000 - tripMs);
     const result = BackgroundResolver.resolveSolo({ state: traveling, timestamp: now });
     raised = null;
     const projected = (await kernel.projectResolve(traveling, result, now)).state;

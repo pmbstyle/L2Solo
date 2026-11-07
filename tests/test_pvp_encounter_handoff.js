@@ -85,7 +85,8 @@ async function main() {
     patch(World, 'insertUser', s => { World.user.sessions.push(s); });
     patch(World, 'removeUser', s => { World.user.sessions = World.user.sessions.filter(x => x !== s); });
     patch(World, 'fetchVisibleRealPlayers', () => []);
-    patch(Coordinator, 'fenceBot', async () => ({ ok: true })); patch(Coordinator, 'notifyState', () => {});
+    // The fence as the worker holds it; the release is the real one (no worker runs here).
+    patch(Coordinator, 'fenceBot', async n => { Coordinator.fencedBots.add(Number(n)); return { ok: true }; });
     patch(invoke('GameServer/Bot/Population/ActivationPlacement'), 'resolve', s => ({ loc: s.loc, spot: { id: 'test' } }));
     patch(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
     patch(invoke('GameServer/Bot/AI/BotPvpThreats'), 'context', () => ({ threats: [] }));
@@ -271,6 +272,7 @@ async function main() {
     const failed = await Lifecycle.activate(solo.encounter);
     assert.strictEqual(failed.reason, 'test_spawn_failure');
     assert([5,6].every(n => state(n).phase === 'cold'));
+    assert([5,6].every(n => !Coordinator.fencedBots.has(n)), 'a failed encounter activation leaves no member fenced');
     assert.strictEqual(Manager.sessions.length, 0, 'failed staging publishes nobody');
     assert(!Runtime.pending.size);
     const running = await Conflict.apply({ ...base, event: event(7, 8) });

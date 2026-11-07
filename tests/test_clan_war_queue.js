@@ -135,6 +135,30 @@ async function run() {
     many.parties.push(...Array.from({ length: 4 }, (_, n) => ({ stats: { warOperation: { clanId: 100 + n } } })));
     await many.pulse(); assert.equal(many.admission.warWaiters.size, 0); many.director.stop();
 
+    // A diplomatic review that changes nothing but its next time is not
+    // written; a new sighting is.
+    const quiet = await fixture(2, 3);
+    Object.assign(quiet.director, { review: ClanWarDirector.prototype.review, social: { clans: new Map(), indexes: new Map() },
+        personaFor: () => null });
+    quiet.director.war.combatAt = () => 0;
+    quiet.director.clans.clanOfMember = id => quiet.clans.get(Math.floor(id / 100));
+    quiet.director.plans.clear();
+    for (const id of [1100, 1101, 1102]) quiet.director.index({ ...quiet.states.get(id), spotId: 'away' }, id);
+    const clan = quiet.clans.get(10), review = at => quiet.director.review(clan, at);
+    await review(AT + Config.reviewMs);
+    assert.equal(quiet.counters.writes, 1, 'the first plan is written');
+    const first = quiet.director.plans.get(10);
+    await review(AT + 2 * Config.reviewMs + 1);
+    assert.equal(quiet.counters.writes, 1, 'an unchanged review is not written');
+    assert.deepEqual({ ...quiet.director.plans.get(10), nextReviewAt: 0 }, { ...first, nextReviewAt: 0 });
+    assert(quiet.director.plans.get(10).nextReviewAt > first.nextReviewAt, 'the next review time still moves on');
+    const enemy = quiet.states.get(1100);
+    quiet.director.index({ ...enemy, spotId: 'home' }, 1100);
+    await review(AT + 3 * Config.reviewMs + 2);
+    assert.equal(quiet.counters.writes, 2, 'a new sighting is written');
+    assert.equal(quiet.director.plans.get(10).intel[0]?.enemyClanId, 11);
+    quiet.director.stop();
+
     const a = new PartyAdmission(), cap = { maxBackgroundParties: 1 };
     a.syncWarRequests([10]); const inFlight = a.reserveWar([], cap, 10, AT);
     assert(inFlight); a.syncWarRequests([11]);

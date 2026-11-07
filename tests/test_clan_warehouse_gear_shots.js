@@ -6,6 +6,8 @@ const previousRate = process.env.L2NODE_PROGRESSION_RATE;
 // prefer hunting without shots even with a large purse.
 useRate('x10');
 require('../src/Global');
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const Exchange = invoke('GameServer/Clan/ClanWarehouseEquipmentService');

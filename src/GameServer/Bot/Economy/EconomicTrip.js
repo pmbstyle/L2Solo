@@ -62,8 +62,7 @@ function* region(loc) {
 
 function* forwardTrip(state, from, to) {
     if (Karma.closesTowns(state.stats?.karma)) return to.name === Karma.TOWN_NAME
-        ? { route: { fee: 0, hops: 0 }, durationMs: Trip.honest() ? Trip.runMs(from, to)
-            : Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, to)) } : null;
+        ? { route: { fee: 0, hops: 0 }, durationMs: Trip.runMs(from, to) } : null;
     const origin = yield* region(from), start = Towns.towns[origin?.respawnTown] || origin;
     const destination = yield* region(to), destinationKey = townKeys.get(destination);
     const gateKey = destinationKey === 'floran_village' ? 'dion_town' : destinationKey;
@@ -72,16 +71,14 @@ function* forwardTrip(state, from, to) {
     const distance = Math.hypot(Number(from.locX) - start.locX, Number(from.locY) - start.locY);
     const inStart = distance <= Trip.TOWN_RADIUS;
     const scroll = !inStart && Payment.hasColdScroll(state);
-    const honestMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
+    const durationMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
         + route.hops * Trip.HOP_MS + Trip.runMs(gate, to);
     yield 'trip';
-    return { route, durationMs: Trip.honest() ? honestMs : !inStart && !scroll
-        ? Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, start)) : Trip.AUTHOR_TRIP_MS };
+    return { route, durationMs };
 }
 
 
 function* returnMs(state, from, to, tailScope = null) {
-    if (!Trip.honest()) return Trip.AUTHOR_TRIP_MS;
     let best = Trip.runMs(from, to);
     if (Karma.closesTowns(state.stats?.karma)) return best;
     const regional = yield* region(from), start = Towns.towns[regional?.respawnTown] || regional;
@@ -157,9 +154,28 @@ function frame(state) {
                 spotId: travel.spotId == null ? null : String(travel.spotId),
                 arrivalActivity: travel.arrivalActivity == null ? null : String(travel.arrivalActivity), to: point(travel.to) } : null } };
 }
-function key(state) { return JSON.stringify([Trip.honest(), frame(state)]); }
+// What the route table (details with no origin) reads of a state, and nothing
+// else, so the key moves only when a row can: the activity only as a shopping
+// visit, a trip to one (with its town and end) or neither (a rest, a hunt and
+// a trip to a spot read alike), the region only on a visit, the bot's point
+// only where no trip end or return point stands for it, the Scroll of Escape
+// only as present (TripPayment.hasColdScroll), the karma only as its town-closing flip.
+function routeInputs(state) {
+    const travel = state?.stats?.travel, shopping = state?.activity === 'shopping';
+    const accepted = state?.activity === 'traveling' && travel?.arrivalActivity === 'shopping';
+    const back = state?.stats?.marketReturn?.loc ? point(state.stats.marketReturn.loc) : null;
+    const to = accepted ? point(travel.to) : null;
+    return { activity: shopping ? 'shopping' : accepted ? 'traveling' : '',
+        currentRegion: shopping && state.currentRegion != null ? String(state.currentRegion) : null,
+        loc: shopping || accepted && !to || !shopping && !accepted && !back ? point(state?.loc) : null,
+        inventory: { 736: { amount: Number(Payment.hasColdScroll(state)) } },
+        stats: { karma: Number(Karma.closesTowns(state?.stats?.karma)), marketReturn: back ? { loc: back } : null,
+            travel: accepted ? { townName: travel.townName == null ? null : String(travel.townName),
+                arrivalActivity: 'shopping', to } : null } };
+}
+function key(state) { return JSON.stringify(routeInputs(state)); }
 function* prepare(state) {
-    const captured = frame(state), routeKey = key(captured), previous = preparedTables.get(routeKey);
+    const captured = routeInputs(state), routeKey = JSON.stringify(captured), previous = preparedTables.get(routeKey);
     if (previous) {
         preparedTables.delete(routeKey); preparedTables.set(routeKey, previous);
         return previous;
@@ -192,11 +208,13 @@ function preparedReader(rows, { hourAdena } = {}) {
             ? Math.round(value.hours * hourAdena) + value.fees : Infinity;
     };
     cost.details = row;
+    // Its one input: a holder of what was made of its rows compares them.
+    cost.rows = rows;
     return cost;
 }
 function reader(state, { hourAdena, origin = null } = {}) {
     const pointKey = loc => [loc?.locX, loc?.locY, loc?.locZ];
-    const key = JSON.stringify([hourAdena, Trip.honest(), state?.activity, state?.currentRegion,
+    const key = JSON.stringify([hourAdena, state?.activity, state?.currentRegion,
         Karma.closesTowns(state?.stats?.karma), state?.inventory?.[736]?.amount, pointKey(state?.loc), pointKey(origin),
         pointKey(state?.stats?.marketReturn?.loc), state?.stats?.travel?.townName,
         state?.stats?.travel?.arrivalActivity, pointKey(state?.stats?.travel?.to)]);
@@ -224,4 +242,4 @@ function reader(state, { hourAdena, origin = null } = {}) {
     if (state && typeof state === 'object') readers.set(state, { key, cost });
     return cost;
 }
-module.exports = { details, read, reader, regionalTown, towns, frame, key, prepare, prepared, preparedReader };
+module.exports = { details, read, reader, regionalTown, towns, frame, routeInputs, key, prepare, prepared, preparedReader };

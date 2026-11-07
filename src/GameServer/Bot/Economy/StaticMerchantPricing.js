@@ -1,26 +1,14 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
-// Authored shop rows are pure data and are shared with cold craft decisions.
-const NpcShopBuyLists = require('../../World/Generics/NpcShopBuyLists');
+// The NPC side is the one NPC price table (town sellers, cheapest row), main's
+// and the workers' snapshot of it.
+const { npcPriceOf } = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const OfferQuery = require('./OfferQuery');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 
 const BUYBACK_RATIO = 0.9;
-let npcOffers = new Map();
-let npcRate = null;
-function refreshNpcOffers() {
-    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
-    if (npcRate === rate) return;
-    npcRate = rate;
-    npcOffers = new Map();
-    for (const line of NpcShopBuyLists.allOffers()) {
-        const id = Number(line.selfId);
-        if (!npcOffers.has(id)) npcOffers.set(id, []);
-        npcOffers.get(id).push(line);
-    }
-}
 
 function basePrice(selfId) {
     return Number(ItemTemplateIndex.find(DataCache.items, selfId)?.template?.price || 0);
@@ -69,18 +57,15 @@ function refreshFixedOffers() {
     }
 }
 
+// The cheapest repeatable supply of an item: NPC shops and the configured city
+// stores. forBot: only where a bot may buy it (ProductionPolicy: a city store
+// sells a bot only shots), the one price every bot purchase path reads.
 function cheapestPurchase(selfId, { forBot = false } = {}) {
-    refreshNpcOffers();
     refreshFixedOffers();
     const id = Number(selfId);
     const production = require('./ProductionPolicy');
-    let minimum = forBot && production.shotsDisabled() && (production.GRADED_SHOTS.has(id) || production.NO_GRADE_SHOTS.has(id))
-        ? Infinity : fixedMinimums.get(id) ?? Infinity;
-    if (forBot && !production.allowsNpcShot(id)) return minimum;
-    for (const line of npcOffers.get(id) || []) {
-        minimum = Math.min(minimum, Number(line.price ?? basePrice(id)));
-    }
-    return minimum;
+    const minimum = !forBot || production.allowsFixedShot(id) ? fixedMinimums.get(id) ?? Infinity : Infinity;
+    return forBot && !production.allowsNpcShot(id) ? minimum : Math.min(minimum, npcPriceOf(id));
 }
 
 // The configured city merchants selling an item, by town. This remains the
@@ -140,4 +125,22 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
     return ask ? Math.max(price, Number(ask.price)) : price;
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), priceFor, sellersOf };
+// An NPC shop's price of an item for a bot: the NPC price table's (the
+// configured city stores excluded: they sell a bot only shots,
+// ProductionPolicy.allowsFixedShot); a dearer town's tax quotes above it.
+// Infinity where no town NPC sells it to bots. The survival kit's price
+// (EconomyContext.survivalPrice).
+function botNpcListPrice(selfId) {
+    const id = Number(selfId);
+    return require('./ProductionPolicy').allowsNpcShot(id) ? npcPriceOf(id) : Infinity;
+}
+
+// What a bot pays an NPC for an item at the current rate, else (no NPC sells
+// it) its template price: the baseline consumable price of the hunt model.
+function botBuyPrice(id) {
+    const npc = cheapestPurchase(id, { forBot: true });
+    return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
+}
+
+module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
+    priceFor, sellersOf };

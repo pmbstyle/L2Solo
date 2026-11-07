@@ -54,8 +54,12 @@ const native = require('./helpers/workerEconomyDecision');
     const prepared = await native(funded, { ...input, meetingRequest: request });
     assert.equal(Intent.decode(prepared.request.lines[0].certificate).itemId, recipe.recipeItemId);
     assert.equal(state.inventory[recipe.recipeItemId], undefined, 'preparation grants no recipe');
-    const expired = { ...state, stats: { ...state.stats,
-        shotRecipeDemand: { ...state.stats.shotRecipeDemand, at: timestamp - 31 * 60000 } } };
+    // The want lives until its clear event (learned, or the plan drops it), not a clock.
+    const aged = await native({ ...state, stats: { ...state.stats,
+        shotRecipeDemand: { ...state.stats.shotRecipeDemand, at: timestamp - 3 * 3600000 } } }, input);
+    assert.equal(aged.queue.find(row => row.key === `resale:${recipe.productId}`)?.object.amount, recipe.productCount * batches,
+        'a recipe want three hours old still plans its production lot');
+    const expired = { ...state, stats: { ...state.stats, shotRecipeDemand: null } };
     const fresh = await native(expired, input);
     const expiredRoot = fresh.queue.find(row => row.key === `resale:${recipe.productId}`);
     assert(!expiredRoot || expiredRoot.object.amount <= recipe.productCount,

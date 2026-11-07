@@ -26,7 +26,7 @@ const profiles = [
     { classId: 3, role: 'dps', armor: 'heavy', weapon: 'Weapon.Pole', shield: false },
     { classId: 21, role: 'buffer', armor: 'heavy', weapon: 'Weapon.Sword', shield: true },
     { classId: 34, role: 'buffer', armor: 'heavy', weapon: 'Weapon.Dual', shield: false },
-    { classId: 45, role: 'dps', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
+    { classId: 45, role: 'dps', armor: 'heavy', weapon: 'Weapon.GreatSword', shield: false }, // Destroyer's masteries (user 10-30)
     { classId: 46, role: 'dps', armor: 'heavy', weapon: 'Weapon.GreatSword', shield: false },
     { classId: 47, role: 'dps', armor: 'light', weapon: 'Weapon.DualFist', shield: false },
     { classId: 55, role: 'spoiler', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
@@ -73,7 +73,9 @@ const secondClassGroups = [
     { ids: [5, 6, 20, 33], weapons: ['Weapon.Sword', 'Weapon.Blunt'], armor: 'heavy', shield: true },
     { ids: [8, 23, 36], weapons: ['Weapon.Knife'], armor: 'light', shield: false },
     { ids: [9, 24, 37], weapons: ['Weapon.Bow'], armor: 'light', shield: false },
-    { ids: [12, 13, 14, 16, 17, 27, 28, 30, 40, 41, 43, 51, 52], weapons: ['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'], armor: 'robe', shield: false },
+    { ids: [12, 13, 14, 16, 17, 27, 28, 30, 40, 41, 43], weapons: ['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'], armor: 'robe', shield: false },
+    // Overlord and Warcryer keep the Orc Shaman's melee kit (user 10-29).
+    { ids: [51, 52], weapons: ['Weapon.Blunt'], armor: 'heavy', shield: true },
     { ids: [21], weapons: ['Weapon.Sword', 'Weapon.Blunt'], armor: 'heavy', shield: true },
     { ids: [34], weapons: ['Weapon.Dual'], armor: 'heavy', shield: false },
     { ids: [46], weapons: ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'], armor: 'heavy', shield: false },

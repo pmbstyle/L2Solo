@@ -1,6 +1,9 @@
 const assert = require('assert');
 
 require('../src/Global');
+// An attack on a character flags the attacker at the swing or the skill's
+// landing (PvpFlag.attack); the flag packets are not under test here.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 
 const Attack = invoke('GameServer/Actor/Attack');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
@@ -306,25 +309,25 @@ for (const [id, name] of [[13, 'Summon Siege Golem'], [25, 'Summon Mechanic Gole
 assert.strictEqual(C4SkillRules.resolve({ selfId: 60, name: 'Fake Death', level: 1 }).operateType, 'toggle', 'Fake Death should remain activatable');
 for (const [id, name] of [[339, 'Parry Stance'], [340, 'Riposte Stance']]) {
     const toggleActor = actor();
-    const stance = skill(id, name, 1, { spell: true });
+    const stance = skill(id, name);
     assert.strictEqual(stance.fetchSpell(), false, `${name} should use physical toggle timing`);
     ToggleSkills.handleRequest(session(toggleActor), toggleActor, stance);
     assert(EffectStore.list(toggleActor).some((effect) => effect.id === id), `${name} should activate as a maintained toggle`);
     ToggleSkills.handleRequest(session(toggleActor), toggleActor, stance);
 }
 
-const stunAttack = skill(100, 'Stun Attack', 15, { spell: true, distance: 40, buff: 9000 });
-const hammerCrush = skill(260, 'Hammer Crush', 37, { spell: true, distance: 40, buff: 9000 });
+const stunAttack = skill(100, 'Stun Attack', 15, { distance: 40, buff: 9000 });
+const hammerCrush = skill(260, 'Hammer Crush', 37, { distance: 40, buff: 9000 });
 for (const dwarfStun of [stunAttack, hammerCrush]) {
     const semantic = dwarfStun.fetchSemantic();
-    assert.strictEqual(dwarfStun.fetchSpell(), false, `${dwarfStun.fetchName()} should be physical despite stale active data`);
+    assert.strictEqual(dwarfStun.fetchSpell(), false, `${dwarfStun.fetchName()} should be physical (Lisvus isMagic false)`);
     assert.strictEqual(semantic.durationMs, 9000, `${dwarfStun.fetchName()} should preserve the sourced nine-second stun`);
     assert.strictEqual(semantic.reuseTime, 13000, `${dwarfStun.fetchName()} should preserve the sourced reuse`);
     assert.strictEqual(semantic.magicLevel, dwarfStun.fetchSelfId() === 100 ? 36 : 74, `${dwarfStun.fetchName()} should preserve its final sourced magic level`);
     assert.strictEqual(new Attack().skillUseConditionFailure(actor({ weaponKind: 'Weapon.Sword' }), dwarfStun), 'Incorrect weapon.', `${dwarfStun.fetchName()} should require a blunt weapon`);
 }
 
-const earthquake = skill(347, 'Earthquake', 1, { spell: true, distance: 40, hp: 340, power: 4040 });
+const earthquake = skill(347, 'Earthquake', 1, { distance: 40, hp: 340, power: 4040 });
 assert.strictEqual(earthquake.fetchSpell(), false, 'Earthquake should use physical cast timing');
 assert.strictEqual(earthquake.fetchTargetKind(), 'enemy', 'Earthquake should damage enemies');
 assert.strictEqual(earthquake.fetchSemantic().sourceTarget, 'aura', 'Earthquake should originate from the caster');
@@ -362,7 +365,7 @@ const normalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, sk
 const criticalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, skillCritTarget, earthquake, false, () => 0);
 assert.strictEqual(criticalQuakeDamage, normalQuakeDamage * 2, 'Earthquake physical skill critical should double final damage without melee critical-power modifiers');
 
-const armorCrush = skill(362, 'Armor Crush', 1, { spell: true, distance: 40, hp: 254, power: 1973, buff: 9000 });
+const armorCrush = skill(362, 'Armor Crush', 1, { distance: 40, hp: 254, power: 1973, buff: 9000 });
 assert.strictEqual(armorCrush.fetchSpell(), false, 'Armor Crush should be a physical skill');
 assert.strictEqual(armorCrush.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Armor Crush should deal damage and apply a debuff');
 assert.strictEqual(armorCrush.fetchConsumedHp(), 254, 'Armor Crush should consume the sourced 254 HP');
@@ -392,7 +395,7 @@ const spoilTarget = {
     state: { fetchDead() { return spoilTarget.dead; } },
     enterCombatState() {}
 };
-const spoilCrush = skill(348, 'Spoil Crush', 1, { spell: true, distance: 40, power: 5 });
+const spoilCrush = skill(348, 'Spoil Crush', 1, { distance: 40, power: 5 });
 const spoilOutcome = C4SkillEffects.execute(session(auraCaster), auraCaster, spoilTarget, spoilCrush, {
     magicSkill: false,
     rng: () => 0,

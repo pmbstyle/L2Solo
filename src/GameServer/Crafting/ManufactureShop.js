@@ -174,7 +174,8 @@ async function craft(session, crafterId, recipeId, random = Math.random, order =
     const batches = order.batches ?? 1;
     if (!Number.isSafeInteger(batches) || batches < 1 || batches > 64) return fail();
     if (order.botOrder && recipe.successRate < 100 && batches !== 1) return fail();
-    const consumed = materialPlan(customer.backpack, recipe.materials.map(row => ({ ...row, amount: row.amount * batches })));
+    const inputs = publicStation ? require('./StationRecipe').forStation(recipe) : recipe;
+    const consumed = materialPlan(customer.backpack, inputs.materials.map(row => ({ ...row, amount: row.amount * batches })));
     const template = productTemplate(recipe);
     if (!consumed || !template) return fail();
     const unitPrice = Number(entry.price), price = unitPrice * batches;

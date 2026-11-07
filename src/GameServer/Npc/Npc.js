@@ -9,16 +9,27 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
+const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+const FailureLog     = require('../../FailureLog');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
-// Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
-const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0 };
+// Dropped chases, chase path requests that gave no usable way (noPath), and mobs
+// left out of combat still hating (fake death).
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
+// A monster that neither attacked or cast nor was attacked for 2 minutes stops
+// hating its target; the next hated one gets a timeout of its own, and with none
+// left it walks home (Lisvus and Mobius C4 L2AttackableAI.thinkAttack,
+// MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
+// alone, not counted while it cannot move). It is the one give-up for a target
+// the mob cannot reach: one it has no path to, or a player running at its speed.
+const ATTACK_TIMEOUT_MS = 120000;
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
 // that request on every 100ms combat tick yields visible stop/start jitter.
@@ -27,30 +38,25 @@ const CHASE_REPATH_INTERVAL_MS = 300;
 const NPC_PATH_MAX_NODES = 8000;
 const NPC_PATH_RETRY_INTERVAL_MS = 500;
 const NPC_PATH_MAX_RETRY_INTERVAL_MS = 4000;
-const NPC_PATH_FAILURE_TIMEOUT_MS = 10000;
-const NPC_AI_TYPES = new Set(['fighter', 'mage', 'balanced', 'archer']);
-const HARD_CONTROL_EFFECTS = new Set(['stun', 'paralyze']);
-const SLEEP_EFFECTS = new Set(['sleep']);
-const ROOT_EFFECTS = new Set(['root']);
-const MUTE_EFFECTS = new Set(['silence', 'physical_mute', 'magic_mute', 'mute']);
+// The pool's own deadline for one chase path request (a pool error when hit).
+const NPC_PATH_REQUEST_TIMEOUT_MS = 10000;
 
-function semanticEffect(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    return String(semantic.effect || semantic.trait || '').trim().toLowerCase();
-}
 
-function skillDistance(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    const sourcedRange = Number(semantic.castRange);
-    const modelRange = Number(skill?.fetchDistance?.());
-    return Math.max(
-        0,
-        Number.isFinite(sourcedRange) ? sourcedRange : 0,
-        Number.isFinite(modelRange) ? modelRange : 0
-    );
-}
 
 class Npc extends NpcModel {
+    // An NPC's combat and movement parts are built on first use: most of the
+    // world's NPCs never move, fight, cast or get hit while no player is near.
+    // Each getter returns the part the constructor built before (an NPC's own,
+    // the same object on every read); a setter replaces it (tests, pets).
+    // Reads that only look (hate, skill reuse, a walk to resume, timers to
+    // clear) build nothing: an unbuilt part is empty. `state` stays eager:
+    // every NPC scan near a hot actor reads it, players share its field.
+    #automation;
+    #attack;
+    #timer;
+    #skillReuseUntil;
+    #aggroList;
+
     static hateStats() {
         return { ...hateStats };
     }
@@ -63,12 +69,6 @@ class Npc extends NpcModel {
         // and dungeon floors). SpawnNpcs resolves terrain only for random
         // territory positions before constructing the NPC.
 
-        // Local
-        this.automation = new Automation();
-        this.automation.setRevHp(this.fetchRevHp());
-        this.automation.setRevMp(this.fetchRevMp());
-        this.attack = new Attack();
-
         this.setId(id);
         this.fillupVitals();
 
@@ -79,31 +79,84 @@ class Npc extends NpcModel {
             this.showLevelTitle();
         }
 
-        // TODO: Move this into actual GameServer timer
-        this.timer = {
-            combat: undefined,
-            combatStart: undefined,
-            hit: undefined,
-            hitEnd: undefined
-        };
-        this.skillReuseUntil = new Map();
         this.lastDebuffAt = 0;
-        this.aggroList = new Map();
         this.combatTarget = undefined;
     }
 
+    // The template's regeneration: no model write after construction changes
+    // revHp/revMp (a pet's stats set its automation's own after writing them).
+    get automation() {
+        if (this.#automation === undefined) {
+            this.#automation = new Automation();
+            this.#automation.setRevHp(this.fetchRevHp());
+            this.#automation.setRevMp(this.fetchRevMp());
+        }
+        return this.#automation;
+    }
+
+    set automation(value) {
+        this.#automation = value;
+    }
+
+    // The automation of an NPC that ever had one, never built by this read.
+    builtAutomation() {
+        return this.#automation;
+    }
+
+    get attack() {
+        if (this.#attack === undefined) this.#attack = new Attack();
+        return this.#attack;
+    }
+
+    set attack(value) {
+        this.#attack = value;
+    }
+
+    // TODO: Move this into actual GameServer timer
+    get timer() {
+        if (this.#timer === undefined) {
+            this.#timer = { combat: undefined, combatStart: undefined, hit: undefined, hitEnd: undefined };
+        }
+        return this.#timer;
+    }
+
+    set timer(value) {
+        this.#timer = value;
+    }
+
+    get skillReuseUntil() {
+        if (this.#skillReuseUntil === undefined) this.#skillReuseUntil = new Map();
+        return this.#skillReuseUntil;
+    }
+
+    set skillReuseUntil(value) {
+        this.#skillReuseUntil = value;
+    }
+
+    get aggroList() {
+        if (this.#aggroList === undefined) this.#aggroList = new Map();
+        return this.#aggroList;
+    }
+
+    set aggroList(value) {
+        this.#aggroList = value;
+    }
+
     destructor(session) {
-        clearInterval(this.timer.babyHeal);
-        clearInterval(this.timer.followOwner);
-        this.timer.followOwner = undefined;
-        clearTimeout(this.timer.summonResume);
-        this.timer.summonResume = undefined;
-        clearInterval(this.timer.summonLifetime);
-        this.timer.summonLifetime = undefined;
-        clearInterval(this.timer.petFeed);
-        this.timer.petFeed = undefined;
-        this.automation.stopReplenish();
-        this.attack.clearTimers?.();
+        const timer = this.#timer;
+        if (timer) {
+            clearInterval(timer.babyHeal);
+            clearInterval(timer.followOwner);
+            timer.followOwner = undefined;
+            clearTimeout(timer.summonResume);
+            timer.summonResume = undefined;
+            clearInterval(timer.summonLifetime);
+            timer.summonLifetime = undefined;
+            clearInterval(timer.petFeed);
+            timer.petFeed = undefined;
+        }
+        this.#automation?.stopReplenish();
+        this.#attack?.clearTimers?.();
         // Despawn without death (quest NPC, minion, day/night, unsummon) must
         // not leave effect timers that later refresh a removed NPC.
         EffectTicker.clearAll(this);
@@ -114,6 +167,10 @@ class Npc extends NpcModel {
         if (this.fetchAttackable() && this.fetchTitle() === '') {
             this.setTitle('Lv ' + this.fetchLevel() + (this.fetchHostile() ? ' @' : ''));
         }
+    }
+
+    isSpoil() {
+        return this.model.spoil?.spoiled === true;
     }
 
     isConfusionTarget(actor) {
@@ -138,11 +195,6 @@ class Npc extends NpcModel {
         // back to the actor's online flag.
         if (actor.session && actor.session.actor !== actor) return false;
         if (typeof actor.fetchIsOnline === 'function' && actor.fetchIsOnline() === false) return false;
-
-        // NPCs and lightweight test actors may not expose StateModel. Only
-        // use the generic isDead() fallback when it cannot trigger the player
-        // ActionFailed side effect implemented by Actor.isDead().
-        if (!actor.state && actor.isDead?.() === true) return false;
         return true;
     }
 
@@ -170,10 +222,12 @@ class Npc extends NpcModel {
         return entry;
     }
 
-    addDamageHate(session, actor, damage = 0, aggro = 0) {
+    // attacked: false is hate alone (another's skill near the fight), no attack on this mob.
+    addDamageHate(session, actor, damage = 0, aggro = 0, { attacked = true } = {}) {
         const entry = this.ensureAggroEntry(actor);
         if (!entry) return false;
 
+        if (attacked) this.combatActiveAt = Date.now();
         const damageValue = Math.max(0, Number(damage) || 0);
         const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
         entry.damage += damageValue;
@@ -194,10 +248,12 @@ class Npc extends NpcModel {
     }
 
     fetchMostHated() {
-        for (const [actorId, entry] of this.aggroList.entries()) {
-            if (!this.isValidAggroTarget(entry?.actor)) this.aggroList.delete(actorId);
+        const aggroList = this.#aggroList;
+        if (!aggroList) return null;
+        for (const [actorId, entry] of aggroList.entries()) {
+            if (!this.isValidAggroTarget(entry?.actor)) aggroList.delete(actorId);
         }
-        return NpcHate.mostHated(this.aggroList.values())?.actor || null;
+        return NpcHate.mostHated(aggroList.values())?.actor || null;
     }
 
     fetchCombatTarget() {
@@ -235,7 +291,7 @@ class Npc extends NpcModel {
 
     getHating(actor) {
         const actorId = Number(actor?.fetchId?.());
-        return this.aggroList.get(actorId)?.hate || 0;
+        return this.#aggroList?.get(actorId)?.hate || 0;
     }
 
     reduceAggro(session, actor, amount) {
@@ -275,12 +331,12 @@ class Npc extends NpcModel {
             return true;
         }
 
-        if (this.state.fetchCombats()) this.abortCombatState(session);
+        if (this.state.fetchCombats()) this.endFight(session);
         return false;
     }
 
     clearAggroList() {
-        this.aggroList.clear();
+        this.#aggroList?.clear();
         this.combatTarget = undefined;
         invoke('GameServer/Bot/AI/BotMobCompetition').reset(this);
     }
@@ -300,20 +356,18 @@ class Npc extends NpcModel {
             return true;
         }
 
-        invoke('GameServer/Npc/NpcWander').cancel(this, session);
+        NpcWander.cancel(this, session);
         this.switchCombatTarget(target);
         this.state.setCombats(true);
+        this.combatActiveAt = Date.now();
 
-        this.setStateRun(true);
-        this.setStateAttack(true);
-        session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
-        session.dataSendToMeAndOthers(ServerResponse.autoAttackStart(this.fetchId()), this);
+        this.startCombatActions(session);
 
         this.timer.combatStart = setTimeout(() => {
             this.timer.combatStart = undefined;
             const initialTarget = this.fetchCombatTarget();
             if (!this.state.fetchCombats() || !initialTarget) {
-                if (this.state.fetchCombats()) this.abortCombatState(session);
+                if (this.state.fetchCombats()) this.endFight(session);
                 return;
             }
 
@@ -326,17 +380,45 @@ class Npc extends NpcModel {
             let activeMoveCoords = null;
             let activePathWaypoints = [];
             let activePathTargetCoords = null;
-            let pathFailureStartedAt = 0;
             let pathFailureCount = 0;
             let nextPathRetryAt = 0;
             let pendingPath = null;
             let pathGeneration = 0;
             let activeTarget = initialTarget;
+            // A chase request that gave no usable way to the target: an empty path, a
+            // path to where the target no longer is (it moved CHASE_REPATH_DISTANCE or
+            // more meanwhile: a running target, a slow pool), or a pool error (queue
+            // full, pre-empted, timed out, a crashed worker). Counted (npcHate noPath);
+            // the next request waits 0.5, 1, 2, then 4 s per failure in a row. The mob
+            // keeps hating: Lisvus has no give-up of its own for a target it has no way
+            // to, only its attack timeout (ATTACK_TIMEOUT_MS).
+            const pathFailed = () => {
+                pathFailureCount++;
+                hateStats.noPath += 1;
+                nextPathRetryAt = Date.now() + Math.min(
+                    NPC_PATH_MAX_RETRY_INTERVAL_MS,
+                    NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
+                );
+            };
 
             this.timer.combat = setInterval(() => {
+                if (!this.fetchStateAttack() && !EffectRestrictions.canAttack(this)) {
+                    // Control is not a failed chase. A path interrupted before
+                    // it landed must get a fresh retry after control ends.
+                    if (pendingPath) {
+                        pathGeneration++;
+                        pendingPath = null;
+                    }
+                    pathFailureCount = 0;
+                    nextPathRetryAt = 0;
+                    activeMoveCoords = null;
+                    activePathWaypoints.length = 0;
+                    activePathTargetCoords = null;
+                    return;
+                }
                 const actor = this.fetchCombatTarget();
                 if (!actor) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -347,7 +429,6 @@ class Npc extends NpcModel {
                     activeMoveCoords = null;
                     activePathWaypoints = [];
                     activePathTargetCoords = null;
-                    pathFailureStartedAt = 0;
                     pathFailureCount = 0;
                     nextPathRetryAt = 0;
                     this.automation.abortAll(this);
@@ -357,7 +438,7 @@ class Npc extends NpcModel {
                 // combat here pins its target to the corpse indefinitely and
                 // makes party resurrection believe the fight never ended.
                 if (actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -365,6 +446,12 @@ class Npc extends NpcModel {
                     // Lisvus forgets a hated actor that left its known list (3000,
                     // AttackableKnownList); this chase stops at 1500, so it forgets then.
                     this.removeAggroTarget(session, actor, 'outOfReach');
+                    return;
+                }
+
+                if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
+                    this.combatActiveAt = Date.now();
+                    this.removeAggroTarget(session, actor, 'attackTimeout');
                     return;
                 }
 
@@ -450,32 +537,24 @@ class Npc extends NpcModel {
                                         actor.fetchLocY(),
                                         actor.fetchLocZ()
                                     ));
-                                    if (drift >= CHASE_REPATH_DISTANCE) return;
-                                    if (!path || path.length <= 1) {
-                                        pathFailureStartedAt ||= Date.now();
-                                        pathFailureCount++;
-                                        const retryDelay = Math.min(
-                                            NPC_PATH_MAX_RETRY_INTERVAL_MS,
-                                            NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
-                                        );
-                                        nextPathRetryAt = Date.now() + retryDelay;
-                                        if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                                            // Lisvus stops hating an actor it could not hit for
-                                            // its attack timeout (L2AttackableAI.thinkAttack).
-                                            this.removeAggroTarget(session, actor, 'noPath');
-                                        }
+                                    if (drift >= CHASE_REPATH_DISTANCE || !path || path.length <= 1) {
+                                        pathFailed();
                                         return;
                                     }
                                     activePathWaypoints = path.slice(1);
                                     activePathTargetCoords = requestedTarget;
-                                    pathFailureStartedAt = 0;
                                     pathFailureCount = 0;
                                     nextPathRetryAt = 0;
+                                }, (error) => {
+                                    // A newer request replaced this one, or the server stops.
+                                    if (['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) return;
+                                    if (generation !== pathGeneration || !this.state.fetchCombats()) return;
+                                    pathFailed();
                                 })
                                 .catch((error) => {
-                                    if (!['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) {
-                                        nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
-                                    }
+                                    // A throw in the handlers above: count it, retry later.
+                                    FailureLog.note('npc.chase_path', error);
+                                    nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
                                 })
                                 .finally(() => {
                                     if (generation === pathGeneration) pendingPath = null;
@@ -491,7 +570,6 @@ class Npc extends NpcModel {
                     return;
                 }
 
-                pathFailureStartedAt = 0;
                 pathFailureCount = 0;
                 nextPathRetryAt = 0;
                 activePathWaypoints = [];
@@ -650,7 +728,7 @@ class Npc extends NpcModel {
             maxNodes: NPC_PATH_MAX_NODES
         }, {
             key: `npc:${this.fetchId()}`,
-            timeoutMs: NPC_PATH_FAILURE_TIMEOUT_MS
+            timeoutMs: NPC_PATH_REQUEST_TIMEOUT_MS
         });
     }
 
@@ -669,25 +747,20 @@ class Npc extends NpcModel {
     }
 
     fetchAiType() {
-        const explicit = super.fetchAiType();
-        if (explicit && NPC_AI_TYPES.has(explicit)) return explicit;
+        return this.combatProfile().aiType;
+    }
 
-        // Most imported C4 templates do not carry the source AI enum. Keep a
-        // useful fallback instead of treating every NPC as a caster: long
-        // ranged physical attacks read as archers, while long-range magic
-        // damage reads as mage. The explicit template value always wins.
+    // What the combat skill list makes of the monster, once per list and
+    // template: its AI type (most imported C4 templates do not carry the
+    // source AI enum; NpcCombatChoice.aiTypeFor reads it from skills and
+    // attack radius) and whether any skill aims at an enemy.
+    combatProfile() {
         const skills = this.fetchCombatSkills();
-        const hasLongRangeMagicDamage = skills.some((skill) => (
-            skill.fetchTargetKind?.() === 'enemy'
-            && skill.fetchSpell?.() === true
-            && skillDistance(skill) >= 200
-            && !skill.fetchSemantic?.()?.effect
-        ));
-        if (hasLongRangeMagicDamage) return 'mage';
-
-        const attackRadius = Number(this.fetchAtkRadius());
-        if (Number.isFinite(attackRadius) && attackRadius >= 200) return 'archer';
-        return 'fighter';
+        const held = this.heldCombatProfile;
+        if (held?.skills === skills && held.model === this.model) return held;
+        return this.heldCombatProfile = { skills, model: this.model,
+            aiType: NpcCombatChoice.aiTypeFor(super.fetchAiType(), skills, this.fetchAtkRadius()),
+            enemySkills: skills.some((skill) => skill.fetchTargetKind?.() === 'enemy') };
     }
 
     fetchSkillCastRange(skill, actor) {
@@ -699,125 +772,40 @@ class Npc extends NpcModel {
     }
 
     selectCombatSkill(actor, rng = Math.random) {
-        if (!EffectRestrictions.canCast(this)) return null;
-        const skills = this.fetchCombatSkills().filter((skill) => {
-            if (this.fetchMp() < skill.fetchConsumedMp()) return false;
-            return this.canUseSkill(skill);
-        });
-        const selfBuff = skills.find((skill) => {
-            if (skill.fetchTargetKind() !== 'self') return false;
-            const semantic = skill.fetchSemantic?.() || {};
-            if (semantic.effectType !== 'buff' || !semantic.effect) return false;
-            if (skill.fetchSkillType?.() === 'hot') {
-                const targets = this.attack.resolveSkillTargets(null,this,this,skill);
-                if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
-            }
-            return !EffectStore.list(this).some((effect) => (
-                Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
-                || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
-                    && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
-            ));
-        });
-        if (selfBuff) return selfBuff;
-
-        const enemySkills = skills.filter((skill) => skill.fetchTargetKind?.() === 'enemy');
-        if (enemySkills.length === 0 || !actor) return null;
-
-        const impairments = EffectStore.impairments(actor);
-        const targetAiType = actor.fetchAiType?.() || 'fighter';
-        const aiType = this.fetchAiType();
-        const chance = (skill, category) => this.fetchCombatSkillChance(
-            skill,
-            category,
-            aiType,
-            targetAiType
-        );
-        const passes = (skill, category) => Number(rng()) * 100 <= chance(skill, category);
-
-        // L2J checks special utility categories before ordinary damage. A
-        // failed special roll does not consume the action: the NPC may still
-        // roll a normal damage skill during this combat tick.
-        const hardControls = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'hard_control');
-        if (!impairments.disabled) {
-            const selected = hardControls.find((skill) => passes(skill, 'hard_control'));
-            if (selected) return selected;
-        }
-
-        const sleeps = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'sleep');
-        if (!impairments.disabled) {
-            const selected = sleeps.find((skill) => passes(skill, 'sleep'));
-            if (selected) return selected;
-        }
-
-        const roots = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'root');
-        if (!impairments.rooted) {
-            const selected = roots.find((skill) => passes(skill, 'root'));
-            if (selected) return selected;
-        }
-
-        const mutes = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'mute');
-        if (!impairments.silenced) {
-            const selected = mutes.find((skill) => passes(skill, 'mute'));
-            if (selected) return selected;
-        }
-
+        if (!this.fetchCombatSkills().length || !EffectRestrictions.canCast(this)) return null;
         const now = Date.now();
-        const debuffs = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'debuff');
-        if (now - this.lastDebuffAt >= 6000) {
-            const selected = debuffs.find((skill) => passes(skill, 'debuff'));
-            if (selected) {
-                this.lastDebuffAt = now;
-                return selected;
-            }
-        }
-
-        const damage = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'damage');
-        return damage.find((skill) => passes(skill, 'damage')) || null;
-    }
-
-    isCombatSkillCategory(skill) {
-        const semantic = skill?.fetchSemantic?.() || {};
-        const effect = semanticEffect(skill);
-        if (HARD_CONTROL_EFFECTS.has(effect)) return 'hard_control';
-        if (SLEEP_EFFECTS.has(effect)) return 'sleep';
-        if (ROOT_EFFECTS.has(effect)) return 'root';
-        if (MUTE_EFFECTS.has(effect) || semantic.physicalMute || semantic.magicMute) return 'mute';
-        if (semantic.effectType === 'debuff') return 'debuff';
-        return 'damage';
-    }
-
-    fetchCombatSkillChance(skill, category, aiType = 'fighter', targetAiType = 'fighter') {
-        const range = skillDistance(skill);
-        const closeRange = range < 200;
-
-        if (category === 'hard_control') {
-            return closeRange ? 10 : 7;
-        }
-        if (category === 'sleep') return 1;
-        if (category === 'root') return 8;
-        if (category === 'mute') return (targetAiType === 'mage' || targetAiType === 'balanced') ? 8 : 3;
-        if (category === 'debuff') {
-            let value = 5;
-            if (aiType === 'fighter' && ['mage', 'archer'].includes(targetAiType)) value = 3;
-            if (aiType === 'mage' && targetAiType !== 'mage') value = 4;
-            if (closeRange) value += 3;
-            return value;
-        }
-
-        if (aiType === 'mage') return closeRange ? 35 : 25;
-        if (aiType === 'balanced') {
-            if (closeRange) return 12;
-            return targetAiType === 'mage' ? 2 : 5;
-        }
-        if (aiType === 'archer') return closeRange ? 12 : 3;
-        if (closeRange) return 12;
-        return targetAiType === 'mage' ? 1 : 3;
+        // A target's impairments and AI type only weigh an enemy skill.
+        const profile = this.combatProfile(), aimed = !!actor && profile.enemySkills;
+        const picked = NpcCombatChoice.select({
+            skills: this.fetchCombatSkills(),
+            usable: (skill) => this.fetchMp() >= skill.fetchConsumedMp() && this.canUseSkill(skill),
+            buffNeeded: (skill) => {
+                const semantic = skill.fetchSemantic?.() || {};
+                if (skill.fetchSkillType?.() === 'hot') {
+                    const targets = this.attack.resolveSkillTargets(null,this,this,skill);
+                    if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
+                }
+                return !EffectStore.list(this).some((effect) => (
+                    Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+                    || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+                        && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
+                ));
+            },
+            hasTarget: !!actor,
+            impairments: aimed ? EffectStore.impairments(actor) : {},
+            aiType: profile.aiType,
+            targetAiType: aimed && actor.fetchAiType?.() || 'fighter',
+            debuffReady: now - this.lastDebuffAt >= NpcCombatChoice.DEBUFF_GAP_MS,
+            rng
+        });
+        if (picked?.category === 'debuff') this.lastDebuffAt = now;
+        return picked?.skill || null;
     }
 
     canUseCombatSkillOn(actor, skill) {
         if (!actor || actor === this) return true;
         const impairments = EffectStore.impairments(actor);
-        switch (this.isCombatSkillCategory(skill)) {
+        switch (NpcCombatChoice.category(skill)) {
             case 'hard_control':
             case 'sleep':
                 return !impairments.disabled;
@@ -831,13 +819,13 @@ class Npc extends NpcModel {
     }
 
     canUseSkill(skill, now = Date.now()) {
-        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+        return (this.#skillReuseUntil?.get(skill.fetchSelfId()) || 0) <= now;
     }
 
     markSkillReuse(skill, now = Date.now()) {
         this.skillReuseUntil.set(
             skill.fetchSelfId(),
-            now + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
+            now + NpcCombatChoice.reuseMs(skill)
         );
     }
 
@@ -856,6 +844,8 @@ class Npc extends NpcModel {
         if (!EffectRestrictions.canCast(this)) return;
         if (!this.canUseCombatSkillOn(actor, skill)) return;
         if (actor !== this && !this.hasCombatLineOfSight(actor)) return;
+        this.startCombatActions(session);
+        this.combatActiveAt = Date.now();
         this.attack.remoteHit({
             actor: this,
             dataSendToMe: (packet) => session.dataSendToMe?.(packet),
@@ -863,18 +853,48 @@ class Npc extends NpcModel {
         }, actor, skill);
     }
 
+    // The fight is over: no target left, or the timeout. abortCombatState alone is
+    // no such thing: death, confusion and skills that clear hate go through it too.
+    endFight(session) {
+        this.abortCombatState(session);
+        NpcWander.leaveFight(this);
+    }
+
+    startCombatActions(session) {
+        if (!this.state.fetchCombats() || this.fetchStateAttack()) return;
+        this.setStateRun(true);
+        this.setStateAttack(true);
+        session?.dataSendToMeAndOthers?.(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
+        session?.dataSendToMeAndOthers?.(ServerResponse.autoAttackStart(this.fetchId()), this);
+    }
+
+    // Hot NPC control and combat termination share cancellation of the current
+    // swing. Control leaves the target, hate and combat loop ready to resume.
+    interruptCombatActions(session) {
+        const timer = this.#timer;
+        if (timer) {
+            clearTimeout(timer.hit);
+            timer.hit = undefined;
+            clearTimeout(timer.hitEnd);
+            timer.hitEnd = undefined;
+        }
+        PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
+        this.state.setHits(false);
+        this.setStateAttack(false);
+        session?.dataSendToMeAndOthers?.(ServerResponse.autoAttackStop(this.fetchId()), this);
+    }
+
     abortCombatState(session, { preserveAggro = false } = {}) {
         delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
-        clearTimeout(this.timer.combatStart);
-        this.timer.combatStart = undefined;
-        clearInterval(this.timer.combat);
-        this.timer.combat = undefined;
-        clearTimeout(this.timer.hit);
-        this.timer.hit = undefined;
-        clearTimeout(this.timer.hitEnd);
-        this.timer.hitEnd = undefined;
-        PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
+        const timer = this.#timer;
+        if (timer) {
+            clearTimeout(timer.combatStart);
+            timer.combatStart = undefined;
+            clearInterval(timer.combat);
+            timer.combat = undefined;
+        }
+        this.interruptCombatActions(session);
 
         const previousTargetId = Number(this.fetchDestId?.() || 0);
         this.clearDestId();
@@ -894,9 +914,7 @@ class Npc extends NpcModel {
         }
 
         this.setStateRun(false);
-        this.setStateAttack(false);
         session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
-        session.dataSendToMeAndOthers(ServerResponse.autoAttackStop(this.fetchId()), this);
     }
 
     meleeHit(session, src, dst) {
@@ -908,12 +926,11 @@ class Npc extends NpcModel {
             return;
         }
 
+        this.startCombatActions(session);
+        this.combatActiveAt = Date.now();
         const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
         const attackSpeed = src.fetchCollectiveAtkSpd();
-        const timing = rangedAttack
-            ? Formulas.calcBowAttackTimes(attackSpeed)
-            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
-                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack });
         const hitLanded = Formulas.calcHitChance(src, dst, Math.random, AttackHelper.positionContext(src, dst));
         const hit = AttackHelper.prepareNpcMeleeHit(src, dst, hitLanded);
 
@@ -923,7 +940,8 @@ class Npc extends NpcModel {
         clearTimeout(this.timer.hit);
         this.timer.hit = setTimeout(() => {
             this.timer.hit = undefined;
-            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
+            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)
+                || AttackRange.lostFromView(src, dst)) {
                 return;
             }
 
@@ -951,7 +969,7 @@ class Npc extends NpcModel {
                 this.switchCombatTarget(replacement);
                 return true;
             }
-            this.abortCombatState(session);
+            this.endFight(session);
             return true;
         }
         return false;

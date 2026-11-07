@@ -58,6 +58,32 @@ try {
     }
     assert.equal(all.size, 14, 'owners with the existing 14-line cap eventually inspect every line');
     assert(rolls.length > oldRolls);
+    // What a line's answer reads of the money price (which moves every
+    // build): an ask only the trader's wait (0 with no urgent want), a bid
+    // its worth (usefulness / money price). A line whose read stands is kept;
+    // the prepared card is compared by its version, not its buffer.
+    const reviewed = [];
+    Pricing.look = (_, lines, lookCtx) => { reviewed.push(...lines.map(x => [x.lineId, lookCtx.reviewReasons.get(x.lineId)])); return null; };
+    const review = (lines, extra) => { reviewed.length = 0; Pricing.lookOwn(state, lines, { ...ctx, adena: 1e9, ...extra }, priced); return [...reviewed]; };
+    const priced = new Look.SeenLines();
+    const ask = { ...line, lineId: 21 };
+    review([ask], { moneyPrice: 1e-5, trader: { wait: 0 } });
+    assert.deepEqual(review([ask], { moneyPrice: 2e-5, trader: { wait: 0 } }), [],
+        'an ask with no urgent want reads no money price: its move keeps the line');
+    assert.deepEqual(review([ask], { moneyPrice: 2e-5, trader: { wait: 0.04 } }), [[21, 4]],
+        'an urgent want\'s wait moves the ask\'s answer: reviewed');
+    const usefulness = 3, bidLine = { ...line, lineId: 22, selfId: 1865, storeType: 3, price: 1000, count: 2,
+        pricing: { ...line.pricing, worth: 3e5 } };
+    let worthReads = 0;
+    const bidCtx = (moneyPrice, version) => ({ moneyPrice, trader: { wait: 0 }, preparedVersion: version,
+        preparedWorth: () => { worthReads++; return usefulness / moneyPrice; } });
+    review([bidLine], bidCtx(1e-5, 7));
+    const reads = worthReads;
+    assert.deepEqual(review([bidLine], bidCtx(1e-5, 7)), [], 'the same card and money price keep the bid');
+    assert.equal(worthReads, reads, 'its worth is not read again');
+    assert.deepEqual(review([bidLine], bidCtx(2e-5, 7)), [[22, 4]], 'a money price move moves a bid\'s worth: reviewed');
+    review([bidLine], bidCtx(2e-5, 8));
+    assert.equal(worthReads, reads + 2, 'a new card version reads the worth again');
 } finally {
     Counters.itemDeals = saved.itemDeals; Counters.counter = saved.counter; Counters.moveOf = saved.move; Roll.roll = saved.roll; Pricing.look = saved.look;
 }

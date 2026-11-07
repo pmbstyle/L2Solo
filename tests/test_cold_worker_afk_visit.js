@@ -10,11 +10,13 @@ const id = 730183;
 const sellerId = 730184;
 const doneSellerId = 730185;
 const cleanerId = 730186;
+const archerId = 730187;
 const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
 
 (async () => {
     const world = await createWorld([{ id, classId: 0, level: 20 }, { id: sellerId, classId: 0, level: 20 },
-        { id: doneSellerId, classId: 0, level: 20 }, { id: cleanerId, classId: 0, level: 20 }], 'native-afk-visit');
+        { id: doneSellerId, classId: 0, level: 20 }, { id: cleanerId, classId: 0, level: 20 },
+        { id: archerId, classId: 9, level: 20 }], 'native-afk-visit');
     try {
         await Life.init();
         await Database.createAccount('bot_native_afk_visit', 'fixture');
@@ -59,6 +61,8 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         assert(!shieldPlans.some(row => row[4] === 3), 'the worn shield stays reserved');
         const prices = plan.sell.map(row => row[2]);
         assert.deepEqual(prices.slice(0, 3), prices.slice().sort((a, b) => b - a).slice(0, 3));
+        assert(plan.sell.every(row => Number.isSafeInteger(row[5]) && row[5] > 0),
+            'every quoted row carries the width of the belief its price was decided with');
         const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), saved = Economy.forState;
         let outcome;
         try {
@@ -79,6 +83,10 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         const own = Afk.boardIndex().ownerLines(id);
         assert.equal(new Set(own.map(line => `${line.selfId}:${line.enchant}`)).size, own.length);
         assert(!own.some(line => line.selfId === 1), 'the worn weapon cannot be offered');
+        for (const row of plan.sell) {
+            const line = own.find(line => line.selfId === row[0] && line.enchant === row[4]);
+            if (line) assert.equal(line.pricing.sigma, row[5] / 1e4, 'the published line keeps the worker belief width');
+        }
         for (const row of shieldPlans) {
             const line = own.find(line => line.selfId === 626 && line.enchant === row[4]);
             assert(line, 'the town lifecycle publishes the worker selected enchant without an ambiguous-copy failure');
@@ -159,21 +167,23 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             'the static-bought materials left the bag');
         assert((bagAfter[57] || 0) > (bagBefore[57] || 0), 'the static sale paid adena');
         const savedSeller = await Life.findByCharacterId(sellerId);
-        assert(Number(saleOutcome.state.stats.marketSellRetryAfter || savedSeller?.stats?.marketSellRetryAfter || 0) > Date.now(),
-            'the sale trip wrote its 30-min retry, so the next trip waits for it');
+        const seen = saleOutcome.state.stats.marketSellSeen ?? savedSeller?.stats?.marketSellSeen ?? null;
+        assert.deepEqual(seen?.items || [], invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(saleOutcome.state)?.items || [],
+            'the sale trip wrote its retry on what it could not place, so the next trip waits for new goods or a buyer');
         assert.equal(opens.length, 1);
         assert.equal(opens[0].listed, true, `open listed the rest: ${opens[0].reason}`);
         const saleShop = Afk.findOwnerProjection(sellerId)?.shop;
         assert(saleShop && Number(saleShop.storeType) === Afk.SELL && saleShop.town === 'Elven Village', 'open opened the sell shop');
+        const variant = item => `${Number(item.selfId)}:${Number(item.enchant || 0)}`;
         const sold = new Set([
-            ...staticSales.flatMap(row => (row.candidates || []).map(candidate => Number(candidate.selfId))),
-            ...(opens[0].market?.npc || []).map(row => Number(row.selfId))
+            ...staticSales.flatMap(row => (row.candidates || []).map(variant)),
+            ...(opens[0].market?.npc || []).map(variant)
         ]);
         assert(sold.size > 0);
         const offered = Afk.ownerRecords(sellerId).filter(row => row.kind === 'sell_ad').flatMap(row => row.lines)
             .concat(saleShop.lines);
-        const unbacked = offered.filter(line => sold.has(Number(line.selfId)));
-        assert.deepEqual(unbacked.map(line => line.selfId), [], 'nothing sold on this visit is still offered on the board');
+        const unbacked = offered.filter(line => sold.has(variant(line)));
+        assert.deepEqual(unbacked.map(variant), [], 'sold variants are gone; another enchant of the same item can remain offered');
         console.log('PASS native sale town visit: worker showcase skipped, static buyers paid, sale retry written, open listed the rest');
 
         assert.equal(Population.marketListingIntent({ ...saleState, stats: { ...saleState.stats,
@@ -181,20 +191,23 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         'a sale marker for another town does not make this visit a sale trip');
         // Controls on the same bag: the worker showcase still runs on a finished
         // sale visit and on a forced cleanup (the author's path, E306).
-        const showcaseRunsFor = async (characterId, label, stats) => {
+        const showcaseRunsFor = async (characterId, label, stats, classId = 0, extraItems = []) => {
             const account = `bot_native_${label}`;
             await Database.createAccount(account, 'fixture');
             await Database.execute(['UPDATE characters SET username=? WHERE id=?', [account, characterId]]);
             await Database.setItem(characterId, { selfId: 57, amount: 1000000, slot: 0 });
-            await Database.setItem(characterId, { selfId: 1, amount: 1, equipped: 1, slot: 7 });
+            const weaponId = classId === 9 ? DataCache.items.find(item =>
+                item.template?.kind === 'Weapon.Bow' && item.etc?.rank === 'd').selfId : 1;
+            await Database.setItem(characterId, { selfId: weaponId, amount: 1, equipped: 1, slot: 7 });
+            for (const item of extraItems) await Database.setItem(characterId, item);
             for (const selfId of [1786, 1792, 1793, 1800, 1803, 2143, 2151, 2173, 2174, 2175, 1867, 1869, 1870, 1871, 1872, 1873, 1880, 1897])
-                await Database.setItem(characterId, { selfId, amount: 1000, slot: 0 });
+                await Database.setItem(characterId, { selfId, amount: classId === 9 ? 10 : 1000, slot: 0 });
             const visitState = await Life.upsertState({ characterId, accountName: account,
                 name: `Native${label}`, level: 20, exp: Number(DataCache.experience[19]),
                 phase: 'cold', activity: 'shopping', currentRegion: 'Elven Village', spotId: String(spot.id),
                 adena: 1000000, loc: place, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
                 inventory: Life.inventorySummaryFromItems(await Database.fetchItems(characterId)),
-                stats: { classId: 0, generatedCold: true, classProgressionClassId: 0, classProgressionLevel: 20,
+                stats: { classId, generatedCold: true, classProgressionClassId: classId, classProgressionLevel: 20,
                     marketReturn: { spotId: String(spot.id), regionName: spot.name, loc: spot.center }, ...stats },
                 timing: { activityStartedAt: Date.now(), lastResolvedAt: Date.now() - 1000, nextResolveAt: Date.now() }
             }, `${label}_fixture`);
@@ -219,5 +232,13 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             forcedMarketCleanup: { cleanupReason: 'inventory_capacity', itemCount: 18, npcOnlySlots: 0, startedAt } });
         assert.equal(cleanup.runs, 1, 'a forced cleanup keeps the worker showcase (the author path)');
         console.log('PASS sale visit controls: finished and other-town sale markers, forced cleanup keeps the showcase');
+        const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit', {}, 9,
+            [{ selfId: 1341, amount: 5000 }, { selfId: 1343, amount: 100 }]);
+        assert.equal(invoke('GameServer/Inventory/ArrowStock').keptAmounts(arrows.visitState)[1341], 2000);
+        assert.equal(arrows.runs, 1, 'unused arrows do not cost the visit its worker showcase');
+        const arrowBag = await Database.fetchItems(archerId);
+        assert.equal(arrowBag.filter(item => item.selfId === 1341).reduce((sum, item) => sum + item.amount, 0), 2000);
+        assert(!arrowBag.some(item => item.selfId === 1343), 'wrong-grade arrows go to the NPC on an ordinary town errand');
+        console.log('PASS ordinary archer town visit: the showcase runs and the NPC takes surplus and wrong-grade arrows');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

@@ -94,7 +94,8 @@ async function run() {
             spotId: '2_-24',
             loc: { locX: -8200, locY: 11300, locZ: -3100 },
             vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 },
-            timing: {},
+            // An hour-old cold step: the hot hour since was lived hot.
+            timing: { lastResolvedAt: Date.now() - 3600000 },
             party: { partyId: null, role: 'dps' },
             stats: { equipmentPlan: { target: { name: 'Atuba Mace' } } },
             inventory: {}
@@ -118,7 +119,10 @@ async function run() {
         }
     };
 
+    const releasedAt = Date.now();
     await LifeState.markCold(session, 'test_context');
+    // T126: the release starts the first cold step now, not at the last cold step.
+    assert(saved.timing.lastResolvedAt >= releasedAt, 'a bot released to cold does not live its hot time again');
 
     assert(saved, 'cooldown should persist a state');
     assert.deepStrictEqual(saved.loc, { locX: -8200, locY: 11300, locZ: -3100 }, 'a bot activated in Giran must return to its saved field location when cooled');

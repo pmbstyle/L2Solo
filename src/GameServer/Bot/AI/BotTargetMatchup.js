@@ -2,24 +2,36 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const WeaponMask = invoke('GameServer/Skills/WeaponMask');
-const PullEstimate = require('./BotPullEstimate');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
+const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
+const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
+const HitRules = invoke('GameServer/Combat/HitRules');
+const CombatantView = invoke('GameServer/Combat/CombatantView');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
+const { fnv1a32 } = require('../Fnv1a');
 
 const MIN_EFFICIENCY = 0.15;
-const ELEMENTS = ['fire', 'water', 'wind', 'earth', 'holy', 'dark'];
+// The weakness stats a hit's damage reads (HitRules.targetModifier).
+const { DAMAGE_VULN_STATS } = HitRules;
 const DAMAGE_TYPES = new Set([Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN,
     Rules.DEATH_LINK, Rules.FATAL, Rules.BLOW]);
-const weaponStat = kind => ({ 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln',
-    'Weapon.Blunt': 'bluntWpnVuln', 'Weapon.BigBlunt': 'bluntWpnVuln' })[kind];
 const number = (value, fallback = 1) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = value => Math.max(1, number(value));
 // Resolved on first use (the cold worker loads this module before them);
 // invoke() re-resolves the path on every call inside spot scans.
+const ColdMobAction = invoke('GameServer/Bot/Population/ColdMobAction');
 let DataCacheModule, HuntingTargetPolicy, ColdCombatProfile;
 const dataCache = () => DataCacheModule || (DataCacheModule = invoke('GameServer/DataCache'));
 const huntingTargetPolicy = () => HuntingTargetPolicy
     || (HuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy'));
 const coldCombatProfile = () => ColdCombatProfile
     || (ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile'));
+const coldMobAction = () => ColdMobAction;
+let ClassPolicy, EncounterReadiness;
+// lazy: BotEncounterReadiness reads this module.
+const encounterReadiness = () => EncounterReadiness || (EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness'));
+const classPolicy = () => ClassPolicy || (ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy'));
 
 function npcTemplate(id) {
     return ItemTemplateIndex.findLastByLength(dataCache().npcs, id, npcTemplate);
@@ -27,9 +39,12 @@ function npcTemplate(id) {
 
 // A scan owns this snapshot: do not retain live effects, equipment or learned
 // skills across decisions. Cold callers already own an immutable profile.
+// The numbers the cold fight's profile gives its hits (hit roll, critical,
+// spread, shield: ColdCombatProfile.attackerView, defenderView), live.
 function actorProfile(actor) {
+    const backpack = actor.backpack;
     return {
-        classId: actor.fetchClassId?.(), level: actor.fetchLevel?.(),
+        classId: actor.fetchClassId?.(), characterId: Roles.botCharacterId(actor), level: actor.fetchLevel?.(),
         role: Roles.combatRoleFor(actor),
         pAtk: actor.fetchCollectivePAtk?.() ?? actor.fetchPAtk?.(),
         mAtk: actor.fetchCollectiveMAtk?.() ?? actor.fetchMAtk?.(),
@@ -38,7 +53,14 @@ function actorProfile(actor) {
         maxMp: actor.fetchMaxMp?.(), weaponMask: WeaponMask.weaponMaskFor(actor),
         maxHp: actor.fetchMaxHp?.(),
         pDef: actor.fetchCollectivePDef?.() ?? actor.fetchPDef?.(),
-        equipment: { weaponKind: actor.backpack?.fetchTotalWeaponKind?.() },
+        mDef: actor.fetchCollectiveMDef?.() ?? actor.fetchMDef?.(),
+        accur: actor.fetchCollectiveAccur?.() ?? actor.fetchAccur?.(),
+        evasion: actor.fetchCollectiveEvasion?.() ?? actor.fetchEvasion?.(),
+        critical: actor.fetchCollectiveCritical?.() ?? actor.fetchCritical?.(),
+        str: actor.fetchStr?.(), dex: actor.fetchDex?.(),
+        equipment: { weaponKind: backpack?.fetchTotalWeaponKind?.(), pAtkRnd: backpack?.fetchTotalWeaponPAtkRnd?.(),
+            attackReuseDelay: backpack?.fetchEquippedWeapon?.()?.fetchAttackReuseDelay?.(),
+            shieldPDef: backpack?.fetchTotalShieldPDef?.(), shieldRate: backpack?.fetchTotalShieldRate?.() },
         skills: (actor.skillset?.skills || actor.skillset?.fetchSkills?.() || []).map(skill => ({
             selfId: skill.fetchSelfId?.(), level: skill.fetchLevel?.(),
             reuseReady: actor.canUseSkill?.(skill) !== false,
@@ -53,27 +75,63 @@ function actorProfiles(actors) {
     return actors.filter(Boolean).flatMap(actor => {
         const profile = actorProfile(actor);
         if (actor.summon && !actor.summon.isDead?.() && !actor.summon.state?.fetchDead?.()) {
-            return [profile, { ...actorProfile(actor.summon), role: 'dps' }];
+            return [profile, { ...actorProfile(actor.summon), role: 'dps', servitor: true,
+                hp: Number(actor.summon.fetchHp?.() ?? actor.summon.fetchMaxHp?.()) || undefined,
+                ...petHealFields(profile, actor.fetchMp?.()) }];
         }
         return coldProfiles(profile, { vitals: { mp: actor.fetchMp?.() } });
     });
 }
 
-function coldProfiles(profile, state = {}, timestamp = Date.now()) {
+// The servitor beside a cold bot's profile at timestamp: its living saved
+// summon with the HP it has left, else the one a summoner casts first (MP and
+// reuse allow it: BackgroundResolver.startColdSummon), which strikes, and
+// lets its owner act again, after the summon's cast (summonCastMs); null
+// without either. coldProfiles builds the gate's pair with it, and a solo
+// fight's readiness reads it anew before each fight (a pet dead or raised
+// since the round's profiles were built).
+// A pet's owner heals it (PetHealRule, user 10-30): its best heal and the
+// MP that pays for it, the fields sideLifetime reads; none without a heal.
+// The owner's heal numbers once per profile object.
+const petSustains = new WeakMap();
+function petHealFields(profile, ownerMp) {
+    let petSustain = petSustains.get(profile);
+    if (petSustain === undefined) {
+        const Cold = coldCombatProfile();
+        petSustains.set(profile, petSustain = PetHealRule.sustainOf(profile.skills, record => Cold.actionDelayMs(profile, record)));
+    }
+    return petSustain ? { petSustain, ownerMp: number(ownerMp, profile.maxMp) } : {};
+}
+
+function servitorProfile(profile, state = {}, timestamp = Date.now()) {
+    const summon = state.stats?.coldCombat?.summon;
+    const Cold = coldCombatProfile();
+    const healed = () => petHealFields(profile, state.vitals?.mp);
+    // lazy: worker ColdSummonProfile loads ColdCombatProfile, resolved on first use (coldCombatProfile).
+    const Summon = () => invoke('GameServer/Bot/Population/ColdSummonProfile');
+    if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
+        return { ...Summon().fullSummon(profile, summon), role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, ...healed() };
+    }
+    if (!Roles.isSummoner(profile)) return null;
+    const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
+        && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
+        && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
+    return skill ? { ...Summon()(profile, Cold.summonDetails(skill)),
+        role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill),
+        ...healed() } : null;
+}
+
+// options.shot: the shot supply the caller's fight already holds
+// (BackgroundResolver: its fighter's), instead of a second read of the stock;
+// options.servitor: likewise its servitorProfile (stateProfiles).
+function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {}) {
     const profiles = [{ ...profile, skills: (profile.skills || []).map(skill => ({
         ...skill, semantic: skill.semantic || Rules.resolveCached(skill)
     })) }];
-    const summon = state.stats?.coldCombat?.summon;
-    if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
-        profiles.push({ ...summon, role: 'dps', skills: [], soloDamageReceiver: false });
-    } else if (Roles.isSummoner(profile.classId)) {
-        const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
-        const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
-            && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
-            && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
-        if (skill) profiles.push({ ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
-            role: 'dps', skills: [], soloDamageReceiver: false });
-    }
+    const servitor = 'servitor' in options ? options.servitor : servitorProfile(profile, state, timestamp);
+    if (servitor) profiles.push(servitor);
+    // The shot the fight loads from the bot's stock (ColdCombatProfile.shotSupply).
+    if (state.inventory) profiles[0].shot = 'shot' in options ? options.shot : coldCombatProfile().shotSupply(state, timestamp);
     const role = profile.role || Roles.combatRoleFor(profile);
     if (role === 'mage' || role === 'healer') {
         profiles[0].soloAttackScores = invoke('GameServer/Bot/Population/ColdClassPolicy')
@@ -82,21 +140,30 @@ function coldProfiles(profile, state = {}, timestamp = Date.now()) {
     return profiles;
 }
 
-// What of a bot's solo profile array (stateProfiles) moves with no build
-// section: whether the bot is alive (a dead bot has no profiles) and the
-// summon beside it (coldProfiles: its live cold summon, or the servitor a
-// summoner can cast now). -1 dead, 0 alone, else the summon's npc id (1 for
-// a live summon whose profile names none, the hot path's actorProfile).
-function profileKey(profiles) {
-    if (!profiles.length) return -1;
-    return profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0;
+// The kind of shot a fight loads: 0 none, 1 soulshot, 2 spiritshot, 3 blessed.
+function shotKind(shot) {
+    return !shot ? 0 : shot.blessedSpiritshot ? 3 : shot.spiritshot ? 2 : 1;
 }
 
+// What of a bot's solo profile array (stateProfiles) moves with no build
+// section: whether the bot is alive (a dead bot has no profiles), the summon
+// beside it (coldProfiles: its live cold summon, or the servitor a summoner
+// can cast now) and the kind of shot it holds. -1 dead, else the summon's npc
+// id (0 alone, 1 for a live summon whose profile names none, the hot path's
+// actorProfile) over the shot kind in the low two bits.
+function profileKey(profiles) {
+    if (!profiles.length) return -1;
+    return (profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0) * 4 + shotKind(profiles[0].shot);
+}
+const shotKindOfKey = key => key & 3;
+
+// The weakness stats a kit's hits read (HitRules.targetModifier): its weapon's
+// and each skill's.
 function profileStats(profiles) {
-    return [...new Set((profiles || []).flatMap(profile => [weaponStat(profile.equipment?.weaponKind),
+    return [...new Set((profiles || []).flatMap(profile => [HitRules.weaponVulnStat(profile.equipment?.weaponKind, '', true),
         ...(profile.skills || []).map(skill => {
             const trait = (skill.semantic || Rules.resolve(skill)).trait;
-            return skill.spell && ELEMENTS.includes(trait) ? `${trait}Vuln` : null;
+            return skill.spell ? HitRules.elementVulnStat(trait) : HitRules.weaponVulnStat(profile.equipment?.weaponKind, trait, true);
         })]).filter(Boolean))];
 }
 
@@ -107,7 +174,7 @@ function skillStats(actor) {
         })) }]);
 }
 
-function targetView(target, stats = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln', ...ELEMENTS.map(e => `${e}Vuln`)]) {
+function targetView(target, stats = DAMAGE_VULN_STATS) {
     if (!target || typeof target.fetchHp !== 'function') return target || {};
     // ColdClassPolicy supplies the same projection as native target scans.
     if (target.matchupTarget) return target.matchupTarget;
@@ -120,70 +187,191 @@ function targetView(target, stats = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVul
     }
     const pDef = target.fetchCollectivePDef?.() ?? target.fetchPDef?.();
     const mDef = target.fetchCollectiveMDef?.() ?? target.fetchMDef?.();
-    return { vulnerabilities, pDef, mDef, undead: target.fetchUndead?.() === true,
-        maxHp: target.fetchMaxHp?.(),
-        pAtk: target.fetchCollectivePAtk?.() ?? target.fetchPAtk?.(),
-        atkSpd: target.fetchCollectiveAtkSpd?.() ?? target.fetchAtkSpd?.(),
+    // The cold fight's monster (ColdCombatProfile.npcCombatStats of its
+    // template: its skills by selfId, hit roll, critical, reach, run speed,
+    // resists), its live HP and buffed numbers over it.
+    const template = npcTemplate(target.fetchSelfId?.());
+    const cold = template ? coldCombatProfile().npcCombatStats(template) : null;
+    return { ...cold, vulnerabilities: { ...cold?.vulnerabilities, ...vulnerabilities }, pDef, mDef,
+        undead: (target.fetchUndead?.() ?? cold?.undead) === true,
+        race: String(target.fetchRace?.() ?? target.model?.race ?? cold?.race ?? '').toLowerCase(),
+        level: target.fetchLevel?.() ?? cold?.level, maxHp: target.fetchMaxHp?.() ?? cold?.maxHp,
+        pAtk: target.fetchCollectivePAtk?.() ?? target.fetchPAtk?.() ?? cold?.pAtk,
+        mAtk: target.fetchCollectiveMAtk?.() ?? target.fetchMAtk?.() ?? cold?.mAtk,
+        atkSpd: target.fetchCollectiveAtkSpd?.() ?? target.fetchAtkSpd?.() ?? cold?.atkSpd,
+        castSpd: target.fetchCollectiveCastSpd?.() ?? target.fetchCastSpd?.() ?? cold?.castSpd,
         basePDef: target.fetchPDef?.() ?? pDef, baseMDef: target.fetchMDef?.() ?? mDef };
 }
 
-function modifier(target, semantic = {}, magic = false, kind = '') {
-    const stat = magic ? (ELEMENTS.includes(semantic.trait) ? `${semantic.trait}Vuln` : null)
-        : semantic.trait === 'bow' ? 'bowWpnVuln'
-            : semantic.trait === 'dagger' ? 'daggerWpnVuln' : weaponStat(kind);
-    const vuln = stat ? Math.max(0, number(target.vulnerabilities?.[stat])) : 1;
+// A hit's modifier on a target view: the fight's terms (HitRules.targetModifier:
+// weaknesses, the attacker's race and undead bonuses; bonus(stat) the
+// attacker's multiplier) times the target's defence buffs (its base defence
+// over the buffed one: channels hit the base). skill: a skill, not a normal
+// attack (only a skill reads the dagger weakness).
+function modifier(target, semantic = {}, magic = false, kind = '', skill = true, bonus = () => 1) {
+    const vuln = HitRules.targetModifier({ magic, skill, trait: semantic.trait, weaponKind: kind, race: target.race, undead: target.undead === true },
+        stat => coldCombatProfile().npcVulnerability(target, stat), bonus);
     const base = magic ? target.baseMDef : target.basePDef;
     const defense = magic ? target.mDef : target.pDef;
     return vuln * (number(base, 0) > 0 && number(defense, 0) > 0 ? base / defense : 1);
 }
 
+// A cold profile's multiplier of a stat (a race or undead bonus, the blow
+// rate), once per profile object (a profile is fixed once built): its
+// passives and effects now.
+const bonuses = new WeakMap();
+function profileBonus(profile) {
+    let held = bonuses.get(profile);
+    if (!held) bonuses.set(profile, held = new Map());
+    return stat => {
+        if (!held.has(stat)) held.set(stat, coldCombatProfile().statMultiplier(profile, stat, Date.now()));
+        return held.get(stat);
+    };
+}
+
+// The executor's pick (BotCombatUtility) ranks one actor's attacks on one
+// target: its race and undead bonuses multiply all its physical hits alike and
+// stay out (a hot actor's effects are not read in the cold worker).
 function skillModifier(actor, target, skill, view = targetView(target)) {
     return modifier(view, skill.fetchSemantic?.(), skill.fetchSpell?.() === true,
         actor.backpack?.fetchTotalWeaponKind?.() || '');
 }
 
+// The plain damage rates of a kit (HuntCycle's kit ratio, which applies the
+// hit roll itself): a profile's auto-attack at the cold fight's attack cycle
+// (ColdCombatProfile.normalAttackMs) and a spell of `power` against a
+// target's defence, and a target's hits against a profile. The solo gate
+// reads the fight's expected hits instead (channels, soloSurvival).
+function attackRate(profile, target) {
+    const perSecond = 1000 / coldCombatProfile().normalAttackMs(profile.atkSpd ? profile : { ...profile, atkSpd: 300 });
+    return 70 * positive(profile.pAtk) / positive(target.basePDef || target.pDef) * perSecond;
+}
+function spellDamage(profile, target, power) {
+    return 91 * Math.sqrt(positive(profile.mAtk)) * power / positive(target.baseMDef || target.mDef);
+}
+function spellRate(profile, target, power, hitTime = 3000) {
+    return spellDamage(profile, target, power) / Math.max(0.5, number(hitTime, 3000) / 1000 * 333 / positive(profile.castSpd || 333));
+}
+function incomingRate(target, profile) {
+    return 70 * target.pAtk / profile.pDef * positive(target.atkSpd || 253) / 500;
+}
+
+// A profile's attacks on a target, each as the cold fight strikes it: its
+// expected hit (HitRules.expected*: hit roll, critical, shield, the shot it
+// loads) over the action's time (ColdCombatProfile.actionDelayMs, a weapon
+// cycle, a servitor's swing), against the target's base defence (modifier:
+// its weaknesses and defence buffs). An area skill hits every mob of a pull.
+// weight: damage per second; hit: of one action on one mob; struck: the mobs
+// it hits; survivalWeight: bounded by the skill's reuse; damageBudget: what
+// the MP bar pays for; area: an area skill on a pull.
+// spendableMp: the MP its attacks may spend (channels).
+function channelContext(profile, target, shot = profile.shot) {
+    const Cold = coldCombatProfile();
+    const kind = profile.equipment?.weaponKind || '';
+    return { Cold, shot, kind, bow: kind === 'Weapon.Bow', attacker: Cold.attackerView(profile), bonus: profileBonus(profile),
+        defender: CombatantView.view({ pDef: positive(target.basePDef || target.pDef), mDef: positive(target.baseMDef || target.mDef),
+            dex: target.dex, shieldPDef: target.shieldPDef, shieldRate: target.shieldRate }) };
+}
+
+function normalChannel(profile, target, { Cold, shot: supply, kind, bow, attacker, defender, bonus }) {
+    const shot = Cold.actionShot(supply, null);
+    const hit = HitRules.expectedMelee(attacker, defender, { soulshot: shot?.soulshot === true, bow,
+        hitChance: Cold.expectedHitChance(profile.accur, target.evasion) });
+    const swingMs = profile.servitor ? Cold.summonAttackMs(profile) : Cold.normalAttackMs(profile);
+    return { weight: hit * 1000 / swingMs, hit, modifier: modifier(target, {}, false, kind, false, bonus), magic: false, normal: true };
+}
+
+function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, attacker, defender, bonus, spendableMp = number(profile.maxMp, 0) }) {
+    const semantic = skill.semantic || Rules.resolve(skill);
+    const magic = skill.spell === true;
+    // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
+    const power = Math.max(0, HitRules.skillPower(semantic, number(skill.power ?? semantic.power, 0), 1, 1));
+    if (!power) return null;
+    // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
+    const area = Rules.hitsArea(semantic) && number(target.pull, 1) > 1;
+    const struck = area ? number(target.pull) : 1;
+    const shot = Cold.actionShot(supply, skill);
+    const blow = semantic.skillType === Rules.BLOW;
+    const hit = magic
+        ? HitRules.expectedMagicSkill(attacker, defender, { power, spiritshot: shot?.spiritshot === true,
+            blessedSpiritshot: shot?.blessedSpiritshot === true })
+            // The level-fail roll a nuke or a drain makes (HitRules.rollsMagicLevel).
+            * (HitRules.rollsMagicLevel(semantic, true) ? HitRules.magicLevelChance(semantic, profile.level, target.level) / 100 : 1)
+        : HitRules.expectedPhysicalSkill(attacker, defender, { power, blow, bow, soulshot: shot?.soulshot === true,
+            skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
+            landChance: blow ? HitRules.blowLandChance(semantic, { dex: profile.dex, front: true,
+                rateMul: bonus('blowRateMul') }) / 100 : 1 });
+    const hitDamage = struck * hit;
+    const weight = hitDamage * 1000 / Cold.actionDelayMs(profile, skill, shot?.spiritshot === true);
+    return { weight, hit, struck, modifier: modifier(target, semantic, magic, kind, true, bonus), magic, area,
+        soloScore: profile.soloAttackScores?.[skill.selfId],
+        survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
+        damageBudget: number(skill.mp, 0) > 0
+            ? Math.floor(spendableMp / skill.mp) * hitDamage : Infinity };
+}
+
+// The MP a profile's attacks may spend: what it has now (mp, atVitals; else a
+// full bar) above the share an offensive skill leaves (BotClassPolicy's
+// reserve, the executor's own, BotCombatUtility): a solo healer keeps a
+// quarter of its bar for its heals and fights with its weapon below it. A
+// servitor has no such rule. 0 without a known bar.
+function spendableMp(profile, role) {
+    const maxMp = number(profile.maxMp, 0);
+    if (!(maxMp > 0)) return 0;
+    const mp = Math.min(maxMp, number(profile.mp, maxMp));
+    if (profile.servitor === true) return mp;
+    let reserve = mpReserves.get(profile);
+    if (reserve === undefined) {
+        const Policy = classPolicy();
+        mpReserves.set(profile, reserve = Policy.offensiveMpReserve(Policy.profileFor(profile, { mode: 'solo_pve' }), role));
+    }
+    return Math.max(0, mp - reserve * maxMp);
+}
+// The reserve share per profile object (fixed once built; a scan's atVitals
+// copy is one object for all its candidates): dies with the profile.
+const mpReserves = new WeakMap();
+
 function channels(profile, target) {
     const role = profile.role || Roles.combatRoleFor(profile);
-    const kind = profile.equipment?.weaponKind || '';
-    const physical = role !== 'mage';
+    const context = channelContext(profile, target);
+    context.spendableMp = spendableMp(profile, role);
     const result = [];
-    if (physical) result.push({ weight: 70 * positive(profile.pAtk) / positive(target.basePDef || target.pDef)
-        * positive(profile.atkSpd || 300) / 500,
-    modifier: modifier(target, {}, false, kind), magic: false });
+    if (role !== 'mage') result.push(normalChannel(profile, target, context));
     for (const skill of profile.skills || []) {
         const semantic = skill.semantic || Rules.resolve(skill);
-        const magic = skill.spell === true;
         if (skill.passive || !DAMAGE_TYPES.has(semantic.skillType) || semantic.target !== 'enemy'
-            || semantic.notUsedInC4 || (role === 'mage' && !magic)
+            || semantic.notUsedInC4 || (role === 'mage' && skill.spell !== true)
             || (semantic.undeadOnly && target.undead !== true)
-            || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > profile.maxMp)
+            || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > context.spendableMp)
             || (semantic.requires?.weaponsAllowed && !(semantic.requires.weaponsAllowed & profile.weaponMask))
-            || (kind === 'Weapon.Bow' && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
-        const power = Math.max(0, number(skill.power ?? semantic.power, 0));
-        if (!power) continue;
-        // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
-        const struck = Rules.hitsArea(semantic) ? Math.max(1, number(target.pull)) : 1;
-        const weight = struck * (magic
-            ? 91 * Math.sqrt(positive(profile.mAtk)) * power / positive(target.baseMDef || target.mDef)
-                / Math.max(0.5, number(skill.hitTime, 3000) / 1000 * 333 / positive(profile.castSpd || 333))
-            : 70 * (positive(profile.pAtk) + power) / positive(target.basePDef || target.pDef)
-                / Math.max(1, number(skill.hitTime, 1500) / 1000));
-        const hitDamage = struck * (magic
-            ? 91 * Math.sqrt(positive(profile.mAtk)) * power / positive(target.baseMDef || target.mDef)
-            : 70 * (positive(profile.pAtk) + power) / positive(target.basePDef || target.pDef));
-        result.push({ weight, modifier: modifier(target, semantic, magic, kind), magic,
-            soloScore: profile.soloAttackScores?.[skill.selfId],
-            survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
-            damageBudget: number(skill.mp, 0) > 0
-                ? Math.floor(number(profile.maxMp, 0) / skill.mp) * hitDamage : Infinity });
+            || (context.bow && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
+        const channel = skillChannel(profile, target, skill, context);
+        if (channel) result.push(channel);
     }
     return result;
 }
 
-function evaluate(profiles, target) {
+// The expected damage of a profile's next action on one mob of target: skill,
+// or its weapon hit (PetTankRule prices the hit before the cast). shot: the
+// supply its fight holds, else the profile's.
+function expectedHit(profile, target, skill = null, shot = profile.shot) {
+    const context = channelContext(profile, target, shot);
+    const channel = skill ? skillChannel(profile, target, skill, context) : normalChannel(profile, target, context);
+    return channel ? channel.hit * channel.modifier : 0;
+}
+
+// expectedHit for a live actor (hot): skill by its id, a pet or a bot alike.
+function actorHit(actor, target, skill = null) {
+    const profile = actorProfile(actor);
+    const id = skill?.fetchSelfId?.();
+    return expectedHit(profile, target, id === undefined ? null : profile.skills.find(record => record.selfId === id) || null);
+}
+
+// attacksOf: channels, or a caller's per-target list of them (npcVerdict).
+function evaluate(profiles, target, attacksOf = channels) {
     let neutral = 0, effective = 0;
     for (const profile of profiles || []) {
-        const attacks = channels(profile, target);
+        const attacks = attacksOf(profile, target);
         if (!attacks.length) continue; // Missing legacy skill data is not immunity.
         neutral += Math.max(...attacks.map(a => a.weight));
         effective += Math.max(...attacks.map(a => a.weight * a.modifier));
@@ -197,26 +385,220 @@ function evaluate(profiles, target) {
 // Full-health readiness, not an estimate of the current injured fight. Keep
 // headroom for misses, interrupted casts and the retreat before zero HP.
 // Missing legacy projections remain neutral until real stats are available.
-function soloSurvival(profiles, target, minimum = 1.5) {
-    // The cold solo executor damages the owner; the summon only adds attacks.
-    // Native actor profiles retain their ordinary tanking behavior.
-    const receivers = profiles?.filter(profile => profile.soloDamageReceiver !== false);
+// The fight the bot meets (BackgroundResolver.resolveFight), in expectation:
+// the bot lives its HP over the target's mean action damage
+// (ColdMobAction.incomingPerSecond: hits, criticals, skills), plus the
+// opening it strikes before a melee monster closes in
+// (ColdCombatProfile.openingMs; none on a mob already in the fight,
+// target.engaged); a servitor still to be raised strikes, and its owner acts,
+// only after the summon's cast. Each attacker deals its best attack over that
+// time; areaShare: the share of that damage by area skills, which keeps a
+// pull's mobs standing together (Pull.repack).
+// How long the bot's side outlives a mob view (user 10-29: the pet tanks, as
+// in C4): { total, pet }, pet: the time the pet stands. Each servitor's HP over
+// the damage it takes, held longer by its owner's heals
+// (PetHealRule.healedLifetime: petSustain, ownerMp), then the owner's (the
+// longest of its receivers', with the opening: the mob walks to the owner, not
+// to a pet at its side; PetTankRule keeps it off the owner till then). One rule
+// for the gate, its bound and the hot danger read.
+function sideLifetime(view, profiles, Mob, opening = 0) {
+    let pets = 0, owner = 0;
+    for (const profile of profiles) {
+        if (profile.servitor === true) {
+            if (profile.maxHp > 0 && profile.pDef > 0) pets += PetHealRule.healedLifetime(Math.min(profile.maxHp, number(profile.hp, profile.maxHp)),
+                Mob.incomingPerSecond(view, profile), profile.petSustain || null, profile.ownerMp);
+        } else if (profile.soloDamageReceiver !== false) {
+            owner = Math.max(owner, profile.maxHp / Mob.incomingPerSecond(view, profile));
+        }
+    }
+    return { total: pets + owner + opening, pet: pets };
+}
+// The owners, the bot's own side of a fight (sideLifetime).
+function ownerReceivers(profiles) {
+    return profiles?.filter(profile => profile.soloDamageReceiver !== false && profile.servitor !== true);
+}
+// A bot's solo profiles at the HP and MP it has left: a pet keeps its own HP.
+// The HP left is the life the gate counts (maxHp); the bar stays whole, the
+// MP left is mp (spendableMp: the reserve is a share of the whole bar).
+function atVitals(profiles, hp, mp) {
+    return profiles.map(profile => profile.soloDamageReceiver === false || profile.servitor === true ? profile
+        : { ...profile, maxHp: Math.min(profile.maxHp, hp), mp: Math.min(profile.maxMp, mp) });
+}
+// A bot's solo profiles for a spot it picks ahead, not for the fight of this
+// moment: its pet up at full HP and its own MP full, so the summoner has a pet
+// (no cooldown, cast MP or cast time stands in the way), with the shots it
+// holds now (the array can be an older search's, EquipmentIncomeRoute).
+function readyProfiles(profiles, state, timestamp) {
+    const owner = profiles[0];
+    if (!owner || !state.inventory) return profiles;
+    const shot = coldCombatProfile().shotSupply(state, timestamp);
+    const summon = state.stats?.coldCombat?.summon;
+    if (profiles.length === 1 && !summon?.active && !Roles.isSummoner(owner)) {
+        return shotKind(owner.shot) === shotKind(shot) ? profiles : [{ ...owner, shot }];
+    }
+    const ready = coldProfiles(owner, { inventory: state.inventory, vitals: {},
+        stats: { coldCombat: { summon: summon && { ...summon, hp: summon.maxHp } } } }, timestamp, { shot });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
+}
+// What a solo bot's matchup verdicts read of it, as one string: a verdict
+// kept over a spot stands while this reads the same. The solo array
+// (stateProfiles at a timestamp, heldSolo's inputs) is the kit (the stored
+// profile, one object while ColdCombatProfile.kitHash's parts hold: class,
+// level, gear, hennas, skills, capture), survivalKnown, the shot and the
+// servitor: of the shot the verdicts read the kind (actionShot), of the
+// servitor its profile at this moment (HP, MP, cooldowns, a summon's
+// expiry). ready: readyProfiles over that array, where the servitor is a live
+// summon's record at full HP, else the one a summoner raises (its kit's).
+// 'dead': no profiles. Null: no stored solo array stands for the state (a
+// live actor, no character id or timestamp, no bag for the ready read).
+function soloVerdictKey(state, timestamp, ready = false) {
+    if (typeof state.fetchHp === 'function' || !(Number(state.characterId) > 0) || !Number.isFinite(timestamp)
+        || !state.inventory) return null;
+    if (state.vitals?.hp === 0 || state.activity === 'dead') return 'dead';
+    const Cold = coldCombatProfile();
+    const kitHashes = Cold.kitHash(Cold.combatView(state));
+    const kit = Cold.profileFor(state, timestamp, { kitHashes });
+    let servitor;
+    if (ready) {
+        const summon = state.stats?.coldCombat?.summon;
+        servitor = summon?.active && number(summon.maxHp, 0) > 0 && summon.expiresAt > timestamp
+            ? JSON.stringify({ ...summon, hp: undefined }) : Roles.isSummoner(kit) ? 'summoner' : '';
+    } else servitor = JSON.stringify(servitorProfile(kit, state, timestamp)) ?? '';
+    // A servitor's record in 53 bits, as the kit store names a kit: a key kept per bot stays small.
+    if (servitor.length > 16) servitor = fnv1a32(servitor) * 2 ** 21 + (fnv1a32(servitor, 0x9e3779b9) & 0x1fffff);
+    return `${kitHashes.join(',')}|${survivalKnown(state) ? 1 : 0}|${shotKind(Cold.shotSupply(state, timestamp))}|${servitor}`;
+}
+// readyProfiles of a body near a player, from the live actor: its living pet at
+// full HP, else the one it can raise, MP, reuse and cast time aside.
+function actorReadyProfiles(actor) {
+    const profiles = actorProfiles([actor]);
+    if (!profiles.length) return profiles;
+    const pet = actor.summon && !actor.summon.isDead?.() && !actor.summon.state?.fetchDead?.();
+    if (pet && profiles[1]) return [profiles[0], { ...profiles[1], hp: undefined }];
+    const ready = coldProfiles(profiles[0], { vitals: {} });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
+}
+// The bot's side with no pet, at the HP and MP it has left.
+function ownersAtVitals(profiles, hp, mp) {
+    return atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
+}
+// The pair PetTankRule binds: one owner of a class that sends a pet ahead and
+// its one pet, their indices in profiles; null for anything else (a party's
+// tank holds its mob: the owner fights).
+function soloPair(profiles) {
+    if (!profiles || profiles.length !== 2) return null;
+    const pet = profiles.findIndex(profile => profile.servitor === true);
+    return pet >= 0 && PetTankRule.binds(profiles[1 - pet]) ? { owner: 1 - pet, pet } : null;
+}
+// The best damage per second of a list of attacks.
+function bestRate(attacks) {
+    let best = 0;
+    for (const attack of attacks) best = Math.max(best, (attack.survivalWeight ?? attack.weight) * attack.modifier);
+    return best;
+}
+
+// The survival ratio (T132, docs/game-decisions.md): the damage a bot deals
+// over the target's HP before its own runs out. Cold hunt deaths do not fall
+// above 1.0 (gate sweep, 700 kit and mob pairs): the ratio a fight is won at,
+// which DangerRule's lose chance reads. Whether a bot starts a fight alone is
+// BotEncounterReadiness's (soloCanHunt): it ends that fight above its potion
+// line, with a margin by its length.
+const SOLO_GATE_MARGIN = 1.0;
+
+function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = channels) {
+    const receivers = ownerReceivers(profiles);
     if (!receivers?.length || !(target.maxHp > 0) || !(target.pAtk > 0)
         || receivers.some(profile => profile.survivalKnown === false || !(profile.maxHp > 0) || !(profile.pDef > 0))) {
         return { eligible: true, survivalRatio: null };
     }
-    const lifetime = Math.max(...receivers.map(profile => profile.maxHp
-        / (70 * target.pAtk / profile.pDef * positive(target.atkSpd || 253) / 500)));
-    const damage = profiles.reduce((sum, profile) => sum + Math.max(0, ...soloChannels(profile, target)
-        .map(attack => Math.min((attack.survivalWeight ?? attack.weight) * lifetime,
-            attack.damageBudget ?? Infinity) * attack.modifier)), 0);
-    const survivalRatio = damage / target.maxHp;
-    return { eligible: survivalRatio >= minimum, survivalRatio,
+    const Cold = coldCombatProfile(), Mob = coldMobAction();
+    const openingSeconds = target.engaged === true ? 0 : Cold.openingMs(receivers[0], target) / 1000;
+    const castSeconds = Math.max(0, ...profiles.map(profile => number(profile.summonCastMs, 0))) / 1000;
+    const lists = profiles.map(profile => soloChannels(profile, target, attacksOf));
+    const pair = soloPair(profiles);
+    const plan = view => {
+        const side = sideLifetime(view, profiles, Mob, openingSeconds);
+        const seconds = Math.max(0, side.total - castSeconds), petSeconds = Math.max(0, side.pet - castSeconds);
+        let damage = 0, area = 0, petDealt = 0;
+        // Every attack of every attacker as its damage curve by time t (dealtBy):
+        // the fight time reads their envelope, not the attack that deals most by
+        // the end of the side's life (a slow free hit overtakes a fast budgeted
+        // skill only late).
+        const curves = [];
+        // The pair's pet first: it strikes while it stands, and its hate caps its owner's damage.
+        for (const index of pair ? [pair.pet, pair.owner] : lists.keys()) {
+            const onPet = pair?.pet === index, ownerOfPet = pair?.owner === index;
+            const time = onPet ? petSeconds : seconds;
+            const own = [];
+            let best = 0, bestArea = false;
+            for (const attack of lists[index]) {
+                const rate = (attack.survivalWeight ?? attack.weight) * attack.modifier;
+                const budget = (attack.damageBudget ?? Infinity) * attack.modifier;
+                // Once the pet is down nothing holds the owner back: till then its pet's hate does.
+                const hold = ownerOfPet ? PetTankRule.ownerCap(petDealt, number(attack.hit, 0) * attack.modifier) * number(attack.struck, 1) : Infinity;
+                const curve = { rate, budget, until: onPet ? petSeconds : Infinity, hold, holdFrom: petSeconds };
+                own.push(curve);
+                const dealt = dealtBy(curve, time);
+                if (dealt > best) { best = dealt; bestArea = attack.area === true; }
+            }
+            if (onPet) petDealt = best;
+            damage += best;
+            if (bestArea) area += best;
+            if (own.length) curves.push(own);
+        }
+        return { damage, seconds, curves, areaShare: damage > 0 ? area / damage : 0 };
+    };
+    let result = plan(target);
+    if (result.areaShare > 0 && Number(target.pull) > 1) result = plan(Pull.repack(target, result.areaShare));
+    const survivalRatio = result.damage / target.maxHp;
+    // seconds: how long the bot's side stands, the time its damage is dealt in;
+    // fightSeconds: the time its attacks take to deal the target's HP, at most
+    // seconds; it does not grow with the side's life (more HP never refuses).
+    return { eligible: survivalRatio >= minimum, survivalRatio, areaShare: result.areaShare, seconds: result.seconds,
+        fightSeconds: survivalRatio >= 1 ? dealSeconds(result.curves, target.maxHp, result.seconds) : result.seconds,
         reason: survivalRatio >= minimum ? 'solo_survival_ready' : 'insufficient_survival_margin' };
 }
+// One attack's damage by time t: its rate while it acts (a pet's till it falls,
+// until), at most its MP budget, and an owner's held under its pet's hate (hold
+// by the time the pet falls, holdFrom, growing as the pet's damage does), then free.
+function dealtBy(curve, t) {
+    const held = curve.hold === Infinity ? Infinity
+        : curve.hold * (curve.holdFrom > 0 ? Math.min(t, curve.holdFrom) / curve.holdFrom : 1) + curve.rate * Math.max(0, t - curve.holdFrom);
+    return Math.min(curve.rate * Math.min(t, curve.until), curve.budget, held);
+}
+// The side's damage by time t: each attacker's best attack by then (the envelope).
+function sideDealtBy(curves, t) {
+    let sum = 0;
+    for (const own of curves) {
+        let best = 0;
+        for (const curve of own) best = Math.max(best, dealtBy(curve, t));
+        sum += best;
+    }
+    return sum;
+}
+// The first time the side has dealt hp, within limit (its damage only grows
+// with time): a bisection of 24 halvings (limit / 16M, well under a tick).
+function dealSeconds(curves, hp, limit) {
+    if (!(limit > 0) || sideDealtBy(curves, limit) < hp) return limit;
+    let low = 0, high = limit;
+    for (let step = 0; step < 24; step++) {
+        const middle = (low + high) / 2;
+        if (sideDealtBy(curves, middle) >= hp) high = middle; else low = middle;
+    }
+    return high;
+}
 
-function soloChannels(profile, target) {
-    const attacks = channels(profile, target);
+function soloChannels(profile, target, attacksOf = channels) {
+    const attacks = attacksOf(profile, target);
+    // T100: a bot that sits for MP and fights with its weapon (an archer,
+    // a self-healer: RestPolicy.sitsForMana) spends MP only while its bar is
+    // near full (BotCombatUtility's price): its fight is the normal attack.
+    if (!Roles.usesCasterWeaponCombat(profile) && RestPolicy.sitsForMana(profile)) {
+        const normal = attacks.filter(attack => attack.normal);
+        if (normal.length) return normal;
+    }
     if (!profile.soloAttackScores) return attacks;
     // The executor chooses by native skill priority, not maximum DPS. Healers
     // may prefer cheap Disrupt Undead over stronger Might of Heaven too.
@@ -233,12 +615,35 @@ function soloChannels(profile, target) {
     return (profile.role || Roles.combatRoleFor(profile)) === 'mage' ? [] : attacks.slice(0, 1);
 }
 
-function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {
-    const survival = soloSurvival(profiles, target);
+// The route's gate: would the bot, whole, start this fight alone
+// (BotEncounterReadiness, the rule a hunting bot admits its next mob by)? It
+// fights from its whole bar above its potion line; its attacks are its own
+// profile's (the copy differs only in the HP it counts). Several owners (a
+// party's members, HotBackgroundParty) keep the survival ratio: a party's
+// heals and its members' turns are not that solo rule's.
+function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel, attacksOf = channels } = {}) {
+    const owners = profiles.filter(profile => profile.servitor !== true);
+    let survival;
+    if (owners.length === 1) {
+        const remaining = encounterReadiness().atWholeBar(profiles);
+        const readiness = encounterReadiness().evaluate(remaining, target, profile => attacksOf(profile === remaining[0] ? owners[0] : profile, target));
+        survival = { ...readiness.survival, eligible: readiness.ready,
+            reason: readiness.ready ? readiness.survival?.reason : 'insufficient_survival_margin' };
+    } else survival = soloSurvival(profiles, target, SOLO_GATE_MARGIN, attacksOf);
     if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
         return { ...survival, eligible: false, reason: 'recovery_level' };
     }
-    return survival.survivalRatio === null ? { ...evaluate(profiles, target), survivalRatio: null } : survival;
+    return survival.survivalRatio === null ? { ...evaluate(profiles, target, attacksOf), survivalRatio: null } : survival;
+}
+
+// The one judgement of a pull, hot and cold (BotPullEstimate): the mob with
+// the size that comes with it, as one fight. A cold fight judges each size of
+// its spawn group (entryVerdict), a hot bot the pack before it.
+function pullVerdict(profiles, target, size, options = {}) {
+    return soloCanHunt(profiles, Pull.pullView(target, wholePull(size)), options);
+}
+function wholePull(size) {
+    return Math.max(1, Math.round(Number(size) || 1));
 }
 
 // An optimistic damage bound, not another survival gate. Compile skills once
@@ -246,14 +651,15 @@ function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {
 // attack envelopes per profile. Separate maxima for rate/budget and the best
 // vulnerability can only increase damage, so an exact-safe mob stays eligible.
 function soloSpotUpperBound(profiles) {
-    const receivers = profiles?.filter(profile => profile.soloDamageReceiver !== false);
+    const receivers = ownerReceivers(profiles);
     if (!receivers?.length || receivers.some(p => p.survivalKnown === false
         || !Number.isFinite(p.maxHp) || !(p.maxHp > 0) || !Number.isFinite(p.pDef) || !(p.pDef > 0))) {
         return () => true;
     }
-    const lifetimeNumerator = Math.max(...receivers.map(p => p.maxHp * p.pDef)) * 500 / 70;
-    if (!Number.isFinite(lifetimeNumerator)) return () => true;
     const neutral = { basePDef: 1, pDef: 1, baseMDef: 1, mDef: 1, undead: true };
+    // The life the exact gate counts: a lone owner's above its potion line (soloCanHunt).
+    const owners = profiles.filter(profile => profile.servitor !== true);
+    const living = owners.length === 1 ? encounterReadiness().atWholeBar(profiles) : profiles;
     const bounds = profiles.map(profile => {
         const bound = { continuous: 0, physicalRate: 0, physicalBudget: 0, magicRate: 0, magicBudget: 0 };
         for (const attack of channels(profile, neutral)) {
@@ -268,28 +674,39 @@ function soloSpotUpperBound(profiles) {
         }
         return bound;
     });
-    // Search-local, capped at 256 species (~8 KiB of pairs); never retained on
-    // a bot, a shared verdict fingerprint or a saved combat projection.
+    // Search-local, capped at 4096 species (every C4 NPC template; ~130 KiB of
+    // pairs at most, dies with the search); never retained on a bot, a shared
+    // verdict fingerprint or a saved combat projection. A source route reader
+    // asks it for ~700 spots of one build (R3 cost: at 256 a third of its
+    // asks recomputed a species).
     const seen = new Map();
+    // Every answer is kept, the unhuntable (null) and unknown-stat (true) too.
     function maybeSafe(selfId) {
         if (seen.has(selfId)) return seen.get(selfId);
+        const allowed = speciesBound(selfId);
+        if (seen.size < 4096) seen.set(selfId, allowed);
+        return allowed;
+    }
+    function speciesBound(selfId) {
         const npc = npcTemplate(selfId);
         if (!npc || !huntingTargetPolicy().canHunt(npc)) return null;
         const target = coldCombatProfile().npcCombatStats(npc);
         if (!(target?.maxHp > 0) || !(target.pAtk > 0)
             || !(target.basePDef > 0) || !(target.baseMDef > 0)) return true;
-        const seconds = lifetimeNumerator / (target.pAtk * positive(target.atkSpd || 253));
-        let vulnerability = 1;
-        for (const stat in target.vulnerabilities) {
-            vulnerability = Math.max(vulnerability, number(target.vulnerabilities[stat]));
-        }
+        // The gate's own lifetime (above the potion line) and opening, no summon cast.
+        const seconds = sideLifetime(target, living, coldMobAction(), coldCombatProfile().openingMs(receivers[0], target) / 1000).total;
+        // The largest term a hit of theirs can meet: a damage weakness of the
+        // target, times a profile's bonus against its race or undead kind.
+        let vulnerability = 1, bonus = 1;
+        for (const stat of DAMAGE_VULN_STATS) vulnerability = Math.max(vulnerability, coldCombatProfile().npcVulnerability(target, stat));
+        for (const profile of profiles) bonus = Math.max(bonus, HitRules.targetModifier({ race: target.race, undead: target.undead === true },
+            () => 1, profileBonus(profile)));
+        vulnerability *= bonus;
         const damage = bounds.reduce((sum, bound) => sum + Math.max(
             bound.continuous * seconds / positive(target.pDef),
             Math.min(bound.physicalRate * seconds, bound.physicalBudget) / positive(target.pDef),
             Math.min(bound.magicRate * seconds, bound.magicBudget) / positive(target.mDef)) * vulnerability, 0);
-        const allowed = damage / target.maxHp >= 1.5;
-        if (seen.size < 256) seen.set(selfId, allowed);
-        return allowed;
+        return damage / target.maxHp >= SOLO_GATE_MARGIN;
     }
     return spot => {
         let total = 0, safe = 0;
@@ -313,51 +730,108 @@ function stateProfiles(state, options = {}) {
         .filter(member => member.vitals?.hp !== 0 && member.activity !== 'dead');
     // Do not invent the other members of an incomplete party projection.
     if (options.mode === 'party' && states.length === 1) return [];
+    const [member] = states;
+    if (states.length === 1 && typeof member.fetchHp !== 'function' && options.buffed !== true && options.store !== false
+        && Number(member.characterId) > 0 && Number.isFinite(options.timestamp)) return heldSolo(member, options.timestamp);
+    return states.flatMap(member => typeof member.fetchHp === 'function' ? actorProfiles([member])
+        : coldProfiles({ ...matchupKit(member, options), survivalKnown: survivalKnown(member) }, member, options.timestamp));
+}
+function matchupKit(member, options) {
     const Cold = coldCombatProfile();
-    const profiles = states.flatMap(member => typeof member.fetchHp === 'function'
-        ? actorProfiles([member])
-        : coldProfiles({ ...Cold.withBuildSite('matchup', () => (options.buffed === true ? Cold.fightProfile : Cold.profileFor)(
-            member, options.timestamp, { store: options.store })),
-            // Partial route projections must not turn an invented default
-            // class/build into evidence that the real character is too weak.
-            survivalKnown: !!member.stats?.coldCombat
-                || Number.isFinite(Number(member.stats?.classId ?? member.classId))
-        }, member, options.timestamp));
+    return Cold.withBuildSite('matchup', () => (options.buffed === true ? Cold.fightProfile : Cold.profileFor)(
+        member, options.timestamp, { store: options.store }));
+}
+// Partial route projections must not turn an invented default class/build
+// into evidence that the real character is too weak.
+const survivalKnown = member => !!member.stats?.coldCombat || Number.isFinite(Number(member.stats?.classId ?? member.classId));
+
+// The solo kit arrays the latest readers built (stateProfiles), newest last.
+// A step's readers of one bot at one timestamp (income route, source routes,
+// spot search, spot gates) share one array and so its verdicts (npcVerdicts,
+// spotMatchups) instead of a new array each. An array serves only while every
+// input it was built from reads the same now: the stored kit profile
+// (ColdCombatProfile.profileFor: the same object while the kit hash holds),
+// survivalKnown, the timestamp, the shot supply and the servitor (both read
+// anew and compared value by value). A state changed in place after a read (a
+// restock plan's virtual purchase, a wound, a pet) or a copy that differs
+// reads its own. Kept by count, not by bot: at most HELD_PROFILES, the oldest
+// dropped with its verdicts (a spot search leaves ~100 KB of them on its
+// array: kept per bot they would grow with the population).
+const HELD_PROFILES = 8;
+const heldProfiles = [];
+function heldSolo(state, timestamp) {
+    const kit = matchupKit(state, { timestamp }), known = survivalKnown(state);
+    const shot = state.inventory ? coldCombatProfile().shotSupply(state, timestamp) : undefined;
+    // The stored profile stands for the spread one coldProfiles reads: the
+    // servitor reads no survivalKnown.
+    const servitor = servitorProfile(kit, state, timestamp);
+    for (let at = heldProfiles.length - 1; at >= 0; at--) {
+        const held = heldProfiles[at];
+        if (held.kit !== kit || held.timestamp !== timestamp || held.known !== known
+            || !sameData(held.shot, shot) || !sameData(held.servitor, servitor)) continue;
+        if (Diagnostics.active()) Diagnostics.count('matchup_profiles', 'held', 'hit');
+        return held.profiles;
+    }
+    const profiles = coldProfiles({ ...kit, survivalKnown: known }, state, timestamp, { shot, servitor });
+    heldProfiles.push({ kit, timestamp, known, shot, servitor, profiles });
+    if (heldProfiles.length > HELD_PROFILES) heldProfiles.shift();
+    if (Diagnostics.active()) Diagnostics.count('matchup_profiles', 'held', 'built');
     return profiles;
+}
+// Plain data equal value by value, keys in the same order.
+function sameData(left, right) {
+    if (Object.is(left, right)) return true;
+    if (!left || !right || typeof left !== 'object' || typeof right !== 'object'
+        || Array.isArray(left) !== Array.isArray(right)) return false;
+    const keys = Object.keys(left), others = Object.keys(right);
+    if (keys.length !== others.length) return false;
+    for (let at = 0; at < keys.length; at++) {
+        if (keys[at] !== others[at] || !sameData(left[keys[at]], right[keys[at]])) return false;
+    }
+    return true;
 }
 
 // A spot search checks hundreds of spots with one profile array, and each mob
 // species appears on several of them. The verdict depends only on the
 // profiles, the species and the safety options: it is computed when asked and
 // kept only for that array (a WeakMap keyed by it, options.matchupProfiles of
-// one search), so it dies with the search.
+// one search, or a held one: stateProfiles), so it dies with the array.
 const npcVerdicts = new WeakMap();
 
 // Verdicts of one profile array: safety options key -> species id -> verdict.
 function optionVerdicts(profiles, options) {
     let byOptions = npcVerdicts.get(profiles);
     if (!byOptions) npcVerdicts.set(profiles, byOptions = new Map());
-    const pull = options.soloSafety ? Math.max(1, number(options.pull)) : 1;
-    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}:${pull}`;
+    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
     let verdicts = byOptions.get(optionsKey);
     if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
     return verdicts;
 }
 
-function npcVerdict(verdicts, selfId, options) {
-    if (verdicts.has(selfId)) return verdicts.get(selfId);
+// pull: one size of the species' pulls on the spot; the fight meets a whole
+// pull (resolveFight: BotPullEstimate.pullView), so the verdict judges it.
+function npcVerdict(verdicts, selfId, options, pull = 1) {
+    const size = wholePull(pull);
+    const key = size > 1 ? `${selfId}:${size}` : selfId;
+    if (verdicts.has(key)) return verdicts.get(key);
     const npc = npcTemplate(selfId);
     let verdict = null;
     if (npc && huntingTargetPolicy().canHunt(npc)) {
-        const target = coldCombatProfile().npcCombatStats(npc);
-        const match = evaluate(options.profiles, target);
+        const stats = coldCombatProfile().npcCombatStats(npc);
+        const target = Pull.pullView(stats, size);
+        // One attack list per profile against this species: the efficiency and
+        // the solo survival read the same channels (pure in profile and target).
+        const lists = new Map();
+        const attacksOf = profile => { let list = lists.get(profile);
+            if (!list) lists.set(profile, list = channels(profile, target)); return list; };
+        const match = evaluate(options.profiles, target, attacksOf);
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, PullEstimate.pullView(target, options.pull),
-            { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible
+        const canHunt = options.soloSafety ? pullVerdict(options.profiles, stats, size,
+            { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0), attacksOf }).eligible
             : match.eligible && withinRecoveryLevel;
         verdict = Object.freeze({ efficiency: match.efficiency, canHunt });
     }
-    verdicts.set(selfId, verdict);
+    verdicts.set(key, verdict);
     return verdict;
 }
 
@@ -366,12 +840,55 @@ function npcVerdict(verdicts, selfId, options) {
 // hundreds of spots against the same verdicts.
 const spotMatchups = new WeakMap();
 
-// One species' verdict ({ efficiency, canHunt } or null) for profiles under
-// safety options: the one a spot search with the same profiles and options
-// reads, so a solo fight's pick (ColdCombatProfile.npcForSpot) shares it.
-function speciesVerdict(profiles, selfId, options = {}) {
-    return npcVerdict(optionVerdicts(profiles, options), Number(selfId),
-        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel, pull: options.pull });
+// One spawn group's verdict over its pulls (BotPullEstimate.pullsOf): the
+// pulls the profiles survive (allowed, their shares as measured), their
+// share of the group, and the efficiency over all its pulls; null for a
+// species no one hunts. The bot takes only the spawns it can (user 10-29).
+function entryVerdict(verdicts, entry, verdictOptions) {
+    const allowed = [];
+    let efficiency = 0, share = 0, known = false;
+    for (const [size, part] of Pull.pullsOf(entry)) {
+        const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions, size);
+        if (!verdict) continue;
+        known = true;
+        efficiency += part * verdict.efficiency;
+        if (verdict.canHunt) {
+            allowed.push([size, part]);
+            share += part;
+        }
+    }
+    return known ? { efficiency, canHunt: share > 0, share, allowed } : null;
+}
+
+// The spawn group's verdict for profiles under safety options, the one a spot
+// search with the same profiles and options reads (spotMatchup), so a solo
+// fight's pick (ColdCombatProfile.npcForSpot) shares it.
+function speciesPulls(profiles, entry, options = {}) {
+    return entryVerdict(optionVerdicts(profiles, options), entry,
+        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel });
+}
+
+// Each spawn group of a spot and the share of its pulls the profiles may fight
+// under the safety options (speciesPulls; 0 for a group they may not), or null
+// for a spot without spawn groups or with none a verdict knows. Read by a cold
+// round (BackgroundResolver.admittedShares) and by a hot hunter's look at its
+// ground (BotDecisionService.suggest): one rule.
+function spotShares(profiles, spot, options = {}) {
+    if (!spot?.npcEntries?.length) return null;
+    let known = false;
+    const shares = new Map(spot.npcEntries.map(entry => {
+        const verdict = speciesPulls(profiles, entry, options);
+        known ||= !!verdict;
+        return [entry, verdict?.share ?? 0];
+    }));
+    return known ? shares : null;
+}
+// The spot holds nothing the profiles may fight: every group the verdict knows
+// is refused (spotShares). Unknown (null) is no proof.
+function admitsNone(shares) {
+    if (!shares) return false;
+    for (const share of shares.values()) if (share > 0) return false;
+    return true;
 }
 
 function spotMatchup(spot, profiles, options = {}) {
@@ -384,18 +901,13 @@ function spotMatchup(spot, profiles, options = {}) {
     if (known) return known;
     const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
-        // A species can be safe alone and lethal with its helpers. Routing
-        // must judge the same pull that the hot hunter and cold fight take.
-        const verdict = options.soloSafety && entry.pull > 1
-            ? speciesVerdict(profiles, entry.selfId, { ...options, pull: entry.pull })
-            : npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
+        const verdict = entryVerdict(verdicts, entry, verdictOptions);
         if (!verdict) continue;
         const weight = Math.max(1, number(entry.count));
         total += weight;
         effective += weight * Math.min(1, verdict.efficiency);
-        const canHunt = verdict.canHunt;
-        eligible ||= canHunt;
-        if (canHunt) safe += weight;
+        eligible ||= verdict.canHunt;
+        safe += weight * verdict.share;
     }
     const efficiency = total ? effective / total : 1;
     const safeFraction = total ? safe / total : 1;
@@ -409,9 +921,11 @@ function spotMatchup(spot, profiles, options = {}) {
 // A fixed attack envelope, shared with the survival gate. Admission may
 // compare native buff effects without running an encounter simulation.
 function damageRate(profiles, target = {}) {
-    return profiles.reduce((sum, profile) => sum + Math.max(0, ...channels(profile, target)
-        .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
+    const rates = profiles.map(profile => bestRate(channels(profile, target)));
+    const pair = soloPair(profiles);
+    if (pair) rates[pair.owner] = Math.min(rates[pair.owner], rates[pair.pet]);
+    return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, damageRate,
-    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesVerdict };
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKind, sameData, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate, soloVerdictKey,
+    profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, spotShares, admitsNone, expectedHit, actorHit };

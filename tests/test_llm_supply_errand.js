@@ -1,6 +1,8 @@
 const assert = require('assert');
 
 require('../src/Global');
+// The errand buys D soulshots from an NPC offer: off by default since T116 (no C4 NPC sells them).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -16,6 +18,7 @@ const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BotAI = invoke('GameServer/Bot/BotAI');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 function item(id, selfId, amount, name = 'Soulshot: D-grade') {
     let count = amount;
@@ -42,8 +45,11 @@ async function main() {
         botAiStop: BotAI.stop,
         botAiInit: BotAI.init,
         botAiWakeup: BotAI.wakeup,
-        meetingReceipt: invoke('GameServer/AfkTrade/TradeMeetingService').receipt
+        meetingReceipt: invoke('GameServer/AfkTrade/TradeMeetingService').receipt,
+        partyThreat: PartyAwareness.findThreatTargetingPartyProjected
     };
+    // This fixture has no NPC grid: the delivery sees no threat to the party.
+    PartyAwareness.findThreatTargetingPartyProjected = () => null;
     const adena = item(10, 57, 100000, 'Adena');
     const shots = item(11, 1463, 991);
     const bySelfId = new Map([[57, adena], [1463, shots]]);
@@ -87,6 +93,9 @@ async function main() {
         const unaccepted = { ...overdue, stats: { supplyErrand: { expiresAt: 1 } } };
         assert.strictEqual(Resolver.resolveSolo({ state: unaccepted, timestamp: 100000 }).patch.stats.supplyErrand, null,
             'ordinary unaccepted companion requests retain their existing expiry');
+        const away = { ...overdue, stats: { supplyErrand: { expiresAt: 700000 } } };
+        assert.strictEqual(Resolver.resolveSolo({ state: away, timestamp: 100000 }).nextResolveAt, 700000,
+            'a parked companion row waits for its return (written hot) or its deadline, not a 30 s step');
         const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
         const acceptedErrand = { itemId: 1463, amount: 200, totalCost: 3400, meetingToken: 'original-supply-token' };
         let outcome = { pending: true, outcome: 'accepted', meetingId: 99 };
@@ -109,6 +118,13 @@ async function main() {
         assert.strictEqual(MarketOpportunity.resolveSupplyItem('Soulshots D grade').selfId, 1463);
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('D-grade soulshots'), 'soulshot_d_grade');
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('No-grade soulshots'), 'soulshot_no_grade');
+        // A board writer keeps the reserve: a wallet that covers the item only by
+        // dipping into it is refused here, before the bot leaves the party.
+        MarketOpportunity.bestSupplyOffer = () => ({ sourceType: 'afk_bot_store', sourceId: 7005, sourceName: 'Seller',
+            town: 'Talking Island', selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true });
+        session.coldLifeState = { stats: { money: [1000, .001, BotSupplyErrand.actorAdena(bot) - 16, 0] } };
+        assert.strictEqual(BotSupplyErrand.request(session, player, 1463, 1).reason, 'not_enough_adena');
+        session.coldLifeState = undefined;
         MarketOpportunity.bestSupplyOffer = () => ({
             sourceType: 'npc', sourceId: 7004, sourceName: 'D-grade grocer', town: 'Talking Island',
             selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true
@@ -264,6 +280,7 @@ async function main() {
         BotAI.init = originals.botAiInit;
         BotAI.wakeup = originals.botAiWakeup;
         invoke('GameServer/AfkTrade/TradeMeetingService').receipt = originals.meetingReceipt;
+        PartyAwareness.findThreatTargetingPartyProjected = originals.partyThreat;
         DataCache.items = originalItems;
     }
     console.log('LLM supply errand checks passed');
@@ -297,7 +314,7 @@ async function exhaustedSupplyRouteReturnsVisibly() {
         Recovery.refreshTarget = (target) => target;
         Approach.plan = () => null;
         Chatter.say = (_session, _ai, key) => { said.push(key); };
-        PopulationService.markHot = async (_session, reason) => { hot.push(reason); };
+        PopulationService.markHot = async (_session, reason) => { hot.push(reason); return { phase: 'hot' }; };
         HotBoard.naturalBreak = () => {};
         Response.charInfo = () => 'charInfo';
         Response.relationChanged = () => 'relationChanged';

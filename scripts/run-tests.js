@@ -10,12 +10,31 @@ const notRunTests = new Map([
     ['tests/test_finite_market_income.js', 'new red 2026-10-14: AssertionError: a stored shop town is read as its town name'],
     ['tests/test_gear_intermediate_candidates.js', 'new red 2026-10-14: AssertionError: same event reuses the decision and held roll'],
     ['tests/test_npc_purchase_consumers.js', 'E195: base red, first error: AssertionError: cold caller propagates activation after the committed NPC await'],
-    ['tests/test_scroll_stock_economy.js', 'E202: base red, first error: AssertionError: strictEqual 1 !== 9'],
     ['tests/test_task4_b5_hot_cold_same.js', 'new red 2026-10-14: AssertionError: cold publishes one buy ad'],
     ['tests/test_task4_survival_tranche.js', 'new red 2026-10-14: AssertionError: the tranche funds a shot bid'],
 ]);
 
 const tests = [
+    'tests/test_perf_cpu_profile.js',
+    'tests/test_perf_live_recorder.js',
+    'tests/test_perf_heap_profile.js',
+    'tests/test_perf_report.js',
+    'tests/test_perf_compare.js',
+    'tests/test_perf_hot_crowd.js',
+    'tests/test_perf_player_client.js',
+    'tests/test_e2e_scripts.js',
+    'tests/test_worker_heap_telemetry_handles.js',
+    'tests/test_server_packet_names.js',
+    'tests/test_scroll_stock_economy.js',
+    'tests/test_wish_focus_supply.js',
+    'tests/test_wish_goal_loyalty.js',
+    'tests/test_equipment_input_warehouse.js',
+    'tests/test_active_craft_warehouse.js',
+    'tests/test_personal_craft_selection.js',
+    'tests/test_player_moment.js',
+    'tests/test_agenda.js',
+    'tests/test_goal_revision.js',
+    'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',
     'tests/test_clan_war_return_geodata.js',
     'tests/test_clan_war_return.js',
@@ -39,10 +58,12 @@ const tests = [
     'tests/test_bot_dialogue_grounding.js',
     'tests/test_bot_dialogue_party.js',
     'tests/test_bot_afk_buy_shop.js',
+    'tests/test_duplicate_craft_buy_ads.js',
     'tests/test_native_board.js',
     'tests/test_c4_import_integration.js',
     'tests/test_generated_cold_loadout.js',
     'tests/test_generated_cold_seed_shots.js',
+    'tests/test_generated_seed_spot_level.js',
     'tests/test_c4_elven_forest_quests.js',
     'tests/test_c4_beginner_quests.js',
     'tests/test_c4_bounty_target_quests.js',
@@ -66,6 +87,7 @@ const tests = [
     'tests/test_bot_market_price_alignment.js',
     'tests/test_wtb_purchase_alternatives.js',
     'tests/test_wtb_meeting_worker.js',
+    'tests/test_meeting_price_sources.js',
     'tests/test_trade_meeting_plan_return.js',
     'tests/test_clan_hall_auctions.js',
     'tests/test_clan_hall_progression_reserve.js',
@@ -78,6 +100,7 @@ const tests = [
     'tests/test_bot_hunting_visibility.js',
     'tests/test_skill_cooldowns.js',
     'tests/test_cold_pve_continuation.js',
+    'tests/test_cold_danger_moment.js',
     'tests/test_bot_acquisition_recovery.js',
     'tests/test_bot_leveling_recovery.js',
     'tests/test_npc_passive_retaliation.js',
@@ -115,6 +138,7 @@ const tests = [
     'tests/test_bot_armor_policy.js',
     'tests/test_bot_hunt_efficiency.js',
     'tests/test_leaf_fit.js',
+    'tests/test_spot_choice.js',
     'tests/test_personal_gear_progression.js',
     'tests/test_weapon_grade_progression.js',
     'tests/test_clan_personal_surplus.js',
@@ -142,6 +166,7 @@ const tests = [
     'tests/test_spot_reward_expectation.js',
     'tests/test_spot_table_stacks.js',
     'tests/test_spot_table_generator.js',
+    'tests/test_table_fingerprint.js',
     'tests/test_first_price.js',
     'tests/test_bot_solo_hunt_safety.js',
     'tests/test_bot_routing_thresholds.js',
@@ -240,8 +265,10 @@ const tests = [
     'tests/test_cold_commit_admission.js',
     'tests/test_cold_message_pages.js',
     'tests/test_cold_message_bytes.js',
+    'tests/test_cold_skill_dto_interning.js',
     'tests/test_life_state_cache.js',
     'tests/test_cold_hydrate_downtime_shift.js',
+    'tests/test_boot_life_row_order.js',
     'tests/test_admin_tools.js',
     'tests/test_admin_saved_locations.js',
     'tests/test_auto_soulshots.js',
@@ -259,6 +286,10 @@ const tests = [
     'tests/test_cold_potion_consumption.js',
     'tests/test_market_economy_policy.js',
     'tests/test_attack_hit_flags.js',
+    'tests/test_combat_core.js',
+    'tests/test_solo_self_heal.js',
+    'tests/test_rest_potion.js',
+    'tests/test_pet_heal.js',
     'tests/test_player_attack_range.js',
     'tests/test_player_attack_click_control.js',
     'tests/test_player_attack_approach.js',
@@ -372,6 +403,7 @@ const tests = [
     'tests/test_bot_party_chat.js',
     'tests/test_bot_agent_support_confirmation.js',
     'tests/test_bot_combat_skill_selection.js',
+    'tests/test_bot_mana_price.js',
     'tests/test_bot_healing_potions.js',
     'tests/test_bot_raid_safety.js',
     'tests/test_opportunistic_raids.js',
@@ -437,8 +469,7 @@ const tests = [
     'tests/test_bot_persona_types.js',
     'tests/test_bot_persona_migration.js',
     'tests/test_bot_persona_background_intent.js',
-    'tests/test_bot_persona_economic_policy.js',
-    'tests/test_wealth_investment_policy.js',
+    'tests/test_support_no_solo_ground.js',
     'tests/test_wealth_craft_policy.js',
     'tests/test_craft_facts.js',
     'tests/test_cold_wealth_craft.js',
@@ -452,7 +483,6 @@ const tests = [
     'tests/test_cold_occupation_sources.js',
     'tests/test_economy_commit_native.js',
     'tests/test_bot_spot_risk_baseline.js',
-    'tests/test_bot_persona_party_decision.js',
     'tests/test_persona_party_copies.js',
     'tests/test_bot_remote_chat_persona.js',
     'tests/test_cold_bot_chat.js',
@@ -498,6 +528,9 @@ const tests = [
     'tests/test_bot_dye_cleanup.js',
     'tests/test_player_dye_stacking.js',
     'tests/test_bot_inventory_capacity_cleanup.js',
+    'tests/test_companion_inventory_cleanup.js',
+    'tests/test_bot_arrow_cleanup.js',
+    'tests/test_arrow_stock_limits.js',
     'tests/test_bot_goal_copies.js',
     'tests/test_cold_cleanup_keeps_resolve.js',
     'tests/test_cold_cleanup_economy_authority.js',
@@ -508,6 +541,7 @@ const tests = [
     'tests/test_cold_exchange_wait_once.js',
     'tests/test_e314_sale_visit_shot_pending.js',
     'tests/test_meeting_stage_last.js',
+    'tests/test_meeting_outlives_command.js',
     'tests/test_cold_safe_enchant.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
@@ -544,6 +578,7 @@ const tests = [
     'tests/test_skill_requirements.js',
     'tests/test_cold_worker_party_wait.js',
     'tests/test_party_wait_fallback.js',
+    'tests/test_held_earning_spot.js',
     'tests/test_hunting_trip.js',
     'tests/test_world_grid.js',
     'tests/test_cold_pvp_death_experience.js',
@@ -559,6 +594,9 @@ const tests = [
     'tests/test_cold_kill_rewards.js',
     'tests/test_spoil_landing.js',
     'tests/test_spoil_selection.js',
+    'tests/test_spoil_rates.js',
+    'tests/test_non_stackable_awards.js',
+    'tests/test_non_stackable_cold_repair.js',
     'tests/test_bot_background_rest.js',
     'tests/test_bot_background_party_rest.js',
     'tests/test_cold_party_assembly.js',
@@ -585,6 +623,7 @@ const tests = [
     'tests/test_bot_market_listing_policy.js',
     'tests/test_ready_trade_choice.js',
     'tests/test_standing_sale_answer.js',
+    'tests/test_standing_sale_quantity.js',
     'tests/test_bid_sale.js',
     'tests/test_ready_trade_execution.js',
     'tests/test_bot_quest_item_eligibility.js',
@@ -595,6 +634,7 @@ const tests = [
     'tests/test_group_f_companion_board_line.js',
     'tests/test_group_f_market_ads.js',
     'tests/test_group_f_empty_sale_trip.js',
+    'tests/test_cold_overweight_sale_retry.js',
     'tests/test_group_f_spoil_quest.js',
     'tests/test_group_f_warehouse.js',
     'tests/test_group_f_warehouse_transaction.js',
@@ -620,6 +660,7 @@ const tests = [
     'tests/test_cold_pvp_kill_commit.js',
     'tests/test_bot_errand_flags.js',
     'tests/test_cold_simulation_kernel.js',
+    'tests/test_cold_integer_timing.js',
     'tests/test_cold_step_lead.js',
     'tests/test_cold_proposal_batch_bytes.js',
     'tests/test_cold_proposal_compact.js',
@@ -658,7 +699,6 @@ const tests = [
     'tests/test_pk_profiles.js',
     'tests/test_bot_social_memory_events.js',
     'tests/test_social_graph_repository.js',
-    'tests/test_bot_simulation_kernel.js',
     'tests/test_bot_support_planner.js',
     'tests/test_party_buff_loadout.js',
     'tests/test_bot_loot_etiquette.js',
@@ -720,6 +760,8 @@ const tests = [
       'tests/test_clan_simulation_scan.js',
       'tests/test_clan_founder_budget.js',
       'tests/test_clan_action_queue.js',
+      'tests/test_clan_action_fairness.js',
+      'tests/test_clan_action_budget_fairness.js',
       'tests/test_clan_review_enqueue_retry.js',
       'tests/test_clan_crafting_dual_stock.js',
       'tests/test_clan_raid_cancel_wake.js',
@@ -731,6 +773,26 @@ const tests = [
     'tests/test_clan_system.js',
     'tests/test_clan_join_penalty.js',
     'tests/test_cp_stats.js',
+    'tests/test_class_vitals.js',
+    'tests/test_solo_round_rules.js',
+    'tests/test_hunt_corrections_fit.js',
+    'tests/test_table_roles_and_blessed.js',
+    'tests/test_c4_shot_multipliers.js',
+    'tests/test_table_class_lines.js',
+    'tests/test_future_class_kit.js',
+    'tests/test_spot_table_death_time.js',
+    'tests/test_future_summoner_pet.js',
+    'tests/test_cold_hot_rules.js',
+    'tests/test_spot_cutting.js',
+    'tests/test_fight_table_points.js',
+    'tests/test_cold_regen_passives.js',
+    'tests/test_warrior_chanter_kits.js',
+    'tests/test_spot_crowd_share.js',
+    'tests/test_hunt_kit_surface.js',
+    'tests/test_two_handed_blunt_mastery.js',
+    'tests/test_npc_undead_race.js',
+    'tests/test_potion_npc_price.js',
+    'tests/test_solo_gate_fight_model.js',
     'tests/test_player_combat_stance.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_store_c4_slots.js',
@@ -802,7 +864,7 @@ const tests = [
     'tests/test_c4_low_level_raid_bosses.js',
     'tests/test_c4_raid_bosses.js',
     'tests/test_c4_recipe_scrolls.js',
-    'tests/test_c4_high_grade_drops.js',
+    'tests/test_c4_legacy_drops.js',
     'tests/test_c4_high_grade_recipe_quests.js',
     'tests/test_c4_group_leader_minions.js',
     'tests/test_raid_boss_curse.js',
@@ -858,6 +920,7 @@ const tests = [
     'tests/test_ground_item_pickup_race.js',
     'tests/test_ground_item_visibility.js',
     'tests/test_pickup_inventory_capacity.js',
+    'tests/test_party_loot_capacity.js',
     'tests/test_pk_drop_pickup_enchant.js',
     'tests/test_pickup_session_lifecycle.js',
     'tests/test_pickup_c4_timing.js',
@@ -949,6 +1012,7 @@ const tests = [
     'tests/test_skill_area_runtime.js',
     'tests/test_summon_runtime.js',
     'tests/test_skill_semantics.js',
+    'tests/test_skill_mp_c4_totals.js',
     'tests/test_buffer_healer_skills.js',
     'tests/test_archer_class_skills.js',
     'tests/test_melee_dd_class_skills.js',
@@ -997,6 +1061,7 @@ const tests = [
     'tests/test_clan_order_crafting.js',
     'tests/test_cold_snapshot_queue.js',
     'tests/test_cold_solo_combat_budget.js',
+    'tests/test_cold_solo_window.js',
     'tests/test_cold_worker_pressure.js',
     'tests/test_private_store_limits.js',
     'tests/test_update_environment_visibility.js',
@@ -1042,17 +1107,29 @@ const tests = [
     'tests/test_shot_craft_demand_batch.js',
     'tests/test_shot_trade_demand.js',
     'tests/test_shot_setup_purchase.js',
+    'tests/test_shot_crystal_residual.js',
+    'tests/test_production_bid_quotes.js',
+    'tests/test_backed_production_bids.js',
+    'tests/test_buy_interest_index.js',
+    'tests/test_aggregate_production_demand.js',
     'tests/test_trade_intent.js',
     'tests/test_selected_purchase_meeting.js',
+    'tests/test_meeting_survival_transport.js',
+    'tests/test_production_purchase_meeting.js',
     'tests/test_luxury_purchase_meeting.js',
     'tests/test_meeting_flow_freshness.js',
     'tests/test_refused_purchase_errand.js',
+    'tests/test_sell_ad_price_refusal.js',
+    'tests/test_sell_ad_price_replan.js',
     'tests/test_board_trade_meeting.js',
+    'tests/test_trade_meeting_detached_admission.js',
+    'tests/test_trade_meeting_arrival_admission.js',
     'tests/test_same_point_trade_meetings.js',
     'tests/test_reserved_board_stock.js',
     'tests/test_delete_character_trade_meetings.js',
     'tests/test_native_meeting_arrival_publication.js',
     'tests/test_cold_meeting_travel.js',
+    'tests/test_trade_meeting_route_funding.js',
     'tests/test_bot_meeting_travel.js',
     'tests/test_hot_meeting_ai_ownership.js',
     'tests/test_hot_meeting_materialization.js',
@@ -1095,6 +1172,9 @@ const tests = [
     'tests/test_walkback_catalog_cache.js',
     'tests/test_source_facts.js',
     'tests/test_source_route_admission.js',
+    'tests/test_full_source_keeps_plan.js',
+    'tests/test_spot_source_targets.js',
+    'tests/test_market_return_hunting_origin.js',
     'tests/test_stock_bag_fill_interval.js',
     'tests/test_stock_refill_preservation.js',
     'tests/test_cold_decision_clan_clock.js',
@@ -1161,7 +1241,6 @@ const tests = [
     'tests/test_beginner_shot_restrictions.js',
     'tests/test_buy_ad_source_ownership.js',
     'tests/test_buy_ad_town_look.js',
-    'tests/test_buy_bot_shop_sources.js',
     'tests/test_cold_warehouse_deposit_transaction.js',
     'tests/test_craft_input_quantities.js',
     'tests/test_current_board_quotes.js',
@@ -1172,7 +1251,6 @@ const tests = [
     'tests/test_field_trade_ads.js',
     'tests/test_first_price_made.js',
     'tests/test_game_data_catalogue.js',
-    'tests/test_gear_plan_selection_sections.js',
     'tests/test_market_arrival_goal_refresh.js',
     'tests/test_market_lot_policy.js',
     'tests/test_meeting_arrival_events.js',
@@ -1205,6 +1283,7 @@ const tests = [
     'tests/test_unknown_recipe_native.js',
     'tests/test_wish_gear_replacement.js',
     'tests/test_kit_profile_gear_gain.js',
+    'tests/test_hunt_cycle.js',
     'tests/test_wish_quantity_allocation.js',
 ];
 
@@ -1291,6 +1370,7 @@ const defaultConfigTests = new Set([
     'tests/test_same_point_trade_meetings.js',
     'tests/test_native_meeting_arrival_publication.js',
     'tests/test_cold_meeting_travel.js',
+    'tests/test_trade_meeting_route_funding.js',
     'tests/test_bot_meeting_travel.js',
     'tests/test_hot_meeting_ai_ownership.js',
     'tests/test_hot_meeting_materialization.js',
@@ -1335,6 +1415,7 @@ const defaultConfigTests = new Set([
     'tests/test_group_f_companion_board_line.js',
     'tests/test_group_f_market_ads.js',
     'tests/test_group_f_empty_sale_trip.js',
+    'tests/test_cold_overweight_sale_retry.js',
     'tests/test_group_f_spoil_quest.js',
     'tests/test_group_f_warehouse.js',
     'tests/test_group_f_warehouse_transaction.js',
@@ -1417,7 +1498,6 @@ const defaultConfigTests = new Set([
     'tests/test_beginner_shot_restrictions.js',
     'tests/test_buy_ad_source_ownership.js',
     'tests/test_buy_ad_town_look.js',
-    'tests/test_buy_bot_shop_sources.js',
     'tests/test_cold_warehouse_deposit_transaction.js',
     'tests/test_craft_input_quantities.js',
     'tests/test_current_board_quotes.js',
@@ -1428,7 +1508,6 @@ const defaultConfigTests = new Set([
     'tests/test_field_trade_ads.js',
     'tests/test_first_price_made.js',
     'tests/test_game_data_catalogue.js',
-    'tests/test_gear_plan_selection_sections.js',
     'tests/test_market_arrival_goal_refresh.js',
     'tests/test_market_lot_policy.js',
     'tests/test_meeting_arrival_events.js',
@@ -1461,6 +1540,7 @@ const defaultConfigTests = new Set([
     'tests/test_unknown_recipe_native.js',
     'tests/test_wish_gear_replacement.js',
     'tests/test_kit_profile_gear_gain.js',
+    'tests/test_hunt_cycle.js',
     'tests/test_wish_quantity_allocation.js',
 ]);
 // Gate: a test file nobody lists is a test CI never runs (E297). Checked before
@@ -1488,9 +1568,31 @@ const defaultConfigTests = new Set([
         process.exit(1);
     }
 }
-const selectedTests = tests.filter((testFile) => geodataOnly
+// --only=a,b (or --only=@list.txt: names by comma, space or line, # comments)
+// runs just those files, in that order, each as the suite runs it; a name is
+// tests/test_x.js, test_x.js, test_x or x (.github/workflows/tests.yml).
+const onlyArg = process.argv.find((arg) => arg.startsWith('--only='));
+let onlyTests = null;
+if (onlyArg) {
+    let text = onlyArg.slice('--only='.length);
+    if (text.startsWith('@')) text = fs.readFileSync(text.slice(1), 'utf8').replace(/#.*$/gm, '');
+    const names = text.split(/[\s,]+/).filter(Boolean)
+        .map((name) => `tests/${path.basename(name).replace(/^(test_)?/, 'test_').replace(/(\.js)?$/, '.js')}`);
+    const listed = new Set(tests);
+    const unknown = names.filter((testFile) => !listed.has(testFile));
+    if (!names.length || unknown.length) {
+        console.error(names.length ? `--only: not in the suite:\n${unknown.map((f) => `  ${f}${notRunTests.has(f) ? ` (notRunTests: ${notRunTests.get(f)})` : ''}`).join('\n')}`
+            : '--only: no test files given');
+        process.exit(2);
+    }
+    onlyTests = [...new Set(names)];
+}
+const selectedTests = onlyTests || tests.filter((testFile) => geodataOnly
     ? geodataTests.has(testFile) || optionalGeodataTests.has(testFile)
     : !geodataTests.has(testFile));
+// A geodata test always runs on the raw map (only --only picks one without
+// --geodata); the optional ones read it with --geodata.
+const rawGeodata = (testFile) => geodataOnly || geodataTests.has(testFile);
 // --shard=K/N keeps every N-th file starting at K, so CI can run N parts on
 // separate machines at once; the interleave spreads the slow files evenly.
 const shardArg = process.argv.find((arg) => arg.startsWith('--shard='));
@@ -1507,6 +1609,11 @@ if (process.argv.includes('--list')) {
     selectedTests.forEach((testFile) => console.log(testFile));
     process.exit(0);
 }
+// --needs-geodata: whether a selected file reads the raw map (CI fetches it then).
+if (process.argv.includes('--needs-geodata')) {
+    console.log(selectedTests.some(rawGeodata) ? 'true' : 'false');
+    process.exit(0);
+}
 
 fs.mkdirSync('tmp', { recursive: true });
 const keepGoing = process.argv.includes('--keep-going');
@@ -1516,7 +1623,7 @@ const timeoutMs = Number(process.env.L2NODE_TEST_TIMEOUT_MS) > 0 ? Number(proces
 const failedTests = [];
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
-    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' };
+    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: rawGeodata(testFile) ? '0' : '1' };
     if (defaultConfigTests.has(testFile)) {
         env.L2NODE_CONFIG_FILE = 'config/default.ini';
         delete env.L2NODE_SHARED_CONFIG_FILE;

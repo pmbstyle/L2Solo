@@ -230,24 +230,45 @@ function scaleAmount(amount, amountMultiplier, rng = Math.random) {
     return Math.max(1, whole + (rng() < fraction ? 1 : 0));
 }
 
-// C4 spoil: each item of a landed spoil group rolls on its own chance, so one
-// sweep can give several items of a group; the datapack has groups whose
-// item chances add up past 100, which one 0-100 line cannot roll.
-// The chance (0..1) that a landed group gives this item.
-function spoilItemChance(item) {
-    return Math.max(0, Math.min(1, (Number(item?.chance) || 0) / 100));
+// Lisvus fdc7e33, L2Attackable.calculateRewardItem: rate each spoil row's
+// chance independently. Only chance above 100% becomes extra item rolls.
+// In imported groups overall=100 and item.chance holds the actual row chance.
+function spoilItemPlan(group, item, context = {}) {
+    const rule = deepBlueRule(context);
+    const baseRate = groupRate(group, 'spoil');
+    let rate = baseRate;
+    if (rule.active) {
+        rate *= rule.chanceMultiplier;
+        if (Number(item.selfId) === 57) rate = profile().drop > 0 ? rate / profile().drop : 0;
+    }
+    const baseChance = dropItemBaseChance(group, item);
+    const scaled = baseRate > 0 && baseChance > 0
+        ? Math.max(MIN_DEEP_BLUE_CHANCE, Math.round(baseChance * rate * 10000) / 10000)
+        : 0;
+    const guaranteed = Math.floor(scaled / 100);
+    const remainder = scaled - guaranteed * 100;
+    const min = Math.max(1, Math.floor(Number(item.min) || 1));
+    const max = Math.max(min, Math.floor(Number(item.max) || min));
+    return {
+        min, max, guaranteed, remainder,
+        chance: Math.min(100, scaled) / 100,
+        expectedYield: scaled / 100 * (min + max) / 2,
+        minAmount: scaled > 0 ? Math.max(1, guaranteed) * min : 0,
+        maxAmount: (guaranteed + (remainder > 0 ? 1 : 0)) * max
+    };
 }
 
-// The items a landed spoil group gives: [{ item, amount }], the one spoil roll
-// of the hot sweep (SpoilSweep) and the cold fight (BackgroundDropResolver).
-function rollSpoilGroup(group, amountMultiplier, rng = Math.random) {
+// Every spoil item is independent, including items sharing an authored group.
+function rollSpoilGroup(group, context = {}, rng = Math.random) {
     const landed = [];
     for (const item of group?.items || []) {
-        if (!(rng() < spoilItemChance(item))) continue;
-        const min = Math.max(1, Math.floor(Number(item.min) || 1));
-        const max = Math.max(min, Math.floor(Number(item.max) || min));
-        const baseAmount = min === max ? min : Math.floor(rng() * (max - min + 1)) + min;
-        landed.push({ item, amount: scaleAmount(baseAmount, amountMultiplier, rng) });
+        const { min, max, guaranteed, remainder } = spoilItemPlan(group, item, context);
+        const draw = (low, high) => low === high ? low : Math.floor(rng() * (high - low + 1)) + low;
+        // Lisvus's high-rate shortcut draws the guaranteed combined range,
+        // then rolls the fractional remainder for one more base quantity.
+        let amount = guaranteed > 0 ? draw(min * guaranteed, max * guaranteed) : 0;
+        if (rng() * 100 < remainder) amount += draw(min, max);
+        if (amount > 0) landed.push({ item, amount });
     }
     return landed;
 }
@@ -268,9 +289,10 @@ module.exports = {
     rollDropAmount,
     deepBlueRule,
     deepBlueActive,
+    DEEP_BLUE_LEVEL_GAP,
     deepBluePenaltyPercent,
     rewardGroupRoll,
     scaleAmount,
-    spoilItemChance,
+    spoilItemPlan,
     rollSpoilGroup
 };

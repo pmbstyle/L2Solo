@@ -164,6 +164,36 @@ async function main() {
         session.currentTargetId = undefined;
         session.currentSpot = null;
 
+        // A blocked scan resumes at the mob it stopped at. When that mob is no longer a
+        // fight the bot can take, the next batch starts at the next ready mob after it,
+        // not among the refused ones: a visible ready mob is found, the bot does not sit.
+        const Readiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
+        const unready = new Set();
+        replace(Readiness, 'evaluate', (_remaining, target) => ({ ready: !unready.has(target.maxHp), reason: 'fixture' }));
+        const rows = [1, 2, 3, 4, 5, 6, 7].map(rank => ({ ...npc(300 + rank, rank * 100), fetchHp: () => 300 + rank }));
+        const scanSession = { actor: bot, plan: 'hunting' };
+        available = rows;
+        bot.moving = false;
+        let visible = new Set();
+        Geo.hasLineOfSight = (_x, _y, _z, x) => visible.has(x);
+        assert.equal(Hunting.findPreferredMonster(scanSession, bot, 2000, { readyOnly: true }), null);
+        assert.equal(scanSession.huntTargetScanPending, true, 'four blocked ready mobs leave the scan pending');
+        unready.add(305);
+        visible = new Set([500, 600]);
+        assert.equal(Hunting.findPreferredMonster(scanSession, bot, 2000, { readyOnly: true })?.fetchId(), 306,
+            'the next batch starts at the ready mob after the one that stopped being ready');
+        assert.equal(scanSession.lastEncounterReadiness?.ready, true);
+        // Ranks 1-6, only 4 and 5 ready, all behind walls: once the batches reach the
+        // refused mobs they go on there, the ready ones are not checked again, the scan ends.
+        unready.clear(); [301, 302, 303, 306].forEach(hp => unready.add(hp));
+        available = rows.slice(0, 6); visible = new Set();
+        const wallSession = { actor: bot, plan: 'hunting' };
+        let ticks = 0;
+        do { Hunting.findPreferredMonster(wallSession, bot, 2000, { readyOnly: true }); ticks++; }
+        while (wallSession.huntTargetScanPending && ticks < 10);
+        assert.equal(wallSession.huntTargetScanPending, false, 'a blocked scan of ready and refused mobs ends');
+        assert(ticks <= 3, `it ends within a few ticks (${ticks})`);
+
         // Native action automation is a separate movement path from moveTo.
         // Even an in-range attack/cast must route rather than cross a wall.
         const Automation = invoke('GameServer/Automation');

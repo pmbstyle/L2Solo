@@ -5,7 +5,7 @@ const Mutations = require('../../Inventory/InventoryMutationQueue');
 
 function purchaseItem(session, selfId, amount, metadata = {}) {
     const actor = session?.actor;
-    if (!actor?.backpack) return false;
+    if (!actor?.backpack || !Number.isSafeInteger(amount) || amount <= 0 || amount > 0x7fffffff) return false;
     return Mutations.run(actor.backpack, () => awardItem(session, actor, selfId, amount, metadata)).catch((err) => {
         utils.infoWarn('GameServer', 'Item award failed actor=%s item=%s error=%s',
             actor.fetchId(), selfId, err?.message || String(err));
@@ -30,7 +30,7 @@ function awardItem(session, actor, selfId, amount, metadata) {
         });
     }, () => new Promise((resolve, reject) => { // New item
         DataCache.fetchItemFromSelfId(selfId, (item) => {
-            Database.setItem(actor.fetchId(), {
+            Database.setItemInstances(actor.fetchId(), {
                   selfId: item.selfId,
                     name: item.template.name,
                   amount: amount,
@@ -38,8 +38,10 @@ function awardItem(session, actor, selfId, amount, metadata) {
                 equipped: false,
                     slot: item.etc.slot,
                     ...(metadata.petData ? { petData: metadata.petData } : {})
-            }).then((packet) => {
-                backpack.insertItem(Number(packet.insertId), selfId, { amount: amount, ...metadata });
+            }).then((packets) => {
+                for (const packet of packets) {
+                    backpack.insertItem(Number(packet.insertId), selfId, { ...metadata, amount: packet.amount });
+                }
                 refreshInventory();
             }).then(resolve, reject);
         });

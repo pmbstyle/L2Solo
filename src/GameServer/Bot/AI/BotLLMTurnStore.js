@@ -20,7 +20,7 @@ function turnId(input) {
 function begin(input = {}) {
     const turn = turnId(input);
     const botId = id(input.botId);
-    if (!turn || !botId || !Database.isReady?.()) return Promise.resolve(false);
+    if (!turn || !botId || !Database.isReady()) return Promise.resolve(false);
     const playerId = id(input.playerId);
     return Database.execute([`
         INSERT INTO bot_llm_turns
@@ -45,7 +45,7 @@ function begin(input = {}) {
 
 function markStarted(input = {}) {
     const turn = turnId(input);
-    if (!turn || !Database.isReady?.()) return Promise.resolve(false);
+    if (!turn || !Database.isReady()) return Promise.resolve(false);
     return Database.execute([`
         UPDATE bot_llm_turns
         SET state = 'running', startedAt = COALESCE(startedAt, ?), traceId = COALESCE(?, traceId)
@@ -56,7 +56,7 @@ function markStarted(input = {}) {
 
 function finish(input = {}) {
     const turn = turnId(input);
-    if (!turn || !Database.isReady?.()) return Promise.resolve(false);
+    if (!turn || !Database.isReady()) return Promise.resolve(false);
     const usage = input.usage || {};
     const state = input.ok === false ? 'failed' : 'completed';
     return Database.execute([`

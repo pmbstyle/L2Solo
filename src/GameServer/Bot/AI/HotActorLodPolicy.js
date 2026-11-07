@@ -1,6 +1,6 @@
 const { DiagnosticMetricMap } = require('../Population/DiagnosticMetricMap');
 const DiagnosticConfig = require('../Population/PopulationConfig');
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const { CLIENT_VISIBILITY_RADIUS, inClientView } = invoke('GameServer/World/WorldConstants');
 const ActorQueries = require('../../World/ActorSpatialQueries');
 const FULL_ENTER_RADIUS = 3500;
 const FULL_EXIT_RADIUS = 4000;
@@ -106,7 +106,8 @@ function playerContext(session, realPlayers, now, World = null) {
         if (group.some(member => member.actor?.state?.fetchHits?.() || member.actor?.state?.fetchCasts?.()
             || now - Number(member.incomingThreatAt || 0) < PLAYER_THREAT_HOLD_MS
             || (World ? ActorQueries.near(World, member.actor, CLIENT_VISIBILITY_RADIUS, isRealPlayerSession).length > 0
-                : realPlayers.some(player => distance2d(member.actor, player.actor) <= CLIENT_VISIBILITY_RADIUS)))) return 'hot_party';
+                : realPlayers.some(player => inClientView(member.actor?.fetchLocX?.(), member.actor?.fetchLocY?.(),
+                    player.actor?.fetchLocX?.(), player.actor?.fetchLocY?.()))))) return 'hot_party';
     }
     if (session.chatArrivalActive || session.inConversation || session.activeTrade || session.pendingPartyInvite) return 'player_interaction';
 
@@ -146,15 +147,20 @@ function evaluate(session, sessions = [], now = Date.now()) {
     ), Infinity);
     const context = playerContext(session, realPlayers, now, World);
     if (context) promote(session, context, now);
+    // Visible combat is full while it lasts and no longer: the combat stance
+    // (fetchCombats) stays on 15 s after the last landed blow or offensive cast
+    // (CombatStance, Lisvus), so its end is the event; no hold after it.
     const visibleCombat = nearestDistance <= CLIENT_VISIBILITY_RADIUS && !!(
         bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.()
     );
-    if (visibleCombat) promote(session, 'visible_combat', now);
 
     const heldPromotion = Number(state.promotedUntil || 0) > now;
     let tier;
     let reason;
-    if (heldPromotion) {
+    if (visibleCombat) {
+        tier = 'full';
+        reason = 'visible_combat';
+    } else if (heldPromotion) {
         tier = 'full';
         reason = state.lastPromotionReason || 'promotion_hold';
     } else if (nearestDistance <= FULL_ENTER_RADIUS || (state.tier === 'full' && nearestDistance <= FULL_EXIT_RADIUS)) {
@@ -171,7 +177,10 @@ function evaluate(session, sessions = [], now = Date.now()) {
     state.reason = reason;
     state.nearestPlayerDistance = Number.isFinite(nearestDistance) ? Math.round(nearestDistance) : null;
     state.evaluatedAt = now;
-    return { tier, reason, nearestPlayerDistance: nearestDistance, promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion };
+    // playerVisible: a real player is within the client's view of the bot (the
+    // nearest one, from this same read); BotAI's far-away gate and local chat read it.
+    return { tier, reason, nearestPlayerDistance: nearestDistance, playerVisible: nearestDistance <= CLIENT_VISIBILITY_RADIUS,
+        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion || visibleCombat };
 }
 
 function nextTickDelay(session, context, random = Math.random) {

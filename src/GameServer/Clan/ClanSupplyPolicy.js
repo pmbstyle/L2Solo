@@ -6,6 +6,7 @@ let ClanCraftingPolicyModule = null;
 const craftingPolicy = () => ClanCraftingPolicyModule ??= require('./ClanCraftingPolicy');
 const ClanHallPolicy = require('../ClanHall/Policy');
 const CONTENT_IDENTITY = Symbol('clan_supply_content_identity');
+const REQUEST_IDENTITY = Symbol('clan_supply_request_identity');
 const NO_CLAN_IDENTITY = createHash('sha256').update('[0,[]]').digest('hex');
 const records = new Map();
 const stocks = new Map();
@@ -17,9 +18,14 @@ function prepareRow(row) {
         && Number.isSafeInteger(row[1]) && row[1] >= 0 && Array.isArray(row[2]) && row[2].length <= 128
         && row[2].every(value => Array.isArray(value) && value.length === 2
             && Number.isSafeInteger(value[0]) && value[0] > 0 && Number.isSafeInteger(value[1]) && value[1] > 0);
-    if (!valid) { if (row && typeof row === 'object') delete row[CONTENT_IDENTITY]; return row; }
+    if (!valid) {
+        if (row && typeof row === 'object') { delete row[CONTENT_IDENTITY]; delete row[REQUEST_IDENTITY]; }
+        return row;
+    }
     if (!Object.hasOwn(row, CONTENT_IDENTITY)) Object.defineProperty(row, CONTENT_IDENTITY,
         { configurable: true, value: createHash('sha256').update(JSON.stringify([row[1], row[2]])).digest('hex') });
+    if (!Object.hasOwn(row, REQUEST_IDENTITY)) Object.defineProperty(row, REQUEST_IDENTITY,
+        { configurable: true, value: `${row[1]}:${row[2].map(value => value[0]).sort((a, b) => a - b).join()}` });
     return row;
 }
 const positive = value => Math.max(0, Math.floor(Number(value) || 0));
@@ -105,6 +111,14 @@ module.exports = { requirements, publish, reservedAmounts, hasWarehouse, init, p
         if (!(id > 0)) return NO_CLAN_IDENTITY;
         if (sourceReady() !== true) return null;
         return source(id)?.[CONTENT_IDENTITY] ?? null;
+    },
+    // What a member hears of its clan's request: the items it names; a request
+    // opening or closing moves it, a count left does not (Recompute: a crossing).
+    requestIdentity(state = {}) {
+        const id = Number(state.clanId ?? state.stats?.clanId);
+        if (!(id > 0)) return NO_CLAN_IDENTITY;
+        if (sourceReady() !== true) return null;
+        return source(id)?.[REQUEST_IDENTITY] ?? null;
     },
     version(state = {}) { return Number(source(Number(state.clanId ?? state.stats?.clanId))?.[3] || 0); },
     useRowSource(reader, isReady) {

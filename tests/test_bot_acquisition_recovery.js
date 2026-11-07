@@ -33,7 +33,10 @@ async function run() {
             { status: 'complete', strategy: 'none' }, context, now + 2);
         assert(Planner.replanContextFor(remembered, idle, now + 3).excludedMaterialIds.includes(75),
             'an idle tick without alternatives must retain the failure memory');
-        assert.strictEqual(Planner.replanContextFor(remembered, idle, now + 5 * 3600000).excludedMaterialIds.length, 0);
+        assert(Planner.replanContextFor(remembered, idle, now + 5 * 3600000).excludedMaterialIds.includes(75),
+            'the failure memory has no clock: it stands while its wake inputs hold');
+        assert.strictEqual(Planner.replanContextFor({ ...remembered, level: 54 }, idle, now + 4).excludedMaterialIds.length, 0,
+            'a level wakes the failed purchase at once');
         const variants = new Set(Array.from({ length: 30 }, (_, i) => Planner.preferredTarget(
             { ...state, characterId: i + 1 }, { findMarketOffer: () => null })?.item.selfId));
         assert(variants.size > 1, 'comparable dual routes must not synchronize the whole population');
@@ -151,16 +154,17 @@ async function run() {
     assert.strictEqual(ownedBladeReserves[2089] || 0, 0, 'an owned blade no longer needs its crafting pieces reserved');
 
     const originalRecipeLookup = Recipes.resolveByProductId;
-    const ironSpots = [{ id: 'stone-golem', avgLevel: 19, npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 8 }] }];
-    let synthetic = { recipeId: 999001, productCount: 1, materials: [{ selfId: 1869, amount: 3 }] };
+    // Stone Golem drops Charcoal in C4 (Lisvus droplist: 4.76 %), not Iron Ore.
+    const golemSpots = [{ id: 'stone-golem', avgLevel: 19, npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 8 }] }];
+    let synthetic = { recipeId: 999001, productCount: 1, materials: [{ selfId: 1871, amount: 3 }] };
     Recipes.resolveByProductId = (id) => Number(id) === 999001 ? synthetic : null;
     try {
         const routeState = { ...state, level: 19, inventory: {} };
-        const leaf = Planner.farmSourceForMaterial(999001, routeState, ironSpots, new Set([999001]));
-        assert.strictEqual(leaf.itemId, 1869, 'nested craft routes must farm the ingredient, not the parent weapon');
+        const leaf = Planner.farmSourceForMaterial(999001, routeState, golemSpots, new Set([999001]));
+        assert.strictEqual(leaf.itemId, 1871, 'nested craft routes must farm the ingredient, not the parent weapon');
         assert.strictEqual(leaf.requiredAmount, 3);
         synthetic = { ...synthetic, materials: [...synthetic.materials, { selfId: 999002, amount: 1 }] };
-        assert.strictEqual(Planner.farmSourceForMaterial(999001, routeState, ironSpots, new Set([999001])), null,
+        assert.strictEqual(Planner.farmSourceForMaterial(999001, routeState, golemSpots, new Set([999001])), null,
             'one farmable ingredient must not hide another ingredient with no source');
     } finally {
         Recipes.resolveByProductId = originalRecipeLookup;

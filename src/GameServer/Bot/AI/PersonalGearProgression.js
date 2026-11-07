@@ -4,7 +4,7 @@ const GearLifecycle = require('./GearLifecycle');
 const Data = invoke('GameServer/DataCache');
 const Index = invoke('GameServer/Item/ItemTemplateIndex');
 const StarterItemCatalog = require('../../Knowledge/StarterItemCatalog');
-const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
+const { GRADES: RANKS } = invoke('GameServer/Bot/AI/GearGradeRule');
 function adventurer(state = {}) {
     return !state.stats?.craftStationId
         && !(state.activity === 'crafting' && state.stats?.craftShop

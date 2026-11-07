@@ -44,6 +44,13 @@ async function main() {
         World.user = { sessions: [leader, member, outsider, distant] };
         Doors.sync(leader, leader.actor, true);
         const firstDoor = doors.find(door => door.hallId === 22);
+        const seesDoor = locX => {
+            const viewer = player(100, 1, 0, { locX, locY: firstDoor.locY, locZ: 0 });
+            Doors.sync(viewer, viewer.actor, true);
+            return viewer.sent.some(packet => packet.readInt32LE(1) === firstDoor.objectId);
+        };
+        assert(seesDoor(firstDoor.locX + 5999), 'a door inside the view is sent');
+        assert(!seesDoor(firstDoor.locX + 6000), 'the view ends at the radius, as for every packet to a viewer');
         const [info, closed] = Doors.packets(firstDoor);
         assert.equal(info.length, 16, 'DoorInfo uses the shared packet padding');
         assert.equal(info.readInt32LE(1), firstDoor.objectId);

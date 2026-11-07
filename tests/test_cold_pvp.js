@@ -86,6 +86,20 @@ async function main() {
     assert(duel.started);
     assert.deepStrictEqual(run(JSON.parse(original)), duel);
     assert.strictEqual(JSON.stringify(sides), original);
+    // C4 (Lisvus updatePvPStatus, onKillUpdatePvPKarma): hitting a character
+    // with karma flags nobody and killing it is PvP; a killer with karma gets
+    // nothing for a flagged victim.
+    const strong = state(3), weak = { ...state(1), vitals: { ...state(1).vitals, hp: 900 } };
+    const withStats = (s, stats) => ({ ...s, stats: { ...s.stats, ...stats } });
+    const killFight = (killer, victim) => Pvp.resolve({ sides: [{ principal: killer, members: [killer] },
+        { principal: victim, members: [victim] }], roles: new Map(), timestamp: at, rng: seeded('c4-kill'), personaFor, openingSide: 0 });
+    const redVictim = killFight(strong, withStats(weak, { karma: 500 }));
+    assert.deepStrictEqual(redVictim.fighters.find(f => f.id === strong.characterId).kills.map(k => k.outcome), ['pvp'],
+        'killing a character with karma is PvP');
+    assert.strictEqual(redVictim.updates.get(strong.characterId).stats.coldPvp.flagUntil, 0, 'hitting a character with karma does not flag');
+    const redKiller = killFight(withStats(strong, { karma: 500 }), withStats(weak, { coldPvp: { flagUntil: at + 10000 } }));
+    assert.deepStrictEqual(redKiller.fighters.find(f => f.id === strong.characterId).kills.map(k => k.outcome), ['none'],
+        'a killer with karma gets nothing for a flagged victim');
     // Exercise mode propagation through the real resolver, including the MP
     // spent by its first completed action rather than only selector metadata.
     function modeFighter(classId, skillId, skillLevel) {
@@ -172,7 +186,8 @@ async function main() {
     assert(fullFight.actions <= Pvp.MAX_ACTIONS && fullFight.durationMs <= Pvp.MAX_DURATION_MS);
     assert(fullFight.incidents.length <= 18, 'actual attribution stays linear in roster size');
     const healer = { ...right, stats: { ...right.stats, coldCombat: { ...right.stats.coldCombat,
-        skills: [{ selfId: 1011, level: 1, spell: true, passive: false, power: 100, mp: 12, hitTime: 1500, reuse: 1000 }] } } };
+        // A real learned rank (Battle Heal 1): the kit a save rebuilds from the skill rows carries the same numbers.
+        skills: Profile.skillSnapshotsFromRecords([{ selfId: 1015, level: 1 }]) } } };
     const injured = { ...right, characterId: 90, vitals: { ...right.vitals, hp: 350 } };
     const healedFight = Pvp.resolve({ sides: [sides[0], { principal: healer, members: [healer, injured] }],
         roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('heal'), personaFor });
@@ -223,7 +238,9 @@ async function main() {
     assert(recovery.memberResults.every(r => r.result.materialize.exp === 0));
     assert.strictEqual(recovery.memberResults[0].result.patch.vitals, undefined, 'dead member remains dead until recovery');
     const revived = Resolver.resolveDeathRecovery(state(1), state(1).stats.coldPvp.recoverUntil);
-    assert(revived.patch.vitals.hp > 0 && revived.patch.stats.coldPvp.recoverUntil === 0);
+    assert(revived.patch.stats.coldPvp.recoverUntil === 0);
+    assert.deepStrictEqual([revived.patch.vitals.hp, revived.patch.vitals.mp], [Math.round(revived.patch.vitals.maxHp * 0.7),
+        Math.min(revived.patch.vitals.maxMp, state(1).vitals.mp)], 'a cold respawn, as hot: 70% HP, MP as death left it');
 
     // A flagged target awards PvP, not karma, through the same SQL transaction.
     const flagged = { ...state(4), stats: { ...state(4).stats, coldPvp: { flagUntil: at + 10000 } } };

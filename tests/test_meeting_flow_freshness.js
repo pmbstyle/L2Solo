@@ -21,7 +21,8 @@ const native = require('./helpers/workerEconomyDecision');
         currentRegion: 'Giran', homeRegion: 'Giran', loc: { locX: 83396, locY: 147904, locZ: -3400 },
         vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 }, timing: {},
         updatedAt: timestamp, simulation: { revision: 1 }, inventory: {},
-        stats: { classId: 57, exp: Data.experience[77], money: [1000, .001, 0, 0] } };
+        stats: { classId: 57, exp: Data.experience[77], money: [1000, .001, 0, 0],
+            shotRecipeDemand: { itemId: recipe.recipeItemId, recipeId: 20, batches: 1, amount: 1, at: timestamp } } };
     for (const id of [20, 21, 22, 23, 24]) for (const row of Recipes.resolveByRecipeId(id).materials)
         state.inventory[row.selfId] = { selfId: row.selfId, amount: row.amount * 16, stackable: true };
     state.persona = invoke('GameServer/Bot/AI/BotPersona').generate(state);
@@ -29,6 +30,10 @@ const native = require('./helpers/workerEconomyDecision');
     for (let i = 0; i < 3; i++) state.stats.huntEfficiency = Hunt.record(state,
         { spotId: 'flow_test_hunt', cycleMs: 3600000, adena: 77000, exp: 100000, kills: 1, timestamp });
     Market.reset();
+    // Peer deals price the D shot. Without them its belief is the craft first price, whose labour
+    // reads the level-20 crafter's table hour: the T106 tables tripled it (a D shot above every
+    // C-S shot), so the C-S crafts the new flow opens could not outrank the D recipe.
+    for (let i = 0; i < 5; i++) Market.deal(1463, 140, 1000, timestamp - (20 - i) * 60000, 910823, 'Giran');
     Market.supplyDeal(1463, 10000, 'Giran', timestamp - 600000);
     Market.supplyDeal(1463, 10000, 'Giran', timestamp - 300000);
     let marketSource;
@@ -82,8 +87,11 @@ const native = require('./helpers/workerEconomyDecision');
         assert.equal(Market.revisionOf('shot c'), peerRevision, 'configured purchases leave peer counters unchanged');
         assert.equal(current(), false, 'new flow invalidates old meeting consent on main');
         const fresh = await native(funded, input());
-        assert(!fresh.tradeIntents.some(row => row.itemId === recipe.recipeItemId), 'the fresh graph no longer wants the D recipe');
-        await assert.rejects(native(funded, { ...input(), meetingRequest: structuredClone(request) }), /trade_meeting_need_changed/);
+        assert(fresh.tradeIntents.some(row => row.itemId === recipe.recipeItemId),
+            'the finite production setup remains useful after other grades gain demand');
+        const renewed = await native(funded, { ...input(), meetingRequest: structuredClone(request) });
+        assert.notDeepEqual(renewed.request.dependencies, proof.dependencies,
+            'renewed consent must capture the changed flow instead of reusing the stale proof');
     } finally { Life.cachedState = before.cachedState; Afk.boardIndex = before.boardIndex; Market.reset(); }
-    console.log('PASS native flow-only need change, scoped meeting dependencies, transport and main stale-proof refusal');
+    console.log('PASS native flow change, scoped dependencies, transport, stale-proof refusal and renewed consent');
 })().catch(error => { console.error(error.stack, error.meetingTrace); process.exitCode = 1; });

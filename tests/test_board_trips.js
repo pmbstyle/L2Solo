@@ -29,18 +29,18 @@ function hunter(extra = {}) {
 
 // 1. A trip costs the way there and back (item 8): the town leg the trip
 // builder plans plus the return to the spot, at the bot's hour, and the fee.
-for (const honest of [false, true]) {
-    Config.coldHonestTravel = honest;
+{
     const state = hunter();
     const hour = Efficiency.hourValue(state, Date.now()).perHour;
     const giran = town('Giran');
     const plan = ColdTrip.townPlan(state, giran);
-    const back = ColdTrip.spotTripMs({ ...state, loc: ColdTrip.point(giran) }, SPOT);
+    const back = ColdTrip.spotPlan({ ...state, loc: ColdTrip.point(giran) }, SPOT).durationMs;
     assert(back > 0);
     const expected = Math.round((plan.durationMs + back) / HOUR_MS * hour) + plan.route.fee;
-    assert.strictEqual(OfferOrder.tripCost(state)('Giran'), expected, `round trip, honest travel ${honest}`);
+    assert.strictEqual(OfferOrder.tripCost(state)('Giran'), expected, 'round trip');
 }
-Config.coldHonestTravel = false;
+// The author's fixed shot merchant supplies the trips (off by default since T116).
+Config.staticShotsDisabled = false;
 
 // 2. A bot with karma enters no town but Floran, on foot (E48).
 {
@@ -129,9 +129,11 @@ Config.coldHonestTravel = false;
     assert.strictEqual(answer.line.town, 'Dion');
     assert.strictEqual(answer.count, 30);
     assert.strictEqual(answer.net, 900 * 30, 'no trip to the town the bot stands in');
+    // One bag and board roll once (the roll stands on the item's facts); twenty
+    // trials name their own rolls to sample the choice.
     let chosen = 0;
     for (let run = 0; run < 20; run++) {
-        const market = ListingPolicy.evaluate(inDion, { now: 1000 + run, ...{} });
+        const market = ListingPolicy.evaluate(inDion, { now: 1000, decisionPoint: `trial:${run}` });
         if (market.answers.some((entry) => entry.line.town === 'Dion' && entry.count === 30)) chosen += 1;
     }
     assert(chosen >= 18, `a generous ad in the bot's own town is answered (${chosen} of 20)`);

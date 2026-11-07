@@ -441,8 +441,8 @@ try {
     patch(Matchup, 'actorProfiles', () => []);
     patch(Matchup, 'targetView', () => ({}));
     let ordinaryChecks = 0;
-    patch(Matchup, 'soloSurvival', () => { ordinaryChecks++; return { eligible: false }; });
-    patch(Spots, 'pullSizeFor', () => 1);
+    patch(Matchup, 'pullVerdict', () => { ordinaryChecks++; return { eligible: false }; });
+    patch(Spots, 'livePull', () => 1);
     patch(Visibility, 'select', (_owner, _key, _actor, candidates) => ({ candidate: candidates[0], pending: false }));
     patch(Visibility, 'canSee', () => true);
     owner.backgroundHuntTarget = null;

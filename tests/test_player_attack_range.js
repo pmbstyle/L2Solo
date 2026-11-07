@@ -1,5 +1,8 @@
 const assert = require('assert');
 require('../src/Global');
+// An attack on a character flags the attacker at the swing or the skill's
+// landing (PvpFlag.attack); the flag packets are not under test here.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 
 const Attack = invoke('GameServer/Actor/Attack');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
@@ -32,7 +35,7 @@ function fixture(kind = 'Weapon.DualFist', targetX = 40) {
         } }
     };
     if (kind === 'Weapon.Bow') {
-        actor.backpack = new Backpack({ items: [], paperdoll: {} });
+        actor.backpack = new Backpack({ id: 2000001, items: [], paperdoll: {} });
         actor.backpack.items = [
             new Item(1, { selfId: 14, kind, rank: 'none', mp: 2, equipped: true, slot: 14 }),
             new Item(2, { selfId: 17, kind: 'Other.Arrow', amount: 2, stackable: true })
@@ -74,14 +77,33 @@ try {
     far.timers[0]();
     assert.strictEqual(far.damage.length, 1, 'attacks resume once the actor has actually caught up');
 
+    const keptBefore = Attack.keptSwings();
     const escaping = fixture();
     escaping.attack.meleeHit(escaping.session, escaping.target);
-    escaping.target.x = 1000;
+    escaping.target.x = 200;
     escaping.timers[0]();
-    assert.strictEqual(escaping.damage.length, 0, 'a target escaping during the swing must not take melee damage');
+    assert.strictEqual(escaping.damage.length, 1, 'a target walking away during the swing takes the started swing');
+    assert.strictEqual(Attack.keptSwings(), keptBefore + 1, 'the kept swing is counted for the live read');
     escaping.timers[1]();
     assert.strictEqual(escaping.chases.length, 1, 'the next swing must approach instead of attacking from afar');
     assert.strictEqual(escaping.actor.state.hits, false);
+
+    const missedAway = fixture();
+    missedAway.attack.prepareMeleeHit = () => ({ damage: 0, flags: 0 });
+    Formulas.calcHitChance = () => false;
+    missedAway.attack.meleeHit(missedAway.session, missedAway.target);
+    missedAway.target.x = 200;
+    const shownBefore = missedAway.packets.length;
+    missedAway.timers[0]();
+    Formulas.calcHitChance = () => true;
+    assert.strictEqual(missedAway.damage.length, 0);
+    assert.strictEqual(missedAway.packets.length, shownBefore + 1, 'a miss on a target walking away is shown to the player');
+
+    const teleported = fixture();
+    teleported.attack.meleeHit(teleported.session, teleported.target);
+    teleported.target.x = 7000;
+    teleported.timers[0]();
+    assert.strictEqual(teleported.damage.length, 0, 'a target that left the view takes no melee damage');
 
     const between = fixture('Weapon.DualFist', 56);
     assert(AttackRange.isWithinRange(between.actor, between.target, 40), 'both collision radii count at the boundary');
@@ -96,10 +118,10 @@ try {
     const secondary = { ...pole.target, x: 50, fetchId: () => 2000003 };
     pole.attack.resolveMeleeTargets = () => [pole.target, secondary];
     pole.attack.meleeHit(pole.session, pole.target);
-    secondary.x = 1000;
+    secondary.x = 7000;
     pole.timers[0]();
     assert.deepStrictEqual(pole.damage.map(entry => entry.victim.fetchId()), [pole.target.fetchId()],
-        'polearm secondary targets must also remain in melee range at impact');
+        'a polearm secondary target that left the view takes no damage');
 
     const bow = fixture('Weapon.Bow', 600);
     bow.attack.meleeHit(bow.session, bow.target);
@@ -119,6 +141,13 @@ try {
     assert.strictEqual(bow.chases.length, 1, 'the next arrow must still require bow range');
     assert.strictEqual(bow.actor.fetchMp(), 8, 'chasing must not spend MP');
     assert.strictEqual(bow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1);
+
+    const lostArrow = fixture('Weapon.Bow', 600);
+    lostArrow.attack.meleeHit(lostArrow.session, lostArrow.target);
+    lostArrow.target.x = 7000;
+    lostArrow.timers[0]();
+    assert.strictEqual(lostArrow.damage.length, 0, 'an arrow takes nothing from a target that left the view');
+    assert.strictEqual(lostArrow.actor.state.fetchHits(), false, 'the lost arrow still frees movement');
 
     const movingBow = fixture('Weapon.Bow', 600);
     movingBow.attack.meleeHit(movingBow.session, movingBow.target);

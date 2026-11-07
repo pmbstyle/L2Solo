@@ -11,10 +11,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const ColdNpcPlanningCatalog = require('../src/GameServer/Bot/Population/ColdNpcPlanningCatalog');
 const BotRoute = require('../src/GameServer/Bot/Population/BotRoute');
-const {
-    ColdSimulationCoordinator,
-    npcPlanningCatalogRows
-} = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+const { npcPlanningCatalogRows } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 
 DataCache.init();
 
@@ -98,7 +95,6 @@ try {
     };
     SpotProfiles.findForState = routeTargetForState;
 
-    const coordinator = new ColdSimulationCoordinator();
     const solo = routeFor({
         characterId: 1,
         phase: 'cold',
@@ -265,24 +261,23 @@ try {
         SpotService.findCurrentSpot = originalFindCurrentSpot;
     }
 
+    // A competition avoid only marks the spot (ColdCompetitionRetreat): the
+    // route the worker searches excludes it and moves the bot off it.
     const retreatAt = Date.now();
     const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
         spotId: currentSpot.id, loc: { locX: 1, locY: 2, locZ: 3 },
         stats: { coldCompetition: { avoid: { spotId: currentSpot.id, untilStep: 10 } } } };
-    SpotProfiles.ensure = () => [currentSpot, targetSpot];
     SpotProfiles.findForState = (state, options) => {
         assert(options.excludedSpotIds.has(currentSpot.id), 'voluntary avoidance reaches the real route selector');
         assert.strictEqual(options.timestamp, retreatAt);
         return targetSpot;
     };
-    const retreatRoute = coordinator.competitionActions.retreatRoute([retreatState], null, { spotId: currentSpot.id }, retreatAt);
-    assert.strictEqual(retreatRoute.cause, 'competition_avoid');
-    assert.strictEqual(retreatRoute.spotId, targetSpot.id);
+    const retreatRoute = routeFor(retreatState, currentSpot, null, [], [currentSpot, targetSpot], retreatAt);
+    assert.strictEqual(retreatRoute.spotId, targetSpot.id, 'the worker routes the avoiding bot off its spot');
     assert(!retreatRoute.spotBackoff, 'a social retreat does not invent PvE deaths or escalate their backoff');
     SpotProfiles.findForState = () => null;
-    assert.strictEqual(coordinator.competitionActions.retreatRoute([retreatState], null, { spotId: currentSpot.id }, retreatAt), null,
-        'no suitable destination means no invented successful retreat');
-    SpotProfiles.ensure = originalEnsure;
+    assert.strictEqual(routeFor(retreatState, currentSpot, null, [], [currentSpot, targetSpot], retreatAt), null,
+        'no suitable destination: the bot stays');
     SpotProfiles.findForState = routeTargetForState;
 
     const batchRouteFor = (characterId) => routeFor({
@@ -394,7 +389,7 @@ try {
             ...targetSpot, id: `evacuation-${i}`
         }));
         const outOfRange = Array.from({ length: 100 }, (_, i) => ({
-            ...targetSpot, id: `out-of-range-${i}`, minLevel: 70, maxLevel: 80
+            ...targetSpot, id: `out-of-range-${i}`, minLevel: 70, maxLevel: 80, avgLevel: 75, levelCounts: { 70: 4, 80: 4 }
         }));
         const catalog = [...outOfRange, ...alternatives];
         const evacuationState = {
@@ -453,8 +448,9 @@ try {
         const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
         const departing = require('../src/GameServer/Bot/Population/HuntingTravel').beginHuntingTrip(displacedMembers[1], repairedRoute, 1000);
         assert.strictEqual(departing.loc.locZ, 160, 'repair uses ordinary travel, not an instant move');
-        assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, 2000), null);
-        const arrived = Kernel.finishPartyRouteTravelState(departing, 1000 + repairedRoute.travelMs);
+        const arrivalAt = departing.stats.travel.arrivalAt;
+        assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, arrivalAt - 1), null);
+        const arrived = Kernel.finishPartyRouteTravelState(departing, arrivalAt);
         assert(SpotService.containsLocation(lair, arrived.loc));
         assert.strictEqual(arrived.spotId, lair.id);
         for (const patch of [{ phase: 'hot' }, { activity: 'resting' }, { stats: { pvpEncounter: { key: 'fighting' } } }]) {

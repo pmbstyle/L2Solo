@@ -91,7 +91,7 @@ async function main() {
             stats: {
                 objective: { clanId: 77, sourceKind: 'raid', raidBoss: true, spotId: 'raid:10029', minPartySize: 7 },
                 raidEncounter: { status: 'active' },
-                sessionExpiresAt: 1
+                sessionReview: { at: 0, nextAt: 1 }
             }
         };
         PartyState.active = () => [raidParty];

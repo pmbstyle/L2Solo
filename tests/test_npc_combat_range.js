@@ -8,6 +8,7 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const Formulas = invoke('GameServer/Formulas');
 const ConsoleText = invoke('GameServer/ConsoleText');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const World = invoke('GameServer/World/World');
 
@@ -94,6 +95,159 @@ function actorAt(x, id = 2000001, cp = 0) {
             setCombats() {}
         }
     };
+}
+
+// Drive native casts to impact without waiting; NPC hate, stats and system
+// packets remain real so a silent or harmless debuff cannot pass this check.
+{
+    const savedRandom = Math.random;
+    try {
+        for (const [id, level, stat, multiplier] of [[122, 1, 'pDef', 0.77], [115, 1, 'pAtk', 0.8], [115, 2, 'pAtk', 0.8], [115, 3, 'pAtk', 0.77]]) {
+            for (const resisted of [false, true]) {
+                const caster = Object.assign(actorAt(0), {
+                    mp: 1000,
+                    fetchName: () => 'Debuff Caster',
+                    fetchMp() { return this.mp; },
+                    setMp(value) { this.mp = value; },
+                    fetchCollectiveMAtk: () => 100,
+                    fetchCollectiveCastSpd: () => 333,
+                    fetchCollectiveAtkSpd: () => 333,
+                    backpack: {}
+                });
+                const castSession = { actor: caster, packets: [],
+                    dataSendToMe(packet) { this.packets.push(packet); },
+                    dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+                const mob = npcWithRange(40);
+                mob.setLevel(40);
+                mob.model.hostile = false;
+                const skill = new SkillModel({ selfId: id, level, name: id === 122 ? 'Hex' : 'Power Break',
+                    spell: true, distance: 600, mp: 18, hp: 0, itemId: 0, itemCount: 0 });
+                const cast = new Attack();
+                caster.attack = cast;
+                const callbacks = [];
+                cast.queueTimer = callback => callbacks.push(callback);
+                const messages = () => castSession.packets.filter(packet => packet[0] === 0x64);
+                const before = stat === 'pDef' ? mob.fetchCollectivePDef() : mob.fetchCollectivePAtk();
+                Math.random = () => resisted ? 0.999999 : 0;
+                try {
+                    cast.remoteHit(castSession, mob, skill);
+                    const used = messages().filter(packet => packet.readInt32LE(1) === 46);
+                    assert.strictEqual(used.length, 1, 'accepted player cast must announce its use once');
+                    assert.strictEqual(used[0].readInt32LE(5), 1, 'use message has one skill-name parameter');
+                    assert.strictEqual(used[0].readInt32LE(9), 4, 'use message carries a client skill name');
+                    assert.strictEqual(used[0].readInt32LE(13), id);
+                    assert.strictEqual(used[0].readInt32LE(17), level, 'C4 skill-name parameters include the skill level');
+                    assert.strictEqual(mob.state.fetchCombats(), false, 'cast acceptance alone must not provoke the mob');
+                    while (callbacks.length) callbacks.shift()();
+                    const after = stat === 'pDef' ? mob.fetchCollectivePDef() : mob.fetchCollectivePAtk();
+                    assert.strictEqual(after, resisted ? before : Math.round(before * multiplier));
+                    const effect = EffectStore.list(mob).find(entry => entry.id === id);
+                    assert.strictEqual(!!effect, !resisted, 'only landed debuffs change the monster');
+                    if (effect) assert(effect.expiresAt - Date.now() > 14000 && effect.expiresAt - Date.now() <= 15000);
+                    assert.strictEqual(mob.fetchHp(), 100, 'debuff hate must not invent HP damage');
+                    assert.strictEqual(mob.state.fetchCombats(), true, 'landed and resisted debuffs provoke a passive mob');
+                    assert.strictEqual(mob.fetchCombatTarget(), caster);
+                    assert.strictEqual(mob.getHating(caster), 1, 'a non-damaging hostile cast adds one engagement point');
+                    assert.deepStrictEqual(messages().map(packet => packet.readInt32LE(1)), resisted ? [46, 158] : [46]);
+                } finally {
+                    mob.destructor(castSession);
+                    cast.destructor();
+                    invoke('GameServer/Actor/CombatStance').clear(caster);
+                }
+            }
+        }
+        for (const id of [11, 15, 106, 263]) {
+            const caster = actorAt(0);
+            const mob = npcWithRange(40);
+            const quietSession = { actor: caster, dataSendToMe() {}, dataSendToMeAndOthers() {} };
+            const quietSkill = new SkillModel({ selfId: id, level: 1, power: 1, spell: true });
+            try {
+                SkillEffects.execute(quietSession, caster, mob, quietSkill, { rng: () => 1 });
+                assert.strictEqual(mob.state.fetchCombats(), false, 'hate removal and missed dagger blows must not start a fight');
+                assert.strictEqual(mob.fetchMostHated(), null);
+            } finally {
+                mob.destructor(quietSession);
+            }
+        }
+    } finally {
+        Math.random = savedRandom;
+    }
+}
+
+// The corpse selects the centre; each living victim must retaliate at
+// impact, before any poison tick and independently of its effect roll.
+{
+    const savedRandom = Math.random;
+    const savedRadiusLookup = World.fetchNpcsInRadius;
+    const savedUsers = World.user;
+    const data = require('../data/Skills/Active/active.json').find(entry => entry.selfId === 103);
+    try {
+        for (const resisted of [false, true]) {
+            const caster = Object.assign(actorAt(0), {
+                mp: 1000,
+                fetchLevel: () => 46,
+                fetchName: () => 'Corpse Plague Caster',
+                fetchMp() { return this.mp; },
+                setMp(value) { this.mp = value; },
+                fetchCollectiveMAtk: () => 100,
+                fetchCollectiveCastSpd: () => 333,
+                fetchCollectiveAtkSpd: () => 333,
+                backpack: {}
+            });
+            const castSession = { actor: caster, packets: [],
+                dataSendToMe(packet) { this.packets.push(packet); },
+                dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+            const mobs = [100, 150, 500, 501, 200].map((x, index) => {
+                const mob = npcWithRange(40);
+                mob.setId(900100 + index);
+                mob.setLocX(x);
+                mob.setLevel(46);
+                mob.model.hostile = false;
+                return mob;
+            });
+            const [corpse, nearby, boundary, outside, neutral] = mobs;
+            corpse.setHp(0);
+            corpse.state.setDead(true);
+            neutral.fetchAttackable = () => false;
+            const skill = new SkillModel({ selfId: 103, ...data.template, ...data.time, ...data.levels[0] });
+            const cast = new Attack();
+            caster.attack = cast;
+            const callbacks = [];
+            cast.queueTimer = callback => callbacks.push(callback);
+            World.user = { sessions: [castSession] };
+            World.fetchNpcsInRadius = (x, y, radius) => mobs.filter(mob =>
+                Math.hypot(mob.fetchLocX() - x, mob.fetchLocY() - y) <= radius);
+            Math.random = () => resisted ? 0.999999 : 0.25;
+            try {
+                cast.remoteHit(castSession, corpse, skill);
+                assert(mobs.every(mob => !mob.state.fetchCombats()), 'starting a cast must not provoke before impact');
+                while (callbacks.length) callbacks.shift()();
+                for (const victim of [nearby, boundary]) {
+                    assert.strictEqual(victim.state.fetchCombats(), true, 'Corpse Plague must provoke each living victim on impact, including a resisted poison');
+                    assert.strictEqual(victim.fetchCombatTarget(), caster);
+                    assert.strictEqual(victim.getHating(caster), 1, 'cast engagement must add hate without an invented damage hit');
+                    assert.strictEqual(victim.fetchHp(), 100, 'immediate engagement must not wait for or deal poison damage');
+                    assert.strictEqual(EffectStore.hasDebuff(victim, 'poison'), !resisted);
+                }
+                for (const ignored of [corpse, outside, neutral]) {
+                    assert.strictEqual(ignored.state.fetchCombats(), false, 'the corpse, non-attackable NPCs and mobs outside the area must stay passive');
+                    assert.strictEqual(EffectStore.hasDebuff(ignored, 'poison'), false);
+                }
+                assert.strictEqual(corpse.fetchHp(), 0);
+                assert.strictEqual(caster.mp, 1000 - skill.fetchConsumedMp());
+                const messages = castSession.packets.filter(packet => packet[0] === 0x64).map(packet => packet.readInt32LE(1));
+                assert.deepStrictEqual(messages, resisted ? [46, 158, 158] : [46]);
+            } finally {
+                mobs.forEach(mob => mob.destructor(castSession));
+                cast.destructor();
+                invoke('GameServer/Actor/CombatStance').clear(caster);
+            }
+        }
+    } finally {
+        Math.random = savedRandom;
+        World.fetchNpcsInRadius = savedRadiusLookup;
+        World.user = savedUsers;
+    }
 }
 
 const rangedNpc = npcWithRange(500);
@@ -233,6 +387,30 @@ Formulas.calcHitChance = () => false;
 meleeNpc.setCollectiveAtkSpd(999999);
 meleeNpc.meleeHit(session, meleeNpc, target);
 Formulas.calcHitChance = originalCalcHitChance;
+
+// A started monster swing reaches a target that stepped away, not one out of view.
+const originalTimeout = global.setTimeout;
+const swingTimers = [], victims = [];
+global.setTimeout = (callback) => { swingTimers.push(callback); return { unref() {} }; };
+const swinger = npcWithRange(40, 900003);
+const swingAt = (x) => {
+    let locX = 20;
+    const victim = { ...actorAt(20), fetchLocX: () => locX };
+    victims.push(victim);
+    Formulas.calcHitChance = () => true;
+    swingTimers.length = 0;
+    swinger.meleeHit(session, swinger, victim);
+    locX = x;
+    swingTimers[0]();
+    Formulas.calcHitChance = originalCalcHitChance;
+};
+swingAt(300);
+global.setTimeout = originalTimeout;
+assert(victims[0].fetchHp() < 1000, 'a monster swing lands on a target that stepped out of range');
+global.setTimeout = (callback) => { swingTimers.push(callback); return { unref() {} }; };
+swingAt(7000);
+global.setTimeout = originalTimeout;
+assert.strictEqual(victims[1].fetchHp(), 1000, 'a monster swing takes nothing from a target that left the view');
 
 const npcPhysicalSkill = new SkillModel({
     selfId: 4032,

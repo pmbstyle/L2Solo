@@ -1,6 +1,7 @@
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 
-const CHASE_BREAK_DISTANCE = 1500;
+const CHASE_BREAK_DISTANCE = DangerRule.CHASE_BREAK_DISTANCE;
 
 function movementSpeed(actor) {
     const walking = actor.state?.fetchWalkin?.() === true;
@@ -21,7 +22,7 @@ function assess(session, bot, threats) {
     for (const threat of threats) {
         if (threat.isDead?.() || threat.state?.fetchDead?.()) continue;
         const threatSpeed = movementSpeed(threat);
-        if (botSpeed !== null && threatSpeed !== null && botSpeed <= threatSpeed) {
+        if (botSpeed !== null && threatSpeed !== null && !DangerRule.outruns(botSpeed, threatSpeed)) {
             return { possible: false, reason: 'pursuer_too_fast', threat, botSpeed, threatSpeed };
         }
         const failed = session.retreatFailure;

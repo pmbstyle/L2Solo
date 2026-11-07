@@ -1,5 +1,6 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // The shared capture helper reads the optional main cold-build counter.
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('economy-thresholds');
@@ -25,9 +26,10 @@ function reserveInputs(state) {
     const stocks = ['shots', 'potions'].map(kind => {
         const stock = base.stock(kind);
         return { selfId: stock.itemId, perHour: stock.usePerHour,
-            held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: base.price(stock.itemId) };
+            held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.survivalPrice };
     });
-    const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.price(736),
+    // The kit at the merchant's price, the one the counter's survival tranche pays.
+    const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.stock('scrolls').survivalPrice,
         usable: !Karma.closesTowns(state.stats?.karma) };
     // A fractional hourly use is bought as whole units (24512a44): the survival
     // stock is ceil(use per hour), so both purchase tranches stay executable.
@@ -81,9 +83,9 @@ assert(nativeReserve && nativeReserve.stocks.length === 2);
 const workerReserve = nativeReserve.stocks.reduce((sum, row) =>
     sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0)
     + (nativeReserve.escape.usable ? Math.max(0, 1 - nativeReserve.escape.held) * nativeReserve.escape.unitPrice : 0);
-assert.strictEqual(reserveCapture.state.stats.money[2], Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
+assert.strictEqual(Packet.survivalReserve(reserveCapture.state.stats.money), Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
 console.log(JSON.stringify({ mainReserve: emptyKit.expected, nativeReserveInputs: nativeReserve, expectedWorkerReserve: workerReserve }));
-assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), reserveCapture.captured.statsPacket.money[2],
+assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), Packet.survivalReserve(reserveCapture.captured.statsPacket.money),
     'a reader uses the genuine saved worker reserve');
 const material = Data.items.find(row => Number(row.selfId) === 1864);
 assert(material, 'the declared sale stock has an authored C4 item');

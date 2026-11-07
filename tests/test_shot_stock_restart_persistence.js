@@ -62,9 +62,11 @@ function expectedStock(state, timestamp) {
         return belief ? Math.exp(belief.mu) : 0;
     };
     const rawUse = shotPlan.perAction > 0 ? Math.max(0, Number(withShots.shots) || 0) : 0;
-    const benefit = Math.max(0, 1 - Math.max(0, Number(withoutShots.exp) || 0)
-        / Math.max(1, Number(withShots.exp) || 0));
-    const hourAdena = Hunt.huntHour(hunt, state);
+    // The farm the shots give: the best spot with shots against the best without.
+    const benefit = Math.max(0, 1 - Math.max(0, Number(Table.best(tableRole, state.level, false)?.exp) || 0)
+        / Math.max(1, Number(Table.best(tableRole, state.level, true)?.exp) || 0));
+    // The hour before the shots it already paid at the shop price.
+    const hourAdena = Hunt.huntHour(hunt, state) + rawUse * Hunt.consumablePrices(state).shots;
     const costHours = rawUse * price(shotPlan.selfId) / hourAdena;
     const use = benefit >= costHours ? rawUse : 0;
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;

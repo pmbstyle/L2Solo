@@ -8,10 +8,8 @@ const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
-const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
-const SocialAggro = invoke('GameServer/Npc/SocialAggro');
 const NpcAggro = invoke('GameServer/Npc/NpcAggro');
-const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
@@ -242,7 +240,8 @@ function cancelForRevival(leaderSession) {
 
 function attackRange(actor, target) {
     const role = BotRoles.inferRole(actor);
-    const combat = BotCombatUtility.select(actor, target, role);
+    // The reach of a usable skill, not whether its MP pays now (T100 price).
+    const combat = BotCombatUtility.select(actor, target, role, { priceMana: false });
     const skillRange = Number(combat?.range);
     // This predicate decides whether normal combat may begin, rather than
     // whether its first selected skill can land in place.  A melee skill may
@@ -320,22 +319,16 @@ function partyReferenceLevel(leaderSession) {
     return levels[Math.floor((levels.length - 1) / 2)];
 }
 
-let pullJoiners = null;
-
 // The live idle mobs that come with the target, by the one pull rule of hot
 // and cold bots (BotPullEstimate), and the crowd standing at the target.
 function socialRisk(target) {
     const helpRadius = Math.max(0, Number(target.fetchClanHelpRadius?.()) || 0);
-    const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius, NpcAggro.AGGRO_RADIUS);
-    const nearby = World.fetchNpcsInRadius(target.fetchLocX(), target.fetchLocY(), radius)
-        .filter((npc) => npc !== target && !BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
-    pullJoiners = pullJoiners || BotPullEstimate.minionJoiners(MinionManager.groupsByBoss);
-    const socialAllies = BotPullEstimate.pullSize(BotPullEstimate.record(target), nearby.map(BotPullEstimate.record), {
-        assistZ: SocialAggro.MAX_ASSIST_Z_DIFFERENCE,
-        aggroRadius: NpcAggro.AGGRO_RADIUS,
-        aggroZ: NpcAggro.MAX_AGGRO_Z_DIFFERENCE
-    }, pullJoiners.get(Number(target.fetchSelfId?.() || 0))) - 1;
-    const crowd = nearby.filter((npc) => distance2d(point(target), point(npc)) <= PULL_SOCIAL_RISK_RADIUS).length;
+    const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius, NpcAggro.MAX_AGGRO_RADIUS);
+    const nearby = World.fetchNpcsInRadius(target.fetchLocX(), target.fetchLocY(), radius);
+    const pack = SpotService.idlePack(nearby);
+    const socialAllies = SpotService.livePull(target, pack) - 1;
+    const crowd = pack.records.filter((npc) => npc.id !== target.fetchId()
+        && distance2d(point(target), { locX: npc.x, locY: npc.y }) <= PULL_SOCIAL_RISK_RADIUS).length;
     return { socialAllies, crowd };
 }
 

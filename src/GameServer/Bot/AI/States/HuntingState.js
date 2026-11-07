@@ -1,3 +1,4 @@
+const FailureLog = require('../../../../FailureLog');
 const ActorQueries = require('../../../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const NpcObjectIndex = require('../../../World/NpcObjectIndex');
@@ -14,9 +15,12 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
+const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
+const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
+const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
 const DangerMoment    = invoke('GameServer/Bot/AI/DangerMoment');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -28,7 +32,7 @@ const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
-const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
+const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -41,12 +45,13 @@ const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const DecisionEvents = require('../DecisionEvents');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
+const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
-const EMERGENCY_RETREAT_DISTANCE = 850;
+const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
 const MAX_WALK_SPOT_DISTANCE = SpotService.MAX_WALK_SPOT_DISTANCE;
 const SPOT_ARRIVAL_RADIUS = 1000;
 const MAX_SPOT_RELOCATION_MS = 120000;
@@ -59,7 +64,8 @@ const SHOP_DEPARTURE_RADIUS = 900;
 function leaveShop(session, bot, now = Date.now()) {
     if (!isSoloHunter(session) || !session.pendingFarmDepartureAnnouncement || session.spotRelocation
         || BotTownTravel.hasCombatThreat(session, bot) || bot.state?.fetchCasts?.()) return false;
-    if (RestPolicy.needsRest(bot, bot.fetchHp?.() / bot.fetchMaxHp?.(), bot.fetchMp?.() / bot.fetchMaxMp?.())) return false;
+    if (RestPolicy.needsRest(bot, bot.fetchHp?.() / bot.fetchMaxHp?.(), bot.fetchMp?.() / bot.fetchMaxMp?.(),
+        { pet: SummonerTactics.petRestView(bot) })) return false;
     const point = botLocation(bot);
     const town = TownPathfinder.getTown(point);
     if (!town || SpotService.distance2d(point, town.center) <= SHOP_DEPARTURE_RADIUS) return false;
@@ -90,8 +96,9 @@ function isSoloHunter(session) {
 
 // When a solo hunter carries its bag to town: the cold rule
 // (ItemDisposition.inventoryCleanupNeed) on the live bag. The verdict is kept
-// until the bag, the life state, the level or the party changes, or the sell
-// pause ends, so a tick with nothing new costs a few comparisons.
+// until the bag, the life state, the level or the party changes, so a tick
+// with nothing new costs a few comparisons (a buyer of the goods the sale
+// retry holds is read at the next bag change).
 function sellTripDue(session, bot, now = Date.now()) {
     if (!isSoloHunter(session) || session.pendingTownTrip) return null;
     const items = bot.backpack?.fetchItems?.();
@@ -103,28 +110,30 @@ function sellTripDue(session, bot, now = Date.now()) {
     const last = session.sellTripCheck;
     if (last && last.items === items && last.count === items.length && last.life === life
         && last.revision === Number(bot.backpack.inventoryRevision || 0)
-        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq
-        && !(last.pauseEndsAt && now >= last.pauseEndsAt)) return last.need;
+        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq) return last.need;
     const state = MarketListingPolicy.actorState(session);
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
-    const pause = Number(state.stats?.marketSellRetryAfter || 0);
-    const need = forced || (activity?.activity === 'selling' && pause <= now
+    const need = forced || (activity?.activity === 'selling' && !ItemDisposition.saleRetryHolds(state)
         ? { reason: 'wish_funding', itemIds: activity.items } : null);
     session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
-        revision: Number(bot.backpack.inventoryRevision || 0),
-        pauseEndsAt: pause > now ? pause : 0, need };
+        revision: Number(bot.backpack.inventoryRevision || 0), need };
     return need;
 }
 
-// A sell trip starts the cold sell pause, as the cold visit does, so a bag the
-// town visit could not empty does not send the bot back on its next loot.
-function pauseSelling(session, now = Date.now()) {
+// A sell trip starts the sale retry, as the cold visit's end does, and the
+// visit's end (the departure to a spot) writes it again on what the bot could
+// not place (ItemDisposition.saleSeen): a bag the town could not empty does not
+// send the bot back on its next loot, only on goods or a buyer it has not tried.
+function pauseSelling(session, departing = false) {
     const life = session.coldLifeState;
-    if (!life) return;
-    const delay = invoke('GameServer/Bot/Economy/ColdMarketListingService').SELL_RETRY_DELAY_MS;
-    session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellRetryAfter: now + delay } };
+    // A departure after a buff, clan hall or buy-only visit tried no sale.
+    if (departing && !session.saleTrip) return;
+    session.saleTrip = !departing;
+    if (!life || !session.actor?.backpack?.fetchItems) return;
+    const seen = ItemDisposition.saleSeen(MarketListingPolicy.actorState(session));
+    session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellSeen: seen } };
     refreshPartyMemberships([session], invoke);
 }
 
@@ -193,6 +202,7 @@ function limitTargetCandidates(session, bot, candidates) {
         ? VISIBLE_TARGET_CANDIDATE_LIMIT
         : FULL_TARGET_CANDIDATE_LIMIT;
     if (candidates.length <= limit) return candidates;
+    Diagnostics.count('target_scan', 'capped', session.hotActorLod?.tier === 'visible' ? 'visible' : 'full');
     return candidates
         .map((npc) => ({ npc, distance: targetDistance(bot, npc) }))
         .sort((first, second) => first.distance - second.distance)
@@ -222,9 +232,13 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         .filter((npc) => BotHuntingTargetPolicy.canHunt(npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
+    // The bot stands before each mob and its pack: this scan's idle mobs are all a pull can bring.
+    const pack = SpotService.idlePack(allNearbyNpcs);
     const claimedIds = options.claimedIds || claimedTargetIds(session);
-    const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
-    const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot)).split(':')[0];
+    // The spot a point is part of (its cell piece and floor, T123), else its cell.
+    const spotIdAt = (actor, spot = SpotService.findCurrentSpot(botLocation(actor))) => spot?.id
+        || `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
+    const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot));
     const partyActors = session.followPlayerSession || session.hotBackgroundPartyId
         ? PartyAwareness.partyActors(session.followPlayerSession || session) : [];
     const matchupProfiles = TargetMatchup.actorProfiles(partyActors.length ? partyActors : [bot]);
@@ -242,12 +256,14 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             const claimed = claimedIds.has(Number(npc.fetchId()));
             const npcSpotId = spotIdAt(npc);
             // The target's helpers, aggressive neighbours and minions come with it.
-            const pull = SpotService.pullSizeFor(npc);
+            const pull = SpotService.livePull(npc, pack);
             const matchupTarget = TargetMatchup.targetView(npc, matchupStats);
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
-                const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, BotPullEstimate.pullView(matchupTarget, pull));
+                const canHunt = TargetMatchup.pullVerdict(matchupProfiles, matchupTarget, pull);
                 Object.assign(targetMatchup, canHunt);
+                // hot_pull:refused: the pulls a hot hunter turns down, by what stood before it (the cold pick's no_safe_solo_target).
+                if (!canHunt.eligible) Diagnostics.count('hot_pull', 'refused', pull > 1 ? 'pack' : 'lone');
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
@@ -281,8 +297,9 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             return {
                 npc,
                 evaluation: BotTargetScorer.score(scoreContext),
-                readiness: options.readyOnly ? encounterReadiness(bot, npc) : null,
                 scoreContext,
+                matchupTarget,
+                pull,
                 claimed
             };
         })
@@ -309,10 +326,12 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     }
     // Prefer a fight we can finish, but retain a visible unready candidate
     // so the caller can recover instead of wandering while exhausted.
-    const ordered = options.readyOnly
-        ? [...ranked.filter(candidate => candidate.readiness.ready), ...ranked.filter(candidate => !candidate.readiness.ready)]
-        : ranked;
-    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
+    // A solo scan's matchup is the bot's own: readiness reads the same profiles and views.
+    const ready = options.readyOnly ? readyRanked(bot, ranked, HuntingVisibility.batch(session, 'solo', bot),
+        partyActors.length ? readinessProfiles(bot) : readinessProfiles(bot, matchupProfiles, matchupStats), !partyActors.length) : null;
+    const ordered = ready ? ready.ordered : ranked;
+    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc,
+        ready ? { start: ready.start, tail: ready.tail } : {});
     session.huntTargetScanPending = scan.pending;
     session.huntingTargetScan = { at: Date.now(), loc: botLocation(bot), radius,
         attackableNpcs: eligibleNearbyNpcs.length, eligibleAttackableNpcs: ranked.length };
@@ -326,6 +345,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     session.lastTargetEvaluation = selected ? {
         targetId: selected.npc.fetchId(),
         targetName: selected.npc.fetchName(),
+        // The mobs that come with it (SpotService.livePull): its readiness reads them until the fight.
+        pull: selected.pull,
         score: selected.evaluation.score,
         reasons: selected.evaluation.reasons,
         at: Date.now()
@@ -350,11 +371,53 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
     return targetDistance(bot, target) <= radius ? target : null;
 }
 
-function encounterReadiness(bot, target) {
-    return EncounterReadiness.evaluate({
-        hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp(),
-        level: bot.fetchLevel(), manaDependent: BotRoles.shouldRestForMana(bot)
-    }, { hp: target?.fetchHp?.(), maxHp: target?.fetchMaxHp?.(), level: target?.fetchLevel?.() });
+// What the bot has now, once per scan; a pet keeps its own HP (actorProfiles).
+function readinessProfiles(bot, profiles = TargetMatchup.actorProfiles([bot]), stats = TargetMatchup.profileStats(profiles)) {
+    return { stats, remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
+        profiles.find(profile => profile.servitor === true)) };
+}
+// The fight the bot would take as it stands: the mob with the pull that comes
+// with it (SpotService.livePull, the size pullVerdict judged; a cold fight's
+// readiness judges its rolled pull the same way, BackgroundResolver.resolveFight),
+// a wounded mob with what is left of it.
+// view: the scan's own view of the target, when it was read with these stats.
+function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats), pull = 1) {
+    const fight = BotPullEstimate.pullView(view, pull);
+    return EncounterReadiness.evaluate(own.remaining, { ...fight, maxHp: fight.maxHp - view.maxHp + (target.fetchHp?.() ?? view.maxHp) });
+}
+// The scan's fights, ready ones first, and where the next visibility batch starts
+// in that order. The batch resumes where a blocked one stopped (batch.resumeId).
+// Before the refused tail: at that mob among the ready ones, or, when it is no
+// longer ready, at the first ready mob ranked after it, else at the first refused
+// one. Readiness is read up to the batch's checks and the one after it (the next
+// resume point); the fights past it stay unread between the ready and the refused,
+// so a blocked batch leaves the scan pending and the next tick reads on. Once the
+// batches reached the refused tail (batch.inTail) every fight is read and the batch
+// goes on at the resume mob's place among the refused, so the ready ones already
+// checked are not checked again and the scan ends. tail: where the refused start.
+function readyRanked(bot, ranked, batch, own, sameView = false) {
+    const resumeAt = batch.resumeId === null ? -1 : ranked.findIndex(candidate => candidate.npc.fetchId() === batch.resumeId);
+    const ready = [], refused = [], all = batch.inTail && resumeAt >= 0;
+    let start = resumeAt < 0 ? 0 : null, index = 0;
+    for (; index < ranked.length && (all || !(start !== null && ready.length > start + batch.checks)); index++) {
+        const candidate = ranked[index];
+        candidate.readiness = encounterReadiness(bot, candidate.npc, own, sameView ? candidate.matchupTarget : undefined, candidate.pull);
+        if (!candidate.readiness.ready) { refused.push(candidate); continue; }
+        ready.push(candidate);
+        if (!all && start === null && index >= resumeAt) start = ready.length - 1;
+    }
+    if (all) start = ready.length + Math.max(0, refused.indexOf(ranked[resumeAt]));
+    const unread = ranked.slice(index);
+    return { ordered: [...ready, ...unread, ...refused], start: start ?? ready.length, tail: ready.length + unread.length };
+}
+
+// The pull of the bot's target: the one the scan that chose it counted, else
+// the mobs around it now (the scan's own count, SpotService.livePull).
+function targetPull(session, npc) {
+    const scanned = session.lastTargetEvaluation;
+    if (scanned && Number(scanned.targetId) === Number(npc.fetchId()) && scanned.pull > 0) return scanned.pull;
+    return SpotService.livePull(npc, SpotService.idlePack(World.fetchNpcsInRadius(npc.fetchLocX(), npc.fetchLocY(),
+        LOCAL_TARGET_SEARCH_RADIUS)));
 }
 
 function rememberEncounterReadiness(session, target, readiness) {
@@ -365,7 +428,12 @@ function rememberEncounterReadiness(session, target, readiness) {
     };
 }
 
+// readiness: the refused fight's. A bot it refused at its rested line rests to
+// a full bar (session.restWhole, RestPolicy.restOver; the next hunting tick
+// drops it), else it would stand, be refused and sit again every tick.
 function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
+    session.restWhole = false;
+    session.restWhole = !!readiness && RestingState.rested(session, bot);
     if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
     TownNpcApproach.reset(session);
     session.lastTargetEvaluation = undefined;
@@ -407,7 +475,8 @@ function currentHuntingGround(session, bot) {
         if (physical) return physical;
         if (session.currentSpot?.id) return SpotService.findById(session.currentSpot.id) || session.currentSpot;
         return session.currentSpot || null;
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('ai.hunting_ground', error);
         return session.currentSpot || null;
     }
 }
@@ -512,6 +581,7 @@ function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = nul
 
     const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
     delete session.pendingFarmDepartureAnnouncement;
+    if (finishedTownErrands && isSoloHunter(session)) pauseSelling(session, true);
     const destinationName = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot });
     TownChatter.say(session, BotAI, finishedTownErrands ? 'town-to-farm' : 'farm-relocation', finishedTownErrands
             ? Speech.lines('town.town-to-farm', { place: destinationName })
@@ -579,7 +649,7 @@ function clearTarget(session, bot, targetId, retryCooldown = false) {
 // Low MP sends only a bot that rests for mana away from a fight; a melee
 // bot keeps swinging, as it keeps hunting with low MP.
 function needsEmergencyRetreat(bot) {
-    return RestPolicy.needsRest(bot,
+    return RestPolicy.needsRetreat(bot,
         bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
         bot.fetchMp() / Math.max(1, bot.fetchMaxMp()));
 }
@@ -626,10 +696,13 @@ module.exports = {
     sellTripDue,
     pauseSelling,
     findPreferredMonster,
+    readinessProfiles,
     limitTargetCandidates,
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
         session.deferredOccupation = null;
+        // A rest's full bar lives while the bot rests (beginVoluntaryRecovery).
+        if (session.restWhole) session.restWhole = false;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
@@ -648,8 +721,7 @@ module.exports = {
             // the sale retry, so a bag that sold nothing heavy hunts on at penalty 1.
             // A trip deferred by a fight comes back every tick: the retry it
             // already started stays, the trip itself waits in pendingTownTrip.
-            const retry = Number(session.coldLifeState?.stats?.marketSellRetryAfter || 0);
-            if (!(retry > Date.now())) pauseSelling(session);
+            if (!ItemDisposition.saleRetryHolds(MarketListingPolicy.actorState(session))) pauseSelling(session);
             const trip = startShopping(session, bot, BotAI, `Inventory ${floor.reason}. Heading to town.`);
             if (trip !== 'deferred') return;
         }
@@ -704,7 +776,9 @@ module.exports = {
                 const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
                 if (amount > 0 && invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
                     { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
-                        amount, town: leaf.town, valueHours: leaf.valueHours,
+                        amount, town: leaf.town, valueHours: leaf.valueHours, required: leaf.required === true,
+                        // The root's whole need still to buy: a part fill weighs its road as the visit does.
+                        wanted: amount + Math.max(0, Number(leaf.wanted || 0) - Number(leaf.amount || 0)),
                         ...(!/^stock:/.test(String(leaf.rootKey)) && leaf.r > 0 ? { r: leaf.r } : {}) }, { economy })) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
                     if (trip !== 'deferred' && trip !== false) return;
@@ -885,7 +959,17 @@ module.exports = {
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
-        if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
+        // Between fights a solo bot heals itself where that beats sitting (T107).
+        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+            && SoloSelfHeal.tryBetweenFights(session, bot, Generics)) return;
+        // A summoner keeps its pet alive between fights too (PetHealRule), solo or in a party.
+        if (!encounterActionInFlight && !session.currentTargetId
+            && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return;
+        // Then a healing potion where the rest it saves pays for it (RestPotion, T141).
+        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+            && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
+        // A pet it cannot heal now sends it to rest as its own HP would (RestPolicy).
+        if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio, { pet: SummonerTactics.petRestView(bot) })) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;
         }
@@ -973,6 +1057,13 @@ module.exports = {
                 beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
                 return;
             }
+            // Its ground admits it once its pet is up or whole (BotDecisionService): it
+            // raises the pet out of the fight, or sits for the MP or the pet's HP.
+            if (decision.action === 'summon' && SummonerTactics.raisePet(session, bot, Generics)) return;
+            if (decision.action === 'rest' && decision.reason === 'ground_needs_rest') {
+                beginVoluntaryRecovery(session, bot, BotAI);
+                return;
+            }
         }
 
         // 5. Hunt/Attack Combat execution
@@ -1020,7 +1111,7 @@ module.exports = {
                         }
                         if (isSoloHunter(session) && !npcAggroedOnBot &&
                             !bot.state.fetchTowards() && !bot.state.fetchHits() && !bot.state.fetchCasts()) {
-                            const readiness = encounterReadiness(bot, npc);
+                            const readiness = encounterReadiness(bot, npc, undefined, undefined, targetPull(session, npc));
                             rememberEncounterReadiness(session, npc, readiness);
                             if (!readiness.ready) {
                                 beginVoluntaryRecovery(session, bot, BotAI, readiness);

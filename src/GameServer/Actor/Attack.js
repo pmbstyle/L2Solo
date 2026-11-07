@@ -1,3 +1,5 @@
+'use strict';
+
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
@@ -5,6 +7,8 @@ const Formulas       = invoke('GameServer/Formulas');
 const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
+const HitRules       = invoke('GameServer/Combat/HitRules');
+const CombatantView  = invoke('GameServer/Combat/CombatantView');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
@@ -17,7 +21,14 @@ const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
 
 const { weaponMaskFor } = invoke('GameServer/Skills/WeaponMask');
 
+// Melee swings kept on a target that left the attack range during the draw.
+let keptSwings = 0;
+
 class Attack {
+    static keptSwings() {
+        return keptSwings;
+    }
+
     constructor() {
         this.timers = new Set();
         this.bowReloading = false;
@@ -157,11 +168,10 @@ class Attack {
 
         const attackSpeed = actor.fetchCollectiveAtkSpd();
         const weapon = actor.backpack?.fetchEquippedWeapon?.();
-        const timing = rangedAttack
-            ? Formulas.calcBowAttackTimes(attackSpeed, weapon?.fetchAttackReuseDelay?.() ?? 1500,
-                EffectStats.multiplier(actor, 'atkReuseMul'))
-            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
-                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack,
+            reuseDelay: weapon?.fetchAttackReuseDelay?.() ?? 1500,
+            // Only a bow's cycle reads its reuse (Formulas.attackTimes).
+            reuseMul: rangedAttack ? EffectStats.multiplier(actor, 'atkReuseMul') : 1 });
         const movementGeneration = Number(session.moveRouteGeneration || 0);
         this.repeatTarget = null;
         if (rangedAttack) this.bowReloading = true;
@@ -196,6 +206,8 @@ class Attack {
             }))
         }), actor);
         actor.state.setHits(true);
+        // C4 flags at the swing, before it is known to land.
+        invoke('GameServer/Actor/PvpFlag').attack(session, actor, creature);
 
         this.queueTimer(() => {
             const releaseBowMovement = () => {
@@ -230,9 +242,10 @@ class Attack {
                 const target = entry.target;
                 if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
                 if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
-                // Check every melee victim again at impact, including polearm
-                // secondary targets. Already-launched arrows keep travelling.
-                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) return;
+                // A target that stepped away still takes a started swing or a
+                // launched arrow, polearm secondary targets too; one out of view does not.
+                if (AttackRange.lostFromView(actor, target)) return;
+                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) keptSwings += 1;
                 if (!invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty)) return;
 
                 if (!entry.hitLanded || entry.hit.damage <= 0) this.recordPlayerAggression(session, actor, target);
@@ -298,15 +311,17 @@ class Attack {
         if (session?.pvpHandoffPending) return;
         const actor = session.actor;
         const raidParty = invoke('GameServer/Clan/ClanRaidRoster').offensiveParty(session);
-        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
-            .includes(skill.fetchTargetKind?.());
+        const targetKind = skill.fetchTargetKind?.();
+        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally'].includes(targetKind);
 
-        if (this.blockedPvpDefense(session, actor, creature, skill) || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+        if (this.blockedPvpDefense(session, actor, creature, skill)
+            || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'invalid_target');
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'invalid_target');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
+        if (!this.validateSkillTarget(session, actor, creature, skill)) return;
 
         if (actor.canUseSkill?.(skill) === false) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'reuse');
@@ -372,6 +387,11 @@ class Attack {
         if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, creature);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
+        if (!actor.fetchKind) {
+            ConsoleText.transmit(session, ConsoleText.caption.used, [{
+                kind: ConsoleText.kind.skil, value: skill.fetchSelfId(), level: skill.fetchLevel()
+            }]);
+        }
         actor.state.setCasts(true);
         invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'accepted', 'native_cast');
         // Tactical readers need the accepted cast, not skill availability:
@@ -512,7 +532,11 @@ class Attack {
     applyRemoteCastEffect(session, actor, target, skill, { corpseAreaCast, raidParty, shotState, magicSkill, selfEffectOnly, castWeapon, openingPayment }) {
         if ((skill.fetchTargetKind?.() === 'enemy' || corpseAreaCast)
             && !invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty, openingPayment)) return;
-        if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target);
+        if (skill.fetchTargetKind?.() === 'enemy') {
+            invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target);
+            // C4 flags at an offensive skill's landing, resisted or not.
+            invoke('GameServer/Actor/PvpFlag').attack(session, actor, target);
+        }
         this.restoreShotState(actor, shotState);
         const outcome = SkillEffects.execute(session, actor, target, skill, {
             attack: this,
@@ -521,8 +545,7 @@ class Attack {
             chargeCount: actor.activeSkillChargeCount
         });
         // A hostile control/debuff is aggression even without HP
-        // damage (and even if resisted). Use the same flag and party
-        // wake path as a hit, after native target/cast validation.
+        // damage (and even if resisted): the same party wake as a hit.
         if (!(outcome.damage > 0) && skill.fetchTargetKind?.() === 'enemy') this.recordPlayerAggression(session, actor, target);
         // Chat confirmations are emitted only after the authoritative
         // skill result exists. A queued, interrupted, resisted, or
@@ -530,7 +553,7 @@ class Attack {
         invoke('GameServer/Bot/AI/BotPartyChat').confirmSkillResult(session, actor, target, skill, outcome);
         invoke('GameServer/Bot/AI/BotActionFeedback').result(session, actor, target, skill, outcome);
         if (outcome?.applied && session?.accountId?.startsWith?.('bot_') && target?.session?.accountId && !target.session.accountId.startsWith('bot_')) {
-            Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            invoke('GameServer/Bot/AI/BotEventJournal').record({
                 playerId: target.session.actor?.fetchId?.(),
                 botId: actor.fetchId?.(),
                 eventType: 'support_result',
@@ -539,11 +562,11 @@ class Attack {
                 dedupeKey: `support:${actor.fetchId?.()}:${target.fetchId?.()}:${skill.fetchSelfId?.()}`,
                 coalesceWindowMs: 5000,
                 meta: { skillId: skill.fetchSelfId?.(), outcome: outcome.type || null }
-            })).catch(() => {});
+            });
         }
 
         if (outcome.damage > 0) {
-            this.hit(session, actor, target, outcome.damage, { skill });
+            this.hit(session, actor, target, outcome.damage, { skill, npcAttacked: outcome.npcAttacked });
             if (outcome.forceLethalVitals && target.fetchHp?.() > 0) {
                 target.setHp?.(1);
                 target.setCp?.(1);
@@ -819,9 +842,34 @@ class Attack {
         return this.isValidSkillTarget(target, skill, actor);
     }
 
+    // Lisvus rejects restricted single targets before approach and casting.
+    // Auras instead use the caster as centre and filter their affected targets.
+    validateSkillTarget(session, actor, target, skill) {
+        const semantic = skill.fetchSemantic?.();
+        const restricted = skill.fetchTargetKind?.() === 'corpse_player'
+            || (semantic?.undeadOnly && semantic.sourceTarget !== 'aura');
+        if (!restricted || this.isValidSkillTarget(target, skill, actor)) return true;
+        ConsoleText.transmit(session, ConsoleText.caption.incorrectTarget);
+        session.dataSendToMe(ServerResponse.actionFailed());
+        invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, target, skill, 'rejected', 'invalid_target');
+        invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, target, skill, 'invalid_target');
+        invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, target, skill);
+        return false;
+    }
+
     isValidSkillTarget(target, skill, actor = null) {
         if (!target) return false;
         const targetKind = skill.fetchTargetKind?.();
+
+        const semantic = skill.fetchSemantic?.();
+        if (semantic?.undeadOnly) {
+            if (target.fetchUndead?.() !== true) return false;
+            // TARGET_UNDEAD permits undead NPCs and summons. Auras also
+            // require the ordinary enemy eligibility checked below.
+            if (semantic.sourceTarget !== 'aura') {
+                return target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+            }
+        }
 
         if (targetKind === 'corpse_mob') {
             return target.fetchAttackable?.() === true && target.isDead?.() === true;
@@ -1062,86 +1110,66 @@ class Attack {
     }
 
     prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random, magicAtkOverride = null) {
+        const semantic = skill.fetchSemantic?.() || {};
         if (magicSkill) {
             const usedSpiritshot = !!actor.spiritshotLoaded;
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
-            const semantic = skill.fetchSemantic?.() || {};
-            const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const magicCriticalRate = Formulas.magicCriticalRate({
-                multiplier: EffectStats.multiplier(actor, 'mCritRateMul'),
-                add: EffectStats.add(actor, 'mCritRateAdd'),
-                wit: actor.fetchCollectiveWit?.(),
-                weapon: !!actor.backpack?.fetchEquippedWeapon?.()
+            const attacker = CombatantView.view({
+                mAtk: magicAtkOverride ?? actor.fetchCollectiveMAtk(),
+                mCritRate: Formulas.magicCriticalRate({
+                    multiplier: EffectStats.multiplier(actor, 'mCritRateMul'),
+                    add: EffectStats.add(actor, 'mCritRateAdd'),
+                    wit: actor.fetchCollectiveWit?.(),
+                    weapon: !!actor.backpack?.fetchEquippedWeapon?.()
+                })
             });
-            const magicCritical = Formulas.rollCritical(magicCriticalRate, rng);
-            const power = semantic.skillType === C4SkillRules.DEATH_LINK
-                ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
-                : skill.fetchPower();
-            const damage = Math.round(Formulas.calcMagicDamage(
-                magicAtkOverride ?? actor.fetchCollectiveMAtk(),
-                power,
-                creature.fetchCollectiveMDef(),
-                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot, magicCritical }
-            ) * vulnModifier * WeaponSA.pvpMultiplier(actor, creature, 'magic'));
+            const power = HitRules.skillPower(semantic, skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.());
+            const { damage } = HitRules.magicSkill(attacker, CombatantView.view({ mDef: creature.fetchCollectiveMDef() }), {
+                power, spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot,
+                modifier: hitModifier(actor, creature, { magic: true, trait: semantic.trait }) * WeaponSA.pvpMultiplier(actor, creature, 'magic')
+            }, rng);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
         }
 
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(creature),
-            dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isShieldFacing(creature, actor),
-            bow: this.isBowAttack(actor)
-        }, rng);
-
-        if (shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK) {
-            this.clearLoadedShot(actor, magicSkill);
-            return 1;
-        }
-
-        const usedSoulshot = !!actor.soulshotLoaded;
-        const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
-        const semantic = skill.fetchSemantic?.() || {};
         const position = this.targetPosition(actor, creature);
-        const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: semantic.trait === 'bow' || this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor),
-            dagger: semantic.trait === 'dagger' || this.isDaggerAttack(actor)
+        // Only a skill with a critical rate reads STR (physicalSkillCritRate).
+        const str = Number(semantic.baseCritRate) > 0
+            ? ((Number(actor?.fetchStr?.()) || 1) + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul') : 1;
+        const attacker = CombatantView.view({
+            pAtk: actor.fetchCollectivePAtk(),
+            pAtkRnd: actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0,
+            critDamageMul: EffectStats.multiplier(actor, 'pCritDamageMul')
+                * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+            critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
+            str
         });
-        const damageFormula = semantic.skillType === C4SkillRules.BLOW
-            ? Formulas.calcBlowDamage.bind(Formulas)
-            : Formulas.calcPhysicalDamage.bind(Formulas);
-        const power = semantic.skillType === C4SkillRules.FATAL
-            ? Formulas.calcFatalPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
-            : skill.fetchPower();
-        let damage = Math.round(damageFormula(
-            actor.fetchCollectivePAtk(),
-            weaponPAtkRnd,
-            creature.fetchCollectivePDef() + shieldPDef,
+        const power = HitRules.skillPower(semantic, skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.());
+        const { damage } = HitRules.physicalSkill(attacker, this.defenderView(creature), {
             power,
-            {
-                soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
-                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
-                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
-                rng
-            }
-        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'skill'));
-        if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
+            blow: semantic.skillType === C4SkillRules.BLOW,
+            soulshot: !!actor.soulshotLoaded,
+            facing: this.isShieldFacing(creature, actor),
+            bow: this.isBowAttack(actor),
+            skillCritRate: HitRules.physicalSkillCritRate(semantic, attacker.str),
+            modifier: hitModifier(actor, creature, { skill: true, trait: semantic.trait })
+                * WeaponSA.pvpMultiplier(actor, creature, 'skill')
+        }, rng);
         this.clearLoadedShot(actor, magicSkill);
         return damage;
     }
 
-    rollPhysicalSkillCritical(actor, semantic, rng = Math.random) {
-        const baseCritRate = Number(semantic?.baseCritRate) || 0;
-        if (baseCritRate <= 0) return false;
-
-        const baseStr = Number(actor?.fetchStr?.()) || 1;
-        const effectiveStr = Math.max(1, Math.round(
-            (baseStr + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
-        ));
-        return Formulas.rollCritical(baseCritRate * 10 * Formulas.calcBaseMod.STR(effectiveStr), rng);
+    // The defender's side of a hit (CombatantView): its defences and shield.
+    // Without a shield rate no block succeeds (Formulas.rollShieldUse), so its
+    // P.Def is not read.
+    defenderView(creature) {
+        const shieldRate = this.fetchShieldRate(creature);
+        return CombatantView.view({
+            pDef: creature.fetchCollectivePDef(),
+            shieldPDef: shieldRate > 0 ? this.fetchShieldPDef(creature) : 0,
+            shieldRate,
+            dex: creature.fetchDex ? creature.fetchDex() : 0
+        });
     }
 
     clearLoadedShot(actor, magicSkill) {
@@ -1160,42 +1188,31 @@ class Attack {
             };
         }
 
-        const pAtk  = actor.fetchCollectivePAtk();
-        const pRand = actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0;
-        const shieldPDef = this.fetchShieldPDef(creature);
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(creature),
-            dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isShieldFacing(creature, actor),
-            bow: this.isBowAttack(actor)
-        }, rng);
-        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
-        const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const position = this.targetPosition(actor, creature);
-        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
-        const anger = critical && shield !== Formulas.SHIELD_DEFENSE_PERFECT_BLOCK ? WeaponSA.criticalAnger(actor) : 0;
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor)
+        const attacker = CombatantView.view({
+            pAtk: actor.fetchCollectivePAtk(),
+            pAtkRnd: actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0,
+            critRate: this.fetchSituationalCriticalRate(actor, creature),
+            critDamageMul: EffectStats.multiplier(actor, 'pCritDamageMul')
+                * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+            critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
         });
-        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
-            ? 1
-            : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
-                critical,
-                soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
-                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
-                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd') + anger
-            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'melee'));
+        const hit = HitRules.melee(attacker, this.defenderView(creature), {
+            soulshot: usedSoulshot,
+            facing: this.isShieldFacing(creature, actor),
+            bow: this.isBowAttack(actor),
+            anger: () => WeaponSA.criticalAnger(actor),
+            modifier: hitModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'melee')
+        }, rng);
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
-        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
-        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+        if (hit.critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (hit.shield > Formulas.SHIELD_DEFENSE_FAILED) flags |= ServerResponse.attack.HITFLAG_SHLD;
 
         return {
-            damage,
+            damage: hit.damage,
             flags,
-            anger: !!anger
+            anger: hit.anger
         };
     }
 
@@ -1207,38 +1224,28 @@ class Attack {
             };
         }
 
-        const shieldPDef = this.fetchShieldPDef(dst);
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(dst),
-            dex: dst.fetchDex ? dst.fetchDex() : 0,
-            facing: this.isShieldFacing(dst, src),
-            bow: this.isBowAttack(src)
-        }, rng);
-        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
-        const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
-        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(src, dst), rng);
-        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, {
-            bow: this.isBowAttack(src),
-            blunt: this.isBluntAttack(src)
+        const attacker = CombatantView.view({
+            pAtk: src.fetchCollectivePAtk(),
+            critRate: this.fetchSituationalCriticalRate(src, dst),
+            critDamageMul: EffectStats.multiplier(src, 'pCritDamageMul'),
+            critDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
         });
-        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
-            ? 1
-            : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
-                critical,
-                soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
-                criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
-                criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
-            }) * weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst));
+        const hit = HitRules.melee(attacker, this.defenderView(dst), {
+            soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
+            facing: this.isShieldFacing(dst, src),
+            bow: this.isBowAttack(src),
+            modifier: hitModifier(src, dst)
+        }, rng);
         let flags = 0;
         if (src.fetchIsPet?.() === true && src.soulshotLoaded) {
             flags |= ServerResponse.attack.HITFLAG_USESS;
             src.soulshotLoaded = false;
         }
 
-        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
-        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+        if (hit.critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (hit.shield > Formulas.SHIELD_DEFENSE_FAILED) flags |= ServerResponse.attack.HITFLAG_SHLD;
 
-        return { damage, flags };
+        return { damage: hit.damage, flags };
     }
 
     fetchShieldPDef(creature) {
@@ -1286,23 +1293,11 @@ class Attack {
     }
 
     isBowAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Bow';
-    }
-
-    isBluntAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
-    }
-
-    isDaggerAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Knife';
+        return attackKind(creature) === 'Weapon.Bow';
     }
 
     isPolearmAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Pole';
+        return attackKind(creature) === 'Weapon.Pole';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -1321,13 +1316,8 @@ class Attack {
     applyDamageAbsorb(session, actor, damage) {
         if (this.isBowAttack(actor) || actor.fetchHp?.() <= 0 || actor.state?.fetchDead?.()) return 0;
 
-        const absorbPercent = EffectStats.add(actor, 'absorbDam');
-        if (absorbPercent <= 0) return 0;
-
-        const maxHp = Number(actor.fetchMaxHp?.()) || 0;
         const currentHp = Number(actor.fetchHp?.()) || 0;
-        const maxCanAbsorb = Math.max(0, maxHp - currentHp);
-        const absorbDamage = Math.min(maxCanAbsorb, Math.floor(absorbPercent / 100 * (Number(damage) || 0)));
+        const absorbDamage = HitRules.absorbedHp(EffectStats.add(actor, 'absorbDam'), damage, currentHp, Number(actor.fetchMaxHp?.()) || 0);
         if (absorbDamage <= 0) return 0;
 
         actor.setHp(currentHp + absorbDamage);
@@ -1418,16 +1408,12 @@ class Attack {
         return true;
     }
 
+    // A miss or a harmless hostile skill on a character still wakes its
+    // party (a landed hit does it in ReceivedHit). The flag is PvpFlag.attack.
     recordPlayerAggression(session, actor, target) {
-        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
-        const attacker = Threats.character(actor);
-        const attackerSession = attacker === actor ? session : attacker?.session;
-        if (attacker && attackerSession && target && !target.fetchKind && attacker !== target &&
-            Threats.record(target, actor)) {
-            invoke('GameServer/Actor/PvpFlag').mark(attackerSession, attacker);
-            return true;
-        }
-        return false;
+        const attacker = invoke('GameServer/Bot/AI/BotPvpThreats').character(actor);
+        return !!(attacker && target && !target.fetchKind && attacker !== target &&
+            invoke('GameServer/Bot/AI/BotPvpThreats').record(target, actor));
     }
 
     hit(session, actor, creature, hit, context = {}) {
@@ -1455,9 +1441,6 @@ class Attack {
                 return;
             }
 
-            // Flag the attacker when hitting another player/bot
-            invoke('GameServer/Actor/PvpFlag').mark(session, actor);
-
             invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
         }
         else {
@@ -1472,8 +1455,13 @@ class Attack {
         }
     }
 
+    // C4 (Lisvus L2Character.breakCast): damage breaks only a magic cast.
+    // Physical skills and item casts such as Scroll of Escape, resurrection
+    // scrolls and Sowing (not spells) are not interrupted by hits.
     tryBreakCast(creature, damage, rng = Math.random) {
         if (!creature?.state?.fetchCasts?.()) return false;
+        const cast = creature.attack?.activeCast;
+        if (!cast?.skill || !this.isMagicSkill(cast.skill)) return false;
         const chance = Formulas.calcCastBreakChance({
             damage,
             men: creature.fetchMen?.(),
@@ -1485,8 +1473,7 @@ class Attack {
 
     applyReflectedDamage(session, actor, creature, hit) {
         if (!actor || actor === creature || actor.isDead?.() || creature?.isDead?.()) return;
-        const reflectPercent = Math.max(0, Number(EffectStats.add(creature, 'reflectDam')) || 0);
-        const reflected = Math.floor(Math.max(0, Number(hit) || 0) * reflectPercent / 100);
+        const reflected = HitRules.reflectedDamage(EffectStats.add(creature, 'reflectDam'), hit);
         if (reflected <= 0) return;
 
         if (Number(actor.fetchId?.()) >= 2000000) {
@@ -1497,38 +1484,26 @@ class Attack {
     }
 }
 
-const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+// The hot adapters of HitRules.targetModifier: the target's weaknesses and
+// the attacker's undead and race bonuses from their live effects.
+function hitModifier(attacker, target, { magic = false, skill = false, trait = '' } = {}) {
+    return HitRules.targetModifier({ magic, skill, trait, weaponKind: attackKind(attacker),
+        race: target?.fetchRace?.() ?? target?.model?.race ?? target?.race,
+        undead: target?.fetchUndead?.() === true || target?.model?.undead === true },
+    stat => EffectStats.multiplier(target, stat, 1), stat => EffectStats.multiplier(attacker, stat));
+}
+
+function attackKind(creature) {
+    return creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : Attack.prototype.fetchNpcWeaponKind(creature);
+}
 
 function traitVulnerabilityModifier(target, trait) {
-    if (!ELEMENTAL_DAMAGE_TRAITS.has(trait)) return 1;
-    return EffectStats.multiplier(target, `${trait}Vuln`, 1);
+    const stat = HitRules.elementVulnStat(trait);
+    return stat ? EffectStats.multiplier(target, stat, 1) : 1;
 }
-
-function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false, dagger = false } = {}) {
-    if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
-    if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
-    if (dagger) return EffectStats.multiplier(target, 'daggerWpnVuln', 1);
-    return 1;
-}
-
-function physicalUndeadModifier(attacker, target) {
-    const undead = target?.fetchUndead?.() === true || target?.model?.undead === true;
-    return undead ? EffectStats.multiplier(attacker, 'pAtkUndeadMul') : 1;
-}
-
-const PHYSICAL_RACE_STATS = Object.freeze({
-    animal: 'pAtk-animals',
-    beast: 'pAtk-monsters',
-    construct: 'pAtk-mcreatures',
-    dragon: 'pAtk-dragons',
-    giant: 'pAtk-giants',
-    insect: 'pAtk-insects',
-    plant: 'pAtk-plants'
-});
 
 function physicalRaceModifier(attacker, target) {
-    const race = String(target?.fetchRace?.() ?? target?.model?.race ?? target?.race ?? '').toLowerCase();
-    const stat = PHYSICAL_RACE_STATS[race];
+    const stat = HitRules.raceStat(target?.fetchRace?.() ?? target?.model?.race ?? target?.race);
     return stat ? EffectStats.multiplier(attacker, stat) : 1;
 }
 
@@ -1536,5 +1511,4 @@ module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
 module.exports.physicalRaceModifier = physicalRaceModifier;
 module.exports.traitVulnerabilityModifier = traitVulnerabilityModifier;
-module.exports.incomingWeaponVulnerabilityModifier = incomingWeaponVulnerabilityModifier;
-module.exports.physicalUndeadModifier = physicalUndeadModifier;
+module.exports.hitModifier = hitModifier;

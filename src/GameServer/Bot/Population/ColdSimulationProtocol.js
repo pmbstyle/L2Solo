@@ -19,7 +19,6 @@ const MAIN_TYPES = new Set([
     'commit_ack',
     'command_ack',
     'command_request',
-    'maintenance_ack',
     'party_formation_request',
     'party_goal_request',
     'fence',
@@ -27,6 +26,7 @@ const MAIN_TYPES = new Set([
     'pause',
     'resume',
     'throttle',
+    'overdue_trace',
     'diagnostics_resync',
     'competition_release',
     'shutdown'
@@ -39,7 +39,6 @@ const WORKER_TYPES = new Set([
     'proposal_batch',
     'command_request',
     'command_ack',
-    'maintenance_request',
     'party_formation_proposal',
     'party_goal_result',
     'heartbeat',
@@ -49,9 +48,100 @@ const WORKER_TYPES = new Set([
     'fault'
 ]);
 
+// The message and page limits are UTF-8 bytes of the value's JSON. They are
+// counted here without building the text: stringifying a ~19 KB bot state
+// only to measure it left ~30 KB of garbage on main per sized row. The count
+// equals Buffer.byteLength(JSON.stringify(value)) (Infinity where that throws
+// or yields nothing), so pages split exactly as before. Plain objects (Object
+// or null prototype, not an array, no toJSON) and plain arrays (Array
+// prototype) are walked; anything else (a toJSON, Date, Map, typed arrays,
+// class instances, very deep values) is measured by JSON.stringify itself.
+// The walk assumes no enumerable property was added to Object.prototype (for
+// ... in would count it): Object.keys would be exact but allocates a key list
+// per object.
+function stringBytes(text) {
+    // Most keys and values are printable ASCII without a quote or backslash:
+    // one byte a character, found by the cheaper scan first.
+    const length = text.length;
+    let i = 0;
+    for (; i < length; i++) {
+        const c = text.charCodeAt(i);
+        if (c < 0x20 || c > 0x7e || c === 0x22 || c === 0x5c) break;
+    }
+    if (i === length) return length + 2;
+    let bytes = i + 2;
+    for (; i < length; i++) {
+        const c = text.charCodeAt(i);
+        if (c < 0x80) bytes += c >= 0x20 ? (c === 0x22 || c === 0x5c ? 2 : 1)
+            : c === 8 || c === 9 || c === 10 || c === 12 || c === 13 ? 2 : 6;
+        else if (c < 0x800) bytes += 2;
+        else if (c < 0xd800 || c > 0xdfff) bytes += 3;
+        else if (c <= 0xdbff && (text.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { bytes += 4; i++; }
+        else bytes += 6; // a lone surrogate is written as \uXXXX
+    }
+    return bytes;
+}
+
+function numberBytes(n) {
+    if (Number.isInteger(n) && n > -1e21 && n < 1e21) {
+        const x = n < 0 ? -n : n, sign = n < 0 ? 1 : 0;
+        if (x < 1e5) return sign + (x < 10 ? 1 : x < 100 ? 2 : x < 1e3 ? 3 : x < 1e4 ? 4 : 5);
+        if (x < 1e10) return sign + (x < 1e6 ? 6 : x < 1e7 ? 7 : x < 1e8 ? 8 : x < 1e9 ? 9 : 10);
+        if (x < 1e15) return sign + (x < 1e11 ? 11 : x < 1e12 ? 12 : x < 1e13 ? 13 : x < 1e14 ? 14 : 15);
+        return sign + (x < 1e16 ? 16 : x < 1e17 ? 17 : x < 1e18 ? 18 : x < 1e19 ? 19 : x < 1e20 ? 20 : 21);
+    }
+    return Number.isFinite(n) ? String(n).length : 4;
+}
+
+// JSON.stringify measures the value as the member `key` of a holder, so a
+// toJSON gets the key it would get on the wire; `{}` means the value is left
+// out.
+function stringifiedBytes(value, key) {
+    const name = String(key), text = JSON.stringify({ [name]: value });
+    return text.length === 2 ? -1 : Buffer.byteLength(text) - stringBytes(name) - 3;
+}
+
+// -1: a value JSON leaves out (undefined, a function, a symbol).
+const WALK_DEPTH = 64;
+function valueBytes(value, key, depth) {
+    const type = typeof value;
+    if (type === 'string') return stringBytes(value);
+    if (type === 'number') return numberBytes(value);
+    if (type === 'boolean') return value ? 4 : 5;
+    if (type !== 'object') {
+        // JSON.stringify calls a toJSON on a callable or a bigint too.
+        if (type === 'bigint' || type === 'function' && value.toJSON !== undefined) return stringifiedBytes(value, key);
+        return -1;
+    }
+    if (value === null) return 4;
+    if (depth < WALK_DEPTH && value.toJSON === undefined) {
+        const proto = Object.getPrototypeOf(value);
+        if (!Array.isArray(value)) {
+            if (proto === Object.prototype || proto === null) {
+                let bytes = 1;
+                for (const field in value) {
+                    const size = valueBytes(value[field], field, depth + 1);
+                    if (size >= 0) bytes += stringBytes(field) + 2 + size;
+                }
+                return bytes === 1 ? 2 : bytes;
+            }
+        } else if (proto === Array.prototype) {
+            const length = value.length;
+            let bytes = length > 1 ? length + 1 : 2;
+            for (let i = 0; i < length; i++) {
+                const size = valueBytes(value[i], i, depth + 1);
+                bytes += size < 0 ? 4 : size;
+            }
+            return bytes;
+        }
+    }
+    return stringifiedBytes(value, key);
+}
+
 function byteLength(value) {
     try {
-        return Buffer.byteLength(JSON.stringify(value));
+        const size = valueBytes(value, '', 0);
+        return size < 0 ? Infinity : size;
     } catch (_) {
         return Infinity;
     }
@@ -108,8 +198,10 @@ function validFormingVerdict(joint, sources) {
         && accepted.every(id => Number.isSafeInteger(id) && ids.includes(id));
 }
 
+// incomeReviewKey: the hash of the review's inputs (PartyGoalPolicy.incomeReviewKey), with a review only.
 function validPartyIncomeReviews(joint, sources) {
-    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return true;
+    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return joint.incomeReviewKey === undefined;
+    if (joint.incomeReviewKey !== undefined && !(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviewKey >= 0)) return false;
     if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
         || !Array.isArray(joint.incomeReviews) || joint.incomeReviews.length !== sources.length) return false;
     const nullableNumber = value => value === null || typeof value === 'number' && Number.isFinite(value);
@@ -237,7 +329,7 @@ function validateEnvelope(message, direction, options = {}) {
                 || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
                     : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
                     || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
-                        'lastIncomeReviewAt', 'incomeReviews', 'raidAssessment'].includes(key))
+                        'lastIncomeReviewAt', 'incomeReviewKey', 'incomeReviews', 'raidAssessment'].includes(key))
                     || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
                 || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
@@ -419,6 +511,21 @@ function meetingIdentity(value) {
         || value.pageIndex < -1 || value.pageIndex > 3) return null;
     return { characterId: value.characterId, commandId: value.commandId, kind: 'meeting' };
 }
+
+// Evidence on a refusal is advisory. Size the complete wire envelope, whose
+// epoch and message ID can be much longer than the result row itself, and
+// keep the refusal even when neither evidence form fits the meeting limit.
+function fitMeetingAck(message, fallback) {
+    const results = message?.type === 'command_ack' && message.payload?.results;
+    if (!Array.isArray(results) || results.length !== 1 || !meetingIdentity(results[0])
+        || results[0].ok !== false || !results[0].priceEvidence || byteLength(message) <= 768) return message;
+    const { priceEvidence, ...result } = results[0];
+    if (fallback) {
+        const candidate = { ...message, payload: { ...message.payload, results: [{ ...result, priceEvidence: fallback }] } };
+        if (byteLength(candidate) <= 768) return candidate;
+    }
+    return { ...message, payload: { ...message.payload, results: [result] } };
+}
 function commandIdentity(value) {
     if (value?.kind === 'meeting') return meetingIdentity(value);
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -486,6 +593,7 @@ module.exports = {
     commandIdentity,
     REVIEW_STEPS,
     meetingIdentity,
+    fitMeetingAck,
     byteLength,
     omitPlannedStates,
     competitionEvent

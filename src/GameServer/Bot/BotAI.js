@@ -1,8 +1,9 @@
+const FailureLog = require('../../FailureLog');
+const FaultHold = require('./BotFaultHold');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const { raiseDecision } = require('./AI/DecisionEvents');
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -20,9 +21,12 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
+const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const { performance } = require('perf_hooks');
 const ActorQueries = require('../World/ActorSpatialQueries');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -107,6 +111,35 @@ function clearTacticalState(session) {
     session.sweepAttemptedTargetId = undefined;
 }
 
+// The plan a bot falls back to: a player's companion follows, a merchant keeps its
+// store, a player killer hunts players, any other bot hunts.
+function ownPlan(session, bot) {
+    if (session.followPlayerSession && session.partyCompanion === true) return 'following';
+    if (session.plan === 'merchant' || bot.fetchPrivateStore?.()) return 'merchant';
+    return session.pkProfile ? 'pk_hunting' : 'hunting';
+}
+
+// A hot AI state that threw: the cold step's answer (BotFaultHold). Counted under its plan
+// (the first stack logged); the bot's state is held off longer per fault in a row while the
+// rest of its tick (death, PvP defense, party sync) runs; at the fifth in a row it leaves
+// that plan for its own (ownPlan), which runs at once, and its held decision is taken again,
+// the step it held proved impossible (counted `ai.state_left`). A state tick that returns
+// ends the run.
+function stateFaulted(session, bot, plan, error, now = Date.now()) {
+    FailureLog.note(`ai.state.${plan}`, error);
+    const entry = session.stateFault ||= { count: 0, holdUntil: 0 };
+    FaultHold.fault(entry, now);
+    if (entry.count !== FaultHold.QUARANTINE_AFTER) return;
+    FailureLog.note('ai.state_left', error);
+    raiseDecision(session, 'sources', { impossible: true });
+    const own = ownPlan(session, bot);
+    if (own === plan) return;
+    bot.automation?.abortAll?.(bot);
+    session.currentTargetId = undefined;
+    session.plan = own;
+    entry.holdUntil = now;
+}
+
 function recordHotStage(name, startedAt) {
     if (!DiagnosticConfig.developerDiagnostics) return;
     HotActorLodPolicy.recordSubsystem(name, performance.now() - startedAt, 1);
@@ -135,6 +168,12 @@ function trySpoil(session, bot, npc, Generics) {
     const skill = bot.skillset?.fetchSkill?.(SPOIL_SKILL_ID);
     if (!skill || !canPaySkill(bot, skill) || bot.canUseSkill?.(skill) === false
         || typeof Generics?.skillExec !== 'function') return false;
+    // Spoil lands on any monster, but one with no spoil list gives a bot nothing
+    // for its MP. That lasts the whole encounter: no second look at the rewards.
+    if (!SpoilSweep.hasSpoilList(npc)) {
+        session.spoilAttemptedTargetId = targetId;
+        return false;
+    }
 
     // The attempt is encounter-scoped. Record it only after the transient
     // preflight gates pass, so a bot that recovers MP or leaves reuse can try
@@ -156,9 +195,9 @@ function trySweep(session, bot, npc, Generics) {
     if (!session || !bot || !npc || !BotRoles.isSpoiler(bot) || !targetIsDead(npc)) return false;
     if (npc.fetchAttackable?.() !== true) return false;
 
-    const spoil = npc.model?.spoil;
-    if (!spoil?.spoiled || spoil.swept) return false;
-    if (spoil.spoilerId && Number(spoil.spoilerId) !== targetIdOf(bot)) return false;
+    if (!SpoilSweep.isUnswept(npc)) return false;
+    const spoilerId = SpoilSweep.spoilerId(npc);
+    if (spoilerId && spoilerId !== targetIdOf(bot)) return false;
 
     const targetId = targetIdOf(npc);
     if (!targetId || session.sweepAttemptedTargetId === targetId) return false;
@@ -244,8 +283,8 @@ const BotAI = {
         session.pendingBrainTurn = null;
         HotBotPolicyOverlay.clearForCold(session);
         ChatArrivalState.clear(session, 'ai_stop');
-        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
-        try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (error) { FailureLog.note('ai.cleanup.ambient', error); }
+        try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (error) { FailureLog.note('ai.cleanup.budget', error); }
         this.cancelScheduledTick(session);
     },
 
@@ -429,7 +468,7 @@ const BotAI = {
             BotTradeService.cleanup(session, 'death');
             invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
             invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
-            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
+            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (error) { FailureLog.note('ai.cleanup.ambient', error); }
             if (session.clanAllianceQuest && invoke('GameServer/Clan/ClanAllianceService').recoverDeadCourier(session)) return;
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
@@ -498,9 +537,7 @@ const BotAI = {
         if (!botDead && invoke('GameServer/Bot/Economy/BuffService').maybeAutoBuy(session, tickStartedAt)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
-
-        if (!botDead && onlinePlayerCount > 0 && visibleRealPlayers.length === 0 && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
+        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -585,7 +622,7 @@ const BotAI = {
                 // respawns must complete before applying the new town location.
                 const hallRuntime = invoke('GameServer/ClanHall/Runtime');
                 const recoveryHall = invoke('GameServer/ClanHall/BotVisit').restartHall(session, bot);
-                Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true,
+                Generics.revive(session, bot, { delayMs: 0,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
                 raiseDecision(session, 'revived');
@@ -669,7 +706,7 @@ const BotAI = {
 
         // Reactions use the existing visible hot tick and never delay combat
         // or keep an actor seated just to finish a scripted exchange.
-        if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
+        if (lodContext.playerVisible) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
         if (isCompanion) invoke('GameServer/Bot/AI/PlayerPartyRaidChatter').tick(session.followPlayerSession, tickStartedAt);
@@ -683,10 +720,13 @@ const BotAI = {
         if (state) {
             const stateName = session.plan;
             const stateStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
+            // A state held off after its faults (stateFaulted) waits.
+            if (session.stateFault?.holdUntil > tickStartedAt) return;
             try {
                 state.tick(session, bot, Generics, BotAI);
+                if (session.stateFault) session.stateFault = null;
             } catch (err) {
-                console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
+                stateFaulted(session, bot, stateName, err);
             } finally {
                 DiagnosticConfig.developerDiagnostics && recordHotStage(`state.${stateName}`, stateStartedAt);
             }
@@ -758,6 +798,11 @@ const BotAI = {
         // routine topping-off. The policy also blocks repeats for the same
         // target and while a previous potion HoT remains active.
         if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
+            return true;
+        }
+        // A solo bot on mobs heals itself by the rule hot and cold share (T107).
+        if (!options.pvp && BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
+            && SoloSelfHeal.tryInFight(session, bot, npc, Generics)) {
             return true;
         }
         if (!basicAttackOnly && trySpoil(session, bot, npc, Generics)) {
@@ -862,6 +907,11 @@ const BotAI = {
             return true;
         }
         const decision = offense?.ready || null;
+        // The pet tanks a solo fight: the chosen hit waits on its hate (PetTankRule).
+        if (SummonerTactics.ownerWaits(session, bot, npc, summonAction, decision?.skill)) {
+            session.lastCombatDecision = { action: 'summon_tanks', role, targetId: npc.fetchId(), at: Date.now() };
+            return true;
+        }
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',
@@ -956,30 +1006,6 @@ const BotAI = {
                 user.dataSendToMe(packet);
             }
         });
-    },
-
-    visibleRealPlayers(session, bot, World = invoke('GameServer/World/World')) {
-        if (!session || !bot || !World) return [];
-        if (World.botRealPlayerIndex === true && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
-            if (typeof World.botVisibleRealPlayers !== 'function') throw new TypeError('invalid_bot_real_player_index');
-            return World.botVisibleRealPlayers(session, bot);
-        }
-        const players = realPlayerSessions(World);
-        if (players && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
-            const x = bot.fetchLocX();
-            const y = bot.fetchLocY();
-            return players.filter((candidate) => {
-                if (candidate === session || !candidate.actor || typeof candidate.actor.fetchLocX !== 'function' || typeof candidate.actor.fetchLocY !== 'function') return false;
-                const dx = candidate.actor.fetchLocX() - x;
-                const dy = candidate.actor.fetchLocY() - y;
-                return dx * dx + dy * dy <= CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
-            });
-        }
-        const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
-            ? World.fetchVisibleRealPlayers.bind(World)
-            : World.fetchVisibleUsers?.bind(World);
-        if (!fetchVisiblePlayers) return [];
-        return fetchVisiblePlayers(session, bot).filter(isRealPlayerSession);
     },
 
     getStatus(session) {

@@ -7,6 +7,7 @@ const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PARTY_REWARD_RADIUS = 2500;
 const PendingSweep = invoke('GameServer/Bot/AI/PendingSweep');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const SWEEP_RETRY_DELAY_MS = 250;
 const SWEEP_RETRY_WINDOW_MS = 25000;
 
@@ -93,9 +94,8 @@ function clearSweepRetry(spoilerSession, retries, npcId) {
 }
 
 function autoSweepSpoiledCorpse(npc, Generics) {
-    const spoil = npc?.model?.spoil;
-    const spoilerId = Number(spoil?.spoilerId || 0);
-    if (!spoil?.spoiled || spoil.swept || !spoilerId) return false;
+    const spoilerId = SpoilSweep.spoilerId(npc);
+    if (!SpoilSweep.isSweepable(npc) || !spoilerId) return false;
 
     const spoilerSession = (World.user?.sessions || []).find((candidate) => (
         String(candidate?.accountId || '').startsWith('bot_')
@@ -194,7 +194,7 @@ function npcDied(session, actor, npc) {
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
     if (session?.accountId?.startsWith?.('bot_')) {
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             botId: session.actor?.fetchId?.(),
             eventType: 'kill',
             summary: `${session.actor?.fetchName?.() || 'Bot'} defeated ${npc.fetchName?.() || 'a monster'}.`,
@@ -202,7 +202,7 @@ function npcDied(session, actor, npc) {
             dedupeKey: `kill:${session.actor?.fetchId?.()}:${npc.fetchTemplateId?.() || npc.fetchId?.()}`,
             coalesceWindowMs: 30000,
             meta: { npcId: npc.fetchId?.(), npcName: npc.fetchName?.() || null }
-        })).catch(() => {});
+        });
     }
     const PetRuntime = invoke('GameServer/Pets/PetRuntime');
     const rewardLevel = Math.max(...participants.map(levelOf), Number(rewardActor.fetchLevel?.() || 1));

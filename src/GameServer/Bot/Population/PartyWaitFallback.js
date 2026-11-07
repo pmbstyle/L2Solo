@@ -24,7 +24,7 @@ function waiting(state, plan, partyRequest) {
 // and the level search takes the filter too. The worker passes its own; main
 // passes none and reads main's world index (SpotProfiles.defaultRoomFilter,
 // ROUTE-ROOM-4). Null when neither exists.
-function spotFor(state, plan, profiles, { excludedSpotIds, timestamp, hasRoom: given = null } = {}) {
+function spotFor(state, plan, profiles, { excludedSpotIds, timestamp, hasRoom: given = null, spotHunters = null } = {}) {
     const hasRoom = given ?? SpotProfiles.defaultRoomFilter(state, profiles);
     const planned = GearAcquisitionPlanner.safeFallbackForPlan(state, plan, profiles, { excludedSpotIds });
     const plannedSpot = planned ? SpotIndex.spotById(profiles, planned.spotId) : null;
@@ -38,7 +38,7 @@ function spotFor(state, plan, profiles, { excludedSpotIds, timestamp, hasRoom: g
         spotId: null,
         stats: Object.fromEntries(Object.entries(state.stats || {})
             .filter(([key]) => key !== 'equipmentPlan'))
-    }, { profiles, excludedSpotIds, timestamp, ...(hasRoom ? { hasRoom } : {}) });
+    }, { profiles, excludedSpotIds, timestamp, ...(hasRoom ? { hasRoom } : {}), ...(spotHunters ? { spotHunters } : {}) });
     return spot ? { spot, npcId: 0 } : null;
 }
 

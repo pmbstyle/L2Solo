@@ -22,7 +22,7 @@ function values(packet) {
     Database.fetchClans = async () => [{ id: 1, name: 'TestClan', leaderId: 100 }];
     Database.fetchClanCharacters = async () => [{ id: 101, name: 'HalenAsh', clanId: 1, level: 11, classId: 10 }];
     Social.syncMemberships = () => {};
-    World.user = { sessions: [{ actor: { isDead: () => false, fetchId: () => 100, fetchClanId: () => 1, fetchIsOnline: () => true },
+    World.user = { sessions: [{ fetchAccountId: () => 'leader', actor: { isDead: () => false, fetchId: () => 100, fetchClanId: () => 1, fetchIsOnline: () => true },
         dataSendToMe: packet => packets.push(packet) }] };
     await Clan.reload();
     Life.acceptLifecycleRow(row(12, 10));
@@ -42,8 +42,10 @@ function values(packet) {
     assert.equal(refreshed.level, 20);
     assert.equal(refreshed.classId, 39);
     assert.equal(refreshed.online, true);
-    World.user.sessions.push({ actor: { fetchId: () => 101, fetchClanId: () => 1,
-        fetchIsOnline: () => true, fetchName: () => 'HalenAsh', fetchLevel: () => 21, fetchClassId: () => 39 } });
+    // The bot's actor enters the world (registered, as a login or a cold->hot activation does).
+    World.insertUser({ fetchAccountId: () => 'bot_halen', dataSendToMe() {}, actor: { fetchId: () => 101, fetchClanId: () => 1,
+        fetchIsOnline: () => true, fetchName: () => 'HalenAsh', fetchLevel: () => 21, fetchClassId: () => 39,
+        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0 } });
     assert.equal(Clan.liveMember(refreshed).level, 21, 'active actor takes precedence over cold snapshot');
     ClanMenu(menuSession, ['clan', 'members']);
     assert.match(memberHtml(), /HalenAsh Lv.21/, 'NPC menu prefers active actor level');

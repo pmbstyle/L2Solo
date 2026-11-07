@@ -88,7 +88,7 @@ async function waitForStatus(port) {
     throw lastError || new Error('launcher did not start');
 }
 
-function startLauncher(port, settingsPath, configPath = null) {
+function startLauncher(port, settingsPath, configPath = null, preloadPath = null) {
     const env = {
         ...process.env,
         L2NODE_LAUNCHER_PORT: String(port),
@@ -106,7 +106,10 @@ function startLauncher(port, settingsPath, configPath = null) {
     if (configPath) env.L2NODE_CONFIG_FILE = configPath;
     else delete env.L2NODE_CONFIG_FILE;
 
-    return spawn(process.execPath, [path.join('scripts', 'start.js')], {
+    return spawn(process.execPath, [
+        ...(preloadPath ? ['--require', preloadPath] : []),
+        path.join('scripts', 'start.js')
+    ], {
         cwd: path.resolve(__dirname, '..'),
         env,
         stdio: ['ignore', 'pipe', 'pipe']
@@ -148,6 +151,12 @@ async function stopLauncher(child) {
             if (modelMode === 'error') {
                 res.statusCode = 503;
                 res.end(JSON.stringify({ error: { message: 'model not loaded' } }));
+                return;
+            }
+            if (modelMode === 'routing' && lastModelRequest.body.provider?.order?.includes('OpenAI')
+                && lastModelRequest.body.provider.allow_fallbacks === false) {
+                res.statusCode = 404;
+                res.end(JSON.stringify({ error: { message: 'No endpoints match provider routing' } }));
                 return;
             }
             res.end(JSON.stringify({
@@ -212,6 +221,7 @@ async function stopLauncher(child) {
         assert.strictEqual(lastModelRequest.body.model, 'local-test-model');
         assert.strictEqual(lastModelRequest.body.reasoning_effort, 'none');
         assert.strictEqual(lastModelRequest.body.max_tokens, 128);
+        assert.strictEqual(lastModelRequest.body.provider, undefined);
 
         modelMode = 'error';
         status = await request(port, 'POST', '/api/llm/test');
@@ -228,6 +238,54 @@ async function stopLauncher(child) {
         status = await request(port, 'GET', '/api/status');
         assert.strictEqual(status.llm.phase, 'error');
         assert.match(status.llm.message, /model is empty/);
+
+        await stopLauncher(child);
+        const preloadPath = path.join(tmpDir, 'openrouter-transport.cjs');
+        fs.writeFileSync(preloadPath, [
+            'const originalFetch = globalThis.fetch;',
+            'globalThis.fetch = (url, init) => originalFetch(',
+            `    url === 'https://openrouter.ai/api/v1/chat/completions' ? 'http://127.0.0.1:${modelPort}/v1/chat/completions' : url, init);`,
+            ''
+        ].join('\n'));
+        const routerConfig = [
+            '[OpenRouter]',
+            'enabled = true',
+            'apiKey = router-test-key',
+            'model = liquid/test-model:free',
+            'providerOrder = OpenAI',
+            'providerSort = latency',
+            'allowFallbacks = false',
+            'requireParameters = false',
+            ''
+        ].join('\n');
+        fs.writeFileSync(configPath, routerConfig);
+        modelMode = 'routing';
+        child = startLauncher(port, settingsPath, configPath, preloadPath);
+        await waitForStatus(port);
+        status = await request(port, 'POST', '/api/llm/test');
+        assert.strictEqual(status.llm.phase, 'error', 'inference test must use the same provider routing as bot requests');
+        assert.match(status.llm.message, /HTTP 404: No endpoints match provider routing/);
+        assert.deepStrictEqual(lastModelRequest.body.provider, {
+            order: ['OpenAI'], sort: 'latency', allow_fallbacks: false, require_parameters: false
+        });
+
+        fs.writeFileSync(configPath, routerConfig.replace('providerOrder = OpenAI', 'providerOrder = Liquid'));
+        status = await request(port, 'GET', '/api/status');
+        assert.strictEqual(status.llm.phase, 'untested', 'changing provider routing must invalidate the previous inference result');
+        status = await request(port, 'POST', '/api/llm/test');
+        assert.strictEqual(status.llm.phase, 'online');
+        assert.deepStrictEqual(lastModelRequest.body.provider.order, ['Liquid']);
+
+        fs.writeFileSync(configPath, routerConfig
+            .replace('providerOrder = OpenAI', 'providerOrder =')
+            .replace('providerSort = latency', 'providerSort =')
+            .replace('allowFallbacks = false', 'allowFallbacks = true')
+            .replace('requireParameters = false', 'requireParameters = true'));
+        status = await request(port, 'GET', '/api/status');
+        assert.strictEqual(status.llm.phase, 'untested');
+        status = await request(port, 'POST', '/api/llm/test');
+        assert.strictEqual(status.llm.phase, 'online');
+        assert.deepStrictEqual(lastModelRequest.body.provider, { allow_fallbacks: true, require_parameters: true });
     } finally {
         await stopLauncher(child);
         await new Promise((resolve) => modelServer.close(resolve));

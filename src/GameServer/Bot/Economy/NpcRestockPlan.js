@@ -6,6 +6,7 @@ const Funding = require('./PurchaseFunding');
 const Economy = require('./EconomyContext');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const Diagnostics = require('./EconomyDiagnostics');
+const ArrowStock = require('../../Inventory/ArrowStock');
 const LIMIT = 12;
 const sellerKey = seller => [seller.town, seller.sourceId, seller.locX, seller.locY, seller.locZ].join(':');
 function quoteFor(selfId, town, price = null, seller = null) {
@@ -43,25 +44,31 @@ function collect(state, options = {}) {
     let preparedState = null, prepared = null;
     const economics = () => {
         if (preparedState !== current) {
-            prepared = require('node:worker_threads').isMainThread ? Economy.basics(current) : Economy.forState(current);
+            prepared = require('node:worker_threads').isMainThread ? Economy.keptKit(current) : Economy.forState(current);
             preparedState = current;
         }
         return prepared;
     };
     const baskets = new Map();
     let order = 0;
+    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak'); // lazy: optional, war trips only
     const add = (selfId, amount, offer, terms = {}, attribution = {}) => {
+        // A war supply trip buys its supply alone: the writer refuses the whole basket otherwise.
+        if (PartyBreak.warSupplyPurchaseBlocker(state, selfId)) return;
         if (order >= LIMIT || !offer || offer.town !== town || !(amount > 0)
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);
-        const funding = { ...terms, itemId: Number(selfId),
-            survivalCost: attribution.survivalCost ?? (survivalIds.has(Number(selfId)) ? economics().kitCost(selfId, price) : 0) };
+        const survival = attribution.survival ?? (attribution.survivalCost !== undefined ? null
+            : survivalIds.has(Number(selfId)) ? Funding.survivalTranche(economics(), selfId, price) : null);
+        const funding = { ...terms, itemId: Number(selfId), ...(survival
+            ? Funding.stockTerms(null, Number(selfId), survival) : { survivalCost: attribution.survivalCost ?? 0 }) };
         const cap = attribution.money == null ? Infinity : Math.max(0, Number(attribution.money));
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
         const desired = Math.floor(amount);
         const available = Funding.spendable(current, 0, funding);
-        const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price));
+        const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price),
+            ArrowStock.admitted(current, selfId, desired));
         if (!(count > 0)) {
             if (Diagnostics.active()) observePlan(state, current, selfId, amount, 0, available, offer, attribution, 'no_units');
             return;
@@ -86,12 +93,12 @@ function collect(state, options = {}) {
         line.fundingParts.push({ amount: count, funding, order: order++ });
         if (attribution.errand) line.errands.push({ errand: attribution.errand, units: count, spent: count * price });
         if (attribution.goal) line.goal = { ...attribution.goal, units: count };
-        current.adena = Math.max(0, Number(current.adena || 0) - count * price);
-        current.inventory[selfId] = { ...current.inventory[selfId], selfId: Number(selfId),
-            amount: Number(current.inventory[selfId]?.amount || 0) + count };
-        current.inventory[57] = { ...current.inventory[57], selfId: 57, amount: current.adena };
-        current.stats = { ...current.stats, money: Funding.packetAfterPurchase(current.stats?.money, count * price, funding) };
-        preparedState = null; prepared = null;
+        // The virtual purchase is a new state and bag (readers key on their identity).
+        const adena = Math.max(0, Number(current.adena || 0) - count * price), inventory = { ...current.inventory };
+        inventory[selfId] = { ...inventory[selfId], selfId: Number(selfId), amount: Number(inventory[selfId]?.amount || 0) + count };
+        inventory[57] = { ...inventory[57], selfId: 57, amount: adena };
+        current = { ...current, adena, inventory,
+            stats: { ...current.stats, money: Funding.packetAfterPurchase(current.stats?.money, count * price, funding) } };
     };
     // Preserve the existing survival ordering: potions, escape scroll, work,
     // then shots. Each next shortage and allowance sees the virtual purchase.
@@ -100,7 +107,7 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price, context });
-            add(potion.selfId, plan.amount, offer, {}, { survivalCost: context.kitCost(potion.selfId, offer.price) });
+            add(potion.selfId, plan.amount, offer, {}, { survival: Funding.survivalTranche(context, potion.selfId, offer.price) });
         }
     }
     if (options.scrolls !== false) {
@@ -109,10 +116,11 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context });
-            add(736, plan.amount, offer, {}, { survivalCost: context.kitCost(736, offer.price) });
+            add(736, plan.amount, offer, plan.funding, { survival: Funding.survivalTranche(context, 736, offer.price) });
         }
     }
-    for (const extra of (options.extras || []).slice(0, LIMIT)) {
+    const extras = (options.extras || []).slice(0, LIMIT);
+    for (const extra of extras.filter(row => !ArrowStock.isArrow(row))) {
         const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
         add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
@@ -121,8 +129,13 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context });
-            add(shot.selfId, plan.npcAmount, offer, {}, { survivalCost: context.kitCost(shot.selfId, offer.price) });
+            add(shot.selfId, plan.npcAmount, offer, {}, { survival: Funding.survivalTranche(context, shot.selfId, offer.price) });
         }
+    }
+    // Arrow capacity sees every other funded item in this restock first.
+    for (const extra of extras.filter(ArrowStock.isArrow)) {
+        const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
+        add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
     if (Diagnostics.active()) Diagnostics.duration('npc_plan', performance.now() - started);
     return [...baskets.values()];
@@ -130,8 +143,15 @@ function collect(state, options = {}) {
 async function purchase(state, options = {}) {
     let current = state;
     const receipts = [];
+    const Basket = require('./NpcPurchaseBasket'); // lazy: optional, a purchase only
     for (const basket of collect(state, options)) {
-        const bought = await require('./NpcPurchaseBasket').purchase(current, basket);
+        let bought;
+        try { bought = await Basket.purchase(current, basket); }
+        catch (error) {
+            if (!Basket.finalRefusal(error)) throw error;
+            utils.infoWarn('BotMarket', 'restock refused for %s: %s', state.characterId, error.message);
+            break;
+        }
         receipts.push(bought);
         current = bought.state || current;
         if (bought.hot) break;

@@ -1,8 +1,10 @@
+const FailureLog = require('../../../FailureLog');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const World = invoke('GameServer/World/World');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
@@ -11,7 +13,6 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotTravel = invoke('GameServer/Bot/AI/BotSpotTravel');
 const TownTransit = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
-const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
@@ -201,9 +202,11 @@ function searchGround(session, owner, members, party, legal, now, present) {
     // spawn locations also let the party explore while monsters are respawning.
     const profiles = TargetMatchup.actorProfiles(members.filter(s => present(s)
         && Threats.distance(s.actor, bot) <= 1800).map(s => s.actor));
-    const candidates = World.fetchNpcsInRadius(origin.locX, origin.locY, 4500).filter(legal);
-    const unsafe = new Set(candidates.filter(npc => !Parties.raidBossKey(party) && !TargetMatchup.soloSurvival(profiles,
-        BotPullEstimate.pullView(TargetMatchup.targetView(npc), Spots.pullSizeFor(npc))).eligible));
+    const scan = World.fetchNpcsInRadius(origin.locX, origin.locY, 4500);
+    const candidates = scan.filter(legal);
+    const pack = Spots.idlePack(scan);
+    const unsafe = new Set(candidates.filter(npc => !Parties.raidBossKey(party)
+        && !TargetMatchup.pullVerdict(profiles, TargetMatchup.targetView(npc), Spots.livePull(npc, pack)).eligible));
     const monsters = candidates.filter(npc => !unsafe.has(npc))
         .map(n => ({ ...loc(n), npcId: n.fetchSelfId() })).filter(usable)
         .sort((a, b) => Number(b.npcId === npcId) - Number(a.npcId === npcId) || distance(a) - distance(b));
@@ -323,7 +326,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         const marker = Roster.markerFor(party);
         const Lifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
         if (Roster.admitted(party) && Roster.nativeHotStarted(party)) {
-            Lifecycle.confirmMarkedRaidStart(party, registered, now).catch(() => {});
+            Lifecycle.confirmMarkedRaidStart(party, registered, now).catch(error => FailureLog.note('raid.marked_start', error));
             return true;
         }
         if (!Roster.exact(registered.map(member => Number(member.actor.fetchId())), marker.memberIds)
@@ -457,8 +460,13 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (!combatLegal(target) || (!incoming && Threats.distance(owner.actor, target) > 2000)) target = null;
     if (!incoming && target && !HuntingVisibility.canSee(owner.actor, target)) target = null;
     if (!target && !incoming) {
+        // A member under the party's rest line sits the party down; it rests
+        // until every member is past the "rest until" line (RestPolicy locked,
+        // as a cold party and a hot solo bot do), not just past the trigger.
+        const recovering = owner.backgroundPartyRecovery === party.partyId;
         const low = members.some(s => RestPolicy.needsRest(s.actor, ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()),
-            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true }));
+            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true, locked: recovering, pet: SummonerTactics.petRestView(s.actor) }));
+        owner.backgroundPartyRecovery = low ? party.partyId : undefined;
         if (low) {
             Tactics.stop(session, bot);
             session.currentTargetId = undefined;
@@ -495,16 +503,16 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             // The near members take only a pull they survive (E72): the target
             // with its helpers, aggressive neighbours and minions; smaller first.
             const profiles = TargetMatchup.actorProfiles(near.map(s => s.actor));
-            const candidates = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius)
-                .filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
+            const around = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius);
+            const candidates = around.filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
+            const pack = Spots.idlePack(around);
             const pulls = candidates
-                .map(npc => ({ npc, size: Spots.pullSizeFor(npc) }))
+                .map(npc => ({ npc, size: Spots.livePull(npc, pack) }))
                 // Raid admission already accounts for tanking, healing,
                 // regeneration and supplies. The ordinary no-healing pull
                 // estimate would reject its boss after accepting the adds.
                 // allowedHunt still enforces ownership of this raid only.
-                .filter(({ npc, size }) => raidObjective || TargetMatchup.soloSurvival(profiles,
-                    BotPullEstimate.pullView(TargetMatchup.targetView(npc), size)).eligible);
+                .filter(({ npc, size }) => raidObjective || TargetMatchup.pullVerdict(profiles, TargetMatchup.targetView(npc), size).eligible);
             const Material = require('../Population/CraftMaterialParty');
             owner.backgroundUnsafeHunt = candidates.length > 0 && pulls.length === 0
                 && Material.isObjective(party.stats?.objective)
@@ -522,6 +530,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     owner.backgroundHuntTarget = target;
     if (!raidObjective) standForAction(session, bot);
     if (Tactics.support(session, bot, { owner, members: near, threats: [], raid: raidObjective }, Generics, now)) return true;
+    // A summoner keeps its pet alive between fights, as alone (PetHealRule).
+    if (!target && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return true;
     if (raidObjective && session.hotRaidResurrectionRecovery) {
         if (ratio(bot.fetchHp(), bot.fetchMaxHp()) < 0.65) {
             Tactics.stop(session, bot);

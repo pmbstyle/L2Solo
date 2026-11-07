@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const BeginnerShots = require('../Items/C4BeginnerShots');
 require('../Item/ItemTemplateIndex');
 invoke('GameServer/DataCache');
@@ -131,7 +132,7 @@ function cancelTrade(trade, reason = 'cancelled', notify = true) {
     }
     recordSupplyTrade(trade, 'cancelled', reason, true);
     if (trade.negotiationId) {
-        try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (_) { /* optional negotiation module */ }
+        try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (error) { FailureLog.note('ai.cleanup.negotiation', error); }
     }
     releaseReservations(trade);
     if (notify) sendToPlayer(trade, ServerResponse.tradeDone(false));
@@ -417,9 +418,16 @@ function inventoryCapacity(session, incomingLines, outgoingLines) {
     const canonicalSlots = new Set(stackableItems.map((item) => Number(item.fetchSelfId()))).size
         + inventory.filter((item) => !item.fetchStackable?.()).length;
     const projectedRawItems = remaining.length + incomingNew;
+    const load = inventory.reduce((sum, item) => sum + Number(item.fetchMass?.() || 0) * Number(item.fetchAmount()), 0);
+    const lineLoad = lines => lines.reduce((sum, line) => sum + Number(line.item.fetchMass?.() || 0) * Number(line.count), 0);
+    const projectedLoad = load - lineLoad(outgoingLines) + lineLoad(incomingLines);
+    const maxLoad = session.actor.fetchMaxLoad?.();
     return {
         // Let an already over-capacity character give items away without adding slots.
         ok: projectedRawItems <= Math.max(MAX_INVENTORY_ITEMS, inventory.length),
+        // An overloaded character must still be able to give weight away.
+        weightOk: !Number.isFinite(maxLoad) || projectedLoad <= Math.max(maxLoad, load),
+        load, projectedLoad, maxLoad,
         rawItems: inventory.length,
         equippedItems,
         looseItems: inventory.length - equippedItems,
@@ -601,6 +609,14 @@ function prepareCommit(trade) {
         recordSupplyTrade(trade, 'failed', result.reason, false);
         return result;
     }
+    if (!playerCapacity.weightOk || !botCapacity.weightOk) {
+        const result = { ok: false, reason: 'inventory_weight', weightBlocked: {
+            player: !playerCapacity.weightOk,
+            bot: !botCapacity.weightOk
+        } };
+        recordSupplyTrade(trade, 'failed', result.reason, false);
+        return result;
+    }
 
     const databaseTransfers = entries.map((entry) => ({
         fromCharacterId: entry.fromActor.fetchId(),
@@ -619,13 +635,23 @@ function prepareCommit(trade) {
 async function finishCommit(trade, playerSession, entries, databaseTransfers) {
     let moved;
     try {
-        moved = await Database.transferInventoryBetweenCharacters(databaseTransfers);
+        moved = await Database.transferInventoryBetweenCharacters(databaseTransfers, { validate() {
+            // A queued character flush can change the bag or a weight buff.
+            // Read the pinned actors even if a session has switched character.
+            const player = inventoryCapacity({ actor: trade.playerActor }, [...trade.botItems.values()], [...trade.playerItems.values()]);
+            const bot = inventoryCapacity({ actor: trade.botActor }, [...trade.playerItems.values()], [...trade.botItems.values()]);
+            if (!player.weightOk || !bot.weightOk) {
+                throw Object.assign(new Error('inventory_weight'), { tradeFailure: {
+                    ok: false, reason: 'inventory_weight', weightBlocked: { player: !player.weightOk, bot: !bot.weightOk }
+                } });
+            }
+        } });
     } catch (error) {
         // The transaction wrote nothing: the trade is open again and can be
         // confirmed or cancelled as before.
         trade.state = 'open';
         trade.commitPromise = null;
-        const result = { ok: false, reason: 'database_failed', error };
+        const result = error.tradeFailure || { ok: false, reason: 'database_failed', error };
         recordSupplyTrade(trade, 'failed', result.reason, false);
         return result;
     }
@@ -658,7 +684,7 @@ async function finishCommit(trade, playerSession, entries, databaseTransfers) {
             moved: result.moved
         });
         if (trade.negotiationId) {
-            try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (_) { /* optional negotiation module */ }
+            try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (error) { FailureLog.note('ai.cleanup.negotiation', error); }
         }
     } finally {
         if (trade.botSession.pendingResourceDelivery?.tradeId === trade.id) {

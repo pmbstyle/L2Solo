@@ -1,12 +1,28 @@
+const FailureLog = require('./FailureLog');
 const ItemTemplateIndex = require('./GameServer/Item/ItemTemplateIndex');
 const BeginnerShots = require('./GameServer/Items/C4BeginnerShots');
 const InventoryLimits = require('./GameServer/Inventory/InventoryLimits');
 const fs = require('fs');
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
+const { DiagnosticMetricMap } = require('./GameServer/Bot/Population/DiagnosticMetricMap');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const mutationAdmission = new AsyncLocalStorage();
+// Bots the overdue line named: who moves their revision, with the caller (a
+// worker step begun before the move is refused). Four bots, 60 lines each.
+const revisionTrace = new Map();
+function traceRevisionWrite(sql, params) {
+    if (!revisionTrace.size || !sql.includes('simulationRevision')) return;
+    const id = params.find(value => revisionTrace.has(Number(value)));
+    if (id === undefined) return;
+    const left = revisionTrace.get(Number(id));
+    if (left <= 0) return;
+    revisionTrace.set(Number(id), left - 1);
+    console.info('Database :: overdue revision %s', JSON.stringify({ id: Number(id), at: Date.now(),
+        sql: sql.replace(/\s+/g, ' ').slice(0, 70), by: new Error().stack.split('\n').slice(3, 9)
+            .map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(')) }));
+}
 function checkMutationAdmission() {
     const guard = mutationAdmission.getStore();
     if (guard && guard() !== undefined) throw new TypeError('invalid_mutation_admission');
@@ -15,11 +31,13 @@ const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
+const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const PvpRules = require('./GameServer/PvpRules');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
 const BoardRules = require('./GameServer/AfkTrade/BoardRules');
@@ -29,12 +47,16 @@ const EconomyCommit = require('./GameServer/Bot/Economy/EconomyCommit');
 const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
 const ColdCombatProfile = require('./GameServer/Bot/Population/ColdCombatProfile');
 const SavedStats = require('./GameServer/Bot/SavedStats');
+const SavedSkills = require('./GameServer/Bot/SavedSkills');
+const InventorySummary = require('./GameServer/Bot/Population/InventorySummary');
 const PartyCandidateProjection = require('./DatabasePartyCandidateProjection');
 const PlayerWarehouse = require('./DatabasePlayerWarehouse');
+const ItemInstances = require('./DatabaseItemInstances');
 const DataCache = invoke('GameServer/DataCache');
 const C4Recipes = require('./GameServer/Items/C4RecipeItems');
 const TradeIntent = require('./GameServer/Bot/Economy/TradeIntent');
 const PurchaseFunding = require('./GameServer/Bot/Economy/PurchaseFunding');
+const StatsPacket = require('./GameServer/Bot/Economy/StatsPacket');
 const ClanSocialPolicy = require('./GameServer/Clan/ClanSocialPolicy');
 const ClanRules = require('./GameServer/Clan/ClanRules');
 const ClanSocialEvidence = require('./GameServer/Clan/ClanSocialEvidence');
@@ -112,12 +134,29 @@ let historyPath;
 let boardDealCountsReady = false;
 let boardCounterCountsReady = false;
 let flushPendingCharacterWrites = null;
+// CharacterWriteQueue.applyInJob(characterId, apply): hands over and clears the
+// character's buffered snapshot. jobCharacterIds: the characters whose snapshot
+// the job enqueued now writes first (set while a withCharacterFlush work runs).
+let applyPendingCharacterWrite = null;
+let jobCharacterIds = null;
 const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
     depth: 0,
     sliceStartedAt: 0,
     sliceMs: 0
 };
+// The queue runs its jobs back to back in one microtask chain; after this much
+// of it (jobs and their callers' continuations) the drain gives the event loop
+// a turn (setImmediate) before the next job. A job is never split, so order and
+// atomicity hold. A slice starts at the first job of a turn and ends at the
+// next event-loop boundary (an immediate armed with it), so a chain of awaited
+// calls with nothing else queued accumulates within its turn and yields too.
+const DB_QUEUE_SLICE_MS = 12;
+let drainSliceStartedAt = 0;
+
+function endDrainSlice() {
+    drainSliceStartedAt = 0;
+}
 
 const metrics = {
     pending: 0,
@@ -129,28 +168,71 @@ const metrics = {
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
+    // Drain yields to the event loop (counted with diagnostics off too).
+    queueYields: 0,
     // Diagnostic snapshots built by stats(); control reads use pending().
     snapshots: 0,
     byOperation: null
 };
 
+// Why a maintenance pass on this database was not run when it was tried (state retention, the
+// WAL truncate; PopulationService), `job:reason` -> count, governor refusals as `governor_<reason>`.
+// Counted with diagnostics off too: stats().maintenance. Bounded by DiagnosticMetricMap.
+const maintenanceRefusals = new DiagnosticMetricMap();
+// Jobs that ran past the drain slice on their own (a job is never split, so the
+// event loop waited for all of it): operation -> { count, maxMs, totalMs }.
+// Counted with diagnostics off too: stats().overBudgetJobs. Bounded by DiagnosticMetricMap.
+const overBudgetJobs = new DiagnosticMetricMap();
+
+function noteJobRun(operation, ranMs) {
+    if (ranMs <= DB_QUEUE_SLICE_MS) return;
+    const entry = overBudgetJobs.get(operation) || { count: 0, maxMs: 0, totalMs: 0 };
+    entry.count += 1;
+    entry.maxMs = Math.max(entry.maxMs, ranMs);
+    entry.totalMs += ranMs;
+    overBudgetJobs.set(operation, entry);
+}
+
+function overBudgetSnapshot() {
+    return Object.fromEntries(Array.from(overBudgetJobs.entries(), ([operation, entry]) => [operation, { ...entry }]));
+}
+
 function now() {
     return Date.now();
+}
+
+function maintenanceSnapshot() {
+    return { refusals: Object.fromEntries(maintenanceRefusals.entries()) };
 }
 
 function yieldToEventLoop() {
     return new Promise((resolve) => setImmediate(resolve));
 }
 
-function normalizeValue(value) {
-    if (typeof value === 'bigint') return Number(value);
-    if (Buffer.isBuffer(value)) return value;
-    return value;
+// After a job: yield when the drain slice (or a cooperatively() caller's
+// slice) is spent, then settle the job's promise.
+function afterQueueJob(settle) {
+    const at = now();
+    const cooperativeSpent = cooperative.depth > 0 && at - cooperative.sliceStartedAt >= cooperative.sliceMs;
+    if (!cooperativeSpent && !(drainSliceStartedAt > 0 && at - drainSliceStartedAt >= DB_QUEUE_SLICE_MS)) return settle();
+    metrics.queueYields += 1;
+    // The slice's own immediate, armed before this one, has ended it.
+    return yieldToEventLoop().then(() => {
+        if (cooperative.depth > 0) cooperative.sliceStartedAt = now();
+        return settle();
+    });
 }
 
+// node:sqlite hands back a null-prototype row with BigInt integers (read so a large one does not
+// throw): a plain object with numbers. A loop, not entries/fromEntries: ~4x less per big row.
 function normalizeRow(row) {
     if (!row || typeof row !== 'object') return row;
-    return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeValue(value)]));
+    const out = {};
+    for (const key in row) {
+        const value = row[key];
+        out[key] = typeof value === 'bigint' ? Number(value) : value;
+    }
+    return out;
 }
 
 function copyNormalizedRow(row) {
@@ -264,15 +346,21 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
     const queuedAt = timed ? now() : 0;
     metrics.pending += 1;
     if (timed) metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
+    const characterIds = jobCharacterIds;
+    const job = characterIds ? () => { applyJobCharacterWrites(characterIds); return work(); } : work;
     const execute = () => {
-        const startedAt = timed ? now() : 0;
-        const wait = startedAt - queuedAt;
+        if (drainSliceStartedAt === 0) {
+            drainSliceStartedAt = now();
+            setImmediate(endDrainSlice);
+        }
+        const startedAt = now();
+        const wait = timed ? startedAt - queuedAt : 0;
         EconomyJournal.begin(operation);
         const candidateCheckpoint = connection?.isTransaction ? ClanReviewInputs.candidateCheckpoint() : null;
         if (!connection?.isTransaction) ClanReviewInputs.beginCandidateCommit();
         let committed = false;
         try {
-            const result = work();
+            const result = job();
             EconomyJournal.commit();
             if (!connection?.isTransaction) ClanReviewInputs.commitCandidateInputs();
             committed = true;
@@ -286,6 +374,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             throw error;
         } finally {
             metrics.pending -= 1;
+            noteJobRun(operation, now() - startedAt);
             // A committed job may have added history outbox rows (directly or
             // by a trigger); the history thread sleeps until told. Outside the
             // try: nothing here can turn a committed job into a discard.
@@ -298,22 +387,15 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         }
     };
     const queued = queryTail.then(execute, execute);
-    const cooperativeQueue = cooperative.depth > 0;
-    const result = cooperativeQueue
-        ? queued.then((value) => {
-            if (cooperative.depth <= 0 || now() - cooperative.sliceStartedAt < cooperative.sliceMs) return value;
-            return yieldToEventLoop().then(() => {
-                cooperative.sliceStartedAt = now();
-                return value;
-            });
-        })
-        : queued;
+    const result = queued.then((value) => afterQueueJob(() => value),
+        (error) => afterQueueJob(() => { throw error; }));
     queryTail = result.catch(() => null);
     return result;
 }
 
 function run(sql, params = [], operation, readOverride = null, onTiming = null) {
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
+    if (!read) traceRevisionWrite(sql, params);
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         // Read integers as BigInts before existing Number normalization.
@@ -629,18 +711,46 @@ async function inPreparedTransactionBatch(items, prepare, hooks, operation) {
     });
 }
 
+// The buffered snapshot written by the job itself, before its work, in its own
+// transaction: what was buffered while the job waited in the queue (a drain
+// slice, a timer, a packet) is in the rows the work reads. Inside a raw
+// transaction it stays buffered (a rollback there would lose it).
+function applyJobCharacterWrites(characterIds) {
+    if (!applyPendingCharacterWrite || !connection || connection.isTransaction) return;
+    for (const id of characterIds) applyPendingCharacterWrite(id, state => mutationAdmission.run(undefined, () => {
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            applyBufferedCharacterStateUnsafe(id, state);
+            connection.exec('COMMIT');
+        } catch (error) {
+            if (connection.isTransaction) connection.exec('ROLLBACK');
+            throw error;
+        }
+    }));
+}
+
+// The work's job writes these characters' snapshots first; a nested call keeps
+// the outer characters (captured when it is called, inside the outer work).
+function withJobCharacterIds(ids, work) {
+    const outer = jobCharacterIds;
+    jobCharacterIds = ids;
+    try { return work(); } finally { jobCharacterIds = outer; }
+}
+
 function withCharacterFlush(characterId, work) {
     if (!flushPendingCharacterWrites || !Number(characterId)) return work();
-    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(work);
+    const ids = [...new Set([...(jobCharacterIds || []), Number(characterId)])];
+    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(() => withJobCharacterIds(ids, work));
 }
 
 function withCharacterFlushes(characterIds, work) {
     if (!flushPendingCharacterWrites) return work();
     const ids = [...new Set((characterIds || []).map(Number).filter(Boolean))];
+    const jobIds = [...new Set([...(jobCharacterIds || []), ...ids])];
     return ids.reduce(
         (pending, characterId) => pending.then(() => flushPendingCharacterWrites(characterId)),
         Promise.resolve()
-    ).then(work);
+    ).then(() => withJobCharacterIds(jobIds, work));
 }
 
 function applySchemaMigrations() {
@@ -879,9 +989,9 @@ function applySchemaMigrations() {
             `);
         }],
         [16, () => {
-            // Retention is deliberately incremental. These indexes keep each
-            // idle-only delete batch on a narrow age/group range instead of
-            // turning maintenance into a main-thread table scan.
+            // Retention is deliberately incremental (PersistentStateRetention):
+            // these indexes keep each step, during play too, on a narrow
+            // age/group range instead of a main-thread table scan.
             connection.exec(`
                 CREATE INDEX IF NOT EXISTS bot_conversation_messages_compacted_age
                     ON bot_conversation_messages(compacted, createdAt, id);
@@ -1740,7 +1850,7 @@ function applySchemaMigrations() {
     // A bot's stored bag, learned skills and henna slots each carry a
     // revision that moves with every write of that input, so a reader keys on
     // a number instead of a JSON compare or a reread. A writer that sets
-    // inventoryRevision itself (the cold commit) skips the trigger's second
+    // inventoryRevision itself (bagRevisionSet) skips the trigger's second
     // row write. A world saved before this starts at 0 (unknown: recompute).
     migrations.push([68, () => {
         const columns = new Set(connection.prepare('PRAGMA table_info(bot_life_state)').all().map((column) => column.name));
@@ -1854,22 +1964,8 @@ function applySchemaMigrations() {
             if (columns.has(column)) connection.exec(`ALTER TABLE bot_life_state DROP COLUMN ${column}`);
         }
         connection.exec(`
-            CREATE INDEX bot_life_state_party_owner_filter
-                ON bot_life_state(phase, partyId, activity, spotId, updatedAt);
             CREATE INDEX bot_life_state_party_request_expiry
                 ON bot_life_state(phase, partyRequestStatus, partyRequestedAt, partyRequestPriority);
-            CREATE INDEX bot_life_state_warehouse_release
-                ON bot_life_state(characterId, updatedAt)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
-            CREATE INDEX bot_life_state_warehouse_demand
-                ON bot_life_state(updatedAt, characterId)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
         `);
         PartyCandidateProjection.createIndex(connection);
         const projection = connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bot_party_candidate_projection'").get();
@@ -1920,13 +2016,61 @@ function applySchemaMigrations() {
         }
         require('./GameServer/Clan/ClanJoinPenaltyMigration')(connection, now());
     }]);
-    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
-    migrations.forEach(([version, apply]) => {
-        if (applied.has(version)) return;
+    // New migrations are keyed by name (named_migrations), never by a new
+    // number, so a branch's migration cannot collide with upstream's: append
+    // [name, apply] here. They run after the numbered ones, in list order.
+    const namedMigrations = [
+        // Four bot row indexes no query needs (their readers left with the goal
+        // reconcile and warehouse passes). Each holds updatedAt, which every save
+        // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
+        // 1731-bot save. The queries that used them by chance take phase_partyId
+        // or the covering party candidate projection index. Worlds saved on an
+        // early build ran this as numbered 84; that row is deleted, so the
+        // launcher reads such a world as schema 83 again.
+        ['drop-unused-bot-life-indexes', () => connection.exec(`
+            DROP INDEX IF EXISTS bot_life_state_market_reconcile;
+            DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_release;
+            DELETE FROM schema_migrations WHERE version = 84;
+        `)],
+        // A cold bot's items rows known to match its stored bag summary
+        // (itemsMatchSummaryUnsafe): a row per bot, written by the cold commit
+        // that made them match, deleted by every write of an items row the
+        // summary sync reads, whoever writes it (warehouse, trade, store, quest,
+        // a hot bot's buffered amount, raw SQL). A side table: an items write
+        // never rewrites the wide life row.
+        ['bot-items-synced', () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_items_synced (
+                characterId INTEGER PRIMARY KEY REFERENCES bot_life_state(characterId) ON DELETE CASCADE,
+                inventoryRevision INTEGER NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS items_unsync_insert AFTER INSERT ON items
+            BEGIN DELETE FROM bot_items_synced WHERE characterId = NEW.characterId; END;
+            CREATE TRIGGER IF NOT EXISTS items_unsync_update AFTER UPDATE OF id, selfId, amount, enchant, equipped, slot, characterId ON items
+            WHEN OLD.id IS NOT NEW.id OR OLD.selfId IS NOT NEW.selfId OR OLD.amount IS NOT NEW.amount
+                OR OLD.enchant IS NOT NEW.enchant OR OLD.equipped IS NOT NEW.equipped OR OLD.slot IS NOT NEW.slot
+                OR OLD.characterId IS NOT NEW.characterId
+            BEGIN DELETE FROM bot_items_synced WHERE characterId IN (OLD.characterId, NEW.characterId); END;
+            CREATE TRIGGER IF NOT EXISTS items_unsync_delete AFTER DELETE ON items
+            BEGIN DELETE FROM bot_items_synced WHERE characterId = OLD.characterId; END;
+        `)],
+        // A bot's pending economy intent (EconomyCommit, economyTupleUnsafe):
+        // admission writes it alone, so it is a small row here instead of a
+        // rewrite of the wide life row. A table only: an intent saved in the
+        // row by an older build is read there until the next admission.
+        ['bot-economy-intents', () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_economy_intents (
+                characterId INTEGER PRIMARY KEY REFERENCES bot_life_state(characterId) ON DELETE CASCADE,
+                tuple TEXT NOT NULL
+            );
+        `)]
+    ];
+    const migrate = (apply, record) => {
         connection.exec('BEGIN IMMEDIATE');
         try {
             apply();
-            connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+            record();
             connection.exec('COMMIT');
         } catch (error) {
             try {
@@ -1937,6 +2081,21 @@ function applySchemaMigrations() {
             }
             throw error;
         }
+    };
+    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+    migrations.forEach(([version, apply]) => {
+        if (applied.has(version)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now()));
+    });
+    const names = new Set(namedMigrations.map(([name]) => name));
+    if (names.size !== namedMigrations.length) throw new Error('named migrations repeat a name');
+    const appliedNames = new Set(connection.prepare('SELECT name FROM named_migrations').all().map((row) => row.name));
+    // A world saved by a newer build: its extra migrations are kept, not undone.
+    const unknown = [...appliedNames].filter((name) => !names.has(name));
+    if (unknown.length) console.warn('DB          :: named migrations unknown to this build %s', unknown.join(', '));
+    namedMigrations.forEach(([name, apply]) => {
+        if (appliedNames.has(name)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO named_migrations(name, appliedAt) VALUES (?, ?)').run(name, now()));
     });
 }
 
@@ -1952,6 +2111,7 @@ function all(sql, params = []) {
 
 function write(sql, params = []) {
     checkMutationAdmission();
+    traceRevisionWrite(sql, params);
     const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
@@ -2119,13 +2279,12 @@ function generatedBotRow(row = {}) {
     return generated && !staticService;
 }
 
+// The clan share cap counts the generated bots, and those in a clan, from the
+// trigger-kept party candidate flag, not from every bot's stats. Our choice: a
+// bot under a player party takeover counts in neither number while it lasts.
 function botPopulationUnsafe() {
-    return one(`SELECT
-        COUNT(DISTINCT c.id) AS population,
-        COUNT(DISTINCT CASE WHEN c.clanId != 0 THEN c.id END) AS botMembers
-        FROM characters c
-        LEFT JOIN bot_life_state life ON life.characterId = c.id
-        WHERE ${GENERATED_BOT_FILTER}`);
+    return one(`SELECT COUNT(*) AS population, COUNT(*) FILTER (WHERE clanId != 0) AS botMembers
+        FROM bot_party_candidate_projection WHERE ordinaryEligible = 1`);
 }
 
 function executeReadAutonomousBotMember(characterId, clanId) {
@@ -2222,15 +2381,80 @@ function archiveFinishedClanActionsUnsafe(clanId) {
     return rows;
 }
 
+function resolveClanActionUnsafe(action, status, result, reasonCode) {
+    const timestamp = now();
+    const safeResult = compactClanActionResult(result);
+    const updated = write(`UPDATE clan_actions
+        SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
+        WHERE id = ? AND status IN ('pending', 'running')`, [
+        status,
+        JSON.stringify(safeResult),
+        String(reasonCode || ''),
+        timestamp,
+        timestamp,
+        action.id
+    ]);
+    if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
+    recordClanGoalEventUnsafe({
+        clanId: Number(action.clanId),
+        eventType: `action_${status}`,
+        plan: String(action.actionType || ''),
+        reasonCode: String(reasonCode || ''),
+        payloadJson: JSON.stringify({ actionId: Number(action.id), actionKey: action.actionKey, result: safeResult }),
+        occurredAt: timestamp
+    });
+    const resolved = one('SELECT * FROM clan_actions WHERE id = ?', [action.id]);
+    archiveFinishedClanActionsUnsafe(action.clanId);
+    return {
+        ok: true,
+        actionId: Number(action.id),
+        status,
+        action: resolved
+    };
+}
+
+function clanActionScheduleUnsafe() {
+    return jsonObject(one('SELECT value FROM world_meta WHERE key = ?', [ClanActionScheduler.key])?.value);
+}
+
+function saveClanActionScheduleUnsafe(state) {
+    write(`INSERT INTO world_meta(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [ClanActionScheduler.key, JSON.stringify(state)]);
+}
+
 // A new pending clan action. Its actionKey stays unique across live and
 // finished actions, as when both were one table: a key taken by a finished
 // action fails (or is ignored) like the UNIQUE constraint did.
 function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100, availableAt, payload = {},
-    reasonCode = '', createdAt }, { ignoreDuplicate = false } = {}) {
+    reasonCode = '', createdAt }, { ignoreDuplicate = false, coalescePending = false } = {}) {
     if (finishedClanActionUnsafe('actionKey', actionKey)) {
         if (ignoreDuplicate) return { affectedRows: 0, insertId: 0 };
         throw Object.assign(new Error('UNIQUE constraint failed: clan_actions.actionKey'),
             { code: 'ERR_SQLITE_ERROR', errcode: 2067, errstr: 'constraint failed' });
+    }
+    // These actions read the clan's current state when claimed. New inputs
+    // advance one pending action, never another execution chain. A running
+    // action retains its captured inputs and may have one pending successor.
+    // Only disposable wake-ups opt in. Commands such as equipment completion
+    // retain their own durable key even when another review is already queued.
+    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)
+        && one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId])) {
+        const pending = one(`SELECT * FROM clan_actions
+            WHERE clanId = ? AND status = 'pending' AND actionType = ? ORDER BY id LIMIT 1`, [clanId, actionType]);
+        if (pending) {
+            const previous = jsonObject(pending.payloadJson);
+            const merged = { ...previous, ...payload };
+            merged.reasons = [...new Set([...(previous.reasons || []), ...(payload.reasons || []),
+                previous.reason, payload.reason].filter(Boolean))];
+            const nextPriority = Math.max(Number(pending.priority), priority);
+            const nextAt = Math.min(Number(pending.availableAt), availableAt);
+            const payloadJson = JSON.stringify(merged);
+            if (nextPriority !== Number(pending.priority) || nextAt !== Number(pending.availableAt) || payloadJson !== pending.payloadJson) {
+                write('UPDATE clan_actions SET priority = ?, availableAt = ?, payloadJson = ?, updatedAt = ? WHERE id = ?',
+                    [nextPriority, nextAt, payloadJson, createdAt, pending.id]);
+            }
+            return { affectedRows: 0, insertId: pending.id, coalesced: true };
+        }
     }
     return write(`INSERT ${ignoreDuplicate ? 'OR IGNORE ' : ''}INTO clan_actions
         (clanId, actionKey, actionType, priority, status, attempt, availableAt,
@@ -2362,14 +2586,14 @@ function syncPlayerManagedClanUnsafe(clanId) {
 
 // Economic operations must commit their cold projection with the physical
 // inventory. A later failure or restart must not replay pre-purchase balances.
-function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null) {
+function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null, statsPatch = null) {
     if (!state) return null;
     const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
     if (!row || row.phase !== 'cold'
         || (state.simulation && Number(row.simulationRevision) !== Number(state.simulation.revision))) {
         throw new Error('economy_state_changed');
     }
-    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp);
+    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp, statsPatch);
 }
 
 function nativeHennaSlotsUnsafe(characterId) {
@@ -2392,6 +2616,30 @@ function economyOwnerUnsafe(characterId, authority, fresh = false) {
     return row;
 }
 
+// A bot's economy tuple (EconomyCommit): the completed receipt is the row's
+// stats leaf, written by the step that completed it; a pending intent is its
+// bot_economy_intents row, written alone at admission. The newer one holds: a
+// receipt is one sequence past the intent it completed (or names its id), an
+// intent admitted after a receipt carries the receipt's sequence. An intent
+// that does not read as one is counted and taken as absent: the next
+// admission writes over it.
+function economyTupleUnsafe(characterId, row) {
+    const receipt = jsonObject(row.statsJson).economyCommit ?? null;
+    const saved = one('SELECT tuple FROM bot_economy_intents WHERE characterId=?', [Number(characterId)])?.tuple;
+    let intent = null;
+    if (saved) {
+        try {
+            intent = JSON.parse(saved);
+            if (!EconomyCommit.valid(intent) || intent[1] !== 0) throw Error('invalid_economy_intent');
+        } catch (error) {
+            FailureLog.note('db.economy_intent', error);
+            intent = null;
+        }
+    }
+    const completed = receipt && (Number(receipt[0]) > Number(intent?.[0]) || receipt[2] === intent?.[2]);
+    return { receipt, tuple: intent && !completed ? intent : receipt };
+}
+
 // Read a saved completion before examining the now-consumed physical inputs.
 // Authority is still checked first; an obsolete session/worker cannot spend.
 function economyStepUnsafe(characterId, command, kind) {
@@ -2402,7 +2650,7 @@ function economyStepUnsafe(characterId, command, kind) {
     const row = economyOwnerUnsafe(characterId, command.authority);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_admission', 'authority_checked',
         { commandKind: command[1] });
-    const tuple = jsonObject(row.statsJson).economyCommit;
+    const { tuple } = economyTupleUnsafe(characterId, row);
     if (!EconomyCommit.valid(tuple) || tuple[2] !== command[0] || tuple[3] !== command[1]) throw Error('economy_intent_changed');
     if (tuple[1] === 1 && command[2] === tuple[0] - 1) {
         if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_replay', 'saved_receipt',
@@ -2413,7 +2661,7 @@ function economyStepUnsafe(characterId, command, kind) {
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
     economyOwnerUnsafe(characterId, command.authority, true);
     const state = { level: Number(row.level), phase: row.phase, stats: SavedStats.merge(row.statsJson, row.mindJson),
-        inventory: jsonObject(row.inventorySummary) };
+        inventory: InventorySummary.read(row.inventorySummary) };
     // Current own protection is prepared once inside the atomic boundary,
     // never inferred from the worker's spending proposal.
     const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
@@ -2481,21 +2729,43 @@ function checkWarSupplyPurchaseUnsafe(characterId, itemId, source = null) {
     if (reason) throw Error(reason);
 }
 
+function checkArrowPurchaseUnsafe(characterId, itemId, count, source = null, pending = [], excludeMeeting = 0) {
+    const Arrows = require('./GameServer/Inventory/ArrowStock');
+    if (!Arrows.isArrow({ selfId: itemId })) return;
+    const character = one('SELECT username,classId,level FROM characters WHERE id=?', [characterId]);
+    if (!String(character?.username || '').startsWith('bot_')) return;
+    const row = source || one('SELECT statsJson,mindJson FROM bot_life_state WHERE characterId=?', [characterId]);
+    const inventory = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(
+        all('SELECT * FROM items WHERE characterId=?', [characterId]));
+    const incoming = all('SELECT selfId,SUM(amount) amount FROM board_settlements WHERE ownerId=? GROUP BY selfId', [characterId]);
+    for (const meeting of TradeMeetings.active(characterId)) if (meeting.id !== excludeMeeting)
+        incoming.push(...all("SELECT selfId,heldCount amount FROM board_trade_meeting_lines WHERE meetingId=? AND payer=? AND custodyType='trade' AND heldCount>0",
+            [meeting.id, Number(meeting.actorB === characterId)]));
+    for (const line of [...pending, ...incoming]) {
+        const id = Number(line.selfId);
+        inventory[id] = { ...inventory[id], selfId: id,
+            amount: Number(inventory[id]?.amount || 0) + Number(line.amount || 0) };
+    }
+    const state = { characterId, level: character.level, inventory,
+        stats: { ...SavedStats.merge(row?.statsJson, row?.mindJson), classId: character.classId } };
+    if (Arrows.purchaseAmount(state, itemId, count) < count) throw Error('arrow_stock_limit');
+}
+
 function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), packet = packetOverride || stats.money;
-    if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+    if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
-    const { r, itemId, valueHours, survivalCost, clanPart, raidPreparationId } = funding;
+    const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
     const budget = PurchaseFunding.spendable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
-    }, 0, { r, itemId, valueHours, survivalCost, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
+    }, 0, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
-        { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
-            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
+        { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(StatsPacket.survivalReserve(packet)),
+            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow: 0,
             decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
 
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
@@ -2517,15 +2787,17 @@ function prepareCraftReservationsUnsafe(step, recipe) {
         && !unsealSource
         && Number(plan.componentRecipes?.[recipe.productId]) === Number(recipe.recipeId);
     if (!final && !component) return;
+    // A bot's own craft spends its own bag: a clan goal's reserve binds what the
+    // bot sells or trades, not this plan (docs/game-decisions.md, 11-02).
     step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats,
-        inventory: jsonObject(step.row.inventorySummary)
-    }, { craft: false });
+        inventory: InventorySummary.read(step.row.inventorySummary)
+    }, { craft: false, clan: false });
 }
 
-function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false) {
+function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false, held = 0) {
     if (!step) return;
-    const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = jsonObject(step.row.inventorySummary);
+    const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = InventorySummary.read(step.row.inventorySummary);
     // Bilateral market acceptance also rechecks the current gear/craft/clan
     // reserves inside its transaction, without a prepared economy command.
     step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
@@ -2537,7 +2809,7 @@ function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, s
         Number(step.reserved?.[selfId] || 0), Number(item.protectedAmount || 0), Number(item.starterMobLootAmount || 0), Number(item.reservedAmount || 0))
         + (sale ? Number(invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({ stats })[selfId] || 0) : 0);
     const available = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=? AND equipped=0',
-        [characterId, Number(selfId)]).amount);
+        [characterId, Number(selfId)]).amount) + held;
     if (available - reserve < used) throw Error('economy_material_protected');
 }
 
@@ -2568,18 +2840,23 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     const ids = [...new Set([57, ...changedIds].map(Number))];
     const physical = LifeState.inventorySummaryFromItems(all(`SELECT * FROM items
         WHERE characterId = ? AND selfId IN (${ids.map(() => '?').join(',')})`, [Number(characterId), ...ids]));
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     for (const id of ids) {
         if (physical[id]) inventory[id] = physical[id];
         else delete inventory[id];
     }
     const adena = Number(physical[57]?.amount || 0);
     const { body, mind } = SavedStats.split({ ...statsPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
-    write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?, mp = COALESCE(?, mp),
-        statsJson = json_patch(statsJson,json(?)),
+    // An equipment plan is a complete ownership record, not a partial JSON
+    // patch: merging a resumed project into the completed goal leaves stale
+    // target fields and even its nested inputPreparation behind.
+    const statsBase = Object.hasOwn(body, 'equipmentPlan') ? "json_remove(statsJson,'$.equipmentPlan')" : 'statsJson';
+    const summary = InventorySummary.saved(inventory);
+    write(`UPDATE bot_life_state SET inventorySummary = ?, ${bagRevisionSet('?')}, adena = ?, mp = COALESCE(?, mp),
+        statsJson = json_patch(${statsBase},json(?)),
         mindJson = CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END,
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-    [JSON.stringify(inventory), adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
+    [summary, summary, adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
     const inventoryPatch = Object.fromEntries(ids
         .map(id => [id, physical[id] || null]));
     return { ...normalizeRow(coldSimulationRow(characterId)), inventoryPatch };
@@ -2645,7 +2922,7 @@ function partyAgreementUnsafe(previous, proposed) {
 function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
     const row = one('SELECT inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
     if (!row) return false;
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     inventory['57'] = {
         ...(inventory['57'] || {}),
         selfId: 57,
@@ -2657,7 +2934,7 @@ function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
     write(`UPDATE bot_life_state SET adena = ?, inventorySummary = ?, statsJson = ?, updatedAt = ?, ${MOVE_FAR_REVISION}
         WHERE characterId = ?`, [
         Math.max(0, Number(amount) || 0),
-        JSON.stringify(inventory),
+        InventorySummary.saved(inventory),
         JSON.stringify(stats),
         now(),
         Number(characterId)
@@ -2680,7 +2957,7 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
     if (expectedRevision !== null && Number(expectedRevision) !== currentRevision) {
         return { ok: false, code: 'stale_snapshot', simulationRevision: currentRevision };
     }
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     const physical = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
         FROM items WHERE characterId = ? AND selfId = ? AND amount > 0`, [id, itemId]).amount || 0);
     const previous = inventory[String(itemId)] || {};
@@ -2701,7 +2978,7 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
         WHERE characterId = ? AND phase = 'cold'
           AND simulationRevision = ?
           AND (? = 1 OR partyId IS NULL OR partyId = '')`, [
-        JSON.stringify(inventory),
+        InventorySummary.saved(inventory),
         itemId === 57 ? physical : null,
         JSON.stringify(stats),
         nextRevision,
@@ -2758,6 +3035,13 @@ const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, ac
 // or after the resolve's save that already moved the row, before its publish).
 // BotLifeState `save` takes it in its upsert.
 const MOVE_FAR_REVISION = "simulationRevision = simulationRevision + CASE WHEN phase = 'cold' THEN 1 ELSE 0 END";
+// A writer of the bag summary moves its revision in its own UPDATE (`incoming`:
+// the SQL value it writes), so bot_life_state_inventory_revision adds no
+// second write of the whole row (migration 68): the cold commit, the bag
+// snapshot after a value move, BotLifeState `save`.
+function bagRevisionSet(incoming) {
+    return `inventoryRevision = CASE WHEN inventorySummary IS ${incoming} THEN inventoryRevision ELSE inventoryRevision + 1 END`;
+}
 const SIMPLE_COLD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion', 'spotId',
@@ -2765,6 +3049,58 @@ const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'lastHotAt', 'locX', 'locY', 'locZ', 'hp', 'maxHp', 'mp', 'maxMp',
     'targetLevelBand', 'deathCount', 'partyId', 'inventorySummary', 'statsJson', 'mindJson', 'updatedAt'
 ]);
+
+// SQLite rewrites the entry of every index whose column an UPDATE sets,
+// changed or not: a WAL page per index per row. The whole-row writers (the
+// BotLifeState save, the cold commit) name every column, so these indexed ones,
+// still on most writes, are set only when the row does not already hold the
+// value (accountName, characterName, phase+partyId, phase+nextResolveAt). The
+// other indexed columns move on almost every write: updatedAt and the revision
+// in the party candidate projection, statsJson behind the party request ones.
+const HELD_ROW_COLUMNS = Object.freeze(['accountName', 'characterName', 'phase', 'partyId', 'nextResolveAt']);
+
+// Which of the held columns named in `values` the row already holds, compared
+// by SQL `IS` (the column's affinity, as the write would store the value) in
+// the writer's job. None for a missing row.
+function heldRowColumnsUnsafe(characterId, values) {
+    const named = HELD_ROW_COLUMNS.filter((column) => values[column] !== undefined);
+    if (!named.length) return [];
+    const row = one(`SELECT ${named.map((column) => `${column} IS ? AS ${column}`).join(', ')}
+        FROM bot_life_state WHERE characterId = ?`, [...named.map((column) => values[column]), characterId]);
+    return row ? named.filter((column) => Number(row[column]) === 1) : [];
+}
+
+// The BotLifeState save's upsert names the held columns with this marker in
+// its DO UPDATE list; the save puts back the ones the row does not hold. Their
+// places in the save's native ROW (BotLifeState.save).
+const HELD_ROW_SET = '/* held row columns */';
+const SAVE_ROW_HELD_PARAMS = Object.freeze({ accountName: 1, characterName: 2, phase: 11, nextResolveAt: 13, partyId: 25 });
+function heldRowSetSql(sql, held = []) {
+    return sql.replace(HELD_ROW_SET, HELD_ROW_COLUMNS.filter((column) => !held.includes(column))
+        .map((column) => `${column} = excluded.${column},`).join(' '));
+}
+// A save's text with the held columns put back, and with its RETURNING list,
+// held per (held set, RETURNING list) for one base text: the BotLifeState
+// save's constant, so at most 2^5 held sets x 2 lists = 64 (limits.md
+// "Lifecycle save texts"). A different base text (only tests alternate one)
+// clears them and they are built again. Built per save they were ~15 KB of
+// new strings each.
+const SAVE_RETURNING_NATIVE = `${NativeWriteCheckpoint.columns.join(', ')}, statsJson, mindJson`;
+const SAVE_RETURNING_PLAIN = 'simulationRevision, statsJson, mindJson';
+let saveSqlBase = null;
+const saveSqlVariants = new Map();
+function heldRowSaveSql(sql, held, nativeProof) {
+    if (sql !== saveSqlBase) { saveSqlBase = sql; saveSqlVariants.clear(); }
+    let key = nativeProof ? 1 << HELD_ROW_COLUMNS.length : 0;
+    for (let index = 0; index < HELD_ROW_COLUMNS.length; index++) if (held.includes(HELD_ROW_COLUMNS[index])) key |= 1 << index;
+    let variant = saveSqlVariants.get(key);
+    if (!variant) {
+        const set = heldRowSetSql(sql, held);
+        variant = { set, returning: `${set} RETURNING ${nativeProof ? SAVE_RETURNING_NATIVE : SAVE_RETURNING_PLAIN}` };
+        saveSqlVariants.set(key, variant);
+    }
+    return variant;
+}
 
 // bot_life_state columns (migration 68): the stored bag summary, the learned
 // skills rows and the henna rows of the bot. Only the database moves them.
@@ -2793,40 +3129,52 @@ function parsedObject(raw) {
     }
 }
 
-// The kit rebuild below keeps a held rank's fields over the fresh ones and puts
-// the fresh keys first; a held skill whose keys already start with them and
-// whose identity fields match rebuilds into the same JSON.
+// A held record is current when it is the fresh one field for field: the
+// fresh record already carries the hot Skill model's numbers (ColdCombatProfile
+// skillRecord), so a rebuild of a current kit writes the same JSON.
 function heldSkillCurrent(held, fresh) {
-    if (!held || held.selfId !== fresh.selfId || held.level !== fresh.level || held.passive !== fresh.passive) return false;
+    if (!held) return false;
     const heldKeys = Object.keys(held);
     let index = 0;
-    for (const key in fresh) if (heldKeys[index++] !== key) return false;
-    return true;
+    for (const key in fresh) if (heldKeys[index++] !== key || held[key] !== fresh[key]) return false;
+    return index === heldKeys.length;
 }
 
-// The kit from the learned rows. Returns `combat` itself when the rows rebuild
-// it unchanged, so the caller re-serializes stats only after a skill move (a
-// level-up, a grant).
+// The kit from the learned rows, as saved (SavedSkills). Returns `combat`
+// itself (packed or whole) when the rows rebuild it unchanged, so the caller
+// re-serializes stats only after a skill move (a level-up, a grant).
 function nativeColdCombatSkillsUnsafe(characterId, combat) {
     if (!combat || typeof combat !== 'object' || Array.isArray(combat)) return combat;
     const learned = ColdCombatProfile.skillSnapshotsFromRecords(all('SELECT selfId, level FROM skills WHERE characterId = ? ORDER BY selfId', [characterId]));
-    const held = Array.isArray(combat.skills) ? combat.skills : null;
+    const held = Array.isArray(combat.skills) ? SavedSkills.unpack(combat.skills) : null;
     if (held && combat.version === ColdCombatProfile.PROFILE_VERSION && combat.skillSource === 'database'
         && held.length === learned.length && learned.every((skill, index) => heldSkillCurrent(held[index], skill))) return combat;
-    const proposed = new Map((held || []).map(skill => [Number(skill.selfId), skill]));
-    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database',
-        skills: learned.map(skill => {
-            const sameRank = proposed.get(skill.selfId);
-            // Hot Skill models resolve C4 semantics (for example buff power)
-            // beyond the raw datapack DTO. Keep that metadata for the exact
-            // learned rank; changed/missing ranks need a fresh native DTO.
-            return Number(sameRank?.level) === skill.level
-                ? { ...skill, ...sameRank, selfId: skill.selfId, level: skill.level, passive: skill.passive } : skill;
-        }) };
+    return SavedSkills.packKit({ ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned });
 }
 
-function syncInventorySummaryUnsafe(characterId, inventory = {}) {
-    const existing = all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
+// Whether a cold bot's items rows match its stored bag summary: a cold commit
+// that synced them wrote the marker at the summary's revision, and since then
+// no items row of the bot moved (the bot-items-synced triggers delete it) and
+// no other writer moved the summary (inventoryRevision). Read before the
+// commit's UPDATE moves the revision.
+function itemsMatchSummaryUnsafe(characterId) {
+    return !!one(`SELECT 1 AS synced FROM bot_items_synced s JOIN bot_life_state b
+        ON b.characterId = s.characterId AND b.inventoryRevision = s.inventoryRevision WHERE s.characterId = ?`, [characterId]);
+}
+
+// Makes the items rows of a bot match the stacks of `inventory` (a stack with
+// no positive amount: no rows); rows of selfIds it does not name stay. A stack
+// is synced from its own rows only, and a second sync of the same entry finds
+// nothing to write, so `selfIds` (a Set) limits it to those stacks when the
+// rows of the others already match their entries: no read or compare of
+// theirs. Every stack when absent.
+function syncInventorySummaryUnsafe(characterId, inventory = {}, selfIds = null) {
+    const entries = Object.keys(inventory).length;
+    if (selfIds && !selfIds.size) return { characterId, entries };
+    const existing = selfIds
+        ? all(`SELECT id, selfId, amount, enchant, equipped, slot FROM items INDEXED BY items_characterId_selfId
+            WHERE characterId = ? AND selfId IN (SELECT value FROM json_each(?)) ORDER BY id`, [characterId, JSON.stringify([...selfIds])])
+        : all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
     const bySelfId = new Map();
     const byId = new Map();
     existing.forEach((row) => {
@@ -2838,7 +3186,7 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
     Object.values(inventory).forEach((item) => {
         const selfId = Number(item.selfId || 0);
         const amount = Number(item.amount || 0);
-        if (!selfId) return;
+        if (!selfId || selfIds && !selfIds.has(selfId)) return;
         const rows = bySelfId.get(selfId) || [];
         if (amount <= 0) {
             rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
@@ -2917,7 +3265,7 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
         });
         rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
     });
-    return { characterId, entries: Object.keys(inventory).length };
+    return { characterId, entries };
 }
 
 function syncColdDeathExperienceUnsafe(characterId, record, timestamp) {
@@ -2977,58 +3325,98 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
     }
 }
 
-function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) {
+// A bot's progress copied to its `characters` row (level, EXP, SP, vitals,
+// class) as one UPDATE. SQLite rewrites the entry of every index whose column
+// the UPDATE sets, changed or not (characters_clan_level_id holds the level),
+// so with the stored row at hand only the moved columns are set; without it
+// the IS NOT guard writes nothing when nothing moved (95 % of cold resolves).
+// washKarma: the EXP gained washes karma (Karma), read from the stored EXP so
+// a repeated write cannot wash twice. Null when nothing is to be written.
+function characterProgressStatement(characterId, values, { washKarma = false, before = null } = {}) {
+    const columns = Object.keys(values).filter((column) => !before || Number(before[column]) !== values[column]);
+    if (!columns.length) return null;
+    const assignments = columns.map((column) => `${escapeIdentifier(column)} = ?`);
+    const params = columns.map((column) => values[column]);
+    if (washKarma && columns.includes('exp')) {
+        assignments.unshift('karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER))');
+        params.unshift(values.exp, KARMA_XP_DIVIDER);
+    }
+    const guard = before ? '' : `(${columns.map((column) => `${escapeIdentifier(column)} IS NOT ?`).join(' OR ')}) AND `;
+    return [`UPDATE characters SET ${assignments.join(', ')} WHERE ${guard}id = ?`,
+        [...params, ...(before ? [] : columns.map((column) => values[column])), characterId]];
+}
+
+// bag: the cold commit's summary write, null when its patch names none:
+// inventoryRevision, the one its UPDATE left, and matched, whether the rows
+// matched the stored summary before that UPDATE (itemsMatchSummaryUnsafe).
+function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null, bag = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
         level: Number(physical.level || 1), exp: Number(physical.exp || 0), sp: Number(physical.sp || 0),
         hp: Number(physical.hp || 0), maxHp: Number(physical.maxHp || 0),
-        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0)
+        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0),
+        ...(classId !== null ? { classId } : {})
     };
-    // The karma wash reads only an EXP gain, so a step that moves none of
-    // these columns leaves the row as it is.
-    const changed = !before || (classId !== null && Number(before.classId) !== classId)
-        || Object.keys(values).some((column) => Number(before[column]) !== values[column]);
-    parts && Diagnostics.count('commit_characters', changed ? 'written' : 'same');
-    // Use the persisted XP delta inside the fenced transaction: unchanged
-    // snapshots cannot wash karma twice, and non-combat updates grant none.
-    if (changed) write(`UPDATE characters SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-        level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${classId !== null ? ', classId = ?' : ''} WHERE id = ?`, [
-        values.exp, KARMA_XP_DIVIDER,
-        values.level, values.exp, values.sp, values.hp, values.maxHp, values.mp, values.maxMp,
-        ...(classId !== null ? [classId] : []), characterId
-    ]);
+    // Inside the fenced transaction: an unchanged snapshot cannot wash karma
+    // twice, and a step without an EXP gain washes none.
+    const statement = before ? characterProgressStatement(characterId, values, { washKarma: true, before }) : null;
+    parts && Diagnostics.count('commit_characters', statement ? 'written' : 'same');
+    if (statement) write(...statement);
     if (physical.soulCrystals?.length) applySoulCrystalStepsUnsafe(characterId, physical.soulCrystals);
     parts?.lap('physical');
-    if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
-    parts && Diagnostics.count('commit_inventory', physical.inventory ? 'sent' : 'absent');
+    if (physical.inventory) {
+        // The rows already match the stored summary, which the step's bag
+        // was (the revision fence): only the stacks it moved can differ. Soul
+        // crystal steps above rewrote rows of this bag: every stack then.
+        const stacks = bag?.matched && Array.isArray(physical.changedItemIds) && !physical.soulCrystals?.length
+            ? new Set(physical.changedItemIds.map(Number)) : null;
+        syncInventorySummaryUnsafe(characterId, physical.inventory, stacks);
+        // The rows match the summary this commit stored until an items write.
+        if (bag) write(`INSERT INTO bot_items_synced(characterId, inventoryRevision) VALUES (?, ?)
+            ON CONFLICT(characterId) DO UPDATE SET inventoryRevision = excluded.inventoryRevision`, [characterId, bag.inventoryRevision]);
+        if (parts) {
+            const entries = Object.values(physical.inventory);
+            const synced = stacks ? entries.filter((item) => stacks.has(Number(item.selfId || 0))).length : entries.length;
+            Diagnostics.count('commit_inventory', stacks ? 'stacks' : 'full');
+            Diagnostics.count('commit_inventory', 'stack', 'synced', synced);
+            Diagnostics.count('commit_inventory', 'stack', 'kept', entries.length - synced);
+        }
+    } else if (parts) Diagnostics.count('commit_inventory', 'absent');
     parts?.lap('inventory');
     if (physical.pvpKills?.length) {
         if (physical.pvpKills.length > 18) throw Error('cold PvP: too many kills');
         const current = one('SELECT level, pvp, pk, karma FROM characters WHERE id = ?', [characterId]);
         for (const kill of physical.pvpKills) {
             if (!Number.isSafeInteger(kill.victimId) || kill.victimId === characterId
-                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || typeof kill.pvp !== 'boolean') {
+                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || !PvpRules.KILL_OUTCOMES.includes(kill.outcome)) {
                 throw Error('cold PvP: invalid kill');
             }
-            if (kill.pvp) current.pvp++;
-            else {
-                current.karma += require('./GameServer/Karma').pkKillKarma({ fetchPk: () => current.pk,
-                    fetchLevel: () => current.level }, { fetchLevel: () => kill.victimLevel });
-                current.pk++;
-            }
+            Object.assign(current, PvpRules.tallyAfterKill(current, kill.outcome, kill.victimLevel));
         }
         write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
             [current.pvp, current.pk, current.karma, characterId]);
         write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?, '$.pk', ?) WHERE characterId = ?",
             [current.karma, current.pk, characterId]);
     }
-    // A PvP tally and a PK death drop (tried on the step that ends at 0 HP; it
-    // returns its death sequence only when it wrote) rewrite this bot's life
-    // state after the commit's UPDATE.
+    // A PvP tally, a PK death drop (tried on the step that ends at 0 HP; it
+    // returns its death sequence only when it wrote) and a death's karma wash
+    // rewrite this bot's life state after the commit's UPDATE.
     const dropped = Number(before?.hp) > 0 && Number(physical.hp) <= 0 ? dropPkDeathItemsUnsafe(characterId) : null;
+    // A new cold death's EXP loss washes karma (DeathExperience.applyColdDeath
+    // names how much), after the drop read the karma it died with.
+    // The wash is capped by the karma held now, after this commit's own kills.
+    const washed = Number(deathRecord?.karmaLost) > 0 && deathRecord.pendingRestoration
+        && Number(one('SELECT karma FROM characters WHERE id = ?', [characterId])?.karma) > 0
+        && !(Number(one('SELECT penaltyAppliedAt FROM character_death_experience WHERE characterId = ?',
+            [characterId])?.penaltyAppliedAt) >= Number(deathRecord.penaltyAppliedAt));
+    if (washed) {
+        write('UPDATE characters SET karma = MAX(0, karma - ?) WHERE id = ?', [Number(deathRecord.karmaLost), characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', (SELECT karma FROM characters WHERE id = ?)) WHERE characterId = ?",
+            [characterId, characterId]);
+    }
     return { drops: dropped?.drops || [],
-        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 };
+        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 || washed };
 }
 
 // The row is already moved when this runs: by the commit's own UPDATE, or by
@@ -3047,7 +3435,7 @@ function dropPkDeathItemsUnsafe(characterId) {
     for (const item of drops) write('DELETE FROM items WHERE id=? AND characterId=?', [item.id, characterId]);
     const summary = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]));
     const written = one(`UPDATE bot_life_state SET inventorySummary=?, statsJson=json_set(statsJson,'$.pkDropDeathSequence',?)
-        WHERE characterId=? RETURNING ${NativeWriteCheckpoint.columns.join(', ')}`, [JSON.stringify(summary), death, characterId]);
+        WHERE characterId=? RETURNING ${NativeWriteCheckpoint.columns.join(', ')}`, [InventorySummary.saved(summary), death, characterId]);
     return { drops, inventory: summary, deathSequence: death, revision: Number(written.simulationRevision), checkpoint: written };
 }
 
@@ -3123,10 +3511,11 @@ const COLD_COMMIT_RETURNING = `characterId, simulationRevision, inventoryRevisio
     json_extract(statsJson, '$.economyCommit') AS economyCommit`;
 
 // A cold commit's one write: the UPDATE of the proposal's columns guarded by
-// the far phase and the revision the step started from, with no row read
-// before it. The bag revision moves in this statement: RETURNING does not see
-// what an AFTER trigger writes, and a statement that moved it leaves the
-// trigger nothing to do. Null when the guard refused.
+// the far phase and the revision the step started from; only the held columns
+// are read before it (HELD_ROW_COLUMNS). The bag revision moves in this
+// statement: RETURNING does not see what an AFTER trigger writes, and a
+// statement that moved it leaves the trigger nothing to do. Null when the
+// guard refused.
 // A refused commit writes nothing, the mind included: main moved the row, the
 // refusal hands that row back (coldSimulationRow), the worker rebases on it and
 // builds again (one build per refusal, stale_revision 0.3% of acks). Every mind
@@ -3136,11 +3525,14 @@ const COLD_COMMIT_RETURNING = `characterId, simulationRevision, inventoryRevisio
 // and dropped a raise main made meanwhile.
 function writeColdCommitUnsafe(fields, patch) {
     const { characterId, expectedRevision, timestamp } = fields;
-    const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp });
+    // The proposal names every column; the held ones the row holds stay out.
+    const held = heldRowColumnsUnsafe(characterId, patch);
+    const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp })
+        .filter(([column]) => !held.includes(column));
     const assignments = coldPatchAssignments(entries);
     const params = entries.map(([, value]) => value);
     if (patch.inventorySummary !== undefined) {
-        assignments.push('inventoryRevision = CASE WHEN inventorySummary IS ? THEN inventoryRevision ELSE inventoryRevision + 1 END');
+        assignments.push(bagRevisionSet('?'));
         params.push(patch.inventorySummary);
     }
     assignments.push('simulationRevision = ?');
@@ -3482,7 +3874,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
     if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
     if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
-    const changedIds = [];
+    const changedIds = difference ? [57] : [];
     if (returned > 0 && shop.custodyPolicy !== 1 && Number(shop.storeType) === 1) {
         afkTradeCreditItemUnsafe(characterId, line, returned);
         changedIds.push(Number(line.selfId));
@@ -3504,7 +3896,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     return {
         shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
         changedIds,
-        moved: changedIds.length > 0 || difference !== 0
+        moved: changedIds.length > 0
     };
 }
 
@@ -3699,7 +4091,7 @@ function closeBoardRecordUnsafe(shop, { ownMove = true, at = now() } = {}) {
             if (give(line, line.count) === 'bag') changed.push(Number(line.selfId));
         });
     }
-    if (Number(shop.escrowAdena || 0) > 0) give({ selfId: 57 }, shop.escrowAdena);
+    if (Number(shop.escrowAdena || 0) > 0 && give({ selfId: 57 }, shop.escrowAdena) === 'bag') changed.push(57);
     deleteBoardRecordUnsafe(shop.id, at);
     return changed;
 }
@@ -3753,8 +4145,206 @@ function validBoardRecord(kind, storeType, rows) {
     return [BoardRules.SELL, BoardRules.BUY].includes(BoardRules.storeTypeFor(kind, storeType));
 }
 
+// A record line's numbers as written, checked: its fills and pricing cursor
+// (a bot's own, or a fresh one; none for a player).
+function boardLineValues(line, storeType, botOwned) {
+    const selfId = Number(line.selfId);
+    const count = Math.floor(Number(line.count));
+    const price = Math.floor(Number(line.price));
+    const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
+    if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+        || !Number.isSafeInteger(count) || count < 1
+        || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
+        throw new Error('invalid_afk_trade_line');
+    }
+    const fills = botOwned ? (line.fills ?? 0) : 0;
+    if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
+    const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
+    const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? 0 : null);
+    if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
+    return { selfId, count, price, enchant, fills, observations };
+}
+
+// A bot's sale keeps its production inputs (ItemDisposition): one check per
+// line, its row read once per move (no write of the move touches it). `held`:
+// units of the item the shop still holds that count as in the bag (a
+// republished shop's stock is offered again).
+function saleProtectionUnsafe(characterId, botOwned) {
+    const life = botOwned && one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
+    if (!life) return null;
+    const inputs = invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({
+        stats: SavedStats.merge(life.statsJson, life.mindJson) });
+    const step = { row: life };
+    return (selfId, count, held = 0) => {
+        if (inputs[selfId] > 0) checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, count, true, held);
+    };
+}
+
+// Takes `count` of a sell line's item out of the owner's bag (a conditional
+// ad only names the row) and returns the first row taken. `sourceIds`: rows
+// this move took from already.
+function takeSellStockUnsafe(characterId, line, { selfId, enchant, count }, { flexible, compatibleParts, conditional, sourceIds }) {
+    let source = null;
+    let sourceId = Number(line.objectId || line.sourceObjectId || 0);
+    // Returned nonstackable stock is one physical row per unit. Keep
+    // the logical lot's metadata even when another row serves it.
+    const metadataSql = compatibleParts ? ' AND slot = ? AND petData IS ?' : '';
+    const metadataValues = compatibleParts ? [Number(line.slot || 0), petDataText(line.petData)] : [];
+    if (flexible) {
+        const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
+            AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}`,
+        [sourceId, characterId, selfId, enchant, count, ...metadataValues]);
+        if (!preferred || sourceIds.has(sourceId)) {
+            const candidates = all(`SELECT id FROM items WHERE characterId = ?
+                AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}
+                ORDER BY id`, [characterId, selfId, enchant, count, ...metadataValues]);
+            sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
+        }
+    }
+    if (!sourceId && compatibleParts) {
+        // Each unused physical row supplies at least one unit; used
+        // IDs may still have stock, so leave room to skip them.
+        const partLimit = Math.min(Number.MAX_SAFE_INTEGER, count + sourceIds.size);
+        const parts = all(`SELECT id, amount FROM items WHERE characterId = ?
+            AND selfId = ? AND enchant = ? AND equipped = 0 AND amount > 0${metadataSql}
+            ORDER BY id LIMIT ?`, [characterId, selfId, enchant, ...metadataValues, partLimit]);
+        let remaining = count;
+        for (const part of parts) {
+            const partId = Number(part.id);
+            if (sourceIds.has(partId)) continue;
+            const partCount = Math.min(remaining, Number(part.amount));
+            const taken = afkTradeTakeItemUnsafe(characterId, partId, selfId, enchant, partCount);
+            sourceIds.add(partId);
+            if (!source) source = taken;
+            remaining -= partCount;
+            if (remaining === 0) break;
+        }
+        if (remaining > 0) throw new Error('invalid_afk_trade_source');
+        return source;
+    }
+    if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
+    sourceIds.add(sourceId);
+    return conditional ? one('SELECT * FROM items WHERE id=? AND characterId=?', [sourceId, characterId])
+        : afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+}
+
+function petDataText(petData) {
+    return petData ? (typeof petData === 'string' ? petData : JSON.stringify(petData)) : null;
+}
+
+function insertBoardLineUnsafe(shopId, line, { selfId, count, price, enchant, fills, observations }, source, timestamp) {
+    write(`INSERT INTO afk_trade_lines(
+        shopId, sourceObjectId, selfId, name, count, initialCount, price,
+        enchant, slot, stackable, petData, createdAt, updatedAt, fills,
+        ${PRICING_COLUMNS.join(', ')}
+    ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
+        shopId,
+        source ? Number(source.id) : null,
+        selfId,
+        source?.name || line.name || `Item ${selfId}`,
+        count,
+        count,
+        price,
+        source ? Number(source.enchant || 0) : enchant,
+        source ? Number(source.slot || 0) : Number(line.slot || 0),
+        line.stackable ? 1 : 0,
+        source?.petData || line.petData || null,
+        timestamp,
+        timestamp,
+        fills,
+        ...observations
+    ]);
+}
+
+// A bot's sell shop republished as a sell shop in its town keeps its record:
+// its id, its revision moving on (the key a stale move fails on), its lines
+// whose item, count, price and pricing stand unwritten. A changed count moves
+// only the difference between the bag and the line; a line gone gives its
+// stock back, a new one takes it. Lines stay in the order of `rows` (the
+// projection and the next review read them by id): a line whose old row would
+// sort out of order, or after a new one, is given back and taken again as a
+// new row. Bag and journal end as a close and reopen leave them. Closing and
+// reopening rewrote the shop row, its indexes, every line and their bag
+// stacks: 29.5 WAL frames a republish of one changed line, 20.5 now (150 shops
+// of the 1731-bot save; the rest is the bag rows and the fenced life row).
+function keepsShopRecord(active, config, storeType) {
+    return storeType === BoardRules.SELL && Number(active.storeType) === BoardRules.SELL
+        && active.custodyPolicy !== 1 && (config.town || null) === (active.town || null);
+}
+
+function republishSellShopUnsafe(characterId, active, config, rows, timestamp) {
+    const botOwned = isBotOwnerUnsafe(characterId);
+    const held = all('SELECT * FROM afk_trade_lines WHERE shopId = ? ORDER BY id', [active.id]);
+    const open = held.filter(line => Number(line.count) > 0);
+    const sameStock = (old, line, values) => Number(old.selfId) === values.selfId && Number(old.enchant || 0) === values.enchant
+        && Number(old.slot || 0) === Number(line.slot || 0) && (Number(old.stackable) === 1) === !!line.stackable
+        && (old.petData || null) === petDataText(line.petData);
+    let lastId = 0, appended = false;
+    const plan = rows.map((line) => {
+        const values = boardLineValues(line, BoardRules.SELL, botOwned);
+        const index = appended ? -1 : open.findIndex(old => Number(old.id) > lastId && sameStock(old, line, values));
+        if (index < 0) { appended = true; return { line, values, kept: null }; }
+        const [kept] = open.splice(index, 1);
+        lastId = Number(kept.id);
+        return { line, values, kept };
+    });
+    // The check a close and reopen makes: each line's count against the bag
+    // with the whole old stock back, less what earlier lines took again.
+    const protection = saleProtectionUnsafe(characterId, botOwned);
+    if (protection) {
+        const stock = new Map();
+        open.concat(plan.filter(step => step.kept).map(step => step.kept))
+            .forEach(line => stock.set(Number(line.selfId), (stock.get(Number(line.selfId)) || 0) + Number(line.count)));
+        plan.forEach(({ values }) => {
+            const back = stock.get(values.selfId) || 0;
+            protection(values.selfId, values.count, back);
+            stock.set(values.selfId, back - values.count);
+        });
+    }
+    const changed = new Set();
+    // What leaves the shop goes back first: a line below may take it again.
+    held.filter(line => !plan.some(step => step.kept === line)).forEach((line) => {
+        if (Number(line.count) > 0) {
+            afkTradeCreditItemUnsafe(characterId, line, Number(line.count));
+            changed.add(Number(line.selfId));
+        }
+        write('DELETE FROM afk_trade_lines WHERE id = ?', [line.id]);
+    });
+    plan.forEach(({ values, kept }) => {
+        if (!kept || values.count >= Number(kept.count)) return;
+        afkTradeCreditItemUnsafe(characterId, kept, Number(kept.count) - values.count);
+        changed.add(values.selfId);
+    });
+    const take = { flexible: true, compatibleParts: true, conditional: false, sourceIds: new Set() };
+    plan.forEach(({ line, values, kept }) => {
+        if (!kept) {
+            insertBoardLineUnsafe(active.id, line, values, takeSellStockUnsafe(characterId, line, values, take), timestamp);
+            changed.add(values.selfId);
+            return;
+        }
+        if (values.count > Number(kept.count)) {
+            takeSellStockUnsafe(characterId, { ...line, objectId: line.objectId || kept.sourceObjectId },
+                { ...values, count: values.count - Number(kept.count) }, take);
+            changed.add(values.selfId);
+        }
+        const pricingMoved = PRICING_COLUMNS.some((column, index) => kept[column] === null || kept[column] === undefined
+            ? values.observations[index] !== null : Number(kept[column]) !== Number(values.observations[index]));
+        if (values.count === Number(kept.count) && values.price === Number(kept.price)
+            && values.fills === Number(kept.fills || 0) && !pricingMoved) return;
+        write(`UPDATE afk_trade_lines SET count = ?, price = ?, fills = ?,
+            ${PRICING_COLUMNS.map(column => `${column} = ?`).join(', ')}, updatedAt = ? WHERE id = ?`,
+        [values.count, values.price, values.fills, ...values.observations, timestamp, kept.id]);
+    });
+    write(`UPDATE afk_trade_shops SET title = ?, locX = ?, locY = ?, locZ = ?, head = ?, appearanceJson = ?,
+        packageSale = ?, revision = revision + 1, updatedAt = ? WHERE id = ?`, [
+        String(config.title || '').slice(0, 52), Number(config.locX || 0), Number(config.locY || 0), Number(config.locZ || 0),
+        Number(config.head || 0), JSON.stringify(config.appearance || {}), config.packageSale ? 1 : 0, timestamp, active.id]);
+    return { shop: afkTradeShopUnsafe(active.id), changedIds: [...changed] };
+}
+
 // Opens one record inside the caller's transaction (see createAfkTradeShop).
-// A shop replaces the owner's shop when `replace` is set; an ad is one item
+// A shop replaces the owner's shop when `replace` is set (a sell shop
+// republished in its town keeps its record, republishSellShopUnsafe); an ad is one item
 // and one per item. `expectedRevision` names the shop it replaces. No kind
 // has a deadline (expiresAt 0): records close by events (user, 2026-10-05).
 // Returns { shop, changedIds }.
@@ -3774,6 +4364,10 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
         active = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND kind = 'shop' AND status = 'active'", [characterId]);
         if (active && !config.replace) throw new Error('afk_trade_already_active');
         if (config.expectedRevision !== undefined) checkRecordRevisionUnsafe(active, config.expectedRevision);
+        if (active && keepsShopRecord(active, config, storeType)) {
+            checkBotCapsUnsafe(characterId, kind, rows.length);
+            return republishSellShopUnsafe(characterId, active, config, rows, timestamp);
+        }
         // Replacing a remote shop returns its escrow and reserves the new
         // stock in the same transaction. A failed publish restores both.
         if (active) {
@@ -3829,98 +4423,20 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
 
     // A replaced shop or an ad may name a stack the bag has merged since: the
     // same item from another stack serves. A player's new shop names its own.
-    const flexible = !!active || kind !== 'shop';
-    const compatibleParts = !!active && Number(active.storeType) === BoardRules.SELL
-        && active.custodyPolicy !== 1 && kind === 'shop' && storeType === BoardRules.SELL && !conditional;
-    const sourceIds = new Set();
+    const take = { flexible: !!active || kind !== 'shop', conditional, sourceIds: new Set(),
+        compatibleParts: !!active && Number(active.storeType) === BoardRules.SELL
+            && active.custodyPolicy !== 1 && kind === 'shop' && storeType === BoardRules.SELL && !conditional };
     const botOwned = isBotOwnerUnsafe(characterId);
+    const protection = storeType === BoardRules.SELL ? saleProtectionUnsafe(characterId, botOwned) : null;
     rows.forEach((line) => {
-        const selfId = Number(line.selfId);
-        const count = Math.floor(Number(line.count));
-        const price = Math.floor(Number(line.price));
-        const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
-        if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
-            || !Number.isSafeInteger(count) || count < 1
-            || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
-            throw new Error('invalid_afk_trade_line');
-        }
-        const fills = botOwned ? (line.fills ?? 0) : 0;
-        if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
-        const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
-        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? 0 : null);
-        if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
-
+        const values = boardLineValues(line, storeType, botOwned);
         let source = null;
         if (storeType === BoardRules.SELL) {
-            const life = botOwned && one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
-            if (life && invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({
-                stats: SavedStats.merge(life.statsJson, life.mindJson) })[selfId] > 0)
-                checkEconomyMaterialProtectionUnsafe(characterId, { row: life }, selfId, count, true);
-            let sourceId = Number(line.objectId || line.sourceObjectId || 0);
-            // Returned nonstackable stock is one physical row per unit. Keep
-            // the logical lot's metadata even when another row serves it.
-            const metadataSql = compatibleParts ? ' AND slot = ? AND petData IS ?' : '';
-            const metadataValues = compatibleParts ? [Number(line.slot || 0),
-                line.petData ? (typeof line.petData === 'string' ? line.petData : JSON.stringify(line.petData)) : null] : [];
-            if (flexible) {
-                const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
-                    AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}`,
-                [sourceId, characterId, selfId, enchant, count, ...metadataValues]);
-                if (!preferred || sourceIds.has(sourceId)) {
-                    const candidates = all(`SELECT id FROM items WHERE characterId = ?
-                        AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}
-                        ORDER BY id`, [characterId, selfId, enchant, count, ...metadataValues]);
-                    sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
-                }
-            }
-            if (!sourceId && compatibleParts) {
-                // Each unused physical row supplies at least one unit; used
-                // IDs may still have stock, so leave room to skip them.
-                const partLimit = Math.min(Number.MAX_SAFE_INTEGER, count + sourceIds.size);
-                const parts = all(`SELECT id, amount FROM items WHERE characterId = ?
-                    AND selfId = ? AND enchant = ? AND equipped = 0 AND amount > 0${metadataSql}
-                    ORDER BY id LIMIT ?`, [characterId, selfId, enchant, ...metadataValues, partLimit]);
-                let remaining = count;
-                for (const part of parts) {
-                    const partId = Number(part.id);
-                    if (sourceIds.has(partId)) continue;
-                    const partCount = Math.min(remaining, Number(part.amount));
-                    const taken = afkTradeTakeItemUnsafe(characterId, partId, selfId, enchant, partCount);
-                    sourceIds.add(partId);
-                    if (!source) source = taken;
-                    remaining -= partCount;
-                    if (remaining === 0) break;
-                }
-                if (remaining > 0) throw new Error('invalid_afk_trade_source');
-            } else {
-                if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
-                sourceIds.add(sourceId);
-                source = conditional ? one('SELECT * FROM items WHERE id=? AND characterId=?', [sourceId, characterId])
-                    : afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
-            }
-            if (!conditional) changedIds.push(selfId);
+            protection?.(values.selfId, values.count);
+            source = takeSellStockUnsafe(characterId, line, values, take);
+            if (!conditional) changedIds.push(values.selfId);
         }
-        write(`INSERT INTO afk_trade_lines(
-            shopId, sourceObjectId, selfId, name, count, initialCount, price,
-            enchant, slot, stackable, petData, createdAt, updatedAt, fills,
-            ${PRICING_COLUMNS.join(', ')}
-        ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
-            shopId,
-            source ? Number(source.id) : null,
-            selfId,
-            source?.name || line.name || `Item ${selfId}`,
-            count,
-            count,
-            price,
-            source ? Number(source.enchant || 0) : enchant,
-            source ? Number(source.slot || 0) : Number(line.slot || 0),
-            line.stackable ? 1 : 0,
-            source?.petData || line.petData || null,
-            timestamp,
-            timestamp,
-            fills,
-            ...observations
-        ]);
+        insertBoardLineUnsafe(shopId, line, values, source, timestamp);
     });
     if (conditional && storeType === BoardRules.BUY) {
         checkConditionalBidUnsafe(characterId, rows[0], Number(rows[0].price), bidWallet);
@@ -4066,7 +4582,7 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
     if (additions.length) {
         const life = one('SELECT statsJson, mindJson FROM bot_life_state WHERE characterId = ?', [characterId]);
         const stats = SavedStats.merge(life?.statsJson, life?.mindJson);
-        if (life && (!Array.isArray(stats.money) || stats.money.length < 4)) throw Error('economy_funding_missing');
+        if (life && !StatsPacket.hasMoney(stats.money)) throw Error('economy_funding_missing');
         if (Array.isArray(stats.money)) {
             const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
             for (const row of additions) {
@@ -4131,14 +4647,14 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
     if (!life || life.phase !== 'cold') return { changedIds: [...changedIds], row: null };
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [id]));
-    const inventory = jsonObject(life.inventorySummary);
+    const inventory = InventorySummary.read(life.inventorySummary);
     for (const selfId of changedIds) {
         if (physical[selfId]) inventory[selfId] = physical[selfId];
         else delete inventory[selfId];
     }
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
         simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
-    [JSON.stringify(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
+    [InventorySummary.saved(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
     return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
 }
 
@@ -4246,7 +4762,7 @@ function recruitmentRows(where, params) {
         FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
         LEFT JOIN bot_party_candidate_projection p ON p.characterId=c.id WHERE ${where}`, params).map(row => ({ ...row,
             phase: row.phase || '', activity: row.activity || '', spotId: row.spotId || null, partyId: row.partyId || null,
-            stats: jsonObject(row.statsJson), inventory: jsonObject(row.inventorySummary) }));
+            stats: SavedStats.body(row.statsJson), inventory: InventorySummary.read(row.inventorySummary) }));
 }
 function recruitmentSourceCurrent(source) {
     if (source?.kind === 'economic') {
@@ -4369,10 +4885,13 @@ function publishClanMembership(result) {
 
 
 const Database = {
-    // BotLifeState.save builds its upsert with it.
+    // BotLifeState.save builds its upsert with them.
     MOVE_FAR_REVISION,
+    HELD_ROW_SET,
+    bagRevisionSet,
 
     ...PlayerWarehouse.create({ one, all, write, inTransaction, withCharacterFlush }),
+    ...ItemInstances.create({ all, write, inTransaction, bagRevisionSet, now }),
     openClanRaidPartyAtImpact(request) {
         // The offensive callback cannot await our queue: its registered roster
         // could change meanwhile. Abort this native action when another write
@@ -4399,7 +4918,11 @@ const Database = {
                     [JSON.stringify(stats), at, row.partyId, row.revision]);
                 return { ok: true, party: one('SELECT * FROM bot_background_parties WHERE partyId=?', [row.partyId]) };
             }, 'party:marked-raid-impact');
-        } catch (_) { return { ok: false, reason: 'party_opening_rollback' }; }
+        } catch (error) {
+            // The attacker tries again on its next action; a write that always throws would never open the raid.
+            FailureLog.note('db.party_opening', error);
+            return { ok: false, reason: 'party_opening_rollback' };
+        }
     },
     reconcileBotClanMembership: ClanMembership.reconcile,
     reconcileBotClanGoals: ClanMembership.reconcileGoals,
@@ -4461,7 +4984,9 @@ const Database = {
 
     // The lifecycle save's protected stats and its cache row are read from
     // the same queued statement; a later trade cannot slip between them.
-    saveBotLifeState(statement, options = {}, characterId) {
+    // `parsed` ({ statsJson, stats }): the caller's own parse of its stats text,
+    // used while that is the text bound (the same parse, done once).
+    saveBotLifeState(statement, options = {}, characterId, parsed = null) {
         const admission = captureWriteAdmission(options, 'invalid_bot_life_before_write', null, statement);
         return enqueue(() => {
             let phase = 'row_admission';
@@ -4469,10 +4994,6 @@ const Database = {
                 if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
                 phase = 'write_admission';
                 checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
-                // The upsert moves a far row's revision (MOVE_FAR_REVISION) and
-                // hands back the row's own, the number the caller's cache takes;
-                // the mind comes back too: over a far row it is the worker's.
-                const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson, mindJson` : 'simulationRevision, statsJson, mindJson';
                 let params = statement[1] || [];
                 if (characterId !== undefined) {
                     // BotLifeState.save supplies its native 32-column ROW and
@@ -4481,7 +5002,8 @@ const Database = {
                     // immediately before SQL, so an earlier await cannot age it.
                     if (!Number.isSafeInteger(characterId) || characterId <= 0 || params.length !== 33 || params[0] !== characterId)
                         throw new TypeError('invalid_bot_life_skill_snapshot');
-                    const stats = jsonObject(params[27]);
+                    const stats = parsed && typeof params[27] === 'string' && parsed.statsJson === params[27]
+                        ? { ...parsed.stats } : jsonObject(params[27]);
                     const combat = stats.coldCombat || jsonObject(one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId])?.statsJson).coldCombat;
                     const rebuilt = combat && nativeColdCombatSkillsUnsafe(characterId, combat);
                     // An unchanged kit keeps the ROW's own JSON.stringify output.
@@ -4491,8 +5013,17 @@ const Database = {
                         params[27] = JSON.stringify(stats);
                     }
                 }
+                // The held columns the row already holds stay out of the SET
+                // (HELD_ROW_COLUMNS); another caller's statement sets them all.
+                const held = characterId === undefined ? [] : heldRowColumnsUnsafe(characterId, Object.fromEntries(
+                    Object.entries(SAVE_ROW_HELD_PARAMS).map(([column, index]) => [column, params[index]])));
+                // The upsert moves a far row's revision (MOVE_FAR_REVISION) and
+                // hands back the row's own, the number the caller's cache takes;
+                // the mind comes back too: over a far row it is the worker's.
+                const saveTexts = heldRowSaveSql(statement[0], held, !!admission.nativeProof);
+                statement = [saveTexts.set, ...statement.slice(1)];
                 phase = 'write';
-                const row = one(`${statement[0]} RETURNING ${returning}`, params);
+                const row = one(saveTexts.returning, params);
                 phase = 'advance';
                 if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
                 return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson, mindJson: row?.mindJson, simulationRevision: row?.simulationRevision };
@@ -4579,7 +5110,7 @@ const Database = {
             const buyerStats = parsedObject(buyer.statsJson), sellerStats = parsedObject(seller.statsJson);
             if (!buyerStats || !sellerStats) return { ok: false, reason: 'invalid_stats' };
             const sellerSkills = sellerStats.coldCombat?.skills?.length
-                ? sellerStats.coldCombat.skills
+                ? SavedSkills.unpack(sellerStats.coldCombat.skills)
                 : invoke('GameServer/Bot/Population/ColdCombatProfile').skillRecordsFromTree(
                     Number(sellerStats.classId || sellerStats.classProgressionClassId || 0), Number(seller.level || 1));
             const known = new Map(sellerSkills.map(skill => [Number(skill.selfId), Number(skill.level)]));
@@ -4608,16 +5139,16 @@ const Database = {
             const nextMp = Math.max(0, Number(seller.mp) - mana);
             const buyerAdena = payerBalance - fee;
             const sellerAdena = afkTradeAdenaRowsUnsafe(provider).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-            const buyerInventory = parsedObject(buyer.inventorySummary) || {};
-            const sellerInventory = parsedObject(seller.inventorySummary) || {};
+            const buyerInventory = InventorySummary.read(buyer.inventorySummary);
+            const sellerInventory = InventorySummary.read(seller.inventorySummary);
             buyerInventory['57'] = { ...(buyerInventory['57'] || {}), selfId: 57, name: 'Adena', amount: buyerAdena };
             sellerInventory['57'] = { ...(sellerInventory['57'] || {}), selfId: 57, name: 'Adena', amount: sellerAdena };
             write(`UPDATE bot_life_state SET statsJson = ?, inventorySummary = ?, adena = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-            [JSON.stringify(buyerStats), JSON.stringify(buyerInventory), buyerAdena, timestamp, payer]);
+            [JSON.stringify(buyerStats), InventorySummary.saved(buyerInventory), buyerAdena, timestamp, payer]);
             write(`UPDATE bot_life_state SET statsJson = ?, inventorySummary = ?, adena = ?, mp = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-            [JSON.stringify(sellerStats), JSON.stringify(sellerInventory), sellerAdena, nextMp, timestamp, provider]);
+            [JSON.stringify(sellerStats), InventorySummary.saved(sellerInventory), sellerAdena, nextMp, timestamp, provider]);
             write('UPDATE characters SET mp = ? WHERE id = ?', [nextMp, provider]);
             return { ok: true, buyerAdena, sellerAdena, nextMp,
                 buyerRevision: Number(buyer.simulationRevision) + 1,
@@ -4944,7 +5475,8 @@ const Database = {
                 shop: opened.shop,
                 closedRecords,
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.changedIds)
+                // An ad with no custody moved nothing: the worker's step stands.
+                coldLifeRows: opened.changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], opened.changedIds) : {}
             };
         }, 'afk-trade:create'));
     },
@@ -5009,10 +5541,11 @@ const Database = {
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const opened = list.map((config) => openBoardRecordUnsafe(characterId, { ...config, kind }, config.lines));
+            const changedIds = opened.flatMap((record) => record.changedIds);
             return {
                 opened: opened.map((record) => record.shop),
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.flatMap((record) => record.changedIds))
+                coldLifeRows: changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
             };
         }, 'board:open'));
     },
@@ -5313,6 +5846,7 @@ const Database = {
             if (details.expectedPrice !== undefined && Number(details.expectedPrice) !== Number(line.price)) throw new Error('afk_trade_price_changed');
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             checkWarSupplyPurchaseUnsafe(buyerId, line.selfId, step?.row);
+            checkArrowPurchaseUnsafe(buyerId, line.selfId, quantity, step?.row);
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
             checkEconomyFundingUnsafe(buyerId, step, total, { ...details.funding, itemId: line.selfId });
@@ -5389,6 +5923,7 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 1 || Number(shop.escrowAdena) < total) throw new Error('afk_trade_budget_changed');
+            checkArrowPurchaseUnsafe(shop.ownerId, line.selfId, quantity);
             checkEconomyMaterialProtectionUnsafe(sellerId, step, line.selfId, quantity, true);
             const timestamp = now();
             const source = afkTradeTakeItemUnsafe(
@@ -5582,6 +6117,10 @@ const Database = {
                 || !require('./GameServer/Clan/ClanRaidRoster').same(previousStats.objective?.fullRoster, nextStats.objective?.fullRoster)))
                 return { affectedRows: 0, reason: 'raid_admission' };
             if (previous?.status === 'hot') return { affectedRows: 0, reason: 'party_hot' };
+            // Dissolution is final: a write prepared from the party before it
+            // (a worker step's afterCommit, a review) would bring back a roster
+            // whose members already left.
+            if (previous?.status === 'dissolved' && row.status !== 'dissolved') return { affectedRows: 0, reason: 'party_dissolved' };
             if (Number(previousStats.clanGoalInvalidationVersion || 0) > Number(nextStats.clanGoalInvalidationVersion || 0))
                 return { affectedRows: 0, reason: 'goal_invalidated' };
             const payment = partyAgreementUnsafe(previous, row);
@@ -5972,6 +6511,11 @@ const Database = {
             const parts = Diagnostics.laps('commit_');
             const partition = proposalPartition(request, fields);
             if (!partition.ok) return { ok: false, characterId, reason: 'partition_rejected', detail: partition.reason };
+            const physical = request.physical || null;
+            // The bag's rows against its stored summary, before the UPDATE
+            // replaces that summary (applyColdPhysicalStateUnsafe).
+            const bagWrite = physical?.inventory && typeof requestedPatch.inventorySummary === 'string';
+            const matched = bagWrite && Array.isArray(physical.changedItemIds) && itemsMatchSummaryUnsafe(characterId);
             const written = writeColdCommitUnsafe(fields, requestedPatch);
             if (!written) {
                 // A refusal hands back the row: the worker rebases on it.
@@ -5985,9 +6529,9 @@ const Database = {
             }
             const revision = expectedRevision + 1;
             parts?.lap('row_write');
-            const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
-            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts) : { drops: [], rewrote: false };
+            const bag = bagWrite ? { matched, inventoryRevision: Number(written.inventoryRevision) } : null;
+            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts, request.stats?.deathExperience, bag) : { drops: [], rewrote: false };
             parts?.lap('physical');
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.
@@ -6220,7 +6764,7 @@ const Database = {
                 const snapshots = members.map(member => ({ characterId: member.characterId, level: member.patch.level,
                     phase: request.phase, vitals: { hp: member.patch.hp, maxHp: member.patch.maxHp,
                         mp: member.patch.mp, maxMp: member.patch.maxMp },
-                    classId: jsonObject(member.patch.statsJson).classId, inventory: jsonObject(member.patch.inventorySummary), stats: jsonObject(member.patch.statsJson) }));
+                    classId: jsonObject(member.patch.statsJson).classId, inventory: InventorySummary.read(member.patch.inventorySummary), stats: SavedStats.body(member.patch.statsJson) }));
                 const reason = raidRosterCommitReason(party, jsonObject(request.statsJson), null, snapshots);
                 if (reason) return { ok: false, reason };
             }
@@ -6249,6 +6793,42 @@ const Database = {
         return inTransaction(() => require('./GameServer/Bot/Population/ConstPartyActivity').native({
             one, all, write, row: coldSimulationRow, now
         }).release(request), 'bot-life:const-party-resume');
+    },
+
+    // Boot only, before the worker: every row left hot by a restart, rebuilt
+    // by `fromRecord` (BotLifeState) from its character record in one
+    // transaction. Configured static merchants stay hot: BotManager spawns them.
+    recoverStaleHotLifeStates(fromRecord, timestamp) {
+        return inTransaction(() => {
+            const rows = all(`SELECT * FROM bot_life_state WHERE phase = 'hot'
+                AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`);
+            let withoutRecord = 0;
+            for (const row of rows) {
+                const id = Number(row.characterId);
+                const character = one('SELECT level, exp, sp, hp, maxHp, mp, maxMp FROM characters WHERE id = ?', [id]);
+                if (!character) {
+                    // No record to rebuild from (the cascade should prevent it):
+                    // cool the row as it is rather than fail every bot's boot.
+                    write(`UPDATE bot_life_state SET phase = 'cold', nextResolveAt = COALESCE(nextResolveAt, ?),
+                        updatedAt = ? WHERE characterId = ?`, [timestamp + 30000, timestamp, id]);
+                    withoutRecord += 1;
+                    continue;
+                }
+                const next = fromRecord(row, { character, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [id]),
+                    coldCombat: combat => nativeColdCombatSkillsUnsafe(id, combat) }, timestamp);
+                write(`UPDATE bot_life_state SET level = ?, exp = ?, sp = ?, adena = ?,
+                    activity = ?, phase = 'cold', nextResolveAt = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?,
+                    targetLevelBand = ?, inventorySummary = ?, statsJson = ?, mindJson = ?,
+                    simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
+                [next.level, next.exp, next.sp, next.adena, next.activity, next.nextResolveAt,
+                    next.hp, next.maxHp, next.mp, next.maxMp, next.targetLevelBand,
+                    next.inventorySummary, next.statsJson, next.mindJson, timestamp, id]);
+                // The row's background position stays (its activation policy is
+                // not saved); the record takes it, as markCold writes it back.
+                write('UPDATE characters SET locX = ?, locY = ?, locZ = ? WHERE id = ?', [next.locX, next.locY, next.locZ, id]);
+            }
+            return { recovered: rows.length - withoutRecord, withoutRecord };
+        }, 'bot-life:stale-hot-recovery');
     },
 
     recoverConstPartyActivities() {
@@ -6435,9 +7015,8 @@ const Database = {
             delete partyStats.playerTakeover;
             partyStats.partyBreakReason = 'player_party_released';
             // Time spent under a player leader is not autonomous party-session
-            // age. Start a fresh review window when the bots resume control.
+            // age. The bots' next resolve records a fresh review baseline.
             partyStats.formedAt = timestamp;
-            partyStats.sessionExpiresAt = null;
             partyStats.sessionReview = null;
             partyStats.lastProgressAt = timestamp;
             partyStats.partySpotRisk = null;
@@ -6551,19 +7130,25 @@ const Database = {
         return closePromise;
     },
 
-    registerCharacterWriteFlush(flush) {
-        flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+    traceRevisions(characterId) {
+        if (revisionTrace.size < 4 && !revisionTrace.has(characterId)) revisionTrace.set(characterId, 60);
     },
 
-    admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null, reconcilePending = false } = {}) {
+    // applyInJob is kept when only flush is replaced (fixtures stub the flush).
+    registerCharacterWriteFlush(flush, applyInJob) {
+        flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+        if (applyInJob !== undefined) applyPendingCharacterWrite = typeof applyInJob === 'function' ? applyInJob : null;
+    },
+
+    admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null } = {}) {
         const beforeWrite = mutationAdmission.getStore();
         // Admission metadata is saved BEFORE the concrete physical step is
         // guarded. The synchronous guard never enqueues another DB mutation.
         return mutationAdmission.run(undefined, () => inTransaction(() => {
             if (beforeWrite && beforeWrite() !== undefined) throw Error('invalid_economy_admission');
             const row = economyOwnerUnsafe(characterId, authority, !original);
-            const previous = jsonObject(row.statsJson).economyCommit;
-            if (previous && !EconomyCommit.valid(previous)) throw Error('invalid_economy_receipt');
+            const { receipt, tuple: previous } = economyTupleUnsafe(characterId, row);
+            if ([receipt, previous].some(tuple => tuple && !EconomyCommit.valid(tuple))) throw Error('invalid_economy_receipt');
             const sequence = previous?.[0] || 0;
             if (original) {
                 const command = EconomyCommit.header(original[0], original[1], original[2], authority);
@@ -6572,8 +7157,11 @@ const Database = {
                 return { command, row: normalizeRow(row) };
             }
             if (sequence >= Number.MAX_SAFE_INTEGER) throw Error('economy_sequence_exhausted');
-            if (previous && JSON.stringify(previous) !== JSON.stringify(acknowledged)) throw Error('economy_result_unacknowledged');
-            if (previous?.[1] === 0 && !reconcilePending) throw Error('economy_intent_pending');
+            // Replacing a receipt needs the state that reconciled its result.
+            // A pending intent moved nothing: a new admission replaces it (one
+            // still in flight is refused by EconomyCommit.admit, and its step
+            // by its own check of the intent's id, economy_intent_changed).
+            if (receipt && JSON.stringify(receipt) !== JSON.stringify(acknowledged)) throw Error('economy_result_unacknowledged');
             // A recovered pending intent has no physical commit. Its arguments
             // are not reconstructed; the new step is planned from actual state.
             const command = EconomyCommit.create(kind, sequence, authority);
@@ -6581,23 +7169,34 @@ const Database = {
             // authority holds the revision read before this write, and the
             // step's economyOwnerUnsafe refuses a moved one (economy_owner_changed).
             // The step's own write moves the row.
-            write("UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),'$.economyCommit',json(?)) WHERE characterId=?",
-                [JSON.stringify(EconomyCommit.pending(command)), Number(characterId)]);
-            return { command, row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [Number(characterId)])),
-                recovered: previous?.[1] === 0 ? 'pending_aborted' : null };
+            write('INSERT INTO bot_economy_intents(characterId, tuple) VALUES (?, ?) ON CONFLICT(characterId) DO UPDATE SET tuple = excluded.tuple',
+                [Number(characterId), JSON.stringify(EconomyCommit.pending(command))]);
+            // The row is as the caller's state saw it (same revision, nothing
+            // written to it): no row goes back, the caller keeps its state.
+            return { command, row: null, recovered: previous?.[1] === 0 ? 'pending_aborted' : null };
         }, 'economy:intent'));
     },
 
     withMutationAdmission(beforeWrite, work) {
         if (typeof beforeWrite !== 'function' || typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
-        return mutationAdmission.run(beforeWrite, () => Promise.resolve().then(work));
+        // The guard ends with its scope. What the scope left running (a trade
+        // meeting waiting for two workers, a timer it armed) inherits the store
+        // and answers to its own checks, not to a command that has ended.
+        let open = true;
+        const guard = () => (open ? beforeWrite() : undefined);
+        return mutationAdmission.run(guard, () => Promise.resolve().then(work)).finally(() => { open = false; });
     },
 
-    cooperatively(work, sliceMs = 12) {
+    withoutMutationAdmission(work) {
+        if (typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
+        return mutationAdmission.run(undefined, work);
+    },
+
+    cooperatively(work, sliceMs = DB_QUEUE_SLICE_MS) {
         const outermost = cooperative.depth === 0;
         if (outermost) {
             cooperative.sliceStartedAt = now();
-            cooperative.sliceMs = Math.max(1, Number(sliceMs) || 12);
+            cooperative.sliceMs = Math.max(1, Number(sliceMs) || DB_QUEUE_SLICE_MS);
         }
         cooperative.depth += 1;
         return Promise.resolve().then(work).finally(() => {
@@ -6612,7 +7211,8 @@ const Database = {
     stats({ resetPeak = false } = {}) {
         // Depth and physical checkpoint outcomes are runtime control sources.
         if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
-            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(), history: History.stats() };
+            pending: metrics.pending, queueYields: metrics.queueYields, overBudgetJobs: overBudgetSnapshot(), diagnostics: { enabled: false },
+            checkpoint: CheckpointCoordinator.snapshot(), maintenance: maintenanceSnapshot(), history: History.stats() };
         metrics.snapshots += 1;
         const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
@@ -6620,6 +7220,8 @@ const Database = {
             historyPath: historyPath || null,
             pending: metrics.pending,
             maxPending: metrics.maxPending,
+            queueYields: metrics.queueYields,
+            overBudgetJobs: overBudgetSnapshot(),
             total: metrics.total,
             reads: metrics.reads,
             writes: metrics.writes,
@@ -6630,10 +7232,17 @@ const Database = {
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
             operations,
             checkpoint: CheckpointCoordinator.snapshot(),
+            maintenance: maintenanceSnapshot(),
             history: History.stats()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
+    },
+
+    // A maintenance try that did not run (maintenanceRefusals): one map increment.
+    noteMaintenanceRefusal(job, reason) {
+        const key = `${job}:${reason}`;
+        maintenanceRefusals.set(key, (maintenanceRefusals.get(key) || 0) + 1);
     },
 
     // Operations waiting on the write queue. The schedulers read this on every
@@ -6646,6 +7255,11 @@ const Database = {
     // operation counters stats() copies.
     checkpointSnapshot() {
         return CheckpointCoordinator.snapshot();
+    },
+
+    // listener(result) after each finished checkpoint; returns the unsubscribe.
+    onCheckpoint(listener) {
+        return CheckpointCoordinator.onResult(listener);
     },
 
     checkpoint(options = {}) {
@@ -6816,11 +7430,12 @@ const Database = {
                 || Number(source.equipped) !== 0 || Number(source.selfId) === 57) throw Error('private_store_stock_changed');
             const template = ItemTemplateIndex.findStrict(DataCache.items, Number(source.selfId));
             if (!template) throw Error('private_store_item_unavailable');
+            checkArrowPurchaseUnsafe(buyerId, source.selfId, quantity);
             const sellerAdena = afkTradeAdenaRowsUnsafe(sellerId).reduce((sum, row) => sum + Number(row.amount), 0);
             if (!Number.isSafeInteger(sellerAdena + total)) throw Error('private_store_adena_overflow');
             if (details.fundingPacket) {
                 const packet = details.fundingPacket();
-                if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+                if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
                 checkEconomyFundingUnsafe(buyerId, { row: { statsJson: '{}' } }, total, details.funding, null, packet);
             }
             afkTradeDebitAdenaUnsafe(buyerId, total);
@@ -6842,7 +7457,7 @@ const Database = {
         }, 'private-store:purchase'));
     },
 
-    transferInventoryBetweenCharacters(transfers = []) {
+    transferInventoryBetweenCharacters(transfers = [], { validate = null } = {}) {
         const entries = (transfers || []).map((transfer) => ({
             fromCharacterId: Number(transfer.fromCharacterId),
             toCharacterId: Number(transfer.toCharacterId),
@@ -6858,6 +7473,7 @@ const Database = {
         }));
         const characterIds = entries.flatMap((entry) => [entry.fromCharacterId, entry.toCharacterId]);
         return withCharacterFlushes(characterIds, () => inTransaction(() => {
+            validate?.();
             if (!entries.length) throw new Error('empty inventory transfer');
 
             const sources = entries.map((entry) => {
@@ -6999,7 +7615,7 @@ const Database = {
                 all('SELECT * FROM skills WHERE characterId = ?', [characterId]), now());
             checkCapturedWriteAdmission(admission, characterId);
             write('UPDATE bot_life_state SET sp = ?, inventorySummary = ?, statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
-                [character.sp, JSON.stringify(inventory), JSON.stringify(stats), now(), characterId]);
+                [character.sp, InventorySummary.saved(inventory), JSON.stringify(SavedSkills.packStats(stats)), now(), characterId]);
             return one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
         }, 'cold:automatic-skills'));
     },
@@ -7044,6 +7660,32 @@ const Database = {
         const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, enchant: Math.max(0, Number(item.enchant ?? 0) || 0), equipped: item.equipped ? 1 : 0, slot: item.slot ?? 0, characterId };
         if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
         return withCharacterFlush(characterId, () => insert('items', values, 'item:insert'));
+    },
+    // A multi-item award is committed before publishing any of its instances.
+    // Equipment always gets one object ID per copy, even at high reward rates.
+    setItemInstances(characterId, item) {
+        const template = ItemTemplateIndex.find(DataCache.items, item.selfId);
+        const amount = Number(item.amount);
+        if (!template || !Number.isSafeInteger(amount) || amount <= 0 || amount > 0x7fffffff) {
+            return Promise.reject(new Error('invalid item award'));
+        }
+        const stackable = (template.etc?.stackable ?? template.stackable) === true && !item.petData;
+        if (!stackable && amount > InventoryLimits.MAX_CAPACITY) {
+            return Promise.reject(new Error('item award exceeds inventory capacity'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const results = [];
+            const petData = item.petData
+                ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData)) : null;
+            for (let index = 0; index < (stackable ? 1 : amount); index++) {
+                const count = stackable ? amount : 1;
+                const packet = write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+                    VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, [item.selfId, item.name || '', count,
+                    Math.max(0, Number(item.enchant) || 0), item.slot ?? 0, petData, characterId]);
+                results.push({ insertId: Number(packet.insertId), amount: count });
+            }
+            return results;
+        }, 'item:award-instances'));
     },
     // caller: a static tag of the call site, counted for developer diagnostics only.
     fetchItems(characterId, caller = 'untagged') {
@@ -7125,9 +7767,10 @@ const Database = {
             .then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
     },
 
-    transferInventoryToWarehouse(characterId, item, { coldState = null } = {}) {
+    transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null, validate = null } = {}) {
         if (coldState && Number(coldState.characterId) !== Number(characterId)) return Promise.reject(new Error('economy_state_changed'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            validate?.();
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             if (!source || Number(source.amount) < Number(item.amount)) throw new Error('inventory item changed');
             const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
@@ -7141,7 +7784,9 @@ const Database = {
             const inventoryAmount = Number(source.amount) - Number(item.amount);
             if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
-            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
+            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId], null,
+                Number(craftDepositTarget) > 0 ? { craftWarehouseDepositTarget: Number(craftDepositTarget),
+                    ...(craftDepositKind ? { craftWarehouseDepositKind: craftDepositKind } : {}) } : null);
             return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:deposit')).then(result => {
@@ -7176,7 +7821,7 @@ const Database = {
                 }
                 // A resolve saves its lifecycle row before materializing loot.
                 // Hydration can see that row while physical items still lag.
-                const inventory = jsonObject(life.inventorySummary);
+                const inventory = InventorySummary.read(life.inventorySummary);
                 const physical = all(`SELECT selfId, SUM(amount) AS amount FROM items
                     WHERE characterId = ? AND selfId IN (57, ?) GROUP BY selfId`, [characterId, item.selfId]);
                 const amounts = new Map(physical.map(row => [Number(row.selfId), Number(row.amount)]));
@@ -7213,7 +7858,7 @@ const Database = {
         const market = record.items.some(row => row[2] === 1);
         return enqueue(() => {
             const row = one(`UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),
-                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellRetryAfter', NULL" : ''}),
+                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellSeen', NULL" : ''}),
                 nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END, ${MOVE_FAR_REVISION} WHERE characterId=?
                 RETURNING characterId,nextResolveAt,simulationRevision,updatedAt`, [raw, record.at, Number(characterId)]);
             return row ? { ...row, withdrawal: record, market } : null;
@@ -7722,9 +8367,12 @@ const Database = {
                 if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
                     || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
                 if (seller && step && slot > 0) {
+                    // The admitted order owns its input quantity, as in
+                    // ColdMarketService. A retained bridge project may name
+                    // different swords; war and arrow stock gates still hold.
                     const blocker = invoke('GameServer/Bot/Population/BotLifeState').marketPurchaseBlocker({
-                        level: Number(step.row.level), stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: jsonObject(step.row.inventorySummary)
-                    }, { selfId: itemId }, count);
+                        level: Number(step.row.level), stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: InventorySummary.read(step.row.inventorySummary)
+                    }, { selfId: itemId }, count, { commanded: true });
                     if (blocker) throw Error(blocker);
                 }
                 let attributed = 0, attributedCost = 0;
@@ -7746,6 +8394,8 @@ const Database = {
             }
             if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'planned',
                 { requested: units, planned: units, cost: total, npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
+            for (const line of lines) checkArrowPurchaseUnsafe(characterId, line.selfId, line.amount, step?.row,
+                lines.filter(other => !require('./GameServer/Inventory/ArrowStock').isArrow(other)));
             const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
             let remainingWallet = Number(wallet?.amount || 0);
             let remainingPacket = step ? SavedStats.merge(step.row.statsJson, step.row.mindJson).money : null;
@@ -8169,7 +8819,7 @@ const Database = {
                 const source = { characterId, level: Number(character?.level), clanId: Number(character?.clanId),
                     stats: { ...SavedStats.merge(life?.statsJson, life?.mindJson), classId: Number(character?.classId) },
                     inventory: Life.inventorySummaryFromItems(physical) };
-                const protectedInventory = jsonObject(life?.inventorySummary);
+                const protectedInventory = InventorySummary.read(life?.inventorySummary);
                 for (const id of Object.keys(source.inventory))
                     source.inventory[id] = { ...protectedInventory[id], ...source.inventory[id] };
                 const position = state ? life : character;
@@ -8216,7 +8866,7 @@ const Database = {
                 const source = { characterId, level: Number(character?.level), clanId: Number(character?.clanId),
                     stats: { ...SavedStats.merge(life?.statsJson, life?.mindJson), classId: Number(character?.classId) },
                     inventory: Life.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId])) };
-                const protectedInventory = jsonObject(life?.inventorySummary);
+                const protectedInventory = InventorySummary.read(life?.inventorySummary);
                 for (const id of Object.keys(source.inventory))
                     source.inventory[id] = { ...protectedInventory[id], ...source.inventory[id] };
                 const position = state ? life : character;
@@ -8442,7 +9092,8 @@ const Database = {
                     || !one('SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=?', [crafterId, recipe.recipeId]))
                     throw Error('invalid_live_workshop');
                 const required = new Map();
-                for (const row of recipe.materials) required.set(Number(row.selfId),
+                const inputs = liveWorkshop.publicStation ? require('./GameServer/Crafting/StationRecipe').forStation(recipe) : recipe;
+                for (const row of inputs.materials) required.set(Number(row.selfId),
                     (required.get(Number(row.selfId)) || 0) + Number(row.amount) * batches);
                 const supplied = new Map();
                 if (new Set((materials || []).map(row => Number(row.id))).size !== materials?.length)
@@ -8456,7 +9107,7 @@ const Database = {
                     throw Error('live_workshop_recipe_changed');
                 for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
                 const packet = fundingPacket?.();
-                if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+                if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
                 checkEconomyFundingUnsafe(customerId, step, price, { ...funding, itemId: recipe.productId }, null, packet);
             }
             let success = !!product;
@@ -8496,12 +9147,13 @@ const Database = {
                     throw new Error('workshop unavailable');
                 }
                 const stateOf = row => ({ characterId: Number(row.characterId), clanId: Number(row.clanId),
-                    stats: jsonObject(row.statsJson) });
+                    stats: SavedStats.body(row.statsJson) });
                 const quote = invoke('GameServer/Bot/Economy/CraftWorkshopService').quote(stateOf(workshopCrafter), stateOf(customer), recipe.recipeId);
                 if (!quote || Number(price) !== quote.price * batches || Number(workshop.fee) !== Number(price)
                     || !Number.isSafeInteger(Number(price)) || Number(price) < 0) throw new Error('workshop price changed');
                 const required = new Map();
-                for (const input of recipe.materials) required.set(Number(input.selfId),
+                const inputs = rules.isStationService({ stats }) ? require('./GameServer/Crafting/StationRecipe').forStation(recipe) : recipe;
+                for (const input of inputs.materials) required.set(Number(input.selfId),
                     Number(required.get(Number(input.selfId)) || 0) + Number(input.amount) * batches);
                 const supplied = new Map();
                 const ids = new Set();
@@ -8516,7 +9168,7 @@ const Database = {
                     || product && (Number(product.selfId) !== Number(recipe.productId)
                         || Number(product.amount) !== Number(recipe.productCount) * batches)) throw new Error('workshop recipe changed');
                 if (step) {
-                    prepareCraftReservationsUnsafe(step, recipe);
+                    prepareCraftReservationsUnsafe(step, inputs);
                     for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
                     checkEconomyFundingUnsafe(customerId, step, Number(price), { ...funding, itemId: Number(recipe.productId) });
                     const template = ItemTemplateIndex.find(DataCache.items, Number(recipe.productId));
@@ -8665,12 +9317,12 @@ const Database = {
                     const fromItems = id === Number(customerId) || !!workshop;
                     const inventory = fromItems
                         ? lifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]))
-                        : JSON.parse(clanCrafter.inventorySummary || '{}');
+                        : InventorySummary.read(clanCrafter.inventorySummary);
                     write(`UPDATE bot_life_state SET inventorySummary = ?, simulationRevision = simulationRevision + 1,
                         statsJson = json_set(statsJson, '$.clanInventoryRevision', simulationRevision + 1),
                         adena = CASE WHEN ? THEN ? ELSE adena END,
                         mp = CASE WHEN characterId = ? THEN ? ELSE mp END, updatedAt = ? WHERE characterId = ?`,
-                    [JSON.stringify(inventory), fromItems ? 1 : 0, Number(inventory['57']?.amount || 0), crafterId, crafterMp, now(), id]);
+                    [InventorySummary.saved(inventory), fromItems ? 1 : 0, Number(inventory['57']?.amount || 0), crafterId, crafterMp, now(), id]);
                 }
                 if (workshop) {
                     const production = { ...jsonObject(workshopCrafter.statsJson).production };
@@ -9101,7 +9753,8 @@ const Database = {
         actionType,
         priority = 0,
         availableAt = null,
-        payload = {}
+        payload = {},
+        coalescePending = false
     } = {}) {
         const clan = Number(clanId);
         const key = String(actionKey || '').trim();
@@ -9133,10 +9786,43 @@ const Database = {
                 availableAt: dueAt,
                 payload: payload && typeof payload === 'object' ? payload : {},
                 createdAt: timestamp
-            });
+            }, { coalescePending });
             const action = one('SELECT * FROM clan_actions WHERE id = ?', [Number(inserted.insertId)]);
-            return { ok: true, created: true, actionId: Number(inserted.insertId), action };
+            return { ok: true, created: !inserted.coalesced, coalesced: !!inserted.coalesced, actionId: Number(inserted.insertId), action };
         }, 'clan-action:enqueue');
+    },
+    // A paged upgrade of saved queues, using the same admission and settlement
+    // as live actions. Leased work and player orders are never rewritten.
+    repairClanProgressionQueue({ afterId = 0 } = {}) {
+        return inTransaction(() => {
+            const deadlineAt = performance.now() + 8;
+            const rows = all(`SELECT a.* FROM clan_actions a
+                JOIN clan_simulation_clans s ON s.clanId = a.clanId AND s.mode = 'autonomous'
+                WHERE a.id > ? AND a.status = 'pending' AND a.actionType IN ('goal_plan', 'contribution')
+                ORDER BY a.id LIMIT 64`, [Number(afterId)]);
+            let cancelled = 0, scanned = 0, cursor = Number(afterId);
+            for (const action of rows) {
+                if (scanned && performance.now() >= deadlineAt) break;
+                scanned++;
+                cursor = Number(action.id);
+                const payload = jsonObject(action.payloadJson);
+                const strategyReview = action.actionType === 'contribution' && payload.goalType === 'strategy';
+                const kept = insertClanActionUnsafe({
+                    clanId: action.clanId,
+                    actionKey: strategyReview ? `clan:${action.clanId}:queue-repair:${action.id}` : action.actionKey,
+                    actionType: strategyReview ? 'goal_plan' : action.actionType,
+                    priority: Math.max(75, Number(action.priority)),
+                    availableAt: action.availableAt,
+                    payload: strategyReview ? { reason: 'strategy_review_recovered' } : payload,
+                    createdAt: now()
+                }, { coalescePending: true });
+                if (Number(kept.insertId) === Number(action.id)) continue;
+                resolveClanActionUnsafe(action, 'cancelled', { successorActionId: Number(kept.insertId) },
+                    strategyReview ? 'clan_strategy_review_replaced' : 'clan_action_coalesced');
+                cancelled++;
+            }
+            return { scanned, cancelled, afterId: cursor };
+        }, 'clan-action:repair-progression');
     },
     claimClanActions({ limit = 8, at = null, leaseMs = 120000 } = {}) {
         // Compatibility wrapper intentionally admits a single action. Claiming a
@@ -9153,13 +9839,12 @@ const Database = {
             const leaseUntil = timestamp + Math.max(1000, Math.floor(Number(leaseMs) || 120000));
             const recovery = write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
                 WHERE status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ?`, [timestamp, timestamp]);
-            // One priority point per ready minute prevents fresh planning work
-            // from indefinitely starving supplies and progression actions.
-            const pending = one(`SELECT * FROM clan_actions
-                WHERE status = 'pending' AND availableAt <= ?
-                ORDER BY priority + CAST(MAX(0, ? - availableAt) / 60000 AS INTEGER) DESC,
-                    availableAt ASC, id ASC LIMIT 1`, [timestamp, timestamp]);
-            if (!pending) {
+            // Read only the active queue's scheduling columns, never payloads
+            // or terminal history. The cursor commits with the exact lease,
+            // surviving restarts and rolling back with a failed admission.
+            const selection = ClanActionScheduler.select(all(`SELECT id, actionType, status, priority, availableAt
+                FROM clan_actions WHERE status IN ('pending', 'running')`), clanActionScheduleUnsafe(), timestamp);
+            if (selection.actionId === null) {
                 return {
                     action: null,
                     recovered: Number(recovery.affectedRows || 0)
@@ -9167,16 +9852,18 @@ const Database = {
             }
             const updated = write(`UPDATE clan_actions
                 SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
-                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(pending.id)]);
+                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, selection.actionId]);
+            const action = Number(updated.affectedRows || 0) === 1
+                ? one('SELECT * FROM clan_actions WHERE id = ?', [selection.actionId]) : null;
+            if (action) saveClanActionScheduleUnsafe(ClanActionScheduler.recordClaim(selection, action));
             return {
-                action: Number(updated.affectedRows || 0) === 1
-                    ? one('SELECT * FROM clan_actions WHERE id = ?', [Number(pending.id)])
-                    : null,
+                action,
                 recovered: Number(recovery.affectedRows || 0)
             };
         }, 'clan-action:claim-one');
     },
-    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null } = {}) {
+    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null,
+        continuation = false, unstarted = false } = {}) {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
@@ -9204,6 +9891,12 @@ const Database = {
                 dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
+            if (unstarted === true) {
+                const schedule = clanActionScheduleUnsafe();
+                const refunded = ClanActionScheduler.refundClaim(schedule, action);
+                if (refunded !== schedule) saveClanActionScheduleUnsafe(refunded);
+            } else if (continuation === true) saveClanActionScheduleUnsafe(
+                ClanActionScheduler.continueAction(clanActionScheduleUnsafe(), id));
             return {
                 ok: true,
                 actionId: id,
@@ -9230,35 +9923,7 @@ const Database = {
                     action
                 };
             }
-            const timestamp = now();
-            const safeResult = compactClanActionResult(result);
-            const updated = write(`UPDATE clan_actions
-                SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
-                WHERE id = ? AND status IN ('pending', 'running')`, [
-                nextStatus,
-                JSON.stringify(safeResult),
-                String(reasonCode || ''),
-                timestamp,
-                timestamp,
-                id
-            ]);
-            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
-            recordClanGoalEventUnsafe({
-                clanId: Number(action.clanId),
-                eventType: `action_${nextStatus}`,
-                plan: String(action.actionType || ''),
-                reasonCode: String(reasonCode || ''),
-                payloadJson: JSON.stringify({ actionId: id, actionKey: action.actionKey, result: safeResult }),
-                occurredAt: timestamp
-            });
-            const resolved = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
-            archiveFinishedClanActionsUnsafe(action.clanId);
-            return {
-                ok: true,
-                actionId: id,
-                status: nextStatus,
-                action: resolved
-            };
+            return resolveClanActionUnsafe(action, nextStatus, result, reasonCode);
         }, 'clan-action:resolve');
     },
     fetchClanActions({ clanId = null, status = null, limit = 50 } = {}) {
@@ -10127,7 +10792,7 @@ const Database = {
         return inTransaction(() => {
             const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
             if (!row || row.phase !== 'cold' || Number(row.simulationRevision) !== Number(expectedRevision)) return false;
-            const inventory = jsonObject(row.inventorySummary);
+            const inventory = InventorySummary.read(row.inventorySummary);
             const supplies = Object.fromEntries(itemIds.slice(0, 128).filter(id => inventory[id]).map(id => [id, inventory[id]]));
             syncInventorySummaryUnsafe(characterId, supplies);
             return true;
@@ -10189,7 +10854,7 @@ const Database = {
                     return { ok: false, code: 'clan_goal_changed' };
                 const members = goals.map(goal => {
                     const row = one('SELECT characterId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(goal.target?.memberId || 0)]);
-                    return row && { characterId: row.characterId, inventory: jsonObject(row.inventorySummary), stats: jsonObject(row.statsJson) };
+                    return row && { characterId: row.characterId, inventory: InventorySummary.read(row.inventorySummary), stats: SavedStats.body(row.statsJson) };
                 }).filter(Boolean);
                 const gap = invoke('GameServer/Clan/ClanSupplyPolicy').requirements(
                     { id: clan, level: clanRow.level, state: previousState, members },
@@ -10312,10 +10977,10 @@ const Database = {
                 }
                 if (remaining) throw new Error('clan reward funding changed');
                 const next = one('SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [character]);
-                const inventory = jsonObject(next.inventorySummary);
+                const inventory = InventorySummary.read(next.inventorySummary);
                 const wallet = Number(expectedPhase === 'hot' ? inventory[57]?.amount || 0 : life.adena) + reward;
                 inventory[57] = { ...(inventory[57] || {}), selfId: 57, name: 'Adena', amount: wallet };
-                write('UPDATE bot_life_state SET adena = ?, inventorySummary = ? WHERE characterId = ?', [wallet, JSON.stringify(inventory), character]);
+                write('UPDATE bot_life_state SET adena = ?, inventorySummary = ? WHERE characterId = ?', [wallet, InventorySummary.saved(inventory), character]);
                 write('DELETE FROM items WHERE characterId = ? AND selfId = 57', [character]);
                 write("INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES(57, 'Adena', ?, 0, 0, 0, ?)", [wallet, character]);
                 recordClanGoalEventUnsafe({ clanId: clan, eventType: 'member_item_reward', goalType: deliveryGoal.type,
@@ -10375,7 +11040,7 @@ const Database = {
                 return { ok: false, code: 'item_ordered' };
             }
             const rows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
-            if (life.phase === 'cold' && !Policy.inventoryMatches(rows, jsonObject(life.inventorySummary))) {
+            if (life.phase === 'cold' && !Policy.inventoryMatches(rows, InventorySummary.read(life.inventorySummary))) {
                 return { ok: false, code: 'inventory_not_materialized' };
             }
             if (life.phase === 'hot' && (typeof validateLive !== 'function' || !validateLive(member, rows))) {
@@ -10411,7 +11076,7 @@ const Database = {
             ledger(stock.selfId, 'withdraw');
             const updatedRows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
             const physical = LifeState.inventorySummaryFromItems(updatedRows);
-            const inventory = jsonObject(life.inventorySummary);
+            const inventory = InventorySummary.read(life.inventorySummary);
             for (const selfId of new Set([stock.selfId, ...plan.returned.map((row) => row.selfId)])) {
                 delete inventory[String(selfId)];
                 if (physical[String(selfId)]) inventory[String(selfId)] = physical[String(selfId)];
@@ -10423,7 +11088,7 @@ const Database = {
                 returned: plan.returned.map((row) => ({ selfId: row.selfId, enchant: row.enchant })), at: timestamp };
             write(`UPDATE bot_life_state SET inventorySummary = ?, statsJson = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`, [
-                JSON.stringify(inventory), JSON.stringify(stats), timestamp, id
+                InventorySummary.saved(inventory), JSON.stringify(stats), timestamp, id
             ]);
             if (simulation) {
                 clanState.warehouseRevision = revision;
@@ -11032,17 +11697,17 @@ const Database = {
                 simulationRevision: Number(state.simulationRevision) };
         }, 'bot-life:generated-appearance'));
     },
-    updateColdCharacterExperience(id, level, exp, sp, options = {}) {
+    // A bot row's level, EXP, SP and vitals copied to `characters` in one
+    // guarded UPDATE; washKarma for a karma bot whose cold EXP washes it.
+    updateCharacterProgress(id, { level, exp, sp, hp, maxHp, mp, maxMp }, washKarma = false, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite(`UPDATE characters
-            SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-                level = ?, exp = ?, sp = ? WHERE id = ?`,
-            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp, hp, maxHp, mp, maxMp }, { washKarma });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:progress', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "level" = ?, "exp" = ?, "sp" = ? WHERE id = ?',
-            [level, exp, sp, id], 'character:experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:experience', admission));
     },
     fetchCharacterDeathExperience(id) {
         return selectOne('character_death_experience', ['*'], 'characterId = ?', [Number(id)], 'character:death-exp-fetch')
@@ -11115,8 +11780,8 @@ const Database = {
     },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "hp" = ?, "maxHp" = ?, "mp" = ?, "maxMp" = ? WHERE id = ?',
-            [hp, maxHp, mp, maxMp, id], 'character:vitals', admission));
+        const [sql, params] = characterProgressStatement(id, { hp, maxHp, mp, maxMp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:vitals', admission));
     },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
@@ -11148,7 +11813,11 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (!Number.isSafeInteger(bag + pending + count)) throw Error('trade_meeting_integer');
         return creditRecordOwnerUnsafe(owner, item, count, at);
     }, funding: checkEconomyFundingUnsafe,
-    canReceive: (id, life, itemId) => checkWarSupplyPurchaseUnsafe(id, itemId, life),
+    canReceive: (id, life, itemId, count, pending) => {
+        checkWarSupplyPurchaseUnsafe(id, itemId, life);
+        checkArrowPurchaseUnsafe(id, itemId, count, life, pending);
+    },
+    canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),
     position: tradeMeetingPositionUnsafe,
     canStartTrade: (id, state) => require('./GameServer/Bot/Population/PartyAdmission').partyTradeAllowed(
@@ -11169,6 +11838,24 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         const sellerId = line.payer ? meeting.actorA : meeting.actorB;
         const certificate = JSON.parse(meeting.terms).lines[line.ordinal]?.certificate;
         const intent = certificate ? TradeIntent.decode(certificate) : null;
+        // A purchase for a paused kit becomes part of that kit in the same
+        // transaction as its receipt. Other purchases remain free for their
+        // own goal; merely revisiting the plan cannot claim them.
+        if (intent && intent.key.startsWith('power:')) {
+            const life = one('SELECT statsJson FROM bot_life_state WHERE characterId=?', [buyerId]);
+            let saved = jsonObject(life?.statsJson).equipmentPlan?.inputPreparation;
+            let prefix = '$.equipmentPlan.inputPreparation';
+            while (saved && !(saved.reason === 'wish_focus' && intent.key === `power:${Number(saved.target?.selfId)}:${Number(saved.target?.slot)}`
+                && Number(intent.recipeId) === Number(saved.recipeId))) {
+                saved = saved.inputPreparation;
+                prefix += '.inputPreparation';
+            }
+            if (saved && Number(line.enchant || 0) === 0) {
+                const path = `${prefix}.heldInputs.${Number(line.selfId)}`;
+                write("UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),?,COALESCE(json_extract(statsJson,?),0)+?) WHERE characterId=?",
+                    [path, path, Number(line.count), buyerId]);
+            }
+        }
         const ad = line.sourceAdId && one('SELECT * FROM afk_trade_shops WHERE id=?', [line.sourceAdId]);
         if (ad?.custodyPolicy === 1) {
             write('UPDATE afk_trade_lines SET count=max(0,count-?),fills=fills+1,updatedAt=? WHERE shopId=? AND selfId=? AND enchant=?',
@@ -11383,6 +12070,21 @@ Object.assign(Database, {
     },
     cancelTradeMeeting(id, reason) { return withTradeMeetingFlush(id, () => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
     acknowledgeTradeMeeting(id, actor) { return withCharacterFlush(actor, () => inTransaction(() => TradeMeetings.acknowledge(Number(id), Number(actor)), 'board:meeting-ack')); },
+    // Boot only, before recovery: one page of bots whose saved state names a
+    // meeting; each marker is rewritten from its accepted meetings when it
+    // differs (TradeMeeting.remark). { rows: changed life rows, next: cursor or null }.
+    refreshTradeMeetingMarkers(afterId = 0) {
+        return inTransaction(() => {
+            const marked = all(`SELECT characterId, json_extract(statsJson,'$.tradeMeeting') marker FROM bot_life_state
+                WHERE characterId>? AND instr(statsJson,'"tradeMeeting":[')>0 ORDER BY characterId LIMIT 64`, [Number(afterId)]);
+            const rows = {};
+            for (const { characterId, marker } of marked) {
+                const row = TradeMeetings.remark(Number(characterId), marker ? JSON.parse(marker) : null);
+                if (row) rows[characterId] = row;
+            }
+            return { rows, next: marked.length === 64 ? Number(marked.at(-1).characterId) : null };
+        }, 'board:meeting-markers');
+    },
     recoverTradeMeetings(afterId = 0) { return inTransaction(() => all('SELECT id,actorA,actorB,state FROM board_trade_meetings WHERE id>? ORDER BY id LIMIT 32', [afterId]), 'board:meeting-recover'); }
 });
 

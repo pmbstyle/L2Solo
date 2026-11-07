@@ -7,7 +7,8 @@
 // total applies at EACH explicit coordinate, or to random placement in bounds.
 // Recipe relations use the declared source as first indexed (RecipeCatalog).
 // sourcesForItem requires kind 'drops'/'spoils' ('drop'/'spoil' aliases work).
-// It returns borrowed origin-specific source records, not a normalized schema.
+// It returns origin-specific source records, not a normalized schema (native: borrowed
+// reward rows; exported: `{ mobId }` per source, in catalogue order).
 // Importing this module/factory never loads native data or exported JSON.
 // Direct optional queries do not load missing datasets: null = unavailable,
 // [] = available but no matching rows. sourceIndexFor is the legacy planner
@@ -36,6 +37,7 @@ function create(adapter) {
         npcShopRow: (npcId, itemId) => adapter.npcShopRow?.(Number(npcId), Number(itemId)) ?? null,
         npcTownOffers: () => adapter.npcTownOffers?.() ?? null,
         npcPriceForItem: id => adapter.npcPriceForItem?.(Number(id)) ?? null,
+        npcPrices: () => adapter.npcPrices?.() ?? null,
         sourceIndexFor: spots => adapter.sourceIndexFor?.(spots) ?? null,
         sourcesForItem: (id, options = {}) => {
             const kind = options.kind === 'drop' ? 'drops' : options.kind === 'spoil' ? 'spoils' : options.kind;
@@ -116,6 +118,7 @@ function native() {
         npcShopRow: (npcId, itemId) => shops().rowForNpc(npcId, itemId),
         npcTownOffers: () => shops().townOffers(),
         npcPriceForItem: id => shops().townPriceForItem(id),
+        npcPrices: () => shops().townPrices(),
         sourceIndexFor: spots => sources().sourcesByItem(spots),
         sourcesForItem: (id, { kind } = {}) => sources().rawSourcesForItem(id, kind),
         selectedSourcesForItem: (id, spots) => hasSelectedSources(spots) ? sources().sourcesByItem(spots).get(id) || EMPTY : null,

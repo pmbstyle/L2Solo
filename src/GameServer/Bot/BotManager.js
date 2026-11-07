@@ -1,5 +1,5 @@
+const FailureLog = require('../../FailureLog');
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
-const ActorQueries = require('../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
@@ -13,7 +13,6 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
-const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
@@ -22,7 +21,6 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
@@ -32,7 +30,6 @@ const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 
-const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
 const INSULT_PATTERN = /\b(noob|idiot|stupid|trash|useless|suck|sucks)\b|(?:\u0434\u0443\u0440\u0430\u043a|\u0434\u0443\u0440\u0430|\u0442\u0443\u043f\u043e\u0439|\u0442\u0443\u043f\u0430\u044f|\u043b\u043e\u0445|\u043d\u0443\u0431|\u043c\u0443\u0441\u043e\u0440|\u0431\u0435\u0441\u043f\u043e\u043b\u0435\u0437\u043d)/i;
 // Whole-word greetings only: a greeting substring inside a longer word does not count,
@@ -111,9 +108,6 @@ async function rollbackPublishedBot(session, reason) {
 
 const BotManager = {
     sessions: [],
-    pkEncounterTimer: null,
-    pkEncounterPending: new Set(),
-    pkEncounterBots: [],
     recoverStarterSpawn,
 
     findSessionByName(name) {
@@ -326,21 +320,11 @@ const BotManager = {
         BotFriendship.init();
         PopulationService.init();
         GoalService.init();
-        SimulationKernel.init({ population: PopulationService });
-        SimulationKernel.register({
-            id: 'population',
-            register: (registry) => registry.statusProvider(() => PopulationService.summary?.() || null)
-        });
-        SimulationKernel.register({
-            id: 'goals',
-            requires: ['population'],
-            register: (registry) => registry.statusProvider(() => ({ initialized: GoalService.initialized }))
-        });
         
         // Adventurers now belong exclusively to the persistent population
         // seeder. Keeping the old static starters here doubled the fresh-world
         // population before wave one had even begun.
-        const bots = process.env.L2NODE_HOT_LOAD_TEST === '1' ? [] : [...MERCHANT_BOTS];
+        const bots = [...MERCHANT_BOTS];
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
         
         // Wait 5 seconds after startup to let world finish loading
@@ -348,88 +332,11 @@ const BotManager = {
             bots.forEach((botData, idx) => {
                 this.provisionAndSpawn(botData, idx);
             });
-            // PK encounter profiles were part of the old static population as
-            // well. Do not introduce high-level hunters into a newly seeded
-            // level-one world; they can be reintroduced as a later population
-            // phase with an explicit lifecycle rule.
-            this.pkEncounterBots = [];
             Promise.resolve().finally(() => {
-                this.startDynamicScalingMonitor();
                 this.startStatusLogMonitor();
                 PopulationService.start();
-                SimulationKernel.start();
             });
         }, 5000);
-    },
-
-    bindPkAnchorToCharacter(botData, character) {
-        if (!botData?.dynamicStarter || !botData.pkProfile?.anchor || !character) return botData;
-        const anchor = {
-            locX: Number(character.locX),
-            locY: Number(character.locY),
-            locZ: Number(character.locZ)
-        };
-        if (!Number.isFinite(anchor.locX) || !Number.isFinite(anchor.locY) || !Number.isFinite(anchor.locZ)) return botData;
-        botData.pkProfile = { ...botData.pkProfile, anchor };
-        botData.locX = anchor.locX;
-        botData.locY = anchor.locY;
-        botData.locZ = anchor.locZ;
-        return botData;
-    },
-
-    hydratePkEncounterAnchors() {
-        return Promise.all(this.pkEncounterBots.map((botData) => (
-            botData.dynamicStarter
-                ? Shared.fetchCharacters(botData.username)
-                    .then((characters) => this.bindPkAnchorToCharacter(botData, characters[0]))
-                    .catch(() => botData)
-                : Promise.resolve(botData)
-        )));
-    },
-
-    activePopulationForPk(profile) {
-        if (!profile) return [];
-        return ActorQueries.near(World, profile.anchor, profile.activationRadius).filter((session) => {
-            const actor = session?.actor;
-            if (!actor || !actor.fetchIsOnline?.() || session.plan === 'merchant') return false;
-            if (actor.state?.fetchDead?.() || utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) return false;
-            if (Number(actor.fetchKarma?.() || 0) !== 0) return false;
-            // The encounter stays alive for any local white actor. The level
-            // bracket is enforced by PkHuntingState when it selects victims;
-            // an out-of-band player is still a threat the PK must react to.
-            const dx = actor.fetchLocX() - profile.anchor.locX;
-            const dy = actor.fetchLocY() - profile.anchor.locY;
-            return Math.sqrt(dx * dx + dy * dy) <= profile.activationRadius;
-        });
-    },
-
-    reconcilePkEncounters() {
-        const encounters = this.pkEncounterBots;
-        return encounters.reduce((chain, botData, index) => chain.then(() => {
-            const active = this.sessions.find((session) => session.accountId === botData.username && session.actor);
-            const hasPopulation = this.activePopulationForPk(botData.pkProfile).length > 0;
-            if (hasPopulation && !active && !this.pkEncounterPending.has(botData.username)) {
-                this.pkEncounterPending.add(botData.username);
-                this.provisionAndSpawn(botData, 1000 + index);
-                setTimeout(() => this.pkEncounterPending.delete(botData.username), 12000);
-                return null;
-            }
-            if (!hasPopulation && active) {
-                return PopulationService.cooldownSession(active, 'pk_no_eligible_player', {
-                    allowPk: true,
-                    ignoreVisibility: true
-                });
-            }
-            return null;
-        }), Promise.resolve());
-    },
-
-    startPkEncounterMonitor() {
-        if (this.pkEncounterTimer) return;
-        if (this.pkEncounterBots.length === 0) this.pkEncounterBots = BotPopulation.pkEncounters();
-        this.reconcilePkEncounters();
-        this.pkEncounterTimer = setInterval(() => this.reconcilePkEncounters(), 15000);
-        if (typeof this.pkEncounterTimer.unref === 'function') this.pkEncounterTimer.unref();
     },
 
     provisionAndSpawn(botData, idx) {
@@ -512,13 +419,12 @@ const BotManager = {
                         const charId = Number(packet.insertId);
                         this.applyProfileLevel({ id: charId }, effectiveBotData)
                             .then(() => this.awardProfileSkills(charId, effectiveBotData))
-                            .then(() => {
-                                this.awardBaseGear(charId, effectiveBotData.classId);
-                                if (Number(effectiveBotData.level || 1) <= 1) {
-                                    this.awardBaseSkills(charId, effectiveBotData.classId);
-                                }
-                                this.loadAndSpawnBot(username, effectiveBotData);
-                            });
+                            // The bot loads after its starter kit is written; a failed write is counted and
+                            // the bot still spawns, without what was lost.
+                            .then(() => Promise.all([this.awardBaseGear(charId, effectiveBotData.classId),
+                                Number(effectiveBotData.level || 1) <= 1 ? this.awardBaseSkills(charId, effectiveBotData.classId) : null])
+                                .catch(error => FailureLog.note('db.write:base_kit', error)))
+                            .then(() => this.loadAndSpawnBot(username, effectiveBotData));
                     });
                 });
             });
@@ -654,12 +560,11 @@ const BotManager = {
                             session.actor.fetchPvp(),
                             session.actor.fetchPk(),
                             session.actor.fetchKarma()
-                        );
+                        ).catch(error => FailureLog.note('db.write:character_karma', error));
                     }
 
                     session.homeRegion = botData.homeRegion || null;
                     session.visitor = !!botData.visitor;
-                    session.newbieAnchor = !!botData.newbieAnchor;
                     session.pkProfile = botData.pkProfile || null;
                 
                     session.initialSpawnCoord = {
@@ -794,15 +699,16 @@ const BotManager = {
             return Number(template?.etc?.slot || 0) === 14 &&
                 String(template?.template?.kind || '').startsWith('Weapon.');
         });
-        items.forEach((item) => {
+        return Promise.all(items.map((item) => {
             item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
             // Equip weapons/armors automatically for bots
             item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
-            Database.setItem(id, item);
-        });
+            return Database.setItem(id, item);
+        }));
     },
 
     awardBaseSkills(id, classId, level = 1) {
+        const writes = [];
         DataCache.fetchSkillTreeFromClassId(classId, (skillTree) => {
             const skills = skillTree.skills ?? [];
             const eligibleSkills = skills.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level));
@@ -811,10 +717,11 @@ const BotManager = {
                 skill.levels = skill.levels.filter((ob) => ob.pLevel <= level).slice(-1);
                 DataCache.fetchSkillFromSelfId(skill.selfId, (skillDetails) => {
                     skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
-                    Database.setSkill(skill, id);
+                    writes.push(Database.setSkill(skill, id));
                 });
             });
         });
+        return Promise.all(writes);
     },
 
     handlePlayerSpeak(playerSession, data) {
@@ -1420,20 +1327,6 @@ const BotManager = {
         });
     },
 
-    botShout(session, text) {
-        if (!session.actor) return;
-        const ServerResponse = invoke('GameServer/Network/Response');
-        const World = invoke('GameServer/World/World');
-        
-        const packet = ServerResponse.speak(session.actor, { kind: 1, text: text });
-        
-        ActorQueries.humans(World).forEach((user) => {
-            if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
-                user.dataSendToMe(packet);
-            }
-        });
-    },
-
     checkAndStartConversation(botSession) {
         if (botSession.inConversation || botSession.partyCompanion) return;
         const bot = botSession.actor;
@@ -1509,47 +1402,6 @@ const BotManager = {
 
     handleBotGlobalShout(botSession) {
         return invoke('GameServer/Bot/Population/BotGlobalChat').maybeAmbient(botSession);
-    },
-
-    findHighDensityCoord() {
-        const coords = { locX: -83000, locY: 243000, locZ: -3700 }; // default Keltir spot
-        const sectors = {};
-        const World = invoke('GameServer/World/World');
-
-        let maxCount = 0;
-        let bestSector = null;
-
-        ActorQueries.humans(World).forEach((session) => {
-            const actor = session.actor;
-            if (actor && actor.fetchIsOnline() && actor.fetchKarma() === 0 && !session.accountId?.startsWith('bot_') && !utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
-                const sx = Math.floor(actor.fetchLocX() / 4000);
-                const sy = Math.floor(actor.fetchLocY() / 4000);
-                const key = `${sx},${sy}`;
-                if (!sectors[key]) {
-                    sectors[key] = { count: 0, sumX: 0, sumY: 0, sumZ: 0 };
-                }
-                sectors[key].count++;
-                sectors[key].sumX += actor.fetchLocX();
-                sectors[key].sumY += actor.fetchLocY();
-                sectors[key].sumZ += actor.fetchLocZ();
-
-                if (sectors[key].count > maxCount) {
-                    maxCount = sectors[key].count;
-                    bestSector = sectors[key];
-                }
-            }
-        });
-
-        if (bestSector) {
-            coords.locX = Math.floor(bestSector.sumX / bestSector.count);
-            coords.locY = Math.floor(bestSector.sumY / bestSector.count);
-            coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, Math.floor(bestSector.sumZ / bestSector.count));
-        }
-        return coords;
-    },
-
-    startDynamicScalingMonitor() {
-        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotManager :: Dynamic bot teleport/level scaling removed; using persistent starter populations.");
     },
 
     startStatusLogMonitor() {

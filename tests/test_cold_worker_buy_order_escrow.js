@@ -24,7 +24,8 @@ const catalogRows = npcPlanningCatalogRows();
 const plannerOptions = ColdNpcPlanningCatalog.createLookup(catalogRows).plannerOptions;
 const point = { locX: 145224, locY: 120001, locZ: -4500 };
 // The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
-const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
+// A C4 Warrior's kit weapon is two-handed (slot 14), not a one-hand (slot 7).
+const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => [7, 14].includes(Number(item.slot)));
 const base = (characterId, adena) => ({
     characterId, name: `Buyer${characterId}`, accountName: `bot_${characterId}`, level: 30, exp: Number(DataCache.experience[29]), sp: 0,
     phase: 'cold', activity: 'hunting', loc: { ...point },
@@ -140,7 +141,7 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
         const parties = [];
         const partyRows = (partyId, leaderId, wallet) => {
             const party = { partyId, leaderId, memberIds: [leaderId, leaderId + 1], status: 'active', spotId: spot.id,
-                nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10, sessionExpiresAt: now + 3600000 } };
+                nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10 } };
             const member = (characterId, adena, body) => ({ ...base(characterId, adena), activity: 'grouped',
                 spotId: spot.id, timing, party: { partyId, leaderId, role: 'dps' },
                 inventory: {

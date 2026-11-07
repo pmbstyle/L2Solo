@@ -1,4 +1,5 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -11,9 +12,6 @@ const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
-
-const MARKET_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
-const GATEKEEPER_SPOT_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
 function marketTown(name = 'Giran') {
     const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
@@ -43,7 +41,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
     if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory && !improving) return null;
     if (!improving && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
-    if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
+    if (sellingInventory && !forcedInventoryCleanup
+        && invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds(state)) return null;
 
     if (buyingGear || buyingMaterial || buyingErrand) {
         const selfId = Number(goal.target?.itemId);
@@ -55,8 +54,15 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
             if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
         }
         if (goal.plan?.valueRate !== undefined) request.r = goal.plan.valueRate;
-        if (!invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
-            economy ? { timestamp, economy } : { timestamp })) return null;
+        // The plan's own shopping step: the build asked its visit (EconomicValuation.visitPays)
+        // and who sells what is read at the market, on arrival (decision 11-02).
+        const planned = !errand && goal.plan?.economyActivity === 'shopping';
+        // lazy: cycle ColdMarketService reads this module at its load
+        if (!planned && !invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
+            economy ? { timestamp, economy } : { timestamp })) {
+            DecisionEvents.refused(`trip:${request.purpose || goal.type}`);
+            return null;
+        }
     }
 
     // A sale goes where its goal says (the town the shop opens in), else to
@@ -139,17 +145,28 @@ function finishVisit(state, timestamp, options) {
     const spotBackoff = returnState && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
-    // returnState stands at the saved spot, so the search's room filter takes
-    // it for the bot's own spot and never refuses it: the saved spot's room
-    // is read here, on main's world index, and a full one is left out of the
-    // search, which then picks another spot (ROUTE-ROOM-4). With no other
-    // spot the bot still goes home; the room is read again at arrival.
-    const refused = !!savedSpot && !clanReturn
-        && !SpotProfiles.roomFilterFor(BotLifeState.occupancyIndex(), SpotProfiles.ensure(), [state])(savedSpot.id);
-    const selectedSpot = clanReturn ? savedSpot : returnState
-        ? SpotProfiles.findForState(returnState, { timestamp, excludedSpotIds: refused ? [savedSpot.id] : [] })
-            || (spotBackoff ? null : savedSpot)
-        : null;
+    // Where the bot hunts next is the worker's decision, read here: the card's
+    // hunting leaf, else the spot the bot hunted before the trip, else its
+    // gear plan's source while that stays viable; a spot the bot's marks
+    // exclude (died, was full, avoided) is neither. Only without one does main
+    // search. A full spot is met at arrival (ROUTE-ROOM-4) and a spot the bot
+    // may no longer hunt by the worker's next trip start: one trip there
+    // before the worker moves it.
+    let selectedSpot = clanReturn ? savedSpot : null;
+    if (returnState && !clanReturn) {
+        const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
+        const usable = spotId => spotId != null && !excluded.has(String(spotId));
+        // lazy: cycle the coordinator loads PopulationService, which loads this module.
+        const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
+        const plan = state.stats?.equipmentPlan;
+        selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
+            || (usable(savedSpot.id) ? savedSpot : null)
+            || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
+                .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
+                ? SpotProfiles.findById(plan.next.spotId) : null)
+            || SpotProfiles.findForState(returnState, { timestamp })
+            || (spotBackoff ? null : savedSpot);
+    }
     // Remaining in town is safer than silently returning to a spot that is
     // already over the death threshold. A later lifecycle pass can retry
     // once another suitable route becomes available.
@@ -178,4 +195,4 @@ function finishVisit(state, timestamp, options) {
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
-module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
+module.exports = { beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };

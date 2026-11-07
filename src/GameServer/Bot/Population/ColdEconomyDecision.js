@@ -8,12 +8,15 @@
 // network again on the main thread (L25). The native actor retains accepted
 // advice; one bounded saved prefix can cross a restart until its original
 // market deadline. Every use still takes the economy owner's event verdict.
+const FailureLog = require('../../../FailureLog');
 const { isMainThread } = require('node:worker_threads');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
 const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
+const Reaction = require('../Economy/Reaction');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomicValuation = require('../Economy/EconomicValuation');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
@@ -77,6 +80,18 @@ function workshopValues(value) {
         && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
 }
 function unknownWorkshop() { return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
+// A known workshop with nothing to craft (the planner's answer to a bot it has no recipe search for).
+function noWorkshop() { return { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 }; }
+// The occupation planner's answer to a bot that is no service crafter and has
+// no own board line, known without the planner (no recipe search, no sale
+// feasibility to read): its occupation branch (ColdSimulationWorker) and the
+// step's shortcut before an ask (member, lifecycle) both return it. Else null:
+// the planner answers. board: the board mirror (ownerLines).
+function noCrafterWorkshop(state, board) {
+    if (require('../Economy/CraftEligibility').isServiceCrafter(state)
+        || board?.ownerLines(Number(state.characterId))?.length) return null;
+    return { ...noWorkshop(), feasibility: null };
+}
 class CompactDecision {
     constructor(updatedAt, echo, riskWeight, activity, data, flags) {
         this.echo = echo; this.data = data;
@@ -265,22 +280,32 @@ function heldFor(state, itemId) {
     return Math.max(0, Number(state?.inventory?.[itemId]?.amount || 0))
         + Math.max(0, Number(state?.acceptedIncoming?.[itemId] || 0));
 }
-// What a shopping leaf still orders now: the core's amount less what reached
-// the bag or accepted incoming since the decision (heldAtDecision; a full
-// worker leaf is read against its own decided state).
-function remainingToOrder(leaf, state, decided = state, itemId = leaf?.itemId) {
+// A leaf's own progress: what reached the bag or accepted incoming since the
+// decision (heldAtDecision; a full worker leaf is read against its own decided state).
+function progressSince(leaf, state, decided = state, itemId = leaf?.itemId) {
     const id = Number(itemId), baseline = Number(leaf?.heldAtDecision ?? heldFor(decided, id));
-    return Math.max(0, Math.ceil(Number(leaf?.amount) || 0) - Math.max(0, heldFor(state, id) - baseline));
+    return Math.max(0, heldFor(state, id) - baseline);
+}
+// What a shopping leaf still orders now: the core's amount less its progress.
+function remainingToOrder(leaf, state, decided = state, itemId = leaf?.itemId) {
+    return Math.max(0, Math.ceil(Number(leaf?.amount) || 0) - progressSince(leaf, state, decided, itemId));
 }
 function materialHunt(leaf) {
     return leaf?.activity === 'hunting' && leaf.funding !== true
         && Number.isSafeInteger(leaf.itemId) && leaf.itemId > 0 && Number.isFinite(leaf.amount) && leaf.amount > 0;
 }
-// The item a leaf itself brings in (a purchase, a material hunt): its bag
+// The item a leaf itself brings in (a purchase, material hunt or conversion): its bag
 // and incoming count is the leaf's own progress, measured from the decision
 // (heldAtDecision on the card, heldUnits on the held build).
+// The count a step's progress is read against: the decision's, else this state's.
+function heldAtDecisionOf(leaf, state) {
+    const own = ownItem(leaf);
+    return leaf?.heldAtDecision ?? (own === null ? undefined : heldFor(state, own));
+}
 function ownItem(leaf) {
-    return leaf?.activity === 'shopping' || materialHunt(leaf) ? leaf.itemId : null;
+    return leaf?.activity === 'shopping' || materialHunt(leaf)
+        || leaf?.activity === 'improving' && ['luxury_exchange', 'crystallize'].includes(leaf.improvement?.kind)
+            && Number.isSafeInteger(leaf.itemId) && leaf.itemId > 0 ? leaf.itemId : null;
 }
 
 // economy: the network built on `seen` (the state before the projection's
@@ -317,17 +342,21 @@ function capture(economy, state, seen = state) {
         for (const row of plan.requirements || []) visit(row.plan, depth + 1);
     };
     if (economy?.network?.quantityPrepared) for (const row of queue) visit(row.plan);
+    // What the plan's own steps already bought is no input to order.
+    for (const [id, bought] of economy?.network?.filled || []) {
+        const left = (missing.get(id) || 0) - bought;
+        if (left > 0) missing.set(id, left); else missing.delete(id);
+    }
     const activity = leaf ? new CompactActivity(leaf) : null;
     if (activity) {
         const rows = CraftInputReservations.heldCraftRows(seen, economy?.network?.craftNeeds);
         if (rows.length) activity.craftReservations = rows;
     }
-    const own = ownItem(activity);
-    if (own !== null) activity.heldAtDecision = heldFor(seen, own);
-    if (activity?.activity === 'shopping') {
-        const r = PurchaseFunding.rootRatio(wish);
-        if (r > 0) activity.r = r;
-    }
+    // A served plan keeps its decision's count (withHeldUnits): stamped anew, a
+    // partial fill would order the whole amount again and a hunt lose its progress.
+    const held = activity ? heldAtDecisionOf(activity, seen) : undefined;
+    if (held !== undefined) activity.heldAtDecision = held;
+    if (activity?.activity === 'shopping') PurchaseFunding.stampRatio(activity, wish);
     let clan = null;
     // Workshop-only publications carry no hunting valuation. Clan membership
     // cannot turn that partial source into a second, fabricated economy review.
@@ -394,9 +423,23 @@ function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabl
     return NaN;
 }
 
+// What preparedCardWorth reads of a card (the stale flag, its usefulness
+// pairs) as one version: worths read from one card stand for the next card
+// that reads the same (a flag write copies the buffer, a new decision brings a
+// new one). null: no card.
+function usefulnessVersion(decision) {
+    if (!decision) return null;
+    const data = decision.data;
+    if (decision.stale || !data || data.byteLength > MAX_BYTES) return 'none';
+    const text = new Float32Array(data, 28, (decision.counts & 63) * 2).join(',');
+    return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
+}
+
 // The basics' enumerable keys, learned from the first build: basics() always
 // returns the same shape, so a later view defines them without a build.
 let basicsKeys = null;
+// The keys a view reads with no income search (EconomyContext.personal).
+const PERSONAL = new Set(['persona', 'price', 'timestamp']);
 // The view's basics (the hour-value foundation with its income route search)
 // are built on first read: GoalService.review through NeedsEvaluator reads
 // only the card's leaf. The build takes the view's timestamp and board, as
@@ -408,7 +451,9 @@ function view(state, decision, deps = {}, preparedBase = null) {
     const board = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
     const timestamp = Number(deps.timestamp || Date.now());
     const baseDeps = deps.board === board && deps.timestamp === timestamp ? deps : { ...deps, board, timestamp };
-    let base = preparedBase;
+    let base = preparedBase, light = null;
+    // lazy: cycle EconomyContext reads this module at its load
+    const personal = () => base || (light ||= invoke('GameServer/Bot/Economy/EconomyContext').personal(state, baseDeps));
     const basics = () => {
         if (base) return base;
         // lazy: cycle EconomyContext constructs and validates these cards
@@ -417,38 +462,41 @@ function view(state, decision, deps = {}, preparedBase = null) {
         return base;
     };
     const packet = state.stats?.money;
-    const valid = Array.isArray(packet) && packet.length >= 4;
+    const valid = Packet.hasMoney(packet);
     if (!valid || !basicsKeys) basics();
-    const hourAdena = valid ? Number(packet[0]) : base.hourAdena;
-    const moneyPrice = valid ? Number(packet[1]) : hourAdena > 0 ? 1 / hourAdena : 0;
+    const hourAdena = valid ? Number(Packet.hourAdena(packet)) : base.hourAdena;
+    const moneyPrice = valid ? Number(Packet.moneyPrice(packet)) : hourAdena > 0 ? 1 / hourAdena : 0;
     const known = id => {
         const pairs = decision?.usefulness || [];
         for (let i = 0; i < pairs.length; i += 2) if (pairs[i] === Number(id)) return pairs[i + 1];
         return null;
     };
     const enabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
-    const itemUsefulness = id => personalUsefulness(known(id) || 0, state, basics().persona.understanding, enabled, id);
+    const itemUsefulness = id => personalUsefulness(known(id) || 0, state, personal().persona.understanding, enabled, id);
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
-    const gapHorizonHours = () => !decision?.urgency ? 0 : decision.urgency === URGENCY_SHOTS
+    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.stockTargets);
+    const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(publishedHorizon()) ? publishedHorizon()
+        : decision.urgency === URGENCY_SHOTS
         ? basics().stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
             ? basics().stock('potions').targetHours
             : EconomicValuation.stageHours(state, basics().hunt.expPerHour, basics().persona);
-    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(packet[2]) : base.survivalReserve,
+    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
         workshop: decision?.workshop || unknownWorkshop(),
-        itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : basics().price(id) };
+        itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
+        stock: kind => basics().stock(kind) };
     if (base) return { ...base, ...own, gapHorizonHours: gapHorizonHours() };
     // Own enumerable getters: a spread or a key walk of the view sees the
     // basics as before (and builds them); a write replaces the getter.
     const economy = {};
     const lazy = (key, get) => Object.defineProperty(economy, key, { enumerable: true, configurable: true, get,
         set: value => { Object.defineProperty(economy, key, { value, writable: true, enumerable: true, configurable: true }); } });
-    for (const key of basicsKeys) if (!Object.hasOwn(own, key)) lazy(key, () => basics()[key]);
+    for (const key of basicsKeys) if (!Object.hasOwn(own, key)) lazy(key, () => (PERSONAL.has(key) ? personal() : basics())[key]);
     // Defined after the assign: Object.assign would invoke a getter in the literal.
     Object.assign(economy, own);
     // Kept on first read: a spread or a second read does not compute it again.
@@ -562,7 +610,7 @@ function readAdvisoryCard(record) {
         // Validate all binary ranges before this becomes retained native data.
         void card.usefulness; void card.watch; void card.materials; void card.workshop; void card.feasibility; void card.shot;
         return card;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:advisory_card', error); return null; }
 }
 function advisoryMatches(state, accepted) {
     if (!accepted || accepted.characterId !== Number(state?.characterId)) return false;
@@ -608,14 +656,19 @@ function refusal(state, accepted, deps = {}, options = {}) {
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild.
-    if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision) return 'goal';
+    // restart) differs too: one rebuild. The held earning spot does not
+    // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
+    if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
+        && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
+    // A far bot's card lives on, so nothing else heals a lost held build: every
+    // read of the earning spot would search in full.
+    if (Reaction.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).
     const why = [], verdict = {};
     const holds = Economy.eventProofHolds(state, accepted.eventProof, deps, { activity: accepted.activity, leaf,
         baseline: accepted.baseline, mp: accepted.mp, timestamp: Number(deps.timestamp || Date.now()), why, verdict,
-        collect: options.collect === true && !!options.prepared });
+        collect: options.collect === true && !!options.prepared, basics: options.basics });
     if (options.prepared) options.prepared.eventVerdict = verdict;
     return holds ? '' : `events:${why[0] || 'unproved'}`;
 }
@@ -627,10 +680,17 @@ function canReuse(state, accepted, deps = {}, options = {}) {
 // not build them or their income route again for the same state and deps,
 // and the card's verdict; options.collect: the caller builds on this state
 // and deps when the card is refused (its verdict serves the build's).
+// The basics: a selling leaf's check in the card's verdict builds them on the
+// same state and deps right before (EconomyContext LEAF_CHECKS selling), with
+// nothing yielding or written between; that answer serves when it read the
+// held earning spot with no search (a search renews or moves the hold, after
+// which a second read keeps its answer but records no search) at the same time.
 function refreshAdvisory(state, accepted, deps = {}, options = {}) {
-    const refused = refusal(state, accepted, deps, options);
+    const checked = {};
+    const refused = refusal(state, accepted, deps, { ...options, basics: checked });
     if (refused) { options.why?.push(refused); return null; }
-    const base = invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
+    const base = checked.base?.preparedIncomeRoute?.searched === false && checked.base.timestamp === Number(deps.timestamp || Date.now())
+        ? checked.base : invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
     if (options.prepared) options.prepared.basics = base;
     // This new result is fenced to the actual publication and the accepted
     // decision's echo; never relax ColdEconomyDecisions.matches or any
@@ -642,7 +702,7 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        stockTargets: state.stats.stockTargets, wishSections: accepted.baseline, wishDirty: 0,
+        stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
         wishAdvisory: accepted.saved || null };
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });
@@ -785,5 +845,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, capture, heldFor, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
-    unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
+    unknownWorkshop, noWorkshop, noCrafterWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

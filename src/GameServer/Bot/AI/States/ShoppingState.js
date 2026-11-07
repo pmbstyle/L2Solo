@@ -27,6 +27,7 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
 const World = invoke('GameServer/World/World');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
+const InventoryCleanup = require('../CompanionInventoryCleanup');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 const RESTOCK_RETRY_MS = 5000;
@@ -178,7 +179,7 @@ function townMerchantTarget(town, bot, selfId = 0, options = {}) {
 
 function alternateTownNpcErrand(session, bot, town) {
     const errand = session.companionShopping;
-    if (!town?.name || !['sell_resources', 'sell_junk', 'restock_shots'].includes(errand?.kind)) return null;
+    if (!town?.name || !['sell_resources', 'sell_junk', 'restock_shots', 'sell_unused_arrows'].includes(errand?.kind)) return null;
     const failedSourceIds = new Set((errand.failedSourceIds || []).map(Number));
     const failedNpcSelfId = Number(session.shoppingTarget?.npcSelfId || 0);
     if (failedNpcSelfId) failedSourceIds.add(failedNpcSelfId);
@@ -205,6 +206,13 @@ function alternateTownNpcErrand(session, bot, town) {
 function deferEquipmentRetry(session) {
     if (!['npc_equipment_purchase', 'market_purchase', 'dual_component_withdrawal', 'dual_sword_combine', 'mammon_unseal'].includes(session.companionShopping?.kind)) return;
     session.companionEquipmentRetryAt = Date.now() + COMPANION_EQUIPMENT_FAILURE_RETRY_MS;
+}
+
+// A refused gear purchase names its cause: the bot only says it could not buy.
+function equipmentPurchaseFailed(session, bot, errand, error) {
+    deferEquipmentRetry(session);
+    session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
+    utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
 }
 
 function usesWarehouseStop(session) {
@@ -465,7 +473,7 @@ module.exports = {
         const personalCraft = decision.personalCraft?.purpose === 'stock' ? null : decision.personalCraft;
         if (personalCraft && session.coldLifeState) session.coldLifeState = { ...session.coldLifeState,
             stats: { ...session.coldLifeState.stats, equipmentPlan: personalCraft } };
-        const selected = Improvements.chosen(null, decision);
+        const selected = ['unload_inventory', 'sell_unused_arrows'].includes(session.companionShopping?.kind) ? null : Improvements.chosen(null, decision);
         if (selected && selected.kind !== 'enchant') {
             const station = Improvements.stationTarget(bot, selected);
             if (station) { session.shoppingTarget = station; session.shoppingServicePhase = 'improvement'; }
@@ -565,6 +573,10 @@ module.exports = {
                     }
 
                     session.shoppingWarehouseDone = 'unreachable';
+                    if (session.companionShopping?.kind === 'unload_inventory') {
+                        this.finishInventoryUnload(session, bot, BotAI, true);
+                        return;
+                    }
                     restoreAfterWarehouse(session);
                     TownNpcApproach.reset(session);
                     CompanionNavigationRecovery.clear(session);
@@ -612,6 +624,10 @@ module.exports = {
                 }
 
                 const companionResume = session.resumeAfterShopping;
+                if (session.companionShopping?.kind === 'sell_unused_arrows') {
+                    this.finishInventoryUnload(session, bot, BotAI, true);
+                    return;
+                }
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
                 deferEquipmentRetry(session);
                 // A failed sale/restock route needs the same pause as an
@@ -667,7 +683,7 @@ module.exports = {
         }
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: 'shopping_started',
                 summary: `${bot.fetchName?.() || 'Bot'} reached ${target.town || 'town'} to shop and restock.`,
@@ -675,19 +691,18 @@ module.exports = {
                 dedupeKey: `shopping:${bot.fetchId()}:${target.town || 'town'}`,
                 coalesceWindowMs: 30000,
                 meta: { town: target.town || null }
-            })).catch(() => {});
+            });
             this.sellAndRestock(session, bot, Generics, BotAI);
         }
     },
 
     async depositAtWarehouse(session, bot, Generics, BotAI, target) {
+        const errand = session.companionShopping;
+        const unloading = errand?.kind === 'unload_inventory';
         try {
-            const warehouse = await BotWarehouse.depositActorAtWarehouse(
-                bot,
-                session.coldLifeState,
-                session,
-                target
-            );
+            const warehouse = await BotWarehouse.depositActorAtWarehouse(bot, session.coldLifeState, session, target,
+                { unload: unloading });
+            if (unloading && (session.actor !== bot || session.companionShopping !== errand || session.plan !== 'shopping')) return;
             session.shoppingWarehouseDone = true;
             session.lastTradeSummary = warehouse.count > 0
                 ? `stored ${warehouse.count} items with ${target.name}`
@@ -697,21 +712,73 @@ module.exports = {
                 const stored = `${sample}${warehouse.items.length > 2 ? ' and more' : ''}`;
                 TownChatter.say(session, BotAI, 'warehouse-deposit', Speech.lines('town.warehouse-deposit', { items: stored, merchant: target.name }));
             }
+            if (unloading) {
+                this.finishInventoryUnload(session, bot, BotAI);
+                return;
+            }
             restoreAfterWarehouse(session);
             TownNpcApproach.reset(session);
             CompanionNavigationRecovery.clear(session);
         } catch (err) {
+            if (unloading && (session.actor !== bot || session.companionShopping !== errand || session.plan !== 'shopping')) return;
             utils.infoWarn('Shopping', 'warehouse deposit failed for %s at %s: %s', bot.fetchName(), target?.name || 'unknown', err.message);
             session.lastTradeSummary = 'kept inventory after warehouse deposit failure';
             TownChatter.say(session, BotAI, 'warehouse-unavailable', Speech.lines('town.warehouse-unavailable', { merchant: target?.name || 'The warehouse clerk' }), { priority: 'coordination' });
-            this.scheduleRestock(session, bot, Generics, BotAI);
+            if (unloading) {
+                if (session.actor === bot && session.companionShopping === errand && session.plan === 'shopping') {
+                    this.finishInventoryUnload(session, bot, BotAI, true);
+                }
+            } else this.scheduleRestock(session, bot, Generics, BotAI);
         }
+    },
+
+    finishInventoryUnload(session, bot, BotAI, failed = false) {
+        const leader = session.resumeAfterShopping?.followPlayerSession;
+        const following = session.partyCompanion && session.followPlayerSession === leader && leader?.actor?.fetchIsOnline?.();
+        session.companionUnloadRetryAt = failed || require('../../Population/SurvivalFloor').bagMarks(bot).weight
+            ? Date.now() + InventoryCleanup.RETRY_MS : 0;
+        session.plan = following ? 'following' : 'hunting';
+        session.shoppingTarget = undefined;
+        session.companionShopping = undefined;
+        session.shoppingDoneAnnounced = false;
+        session.resumeAfterShopping = undefined;
+        session.preShopLocation = undefined;
+        clearShoppingServiceState(session);
+        if (session.coldLifeState) {
+            session.coldLifeState = { ...session.coldLifeState, activity: session.plan,
+                inventory: LifeState.inventorySummaryFromItems(bot.backpack.fetchItems()) };
+            refreshPartyMemberships([session], invoke);
+        }
+        bot.statusUpdateVitals?.(bot);
+        if (following && !bot.isDead?.()) {
+            TownChatter.say(session, BotAI, 'return-to-party', Speech.lines('town.return-to-party'), { priority: 'coordination' });
+            bot.moveTo({ from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                to: { locX: leader.actor.fetchLocX(), locY: leader.actor.fetchLocY(), locZ: leader.actor.fetchLocZ() } });
+        } else if (!following) raiseDecision(session, 'town');
     },
 
     async sellAndRestock(session, bot, Generics, BotAI) {
         const NpcTalkResponse = invoke(path.world + 'NpcTalkResponse');
         const companionErrand = session.companionShopping;
         const visit = { errand: companionErrand, target: session.shoppingTarget, shopTimer: session.shopTimer };
+
+        // The unload's arrows go with the bot's ordinary NPC sale (SellJunk).
+        if (companionErrand?.kind === 'sell_unused_arrows') {
+            let failed = false;
+            try {
+                const sale = await invoke(path.world + 'NpcBypasses/SellJunk').sell(session);
+                if (session.actor !== bot || session.companionShopping !== companionErrand || session.plan !== 'shopping') return;
+                failed = !(sale.count > 0);
+                session.lastTradeSummary = `sold ${sale.count} items for ${sale.payout}a`;
+            } catch (error) {
+                failed = true;
+                utils.infoWarn('Shopping', 'unused arrow sale failed for %s: %s', bot.fetchName(), error.message);
+            }
+            if (session.actor === bot && session.companionShopping === companionErrand && session.plan === 'shopping') {
+                this.finishInventoryUnload(session, bot, BotAI, failed);
+            }
+            return;
+        }
 
         if (companionErrand?.kind === 'restock_shots') {
             this.scheduleRestock(session, bot, Generics, BotAI);
@@ -783,7 +850,7 @@ module.exports = {
                 deliveryReady = true;
                 session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
                 TownChatter.say(session, BotAI, 'supply-purchased', Speech.lines('town.supply-purchased', { count: purchased.delta, item: companionErrand.itemName }), { priority: 'coordination' });
-                Promise.resolve(BotEventJournal.record({
+                BotEventJournal.record({
                     playerId: companionErrand.playerId,
                     botId: bot.fetchId(),
                     eventType: 'resource_purchase',
@@ -796,7 +863,7 @@ module.exports = {
                         cost: purchased.cost,
                         requestedBy: companionErrand.playerId
                     }
-                })).catch(() => {});
+                });
             } catch (error) {
                 session.pendingResourceDelivery = undefined;
                 session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
@@ -859,8 +926,7 @@ module.exports = {
                     { values: { item: boughtSummary.name, seller: sellerName } });
                 purchaseSucceeded = true;
             } catch (err) {
-                deferEquipmentRetry(session);
-                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                equipmentPurchaseFailed(session, bot, companionErrand, err);
                 TownChatter.say(session, BotAI, 'market-offer-gone', Speech.lines('town.market-offer-gone'));
             }
             if (purchaseSucceeded) await invoke('GameServer/Bot/BotSkillTraining').review(session);
@@ -888,7 +954,8 @@ module.exports = {
                 if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
                 const line = result.receipts.flatMap(row => row.lines || [])
                     .find(row => Number(row.selfId) === Number(companionErrand.itemId));
-                if (!result.ok || !line) throw Error('npc_offer_unavailable');
+                if (!result.ok || !line) throw Error(result.ok ? 'npc_line_not_funded'
+                    : result.receipts.find(row => !row.ok)?.reason || 'npc_offer_unavailable');
                 const bought = { qty: line.amount, name: offer.itemName, totalAdena: line.amount * line.unitPrice };
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
@@ -904,8 +971,7 @@ module.exports = {
                     { values: { item: bought.name, seller: companionErrand.target.name } });
                 purchaseSucceeded = true;
             } catch (err) {
-                deferEquipmentRetry(session);
-                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                equipmentPurchaseFailed(session, bot, companionErrand, err);
                 TownChatter.say(session, BotAI, 'npc-gear-purchase-failed', err?.message === 'Not enough Adena.'
             ? Speech.lines('town.npc-gear-purchase-failed.short-adena')
             : Speech.lines('town.npc-gear-purchase-failed.unavailable'), { priority: 'coordination' });
@@ -1076,7 +1142,7 @@ module.exports = {
             // ARCH-NOTE: shopping may finish with a buff stop; that continuation
             // belongs to this town event and returning from the buff raises nothing.
             if (!returningToCompanion) raiseDecision(session, 'town');
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: restockFailure ? 'shopping_deferred' : 'shopping_completed',
                 summary: restockFailure
@@ -1086,7 +1152,7 @@ module.exports = {
                 dedupeKey: `shopping_done:${bot.fetchId()}`,
                 coalesceWindowMs: 30000,
                 meta: { plan: session.plan, ...(restockFailure ? { reason: restockFailure } : {}) }
-            })).catch(() => {});
+            });
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
@@ -1185,8 +1251,7 @@ module.exports = {
                 // is away. Reappear in a valid companion slot instead of
                 // making the player watch a long return route.
                 bot.setLocXYZ?.(destination);
-                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_return')).catch(() => null).then(() => {
+                BotTownTravel.returnSupplyHot(session, 'supply_errand_return', () => {
                     restoreHot();
                     TownChatter.say(session, BotAI, 'supply-return', options.deliveryReady === true
             ? Speech.lines('town.supply-return.ready')
@@ -1202,8 +1267,7 @@ module.exports = {
                 // The leader may have disconnected during the errand. Reveal
                 // through the same packet path even when there is no return
                 // target; otherwise every nearby client keeps a ghost bot.
-                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_leader_offline')).catch(() => null).then(() => {
+                BotTownTravel.returnSupplyHot(session, 'supply_errand_leader_offline', () => {
                     restoreHot();
                     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(workflowId, 'return', {
                         botId: bot.fetchId(),

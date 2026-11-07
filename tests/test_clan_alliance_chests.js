@@ -6,7 +6,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const SpawnNpcs = invoke('GameServer/World/Generics/SpawnNpcs');
 DataCache.init();
-const world = { npc: { nextId: 1000000, spawns: [] }, user: { sessions: [] }, addNpcToGrid() {} };
+const world = { npc: { nextId: 1000000, spawns: [] }, user: { sessions: [] }, addNpcToGrid() {}, removeNpcFromGrid() {} };
 const kills = [];
 const mocks = {
     'GameServer/Progression/OverhitReward': { capture() {} },
@@ -18,6 +18,7 @@ const mocks = {
     'GameServer/Effects/EffectRestrictions': { wakeOnDamage() {} },
     'GameServer/Npc/SocialAggro': { notifyClan() {} },
     'GameServer/Npc/NpcHate': require('../src/GameServer/Npc/NpcHate'),
+    'GameServer/Npc/Attacked': invoke('GameServer/Npc/Attacked'),
     'GameServer/World/RaidBossMinionManager': {},
     'GameServer/World/World': world,
     'GameServer/Bot/AI/BotMobCompetition': { record() {} },

@@ -17,27 +17,34 @@ module.exports = function nativeStockWorld() {
     process.env.L2NODE_CONFIG_FILE = process.env.L2NODE_SHARED_CONFIG_FILE = config;
     let sourceActive = false;
 
-    function usePotionSpot() {
+    // The potion case: a world whose one spot is the canonical one with its fighters
+    // drinking a bottle every twenty kills. Potion use is the table's measurement (a
+    // rebuild moves it, to zero where bots rest instead), so the fixture sets its own.
+    const POTIONS_PER_KILL = .05;
+    function usePotionSpot(spotId = '-10_30') {
         const table = invoke('GameServer/Bot/AI/SpotValueTable');
         const canonical = JSON.parse(fs.readFileSync(table.DEFAULT_FILE, 'utf8'));
-        const index = canonical.spots.findIndex(row => row[0] === '-10_30');
+        const index = canonical.spots.findIndex(row => row[0] === spotId);
         assert(index >= 0, 'the potion case uses an authored canonical spot');
-        const before = [false, true].map(shots => table.value('-10_30', 'dps', 30, shots));
+        const before = [false, true].map(shots => table.value(spotId, 'dps', 30, shots));
         const file = taskPath.join(directory, 'one-spot.json');
+        const potions = canonical.rowFields.indexOf('potions');
+        const rows = canonical.rows[index].map(row => row && row.map((value, at) => at === potions ? POTIONS_PER_KILL : value));
         // A unit world with one available spot, not a knowledge filter. Every
-        // curve, field and value is retained; the spot and row share index 0.
-        fs.writeFileSync(file, JSON.stringify({ ...canonical,
-            spots: [canonical.spots[index]], rows: [canonical.rows[index]] }));
+        // curve, field and value but the potion use is retained; the spot and row share index 0.
+        fs.writeFileSync(file, JSON.stringify({ ...canonical, spots: [canonical.spots[index]], rows: [rows] }));
         const subset = JSON.parse(fs.readFileSync(file, 'utf8'));
         assert.deepEqual(subset.spots, [canonical.spots[index]]);
-        assert.deepEqual(subset.rows, [canonical.rows[index]]);
         for (const key of ['header', 'roles', 'shots', 'gaps', 'rowFields', 'curveFields', 'curves'])
             assert.deepEqual(subset[key], canonical[key], `the canonical ${key} is unchanged`);
         table.useFile(file);
         sourceActive = true;
         invoke('GameServer/Bot/Economy/EconomyContext').reset();
-        for (const [at, shots] of [false, true].entries())
-            assert.deepEqual(table.value('-10_30', 'dps', 30, shots), before[at], `native values are unchanged with shots=${shots}`);
+        for (const [at, shots] of [false, true].entries()) {
+            const after = table.value(spotId, 'dps', 30, shots);
+            assert(after.potions > 0, `the spot's fighters drink potions with shots=${shots}`);
+            assert.deepEqual({ ...after, potions: before[at].potions }, before[at], `native values but potions are unchanged with shots=${shots}`);
+        }
     }
 
     function town() {

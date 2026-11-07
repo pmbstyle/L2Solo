@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { createExportedCatalogue } = require('../GameServer/Knowledge/ExportedCatalogueAdapter');
+const NpcTraits = require('../GameServer/Npc/NpcTraits');
+const { openRecordFile } = require('./KnowledgeBaseRecords');
+const FailureLog = require('../FailureLog');
 
 const DEFAULT_PAGE_SIZE = 60;
 const MAX_PAGE_SIZE = 100;
@@ -68,17 +71,18 @@ function playerFacingItem(item) {
     return !/^\(not used\)/i.test(name) && !/^unused\b/i.test(name);
 }
 
-function itemDirectorySummary(items) {
+// rows: itemRow results.
+function itemDirectorySummary(rows) {
     const counts = new Map(ITEM_DIRECTORY.map((entry) => [entry.key, {
         ...entry,
         total: 0,
         grades: new Map()
     }]));
 
-    (items || []).filter(playerFacingItem).forEach((item) => {
-        const entry = counts.get(itemCategory(item.kind));
+    (rows || []).filter((row) => row.playerFacing).forEach((row) => {
+        const entry = counts.get(row.category);
         if (!entry) return;
-        const grade = itemGrade(item);
+        const grade = row.grade;
         entry.total += 1;
         entry.grades.set(grade, (entry.grades.get(grade) || 0) + 1);
     });
@@ -94,20 +98,45 @@ function itemDirectorySummary(items) {
     }));
 }
 
-function itemSummary(item, iconFor) {
+// What the item list, overview and detail readers use of a generated item, with its rules applied once at load:
+// the raw id/name/kind (searched and sorted as generated), category, grade, price and player-facing flag, and the
+// detail template fields and stats (kept so itemDetail reads no record: adena's carries ~2k source rows).
+function itemRow(item) {
     const template = item?.template || {};
-    const icon = iconFor?.(null, item.id, item.name, item.kind) || null;
     return {
-        id: Number(item.id),
-        name: String(item.name || `Item ${item.id}`),
-        kind: String(item.kind || 'Other'),
+        id: item.id,
+        name: item.name,
+        kind: item.kind,
         category: itemCategory(item.kind),
         grade: itemGrade(item),
         price: Math.max(0, Number(template?.template?.price || 0)),
+        playerFacing: playerFacingItem(item),
+        template: Object.freeze({
+            mass: Number(template?.template?.mass || 0),
+            price: Number(template?.template?.price || 0),
+            slot: Number(template?.etc?.slot || 0),
+            crystals: Number(template?.etc?.cristals || 0),
+            soulshot: Number(template?.etc?.soulshot || 0),
+            spiritshot: Number(template?.etc?.spiritshot || 0)
+        }),
+        stats: template?.stats || {}
+    };
+}
+
+function itemSummary(row, iconFor, sources) {
+    const drops = sources.count(row.id, 'drops'), spoils = sources.count(row.id, 'spoils');
+    const icon = iconFor?.(null, row.id, row.name, row.kind) || null;
+    return {
+        id: Number(row.id),
+        name: String(row.name || `Item ${row.id}`),
+        kind: String(row.kind || 'Other'),
+        category: row.category,
+        grade: row.grade,
+        price: row.price,
         iconUrl: icon?.url || null,
-        hasDropSources: Boolean(item?.sources?.drops?.length),
-        hasSpoilSources: Boolean(item?.sources?.spoils?.length),
-        sourceCount: Number(item?.sources?.drops?.length || 0) + Number(item?.sources?.spoils?.length || 0)
+        hasDropSources: drops > 0,
+        hasSpoilSources: spoils > 0,
+        sourceCount: drops + spoils
     };
 }
 
@@ -131,11 +160,11 @@ function npcCombatTraits(npc, skillById) {
     };
 }
 
-function npcFilterSummary(mobs, skillById) {
+// rows: mobRow results.
+function npcFilterSummary(rows) {
     const weaknessCounts = new Map(NPC_WEAKNESSES.map(({ key }) => [key, 0]));
     const hpMultiplierCounts = new Map();
-    (mobs || []).forEach((npc) => {
-        const traits = npcCombatTraits(npc, skillById);
+    (rows || []).forEach(({ traits }) => {
         traits.weaknesses.forEach((key) => weaknessCounts.set(key, (weaknessCounts.get(key) || 0) + 1));
         if (traits.hpMultiplier !== 1) {
             hpMultiplierCounts.set(traits.hpMultiplier, (hpMultiplierCounts.get(traits.hpMultiplier) || 0) + 1);
@@ -150,22 +179,42 @@ function npcFilterSummary(mobs, skillById) {
     };
 }
 
-function npcSummary(npc, skillById) {
-    const traits = npcCombatTraits(npc, skillById);
+// What the NPC list, summary and filter readers use of a generated mob: the raw id/name/level/kind/raid flag
+// (filtered and sorted as generated), its combat traits computed once (skills do not change while running) and
+// its counts. rewardsAt: the mob's place in the compact reward groups (absent for an NPC missing from the data).
+function mobRow(npc, skillById, rewardsAt = null) {
     return {
-        id: Number(npc.id),
-        name: String(npc.name || `NPC ${npc.id}`),
-        level: Number(npc.level || 0),
-        kind: String(npc.kind || 'Monster'),
-        aiType: String(npc.aiType || ''),
-        raidBoss: Boolean(npc.raidBoss),
+        id: npc.id,
+        name: npc.name,
+        level: npc.level,
+        kind: npc.kind,
+        aiType: npc.aiType,
+        raidBoss: npc.raidBoss,
         directSpawn: Boolean(npc?.availability?.directSpawn),
         knownReachable: Boolean(npc?.availability?.knownReachable),
-        weaknesses: traits.weaknesses,
-        hpMultiplier: traits.hpMultiplier,
+        traits: npcCombatTraits(npc, skillById),
         spawnCount: Number(npc?.spawnIds?.length || 0),
         dropCount: (npc?.drops || []).reduce((sum, group) => sum + Number(group?.items?.length || 0), 0),
-        spoilCount: (npc?.spoils || []).reduce((sum, group) => sum + Number(group?.items?.length || 0), 0)
+        spoilCount: (npc?.spoils || []).reduce((sum, group) => sum + Number(group?.items?.length || 0), 0),
+        rewardsAt
+    };
+}
+
+function npcSummary(row) {
+    return {
+        id: Number(row.id),
+        name: String(row.name || `NPC ${row.id}`),
+        level: Number(row.level || 0),
+        kind: String(row.kind || 'Monster'),
+        aiType: String(row.aiType || ''),
+        raidBoss: Boolean(row.raidBoss),
+        directSpawn: row.directSpawn,
+        knownReachable: row.knownReachable,
+        weaknesses: [...row.traits.weaknesses],
+        hpMultiplier: row.traits.hpMultiplier,
+        spawnCount: row.spawnCount,
+        dropCount: row.dropCount,
+        spoilCount: row.spoilCount
     };
 }
 
@@ -197,18 +246,19 @@ function scaledRewardGroups(groups, kind, npcLevel, progressionRates, iconFor) {
             chancePercent: round(roll.chance),
             items: (sourceGroup.items || []).map((item, itemIndex) => {
                 const rawItem = group.items[itemIndex];
+                const spoil = kind === 'spoil' ? progressionRates.spoilItemPlan(group, rawItem,
+                    { npcLevel, killerLevel: npcLevel }) : null;
                 const selectionChance = kind === 'drop'
                     ? progressionRates.dropItemSelectionChance(group, rawItem, roll.itemRate)
-                    : progressionRates.spoilItemChance(rawItem);
+                    : spoil.chance;
                 const expectedConditionalAmount = kind === 'drop'
                     ? progressionRates.expectedDropAmount(group, rawItem, roll.itemRate)
-                    : ((Number(rawItem.min || 1) + Number(rawItem.max || rawItem.min || 1)) / 2)
-                        * Number(roll.amountMultiplier || 1);
+                    : 0;
                 const amountRange = kind === 'drop'
                     ? progressionRates.dropAmountRange(group, rawItem, roll.itemRate)
                     : {
-                        min: Number(item.minAmount || 0),
-                        max: Number(item.maxAmount ?? item.minAmount ?? 0)
+                        min: spoil.minAmount,
+                        max: spoil.maxAmount
                     };
                 const icon = iconFor?.(null, item.itemId, item.sourceName, null) || null;
                 return {
@@ -216,8 +266,8 @@ function scaledRewardGroups(groups, kind, npcLevel, progressionRates, iconFor) {
                     name: String(item.sourceName || `Item ${item.itemId}`),
                     minAmount: amountRange.min,
                     maxAmount: amountRange.max,
-                    chancePercent: round(groupChance * selectionChance * 100),
-                    expectedAmountPerKill: round(groupChance * selectionChance * expectedConditionalAmount),
+                    chancePercent: round((spoil ? spoil.chance : groupChance * selectionChance) * 100),
+                    expectedAmountPerKill: round(spoil ? spoil.expectedYield : groupChance * selectionChance * expectedConditionalAmount),
                     iconUrl: icon?.url || null
                 };
             })
@@ -260,32 +310,200 @@ function spawnMapPoints(spawn) {
     }];
 }
 
+// Which mobs drop or spoil an item, kept compact: of the generated source records the readers use only the mob id
+// (in catalogue order, which the stable level/name sort of itemDetail keeps for ties) and the count. Owns the
+// layout (one Int32Array of mob ids per item and kind); callers read through count and mobIds only.
+const SOURCE_KINDS = Object.freeze(['drops', 'spoils']);
+function itemSourceIndex() {
+    const byKind = Object.fromEntries(SOURCE_KINDS.map((kind) => [kind, new Map()]));
+    function add(item) {
+        for (const kind of SOURCE_KINDS) {
+            const records = item.sources?.[kind] || [];
+            if (!records.length) continue;
+            const ids = new Int32Array(records.length);
+            records.forEach((record, index) => {
+                const mobId = Number(record.mobId);
+                if (!Number.isSafeInteger(mobId) || mobId < 0 || mobId > 0x7fffffff) {
+                    throw new Error(`Knowledge base item ${item.id} has a non-int32 ${kind} mob id ${record.mobId}`);
+                }
+                ids[index] = mobId;
+            });
+            byKind[kind].set(Number(item.id), ids);
+        }
+    }
+    const idsOf = (itemId, kind) => byKind[kind]?.get(Number(itemId));
+    return Object.freeze({
+        add,
+        count: (itemId, kind) => idsOf(itemId, kind)?.length || 0,
+        mobIds: (itemId, kind) => Array.from(idsOf(itemId, kind) || [])
+    });
+}
+
+// Every mob's drop and spoil groups, kept compact for itemDetail (adena alone reads ~2k mobs' groups) and npcDetail.
+// Of a generated group the readers use its index and overall chance and, per item, its id, amounts, selection weight
+// and name; the per-rate profiles are not kept (rates apply per request). Owns the layout: one Float64Array (JSON
+// numbers are doubles, held exactly) with, per mob and kind, [groupCount, per group: groupIndex, overallChancePercent,
+// itemCount, per item: itemId, minAmount, maxAmount, selectionWeightPercent, name index], and one table of the
+// distinct names. add returns a mob's offsets; groups decodes them into the generated group shape.
+const GROUP_NUMBERS = Object.freeze(['groupIndex', 'overallChancePercent']);
+const REWARD_NUMBERS = Object.freeze(['itemId', 'minAmount', 'maxAmount', 'selectionWeightPercent']);
+function rewardGroupIndex() {
+    const values = [], names = [], nameIndex = new Map();
+    let table = null;
+    const number = (mob, field, value) => {
+        if (typeof value !== 'number') throw new Error(`Knowledge base mob ${mob.id} has a non-number reward ${field} ${value}`);
+        values.push(value);
+    };
+    function addGroups(mob, groups) {
+        const at = values.length;
+        values.push(groups.length);
+        for (const group of groups) {
+            GROUP_NUMBERS.forEach((field) => number(mob, field, group[field]));
+            const groupItems = group.items || [];
+            values.push(groupItems.length);
+            for (const item of groupItems) {
+                REWARD_NUMBERS.forEach((field) => number(mob, field, item[field]));
+                if (typeof item.sourceName !== 'string') throw new Error(`Knowledge base mob ${mob.id} has a non-string reward name`);
+                if (!nameIndex.has(item.sourceName)) nameIndex.set(item.sourceName, names.push(item.sourceName) - 1);
+                values.push(nameIndex.get(item.sourceName));
+            }
+        }
+        return at;
+    }
+    // The groups at an offset, or only those with an item of itemId (the others add nothing to its chance).
+    function groups(at, itemId = null) {
+        const result = [];
+        let position = at + 1;
+        for (let group = table[at]; group > 0; group--) {
+            const items = [], count = table[position + 2];
+            let matches = itemId === null;
+            for (let item = 0, offset = position + 3; item < count; item++, offset += 5) {
+                matches ||= table[offset] === Number(itemId);
+                items.push({ itemId: table[offset], minAmount: table[offset + 1], maxAmount: table[offset + 2],
+                    selectionWeightPercent: table[offset + 3], sourceName: names[table[offset + 4]] });
+            }
+            if (matches) result.push({ groupIndex: table[position], overallChancePercent: table[position + 1], items });
+            position += 3 + count * 5;
+        }
+        return result;
+    }
+    return {
+        add: (mob) => ({ drops: addGroups(mob, mob.drops || []), spoils: addGroups(mob, mob.spoils || []) }),
+        seal() {
+            table = Float64Array.from(values);
+            values.length = 0;
+            nameIndex.clear();
+            return Object.freeze({ groups });
+        }
+    };
+}
+
+// The knowledge base of one data directory, shared by every service over it (the game's item and drop dialogs and the
+// world observer). Input: the directory's generated JSON, which does not change while the server runs (the generator
+// replaces a file by rename; the held descriptors keep the scanned bytes). In memory: the manifest, skills whole,
+// item and mob rows for the list/overview/summary readers, item source mob ids and compact reward groups. Full
+// item/mob/spawn records are read from disk on demand (one positioned read and parse, ~0.1 ms; a mob's spawns
+// are adjacent, so one read) behind the callers' detail caches; ids are Maps to record indexes.
+const loadedByDir = new Map();
+function loadData(dataDir) {
+    const key = path.resolve(dataDir);
+    if (loadedByDir.has(key)) return loadedByDir.get(key);
+    const file = (name) => path.join(key, `${name}.json`);
+    const skills = JSON.parse(fs.readFileSync(file('skills'), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(file('manifest'), 'utf8'));
+    const skillById = new Map(skills.map((skill) => [String(skill.key || `${skill.id}:${skill.level}`), skill]));
+
+    const items = [], itemIndex = new Map(), itemSources = itemSourceIndex();
+    const mobs = [], mobIndex = new Map(), rewardIndex = rewardGroupIndex();
+    const spawnIndex = new Map();
+    // A failed load closes what it opened, so a later load() starts clean.
+    const opened = [];
+    const open = (name, visit) => {
+        const reader = openRecordFile(file(name), visit);
+        opened.push(reader);
+        return reader;
+    };
+    let itemFile, mobFile, spawnFile;
+    try {
+        itemFile = open('items', (item, index) => {
+            items.push(itemRow(item));
+            itemIndex.set(Number(item.id), index);
+            itemSources.add(item);
+        });
+        mobFile = open('mobs', (mob, index) => {
+            mobs.push(mobRow(mob, skillById, rewardIndex.add(mob)));
+            mobIndex.set(Number(mob.id), index);
+        });
+        spawnFile = open('spawns', (spawn, index) => spawnIndex.set(String(spawn.id), index));
+    } catch (error) {
+        opened.forEach((reader) => reader.close());
+        throw error;
+    }
+
+    // A record whose id is not the one scanned at load means the file changed under the held descriptor. A failed
+    // read (that, or a short read) is counted here and rethrown: the callers answer "unavailable".
+    const checked = (record, id, name) => {
+        if (String(record.id) !== String(id)) throw new Error(`Knowledge base ${name}.json changed since load (wanted ${id})`);
+        return record;
+    };
+    const counted = (read) => (...args) => {
+        try {
+            return read(...args);
+        } catch (error) {
+            FailureLog.note('knowledge.record_read', error);
+            throw error;
+        }
+    };
+    const spawnIndexes = (ids) => ids.map((id) => spawnIndex.get(String(id))).filter((index) => index !== undefined);
+    const records = Object.freeze({
+        item: counted((id) => {
+            const index = itemIndex.get(Number(id));
+            if (index === undefined) return null;
+            // Sources are read through itemSources (mob ids in catalogue order), not from the record.
+            return { ...checked(itemFile.read(index), id, 'items'), sources: null };
+        }),
+        npc: counted((id) => {
+            const index = mobIndex.get(Number(id));
+            return index === undefined ? null : checked(mobFile.read(index), id, 'mobs');
+        }),
+        spawn: counted((id) => {
+            const index = spawnIndex.get(String(id));
+            return index === undefined ? null : checked(spawnFile.read(index), id, 'spawns');
+        }),
+        // The known spawns of ids, in their order (unknown ids skipped).
+        spawns: counted((ids) => {
+            const known = (ids || []).filter((id) => spawnIndex.has(String(id)));
+            return spawnFile.readMany(spawnIndexes(known)).map((spawn, index) => checked(spawn, known[index], 'spawns'));
+        }),
+        allSpawns: counted(() => spawnFile.readAll())
+    });
+    const data = Object.freeze({
+        manifest,
+        skills,
+        skillById,
+        items,
+        mobs,
+        itemSources,
+        rewards: rewardIndex.seal(),
+        itemRow: (id) => items[itemIndex.get(Number(id))] || null,
+        mobRow: (id) => mobs[mobIndex.get(Number(id))] || null,
+        records
+    });
+    loadedByDir.set(key, data);
+    return data;
+}
+
 function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
     catalogueFactory = createExportedCatalogue, nativeCatalogue = null, nativeSkills = null } = {}) {
     if (!dataDir) throw new Error('Knowledge base dataDir is required');
     if (!progressionRates) throw new Error('Knowledge base progressionRates is required');
     let cache = null;
 
+    // The shared data plus this service's catalogue (its native relations); iconFor applies per request.
     function load() {
         if (cache) return cache;
-        const read = (name) => JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8'));
-        const items = read('items');
-        const mobs = read('mobs');
-        const skills = read('skills');
-        const spawns = read('spawns');
-        const manifest = read('manifest');
-        cache = {
-            items,
-            mobs,
-            skills,
-            spawns,
-            manifest,
-            itemById: new Map(items.map((item) => [Number(item.id), item])),
-            mobById: new Map(mobs.map((mob) => [Number(mob.id), mob])),
-            skillById: new Map(skills.map((skill) => [String(skill.key || `${skill.id}:${skill.level}`), skill])),
-            spawnById: new Map(spawns.map((spawn) => [String(spawn.id), spawn]))
-        };
-        cache.catalogue = catalogueFactory(cache, { nativeCatalogue });
+        const data = loadData(dataDir);
+        cache = { ...data, catalogue: catalogueFactory(data, { nativeCatalogue }) };
         return cache;
     }
 
@@ -320,7 +538,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
             ],
             grades: ['all', ...ITEM_GRADE_ORDER],
             itemDirectory: itemDirectorySummary(data.items),
-            npcFilters: npcFilterSummary(data.mobs, data.skillById)
+            npcFilters: npcFilterSummary(data.mobs)
         };
     }
 
@@ -345,14 +563,14 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
         const selectedCategory = normalize(category) || 'all';
         const selectedGrade = normalize(grade) || 'all';
         const results = data.items
-            .filter(playerFacingItem)
+            .filter((item) => item.playerFacing)
             .filter((item) => !needle || normalize(`${item.name} ${item.id} ${item.kind}`).includes(needle))
-            .filter((item) => selectedCategory === 'all' || itemCategory(item.kind) === selectedCategory)
-            .filter((item) => selectedGrade === 'all' || itemGrade(item) === selectedGrade)
+            .filter((item) => selectedCategory === 'all' || item.category === selectedCategory)
+            .filter((item) => selectedGrade === 'all' || item.grade === selectedGrade)
             .sort((left, right) => (exactFirst && needle
                 ? Number(normalize(right.name) === needle || String(right.id) === needle) - Number(normalize(left.name) === needle || String(left.id) === needle)
                 : 0) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
-            .map((item) => itemSummary(item, iconFor));
+            .map((item) => itemSummary(item, iconFor, data.itemSources));
         return { ...pageResult(results, page, limit), rateProfile: rateProfile() };
     }
 
@@ -367,20 +585,18 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
         const selectedHpMultipliers = new Set(commaSeparatedValues(hpMultiplier)
             .map(Number).filter((value) => Number.isFinite(value) && value > 0).map((value) => round(value)));
         const results = data.mobs
-            .map((npc) => ({ npc, traits: npcCombatTraits(npc, data.skillById) }))
-            .filter(({ npc }) => !needle || normalize(`${npc.name} ${npc.id} ${npc.kind}`).includes(needle))
-            .filter(({ npc }) => Number(npc.level) >= minimum && Number(npc.level) <= maximum)
-            .filter(({ npc }) => raidFilter === 'all' || Boolean(npc.raidBoss) === (raidFilter === 'raid'))
+            .filter((npc) => !needle || normalize(`${npc.name} ${npc.id} ${npc.kind}`).includes(needle))
+            .filter((npc) => Number(npc.level) >= minimum && Number(npc.level) <= maximum)
+            .filter((npc) => raidFilter === 'all' || Boolean(npc.raidBoss) === (raidFilter === 'raid'))
             .filter(({ traits }) => !selectedWeaknesses.size || traits.weaknesses.some((key) => selectedWeaknesses.has(key)))
             .filter(({ traits }) => !selectedHpMultipliers.size || selectedHpMultipliers.has(traits.hpMultiplier))
-            .sort(({ npc: left }, { npc: right }) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
-            .map(({ npc }) => npcSummary(npc, data.skillById));
+            .sort((left, right) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
+            .map(npcSummary);
         return { ...pageResult(results, page, limit), rateProfile: rateProfile() };
     }
 
     function npcSpawns(npc) {
-        const data = load();
-        return (npc?.spawnIds || []).map((id) => data.catalogue.spawn(id)).filter(Boolean).map((spawn) => ({
+        return load().records.spawns(npc?.spawnIds).map((spawn) => ({
             id: String(spawn.id),
             period: String(spawn.period || 'always'),
             total: Number(spawn.total || 0),
@@ -396,20 +612,22 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
         return (relations || [])
             .map((relation) => Number(relation?.[idField] ?? relation))
             .filter((id) => Number.isSafeInteger(id) && id > 0)
-            .map((id) => npcSummary(data.catalogue.npc(id) || { id }, data.skillById));
+            .map((id) => npcSummary(data.mobRow(id) || mobRow({ id }, data.skillById)));
     }
 
     function npcDetail(id) {
         const data = load();
-        const npc = data.catalogue.npc(id);
+        // Summary and reward groups from memory, the rest from the mob's record.
+        const row = data.mobRow(id);
+        const npc = row && data.catalogue.npc(id);
         if (!npc) return null;
-        const drops = scaledRewardGroups(npc.drops, 'drop', npc.level, progressionRates, iconFor);
-        const spoils = scaledRewardGroups(npc.spoils, 'spoil', npc.level, progressionRates, iconFor);
+        const drops = scaledRewardGroups(data.rewards.groups(row.rewardsAt.drops), 'drop', row.level, progressionRates, iconFor);
+        const spoils = scaledRewardGroups(data.rewards.groups(row.rewardsAt.spoils), 'spoil', row.level, progressionRates, iconFor);
         return {
-            ...npcSummary(npc, data.skillById),
+            ...npcSummary(row),
             title: String(npc?.template?.template?.title || ''),
             race: String(npc?.template?.traits?.race || ''),
-            undead: Boolean(npc?.template?.traits?.undead),
+            undead: NpcTraits.isUndead(npc?.template?.traits),
             hostile: Boolean(npc?.template?.template?.hostile),
             stats: npc.defaultEffectiveStats,
             progression: npc.progression,
@@ -435,30 +653,23 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
 
     function itemDetail(id) {
         const data = load();
-        const item = data.catalogue.item(id);
+        // From memory only: no record is read (adena's sources are ~2k mobs).
+        const item = data.itemRow(id);
         if (!item) return null;
-        const template = item.template || {};
-        const sourceDetails = (kind) => data.catalogue.sourcesForItem(item.id, { kind }).map((source) => {
-            const npc = data.catalogue.npc(source.mobId);
+        const sourceDetails = (kind) => data.itemSources.mobIds(item.id, kind).map((mobId) => {
+            const npc = data.mobRow(mobId);
             if (!npc) return null;
-            const groups = scaledRewardGroups(kind === 'drops' ? npc.drops : npc.spoils, kind === 'drops' ? 'drop' : 'spoil', npc.level, progressionRates, iconFor);
+            const groups = scaledRewardGroups(data.rewards.groups(npc.rewardsAt[kind], item.id), kind === 'drops' ? 'drop' : 'spoil', npc.level, progressionRates, iconFor);
             return {
-                ...npcSummary(npc, data.skillById),
+                ...npcSummary(npc),
                 ...aggregateItemResults(groups, item.id)
             };
         }).filter(Boolean).sort((left, right) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name));
 
         return {
-            ...itemSummary(item, iconFor),
-            template: {
-                mass: Number(template?.template?.mass || 0),
-                price: Number(template?.template?.price || 0),
-                slot: Number(template?.etc?.slot || 0),
-                crystals: Number(template?.etc?.cristals || 0),
-                soulshot: Number(template?.etc?.soulshot || 0),
-                spiritshot: Number(template?.etc?.spiritshot || 0)
-            },
-            stats: template?.stats || {},
+            ...itemSummary(item, iconFor, data.itemSources),
+            template: { ...item.template },
+            stats: item.stats,
             sources: {
                 drops: sourceDetails('drops'),
                 spoils: sourceDetails('spoils')
@@ -468,8 +679,9 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
     }
 
     function itemOverview(id) {
-        const item = load().catalogue.item(id);
-        return item ? itemSummary(item, iconFor) : null;
+        const data = load();
+        const item = data.itemRow(id);
+        return item ? itemSummary(item, iconFor, data.itemSources) : null;
     }
 
     function listSkills({ q = '', page = 1, limit = DEFAULT_PAGE_SIZE } = {}) {
@@ -511,7 +723,6 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
 module.exports = {
     createKnowledgeBaseService,
     itemCategory,
-    itemDirectorySummary,
     itemGrade,
     npcCombatTraits,
     playerFacingItem,

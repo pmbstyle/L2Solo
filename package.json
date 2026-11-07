@@ -1,6 +1,6 @@
 {
     "name": "nodel2",
-    "version": "0.0.7",
+    "version": "0.1.0",
     "description": "L2 C4 protocol server emulator in NodeJS",
     "author": "Dennis Koluris",
     "license": "SEE LICENSE IN LICENSE",
@@ -8,15 +8,16 @@
         "node": ">=22.5.0"
     },
     "scripts": {
+        "launcher": "npm --prefix launcher start",
+        "test:launcher": "npm --prefix launcher test",
         "start": "node scripts/start.js",
         "NodeL2": "node scripts/run-server.js",
         "geodata": "node scripts/ensure-geodata.js",
         "generate:knowledge-base": "node scripts/generate-knowledge-base.js",
         "check:knowledge-base": "node scripts/generate-knowledge-base.js --check",
-        "check": "node scripts/check-syntax.js",
+        "check": "node scripts/check-syntax.js && node scripts/check-tables.js",
         "test": "node scripts/run-tests.js",
         "test:geodata": "npm run geodata && node scripts/run-tests.js --geodata",
-        "load:mixed": "node scripts/mixed-runtime-load-test.js",
         "wipe:bots": "node scripts/wipe-bots.js"
     },
     "dependencies": {
@@ -32,5 +33,9 @@
         "objcrush": "^1.0.1",
         "random-point-in-shape": "^1.0.0",
         "rsa-raw": "^1.0.3"
+    },
+    "l2soloRelease": {
+        "minimumLauncherVersion": "0.2.0",
+        "runtimeVersion": "22.23.0"
     }
 }

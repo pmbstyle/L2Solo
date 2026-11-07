@@ -40,13 +40,12 @@ function actor(id, { dead = false, skills = [], items = [] } = {}) {
         fetchMaxHp: () => 100,
         fetchHp() { return this.hp; },
         fetchDestId() { return this.destId; },
-        fillupVitals() { this.hp = 100; this.mp = 100; },
+        setHp(value) { this.hp = value; },
         canUseSkill: () => true,
         select(data) { this.destId = data.id; },
         skillset: { skills },
         backpack: { fetchItems: () => items },
         automation: {
-            stopReplenish() {},
             replenishVitals() {},
             scheduleAction(...args) { this.scheduled = args; }
         },

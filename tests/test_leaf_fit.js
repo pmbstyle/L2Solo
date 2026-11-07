@@ -34,21 +34,27 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+// A frozen slice of a spot table (e5b35a04a's: the Gladiator line's ten best
+// earners for this bot), so a table rebuild cannot take the fixture's picks
+// apart or together; both threads read it. Money is priced live from the
+// reward data, so the slice leaves out 5_18:f1, which with the C4 drops both
+// levels and earns best and would make the two picks one.
+Table.useFile(require('node:path').join(__dirname, 'fixtures', 'leaf_fit_spot_table.json'));
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
 const at = Date.now();
 
-// A level-35 human fighter wearing its whole baseline kit: no gear to earn,
-// so no income route; its hunt comes from the shared table.
+// A level-37 human fighter wearing its level-20 baseline kit; its hunt comes
+// from the fixture table, which holds all three picks apart.
 const inventory = {};
 Gear.planFor({ classId: 1, level: 20 }).items.forEach((item, index) => {
     inventory[index + 1] = { selfId: Number(item.selfId), amount: 1, equipped: true, equippedSlots: [Number(item.slot)] };
 });
-const state = { characterId: 990101, level: 35, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
+const state = { characterId: 990101, level: 37, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
 const role = Roles.tableRoleFor(state);
-const ranked = Table.rankedIncome(role, 35, Hunt.consumablePrices(state), -7, true, { spoilSkillLevel: 0 });
-const tableBest = Table.best(role, 35, true).spotId;
+const ranked = Table.rankedIncome(role, state.level, Hunt.consumablePrices(state), -7, true, { spoilSkillLevel: 0 });
+const tableBest = Table.best(role, state.level, true).spotId;
 const tableIncome = ranked[0].spotId;
 assert.notEqual(tableBest, tableIncome, 'the fixture needs two table picks: the progress spot and the income spot');
 const spot = (id, extra = {}) => ({ id, avgLevel: 35, minLevel: 34, maxLevel: 36, density: 10,

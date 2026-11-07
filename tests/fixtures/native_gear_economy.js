@@ -9,8 +9,12 @@ function prepareRoutes(state) {
     return next.value;
 }
 
+// A fresh look at the state the caller set: a far bot at work holds its plan through
+// a change of its bag or purse (Reaction), and these are the caller's edits.
 function review(state, { timestamp, spots, lookup, buyOrderEscrow = 0 }) {
-    return invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
+    const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+    Context.forget(state.characterId);
+    return Context.forState(state, {
         timestamp, spots, routeRows: prepareRoutes(state), buyOrderEscrow,
         npcOffersFor: id => lookup.offersFor(id)
     });
@@ -43,6 +47,12 @@ module.exports = function nativeGearEconomy({ characterId, timestamp = Date.now(
         && member.inventory[entry.selfId].amount === 1
         && lookup.offersFor(entry.selfId).length > 0);
     assert(missing, 'the native D kit has a single-slot wearable sold by canonical NPCs');
+    // The bot holds its potion and shot stock: this gear-only lookup sells neither, so an
+    // unfunded stock (the spot table's use; shots pay at the spot at the NPC's potion
+    // price) would outrank the gear wish.
+    const held = review(member, { timestamp, spots, lookup });
+    for (const row of [held.stock('potions'), held.stock('shots')])
+        member.inventory[row.itemId] = { selfId: row.itemId, amount: row.target, stackable: true };
     delete member.inventory[missing.selfId];
     const economy = review(member, { timestamp, spots, lookup });
     const activity = economy.network.activity;

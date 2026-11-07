@@ -262,6 +262,7 @@ if (process.argv[2] === '--bootstrap') {
             assert.strictEqual(result.status, 1, `failed migration must terminate initialization with an error; stdout=${result.stdout}; stderr=${result.stderr}`);
             assert(result.stdout.includes('SQLite initialization failed'), `migration failure must be explicit; stdout=${result.stdout}; stderr=${result.stderr}`);
         }
+        return result;
     }
 
     function legacyRows(db) {
@@ -283,12 +284,10 @@ if (process.argv[2] === '--bootstrap') {
             'v72 must drop the owner/lease index');
         assert.deepStrictEqual(db.prepare(`SELECT name FROM sqlite_master WHERE ${loanColumns.map((name) => `sql LIKE '%${name}%'`).join(' OR ')}`).all(), [],
             'no index or trigger names a loan column');
-        const partyOwnerIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_party_owner_filter'").get();
-        assert(partyOwnerIndex?.sql?.includes('(phase, partyId, activity, spotId, updatedAt)'), 'party candidate index must cover formation scans');
-        ['bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand'].forEach((name) => {
-            const partial = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").get(name);
-            assert(partial?.sql?.includes("WHERE phase = 'cold'"), `${name} must stay a partial index on far bots`);
-        });
+        // drop-unused-bot-life-indexes: no query needs these, and each held updatedAt, which every save moves.
+        ['bot_life_state_market_reconcile', 'bot_life_state_party_owner_filter', 'bot_life_state_warehouse_release',
+            'bot_life_state_warehouse_demand'].forEach((name) => assert(
+            !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name), `drop-unused-bot-life-indexes must drop ${name}`));
         ['bot_party_candidate_insert', 'bot_party_candidate_metadata', 'bot_party_candidate_ordinary', 'bot_party_candidate_stats'].forEach((name) => assert(
             db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `migrations must leave ${name}`));
         ['bot_party_candidate_payload', 'bot_party_candidate_identity'].forEach((name) => assert(
@@ -320,8 +319,6 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1, 'v15 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1, 'v17 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 25').get().count), 1, 'v25 must be recorded exactly once');
-        const marketIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_market_reconcile'").get();
-        assert(marketIndex?.sql?.includes('phase, updatedAt, characterId'), 'market rotation must have a keyset-compatible lifecycle index');
         assert.deepStrictEqual(legacyRows(db), expectedRows, 'migration must preserve every pre-v10 bot lifecycle value');
         assert.deepStrictEqual(
             db.prepare('SELECT simulationRevision FROM bot_life_state ORDER BY characterId').all().map((row) => Number(row.simulationRevision)),
@@ -583,9 +580,63 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 72').get().count), 1);
+    assert(!fresh.prepare('SELECT 1 FROM schema_migrations WHERE version > 83').get(), 'no numbered migration after 83');
+    assert.deepStrictEqual(fresh.prepare('SELECT name FROM named_migrations').all().map((row) => row.name).sort(),
+        ['bot-economy-intents', 'bot-items-synced', 'drop-unused-bot-life-indexes'], 'a fresh world runs the named migrations after the numbered ones');
     insertBots(fresh, realisticRows.slice(0, 1));
     fresh.close();
     assertCandidateFollowsLifeRow(freshPath);
+
+    // Named migrations. A world at 83 still has the four indexes and no
+    // named_migrations table; one saved on an early build also ran them as 84.
+    const schemaShape = (db) => db.prepare(`SELECT name, sql FROM sqlite_master
+        WHERE type = 'index' AND tbl_name = 'bot_life_state' ORDER BY name`).all();
+    const freshShape = schemaShape(open(freshPath));
+    const namedRows = (db) => db.prepare('SELECT name, appliedAt FROM named_migrations').all()
+        .map((row) => ({ name: row.name, appliedAt: Number(row.appliedAt) }));
+    const rewindTo83 = (databasePath, { stray84 = false } = {}) => {
+        bootstrap(databasePath);
+        const db = open(databasePath);
+        db.exec('DROP TABLE named_migrations');
+        if (stray84) {
+            db.exec('INSERT INTO schema_migrations(version, appliedAt) VALUES (84, 0)');
+        } else {
+            db.exec(`
+                CREATE INDEX bot_life_state_market_reconcile ON bot_life_state(phase, updatedAt);
+                CREATE INDEX bot_life_state_party_owner_filter ON bot_life_state(phase, partyId, activity, spotId, updatedAt);
+                CREATE INDEX bot_life_state_warehouse_demand ON bot_life_state(updatedAt, characterId) WHERE phase = 'cold';
+                CREATE INDEX bot_life_state_warehouse_release ON bot_life_state(characterId, updatedAt) WHERE phase = 'cold';
+            `);
+        }
+        db.close();
+    };
+    const version83Path = path.join(outputDir, 'version-83.sqlite');
+    rewindTo83(version83Path);
+    bootstrap(version83Path);
+    const upgraded83 = open(version83Path);
+    assert.deepStrictEqual(schemaShape(upgraded83), freshShape, 'an upgraded world reaches the fresh bot row indexes');
+    const firstRows = namedRows(upgraded83);
+    assert.deepStrictEqual(firstRows.map((row) => row.name).sort(), ['bot-economy-intents', 'bot-items-synced', 'drop-unused-bot-life-indexes'], 'the upgrade applies the named migrations once');
+    upgraded83.close();
+    bootstrap(version83Path);
+    const again = open(version83Path);
+    assert.deepStrictEqual(namedRows(again), firstRows, 'a second boot applies nothing');
+    again.close();
+
+    const stray84Path = path.join(outputDir, 'version-84-numbered.sqlite');
+    rewindTo83(stray84Path, { stray84: true });
+    bootstrap(stray84Path);
+    const stray = open(stray84Path);
+    assert.deepStrictEqual(schemaShape(stray), freshShape, 'a world that ran numbered 84 keeps the fresh bot row indexes');
+    assert.deepStrictEqual(namedRows(stray).map((row) => row.name).sort(), ['bot-economy-intents', 'bot-items-synced', 'drop-unused-bot-life-indexes'],
+        'the named migration runs again harmlessly where numbered 84 ran');
+    assert.strictEqual(Number(stray.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version), 83,
+        'the stray 84 row is deleted, so the launcher reads the world as schema 83');
+    stray.exec("INSERT INTO named_migrations(name, appliedAt) VALUES ('from-a-newer-build', 0)");
+    stray.close();
+    const newer = bootstrap(stray84Path);
+    assert.strictEqual((newer.stdout + newer.stderr).split('named migrations unknown to this build from-a-newer-build').length, 2,
+        `an unknown applied name is logged once; stderr=${newer.stderr}`);
 
     // v72 on a world saved while a far bot was on loan: the loan columns,
     // the owner index and an owner-naming trigger are back as before v72.
@@ -600,7 +651,6 @@ if (process.argv[2] === '--bootstrap') {
         ALTER TABLE bot_life_state ADD COLUMN simulationLeaseId TEXT;
         ALTER TABLE bot_life_state ADD COLUMN simulationLeaseUntil INTEGER NOT NULL DEFAULT 0;
         CREATE INDEX bot_life_state_simulation_owner_lease ON bot_life_state(simulationOwner, simulationLeaseUntil, phase, activity);
-        DROP INDEX bot_life_state_party_owner_filter;
         CREATE INDEX bot_life_state_party_owner_filter ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
         DROP TRIGGER bot_party_candidate_metadata;
         ${metadataSql.replace('level,phase,', 'level,phase,simulationOwner,')

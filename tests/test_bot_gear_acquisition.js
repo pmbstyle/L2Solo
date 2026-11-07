@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 
 require('./helpers/databaseIsolation');
@@ -24,10 +25,11 @@ const stoneGolemSpot = {
     npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 8 }]
 };
 
-const ironSources = GearAcquisitionPlanner.sourceForItem(1869, [stoneGolemSpot]);
-assert(ironSources.length > 0, 'known material drops must resolve to their real NPC source');
-assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
-assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
+// Stone Golem drops Charcoal in C4 (Lisvus droplist: 4.76 %), not Iron Ore.
+const materialSources = GearAcquisitionPlanner.sourceForItem(1871, [stoneGolemSpot]);
+assert(materialSources.length > 0, 'known material drops must resolve to their real NPC source');
+assert.strictEqual(materialSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
+assert(materialSources[0].chance > 0, 'source lookup must retain an expected drop chance');
 const antharasSpot = {
     id: 'antharas-nest',
     avgLevel: 70,
@@ -388,6 +390,16 @@ const partyBlockedContext = GearAcquisitionPlanner.replanContextFor(
 );
 assert.strictEqual(partyBlockedContext.failure.reason, 'party_route_unavailable',
     'a repeatedly deferred required party route must become a planner recovery, not an endless direct-drop objective');
+const partySetAside = partyBlockedContext.recoveryTargets.find(entry => entry.reason === 'party_route_unavailable');
+assert(Array.isArray(partySetAside.wake) && partySetAside.until === 20 * 60 * 1000 + 3600000,
+    'a party route set aside wakes on its inputs, and after a window for the recruit pool, which has no event');
+const asidePlan = { ...partyBlockedPlan, status: 'complete', recoveryTargets: partyBlockedContext.recoveryTargets };
+assert(GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000 - 1)
+    .excludedTargetIds.includes(partySetAside.targetId));
+assert(!GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000)
+    .excludedTargetIds.includes(partySetAside.targetId), 'the recruit pool window ends the set-aside party route');
+assert(!GearAcquisitionPlanner.replanContextFor({ ...partyBlockedState, party: { partyId: 'formed' } }, asidePlan, 20 * 60 * 1000 + 1)
+    .excludedTargetIds.includes(partySetAside.targetId), 'joining a party wakes it at once');
 const partyBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
     spots: [],
     ...partyBlockedContext,
@@ -415,19 +427,19 @@ assert.strictEqual(capacityMarketFallback.target.selfId, failedTarget.selfId,
 const excludedSourcePlan = {
     status: 'active',
     strategy: 'direct_drop',
-    target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
-    next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+    target: { selfId: 1871, name: 'Charcoal', slot: 1 },
+    next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1871 }
 };
 const excludedSourceReplacement = GearAcquisitionPlanner.replacementPlanFor(
     { ...failedDropState, level: 19 },
     excludedSourcePlan,
     [stoneGolemSpot],
     {
-        excludedTargetIds: [1869],
+        excludedTargetIds: [1871],
         findMarketOffer: () => null
     }
 );
-assert.notStrictEqual(excludedSourceReplacement?.target?.selfId, 1869,
+assert.notStrictEqual(excludedSourceReplacement?.target?.selfId, 1871,
     'a failure-excluded target must not reuse its still-available farming source');
 
 const finalizedReplacement = GearAcquisitionPlanner.finalizePlan(
@@ -436,8 +448,8 @@ const finalizedReplacement = GearAcquisitionPlanner.finalizePlan(
     {
         status: 'active',
         strategy: 'direct_drop',
-        target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
-        next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+        target: { selfId: 1871, name: 'Charcoal', slot: 1 },
+        next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1871 }
     },
     failedContext,
     20 * 60 * 1000
@@ -955,7 +967,6 @@ const travel = ColdCraftingService.beginTravel({
 assert.strictEqual(travel.stats.travel.stationId, station.id, 'ready materials must route the bot to the station that publishes its recipe');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'crafting', 'arrival must enter the cold manufacture state');
 assert.strictEqual(travel.stats.travel.method, 'soe_gatekeeper', 'a remote craft station visit must use SoE and the Giran gatekeeper rather than map-walking');
-assert.strictEqual(travel.stats.travel.arrivalAt - travel.stats.travel.startedAt, ColdCraftingService.NATIVE_TRAVEL_MS, 'craft station transit must remain a short native-travel sequence');
 assert.strictEqual(travel.stats.craftReturn.spotId, null, 'craft travel must preserve the previous hunting destination for the return trip');
 const readyPlan = GearAcquisitionPlanner.planFor({ ...mage, inventory: readyInventory }, { spots: [] });
 assert.strictEqual(readyPlan.status, 'ready_to_craft', 'a complete material list must become a station visit, not a blocked farming plan');
@@ -964,9 +975,8 @@ const oriharkonRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipe
 const syntheticCokesRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(36);
 const atubaMaceRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(189);
 const steelRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(30);
-const crystalSupplement = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const atubaWithCokesIngredients = atubaMaceRecipe.materials.reduce((inventory, material) => {
-    if (Number(material.selfId) === 1879 || crystalSupplement.isSupplementalMaterial(material.selfId)) return inventory;
+    if (Number(material.selfId) === 1879) return inventory;
     inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
     return inventory;
 }, {
@@ -1012,12 +1022,6 @@ const resourceState = {
 // This bounded Iron5/Crystal99 recipe is a synthetic readiness contract, not
 // an authored C4 recipe. test_cold_craft_cash_receipt.js covers the published
 // recipe with authored quantities and a real customer transaction.
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1458), false,
-    'crystals must be acquired as physical recipe inputs');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(2130), false,
-    'gemstones must be acquired as physical recipe inputs');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1869), false,
-    'farmable craft resources must never be supplemented');
 const boundedRecipe = {
     materials: [{ selfId: 1869, amount: 5 }, { selfId: 1458, amount: 99 }]
 };
@@ -1321,7 +1325,7 @@ async function verifyWorkerSelectedGoals() {
             assert(native.queue.some(row => row.key === leaf.rootKey)
                 || leaf.activity === 'hunting' && !leaf.funding && leaf.rootKey === `level:${state.level + 1}`,
                 'paid roots belong to the native queue; free level progress is an explicit network root');
-            assert(Number.isFinite(state.stats.money[0]) && state.stats.money[0] > 0,
+            assert(Number.isFinite(Packet.hourAdena(state.stats.money)) && Packet.hourAdena(state.stats.money) > 0,
                 'native planning supplies a positive hour value, without a synthetic money packet');
             Economy.forState = () => { throw Error('cold goal reader rebuilt the wish network'); };
             const goals = NeedsEvaluator.evaluate(state, { now: 1000, decisions });

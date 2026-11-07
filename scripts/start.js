@@ -199,6 +199,10 @@ function llmConfig() {
         model,
         provider,
         temperature: optionalNumber(optn.temperature),
+        providerOrder: String(optn.providerOrder || '').split(',').map(value => value.trim()).filter(Boolean),
+        providerSort: String(optn.providerSort || '').trim(),
+        allowFallbacks: bool(optn.allowFallbacks, true),
+        requireParameters: bool(optn.requireParameters, true),
         completionLimitParam: completionLimitParam(
             optn.completionLimitParam,
             completionLimitFallback
@@ -245,6 +249,10 @@ function llmFingerprint(config) {
         config.model,
         config.provider,
         config.temperature,
+        config.providerOrder,
+        config.providerSort,
+        config.allowFallbacks,
+        config.requireParameters,
         config.completionLimitParam,
         config.reasoningEffort
     ]);
@@ -285,6 +293,12 @@ function llmTestBody(config) {
         body.temperature = config.temperature;
     }
     if (config.provider === 'openrouter') {
+        body.provider = {
+            allow_fallbacks: config.allowFallbacks,
+            require_parameters: config.requireParameters
+        };
+        if (config.providerOrder.length) body.provider.order = config.providerOrder;
+        if (config.providerSort) body.provider.sort = config.providerSort;
         if (config.reasoningEffort !== 'off') {
             body.reasoning = { effort: config.reasoningEffort, exclude: true };
         }

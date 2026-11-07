@@ -10,7 +10,7 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Trip = require('../src/GameServer/Bot/Economy/EconomicTrip');
 const Order = require('../src/GameServer/Bot/Economy/OfferOrder');
 const saved = { npc: Offers.npcOffersAll, fixed: Offers.fixedStoreOffers, board: Board.boardIndex,
-    economy: Decision.economyFor, basics: Economy.basics, tripRead: Trip.read, tripCost: Order.tripCost };
+    economy: Decision.economyFor, basics: Economy.basics, keptKit: Economy.keptKit, tripRead: Trip.read, tripCost: Order.tripCost };
 const state = { characterId: 99971, phase: 'cold', activity: 'hunting', currentRegion: 'Dion',
     adena: 20, inventory: {}, stats: { money: [1000, .001, 0, 0, .01, 20, 1835] } };
 let travelHours = .1, routeKnown = true, sourceRevision = 1, quoteReads = 0;
@@ -22,13 +22,15 @@ try {
     Offers.fixedStoreOffers = () => [];
     Board.boardIndex = () => ({ towns: () => [], list: () => [], itemRevision: () => String(sourceRevision) });
     Decision.economyFor = () => context;
-    Economy.basics = () => ({ kitCost: (_id, price) => price || 1 });
+    Economy.keptKit = () => ({ kitCost: (_id, price) => price || 1 });
     assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 1, town: 'Dion' }), false,
         'one useful unit does not justify its separate journey');
     assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 2, town: 'Dion' }), true,
         'two actually executable units justify the same journey');
     assert.equal(Market.canTravelForPurchase({ ...state, adena: 10 }, { selfId: 1835, amount: 200, town: 'Dion' }), false,
         'desired 200 units never grant their benefit to an affordable one-unit fill');
+    assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 1, town: 'Dion', purpose: 'wealth_craft' }), true,
+        'a craft input travels on the basket that chose it: its value already paid the trip');
     travelHours = 0;
     assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 1, town: 'Dion' }), true,
         'the already justified town visit can buy one unit');
@@ -53,7 +55,7 @@ try {
     // The near body's held economy: the view of the card the worker decided
     // (DecisionEvents.receive), read by the shared travel gate.
     const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-    Economy.basics = () => ({ kitCost: (_id, price) => price || 1, persona: { understanding: 1 }, trip });
+    Economy.basics = Economy.keptKit = () => ({ kitCost: (_id, price) => price || 1, persona: { understanding: 1 }, trip });
     const session = { coldLifeState: { stats: { decisionSeq: 1 } } };
     // Without the leaf's value hours the packet's item row funds the purchase, as for a far bot.
     const hotState = { ...state, phase: 'hot' };
@@ -91,7 +93,7 @@ try {
     console.log('PASS shared purchase trip admission / actual quantity / current quote / obligations');
 } finally {
     Offers.npcOffersAll = saved.npc; Offers.fixedStoreOffers = saved.fixed; Board.boardIndex = saved.board;
-    Decision.economyFor = saved.economy; Economy.basics = saved.basics;
+    Decision.economyFor = saved.economy; Economy.basics = saved.basics; Economy.keptKit = saved.keptKit;
     Trip.read = saved.tripRead;
     Order.tripCost = saved.tripCost;
 }

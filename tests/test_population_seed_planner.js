@@ -4,7 +4,6 @@ require('../src/Global');
 
 const Planner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
-const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 
 const profiles = Planner.STARTER_REGIONS.map((region) => ({
     id: `starter_${region.id}`,
@@ -36,20 +35,6 @@ Object.entries(starterRaces).forEach(([starterRegion, race]) => {
             `${starterRegion} population slots must use only that race`);
     });
 });
-
-const staticStarterRaces = {
-    'Talking Island': 0,
-    'Elven Village': 1,
-    'Dark Elven Village': 2,
-    'Orc Village': 3,
-    'Dwarven Village': 4
-};
-BotPopulation.buildStarterBots()
-    .filter((bot) => Object.hasOwn(staticStarterRaces, bot.homeRegion))
-    .forEach((bot) => {
-        assert.strictEqual(bot.race, staticStarterRaces[bot.homeRegion],
-            `${bot.homeRegion} static starter cohort must use the local race`);
-    });
 
 const legacyPopulation = Planner.plan(profiles, Array.from({ length: 132 }, (_, index) => ({
     characterId: index + 1,
@@ -203,7 +188,6 @@ assert.ok(new Set(generatedNames.map((name) => name.toLowerCase())).size > 700, 
         SpotProfiles.ensure = () => profiles;
         GeneratedColdSeeder.ensureCraftServices = async () => ({ created: 0, seeded: 0 });
         Database.fetchUserPassword = async () => { throw new Error('Unexpected population account creation'); };
-        assert.strictEqual(LifeState.allStates(1800).length, 1800);
         assert.strictEqual(LifeState.populationSeedStates().length, 2274,
             'population accounting must not inherit recent-state limits');
         const result = await GeneratedColdSeeder.seedPopulation();

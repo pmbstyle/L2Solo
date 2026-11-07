@@ -6,6 +6,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const Intent = invoke('GameServer/Bot/AI/BotSkillIntent');
+const PartyHeal = invoke('GameServer/Bot/AI/PartyHealPolicy');
 
 const ratio = actor => Number(actor.fetchHp?.() || 0) / Math.max(1, Number(actor.fetchMaxHp?.() || 1));
 
@@ -70,7 +71,7 @@ function alliedForHeal(provider, target) {
 function support(session, bot, context, Generics, now) {
     if (bot.state?.fetchCasts?.()) return false;
     const wounded = context.members.map(member => member.actor)
-        .filter(actor => Intent.alive(actor) && ratio(actor) < 0.7 && Threats.distance(bot, actor) <= 900)
+        .filter(actor => Intent.alive(actor) && ratio(actor) < PartyHeal.HEAL_BELOW && Threats.distance(bot, actor) <= 900)
         .sort((a, b) => ratio(a) - ratio(b));
     for (const target of wounded) {
         const nativeParty = !!session.hotBackgroundPartyId || session.partyCompanion === true

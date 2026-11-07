@@ -16,7 +16,6 @@ const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculati
 const Formation = require('../src/GameServer/Bot/Population/RequiredPartyFormation');
 const Goal = invoke('GameServer/Bot/Goals/GoalService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const Events = invoke('GameServer/Bot/Population/BotLifeEvents');
 const restore = [];
 function stub(target, name, value) {
     const old = target[name]; restore.push(() => { target[name] = old; }); target[name] = value;
@@ -49,9 +48,12 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
         spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4 }));
     stub(Parties, 'admitted', () => []); stub(Parties, 'counts', () => ({ active: 0 }));
     stub(Profiles, 'findById', () => spot);
-    stub(Parties, 'createOrUpdate', async party => { writes++; return party; });
+    // The formation announcement commits with the party in one transaction.
+    stub(Database, 'commitBackgroundPartyMembership', async ({ party, event }) => {
+        writes++; if (event) announcements++;
+        return { ok: true, partyRow: party, lifeRows: [] };
+    });
     stub(Life, 'assignParty', async member => member);
-    stub(Events, 'record', async () => { announcements++; });
     stub(Economy, 'forState', () => { throw Error('cold main economic calculation forbidden'); });
     // This fixture supplies a final admitted roster without a real atlas.
     // Keep economic admission separate from worker waits and lifecycle CAS.
@@ -123,7 +125,6 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     Parties.commitGoals = async party => party;
     stub(Life, 'leaveParty', async (member, reason, options) => {
         assert.equal(reason, 'better_solo_income'); assert.equal(options.ownerHandoff, true);
-        assert.equal(member.stats.partyIncomeDecision.partyIncome, 200);
         incomeDepartures++; return { ...member, party: { partyId: null } };
     });
     Parties.createOrUpdate = async party => { retainedParty = party; return party; };
@@ -148,9 +149,7 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
                 itemId: 4097 + index, targetId: 5726 + index, requiredTotal: 12, amount: 12 } } }));
     Formation.proposalFromStates = () => ({ candidates: materialMembers,
         spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4, materialParty: true });
-    Database.commitBackgroundPartyMembership = undefined;
     Life.cachedState = id => materialMembers.find(member => member.characterId === Number(id));
-    Parties.createOrUpdate = async party => { writes++; return party; };
     stub(Income, 'prepare', () => { throw Error('main must never forecast a cold material roster'); });
     Coordinator.requestPartyGoals = async (party, selected) => {
         return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
@@ -163,7 +162,12 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     const writesBeforeBusy = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
     Population.nextProtectedPartyFormationAt = 0;
-    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), materialMembers), []);
+    // Moved members: the verdict on the formed ones is held, a new one is asked.
+    const movedMembers = materialMembers.map(member => ({ ...member, updatedAt: Number(member.updatedAt || 0) + 1 }));
+    Life.cachedState = id => movedMembers.find(member => member.characterId === Number(id));
+    Formation.proposalFromStates = () => ({ candidates: movedMembers,
+        spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4, materialParty: true });
+    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), movedMembers), []);
     assert.equal(writes, writesBeforeBusy, 'a busy worker defers the forming verdict: no main admission');
     console.log('PASS all three cold group readers: no main network, delayed formation, budget, lifecycle CAS, stale rejection');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {

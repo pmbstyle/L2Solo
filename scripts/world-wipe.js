@@ -100,6 +100,11 @@ function wipeWithConnection(db, scope, onWiped = null) {
                 'social_projection_cursors', 'clans', 'clan_crests', 'history_outbox']) {
                 if (hasTable(db, table)) db.exec(`DELETE FROM ${table}`);
             }
+            // These totals belong to the economy being erased, unlike the
+            // history-file identity and completed schema/data migrations.
+            if (hasTable(db, 'world_meta')) db.exec(`DELETE FROM world_meta
+                WHERE key GLOB 'boardDealCount:*' OR key GLOB 'boardCounterDealCount:*'
+                    OR key IN ('boardDealCountsReady','boardCounterCountsReady')`);
         }
         if (ids.length) {
             const placeholders = ids.map(() => '?').join(', ');

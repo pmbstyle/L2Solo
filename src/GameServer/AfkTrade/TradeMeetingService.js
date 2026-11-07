@@ -1,6 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
+const MeetingAnchor = require('./MeetingAnchor');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
@@ -16,6 +17,24 @@ TableChannel.register('meetings', { key: row => row.characterId,
 function publishWaiting(actor) {
     TableChannel.changed('meetings', playerWaiters.get(actor)?.size
         ? { characterId: actor } : { key: actor, removed: true });
+}
+// A player has no life-state marker: its anchor (earliest accepted meeting)
+// is kept here for offer admission on main and published to the cold worker
+// as the 'player_anchors' table (PartyAdmission, MeetingAnchor). Players only.
+const playerAnchors = new Map();
+TableChannel.register('player_anchors', { key: row => row.characterId,
+    allRows: () => [...playerAnchors.values()], eventDriven: true });
+function publishPlayerAnchor(id, anchor) {
+    const row = anchor?.state === 'accepted' ? { characterId: Number(id), town: anchor.town,
+        locX: anchor.locX, locY: anchor.locY, locZ: anchor.locZ } : null;
+    const previous = playerAnchors.get(Number(id));
+    if (JSON.stringify(previous || null) === JSON.stringify(row)) return;
+    if (row) playerAnchors.set(row.characterId, row); else playerAnchors.delete(Number(id));
+    TableChannel.changed('player_anchors', row || { key: Number(id), removed: true });
+}
+function clearPlayerAnchors() {
+    for (const id of playerAnchors.keys()) TableChannel.changed('player_anchors', { key: id, removed: true });
+    playerAnchors.clear();
 }
 function clearWaiters() {
     for (const actor of playerWaiters.keys()) TableChannel.changed('meetings', { key: actor, removed: true });
@@ -163,9 +182,11 @@ function setPresenceMarker(session, id, anchor) {
 }
 async function syncActors(row) {
     for (const id of [row.actorA, row.actorB]) {
-        const session = sessionFor(id), actor = session?.actor;
-        if (!session || Number(actor?.fetchId?.()) !== Number(id)) continue;
+        const session = sessionFor(id), actor = session?.actor, player = !life().cachedState(id);
+        // An offline player meets nobody: its meetings are being cancelled.
+        if (!session || Number(actor?.fetchId?.()) !== Number(id)) { if (player) publishPlayerAnchor(id, null); continue; }
         const anchor = await db().fetchTradeMeetingForOwner?.(id) || (row.state === 'accepted' ? row : null);
+        if (player) publishPlayerAnchor(id, anchor);
         // The connection may hold another character after the wait: its marker,
         // travel and window stay untouched; the inventory sync is bound to the ID.
         if (session.actor === actor) {
@@ -259,6 +280,7 @@ async function prepareActors(token) {
         const side = entry.actors.indexOf(Number(proof.characterId));
         if (side < 0 || proof.token !== token || proof.sequence !== request.parties[side].sequence) throw Error('trade_meeting_consent_changed');
         request.parties[side].route = proof.route;
+        request.parties[side].survivalCost = proof.survivalCost ?? 0;
         request.lines.forEach((line, index) => {
             if (line.payer === side) {
                 const certificate = proof.certificates?.[index];
@@ -335,9 +357,10 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
     if (sides.some((side, index) => !partyTradeAllowed('trade', side, sessionFor(actors[index])))) throw Error('trade_meeting_party_busy');
-    const anchors = sides.filter(side => side.meetingId).map(side => side.anchor);
-    if (anchors.some(anchor => !anchor || anchor.town !== record.town)
-        || anchors.some(anchor => ['locX', 'locY', 'locZ'].some(k => anchor[k] !== anchors[0][k]))) throw Error('trade_meeting_point_changed');
+    // The offer choosers read the same rule over the life-state markers; this
+    // refusal is left for a race between two preparations.
+    const anchors = sides.map(side => side.meetingId ? side.anchor || MeetingAnchor.UNKNOWN : null);
+    if (!MeetingAnchor.compatible(record.town, anchors)) throw Error('trade_meeting_point_changed');
     // Preserve the caller's decision authority across asynchronous native reads.
     // Freshly reading a participant must not turn a stale decision into consent.
     const sourceState = options.coldState || life().cachedState(characterId);
@@ -367,7 +390,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         }
         throw Error('trade_meeting_stock_changed');
     }
-    const destination = anchors[0] || record;
+    const destination = anchors.find(Boolean) || record;
     const point = { locX: destination.locX, locY: destination.locY, locZ: destination.locZ };
     if (options.expectedPoint && ['locX', 'locY', 'locZ'].some(key => options.expectedPoint[key] !== point[key]))
         throw Error('trade_meeting_point_changed');
@@ -403,6 +426,11 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         // ad on the board for every later seller (E198 (2)).
         if (error.message === 'trade_meeting_need_changed' && record.storeType === 3) await buyAdNeedChanged(record, line);
         else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand, purchaseGoal);
+        else if (error.message === 'trade_meeting_purchase_price_changed'
+            && life().cachedState(buyer)?.phase === 'cold') {
+            rememberPriceRefusal(buyer, request, error.priceEvidence);
+            coordinator()?.requestEconomyRefresh?.(buyer);
+        }
         throw error;
     });
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
@@ -412,6 +440,31 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
 // owner publish its fresh quantities/value. A later revision survives this
 // cleanup; sibling shop lines and both physical wallets are preserved.
 const refusedAds = new Map();
+function rememberPriceRefusal(buyer, request, evidence) {
+    const state = life().cachedState(buyer), scopes = evidence?.scopes, purchase = evidence?.purchase;
+    if (!state || !purchase || !Array.isArray(scopes) || scopes.length > 40
+        || !scopes.every(scope => typeof scope === 'string')
+        || evidence.offers === undefined && typeof evidence.source !== 'string'
+        || evidence.items !== undefined && (!Array.isArray(evidence.items) || evidence.items.length > 60
+            || !evidence.items.every(id => Number.isSafeInteger(id) && id > 0))
+        || !EconomyCommit.sameAuthority(EconomyCommit.authority(state), evidence.authority)
+        || Number(state.updatedAt || 0) !== evidence.updatedAt) return;
+    const board = afk().boardIndex(), counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+    const production = invoke('GameServer/Bot/Economy/ProductionPolicy');
+    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+    const current = () => (evidence.offers !== undefined
+        ? evidence.fundingDominance === true && scopes.length === 0 && refusals.witnessCurrent(board, evidence.offers, purchase)
+        : refusals.fingerprint(evidence.items
+        ? [evidence.items.map(id => [id, board.itemFingerprint(id)]),
+            scopes.map(scope => [scope, counters.meetingRevisionOf(scope), workshops.publicScopeDigest(scope)])]
+        : scopes.map(scope => [scope, board.groupFingerprint(scope),
+            counters.meetingRevisionOf(scope), workshops.publicScopeDigest(scope)])) === evidence.source)
+        && production.allowsNpcShot(purchase.selfId) === evidence.npcAllowed
+        && refusals.admissionFingerprint(board, evidence.admissionScope) === (evidence.admission ?? null);
+    if (current()) refusals.remember(state, board, request, purchase, current,
+        { minimumFree: evidence.minimumFree, fundingDominance: evidence.fundingDominance === true });
+}
 async function purchaseNeedChanged(ownerId, errand, goal) {
     try {
         await db().withMutationAdmission(() => {
@@ -486,7 +539,10 @@ async function trade(characterId, store, itemId, amount, options) {
     // A lifecycle command may be waiting for this return on commandTail.
     // Release it before either independent worker preparation replies.
     const token = prepared.preparationId, entry = staged.get(token);
-    entry.ready.then(() => accept(token, characterId)).catch(error => {
+    // Preparation outlives the initiating command. Its acceptance has its
+    // own bilateral proof and native transaction checks; the old command's
+    // async-local write guard must not survive into that independent action.
+    entry.ready.then(() => db().withoutMutationAdmission(() => accept(token, characterId))).catch(error => {
         utils.infoWarn('AfkTrade', 'meeting preparation %s: %s (actor=%d record=%d item=%d count=%d)',
             token, error.message, characterId, store.shopId, itemId, amount);
     });
@@ -504,17 +560,25 @@ function presenceChanged(session) {
     marker.present = present; marker.atWaypoint = atWaypoint; wake(actor.fetchId());
 }
 function reset() {
+    invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear();
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
     for (const [token, listeners] of [...resultListeners])
         notifyResult(token, [...listeners].map(listener => listener.actorId), null);
-    staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); clearWaiters(); travelNotices.clear(); queue.clear();
+    staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
     queue.add(Number(id));
-    if (!draining) { draining = true; setImmediate(drain); }
+    if (!draining) scheduleDrain();
+}
+function scheduleDrain() {
+    draining = true;
+    // A lifecycle notification can come from a short-lived worker command.
+    // Accepted custody has its own native checks; its queued arrival/receipt
+    // must outlive the notifying command's async-local write admission.
+    setImmediate(() => db().withoutMutationAdmission(drain));
 }
 async function processOwner(id) {
     for (const meetingId of [...(enrolled.get(id) || [])].slice(0, MAX_COMMITMENTS)) await processMeeting(id, meetingId);
@@ -563,6 +627,18 @@ async function processMeeting(id, meetingId) {
     if (arrived.meeting.arrivalMask & 1 << side) return;
     const anchorId = state?.stats?.tradeMeeting?.[0] || await db().fetchTradeMeetingForOwner?.(id).then(anchor => anchor?.id);
     if (anchorId && anchorId !== row.id) return;
+    // Recover walks persisted by the old insufficient-fare fallback. The
+    // original departure, rather than an interpolated position en route,
+    // determines whether the agreed native journey is still funded.
+    const travel = state?.stats?.travel, suffix = side ? 'B' : 'A';
+    if (state?.phase === 'cold' && travel?.meetingId === row.id && travel.method === 'walk'
+        && Math.hypot(travel.to.locX - row.locX, travel.to.locY - row.locY, travel.to.locZ - row.locZ) <= 200
+        && JSON.parse(row[`route${suffix}`]).method !== 'walk') {
+        const native = require('../Bot/Travel/TravelRoutes').between(travel.from || state.loc, travel.to);
+        if (!native.route || native.route.fee > row[`routeReserve${suffix}`]) {
+            acceptRows(await db().cancelTradeMeeting(row.id, 'route_unfunded')); wake(id); return;
+        }
+    }
     if (state?.phase === 'cold' && !state.stats?.travel && !['fighting', 'resting'].includes(state.activity)) {
         await continueColdTravel(row, side, state);
     } else if (session && state?.phase === 'hot') {
@@ -593,13 +669,19 @@ async function continueColdTravel(row, side, state) {
     }
     const Routes = require('../Bot/Travel/TravelRoutes');
     const route = JSON.parse(row[`route${suffix}`]);
-    if (route.method === 'walk' || String(route.method).startsWith('meeting:')) {
+    if (route.method === 'walk') {
         const legId = `walk:${point.locX}:${point.locY}:${point.locZ}`;
         acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, 0, false));
         return;
     }
     const native = Routes.between(state.loc, point);
     if (!native.route) { acceptRows(await db().cancelTradeMeeting(row.id, 'route_unavailable')); wake(state.characterId); return; }
+    // A changed departure cannot turn a consented teleport into a walk
+    // across the world. Native cancellation refunds the held goods/fare so
+    // both sides can make a fresh decision from their current positions.
+    if (native.route.fee > row[`routeReserve${suffix}`]) {
+        acceptRows(await db().cancelTradeMeeting(row.id, 'route_unfunded')); wake(state.characterId); return;
+    }
     let kind = 'walk', destination = point, fee = 0, scroll = false;
     if (route.scroll && row[`nextLeg${suffix}`] === 1) {
         kind = 'soe'; destination = native.start; scroll = true;
@@ -613,9 +695,6 @@ async function continueColdTravel(row, side, state) {
             kind = 'gk'; destination = step; fee = step.fee;
         } else destination = gate;
     }
-    // A changed physical route may cost more than the held future fare. Walk
-    // to the agreed point instead; spent legs remain spent, custody is intact.
-    if (fee > row[`routeReserve${suffix}`]) { kind = 'walk'; destination = point; fee = 0; }
     const legId = `${kind}:${destination.locX}:${destination.locY}:${destination.locZ}`;
     acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, fee, scroll));
 }
@@ -626,10 +705,10 @@ async function drain() {
             const id = queue.values().next().value; queue.delete(id);
             try { await processOwner(id); } catch (error) { utils.infoWarn('AfkTrade', 'meeting owner %d: %s', id, error.message); }
         }
-    } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
+    } finally { draining = false; if (queue.size) scheduleDrain(); }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); travelNotices.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -652,6 +731,14 @@ async function init() {
         if (!sessionFor(id)) for (const [key, entry] of staged) if (entry.actors.includes(Number(id))) discard(key);
         wake(id);
     });
+    // Markers saved before they carried their anchor, or left by a meeting
+    // that is gone, are rewritten first: offer admission reads only markers.
+    for (let after = 0; after !== null;) {
+        const page = await db().refreshTradeMeetingMarkers(after);
+        acceptRows({ coldLifeRows: page.rows });
+        after = page.next;
+        await new Promise(resolve => setImmediate(resolve));
+    }
     let cursor = 0;
     for (;;) {
         const rows = await db().recoverTradeMeetings(cursor);
@@ -668,6 +755,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

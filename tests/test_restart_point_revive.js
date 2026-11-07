@@ -127,16 +127,13 @@ assert.strictEqual(dyingActor.silentMoving, false, 'death should clear the silen
 const packets = [];
 const actor = {
     hp: 0,
-    mp: 0,
+    mp: 13,
     fetchId: () => 42,
-    fillupVitals() {
-        this.hp = 100;
-        this.mp = 100;
-    },
+    fetchMaxHp: () => 100,
+    setHp(value) { this.hp = value; },
     automation: {
-        stopReplenishCalled: false,
-        stopReplenish() { this.stopReplenishCalled = true; },
-        replenishVitals() { throw new Error('town restart must not wait for gradual regeneration'); }
+        regenerating: false,
+        replenishVitals() { this.regenerating = true; }
     },
     state: {
         dead: true,
@@ -147,12 +144,12 @@ const session = {
     dataSendToMeAndOthers(packet) { packets.push(packet); }
 };
 
-revive(session, actor, { delayMs: 0, restoreFullVitals: true });
+revive(session, actor, { delayMs: 0 });
 
 assert.strictEqual(actor.state.dead, false, 'town restart should immediately clear the dead state');
-assert.strictEqual(actor.hp, 100, 'town restart should restore HP before teleport validation');
-assert.strictEqual(actor.mp, 100, 'town restart should restore MP before teleport validation');
-assert.strictEqual(actor.automation.stopReplenishCalled, true, 'town restart should stop stale regeneration timers');
+assert.strictEqual(actor.hp, 70, 'C4 doRevive: a restart gives 70% of max HP before teleport validation');
+assert.strictEqual(actor.mp, 13, 'C4 doRevive: a restart does not restore MP');
+assert.strictEqual(actor.automation.regenerating, true, 'the revived actor regenerates from there');
 assert.strictEqual(packets.length, 2, 'town restart should send revive and stand-up packets immediately');
 assert.strictEqual(packets[0][0], 0x07, 'first packet should be Revive');
 assert.strictEqual(packets[1][0], 0x2d, 'second packet should be SocialAction stand-up');

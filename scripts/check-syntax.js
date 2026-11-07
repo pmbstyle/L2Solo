@@ -2,8 +2,8 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const roots = ['src', 'scripts', 'tests'];
-const ignoreDirs = new Set(['node_modules', '.git']);
+const roots = ['src', 'scripts', 'tests', 'launcher'];
+const ignoreDirs = new Set(['node_modules', '.git', 'dist', 'runtime']);
 
 function collectJsFiles(dir, files = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -12,7 +12,7 @@ function collectJsFiles(dir, files = []) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             collectJsFiles(fullPath, files);
-        } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        } else if (entry.isFile() && /\.(?:cjs|js)$/.test(entry.name)) {
             files.push(fullPath);
         }
     }

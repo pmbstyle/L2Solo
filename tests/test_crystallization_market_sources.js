@@ -112,11 +112,11 @@ assert.deepEqual(cheaper.network.queue, expensive.network.queue,
     'a new quote of an unwatched input waits for the next decision');
 assert.strictEqual(cheaper.plan, expensive.plan, 'the published decision is held, not rebuilt');
 // The next decision: a raised sources section (the market's section) with a
-// new sequence, as a step's event raise publishes it.
+// new sequence, as a step's event raise publishes it, read by the bot's step.
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const nextDecision = from => ({ ...from, stats: { ...from.stats,
     decisionSeq: Number(from.stats.decisionSeq || 0) + 1, wishDirty: Sections.sectionBit('sources') } });
-const refreshed = Economy.forState(nextDecision(published), deps);
+const refreshed = Economy.forState(nextDecision(published), { ...deps, caller: 'step' });
 assert(crystalPaths(refreshed).some(row => row.improvement.sourceSelfId === 166),
     'the newly listed cheap input enters at the next decision');
 assert(refreshed.network.queue.some(row => {
@@ -124,7 +124,7 @@ assert(refreshed.network.queue.some(row => {
     return old && row.price < old.price;
 }), 'the native full C-goal estimate falls, rather than just a single-batch price');
 offer(166, 206926, 0);
-const depleted = Economy.forState(nextDecision({ ...state, stats: { ...state.stats, ...refreshed.statsPacket } }), deps);
+const depleted = Economy.forState(nextDecision({ ...state, stats: { ...state.stats, ...refreshed.statsPacket } }), { ...deps, caller: 'step' });
 assert(!crystalPaths(depleted).some(row => row.improvement.sourceSelfId === 166),
     'quote depletion invalidates the selected crystal path');
 assert.deepEqual(state, before);

@@ -25,6 +25,7 @@ let botState = null;
 const cancelled = { id: 9, actorA: 5, actorB: 6, state: 'cancelled', locX: 0, locY: 0, locZ: 0 };
 let resultMeeting = cancelled;
 const native = {
+    refreshTradeMeetingMarkers: async () => ({ rows: {}, next: null }),
     recoverTradeMeetings: async () => [],
     fetchTradeMeetingByToken: async token => token === 'switch' ? resultMeeting : null,
     fetchTradeMeetingForOwner: id => id === 5
@@ -34,6 +35,7 @@ const native = {
 global.utils = { infoWarn() {} };
 global.invoke = name => ({
     Database: native,
+    'GameServer/Bot/Economy/MeetingPriceRefusals': { clear() {} },
     'GameServer/Bot/Population/BotLifeState': { cachedState: id => id === 5 ? botState : null,
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {} },
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {},

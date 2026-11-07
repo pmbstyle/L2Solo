@@ -24,16 +24,28 @@ function playerSales(session) {
 // learned first, as on the cold path.
 async function botSales(session) {
     await BotWarehouse.learnActorRecipes(session.actor, session.coldLifeState, session);
-    const selling = MarketListingPolicy.npcSaleForActor(session);
+    const selling = MarketListingPolicy.npcSaleCandidatesForActor(session);
     const sales = [];
-    for (const item of ItemDisposition.unreservedActorItems(session.coldLifeState, session.actor.backpack.items)) {
-        const selfId = Number(item.fetchSelfId());
-        const left = Number(selling.get(selfId) || 0);
-        if (left <= 0 || item.fetchEquipped() || !NpcSellRules.canSell(item)) continue;
-        const amount = Math.min(item.fetchAmount(), left);
-        selling.set(selfId, left - amount);
-        sales.push({ item, amount });
+    // The live policy already subtracts project/equipment reserves. Applying
+    // those quantities again by bag order can exclude the selected free copy.
+    const items = session.actor.backpack.items;
+    const sold = new Map();
+    for (const candidate of selling) {
+        let left = Number(candidate.count || 0);
+        const ids = candidate.objectIds ? new Set(candidate.objectIds.map(Number)) : null;
+        for (const item of items) {
+            if (left <= 0) break;
+            if (Number(item.fetchSelfId()) !== Number(candidate.selfId)
+                || Number(item.fetchEnchantLevel?.() || 0) !== Number(candidate.enchant || 0)
+                || (ids && !ids.has(Number(item.fetchId())))
+                || item.fetchEquipped() || !NpcSellRules.canSell(item)) continue;
+            const amount = Math.min(item.fetchAmount() - Number(sold.get(item) || 0), left);
+            if (amount <= 0) continue;
+            sold.set(item, Number(sold.get(item) || 0) + amount);
+            left -= amount;
+        }
     }
+    for (const [item, amount] of sold) sales.push({ item, amount });
     return sales;
 }
 
@@ -45,7 +57,7 @@ async function sellJunk(session) {
 
     if (sales.length === 0) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "You have no unequipped items to sell." }));
-        return;
+        return { count: 0, payout: 0 };
     }
 
     let totalAdenaPayout = 0;
@@ -103,12 +115,15 @@ async function sellJunk(session) {
         });
     }));
 
-    return Promise.all(writes);
+    await Promise.all(writes);
+    return { count: sales.reduce((sum, sale) => sum + sale.amount, 0), payout: totalAdenaPayout };
 }
 
-// The NPC dialog does not await its handlers: a failure is logged here.
+// The NPC dialog does not await its handlers: a failure is logged here. A
+// bot's town visit awaits `sell` itself: { count, payout } or a rejection.
 module.exports = function(session) {
     return sellJunk(session).catch((error) => {
         utils.infoWarn('SellJunk', 'junk sale failed for %s: %s', session?.actor?.fetchName?.() || 'unknown', error?.message || String(error));
     });
 };
+module.exports.sell = sellJunk;

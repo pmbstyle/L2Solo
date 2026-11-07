@@ -11,6 +11,10 @@ const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 // freezes the rest of the kit; the dual sword stays their weapon target.
 const byName = (name) => Data.items.find((item) => item.template?.name === name);
 const broadsword = byName('Broadsword');
+// A Gladiator's previous profession is a Human Warrior, who fights with a
+// two-handed sword (user 10-29); a Bladedancer's a Palus Knight, with a sword.
+const twoHander = byName('Two-Handed Sword');
+const interimWeapon = (classId) => classId === 2 ? twoHander : broadsword;
 const bow = byName('Bow');
 const holding = (classId, item, adena) => ({
     characterId: 9500000 + classId, level: 42, adena, stats: { classId, role: 'dps' },
@@ -22,7 +26,7 @@ const holding = (classId, item, adena) => ({
 const spendable = (state) => state.adena - Gear.operationalAdenaReserve(state);
 
 for (const classId of [2, 34]) {
-    const modest = holding(classId, broadsword, 120000);
+    const modest = holding(classId, interimWeapon(classId), 120000);
     assert.strictEqual(Gear.combatReadiness(modest).hasWeapon, true,
         `class ${classId}: the previous profession's sword counts until a dual sword`);
     assert.strictEqual(Gear.npcWeaponBridgePlan(modest), null, `class ${classId}: no bridge freeze`);
@@ -30,18 +34,18 @@ for (const classId of [2, 34]) {
     assert(kit && !kit.combine && Number(kit.market.price) <= spendable(modest),
         `class ${classId}: an affordable kit piece is bought while the dual sword is unaffordable`);
 
-    const broke = holding(classId, broadsword, 0);
+    const broke = holding(classId, interimWeapon(classId), 0);
     const saving = Gear.staticNpcUpgradePlan(broke);
     assert(saving?.combine?.resultId, `class ${classId}: with nothing affordable the kit saves for the dual sword`);
 
-    const rich = holding(classId, broadsword, 20000000);
+    const rich = holding(classId, interimWeapon(classId), 20000000);
     const dual = Gear.staticNpcUpgradePlan(rich);
     assert(dual?.combine?.resultId && Number(dual.market?.price) <= spendable(rich),
         `class ${classId}: an affordable dual sword is the kit weapon`);
 
     // Money for one blade but not for the whole combination: the dual sword
     // is not funded, so the affordable kit piece comes first.
-    const oneBlade = holding(classId, broadsword, 600000);
+    const oneBlade = holding(classId, interimWeapon(classId), 600000);
     const oneBladeKit = Gear.staticNpcUpgradePlan(oneBlade);
     assert(oneBladeKit && !oneBladeKit.combine, `class ${classId}: a half-funded dual sword does not jump ahead of armour`);
     assert.strictEqual(Gear.npcWeaponBridgePlan(oneBlade), null, `class ${classId}: no bridge for a half-funded dual sword`);

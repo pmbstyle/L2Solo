@@ -105,6 +105,21 @@ assert.strictEqual(routedPlan.selectedAngle, 0, 'candidate scoring should use th
 assert.strictEqual(routedPlan.routeStrategy, 'test_astar');
 assert.strictEqual(routedPlan.safe, true, 'the actual preview polyline should own aggro safety');
 
+// Each hazard at its own C4 aggro range (T114): the same A* polyline 700 from an
+// NPC that sees 1000 (data/Npcs/aggro-ranges.json, 7039) is not the safe pick.
+const farSight = { ...routedHazard, fetchSelfId: () => 7039 };
+const farPlan = BotRetreatPlanner.plan(bot, threat, {
+    distance: 1500,
+    world: { fetchNpcsInRadius: () => [threat, farSight] },
+    geodata: openGeodata,
+    previewRoute(from, to) {
+        if (to.locY === 0 && to.locX < 0) return { routedTo: to, routeUsable: true, strategy: 'test_astar',
+            route: [from, { locX: 0, locY: 700, locZ: 0 }, { locX: -1500, locY: 700, locZ: 0 }, to] };
+        return { routedTo: to, routeUsable: true, strategy: 'test_direct', route: [from, to] };
+    }
+});
+assert.notStrictEqual(farPlan.selectedAngle, 0, 'a far-seeing NPC makes the 700-away polyline unsafe');
+
 const distantThreat = hostile(1006, 1000, 0);
 const blockedAwayAngles = [0, -30, 30, -60, 60, -90, 90];
 const crowdedHazards = blockedAwayAngles.map((angle, index) => {

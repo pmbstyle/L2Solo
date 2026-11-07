@@ -105,16 +105,15 @@ function routeAllowed(session, bot, route, goal, { complete = true, endpointOnly
         waypoints.some(point => distance(point, anchor) > routeLimit)) return false;
 
     const scanRadius = Math.max(...waypoints.map(point => distance(from, point)))
-        + NpcAggro.AGGRO_RADIUS + ROUTE_TOLERANCE;
+        + NpcAggro.MAX_AGGRO_RADIUS + ROUTE_TOLERANCE;
     const hazards = World.fetchNpcsInRadius(from.locX, from.locY, scanRadius)
         // Spawn grace can expire during a route. A selected target alone is
         // not combat; only the native combat state makes a mob already engaged.
         .filter(npc => NpcAggro.isEligible(npc, Infinity) && !npc.isDead?.());
     return hazards.every(npc => {
         const hazard = loc(npc);
-        const initialDistance = distance(from, hazard);
-        const clearance = initialDistance < NpcAggro.AGGRO_RADIUS + ROUTE_TOLERANCE && visibleFrom(hazard, from)
-            ? initialDistance : NpcAggro.AGGRO_RADIUS + ROUTE_TOLERANCE;
+        const initialDistance = distance(from, hazard), reach = NpcAggro.aggroRadius(npc) + ROUTE_TOLERANCE;
+        const clearance = initialDistance < reach && visibleFrom(hazard, from) ? initialDistance : reach;
         if (endpointOnly) return distance(loc(goal), hazard) >= clearance - 1e-6 || !visibleFrom(hazard, loc(goal));
         for (let index = 1; index < waypoints.length; index++) {
             if (segmentExposes(waypoints[index - 1], waypoints[index], hazard, clearance)) return false;

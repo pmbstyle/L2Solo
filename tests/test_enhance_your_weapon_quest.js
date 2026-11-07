@@ -25,7 +25,7 @@ async function sessionFor(id, level = 40) {
         packets: [],
         actor: {
             fetchId: () => id, fetchLevel: () => level, fetchClanId: () => 0,
-            backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: {} })
+            backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} })
         },
         dataSendToMe(packet) { this.packets.push(packet); }
     };

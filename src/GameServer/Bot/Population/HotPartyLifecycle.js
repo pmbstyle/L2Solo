@@ -366,7 +366,7 @@ async function releaseUnsafeHunt(partyId) {
             return Life.preparePartyReview(state, next);
         });
         const dissolved = Parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [], nextResolveAt: null,
-            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason, dissolvedAt: timestamp } });
+            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason } });
         if (!dissolved || releases.some(row => !row)) return { ok: false, reason: 'invalid_party_review' };
         const result = await Database.commitBackgroundPartyMembership({ party: dissolved.row, members: releases,
             review: true, expectedPhase: 'hot', expectedPartyRevision: party.revision, canCommitHot: ready,
@@ -418,19 +418,21 @@ function publish(sessions, states, party) {
 }
 
 async function activate(partyId, reason = 'near_player', options = {}) {
+    const transitionStartedAt = Date.now();
     const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
     if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
     pending.add(partyId);
-    let party, states, reserved = false;
-    const sessions = [];
+    let party, states, reserved = false, activated = false;
+    const sessions = [], fenced = [];
     try {
         party = Parties.find(partyId);
         states = members(party);
         if (!ready(party, states)) {
             return { ok: false, reason: 'party_not_ready', detail: readinessReason(party, states) };
         }
-        const fences = await Promise.all(states.map(s => Coordinator.fenceBot(s.characterId)));
+        fenced.push(...states.map(s => s.characterId));
+        const fences = await Promise.all(fenced.map(memberId => Coordinator.fenceBot(memberId)));
         if (fences.some(f => !f.ok)) throw Error('party_fence_failed');
         await Life.settleWrites(party.memberIds);
         party = Parties.find(partyId);
@@ -495,7 +497,7 @@ async function activate(partyId, reason = 'near_player', options = {}) {
         const prepared = sessions.map(session => Life.partySessionSnapshot(session, states.find(s => s.characterId === id(session)), 'hot', reason));
         ({ party, states } = await transition(Parties.find(partyId), states, prepared, 'hot', reason));
         publish(sessions, states, party);
-        for (const state of states) invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation();
+        for (const state of states) invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation(Date.now() - transitionStartedAt);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: activated party %s members=%d reason=%s', partyId, states.length, reason);
         if (raidObjective(party) && options.raidFanout !== false) {
             const competitors = Parties.raidCompetitors(Parties.raidBossKey(party), 'active', party.partyId, 'raid_fanout_activate');
@@ -503,12 +505,13 @@ async function activate(partyId, reason = 'near_player', options = {}) {
                 await activate(competitor.partyId, reason, { ...options, raidFanout: false });
             }
         }
+        activated = true;
         return { ok: true, party, states, count: states.length, reason };
     } catch (error) {
         discard(sessions);
         if (reserved) {
-            // Keep a failed reservation fenced until the full rollback commits.
-            // A failed DB rollback leaves an explicit hot reservation for retry/restart.
+            // The fences are released in finally, after this rollback settles.
+            // A failed DB rollback leaves an explicit hot reservation for restart.
             try {
                 party = Parties.find(partyId);
                 states = members(party);
@@ -518,12 +521,20 @@ async function activate(partyId, reason = 'near_player', options = {}) {
                 return { ok: false, reason: 'party_rollback_failed' };
             }
         }
-        for (const state of members(Parties.find(partyId)) || []) Coordinator.notifyState(state);
         return { ok: false, reason: error.message };
-    } finally { pending.delete(partyId); }
+    } finally {
+        pending.delete(partyId);
+        // A failed activation hands back every bot it fenced, by id: a member
+        // that left the party meanwhile is no longer in its roster, and a bot
+        // left fenced is out of the worker (commands refused, the safety sweep
+        // skips it). A failed rollback's hot rows need no fence: cold writers
+        // check the phase.
+        if (!activated) for (const memberId of fenced) Coordinator.releaseFence(memberId);
+    }
 }
 
 async function cooldown(partyId, reason = 'policy', options = {}) {
+    const transitionStartedAt = Date.now();
     const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
     if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').cooldown(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
@@ -566,7 +577,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
                 ...result.party,
                 status: 'dissolved',
                 nextResolveAt: null,
-                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed', dissolvedAt: Date.now() }
+                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed' }
             });
             if (dissolved) {
                 await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(dissolved);
@@ -582,7 +593,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
             }
         }
         result.states.forEach(state => Coordinator.notifyState(state));
-        for (const state of result.states) invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown();
+        for (const state of result.states) invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown(Date.now() - transitionStartedAt);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: cooled party %s members=%d reason=%s', partyId, next.length, reason);
         return { ok: true, ...result, count: next.length };
     } catch (error) {

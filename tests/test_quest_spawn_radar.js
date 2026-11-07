@@ -29,11 +29,14 @@ const distant = viewer(10000, 2000);
 const world = {
     npc: { nextId: 4000000, spawns: [], grid: {} },
     user: { sessions: [nearby, distant] },
-    indexSpawnsInGrid() {
-        this.npc.grid = {};
-        this.npc.spawns.forEach((npc) => {
-            const key = `${Math.floor(npc.fetchLocX() / 6000)}_${Math.floor(npc.fetchLocY() / 6000)}`;
-            (this.npc.grid[key] ||= []).push(npc);
+    addNpcToGrid(npc) {
+        const key = `${Math.floor(npc.fetchLocX() / 6000)}_${Math.floor(npc.fetchLocY() / 6000)}`;
+        (this.npc.grid[key] ||= []).push(npc);
+    },
+    removeNpcFromGrid(npc) {
+        Object.values(this.npc.grid).forEach((cell) => {
+            const index = cell.indexOf(npc);
+            if (index >= 0) cell.splice(index, 1);
         });
     }
 };

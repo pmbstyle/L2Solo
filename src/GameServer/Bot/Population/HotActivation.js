@@ -8,6 +8,13 @@ const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulati
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
+// An activation the bot's own state refuses (in transit, no placement a player
+// would see): counted by reason (PopulationMetrics), never logged.
+function refused(reason, state) {
+    Metrics.recordActivationRefusal(reason);
+    return { ok: false, reason, state };
+}
+
 function activationPlan(state, options = {}) {
     const activity = state?.activity || 'hunting';
     if (options.recoverOnActivation || (options.readyOnActivation && (activity === 'dead' || activity === 'resting'))) {
@@ -89,6 +96,7 @@ function restoreColdAfterActivationFailure(state) {
 
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
+        const transitionStartedAt = Date.now();
         const loadState = typeof stateOrName === 'string'
             ? LifeState.findByName(stateOrName)
             : Promise.resolve(stateOrName);
@@ -112,14 +120,25 @@ const HotActivation = {
                 && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
-            // With honest travel a traveller a player invites or calls leaves its
-            // trip, as a hunter leaves its spot (design 5.9).
-            const leavesTrip = options.interruptBackgroundActivity === true
+            // A traveller a player invites or calls leaves its trip, as a hunter
+            // leaves its spot (design 5.9). A walker (ColdTrip: a solo run to a
+            // spot) a player comes near leaves it too, at the endpoint in reach of
+            // the player walkerAppearance gives, never on the road between them;
+            // false when neither endpoint is in reach. A bot no longer a walker
+            // (it arrived while fenced) is taken as it is.
+            const walker = reason === 'near_player' && state.activity === 'traveling' && !!state.stats?.travel?.run;
+            const appearance = (s) => {
+                if (!walker) return s;
+                const shown = invoke('GameServer/Bot/Population/PopulationService').walkerAppearance(s, options.playerLoc);
+                return shown === null ? s : shown;
+            };
+            const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
-                    && invoke('GameServer/Bot/Population/ColdTrip').travellerAnswers(state));
-            if (state.activity === 'traveling' && !leavesTrip) {
-                return { ok: false, reason: 'in_transit', state };
-            }
+                    && state.activity === 'traveling');
+            if (state.activity === 'traveling' && !leavesTrip) return refused('in_transit', state);
+            const shown = appearance(state);
+            if (shown === false) return refused('walker_endpoint_far', state);
+            state = shown;
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
@@ -134,7 +153,9 @@ const HotActivation = {
             });
             // A failed placement must not dissolve a party, remove a market
             // listing or hand ownership away from the cold worker.
-            if (!placement) return { ok: false, reason: 'no_safe_activation_placement', state };
+            // With playerLoc only a point within the activation radius of the
+            // player is accepted.
+            if (!placement) return refused('no_safe_activation_placement', state);
             // Reserve the character before party cleanup or recipe sync can
             // yield. Otherwise two concurrent visibility/invite requests can
             // both pass the guard and create independent hot AI sessions.
@@ -150,12 +171,16 @@ const HotActivation = {
                 if (!fence.ok && fence.reason !== 'worker_not_ready') {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
-                const current = LifeState.cachedState(state.characterId) || state;
+                const current = appearance(LifeState.cachedState(state.characterId) || state);
+                if (current === false) {
+                    throw Object.assign(Error('walker_endpoint_far'), { activationRefusal: 'walker_endpoint_far' });
+                }
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
                 const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
                     .some(key => current.loc?.[key] !== state.loc?.[key]);
                 state = current;
-                if (current.activity === 'traveling' && !leavesTrip) {
+                // Still traveling after its appearance: a walker began a trip with no run.
+                if (current.activity === 'traveling' && (walker || !leavesTrip)) {
                     throw Object.assign(Error('in_transit'), { activationRefusal: 'in_transit' });
                 }
                 if (moved) {
@@ -206,7 +231,6 @@ const HotActivation = {
                 return recipesReady.then(() => Promise.resolve(BotManager.loadAndSpawnBot(state.accountName, {
                         name: state.name,
                         homeRegion: state.homeRegion,
-                        newbieAnchor: !!state.stats?.newbieAnchor,
                         plan,
                         backgroundActivity: state.activity || 'hunting',
                         currentSpot: spotSnapshot(placement.spot),
@@ -248,7 +272,7 @@ const HotActivation = {
                         activationDistance(placement, options),
                         (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
                     );
-                    Metrics.recordActivation();
+                    Metrics.recordActivation(Date.now() - transitionStartedAt);
                     return { ok: true, state, reason };
                 }));
             }).catch((error) => {
@@ -259,7 +283,10 @@ const HotActivation = {
                     pendingActivations.delete(state.characterId);
                     const failureReason = error.activationRefusal || (error.partyRefusal ? 'already_grouped'
                         : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed');
-                    utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
+                    // A refusal found after the fence is counted by reason, as before it
+                    // (refused); any other failure is logged.
+                    if (error.activationRefusal) Metrics.recordActivationRefusal(error.activationRefusal);
+                    else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });
             });

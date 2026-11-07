@@ -5,6 +5,7 @@ const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Shots = invoke('GameServer/Inventory/ShotStock');
 const F = invoke('GameServer/Formulas');
+const HitRules = invoke('GameServer/Combat/HitRules');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Buffs = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Capabilities = require('../../Clan/ClanCandidateCapabilities');
@@ -13,7 +14,7 @@ const Minions = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const Supply = require('./RaidSupplyPolicy');
 const Priority = require('./RaidRosterPriority');
 const Healing = require('./RaidHealingEstimate');
-const GRADE = { none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 };
+const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
 const BASE_CLASSES = new Set([0, 10, 18, 25, 31, 38, 44, 53]);
 const id = s => Number(s?.characterId);
 const isObjective = o => o?.opportunisticRaid === true && o.sourceKind === 'raid';
@@ -375,15 +376,16 @@ function prepared(members, timestamp) {
 }
 
 function attack(p, target, charged) {
-    const cycle = p.equipment.weaponKind === 'Weapon.Bow'
-        ? F.calcBowAttackTimes(p.atkSpd, p.equipment.attackReuseDelay || 1500).cycleMs : F.calcMeleeAtkTime(p.atkSpd);
+    const cycle = Combat.normalAttackMs(p);
     const hit = invoke('GameServer/Bot/Population/BackgroundResolver').combat;
     let landed = 0;
     for (let i = 0; i < 20; i++) landed += Number(hit.hitSucceeds(p.accur, target.evasion, () => (i + .5) / 20));
-    const key = { 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln', 'Weapon.Blunt': 'bluntWpnVuln' }[p.equipment.weaponKind];
+    // The fight's modifier of a normal hit (HitRules.targetModifier: a knife meets no dagger weakness).
+    const modifier = HitRules.targetModifier({ weaponKind: p.equipment.weaponKind, race: target.race, undead: target.undead === true },
+        stat => Combat.npcVulnerability(target, stat), stat => Combat.statMultiplier(p, stat, Date.now()));
     return { rate: 1000 / cycle, dps: F.calcPhysicalDamage(p.pAtk, 0, target.pDef, 0,
         { soulshot: charged, rng: () => .5 }) * (1 + Math.min(1, p.critical / 1000))
-        * (landed / 20) * (key ? target.vulnerabilities?.[key] ?? 1 : 1) * 1000 / cycle };
+        * (landed / 20) * modifier * 1000 / cycle };
 }
 
 // Check native worn slots and compatible heavy body pieces. Grade is not a
@@ -412,7 +414,7 @@ function assessment(members, spot, { timestamp = Date.now(), maxFightSeconds = 7
     if (!composition(members).ready) { fail('raid_composition'); unchecked.push('equipment', 'combat'); return result(); }
     const level = Number(spot.avgLevel);
     if (members.some(s => !levelAllowed(s, level))) { fail('raid_level'); unchecked.push('equipment', 'combat'); return result(); }
-    const requiredRank = Math.max(1, GRADE[Gear.gradeForLevel(level)] || 0);
+    const requiredRank = Math.max(1, rankOf(Gear.gradeForLevel(level)));
     const data = invoke('GameServer/DataCache');
     const item = require('../../Item/ItemTemplateIndex');
     for (const s of members) {

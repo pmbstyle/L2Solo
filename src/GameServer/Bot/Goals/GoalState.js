@@ -124,16 +124,21 @@ const GoalState = {
         return cache.get(Number(characterId)) || null;
     },
 
-    // The goal's content without its review clock: equal while a 60 s review
-    // keeps the same goal, so a reader can tell a due review from a new goal.
+    // What the goal is after, without its review clock and what drifts with
+    // prices (costs, value rates): equal while a review keeps the same goal, so
+    // a reader can tell a due review from a new goal.
     // 0 = no goal. A 32-bit digest: stable across restarts, not a save field.
     revision(characterId) {
         const snapshot = cache.get(Number(characterId));
         if (!snapshot?.current) return 0;
         let revision = revisions.get(snapshot);
         if (revision === undefined) {
-            const content = { ...snapshot.current, createdAt: 0, reviewedAt: 0, nextReviewAt: 0 };
-            revision = fnv1a32(JSON.stringify(content)) || 1;
+            const goal = snapshot.current;
+            // A goal copied from the bot's own leaf is its own output (Recompute):
+            // no revision; another goal names what it is after, a bought unit or
+            // a review of the same one does not.
+            revision = goal.plan?.economyActivity !== undefined ? 0
+                : fnv1a32(JSON.stringify([goal.type, goal.status, goal.target?.itemId, goal.plan?.marketTown, goal.plan?.purpose])) || 1;
             revisions.set(snapshot, revision);
         }
         return revision;
@@ -197,11 +202,11 @@ const GoalState = {
         });
     },
 
-    abandonAccepted(characterId, expectedGoal) {
+    closeAccepted(characterId, expectedGoal, status) {
         const id = Number(characterId), existing = this.snapshot(id);
-        if (!expectedGoal || !existing?.current || existing.current.status !== 'active'
+        if (!['abandoned', 'completed'].includes(status) || !expectedGoal || !existing?.current || existing.current.status !== 'active'
             || safeJson(existing.current) !== safeJson(expectedGoal)) return Promise.resolve(null);
-        const timestamp = now(), current = normalizeGoal({ ...existing.current, status: 'abandoned',
+        const timestamp = now(), current = normalizeGoal({ ...existing.current, status,
             reviewedAt: timestamp, nextReviewAt: timestamp });
         const snapshot = { ...existing, current, updatedAt: timestamp, inputHash: undefined };
         return Database.execute([`UPDATE ${TABLE} SET goalJson = ?, updatedAt = ?
@@ -211,6 +216,10 @@ const GoalState = {
             if (cache.get(id) === existing) store(snapshot);
             return snapshot;
         });
+    },
+
+    abandonAccepted(characterId, expectedGoal) {
+        return this.closeAccepted(characterId, expectedGoal, 'abandoned');
     },
 
     // Advance only the goal accepted before the asynchronous native purchase.

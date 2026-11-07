@@ -82,14 +82,11 @@ async function parityAndIntegration() {
     DataCache.init();
     const context = await Runtime.context();
     const pricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
-    const wearableIds = new Set(DataCache.items.filter(item => Number(item.etc?.slot) > 0)
-        .map(item => Number(item.selfId)));
-    const expectedPrices = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries()
-        .map(entry => Number(entry.selfId)))].filter(id => !wearableIds.has(id))
-        .map(selfId => ({ selfId, price: pricing.npcPrice({ selfId }) }))
-        .filter(row => Number.isFinite(row.price) && row.price > 0);
-    assert.deepEqual(context.npcPriceRows, expectedPrices,
-        'the compact snapshot covers every native positive nonwearable NPC quote');
+    const shopIds = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries()
+        .map(entry => Number(entry.selfId)))];
+    const snapshot = new Map(context.npcPriceRows.map(row => [row.selfId, row.price]));
+    assert.deepEqual(shopIds.map(selfId => snapshot.get(selfId) ?? Infinity), shopIds.map(selfId => pricing.npcPrice({ selfId })),
+        'the compact snapshot holds main\'s NPC price of every NPC-sold item, gear and craft inputs alike');
     assert.equal((await Runtime.context()).npcPriceRows, context.npcPriceRows,
         'scalar NPC quotes reuse the existing static rate cache');
     const ore = DataCache.items.find(item => Number(item.selfId) === 1785);
@@ -211,6 +208,34 @@ async function parityAndIntegration() {
         }
     } finally { await worker.shutdown(); }
 
+    // In an admitted job the clan's craft options and warehouse rows cross
+    // with its first plan only; every member still plans as on main.
+    {
+        const jobWorker = new ClanPlanningCoordinator({ restartDelayMs: 0 });
+        const Shops = invoke('GameServer/Bot/Economy/CraftShopService');
+        const craftRecipes = Shops.availableRecipes(Shops.STATION_CRAFTER);
+        assert(craftRecipes.length > 100, 'the fixture plans with the real recipe list');
+        const craft = { craftRecipes, allowedRecipeIds: craftRecipes.map(recipe => recipe.recipeId), craftProviders: {} };
+        const warehouseRows = [{ selfId: 1864, amount: 20 }];
+        const sizes = [], send = jobWorker.send;
+        jobWorker.send = (type, payload) => {
+            if (type === 'plan') sizes.push(require('node:v8').serialize(payload).length);
+            return send.call(jobWorker, type, payload);
+        };
+        try {
+            await jobWorker.withJob(Date.now() + 30000, DataCache, async jobKey => {
+                for (const [classId, level] of [[56, 40], [57, 52], [4, 20]]) {
+                    const member = { characterId: 990001 + level, classId, level, phase: 'cold',
+                        stats: { classId }, inventory: {}, adena: 100000, currentRegion: 'Giran' };
+                    const options = { ...craft, maxExpectedKills: 1500, clanShare: 50000 };
+                    assert.deepEqual(await jobWorker.plan({ member, spots: [], warehouseRows, options, jobKey }, DataCache),
+                        planForMember(member, [], warehouseRows, options), `job plan for class ${classId} matches main`);
+                }
+            });
+            assert(sizes[1] < sizes[0] / 4 && sizes[2] < sizes[0] / 4, `later plans of a job skip the craft options (${sizes})`);
+        } finally { await jobWorker.shutdown(); }
+    }
+
     // Two plans in flight across a context revision change: the worker gets
     // revision 1, then 2, then plan A made under 1. Both plan with the
     // newest static context it holds.
@@ -278,6 +303,34 @@ async function parityAndIntegration() {
         Goals.clanProjectionById = originalProjection;
         await Runtime.shutdown();
     }
+}
+
+// A clan's raid row is a catalogue row with a few fields on top (projection,
+// roster size, estimate): it crosses as those fields, comes back equal in the
+// same key order, and a repeat in a later message is the same row object.
+function spotDecorations() {
+    const { SpotCatalogWriter, SpotCatalogReader } = require('../src/GameServer/Clan/ClanSpotCatalog');
+    const lair = { id: 'raid:1', raidBoss: true, raidBossTemplateId: 1, npcEntries: [{ selfId: 1, count: 1 }],
+        arrivalPoints: Array.from({ length: 40 }, (_, i) => ({ locX: i, locY: i, locZ: 0 })) };
+    const rows = [{ id: 'camp', npcEntries: [] }, lair];
+    const writer = new SpotCatalogWriter(1, rows), reader = new SpotCatalogReader();
+    for (const page of writer.pages()) reader.apply(structuredClone(page));
+    const decorated = { ...lair, raidInstanceId: 'x', raidRosterSize: 9, raidEstimate: { killMs: 5 } };
+    const reordered = { raidEstimate: { killMs: 5 }, ...lair };
+    const send = spots => reader.restore(structuredClone(writer.pack({ spots }))).spots;
+    const [camp, first, other] = send([rows[0], decorated, reordered]);
+    assert.equal(camp, reader.rows[0]);
+    assert.deepEqual(first, decorated);
+    assert.deepEqual(Object.keys(first), Object.keys(decorated));
+    assert.deepEqual(Object.keys(other), Object.keys(reordered), 'a row in another key order crosses whole');
+    const bytes = value => require('node:v8').serialize(value).length;
+    assert(bytes(writer.pack({ spots: [decorated] })) < bytes(decorated) / 3, 'a decoration crosses as its own fields');
+    assert.equal(send([{ ...decorated, raidEstimate: { killMs: 5 } }])[0], first, 'the same decoration is the same row');
+    assert.deepEqual(send([{ ...decorated, raidEstimate: { killMs: 6 } }])[0].raidEstimate, { killMs: 6 });
+    const dropped = { ...decorated };
+    delete dropped.arrivalPoints;
+    assert.deepEqual(send([dropped])[0], dropped, 'a field the row drops stays dropped');
+    console.log('Clan spot decorations cross as their fields and restore equal');
 }
 
 async function workerLifecycle() {
@@ -354,6 +407,7 @@ parentPort.on('message', (m) => {
         console.log('Clan planning worker job admission, end ACK, error/deadline/shutdown checks passed');
         return;
     }
+    spotDecorations();
     await sharedModulesStayPure();
     await parityAndIntegration();
     await workerLifecycle();

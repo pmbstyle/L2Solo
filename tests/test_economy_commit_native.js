@@ -75,6 +75,23 @@ async function run() {
     const stale = await current(1);
     await Life.upsertState({ ...stale, stats: { ...stale.stats, economyCommit: [999, 1, 'fabricated'] } }, 'stale_receipt');
     assert.deepEqual(JSON.parse((await row(1)).statsJson).economyCommit, receipt);
+    // The save patches the row-owned members back in one pass: the takeover
+    // and const session markers the row holds win over the snapshot's, the
+    // hennas come from their rows, retired counters go, the rest is the save's.
+    const takeover = { partyId: 'held-party', playerId: 9001 }, session = { leaderId: 9001, saved: { at: 5 } };
+    await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.playerPartyTakeover',json(?),'$.constPartySession',json(?)) WHERE characterId=1",
+        [JSON.stringify(takeover), JSON.stringify(session)]]);
+    const snapshot = await current(1);
+    await Life.upsertState({ ...snapshot, stats: { ...snapshot.stats, economyCommit: [999, 1, 'fabricated'], playerPartyTakeover: undefined,
+        constPartySession: { leaderId: 7, saved: { at: 1, fields: { travel: 1 } } }, hennas: [1, 2, 3], probe: { kept: true } } }, 'stale_markers');
+    const merged = JSON.parse((await row(1)).statsJson);
+    assert.deepEqual(merged.economyCommit, receipt);
+    assert.deepEqual(merged.playerPartyTakeover, takeover);
+    assert.deepEqual(merged.constPartySession, session);
+    assert.deepEqual(merged.hennas, [null, null, null], 'no henna rows: the save cannot invent symbols');
+    assert.deepEqual(merged.probe, { kept: true });
+    assert.equal(merged.marketTrades, undefined);
+    await Database.execute(["UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.playerPartyTakeover','$.constPartySession','$.probe') WHERE characterId=1"]);
     const wrong = Commit.header(require('node:crypto').randomUUID(), Commit.KINDS.craft, command[2], Commit.authority(await current(1)));
     await assert.rejects(Database.craftInventoryItems(1, { ...args, economyCommand: wrong }), /intent_changed/);
     const npc = await step(1, Commit.KINDS.npcBuy);
@@ -185,6 +202,10 @@ async function run() {
         'the cold snapshot holds no product after the failed roll');
     // A pending intent without a commit survives restart, but recovery never
     // recreates its old arguments. Replan a different native step from stock.
+    await Database.execute(['INSERT INTO bot_economy_intents(characterId, tuple) VALUES (1, ?) ON CONFLICT(characterId) DO UPDATE SET tuple = excluded.tuple', ['[1,0,"broken"']]);
+    const overwritten = await step(1, Commit.KINDS.npcBuy);
+    Commit.finish(1, overwritten.command);
+    assert.equal(overwritten.recovered, null, 'an intent that does not read is taken as absent and written over');
     const pending = await step(1, Commit.KINDS.npcBuy);
     Commit.finish(1, pending.command);
     const recovered = await step(1, Commit.KINDS.npcBuy);

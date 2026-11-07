@@ -1,5 +1,7 @@
 const CreatureModel = invoke('GameServer/Model/Creature');
 const Formulas      = invoke('GameServer/Formulas');
+const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+const NpcTraits = invoke('GameServer/Npc/NpcTraits');
 
 class NpcModel extends CreatureModel {
 
@@ -36,19 +38,7 @@ class NpcModel extends CreatureModel {
     }
 
     fetchAiType() {
-        const value = this.model.ai
-            ?? this.model.AI
-            ?? this.model.aiType
-            ?? this.model.template?.ai
-            ?? this.model.template?.AI
-            ?? this.model.template?.aiType;
-        if (value === undefined || value === null) return null;
-
-        const normalized = String(value).trim().toLowerCase();
-        if (['corpse', 'healer'].includes(normalized)) return 'balanced';
-        return ['fighter', 'mage', 'balanced', 'archer'].includes(normalized)
-            ? normalized
-            : null;
+        return NpcCombatChoice.aiTypeOfModel(this.model);
     }
 
     fetchHostile() {
@@ -92,7 +82,7 @@ class NpcModel extends CreatureModel {
     }
 
     fetchUndead() {
-        return this.model.undead === true;
+        return NpcTraits.isUndead(this.model);
     }
 
     fetchRace() {
@@ -170,11 +160,7 @@ class NpcModel extends CreatureModel {
     // Monsters, Bosses, summons/pets, and the town guards that engage them
     // stay killable.
     fetchIsKillable() {
-        // NPC models without a template kind are lightweight/test doubles;
-        // only real templates are subject to the immortality rule.
-        const kind = String(this.model.kind || '');
-        if (!kind) return true;
-        if (['Monster', 'Boss', 'Summon'].includes(kind)) return true;
+        if (['Monster', 'Boss', 'Summon'].includes(this.model.kind)) return true;
         if (this.fetchAttackable() || this.fetchIsSummon() || this.fetchIsPet()) return true;
         return invoke('GameServer/Npc/TownGuard').isTownGuard(this);
     }

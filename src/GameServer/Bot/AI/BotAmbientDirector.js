@@ -144,7 +144,7 @@ function refresh(session, now = Date.now()) {
             summary: `${actorName(session)} mood=${mood.mood} intent=${mood.intent}`,
             dedupeKey: `mood:${mood.mood}`,
             meta: { mood: mood.mood, intent: mood.intent, reason: mood.reason }
-        }).catch(() => {});
+        });
     }
     return session.ambientState;
 }
@@ -236,7 +236,7 @@ function recordSceneEvent(session, scene, eventType, reason = '') {
             participants: scene.participants,
             reason: clean(reason, 80)
         }
-    }).catch(() => {});
+    });
 }
 
 function start(initiator, responder, now = Date.now()) {
@@ -279,12 +279,6 @@ function finish(sceneOrSession, reason = 'completed', now = Date.now()) {
     participants.forEach((session) => {
         if (session.ambientScene === scene) session.ambientScene = null;
         session.ambientLastSceneAt = Number(session.ambientLastSceneAt || scene.startedAt || now);
-        session.lastAmbientScene = {
-            id: scene.id,
-            topic: scene.topic,
-            at: now,
-            reason: clean(reason, 80)
-        };
         recordSceneEvent(session, scene, 'ambient_scene_finished', reason);
         refresh(session, now);
     });

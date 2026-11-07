@@ -36,8 +36,7 @@ async function main() {
             if (p.stats?.warOperation || members.length !== p.memberIds.length || members.some(s =>
                 s.phase !== 'cold' || s.stats?.travel || s.stats?.tradeMeeting || s.stats?.pvpEncounter
                 || [a.id, b.id].includes(Clans.clanOfMember(s.characterId)?.id))) continue;
-            const preparedParty = Parties.prepareCommit({ ...p, status: 'dissolved', memberIds: [],
-                stats: { ...p.stats, dissolvedReason: 'fixture_session_completion' } });
+            const preparedParty = Parties.prepareCommit({ ...p, status: 'dissolved', memberIds: [] });
             const prepared = members.map(s => Life.preparePartyReview(s, Lifecycle.releaseMember(s, at, 'party_session_rotation', p.stats?.objective)));
             const ended = await DB.commitBackgroundPartyMembership({ party: preparedParty.row, members: prepared,
                 review: true, preserveClanOperations: true, expectedPartyRevision: p.revision });

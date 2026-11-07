@@ -1,5 +1,7 @@
+const FailureLog = require('../../../FailureLog');
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
+const SpotProfiles   = invoke('GameServer/Bot/Population/SpotProfiles');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
@@ -124,14 +126,13 @@ function candidateSpots(status) {
     let indexed;
     try {
         indexed = SpotService.ensureIndexed();
-    } catch (_) {
-        // Lightweight chat fixtures and startup windows may not have the
-        // world spawn catalog loaded yet.  An empty candidate list is safer
-        // than making the whole dialogue turn fail.
+    } catch (error) {
+        // An empty candidate list is safer than making the whole dialogue turn fail.
+        FailureLog.note('ai.chat_spots', error);
         return [];
     }
 
-    return indexed
+    return SpotProfiles.spotsNearLevel(indexed, status.level)
         .map((spot) => ({
             id: spot.id,
             name: spot.name,
@@ -141,7 +142,6 @@ function candidateSpots(status) {
             distance: Math.round(SpotService.distance2d(status.loc, spot.center))
         }))
         .filter((spot) => spot.density >= 3)
-        .filter((spot) => spot.minLevel <= status.level + 4 && spot.maxLevel >= status.level - 4)
         .sort((a, b) => {
             if (a.distance !== b.distance) return a.distance - b.distance;
             return b.density - a.density;
@@ -568,7 +568,6 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
             if (['say', 'none'].includes(validated.action)) return { applied: false, reason: validated.reason,
                 playerVisibleReply: validated.reply, policyDecision: validated };
             const result = await BotAgentTools.execute(session, validated, visiblePlayers, { ...context, deferReply: true });
-            BotAgentTools.remember(session, validated, result, cfg.model);
             return { ...result, executedDecision: validated };
         }
     });
@@ -774,7 +773,6 @@ async function applyDecision(session, decision, visiblePlayers, requestContext) 
     let result = decision.mutation?.result || await BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     if (!dialogueAlive(session, requestContext)) return { ...result, replyDelivered: false, playerVisibleReply: null };
     if (decision.action === 'none') return { ...result, replyDelivered: false, playerVisibleReply: null };
-    BotAgentTools.remember(session, decision, result, config().model);
     const playerSession = requestContext?.playerSession;
     let playerVisibleReply = null;
     if (result.applied) {
@@ -861,7 +859,7 @@ function recordInferenceEvent(session, event, result, requestContext = null, ext
             },
             ...extra
         }
-    }).catch(() => {});
+    });
 }
 
 function fallbackReply(session, requestContext, outcome, persistMetadata = {}) {
@@ -1095,19 +1093,13 @@ const BotBrain = {
                 async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
                 'chain'
             ).catch(() => {});
-            session.lastBrainBudget = {
-                ...BotInferenceBudget.status(session),
-                deniedReason: admission.reason,
-                retryAfterMs: admission.retryAfterMs,
-                at: Date.now()
-            };
             BotEventJournal.record({
                 botId: bot.fetchId?.(),
                 eventType: 'llm_budget',
                 summary: `${bot.fetchName?.() || 'bot'} inference denied: ${admission.reason}`,
                 dedupeKey: `deny:${admission.reason}`,
                 meta: { reason: admission.reason, retryAfterMs: admission.retryAfterMs }
-            }).catch(() => {});
+            });
             debugSkip(session, cfg, admission.reason);
             fallbackReply(session, requestContext, admission.reason);
             return true;
@@ -1180,7 +1172,6 @@ const BotBrain = {
                     rounds: providerResult?.rounds || 1
                 }
             })).catch(() => {});
-            session.lastBrainBudget = BotInferenceBudget.status(session);
             session.brainInFlight = false;
             drainQueuedTurns(session);
         };

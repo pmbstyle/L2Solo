@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('./helpers/databaseIsolation');
 require('../src/Global');
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 invoke('GameServer/DataCache').init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
@@ -12,6 +14,9 @@ const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/
 const { LIMITS } = require('../src/GameServer/Bot/Population/RaidSearchCounters');
 const fixture = require('./fixtures/raid_adjacent_cohort.json');
 const at = fixture.at, ids = roster => roster.map(s => s.characterId);
+// Max HP comes from the class template (T109), far over this boss's bar at CON 43; CON 23 puts the
+// tank just under it, so only the adjacent support's HP buff carries it over.
+fixture.members.find(row => row.characterId === fixture.original[0]).captured.base.con = 23;
 const pool = fixture.members.map(row => ({ ...row, accountName: `bot_${row.characterId}`, phase: 'cold', party: {}, updatedAt: at,
     stats: { ...row.stats, coldCombat: { ...row.captured,
         skills: Combat.skillSnapshotsFromRecords(row.skills.map(([selfId, level]) => ({ selfId, level }))) } },

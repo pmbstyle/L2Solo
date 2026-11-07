@@ -207,7 +207,7 @@ function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
         config.diagnostics = { build: /^[0-9a-f]{40}$/.test(build) ? build : 'unknown',
             world: worldToken.slice(0, 96), run: require('node:crypto').randomUUID(),
             rate: String(process.env.L2NODE_PROGRESSION_RATE || 'config').slice(0, 16),
-            config: { population: PopulationConfig.maxPlayingPopulation, honestTravel: PopulationConfig.coldHonestTravel,
+            config: { population: PopulationConfig.maxPlayingPopulation,
                 staticShotsDisabled: PopulationConfig.staticShotsDisabled, workerHeapMb: PopulationConfig.coldWorkerHeapMb } };
     }
     counters.upTo = 0;

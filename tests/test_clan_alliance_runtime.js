@@ -247,6 +247,7 @@ async function main() {
     mocks['GameServer/World/ArenaDuelService'] = { onPlayerDeath: () => false };
     // A bot's death price only; the player's death here never reads it.
     mocks['GameServer/Bot/Economy/EconomyContext'] = {};
+    mocks['GameServer/Bot/Economy/EconomicValuation'] = {};
     mocks['GameServer/Network/Response'].die = id => ({ deadId: id });
     mocks['GameServer/Actor/Generics/Die'] = load('src/GameServer/Actor/Generics/Die.js');
     const deathPackets = [];

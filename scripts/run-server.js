@@ -2,6 +2,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const { ensureGeodata, releaseGeodataUsage, transferGeodataUsage } = require('./geodata-bootstrap');
 
 const rootDir = path.resolve(__dirname, '..');
@@ -41,6 +42,10 @@ async function startServer(directory) {
     });
 
     const child = serverChild;
+    child.on('message', message => {
+        if (['launcher:population', 'launcher:listening', 'launcher:initialized'].includes(message?.type)
+            && process.connected && !shuttingDown) process.send(message, () => {});
+    });
     child.on('exit', (code, signal) => {
         releaseGeodataUsage(geodataUsage, child.pid);
         serverChild = null;
@@ -59,6 +64,9 @@ async function startServer(directory) {
 }
 
 async function main() {
+    const transaction = path.join(rootDir, '.l2solo/transaction.json');
+    if (fs.existsSync(transaction) && JSON.parse(fs.readFileSync(transaction, 'utf8')).phase !== 'committed'
+        && process.env.L2NODE_UPDATE_TRIAL !== '1') throw new Error('Finish verifying this server update in the desktop launcher before starting it directly.');
     const geodata = await ensureGeodata({ logger: log, acquireUsage: true });
     geodataUsage = geodata.usageFile;
     await startServer(geodata.directory);
@@ -67,8 +75,14 @@ async function main() {
 process.on('exit', () => releaseGeodataUsage(geodataUsage));
 process.on('SIGINT', () => stopServer('SIGINT'));
 process.on('SIGTERM', () => stopServer('SIGTERM'));
+// A desktop launcher can disappear without sending a signal (crash/OS quit).
+// Retain the normal database drain rather than orphaning the server tree.
+process.on('disconnect', () => stopServer('SIGTERM'));
 process.on('message', (message) => {
     if (message?.type === 'shutdown') stopServer(message.reason || 'launcher_stop');
+    if (message?.type === 'launcher:update-commit' && process.env.L2NODE_UPDATE_TRIAL === '1' && serverChild?.connected && !shuttingDown) {
+        serverChild.send(message, () => {});
+    }
 });
 main().catch((error) => {
     console.error(`Startup    :: geodata bootstrap failed: ${error.message}`);

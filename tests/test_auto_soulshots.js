@@ -165,6 +165,41 @@ const botCasterActor = { fetchClassId: () => 10, backpack: botCasterBackpack };
 assert.strictEqual(ShotStock.enableAutoShot(botCasterActor, { stock: { itemId: 2509, usePerHour: 100 } }).selfId, 2509, 'a caster bot should enable its compatible Spiritshot without a client hotbar request');
 assert.strictEqual(botCasterBackpack.fetchAutoSpiritshot(botCasterActor).selfId, 2509, 'the spell combat path should see the bot-enabled Spiritshot');
 
+// One shot choice hot and cold: a level-50 Sorcerer holding Blessed
+// Spiritshot and no Spiritshot loads the blessed ones the worker's stock
+// names (planForState over the same bag), and a spell charges them.
+const blessedBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+blessedBackpack.items = [
+    item(9, { selfId: 5, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1 }),
+    item(10, { selfId: 3947, kind: 'Other.Shot', amount: 500 })
+];
+const blessedActor = { fetchClassId: () => 12, fetchLevel: () => 50, fetchId: () => 2000004, isDead: () => false,
+    fetchLocX: () => 100, fetchLocY: () => 200, fetchLocZ: () => -300, backpack: blessedBackpack, session: { botSession: true } };
+// A player with the same bag keeps its class's Spiritshot: the login top-up
+// (EnterWorld -> ensureActorStock) never hands it free Blessed Spiritshot.
+const playerCaster = { ...blessedActor, session: { accountId: 'player' } };
+assert.strictEqual(ShotStock.planForActor(playerCaster).selfId, ShotStock.planForActorKind('spiritshot', playerCaster).selfId,
+    'a player caster is topped up with Spiritshot, not the Blessed Spiritshot it holds');
+const workerPlan = ShotStock.planForState({ level: 50, stats: { classId: 12 },
+    inventory: { 5: { selfId: 5, equipped: true, slot: 7 }, 3947: { selfId: 3947, amount: 500 } } });
+assert.strictEqual(workerPlan.selfId, 3947, 'the cold choice: the held Blessed Spiritshot');
+assert.strictEqual(ShotStock.enableAutoShot(blessedActor, { stock: { itemId: workerPlan.selfId, ownedUsePerHour: 100,
+    beginnerUsePerHour: 100, paidUsePerHour: 100 } }).selfId, 3947, 'the hot plan enables the worker\'s blessed shot');
+assert.deepStrictEqual([...blessedActor.autoSoulshots], [3947], 'only the Blessed Spiritshot is enabled');
+const blessedAttack = new Attack();
+blessedAttack.chargeShotForSkill({ actor: blessedActor, dataSendToMe() {}, dataSendToMeAndOthers() {} }, blessedActor, true,
+    { fetchSsBoost: () => 0 });
+assert.strictEqual(blessedBackpack.fetchItemFromSelfId(3947).fetchAmount(), 499, 'a spell charges one Blessed Spiritshot');
+assert.strictEqual(blessedActor.blessedSpiritshotLoaded, true, 'the charge carries the blessed multiplier');
+blessedAttack.destructor();
+// The Blessed Spiritshot runs out with Spiritshot still in the bag: the next
+// auto-shot read sees the bag changed and re-plans (the enabled Spiritshot
+// then follows the bot's stock policy).
+blessedBackpack.items = [blessedBackpack.items[0], item(11, { selfId: 2509, kind: 'Other.Shot', amount: 100 })];
+assert.strictEqual(ShotStock.planForActor(blessedActor).selfId, 2509, 'the plan follows the bag to Spiritshot');
+ShotStock.refreshAutoShot(blessedActor);
+assert(!blessedActor.autoSoulshots.has(3947), 'the empty Blessed Spiritshot is no longer the enabled shot');
+
 const attack = new Attack();
 let consumeCalls = 0;
 const combatActor = {

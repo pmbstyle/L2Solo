@@ -3,9 +3,11 @@
 // Facts, reusable calculations and a new character decision are different
 // things. Only these compact boundaries belong to the saved decision; graphs
 // stay in EconomyContext's existing bounded working cache.
+const FailureLog = require('../../../FailureLog');
 const { fnv1a32 } = require('../Fnv1a');
 const { createHash } = require('node:crypto');
 const PurchaseFunding = require('./PurchaseFunding');
+const Packet = require('./StatsPacket');
 const Karma = require('../../Karma');
 const Warehouse = require('./PersonalWarehouseIndex');
 const ClanSupply = require('../../Clan/ClanSupplyPolicy');
@@ -13,6 +15,9 @@ const Providers = require('./WishProviders');
 const Floor = require('../Population/SurvivalFloor');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
 const Diagnostics = require('./EconomyDiagnostics');
+const Reaction = require('./Reaction');
+const { FIELD_ACTIVITIES } = Reaction;
+const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -57,7 +62,10 @@ function observationBaselineValid(baseline, rows) {
 }
 // The decision sections in the order of their wishDirty bit (1 << at): one
 // table for the raise (DecisionEvents) and the names its readers count.
-const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations']);
+// observation: the bot's own hunt samples moved past its error (Reaction's
+// observation link, beside its sections): an event bit read by the links that
+// read the sample values (the earning spot search), no piece of its own.
+const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations', 'observation']);
 function sectionBit(name) {
     if (name === 'funding') name = 'money';
     const at = SECTIONS.indexOf(name);
@@ -71,10 +79,16 @@ function sectionMask(names) {
 // decision point a piece is reused while none of its sections is raised
 // (EconomyContext.forState's mask), rebuilt when one is.
 // foundation: hunt income, risk, death and kit hours, stock targets, the
-// survival reserve (kit, profile, consumables, the observation; not money).
+// survival reserve (kit, profile, consumables, the observation). Of money it
+// reads the wallet only for the rest bottles' cap, read anew on a kept
+// foundation (EconomyContext.foundationFromPlan), and the money weight of its
+// income search, which the held earning spot follows itself (incomeMoved:
+// the weights its answer stands over).
 // Of the relations fact it reads only the party role (its spot value table
 // and hunt income); relations is in its list for it, so a party join
 // rebuilds it (a deviation from the spec's four sections).
+// The earning spot search inside it decides on its own key (LINK_INPUTS
+// incomeSearch, EconomyContext.incomeMoved), not on these sections.
 // sources: the source walk (worn gear and level; party, clan, role;
 // exclusions, risk, hunt rows; the plan, persona, craft station, trades;
 // the hour adena and the money mark). weighing: focus, step and money queue.
@@ -85,35 +99,193 @@ function sectionMask(names) {
 const FOUNDATION = sectionMask(['build', 'combat', 'supply', 'occupation', 'relations']);
 const COMPUTED = Object.freeze({
     foundation: FOUNDATION,
-    sources: sectionMask(['build', 'relations', 'occupation', 'sources', 'money']),
-    weighing: sectionMask(SECTIONS),
+    // weighing: every piece (a refusal that names no section); the
+    // observation bit is an event, not a piece: the earning spot search hears
+    // what such a refusal moved through its own key.
+    weighing: sectionMask(SECTIONS.filter(name => name !== 'observation')),
     route: sectionMask(['build', 'relations', 'occupation', 'sources']),
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
     // level and kit matchup; its other reads are checked beside it.
     sourceGround: sectionMask(['build']),
-    // The crafter's workshop (its best recipe and income per hour, the
-    // occupation planner's answer), kept with the held build: the planner
-    // reads the money packet (stats.money: hour adena, trip value, craft
-    // labour), which the foundation writes every build, and the kept
-    // recipe's market (its watch rows raise money).
-    workshop: FOUNDATION | sectionMask(['money'])
+    // What makes a build weigh every gear candidate whatever the moment: the
+    // bot's kit, what gear gives it, a death (Reaction.quiet).
+    gearReview: sectionMask(['build', 'benefits', 'combat'])
 });
-// The one table of what a moved fact touches, for near and far bots alike
-// (factEvents over factsOf). build: the kit (class, level, gear, hennas,
-// skills, craft); bag: the bag full or its weight level, which changes the
-// loot worth taking.
-const FACT_SECTIONS = Object.freeze({
-    build: Object.freeze(['build', 'benefits', 'sources']),
-    recipes: Object.freeze(['build', 'benefits', 'sources']),
-    dead: Object.freeze(['combat']),
-    relations: Object.freeze(['relations']),
-    funding: Object.freeze(['money']),
-    occupation: Object.freeze(['occupation']),
-    riskDeaths: Object.freeze(['combat', 'occupation']),
-    supply: Object.freeze(['supply']),
-    bag: Object.freeze(['supply', 'sources']),
-    stores: Object.freeze(['supply', 'sources'])
+// The decision links: the inputs
+// each link reads, by inputVersions name. The earning spot search and the
+// workshop decide on them (EconomyContext.incomeMoved, workshopKeyHolds); the
+// route rows are measured only (EconomyContext's link shadow, developerDiagnostics).
+// discrete: a version compared exactly; continuous: a value compared inside
+// the answer's own range, else beyond the bot's own error (movedInput);
+// events: what the link reads with no version, standing on an event bit or on
+// nothing (a window).
+const linkOf = (discrete, continuous, events) => Object.freeze({ discrete: Object.freeze(discrete),
+    continuous: Object.freeze(continuous), events: Object.freeze(events) });
+const LINK_INPUTS = Object.freeze({
+    // The earning spot search (EquipmentIncomeRoute.select, called by
+    // EconomyContext.incomeRouteFor and holdRead; its route feeds foundation).
+    incomeSearch: linkOf([
+        'kit.class', // select: SpotValueTable.roleFor (the table role) and Match.stateProfiles
+        'kit.level', // select: state.level (the band, minGap, spotList.ids, avgLevel - level), the matchup
+        'kit.worn', 'kit.hennas', 'kit.capture', // select: Match.stateProfiles -> soloSpotUpperBound, spotAllowedReaderFor
+        'kit.skills', // spotList: ColdKillRewards.spoilerFor(skillsFor), the spoil skill level; the matchup
+        'party', // select: the state.party.partyId gate
+        'mode', // select: the caller's mode gate (party, duo); maxChecks stays the caller's option
+        'adventurer', // select: PersonalGearProgression.adventurer gate
+        'economic', // select: economicHunt opens the search
+        'required', // select: required (GearProgression.assess in EconomyContext.incomeRouteFor)
+        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours); the arrival at the answer's spot replays (EquipmentIncomeRoute.arrived)
+        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates; a new sampled spot moves every table row (calibration) and the hunt's death hours: a search
+        'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates (its exclusionVersion, a mark's end read at each check)
+        'recovery', // select: spotAllowedReaderFor -> safetyOptions' maxTargetLevel (the death recovery's level penalty)
+        'bagShot', // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
+        'spawns' // SpotValueTable rows (value, rankedSpotIds, best): the spot catalog period, rewards, rates (its revision)
+    ], [
+        'weight', // SpotEconomics.create: moneyWeight, inside the weights the answer stands over (search's weights)
+        'hour' // SpotEconomics.create: the packet's own hour where the band has no money hour (search's weights.hour)
+    ], [
+        // What the answer stands on beside these (EquipmentIncomeRoute.standsMoved, read where the hold is):
+        'observation', // SpotEconomics.create: the bot's own sample values (the observation bit, beyond its own error)
+        'prices', // spotList.ids and SpotEconomics: the shot and potion prices (the reader's), inside the hull of the ranges the crowd key replays over (search's stands.prices)
+        'frustration', // SpotEconomics riskWeight: inside the range of it the answer stands over (search's stands.risk)
+        'crowd' // SpotEconomics spotHunters, SpotProfiles.roomFor: the crowd key's replay over its candidates' hunters (the pick; its earner and numbers at the read: liveRoute)
+    ]),
+    // The crafter's workshop: the occupation planner's answer
+    // (ColdOccupationSources.prepare over the planner capture,
+    // ColdSimulationWorker occupationPlanner.capture), kept by
+    // EconomyContext.heldWorkshopOf.
+    workshop: linkOf([
+        'kit.class', 'kit.level', // mpPerHour (seated recovery by class and level); recipe eligibility
+        'craft', // prepare: CraftShopService.craftLevelFor; capture: stats.workshop.entries (knownRecipes); the station
+        'crafter', // the worker asks a service crafter only (noCrafterWorkshop)
+        'recipes', // capture: RecipeBookCodec.unpack(recipeBook)
+        'maxMp', // craftLabour: state.vitals.maxMp (a cold command's MP cap)
+        'route', // prepare: EconomicTrip.key against the captured routeKey / routeRows (the karma flip among them)
+        'income', // prepare: Packet.hourAdena, the earning the held earning spot's answer published (its spot and hour)
+        'ownLines', // a crafter: its own sell lines (WealthCraftDecision output stock and prices, the shot exits'
+        // posted count); any other bot: whether one stands (noCrafterWorkshop asks the planner's feasibility)
+        'supply' // a shot crafter: the bag's shot and potion presence (its product's own stock)
+    ], [], [
+        'money', // the money bit: the wallet (the planner's funding), the packet's money price and survival reserve, the market watch
+        'observation', // the observation bit: the bot's own samples, which move its hour before the income answer does
+        'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount): heard in town (the money bit)
+        'reservations' // prepare: reservations(state): no event (the next ask)
+    ]),
+    // The town route table (EconomicTrip.prepare, keyed by EconomicTrip.key =
+    // routeInputs): one input per routeInputs field.
+    routeRows: linkOf([
+        'route.activity', // routeInputs: shopping, a trip to a visit, or neither
+        'route.region', // routeInputs: currentRegion on a visit
+        'route.loc', // routeInputs: the bot's point where no trip end or return point stands for it
+        'route.scroll', // routeInputs: TripPayment.hasColdScroll
+        'route.karma', // routeInputs: Karma.closesTowns
+        'route.return', // routeInputs: stats.marketReturn.loc
+        'route.travel' // routeInputs: the accepted trip's town and end
+    ], [], [])
 });
+// What the earning spot search reads of the bag (LINK_INPUTS incomeSearch
+// bagShot): the shot its consumable prices name
+// (BotHuntEfficiency.consumablePrices: a spiritshot class's blessed or plain
+// one by what it holds) and the kind of shot the fight loads
+// (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply: none once the
+// charges end; none without a bag, as stateProfiles).
+function shotInputs(state, timestamp) {
+    return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
+        ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(CombatProfile.shotSupply(state, timestamp)) : 0];
+}
+// lazy: ShotCraftPolicy loads the craft decision, which reads this module's readers.
+let shotRecipes = null;
+const shotRecipe = id => (shotRecipes ||= new Set(invoke('GameServer/Bot/Economy/ShotCraftPolicy').SHOT_RECIPE_IDS)).has(Number(id));
+const pointOf = loc => loc ? [Number(loc.locX) || 0, Number(loc.locY) || 0, Number(loc.locZ) || 0] : null;
+// One reader per link input over one call's reads (r: the view, the state,
+// the options; what several inputs share is read once, r.once).
+const VERSIONS = Object.freeze({
+    'kit.class': r => hash([r.kits[0], r.kits[1]]), 'kit.level': r => r.kits[2], 'kit.worn': r => r.kits[3],
+    'kit.hennas': r => r.kits[4], 'kit.skills': r => r.kits[5], 'kit.capture': r => r.kits[6],
+    craft: r => hash([r.view.craftLevel, r.view.craftStationId ?? null, r.view.workshop?.entries ?? null]),
+    crafter: r => r.once('crafter', () => require('./CraftEligibility').isServiceCrafter(r.state)),
+    recipes: r => r.view.recipes ? hash(r.view.recipes) : null,
+    party: r => hash([r.view.party?.partyId, r.view.party?.role]),
+    mode: r => ['party', 'duo'].includes(r.mode),
+    spot: r => {
+        const spot = r.spots ? invoke('GameServer/Bot/AI/SpotIndex').spotById(r.spots, r.state.spotId) : null;
+        return hash([r.state.spotId ?? null, spot?.center ? null : pointOf(r.state.loc)]);
+    },
+    samples: r => hash([...new Set(Hunt.sampledRows(r.state, r.timestamp).map(row => String(row.spotId)))].sort()),
+    exclusions: r => invoke('GameServer/Bot/Population/SpotRiskPolicy').exclusionVersion(r.state).revision,
+    // What the search's matchup reads of the recovery (its solo safety, as select asks it).
+    recovery: r => invoke('GameServer/Bot/AI/LevelingRoutes').safetyOptions(r.state, { mode: 'solo' }).maxTargetLevel ?? null,
+    bagShot: r => hash(shotInputs(r.state, r.timestamp)),
+    // The table's revision: a counter of this thread (a held answer never leaves it).
+    spawns: () => invoke('GameServer/Bot/AI/SpotValueTable').revision(),
+    economic: r => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(r.state),
+    adventurer: r => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(r.state),
+    // The caller's own assessment of this state when it holds one (one per read: incomeRouteFor), else assessed here.
+    required: r => !!(r.required ?? invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required),
+    weight: r => invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(r.state),
+    hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, maxMp: r => Number(r.state.vitals?.maxMp) || 0,
+    income: r => r.income ? hash(r.income) : null,
+    ownLines: r => {
+        if (!r.board) return null;
+        const lines = r.board.ownerLines(Number(r.state.characterId));
+        if (!VERSIONS.crafter(r)) return Number(lines.length > 0);
+        return hash(lines.filter(line => Number(line.storeType ?? 1) === 1 && line.custodyPolicy !== 1)
+            .map(line => [Number(line.selfId), Number(line.count), Number(line.price)]).sort((a, b) => a[0] - b[0] || a[2] - b[2] || a[1] - b[1]));
+    },
+    supply: r => r.view.recipes?.some(shotRecipe) ? hash(r.view.supply ?? null) : null,
+    ...Object.fromEntries(['route', 'route.activity', 'route.region', 'route.loc', 'route.scroll', 'route.karma', 'route.return',
+        'route.travel'].map(name => [name, r => r.once('route', () => routeVersions(r.state))[name]]))
+});
+// Every link input's version on a state, by LINK_INPUTS name (link: only the
+// discrete and continuous ones of that link, or of each of a list): a digest
+// of the input's value (no counter, no state identity), continuous ones the
+// value itself. view: the state's stateView (the held verdict's reads) or
+// linkView (no supply); spots: the catalogue the search reads (a spot without
+// a center reads the bot's point); board: the board mirror (ownLines; null
+// without one); mode: the caller's; income: the earning spot answer the money
+// packet carries ([spot, earning], EconomyContext.incomeOutput); required:
+// PersonalGearProgression.assess(state).required when the caller holds it.
+function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, required = null, link = null } = {}) {
+    const memo = new Map();
+    const r = { view, state, timestamp, spots, board, mode, income, required, stats: state.stats || {}, kits: view.kitHashes || [],
+        once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
+    const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
+        [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];
+    const out = {};
+    for (const name of names) out[name] = VERSIONS[name](r);
+    return out;
+}
+// The part of stateView the link inputs read, for a reader with no verdict
+// (EconomyContext.holdRead from the basics or the party comparison).
+function linkView(state, recipes = null) {
+    const view = kitView(state);
+    view.party = partyIdOf(state) ? state.party : null;
+    view.recipes = recipes;
+    return view;
+}
+// The route table's inputs (EconomicTrip.routeInputs): the whole key (route)
+// and one version per field (LINK_INPUTS routeRows).
+function routeVersions(state) {
+    const route = invoke('GameServer/Bot/Economy/EconomicTrip').routeInputs(state);
+    return { route: hash(route), 'route.activity': route.activity, 'route.region': route.currentRegion, 'route.loc': hash(route.loc),
+        'route.scroll': route.inventory[736].amount, 'route.karma': route.stats.karma,
+        'route.return': hash(route.stats.marketReturn), 'route.travel': hash(route.stats.travel) };
+}
+// The first input of a link that moved between two inputVersions, '' when
+// none: a discrete one by its version, a continuous one outside the answer's
+// own range where it carries one (bounds: name -> [low, high], as the held
+// earning spot's weights), else beyond the relative error (the bot's own, as
+// the observation event reads it).
+function movedInput(link, before, now, error = 0, bounds = null) {
+    const inputs = LINK_INPUTS[link];
+    for (const name of inputs.discrete) if (before[name] !== now[name]) return name;
+    for (const name of inputs.continuous) {
+        const was = Number(before[name]), is = Number(now[name]), range = bounds?.[name];
+        if (range ? !(is >= range[0] && is <= range[1])
+            : !Object.is(was, is) && !(Math.abs(is - was) <= Math.abs(was) * error)) return name;
+    }
+    return '';
+}
 // The names of the sections raised in wishDirty bits, in table order.
 function sectionNames(bits) {
     const names = [];
@@ -144,9 +316,9 @@ function kit(state) {
 function fundingMark(state, escrow = 0) {
     const packet = state.stats?.money;
     if (!Array.isArray(packet)) return 0;
-    const wallet = PurchaseFunding.budget(state, escrow) - positive(packet[2]);
+    const wallet = PurchaseFunding.budget(state, escrow) - positive(Packet.survivalReserve(packet));
     const funded = [];
-    for (let at = 5; at < packet.length; at += 3) funded.push(wallet >= positive(packet[at]));
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) funded.push(wallet >= positive(Packet.fundedCumulative(packet, row)));
     // Items or adena on their way from the board are a board-side money fact.
     return hash([wallet >= 0, ...funded, PurchaseFunding.moneyReached(state, escrow), state.incomingPending === true]);
 }
@@ -166,10 +338,26 @@ function moneyChanged(state, baseline, escrow, allowSoft) {
     if (physicalWallet < Number(baseline.cashBounds?.[0] ?? -1)
         || budgetTracked && decisionBudget < Number(baseline.budgetBounds[0])
         || baseline.funding !== fundingMark(state, budgetTracked ? escrow : 0)) return true;
-    return allowSoft && (reachesUpper(physicalWallet, baseline.cashBounds)
-        || budgetTracked && reachesUpper(decisionBudget, baseline.budgetBounds)
+    return allowSoft && (moneyBound(state, baseline, escrow)
         || Number(baseline.moneyError) >= 0
             && Math.abs(decisionBudget - baseline.wallet) > baseline.moneyError);
+}
+// The wallet or the budget reached the decision's next wish (its upper bound):
+// the soft money event without the drift. A solo hunt window ends here
+// (ColdSoloWindow); the drift waits for the soft point at its end.
+function moneyBound(state, baseline, escrow = 0) {
+    if (!baseline) return false;
+    return reachesUpper(positive(state.adena), baseline.cashBounds) || Array.isArray(baseline.budgetBounds)
+        && reachesUpper(PurchaseFunding.budget(state, escrow), baseline.budgetBounds);
+}
+// At work a bot watches what its goal costs (decision 11-02), not each price its
+// last review read: the rest and the town read those.
+function goalReached(state, baseline, escrow = 0) {
+    return baseline?.goalBudget > 0 && PurchaseFunding.budget(state, escrow) >= baseline.goalBudget;
+}
+// The wallet reached what the bot watches where it stands.
+function moneyReached(state, baseline, escrow = 0) {
+    return Reaction.hears('money', Reaction.place(state)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
 }
 function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
     return moneyChanged(state, baseline, escrow, true);
@@ -192,7 +380,7 @@ function baselineIdentity(baseline) {
             baseline = { ...baseline, sample: rows };
         }
         return createHash('sha256').update(JSON.stringify(canonical(baseline))).digest('hex');
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:baseline_identity', error); return null; }
 }
 function carrySectionBaseline(previous, current, updated) {
     if (!previous || !Number.isFinite(previous.at) || current.at < previous.at) return current;
@@ -203,7 +391,7 @@ function carrySectionBaseline(previous, current, updated) {
             else delete current[name];
         }
     };
-    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'funding', 'moneyError']);
+    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'goalBudget', 'funding', 'moneyError']);
     carry(sectionBit('occupation') | sectionBit('build'), ['sample', 'share', 'incomeError', 'frustration', 'bond']);
     carry(sectionBit('money') | sectionBit('sources') | sectionBit('supply'), ['bagValue']);
     return current;
@@ -286,6 +474,7 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
     const share = Hunt.onSpotShare(state);
     return { at: Number(context.timestamp), wallet, cashBounds, funding: fundingMark(actual, escrow), moneyError,
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
+        ...(context.goalBudget > wallet ? { goalBudget: context.goalBudget } : {}),
         bagValue: positive(context.choiceBagValue),
         ...(facts || semanticFacts(state)), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
@@ -298,28 +487,28 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
 // baseline: the decision's (stats.wishSections). input: { board (the board
 // mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
 // reader of the bot's memory rows, called only when the bond is compared),
-// timestamp (the step's) }.
-function softEvents(state, baseline, input) {
+// timestamp (the step's) }. before: the state the step left (arriving in town).
+function softEvents(state, baseline, input, before = null) {
     if (!baseline) return NONE;
     let sections = NONE;
     // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
     // the raises by source (the observation share per far step is read live).
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('soft', 'step', 'far');
+    const where = Reaction.place(state, before);
     const add = source => {
-        const names = SOFT_SECTIONS[source];
+        const names = Reaction.raise([source], where);
         sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
-    if (meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    if (Reaction.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    else if (goalReached(state, baseline, input.buyOrderEscrow)) add('goal');
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
-    if (observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
+    if (Reaction.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
     return sections;
 }
 const NONE = Object.freeze([]);
-const SOFT_SECTIONS = Object.freeze({ money: Object.freeze(['money']),
-    observation: Object.freeze(['occupation', 'benefits', 'sources']), market: Object.freeze(['sources', 'money']) });
 // The watch rows against the board mirror, one head read per row: a sell line
 // (SELL) below the reference by more than the error, or a buy line (BUY)
 // above it by more than the error. Rows of another shape
@@ -354,26 +543,22 @@ function relationTargetIds(state, memory = null) {
 // role are the fact, its leaderId is not), clanId,
 // relationTargets ([friend, enemy] ids; null: read here from memory), activity,
 // spotId, stats.travel (occupationPlanned's shape) and stats.relations (the
-// fallback rows without memory), dead, riskDeaths, supply ([id, present] per
+// fallback rows without memory), dead, riskDeaths, recovery (the death
+// recovery's level penalty, SpotRiskPolicy.recoveryFor), supply ([id, present] per
 // stock item), stores (four identities), bagFull, weight (level 0-4).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), recipes: view.recipes ? hash(view.recipes) : null,
-        relations: hash([view.party?.partyId, view.party?.role, view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
+        relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
+        party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
-        dead: view.dead, riskDeaths: view.riskDeaths, supply: hash(view.supply), stores: hash(view.stores),
+        dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
 // The stock items whose presence is the supply fact: the trip's Scroll of
 // Escape (736), the planned shot, the planned healing potion.
 function stockIds(shotPlan, potion) {
     return [736, shotPlan.selfId, potion.selfId];
-}
-// The bot's party id as a string (`bgp_<ts36>_<leaderId>`, `bgp_hot_<uuid>`),
-// '' when it has none (the relations fact's party, the held build's kept
-// projection: EconomyContext).
-function partyIdOf(state) {
-    return String(state.party?.partyId || state.partyId || '');
 }
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
@@ -392,10 +577,12 @@ function stateView(state, recipes = null) {
     view.stats = { travel: stats.travel, relations: stats.relations };
     view.dead = Number(state.activity === 'dead' || Number(state.vitals?.hp) <= 0);
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
+    view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     const shots = ShotStock.planForState(state);
     const potion = HealingPotionStock.purchasePotionFor(state);
     view.supply = stockIds(shots, potion).map(id => [id, positive(state.inventory?.[id]?.amount) > 0]);
     view.stores = storesOf(state);
+    view.warehouse = Warehouse.contentIdentity(state);
     // The bag full: its slot limit (the full-bag sale itself is SurvivalFloor's).
     view.bagFull = Number(bag.slots >= InventoryLimits.forState(state));
     // The kit profile store reads the kit by the hashes this view already holds.
@@ -403,16 +590,19 @@ function stateView(state, recipes = null) {
         CombatProfile.profileFor(state, Date.now(), { kitHashes: view.kitHashes }).maxLoad);
     return view;
 }
-// The tables main keeps about the bot: the clan's material demand, the
-// personal warehouse, the clan supply and whether the clan has a warehouse.
-// owner: { characterId, clanId, stats } (a state is one); into: the array
-// written (the near reader's, updated in place).
-function storesOf(owner, into = new Array(4)) {
-    into[0] = owner.stats?.clanMaterialDemand ?? null; into[1] = Warehouse.contentIdentity(owner);
-    into[2] = ClanSupply.contentIdentity(owner); into[3] = ClanSupply.hasWarehouse(owner);
+// What the bot's clan asks of it and holds for it: the clan's material demand, the clan
+// supply, whether the clan has a warehouse, the clan goal's crystals. The personal
+// warehouse is its own fact: the bot's own doing, read in town (Reaction, warehouse).
+// owner: { characterId, clanId, stats } (a state is one); into: the array written (the
+// near reader's, updated in place).
+function storesOf(owner, into = new Array(3)) {
+    // A far member hears what its clan asks for, not how much is left.
+    const demand = owner.stats?.clanMaterialDemand ?? null, request = Reaction.reactive(owner);
+    into[0] = request && demand ? Object.keys(demand) : demand;
+    into[1] = request ? ClanSupply.requestIdentity(owner) : ClanSupply.contentIdentity(owner); into[2] = ClanSupply.hasWarehouse(owner);
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
-    if (crystals) into[4] = crystals;
-    else into.length = 4;
+    if (crystals) into[3] = crystals;
+    else into.length = 3;
     return into;
 }
 // memory: the bot's interaction memory (the caller's deps.memory), null when
@@ -435,7 +625,9 @@ function isEmptyWishPlan(plan) {
         && plan.next == null && plan.reason === 'wish_focus'
         && Object.keys(plan).every(key => ['status', 'strategy', 'next', 'reason'].includes(key));
 }
-function events(before, after, escrow = 0, leaf = null) {
+// unhuntable: the round found the bot's spot empty of prey (BackgroundResolver,
+// the first such round of a stay), a fact of the round, not of the two states.
+function events(before, after, escrow = 0, leaf = null, unhuntable = false) {
     // Main may replay a validated worker packet that already describes this
     // same round. Compare its actual baselines, not sequence alone; a packet
     // preceding a new death/level/resource event still raises that event.
@@ -447,13 +639,32 @@ function events(before, after, escrow = 0, leaf = null) {
     // fact the baseline lacks reads the state before.
     const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= semanticFacts(before))[key];
     // No memory and no recipe book here: the relations and the recipes the
-    // decision kept stand until the next verdict, which reads both.
-    const current = { ...semanticFacts(after), relations: previousFact('relations'), recipes: previousFact('recipes') };
+    // decision kept stand until the next verdict, which reads both; the party with them.
+    const view = stateView(after);
+    const current = { ...factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
     // leaf: the step's held leaf (the worker's round check): the move it
     // ordered is no event (occupationPlanned). None (main, a step without a
     // plan): every move is an event.
-    return factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
-        || !previous.funding && fundingMark(before) !== fundingMark(after), null, occupationPlanned(after, leaf));
+    const links = [];
+    factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
+        || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
+    if (unhuntable) links.push('unhuntable');
+    const where = Reaction.place(after, before);
+    return Reaction.raise(Reaction.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
+}
+// A need that opened in this step, one raise: one that stays open raises nothing more.
+// now: the step's view of after (stateView), its supply ids read once.
+function needsOpened(before, after, facts, now) {
+    const count = (state, id) => positive(state.inventory?.[id]?.amount);
+    const potionId = now.supply[2][0], floor = Number(Packet.potionSurvivalTarget(after.stats?.stockTargets)) || 0;
+    const ranOut = now.supply.some(([id]) => count(before, id) > 0 && !count(after, id))
+        || count(before, potionId) >= floor && count(after, potionId) < floor;
+    const opened = ranOut ? ['need_supply'] : [];
+    if (facts.includes('bag')) {
+        const was = stateView(before);
+        if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('need_bag');
+    }
+    return opened;
 }
 // The one reading of an occupation against the held leaf (Recompute: own
 // outputs are not inputs): the trip the leaf ordered under way (to its
@@ -464,11 +675,16 @@ function events(before, after, escrow = 0, leaf = null) {
 // (travel.leafSpotId), the arrival keeps the pair leaf spot + ground reached
 // (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
 // while the bot stands on that ground.
-// Death, recall, a party pull, a flight or a yield are none of these and
-// stay events. Read by the held build's verdict and by the far step's round
-// check (factEvents' planned); its field-trip clause is
-// EconomyContext.fieldActivity's.
+// A far bot (Reaction, own_move) owns more: hunting or resting on any ground,
+// and any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
+// pushed-out spot, a party's call), so a pull to another spot or a flight's
+// arrival raises nothing there. Near a player only the leaf's own trip and
+// arrival are; death, recall, a pull, a flight or a yield stay events. Read by
+// the held build's verdict and by the far step's round check (factEvents'
+// planned); its field-trip clause is EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
+    const where = Reaction.place(state);
+    if (ownMove(state, where) && !Reaction.hears('own_move', where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';
     if (state.activity === 'traveling') {
@@ -482,6 +698,14 @@ function occupationPlanned(state, leaf) {
     if (hunt) return leaf.spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
         && (ownSpot(state.spotId, leaf) || standsIn(state, leaf));
     return state.activity === leaf.activity;
+}
+// A trip the bot took itself, out or back, and the ground it reached (the trip's
+// start was its event); a flight, a pushed-out spot or a party's call is the world's.
+const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan']);
+function ownMove(state, where) {
+    if (state.activity !== 'traveling') return Reaction.field(where);
+    const travel = state.stats?.travel;
+    return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);
 }
 function ownSpot(spotId, leaf) {
     return spotId != null && String(spotId) === String(leaf.spotId);
@@ -498,20 +722,27 @@ function standsIn(state, leaf) {
 // ordered (occupationPlanned, the verdict's), its own output, no event.
 function factEvents(previousFact, current, funding = false, facts = null, planned = false) {
     const sections = new Set();
-    const raise = fact => { facts?.push(fact); for (const name of FACT_SECTIONS[fact]) sections.add(name); };
+    const raise = fact => { facts?.push(fact); for (const name of Reaction.sections(fact)) sections.add(name); };
     if (!previousFact('dead') && current.dead) raise('dead');
     if (previousFact('build') !== current.build) raise('build');
     if (previousFact('recipes') !== current.recipes) raise('recipes');
     if (previousFact('relations') !== current.relations) raise('relations');
-    if (funding) { facts?.push('funding'); sections.add('funding'); }
+    if (previousFact('party') !== current.party) raise('party');
+    if (funding) raise('funding');
     // Resting reads as hunting at its spot: a rest where the bot hunted is
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) raise('occupation');
     if (current.riskDeaths > previousFact('riskDeaths')) raise('riskDeaths');
+    // The recovery's level penalty, up (a death, the spot's pressure) or down
+    // (its clean wins, SpotRiskPolicy.recordRecovery). A baseline kept before
+    // the fact was recorded has none to compare.
+    const recovery = previousFact('recovery');
+    if (recovery !== undefined && recovery !== current.recovery) raise('recovery');
     // Physical exhaustion is never hidden by economic uncertainty.
     if (previousFact('supply') !== current.supply) raise('supply');
     if (previousFact('bag') !== current.bag) raise('bag');
     if (previousFact('stores') !== current.stores) raise('stores');
+    if (previousFact('warehouse') !== current.warehouse) raise('warehouse');
     return [...sections];
 }
 // The kit fact each economy build records in its baseline moved between two
@@ -522,5 +753,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal, partyIdOf };
+module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, linkView, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

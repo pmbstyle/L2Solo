@@ -5,13 +5,14 @@
 const Data = invoke('GameServer/DataCache');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const StaticPricing = require('../Economy/StaticMerchantPricing');
+const Packet = require('../Economy/StatsPacket');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
 const { personalOfferAllowed } = require('./PartyAdmission');
 const Price = require('../Economy/PriceDecision');
 const OfferQuery = require('../Economy/OfferQuery');
-const ShotSalePolicy = require('../Economy/ShotSalePolicy');
+const ShotSalePolicy = require('../Economy/ProductionSalePolicy');
 const { QUOTE_DEPTH } = Price;
 const EMPTY = Object.freeze([]);
 let fixedBuy, npcOfferView, mpRates, townByName, townOrdinal, gearByRank;
@@ -43,75 +44,17 @@ function initialise() {
     require('../../Knowledge/RecoveryCatalog').seatedMpRates(Data.classTemplates, Rest, mpRates);
 }
 
+// What a build holds back is the owner's reading, the one the act and the
+// commit read.
 function* reservations(state) {
-    const reserved = invoke('GameServer/Bot/AI/PersonalGearProgression').preparedAmounts(state);
-    const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const plan = Disposition.equipmentInputPlan(state);
-    const planInputs = {};
-    for (const [id, amount] of Object.entries(Disposition.retainedEquipmentAmounts(state))) {
-        reserved[id] = Math.max(Number(reserved[id] || 0), amount); yield 'ingredient';
-    }
-    const role = Planner.roleFor(state), classId = Number(state.stats?.classId || state.classId || 0);
-    const allowed = Disposition.gradeIndex(Planner.gradeForLevel(state.level));
-    if (plan?.strategy === 'luxury_exchange' && plan.status === 'active')
-        for (const row of plan.materials || []) planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount));
-    const equipped = new Map(), staged = new Map();
-    for (const key in state.inventory || {}) {
-        const item = state.inventory[key], template = ItemIndex.find(Data.items, Number(item.selfId));
-        const slot = Number(template?.etc?.slot || 0), rank = Disposition.gradeIndex(template?.etc?.rank);
-        if ([6, 9, 10, 11, 12, 15].includes(slot)) {
-            const candidate = { selfId: Number(item.selfId), rank, score: Planner.itemScore(template, role, classId) };
-            if (item.equipped || Number(item.equippedCount || 0) > 0) equipped.set(slot, candidate);
-            else if (Number(item.amount) > 0 && rank <= allowed && Planner.suitable(template, state, role, template.etc.rank)) {
-                const current = staged.get(slot);
-                if (!current || rank > current.rank || rank === current.rank && candidate.score > current.score) staged.set(slot, candidate);
-            }
-        }
-        yield 'stock';
-    }
-    for (const [slot, candidate] of staged) {
-        let worn = equipped.get(slot) || ([10, 11].includes(slot) ? equipped.get(15) : null);
-        if (slot === 15) for (const number of [10, 11]) {
-            const other = equipped.get(number);
-            if (other && (!worn || other.rank > worn.rank || other.rank === worn.rank && other.score > worn.score)) worn = other;
-        }
-        if (!worn || candidate.rank > worn.rank || candidate.rank === worn.rank && candidate.score > worn.score) reserved[candidate.selfId] = 1;
-        yield 'owned';
-    }
-    if (plan?.combine && ['active', 'component_ready', 'ready_to_craft', 'blocked'].includes(plan.status)) {
-        for (const row of plan.combine.requirements || []) {
-            planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount || 0)); yield 'ingredient';
-        }
-    }
-    if (['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && plan.strategy === 'craft') {
-        // ARCH-NOTE: accepted clan/provider allocations belong to their existing
-        // owner. Missing immutable allocation adapter makes this forecast unknown.
-        if (plan.clanGoal?.clanId && plan.recipeId) return null;
-        const Recipes = invoke('GameServer/Items/C4RecipeItems');
-        const stack = [{ rows: plan.materials || [], at: 0, multiplier: 1, seen: new Set(), depth: 0 }];
-        while (stack.length) {
-            const node = stack[stack.length - 1];
-            if (node.at >= node.rows.length) { stack.pop(); yield 'edge'; continue; }
-            const row = node.rows[node.at++], id = Number(row.selfId), required = Number(row.amount) * node.multiplier;
-            if (id && !node.seen.has(id)) {
-                planInputs[id] = Number(planInputs[id] || 0) + required;
-                const missing = Math.max(0, required - Number(state.inventory?.[id]?.amount ?? row.owned ?? 0));
-                const recipe = missing > 0 ? Recipes.resolveByProductId(id) : null;
-                if (recipe && node.depth < 5) stack.push({ rows: recipe.materials || [], at: 0,
-                    multiplier: Math.ceil(missing / Math.max(1, Number(recipe.productCount))), seen: new Set([...node.seen, id]), depth: node.depth + 1 });
-                else if (recipe && node.depth >= 5) return null;
-            }
-            yield 'edge';
-        }
-    }
-    if (plan?.status === 'active') for (const row of plan.crystalPreparation?.materials || [])
-        planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount));
-    for (const [id, amount] of Object.entries(Disposition.capDeferredInputs(state.stats?.equipmentPlan, planInputs)))
-        reserved[id] = Math.max(Number(reserved[id] || 0), amount);
-    const target = Number(plan?.target?.selfId || 0);
-    if (target && Number(state.inventory?.[target]?.amount) > 0 && !state.inventory[target].equipped) reserved[target] = 1;
-    return reserved;
+    // ARCH-NOTE: accepted clan/provider allocations belong to their existing
+    // owner. Missing immutable allocation adapter makes this forecast unknown.
+    if (['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && plan.strategy === 'craft'
+        && plan.clanGoal?.clanId && plan.recipeId) return null;
+    yield 'ingredient';
+    return Disposition.reservedEquipmentAmounts(state);
 }
 
 function* feasibility(state, { board, read = () => {} }, reserved = null) {
@@ -126,6 +69,28 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
         at++; yield 'owned';
     }
     return [hash, blocked, lines.length];
+}
+
+// Whether a cold look may keep an own SELL line on sale: the mask's rule
+// (feasibility) on the state it looks at, its reservations read once at the
+// first line asked. A built mask describes its build's state and keys only the
+// lines, not the reservations and item flags its bits read, so a held build's
+// mask is no answer for a later state.
+function canSell(state, lines) {
+    const Look = invoke('GameServer/Bot/Economy/BoardLook');
+    let reserved;
+    return line => {
+        if (reserved === undefined) {
+            reserved = null;
+            if (lines.length <= Look.MAX_OWNED_LINES) {
+                const run = reservations(state);
+                let next;
+                do next = run.next(); while (!next.done);
+                reserved = next.value;
+            }
+        }
+        return Look.indexedFeasibility(state, line, reserved);
+    };
 }
 
 const EconomicTrip = require('../Economy/EconomicTrip');
@@ -181,25 +146,41 @@ function craftLabour(state, timestamp = Date.now(), profile = null) {
     return { executor: 'cold', mpCapacity, mpPerHour: mpPerHour(state) };
 }
 
+// A bot with no plan hunts on and shops nothing: each reason says so once per
+// thread, with the first bot it met, for the live log.
+const noPlanSeen = new Set();
+function noPlan(reason, state) {
+    if (!noPlanSeen.has(reason)) {
+        noPlanSeen.add(reason);
+        utils.infoWarn('ColdWork', 'no occupation plan: %s (first bot %d)', reason, Number(state.characterId));
+    }
+    return null;
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
-    routeRows = null, routeKey = null } = {}) {
+    routeRows = null, routeKey = null, targetRecipe = null } = {}) {
     const packet = state.stats?.money;
-    if (!board || !Array.isArray(packet) || packet.length < 4 || !(packet[0] > 0) || !(packet[1] > 0)) return null;
-    const admission = recipeIndex(board);
+    if (!board) return noPlan('no_board', state);
+    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state);
+    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state);
+    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state);
+    const admission = targetRecipe ? null : recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
-    readScope(admission.scopeFor(craftLevel));
+    if (admission) readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
-    if (!reserved) return null;
-    const preparedFeasibility = yield* feasibility(state, { board, read }, reserved);
+    if (!reserved) return noPlan('unknown_reservations', state);
+    const preparedFeasibility = targetRecipe ? null : yield* feasibility(state, { board, read }, reserved);
+    const targetItems = targetRecipe ? new Set([Number(targetRecipe.productId), Number(targetRecipe.recipeItemId),
+        ...(targetRecipe.materials || []).map(row => Number(row.selfId))]) : null;
     const ownStock = new Map(), routes = [];
     const key = EconomicTrip.key(state);
     const directRows = routeKey === key && Array.isArray(routeRows) && routeRows.length === EconomicTrip.towns.length
         ? routeRows : null;
     const readyRows = directRows || (economy?.routeKey === key ? economy.routeRows : null);
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
-        ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(packet[0]) }) : null;
-    const context = { timestamp, state, insideContext: true, hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        survivalReserve: Number(packet[2]), ...craftLabour(state, timestamp),
+        ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(Packet.hourAdena(packet)) }) : null;
+    const context = { timestamp, state, insideContext: true, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)),
+        survivalReserve: Number(Packet.survivalReserve(packet)), ...craftLabour(state, timestamp),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
@@ -214,7 +195,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     trip.details = town => routes[townOrdinal.get(town)] || { known: false, hours: NaN, fees: NaN };
     context.trip = trip;
     for (const key in state.inventory || {}) {
-        const id = Number(state.inventory[key].selfId || key); read(id);
+        const id = Number(state.inventory[key].selfId || key);
+        if (targetItems && !targetItems.has(id)) { yield 'stock'; continue; }
+        read(id);
         const value = yield* exitValue(state, id, board);
         let amount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory[key], reserved);
         if (Number(stock?.itemId) === id) amount = Math.max(0, amount - Math.min(amount,
@@ -222,9 +205,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownStock.set(id, { count: amount, unitValue: value }); yield 'stock';
     }
     const prepareExits = function* (owner, recipe, template) {
-        const result = []; read(recipe.productId); let count = 0;
-        for (const line of board?.list(recipe.productId, 3) || []) {
-            if (count++ === QUOTE_DEPTH) break;
+        const result = []; read(recipe.productId);
+        for (const line of Price.productionBids(board, recipe.productId)) {
             if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)
                 || !personalOfferAllowed(line, owner)) { yield 'quote'; continue; }
             const details = yield* ensureTrip(line.town);
@@ -273,12 +255,11 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             // Static NPC stock is the only unlimited ingredient source admitted here.
             const npcOffers = npc ? npcOffersFor(id) : EMPTY;
             const towns = new Set(npcOffers.map(offer => offer.town));
-            for (const line of (board?.list(id, 1) || []).slice(0, QUOTE_DEPTH)) towns.add(line.town);
+            // Every town of the list: an amount reads past the first asks until one town holds it.
+            for (const town of board?.towns(id, 1) || []) towns.add(town);
             for (const town of towns) { if (townOrdinal.has(town)) yield* ensureTrip(town); yield 'quote'; }
-            // sampleWhole (E303, diagnostics only): the whole-list rerun prices only towns whose trip is warmed above, so
-            // in the worker `cap:quotes:lost` is a lower bound of the plans the cap drops.
             table = OfferQuery.townTable(board, id, { quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
-                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner), npcOffers, cost: trip, sampleWhole: true });
+                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner), npcOffers, cost: trip });
             purchaseTables.set(tableKey, table);
         }
         const best = OfferQuery.cheapestIn(table, amount);
@@ -308,11 +289,11 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         }
     };
     return { context, feasibility: preparedFeasibility, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
-        unknownRecipes: () => admission.rowsFor(craftLevel),
+        unknownRecipes: () => admission ? admission.rowsFor(craftLevel) : [],
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,

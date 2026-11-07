@@ -27,15 +27,15 @@ function emptyCounters() {
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
+        // Activations refused (HotActivation: in_transit, walker_endpoint_far, no_safe_activation_placement), by reason in
+        // activationRefusalReasons; counted with or without developerDiagnostics.
+        activationRefusals: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
         partyDissolutions: 0,
         dbFlushes: 0,
-        schedulerRuns: 0,
-        schedulerSkips: 0,
         partyFormationBudgetStops: 0,
-        schedulerOverruns: 0,
         slowResolves: 0,
         backgroundDeferrals: 0,
         partyFormationDeferrals: 0,
@@ -50,10 +50,8 @@ function emptyCounters() {
         coldOwnerErrors: 0,
         coldOwnerLegacyDeferred: 0,
         coldOwnerDbBusy: 0,
-        coldOwnerDbRetries: 0,
         coldOwnerHandoffs: 0,
         missedEventsRecovered: 0,
-        economySafetyRepairs: 0,
         coldSafetyStateRepairs: 0,
         boardReviewWakeups: 0,
         coldSafetyQueueRepairs: 0,
@@ -62,7 +60,6 @@ function emptyCounters() {
         legacyOwnershipConflicts: 0,
         stateRetentionRuns: 0,
         stateRetentionRows: 0,
-        stateRetentionDeferrals: 0,
         stateRetentionErrors: 0,
         stateRetentionOverruns: 0
     };
@@ -99,29 +96,28 @@ const PopulationMetrics = {
     },
     // Last LAG_WINDOW readings, kept outside eventLoop: snapshot() spreads eventLoop into the status API.
     lagHistory: [],
+    // The player-activity and lag signal (recordSchedulerProfile), read by the
+    // cold worker pressure and the background work admissions.
     schedulerState: {
-        budgetMs: 0,
         mode: 'unknown',
-        lagMs: 0,
-        coldBatch: 0,
-        coldBatchLimit: 0,
-        coldQueueSaturated: false
+        lagMs: 0
     },
     interval: {
         resolveDurationsMs: [],
-        schedulerDurationsMs: [],
         partyFormationDurationsMs: [],
         partyFormationStageDurationsMs: new DiagnosticMetricMap(),
         actorPathDurationsMs: [],
         companionPathDurationsMs: [],
         activationFloorDurationsMs: [],
         activationFloorReasons: new DiagnosticMetricMap(),
+        activationDurationsMs: [],
+        cooldownDurationsMs: [],
         skippedResolveReasons: new DiagnosticMetricMap(),
+        activationRefusalReasons: new DiagnosticMetricMap(),
         coldOwnerCommitDurationsMs: [],
         coldOwnerLegacyReasons: new DiagnosticMetricMap(),
         coldOwnerRejectReasons: new DiagnosticMetricMap(),
         stateRetentionDurationsMs: [],
-        stateRetentionDeferralReasons: new DiagnosticMetricMap(),
         stateRetentionPolicyRows: new DiagnosticMetricMap()
     },
     timer: null,
@@ -258,25 +254,37 @@ const PopulationMetrics = {
         this.interval.skippedResolveReasons.set(key, Number(this.interval.skippedResolveReasons.get(key) || 0) + 1);
     },
 
-    recordActivation() {
+    // durationMs: the whole transition of one bot (solo, party or PvP group: each member gets the
+    // group's time): cold -> hot from activate() to the spawned session, hot -> cold until the
+    // session is gone. The player waits on the first; the second is main-thread work as they leave.
+    recordActivation(durationMs) {
         if (!Config.developerDiagnostics) return;
         this.counters.activations += 1;
+        this.pushTransition('activationDurationsMs', durationMs);
     },
 
-    recordCooldown() {
+    // Always counted: the reason map holds at most KEY_LIMIT keys between summaries.
+    recordActivationRefusal(reason = 'unknown') {
+        this.counters.activationRefusals += 1;
+        const key = String(reason || 'unknown');
+        this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
+    },
+
+    recordCooldown(durationMs) {
         if (!Config.developerDiagnostics) return;
         this.counters.cooldowns += 1;
+        this.pushTransition('cooldownDurationsMs', durationMs);
+    },
+
+    pushTransition(key, durationMs) {
+        if (!Number.isFinite(durationMs)) return;
+        this.interval[key].push(Math.max(0, durationMs));
+        if (this.interval[key].length > Config.resolveSampleLimit) this.interval[key].shift();
     },
 
     recordPartySafetyRepair() {
         if (!Config.developerDiagnostics) return;
         this.counters.partySafetyRepairs++;
-        this.counters.missedEventsRecovered++;
-    },
-
-    recordEconomySafetyRepair() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.economySafetyRepairs++;
         this.counters.missedEventsRecovered++;
     },
 
@@ -312,24 +320,6 @@ const PopulationMetrics = {
         }
     },
 
-    recordSchedulerRun(ms) {
-        if (!Config.developerDiagnostics) return;
-        const value = Math.max(0, Number(ms) || 0);
-        this.counters.schedulerRuns += 1;
-        this.interval.schedulerDurationsMs.push(value);
-        if (this.interval.schedulerDurationsMs.length > Config.resolveSampleLimit) {
-            this.interval.schedulerDurationsMs.shift();
-        }
-        if (value >= Config.schedulerIntervalMs) {
-            this.counters.schedulerOverruns += 1;
-        }
-    },
-
-    recordSchedulerSkip() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.schedulerSkips += 1;
-    },
-
     recordBackgroundDeferral() {
         if (!Config.developerDiagnostics) return;
         this.counters.backgroundDeferrals += 1;
@@ -362,11 +352,6 @@ const PopulationMetrics = {
         const key = String(reason || 'unknown');
         this.counters.coldOwnerLegacyDeferred += 1;
         this.interval.coldOwnerLegacyReasons.set(key, Number(this.interval.coldOwnerLegacyReasons.get(key) || 0) + 1);
-    },
-
-    recordColdOwnerDbRetry() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.coldOwnerDbRetries += 1;
     },
 
     recordColdOwnerHandoff(result = {}) {
@@ -405,16 +390,6 @@ const PopulationMetrics = {
         }
     },
 
-    recordStateRetentionDeferral(reason = 'unknown') {
-        if (!Config.developerDiagnostics) return;
-        const key = String(reason || 'unknown');
-        this.counters.stateRetentionDeferrals += 1;
-        this.interval.stateRetentionDeferralReasons.set(
-            key,
-            Number(this.interval.stateRetentionDeferralReasons.get(key) || 0) + 1
-        );
-    },
-
     recordActivationFloorScan(scan = {}) {
         if (!Config.developerDiagnostics) return;
         const candidates = Math.max(0, Number(scan.candidates) || 0);
@@ -442,24 +417,12 @@ const PopulationMetrics = {
     recordSchedulerProfile(profile = {}) {
         this.schedulerState = {
             ...this.schedulerState,
-            budgetMs: Math.max(0, Number(profile.budgetMs) || 0),
             mode: profile.idle ? 'idle' : 'player',
             lagMs: Math.max(0, Number(profile.lagMs) || 0),
             playerMode: profile.activity?.mode || 'idle',
             realPlayers: Math.max(0, Number(profile.activity?.realPlayers) || 0),
             connectingPlayers: Math.max(0, Number(profile.activity?.connectingPlayers) || 0),
             companions: Math.max(0, Number(profile.activity?.companionCount) || 0)
-        };
-    },
-
-    recordColdBatch(count = 0, limit = 0) {
-        const batch = Math.max(0, Number(count) || 0);
-        const cap = Math.max(0, Number(limit) || 0);
-        this.schedulerState = {
-            ...this.schedulerState,
-            coldBatch: batch,
-            coldBatchLimit: cap,
-            coldQueueSaturated: cap > 0 && batch >= cap
         };
     },
 
@@ -533,36 +496,37 @@ const PopulationMetrics = {
 
         this.lastSummaryCounters = { ...this.counters };
         const resolveStats = stats(this.interval.resolveDurationsMs);
-        const schedulerStats = stats(this.interval.schedulerDurationsMs);
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
         const actorPathStats = stats(this.interval.actorPathDurationsMs);
         const companionPathStats = stats(this.interval.companionPathDurationsMs);
         const activationFloorStats = stats(this.interval.activationFloorDurationsMs);
+        const transitions = { activation: stats(this.interval.activationDurationsMs), cooldown: stats(this.interval.cooldownDurationsMs) };
         const coldOwnerCommitStats = stats(this.interval.coldOwnerCommitDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
         const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
+        const activationRefusalReasons = Object.fromEntries(this.interval.activationRefusalReasons.entries());
         const activationFloorReasons = Object.fromEntries(this.interval.activationFloorReasons.entries());
         const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
         const stateRetentionStats = stats(this.interval.stateRetentionDurationsMs);
-        const stateRetentionDeferralReasons = Object.fromEntries(this.interval.stateRetentionDeferralReasons.entries());
         const stateRetentionPolicyRows = Object.fromEntries(this.interval.stateRetentionPolicyRows.entries());
         this.interval.resolveDurationsMs = [];
-        this.interval.schedulerDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
         this.interval.actorPathDurationsMs = [];
         this.interval.companionPathDurationsMs = [];
         this.interval.activationFloorDurationsMs = [];
+        this.interval.activationDurationsMs = [];
+        this.interval.cooldownDurationsMs = [];
         this.interval.coldOwnerCommitDurationsMs = [];
         this.interval.activationFloorReasons = new DiagnosticMetricMap();
         this.interval.coldOwnerLegacyReasons = new DiagnosticMetricMap();
         this.interval.coldOwnerRejectReasons = new DiagnosticMetricMap();
         this.interval.stateRetentionDurationsMs = [];
-        this.interval.stateRetentionDeferralReasons = new DiagnosticMetricMap();
         this.interval.stateRetentionPolicyRows = new DiagnosticMetricMap();
         this.interval.partyFormationStageDurationsMs = new DiagnosticMetricMap();
         this.interval.skippedResolveReasons = new DiagnosticMetricMap();
+        this.interval.activationRefusalReasons = new DiagnosticMetricMap();
 
         return {
             uptimeMs: elapsedMs,
@@ -570,7 +534,7 @@ const PopulationMetrics = {
             delta,
             eventLoop: { ...this.eventLoop, delay },
             resolve: resolveStats,
-            scheduler: { ...schedulerStats, ...this.schedulerState },
+            scheduler: { ...this.schedulerState },
             partyFormation: partyFormationStats,
             pathfinding: {
                 actor: actorPathStats,
@@ -580,6 +544,7 @@ const PopulationMetrics = {
                 ...activationFloorStats,
                 reasons: activationFloorReasons
             },
+            transitions,
             coldOwner: {
                 commit: coldOwnerCommitStats,
                 legacyReasons: coldOwnerLegacyReasons,
@@ -589,11 +554,11 @@ const PopulationMetrics = {
                 ...stateRetentionStats,
                 policy: this.schedulerState.stateRetentionPolicy || 'none',
                 nextPolicy: this.schedulerState.stateRetentionNextPolicy || 'none',
-                deferralReasons: stateRetentionDeferralReasons,
                 policyRows: stateRetentionPolicyRows
             },
             partyFormationStages,
             skippedResolveReasons,
+            activationRefusalReasons,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }

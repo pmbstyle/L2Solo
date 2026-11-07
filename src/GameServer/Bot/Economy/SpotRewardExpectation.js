@@ -12,13 +12,21 @@ const MAX_SPOT_VALUES = 32768;
 let revision = [];
 let revisionId = 0;
 let compositions = new WeakMap();
-let spotValues = new WeakMap();
-let spotValueCount = 0;
-// The held spot rows in insertion order, as [rows, key] pairs flat: at the
-// cap the oldest one row leaves, not all of them (a wipe re-measured the
-// whole atlas at once). At most 2 x MAX_SPOT_VALUES slots, ~512 KB.
+// The spot rows: one Map from the row's key to its slot, the row (adena,
+// drop, spoil) as three numbers at the slot in a slab, the keys by slot a
+// ring in insertion order: at the cap the oldest row's slot takes the new one
+// (a wipe re-measured the whole atlas at once). A spot is keyed by a number
+// it gets at its first row (spotNumbers), so a key is one number, not a
+// string, and no Map is held per spot: a Map per spot, a string key and an
+// object per row held 16.6-19.7 MB of each thread's heap (perf heap profiles,
+// mostly kill spots of a few rows each); the slab is 768 KB at the cap.
+const ROW_NUMBERS = 3;
+let spotNumbers = new WeakMap();
+let nextSpotNumber = 0;
+const spotValues = new Map();
 let spotValueOrder = [];
 let spotValueNext = 0;
+let spotValueSlab = new Float64Array(0);
 let rewardGroups = new WeakMap();
 const npcValues = new Map();
 
@@ -31,8 +39,9 @@ function refresh(rates = Rates.profile()) {
         revision = current;
         revisionId++;
         compositions = new WeakMap();
-        spotValues = new WeakMap();
-        spotValueCount = 0;
+        spotNumbers = new WeakMap();
+        nextSpotNumber = 0;
+        spotValues.clear();
         spotValueOrder = [];
         spotValueNext = 0;
         rewardGroups = new WeakMap();
@@ -78,16 +87,14 @@ function groupsFor(reward) {
         const total = kind === 'drop' ? items.reduce((sum, item) =>
             sum + Rates.dropItemSelectionWeight(group, item, rate), 0) : 100;
         const expected = { group, kind, adena: 0, items: 0 };
+        if (kind === 'spoil') {
+            expected.spoilItems = items.map(item => ({ item, price: itemPrice(item.selfId) }));
+            groups.push(expected);
+            continue;
+        }
         for (const item of items) {
-            let share, amount;
-            if (kind === 'drop') {
-                share = total > 0 ? Rates.dropItemSelectionWeight(group, item, rate) / total : 0;
-                amount = Rates.expectedDropAmount(group, item, rate);
-            } else {
-                share = Rates.spoilItemChance(item);
-                const min = Math.max(1, Math.floor(Number(item.min) || 1));
-                amount = (min + Math.max(min, Math.floor(Number(item.max) || min))) / 2;
-            }
+            const share = total > 0 ? Rates.dropItemSelectionWeight(group, item, rate) / total : 0;
+            const amount = Rates.expectedDropAmount(group, item, rate);
             if (kind === 'drop' && Number(item.selfId) === 57) expected.adena += share * amount;
             else expected.items += share * amount * itemPrice(item.selfId);
         }
@@ -106,11 +113,18 @@ function npcValue(entry, killerLevel) {
     if (held) return held;
     held = { adena: 0, drop: 0, spoil: 0 };
     for (const expected of groupsFor(entry.reward)) {
+        if (expected.kind === 'spoil') {
+            for (const { item, price } of expected.spoilItems) {
+                held.spoil += Rates.spoilItemPlan(expected.group, item,
+                    { npcLevel: entry.level, killerLevel }).expectedYield * price;
+            }
+            continue;
+        }
         const roll = Rates.rewardGroupRoll(expected.group, expected.kind,
             { npcLevel: entry.level, killerLevel }, () => 0);
         const chance = roll.chance / 100;
         held.adena += chance * expected.adena;
-        held[expected.kind] += chance * expected.items * (expected.kind === 'spoil' ? roll.amountMultiplier : 1);
+        held[expected.kind] += chance * expected.items;
     }
     if (npcValues.size >= MAX_NPC_VALUES) npcValues.delete(npcValues.keys().next().value);
     npcValues.set(key, held);
@@ -123,9 +137,12 @@ function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLe
     if (!spot || typeof spot !== 'object') return null;
     const rates = Rates.profile();
     refresh(rates);
-    const key = `${killerLevel}:${spoilSkillLevel}:${spoilSkillLevel > 0 ? spoilerLevel : 0}`;
-    let rows = spotValues.get(spot);
-    if (rows?.has(key)) return { ...rows.get(key) };
+    const key = rowKey(spot, killerLevel, spoilSkillLevel, spoilSkillLevel > 0 ? spoilerLevel : 0);
+    const kept = spotValues.get(key);
+    if (kept !== undefined) {
+        const n = spotValueSlab, at = kept * ROW_NUMBERS;
+        return { adena: n[at], drop: n[at + 1], spoil: n[at + 2] };
+    }
     const entries = composition(spot);
     if (!entries.length) return null;
     const total = entries.reduce((sum, entry) => sum + entry.count, 0);
@@ -141,19 +158,40 @@ function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLe
             * invoke('GameServer/Formulas').spoilSuccessChance({ skillId: 254,
                 skillLevel: spoilSkillLevel, attackerLevel: spoilerLevel, targetLevel: entry.level });
     }
-    if (spotValueCount >= MAX_SPOT_VALUES) {
+    const slot = spotValueNext;
+    spotValueNext = (spotValueNext + 1) % MAX_SPOT_VALUES;
+    if (spotValueOrder.length > slot) {
         // A ring: the slot of the oldest held row takes the new one.
-        spotValueOrder[spotValueNext].delete(spotValueOrder[spotValueNext + 1]);
-        spotValueCount--;
+        spotValues.delete(spotValueOrder[slot]);
         Diagnostics.count('spot_reward', 'evict', 'oldest');
     }
-    if (!rows) { rows = new Map(); spotValues.set(spot, rows); }
-    rows.set(key, held);
-    spotValueCount++;
-    spotValueOrder[spotValueNext] = rows;
-    spotValueOrder[spotValueNext + 1] = key;
-    spotValueNext = (spotValueNext + 2) % (2 * MAX_SPOT_VALUES);
-    return { ...held };
+    if (slot >= spotValueSlab.length / ROW_NUMBERS) {
+        // The slab grows by doubling up to the cap: a small memo stays small.
+        const grown = new Float64Array(Math.min(MAX_SPOT_VALUES, Math.max(1024, 2 * spotValueSlab.length / ROW_NUMBERS)) * ROW_NUMBERS);
+        grown.set(spotValueSlab);
+        spotValueSlab = grown;
+    }
+    spotValueOrder[slot] = key;
+    spotValues.set(key, slot);
+    const n = spotValueSlab, at = slot * ROW_NUMBERS;
+    n[at] = held.adena; n[at + 1] = held.drop; n[at + 2] = held.spoil;
+    return held;
+}
+
+// A row's key, its inputs: the spot, the killer's level, the Spoil skill
+// level and the spoiler's level (0 without Spoil). One number below 2^53 for
+// integer levels below 128 and a skill level below 32; any other argument
+// set keeps a string of the four parts (a level "24" is not 24: its own row).
+const KEY_LEVELS = 128, KEY_SKILLS = 32;
+function rowKey(spot, killerLevel, skill, spoilerLevel) {
+    let number = spotNumbers.get(spot);
+    if (number === undefined) spotNumbers.set(spot, number = nextSpotNumber++);
+    if (keyPart(killerLevel, KEY_LEVELS) && keyPart(skill, KEY_SKILLS) && keyPart(spoilerLevel, KEY_LEVELS))
+        return ((number * KEY_LEVELS + killerLevel) * KEY_SKILLS + skill) * KEY_LEVELS + spoilerLevel;
+    return `${number}:${typeof killerLevel}${killerLevel}:${typeof skill}${skill}:${typeof spoilerLevel}${spoilerLevel}`;
+}
+function keyPart(value, limit) {
+    return Number.isInteger(value) && value >= 0 && value < limit;
 }
 
 function spoilSkillLevel(state) {

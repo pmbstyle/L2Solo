@@ -102,7 +102,6 @@ function decisionKey(session, target, reason, now) {
 function request(session, target, reason, lines, attack = true, now = Date.now(), rng = Math.random, revengeRoll = null) {
     if (session.pendingPvpProvocation || session.pvpDefense || session.pvpRevenge || !eligible(session, target)) return false;
     const participation = attack ? Participation.prepare(session, target, now, rng) : null;
-    if (participation) session.lastConflictParticipation = { ...participation, reason };
     session.pendingPvpProvocation = { target, reason, attack: attack && !participation?.blocked && !participation?.deescalated,
         participation, revengeRoll, text: lines[Math.floor(rng() * lines.length)], key: decisionKey(session, target, reason, now),
         expiresAt: now + ENCOUNTER_MS };
@@ -138,7 +137,6 @@ function tryStart(session, now = Date.now(), rng = Math.random) {
         if (decision.action !== 'fight') continue;
         session.nextRevengeAt = now + RETRY_MS;
         const roll = rng();
-        session.lastRevengeDecision = { at: now, targetId: enemyId, ...social, roll };
         if (roll >= social.chance) return false;
         const name = String(target.fetchName?.() || '').replace(/[\x00-\x1f]/g, '').slice(0, 24);
         const lines = [

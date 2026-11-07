@@ -61,9 +61,10 @@ const drops = BackgroundDropResolver.rollForFight({
     npcSelfId: 12079,
     rng: () => 0
 });
-// At rng 0 every reward group drops once: the Queen's own group (Blood Mark)
-// first, then the C4 drop groups appended after it (c0f2c59b).
-assert.strictEqual(drops.length, reward.rewards.length, 'one drop per reward group at rng 0');
+// At rng 0 every reward group drops once; adena is no item. The Queen's Lisvus
+// categories: adena, Blood Mark, materials, gear.
+const itemGroups = reward.rewards.filter((group) => !group.items.some((item) => item.selfId === 57));
+assert.strictEqual(drops.length, itemGroups.length, 'one drop per item group at rng 0');
 assert.strictEqual(drops[0].selfId, 1419, 'Bloody Queen reward path must produce the deterministic test drop');
 assert.strictEqual(drops[0].name, 'Blood Mark');
 

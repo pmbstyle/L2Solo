@@ -4,6 +4,7 @@ const MAX_SOURCE_CHECKS = 32, MAX_CAMPS = 4, MAX_CORE = 3, MAX_MEMBERS = 5;
 const REVIEW_MS = 5 * 60000, SOURCE_CACHE_SIZE = 256;
 const sources = new WeakMap();
 const positive = value => Math.max(0, Number(value) || 0);
+const { fnv1a32 } = require('../Fnv1a');
 const isObjective = objective => objective?.materialParty === true && !objective.clanGoalKey;
 const requestOf = state => isObjective(state.stats?.partyRequest) ? state.stats.partyRequest : null;
 
@@ -18,12 +19,12 @@ function partySpoiler(members) {
 // One indexed item lookup, never a scan of the hunting atlas. Bound both the
 // cold-cache work and retained alternatives; shared static rows die with the
 // source index. Actor combat/route checks are separate and never cached here.
-function campsFor(state, itemId, spots, spoiler) {
+// scan: set to { done } (every source row of the item checked) when given.
+function campsFor(state, itemId, spots, spoiler, scan = null) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const index = Planner.sourceIndexFor(spots);
-    const role = state.stats?.role || state.party?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId ?? state.classId);
-    const tableRole = ({ melee: 'dps', nuker: 'mage', crafter: 'dps' })[role] || role;
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const tableRole = Table.roleFor(state);
     let cache = sources.get(index);
     if (!cache) sources.set(index, cache = new Map());
     const key = `${itemId}:${state.level}:${tableRole}:${Number(spoiler)}:${Planner.rateProfileSignature()}`;
@@ -32,6 +33,7 @@ function campsFor(state, itemId, spots, spoiler) {
         // Least recently used: a key read again moves to the newest end.
         cache.delete(key);
         cache.set(key, held);
+        if (scan) scan.done = true;
         return held.rows;
     }
     const camps = new Map((held?.rows || []).map(row => [row.spotId, row])), entries = index.get(itemId) || [];
@@ -57,18 +59,41 @@ function campsFor(state, itemId, spots, spoiler) {
     cache.delete(key);
     if (cache.size >= SOURCE_CACHE_SIZE) cache.delete(cache.keys().next().value);
     cache.set(key, { rows: result, cursor: end, done: end === entries.length });
+    if (scan) scan.done = end === entries.length;
     return result;
+}
+
+// The inputs of the camp choice and of its solo refusal (campsFor,
+// GearAcquisitionPlanner.sourceRouteReader and soloSafeForSource), hashed:
+// level, class, the learned Spoil level (spoil camps), the kit (the
+// decision's kit fact: the solo matchup), the route permission (the spot
+// exclusions, the economic hunt, the recovery's target level, the party ground
+// flag), the spot list's length, and the failed assemblies the held camp
+// rotates over (attempts). Each moves by an event or is read here.
+function reviewKey(state, spots, attempts, timestamp) {
+    const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+    // lazy: the reward rules load the drop resolver, which reaches this module
+    const Rewards = require('../Economy/SpotRewardExpectation');
+    return fnv1a32(JSON.stringify([Number(state.level), state.stats?.classId ?? state.classId ?? null, Rewards.spoilSkillLevel(state),
+        state.stats?.wishSections?.build ?? null,
+        [...invoke('GameServer/Bot/Population/SpotRiskPolicy').excludedSpotIdsForStates([state])].map(String).sort(),
+        invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state),
+        Routes.safetyOptions(state, { timestamp, mode: 'solo' }).maxTargetLevel ?? null,
+        invoke('GameServer/Bot/AI/BotHuntingGroundPolicy').isParty(state, { mode: 'solo' }), spots.length, positive(attempts)]));
 }
 
 // memo: the bot's record in the background thread; its materialMemo field
 // keeps the last "no camp is worth a party" answer while the bot's decision
-// sequence, the memo key and the spot list hold, until the review time.
+// sequence, the memo key (reviewKey, the target, its material and amount) and
+// the spot list hold; no clock ends it.
 function request(state, plan, { spots = [], economy, memo = null, timestamp = Date.now() } = {}) {
     if (state.partyId || state.party?.partyId || state.level < 52 || !plan?.recipeId
         || !['active', 'deferred', 'blocked'].includes(plan.status) || plan.clanGoal
         || !spots.length || !economy) return null;
     const focus = economy.network?.focus?.[0];
     if (focus !== `power:${plan.target?.selfId}:${plan.target?.slot}`) return null;
+    // A bot out for its stock recruits nobody; supplyPause holds a standing request.
+    if (economy.network?.activity?.rootKey?.startsWith('stock:')) return null;
     const Index = require('../../Item/ItemTemplateIndex'), Data = invoke('GameServer/DataCache');
     const target = Index.find(Data.items, plan.target.selfId);
     if (!['b', 'a'].includes(target?.etc?.rank)) return null;
@@ -99,42 +124,51 @@ function request(state, plan, { spots = [], economy, memo = null, timestamp = Da
     const heldRequest = requestOf(state);
     const previous = Number(heldRequest?.targetId) === Number(plan.target.selfId)
         && Number(heldRequest?.itemId) === Number(material.selfId) ? heldRequest : null;
-    if (previous?.materialLevel === state.level && previous.materialClass === (state.stats?.classId ?? state.classId)
-        && timestamp < Number(previous.materialReviewedAt || 0) + REVIEW_MS) {
+    const key = reviewKey(state, spots, previous?.attempts, timestamp);
+    // The held camp stands while the inputs of its choice hold.
+    if (previous && previous.materialKey === key) {
         const { helpDeal, suspendedFor, ...held } = previous;
         return { ...held, status: 'open', amount, requiredTotal, materialCash, materialSoloHours };
     }
-    const memoKey = `${state.level}:${state.stats?.classId ?? state.classId}:${plan.target.selfId}:${material.selfId}:${amount}`;
+    const memoKey = `${key}:${plan.target.selfId}:${material.selfId}:${amount}`;
     const seq = Number(state.stats?.decisionSeq || 0), held = memo?.materialMemo;
-    if (held?.key === memoKey && held.seq === seq && held.spots === spots && timestamp < held.until) return null;
-    const noRequest = () => {
+    if (held?.key === memoKey && held.seq === seq && held.spots === spots) return null;
+    // A bounded page of the item's sources per review: a choice or a "no
+    // camp" read before the last page is kept by no key, so the next review
+    // reads on (a solo-safe camp needs no later page).
+    const scan = { done: false };
+    const noRequest = (kept = true) => {
         // No repeated exact safety work while the bot's decision holds.
-        if (memo) memo.materialMemo = { key: memoKey, seq, spots, until: timestamp + REVIEW_MS };
+        if (memo && kept) memo.materialMemo = { key: memoKey, seq, spots };
         return null;
     };
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const spoiler = !!invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) });
-    const camps = campsFor(state, material.selfId, spots, spoiler);
-    if (!camps.length) return noRequest();
+    const camps = campsFor(state, material.selfId, spots, spoiler, scan);
+    if (!camps.length) return noRequest(scan.done);
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const allowed = Planner.sourceRouteReader(state, { timestamp, spots });
     const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
-    if (camps.some(row => allowed(SpotIndex.spotById(spots, row.spotId))
+    if (camps.some(row => allowed(SpotIndex.spotById(spots, row.spotId), row.npcId)
         && Planner.soloSafeForSource(state, row))) return noRequest();
     const { forecastKnown, ...selected } = camps[Number(previous?.attempts || 0) % camps.length];
     return { status: 'open', priority: 'required', reason: 'craft_material', materialParty: true,
         objectiveKey: `craft-material:${selected.spotId}`, strategy: 'craft', ...selected,
         amount, requiredTotal, targetId: plan.target.selfId, materialCash, materialSoloHours,
-        attempts: positive(previous?.attempts),
-        materialLevel: state.level, materialClass: state.stats?.classId ?? state.classId,
-        materialReviewedAt: timestamp, reviewAt: timestamp + REVIEW_MS };
+        attempts: positive(previous?.attempts), materialKey: scan.done ? key : null };
 }
 
 function remaining(state, goal, inventory = state.inventory) {
     const plan = state.stats?.equipmentPlan;
     if (!goal || Number(plan?.target?.selfId) !== Number(goal.targetId) || plan.status === 'complete'
         || positive(inventory?.[goal.targetId]?.amount) > 0 || positive(inventory?.[plan.unseal?.sourceId]?.amount) > 0) return 0;
-    const physical = Math.max(0, positive(goal.requiredTotal) - positive(inventory?.[goal.itemId]?.amount));
+    let stored = 0;
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    if (Warehouse.ready() && Warehouse.hasItems(state)) {
+        const policy = require('../Economy/CraftWarehousePolicy');
+        if (policy.planFor(state)) stored = Number(policy.available({ ...state, inventory }, Object.values(Warehouse.inventory(state))).warehouse[goal.itemId] || 0);
+    }
+    const physical = Math.max(0, positive(goal.requiredTotal) - positive(inventory?.[goal.itemId]?.amount) - stored);
     return Math.min(physical, goal.quota === undefined ? Infinity : Math.max(0, goal.quota - positive(goal.collected)));
 }
 
@@ -143,15 +177,15 @@ function remaining(state, goal, inventory = state.inventory) {
 // renewed material decision may reopen it. No source search is needed here.
 function supplyPause(state, plan, { economy, timestamp = Date.now() } = {}) {
     const held = requestOf(state);
-    const focus = economy?.network?.focus?.[0] || '';
-    if (!held || !['open', 'deferred'].includes(held.status) || !focus.startsWith('stock:')
+    const step = economy?.network?.activity?.rootKey || '';
+    if (!held || !['open', 'deferred'].includes(held.status) || !step.startsWith('stock:')
         || state.partyId || state.party?.partyId || state.activity === 'dead'
         || !plan?.recipeId || plan.clanGoal || plan.levelingRecovery
         || !['active', 'deferred', 'blocked'].includes(plan.status)
         || remaining({ ...state, stats: { ...state.stats, equipmentPlan: plan } }, held) <= 0) return null;
     const incoming = positive(economy?.stockFor?.(held.itemId, `power:${held.targetId}:${plan.target.slot}`)?.incoming);
     if (incoming >= positive(held.requiredTotal) - positive(state.inventory?.[held.itemId]?.amount)) return null;
-    return { ...held, status: 'deferred', suspendedFor: focus,
+    return { ...held, status: 'deferred', suspendedFor: step,
         deferredUntil: Number(held.deferredUntil || 0) || timestamp };
 }
 
@@ -192,9 +226,12 @@ function joint(party, members, { timestamp = Date.now(), spots } = {}) {
     const goals = needs(members, party.stats.objective, party.stats.agreement);
     const Income = require('./PartyIncomeComparison');
     let review = {};
-    if (timestamp - Number(party.stats.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS) {
+    // The income review runs when its inputs moved since the last one.
+    // lazy: the joint policy loads this module
+    const key = require('./PartyGoalPolicy').incomeReviewKey(party, members, party.stats.objective);
+    if (key !== party.stats.incomeReviewKey) {
         const prepared = Income.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
-        review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
+        review = { lastIncomeReviewAt: timestamp, incomeReviewKey: key, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
             ...Income.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };
     }
     return { objective: { ...party.stats.objective, status: goals.length ? 'open' : 'completed' },
@@ -235,17 +272,12 @@ function selectMembers(candidates, { minSize = 2, maxSize = MAX_MEMBERS, levelRa
 // fight the leader and all its minions once it becomes visible.
 function canHunt(members, spot, profiles = null, npcIds = null) {
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
-    const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
-    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
     profiles ||= Match.stateProfiles(members[0], { mode: 'party', capacityStates: members, buffed: true });
     npcIds ||= [...new Set(members.map(member => Number(requestOf(member)?.npcId)).filter(Boolean))];
     const entries = (spot?.npcEntries || []).filter(entry => !npcIds.length || npcIds.includes(Number(entry.selfId)));
     if (!entries.length) return true;
-    return entries.every(entry => {
-        const npc = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').npcs, entry.selfId);
-        return !npc || Match.soloSurvival(profiles,
-            Pull.pullView(Cold.npcCombatStats(npc), Pull.entryPull(spot, entry.selfId))).eligible;
-    });
+    // No mob is in sight yet: each pull size of the spawn group is judged, as a cold pick's.
+    return entries.every(entry => Match.speciesPulls(profiles, entry, { soloSafety: true })?.canHunt !== false);
 }
 
 module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, canHunt, agreement, departureRequest, joint, target, campsFor, partySpoiler,

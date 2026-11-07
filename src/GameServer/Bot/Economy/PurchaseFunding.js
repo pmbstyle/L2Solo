@@ -1,5 +1,6 @@
 const Diagnostics = require('./EconomyDiagnostics');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
+const Packet = require('./StatsPacket');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
 // higher-valued funded wishes keep their cumulative costs before a spend.
 const nonnegative = value => Math.max(0, Number(value) || 0);
@@ -22,50 +23,54 @@ function surplus(state = {}, price = 0, reserve = 0) {
 }
 function moneyReached(state, escrow = 0) {
     const packet = state?.stats?.money;
-    if (!Array.isArray(packet) || packet.length < 4 || !(Number(packet[3]) > 0)) return false;
+    if (!Packet.hasMoney(packet) || !(Number(Packet.firstUnfundedPrice(packet)) > 0)) return false;
     let fundedPrice = 0;
-    for (let i = 5; i < packet.length; i += 3) fundedPrice = Math.max(fundedPrice, Number(packet[i]) || 0);
-    return budget(state, escrow) - nonnegative(packet[2]) >= fundedPrice + Number(packet[3]);
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) fundedPrice = Math.max(fundedPrice, Number(Packet.fundedCumulative(packet, row)) || 0);
+    return budget(state, escrow) - nonnegative(Packet.survivalReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
 }
 function budgetFor(packet, wallet, escrow, r, capture = null) {
     let prior = 0;
-    for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i] > r) prior = packet[i + 1];
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) > r) prior = Packet.fundedCumulative(packet, row);
     if (capture) capture.priorityReserve = nonnegative(prior);
-    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(packet[2]) - prior);
+    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.survivalReserve(packet)) - prior);
 }
 // A paid funded contribution no longer needs cash protection. Keep the same
 // bounded packet and priority rule; crafting inputs can name their admitted
 // root ratio even when the funded root item is the eventual product.
 function packetAfterPurchase(packet, spent, funding = {}) {
-    if (!Array.isArray(packet) || packet.length < 4 || !(spent > 0)
+    if (!Packet.hasMoney(packet) || !(spent > 0)
         || !Number.isFinite(spent) || funding.free === true) return packet;
-    let rate = null, itemIndex = -1;
-    if (funding.r !== undefined) {
+    const rows = Packet.fundedRows(packet);
+    let rate = null, itemRow = -1;
+    if (funding.r !== undefined && funding.r !== Infinity) {
         if (!(Number(funding.r) > 0) || !Number.isFinite(Number(funding.r))) return packet;
         rate = significant(Number(funding.r));
     } else if (funding.valueHours === undefined && Number(funding.itemId) > 0) {
-        for (let index = 4; index + 2 < packet.length; index += 3) {
-            if (Number(packet[index + 2]) === Number(funding.itemId)) { itemIndex = index; break; }
+        for (let row = 0; row < rows; row++) {
+            if (Number(Packet.fundedItem(packet, row)) === Number(funding.itemId)) { itemRow = row; break; }
         }
-        if (itemIndex < 0) return packet;
+        if (itemRow < 0) return packet;
     } else return packet;
     const next = packet.slice();
     let previous = 0, cumulative = 0, remaining = spent, changed = false;
-    for (let index = 4; index + 2 < packet.length; index += 3) {
-        const original = nonnegative(packet[index + 1]);
+    for (let row = 0; row < rows; row++) {
+        const original = nonnegative(Packet.fundedCumulative(packet, row));
         let contribution = Math.max(0, original - previous);
         previous = original;
-        if (index === itemIndex || rate !== null && Number(packet[index]) === rate) {
+        if (row === itemRow || rate !== null && Number(Packet.fundedRatio(packet, row)) === rate) {
             const paid = Math.min(remaining, contribution);
             contribution -= paid; remaining -= paid; changed ||= paid > 0;
         }
         cumulative += contribution;
-        next[index + 1] = cumulative;
+        Packet.setFundedCumulative(next, row, cumulative);
     }
     return changed ? next : packet;
 }
 // The Adena a finite value is worth at the money price (hours per Adena).
-function worth(packet, valueHours) { return packet[1] > 0 ? nonnegative(valueHours) / packet[1] : Infinity; }
+function worth(packet, valueHours) {
+    const price = Packet.moneyPrice(packet);
+    return price > 0 ? nonnegative(valueHours) / price : Infinity;
+}
 // The treasury money a member carries for its pending clan errands
 // (ClanPurchaseCredit): the clan's, not the member's, while it waits or
 // travels (E193). `own` ({ clanId?, selfId }) is the clan errand whose own
@@ -82,8 +87,18 @@ function clanCredit(state, own = null) {
     }
     return held;
 }
+// Lazy (a load cycle), once: spendable runs per offer and a require per call stats the path.
+let raidSupplyPolicy = null;
+const raidSupply = () => (raidSupplyPolicy ||= require('../Population/RaidSupplyPolicy'));
+// The rate of an item's own row in the money packet; undefined without one.
+function itemRate(packet, itemId) {
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
+        if (Packet.fundedItem(packet, row) === Number(itemId)) return Packet.fundedRatio(packet, row);
+    }
+    return undefined;
+}
 function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
-    const raid = require('../Population/RaidSupplyPolicy').purchaseBudget(state, options);
+    const raid = raidSupply().purchaseBudget(state, options);
     if (raid !== null) return raid;
     // A purchase that carries a clanPart (native terms) is its clan errand's own.
     const own = options.ownClanErrand || (options.free === true && options.clanPart !== undefined && options.itemId
@@ -93,40 +108,51 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     // Native callers observe this same calculation; they never calculate a second wallet.
     const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
     let queueBudget = 0, reason = 'ratio_below_money_price';
-    if (!Array.isArray(packet) || packet.length < 4) {
+    if (!Packet.hasMoney(packet)) {
         if (Diagnostics.active()) moneyPacketMissing++;
         reason = 'money_packet_missing';
         queueBudget = Math.max(0, wallet - operatingReserve(state));
-    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - packet[2]); }
+    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - Packet.survivalReserve(packet)); }
     else if (options.free === true) {
         // Already credited treasury money belongs to this physical wallet.
         // Exclude it from personal free cash before adding its actual remainder.
         const clanPart = Math.min(wallet, nonnegative(options.clanPart));
-        reason = packet[3] === 0 ? 'free_money' : 'funding_gap';
-        queueBudget = clanPart + (packet[3] === 0 ? budgetFor(packet, wallet - clanPart, 0, -Infinity, capture) : 0);
+        const gap = Packet.firstUnfundedPrice(packet);
+        reason = gap === 0 ? 'free_money' : 'funding_gap';
+        queueBudget = clanPart + (gap === 0 ? budgetFor(packet, wallet - clanPart, 0, -Infinity, capture) : 0);
     }
     else {
         let r = Number(options.r ?? 0);
-        if (options.itemId && options.r === undefined) {
-            for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i + 2] === Number(options.itemId)) { r = packet[i]; break; }
-        }
+        if (options.itemId && options.r === undefined) r = itemRate(packet, options.itemId) ?? r;
         // Worth buying is value per Adena at the price really paid: a quote
         // above the planner's estimate lowers it by the same factor (E187).
         // The queue's own order still decides which money is held for others.
         const quoted = options.quoteScale > 0 ? r * options.quoteScale : r;
-        if (quoted >= packet[1]) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
+        if (quoted >= Packet.moneyPrice(packet)) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
     }
     // Native utility terms take precedence over a free/clan allowance too.
-    if (Array.isArray(packet) && packet.length >= 4 && !options.upperBound && options.valueHours !== undefined) {
+    if (Packet.hasMoney(packet) && !options.upperBound && options.valueHours !== undefined) {
         reason = 'finite_value';
-        queueBudget = Math.min(worth(packet, options.valueHours), budgetFor(packet, wallet, 0, packet[1], capture));
+        queueBudget = Math.min(worth(packet, options.valueHours), budgetFor(packet, wallet, 0, Packet.moneyPrice(packet), capture));
     }
-    const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
+    // A side purchase (T177) carries its own value per Adena and takes only the
+    // money no queue row holds.
+    if (Packet.hasMoney(packet) && !options.upperBound && options.side !== undefined) {
+        reason = 'side';
+        queueBudget = options.side >= Packet.moneyPrice(packet) ? budgetFor(packet, wallet, 0, -Infinity, capture) : 0;
+    }
+    // The survival tranche: what the reserve holds for the kit (survivalShare,
+    // EconomyContext.kitCost at its list price) counts beside the queue's money;
+    // the counter's quote above it (a town's tax) comes from that money, or,
+    // when it falls short, from the wallet: the kit itself is never refused.
+    const survivalCost = nonnegative(options.survivalCost);
+    const survivalShare = Math.min(survivalCost, nonnegative(options.survivalShare ?? options.survivalCost));
+    const available = Math.min(wallet, Math.max(queueBudget + Math.min(wallet, survivalShare), survivalCost));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
     if (selected) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
-        escrow: nonnegative(escrow), available, budget: available, reserve: Number(packet?.[2]),
-        priorityReserve: capture.priorityReserve, moneyPrice: Number(packet?.[1]), valueHours: Number(options.valueHours),
+        escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.survivalReserve(packet)),
+        priorityReserve: capture.priorityReserve, moneyPrice: Number(Packet.moneyPrice(packet)), valueHours: Number(options.valueHours),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
     return available;
@@ -140,13 +166,21 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
 function quoteScale(estimate, quote) {
     return Number(estimate) > 0 && Number(quote) > 0 ? Number(estimate) / Number(quote) : 1;
 }
-function stockAllowance(state, wish, itemId, survivalCost, scale = 1) {
-    return spendable(state, 0, { ...stockTerms(wish, itemId, survivalCost), quoteScale: scale });
+function stockAllowance(state, wish, itemId, survival, scale = 1, extra = null) {
+    return spendable(state, 0, { ...stockTerms(wish, itemId, survival), quoteScale: scale, ...extra });
+}
+// A kit item's survival tranche at a counter's quote: { cost } its missing
+// units at the quote, { share } what the reserve holds for them (one economy's kitCost).
+function survivalTranche(economy, itemId, quote = null) {
+    return { cost: economy.kitCost(itemId, quote), share: economy.kitCost(itemId) };
 }
 // A stock purchase's terms, the same for the planner and the native writer:
 // the kit's survival tranche and its stock wish's rank (else its packet row).
-function stockTerms(wish, itemId, survivalCost) {
-    return { itemId, survivalCost, ...(wish ? { r: significant(wish.ratio) } : {}) };
+// survival: survivalTranche's, or a number (cost and share alike).
+function stockTerms(wish, itemId, survival) {
+    const cost = typeof survival === 'object' && survival ? survival.cost : survival;
+    const share = typeof survival === 'object' && survival ? survival.share : survival;
+    return { itemId, survivalCost: cost, ...(share !== cost ? { survivalShare: share } : {}), ...(wish ? { r: significant(wish.ratio) } : {}) };
 }
 function forOpportunity(state, opportunity, escrow = 0) {
     if (!opportunity?.known || !Number.isFinite(opportunity.valueHours) || opportunity.valueHours <= 0
@@ -160,9 +194,18 @@ function nativeTerms(options = {}, itemId = 0) {
     if (Number.isFinite(Number(options.r)) || options.r === Infinity) terms.r = Number(options.r);
     if (options.valueHours !== undefined && Number.isFinite(Number(options.valueHours))) terms.valueHours = Math.max(0, Number(options.valueHours));
     if (options.survivalCost !== undefined && Number.isFinite(Number(options.survivalCost))) terms.survivalCost = Math.max(0, Number(options.survivalCost));
+    if (options.survivalShare !== undefined && Number.isFinite(Number(options.survivalShare))) terms.survivalShare = Math.max(0, Number(options.survivalShare));
+    if (options.side !== undefined && Number.isFinite(Number(options.side))) terms.side = Math.max(0, Number(options.side));
     if (options.free === true) terms.free = true;
     if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
     return terms;
+}
+// ARCH-NOTE: Player companion errands use the player's choice; autonomous bots
+// spend only on their funded item. A companion stands ahead of its own money
+// queue: it spends the wallet above the reserve (r Infinity is upperBound in the
+// terms the native writer checks at the counter). Its item's row, if any, is paid.
+function companionTerms(itemId) {
+    return nativeTerms({ r: Infinity }, itemId);
 }
 // A root's place in the money queue (r) as a goal and the compact card carry
 // it: only a funded root has one.
@@ -172,6 +215,12 @@ function rootRatio(wish) {
 // A card leaf's ratio: the card's own r, else its funded root's.
 function leafRatio(leaf, wish) {
     return leaf?.r > 0 ? leaf.r : rootRatio(wish);
+}
+// A card leaf stamped with its place in the money queue.
+function stampRatio(leaf, wish) {
+    const r = leafRatio(leaf, wish);
+    if (r > 0) leaf.r = r;
+    return leaf;
 }
 // The funding terms of a buy goal, one rule for every reader: its root's
 // place in the money queue when the goal carries one, else the money
@@ -187,9 +236,9 @@ function significant(value) {
     const scale = 10 ** (2 - Math.floor(Math.log10(value)));
     return Number((Math.ceil(value * scale) / scale).toPrecision(3));
 }
-// The money packet keeps this many (ratio, cumulative, itemId) rows; with more
-// funded wishes the last row merges the tail and carries itemId 0 (FX-E3).
-const PACKET_ROWS = 8;
+// The money packet keeps this many funded rows; with more funded wishes the
+// last row merges the tail and carries itemId 0 (FX-E3, StatsPacket).
+const PACKET_ROWS = Packet.MONEY_ROWS;
 // Funded queue wishes that own an itemId row of packetFor, in queue order.
 function packetRowWishes(funded) {
     return funded.length <= PACKET_ROWS ? funded : funded.slice(0, PACKET_ROWS - 1);
@@ -197,19 +246,19 @@ function packetRowWishes(funded) {
 function packetFor(network, hour, reserve) {
     // lazy: cycle WishNetwork requires PurchaseFunding at load.
     const { fundable, cashCharge } = WishNetwork ||= require('./WishNetwork');
-    const packet = [Math.round(hour), significant(network.moneyPrice), Math.round(reserve), Math.round(network.gap ? cashCharge(network.gap) : 0)];
+    const packet = Packet.money({ hourAdena: Math.round(hour), moneyPrice: significant(network.moneyPrice), survivalReserve: Math.round(reserve),
+        firstUnfundedPrice: Math.round(network.gap ? cashCharge(network.gap) : 0) });
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {
         // An unsupported wish keeps its queue place without money (MVP-1).
         if (!fundable(wish)) continue;
         if (!wish.funded) break;
         cumulative += cashCharge(wish); count++;
-        const ratio = significant(wish.ratio);
-        if (count <= PACKET_ROWS) packet.push(ratio, Math.round(cumulative), Number(wish.object?.itemId || 0));
-        else { const last = 4 + 3 * (PACKET_ROWS - 1); packet[last] = ratio; packet[last + 1] = Math.round(cumulative); packet[last + 2] = 0; }
+        Packet.addFunded(packet, significant(wish.ratio), Math.round(cumulative),
+            count <= PACKET_ROWS ? Number(wish.object?.itemId || 0) : 0);
     }
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };
