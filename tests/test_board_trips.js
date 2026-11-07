@@ -193,6 +193,10 @@ Config.staticShotsDisabled = false;
     const goal = NeedsEvaluator.evaluate(state, { now: 1000 }).find((candidate) => candidate.type === 'market_errand');
     assert(goal, 'the errand is a goal');
     assert.strictEqual(goal.plan.marketTown, 'Dion');
+    // On a visit to another town the errand waits for the visit's end: this town's stops come first.
+    const visiting = { ...state, activity: 'shopping', currentRegion: 'Giran' };
+    assert(!NeedsEvaluator.evaluate(visiting, { now: 1000, economy: { network: { activity: null } } })
+        .some(candidate => candidate.type === 'market_errand'), 'a Giran visit is not spent on the Dion errand');
     assert.strictEqual(goal.target.itemId, 1463);
     // The errand's town and arrival are the subject here (its road was weighed when it was taken).
     // A bot in the field travels to Dion and shops on arrival.

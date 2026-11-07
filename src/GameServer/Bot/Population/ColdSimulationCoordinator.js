@@ -31,7 +31,6 @@ const AfkMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const ColdBuffService = invoke('GameServer/Bot/Economy/ColdBuffService');
 const World = invoke('GameServer/World/World');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
-const HotBoardReview = invoke('GameServer/Bot/Economy/HotBoardReviewService');
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdEconomyDecisions, echoHolds } = require('./ColdEconomyDecision');
 const { TTL_MS: COMPETITION_TTL_MS } = require('./ColdCompetitionActions');
@@ -48,6 +47,10 @@ const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 const Trace = require('../DecisionTrace');
 const EconomyCommit = require('../Economy/EconomyCommit');
 const DecisionEvents = require('../AI/DecisionEvents');
+const Situations = require('../Situations');
+// An own lines' look refused for its authority: the row moved since the look (stale) or
+// the body was handed over (fenced).
+const STALE_LOOK = new Set(['stale_market_review', 'hot_handoff_fenced']);
 const RecomputeGeneration = require('./RecomputeGeneration');
 
 const ClanRaidRoster = require('../../Clan/ClanRaidRoster');
@@ -144,7 +147,7 @@ class ColdSimulationCoordinator {
         // Always on (PopulationStatus.nearText): the near decisions the bodies
         // took, refused as older than the held one, or dropped (the bot cooled
         // or has no body before its decision arrived).
-        this.nearDecisions = { accepted: 0, refused: 0, dropped: 0 };
+        this.nearDecisions = { accepted: 0, refused: 0, dropped: 0, linesStale: 0 };
         this.workerMaxInFlight = null;
         this.restartCount = 0;
         this.loadedAt = 0;
@@ -794,14 +797,29 @@ class ColdSimulationCoordinator {
                 const id = Number(payload.characterId), state = LifeState.cachedState(id);
                 const session = World.registeredActorById(id)?.session;
                 if (state?.phase !== 'hot' || !payload.economyDecision || !payload.near || !session?.actor) {
-                    this.nearDecisions.dropped++; break;
+                    this.nearDecisions.dropped++; this.relookOwnLines(id, payload.near?.market); break;
                 }
-                if (Number(payload.near.nearSeq || 0) < Number(session.heldNearSeq || 0)) { this.nearDecisions.refused++; break; }
+                // A newer decision held: its own lines look again at their next situation.
+                if (Number(payload.near.nearSeq || 0) < Number(session.heldNearSeq || 0)) {
+                    this.nearDecisions.refused++; break;
+                }
                 this.nearDecisions.accepted++;
                 // The held card is the one compact (accept) the body's view reads.
                 const decision = this.economyDecisions.accept(id, payload.economyDecision);
                 DecisionEvents.receive(session, decision, payload.near);
-                if (decision?.feasibility) HotBoardReview.preparedOwner(id);
+                // Its own lines' look (own_lines, taken on this post): applied on the hot row
+                // as it stands now (the look's lines carry their own revisions); a row moved
+                // during the write looks again.
+                if (payload.near.market) {
+                    const hotAuthority = { revision: Number(state.simulation?.revision || 0) };
+                    AfkMarket.applyReview(id, payload.near.market, { hotAuthority, canCommitReview: () => {
+                        const current = LifeState.cachedState(id);
+                        return current?.phase === 'hot' && Number(current.simulation?.revision || 0) === hotAuthority.revision;
+                    } }).catch(error => {
+                        if (STALE_LOOK.has(error.message)) { this.nearDecisions.linesStale++; this.relookOwnLines(id, payload.near.market); }
+                        else FailureLog.note('situations.own_lines_hot', error);
+                    });
+                }
                 // The body acts on its new decision at its next turn, not at its next tick.
                 invoke('GameServer/Bot/BotAI').wakeup(session);
             }
@@ -1587,7 +1605,7 @@ class ColdSimulationCoordinator {
         HuntEfficiency.observe(resolvedState);
         // A build decided the cleanup trip and the step found the bot free to start it
         // (cleanupNeed: the held stats.cleanupDue); main only starts the trip, which ends
-        // the hold (temporary until step 6: the town plan's sell stop, an unload root of the build).
+        // the hold: the build decides, main executes the visit's sale.
         const cleanupState = proposal.cleanupNeed ? this.population?.prepareInventoryCleanupProposal?.(
             resolvedState, timestamp, stepState.simulation, stepState, proposal.cleanupNeed) : null;
         if (cleanupState) {
@@ -1607,6 +1625,13 @@ class ColdSimulationCoordinator {
         // The worker's step result commits as it is: the room at a spot is
         // checked in the worker when the bot arrives there.
         return resolvedState;
+    }
+
+    // An own_lines look main could not apply (its row moved during the write, the body
+    // left): the decision's bit was cleared where it was taken, so the look is asked
+    // again where the bot is (line_undercut), else its reprice is lost.
+    relookOwnLines(id, market) {
+        if (market) DecisionEvents.raiseOn(id, 'line_undercut');
     }
 
     // A post-commit step that throws is skipped; the commit stays (it is durable). A refusal its owner
@@ -1681,8 +1706,11 @@ class ColdSimulationCoordinator {
                 return sourceCurrent() && current?.phase === 'cold'
                     && Number(current.simulation?.revision || 0) === coldAuthority.revision;
             };
-            await step('board', () => AfkMarket
-                .applyReview(id, entry.proposal.market, { coldAuthority, canCommitReview }));
+            await step('board', () => AfkMarket.applyReview(id, entry.proposal.market, { coldAuthority, canCommitReview })
+                .catch(error => {
+                    if (!STALE_LOOK.has(error.message)) throw error;
+                    Situations.note('own_lines:stale@cold'); this.relookOwnLines(id, entry.proposal.market);
+                }));
         }
         await step('equipment', () => LifeState.enqueueEquipmentGoalAdvanceForState(state));
         // The bot's own plan, buff and training run in the review command the
@@ -1900,8 +1928,8 @@ class ColdSimulationCoordinator {
     }
 
     // The steps of the review command the worker sends on this ok ack, decided
-    // here where the facts are: the plan unless main started a cleanup trip over
-    // it (temporary until step 6, with inventoryCleanupForced), the buff offer, training when the step moved the
+    // here where the facts are: the plan unless main started the build's cleanup trip over
+    // it (inventoryCleanupForced), the buff offer, training when the step moved the
     // level fact (its durable class/level: B13, training is that fact's consumer) or brought a book into the bag,
     // and the committed state needs it. None: no review.
     reviewSteps(proposal, state) {
@@ -2101,7 +2129,7 @@ class ColdSimulationCoordinator {
                 state = LifeState.cachedState(id) || applied?.state || state;
                 if (applied?.buyPending) DecisionEvents.raiseOn(id, applied.stale ? 'goal_failed' : 'goal_done:goal');
             } finally {
-                this.economyDecisions.release(id);
+                this.economyDecisions.release(id, LifeState.cachedState(id) !== preparedState);
             }
             // The plan may have just started a trip or changed the money packet.
             await this.step('boardLimits', id, async () => {

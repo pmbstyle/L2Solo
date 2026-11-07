@@ -103,10 +103,10 @@ assert.equal(pendingWorth.reprices[0].pricing.worth, line.pricing.worth,
 const fresh = Pricing.bid(ITEM, ctx, { units: 1, worth: 34454032, cap: 1000000,
     town: 'Dion', money: 1000000, rollKey: ['new-ad'] });
 assert(fresh?.price <= 74000, 'publication and review use the same executable outside option');
-const RetryLook = invoke('GameServer/Bot/Economy/BoardLook'), retrySeen = new RetryLook.SeenLines();
+const RetryLook = invoke('GameServer/Bot/Economy/BoardLook');
 const lookCtx = { ...ctx, preparedWorth: () => 34454032 };
-assert(RetryLook.review(buyer, [line], lookCtx, retrySeen)?.reprices?.[0]?.price <= 74000);
-assert(RetryLook.review(buyer, [line], lookCtx, retrySeen)?.reprices?.[0]?.price <= 74000,
+assert(RetryLook.review(buyer, [line], lookCtx)?.reprices?.[0]?.price <= 74000);
+assert(RetryLook.review(buyer, [line], lookCtx)?.reprices?.[0]?.price <= 74000,
     'an undelivered correction retries at the next own look without another source change');
 
 // A useful, funded item still needs fresh consent at the actual agreed price.
@@ -226,19 +226,17 @@ const underfunded = Pricing.look(buyer, [line], { ...ctx, adena: 60000, prepared
 assert(underfunded?.reprices?.[0]?.price <= 59500, 'standing bids can fund the entire meeting');
 routes.Dion = { known: true, hours: 0, fees: 0 };
 
-// A changed route invalidates the scalar attention cache without new deals
-// or a moved public quote. The native pricing cursor is applied between looks.
+// A look after a route changed reads the new route without new deals or a moved
+// public quote. The native pricing cursor is applied between looks.
 board.clear();
 npc = [{ sourceType: 'npc', selfId: ITEM, price: 80000, town: 'Giran', available: true }];
 routes.Giran = { known: true, hours: .1, fees: 0 };
-const Look = require('../src/GameServer/Bot/Economy/BoardLook');
-const seen = new Look.SeenLines();
 const naturalCtx = { ...ctx, preparedWorth: () => 34454032 };
-const firstReview = Pricing.lookOwn(buyer, [line], naturalCtx, seen);
+const firstReview = Pricing.lookOwn(buyer, [line], naturalCtx);
 if (firstReview?.reprices?.length) Object.assign(line, firstReview.reprices[0]);
 assert(line.price > 80000);
 routes.Giran = { known: true, hours: 0, fees: 0 };
-const cheaperRoute = Pricing.lookOwn(buyer, [line], naturalCtx, seen);
+const cheaperRoute = Pricing.lookOwn(buyer, [line], naturalCtx);
 assert(cheaperRoute?.reprices?.[0]?.price <= 80000, 'a cheaper route triggers a natural reprice without a new trade');
 
 const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');

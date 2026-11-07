@@ -45,7 +45,10 @@ function evaluate(state = {}, options = {}) {
     }
     const errand = Object.hasOwn(options, 'errand') ? options.errand
         : invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
-    if (errand?.town && errand.selfId > 0) return [{ type: 'market_errand', priority: 80,
+    // On a visit, an errand of another town waits for the visit's end (its own trip then):
+    // this town's stops come first, so no visit stands idle on another town's errand.
+    const elsewhere = state.activity === 'shopping' && errand?.town && errand.town !== state.currentRegion;
+    if (errand?.town && errand.selfId > 0 && !elsewhere) return [{ type: 'market_errand', priority: 80,
         target: { itemId: errand.selfId, amount: errand.amount },
         plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
         blockers: [] }];

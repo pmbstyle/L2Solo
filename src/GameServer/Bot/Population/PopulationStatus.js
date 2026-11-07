@@ -100,15 +100,16 @@ const PopulationStatus = {
     // level/death/revive/near_spot/near_left/activated, their fact posts queued since
     // start; nearRaises=, the posts a named raise made (DecisionEvents
     // raiseDecision: arrived_town, money, revived, goal_failed, ...); nearDecisions=
-    // accepted/refused/dropped, the decisions their bodies took, refused as
-    // older than the one held, or dropped as the bot cooled before they came.
+    // accepted/refused/dropped/linesStale, the decisions their bodies took, refused as
+    // older than the one held, or dropped as the bot cooled before they came; their own
+    // lines' looks refused as the row moved before main applied them.
     // nearRaiseOver= (only when any): raises past a body's pending bag's cap
     // (DecisionEvents.NEAR_NAMES), dropped.
     nearText(coordinator) {
         const nearFacts = coordinator?.snapshots?.nearFacts || {}, decisions = coordinator?.nearDecisions || {};
         const raises = Object.entries(nearFacts).reduce((sum, [reason, count]) => NEAR_FACTS.includes(reason) ? sum : sum + count, 0);
         return `nearFacts=${NEAR_FACTS.map(reason => nearFacts[reason] || 0).join('/')} nearRaises=${raises}`
-            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}`
+            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}/${decisions.linesStale || 0}`
             + (DecisionEvents.nearOverflow() ? ` nearRaiseOver=${DecisionEvents.nearOverflow()}` : '');
     },
 

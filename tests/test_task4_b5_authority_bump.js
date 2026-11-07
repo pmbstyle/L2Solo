@@ -49,7 +49,6 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
             economyDecision: { updatedAt: Number(state.updatedAt || 0), echo: Decision.stateEcho(state) } }, `b5-card-${++serial}`);
         const kept = () => {
             assert.deepEqual(Goals.snapshot(owner).current, goal, 'the goal is kept');
-            assert.equal(Life.cachedState(owner).stats?.marketRetryAfter, undefined, 'no retry penalty');
         };
 
         // 1. The revision moved after the card was made: the card is dropped before it starts.

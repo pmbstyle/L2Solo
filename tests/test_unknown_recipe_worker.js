@@ -32,25 +32,18 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     assert.equal(known.selected?.wealth?.recipeId, recipe.recipeId, 'full book is authoritative even with an empty public portfolio');
     assert(!known.selected.wealth.scroll, 'learned scroll is not bought twice');
     // The planner's answer per mode stands while what it reads holds: an ask of
-    // another mode keeps the route rows; an action serves its step's clock only.
+    // another mode keeps the route rows; a visit's plan serves its step's clock only.
     const level = invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(state);
     const baseMp = Array.from({ length: 300 }, (_, k) => 1000 - k).find(mp => Craft.sameCraftMp(level, mp, mp + 1));
-    const band = Craft.craftMpBand(level, baseMp), insideMp = baseMp + 1, outsideMp = band[3] ? band[2] + 1 : band[2];
-    assert(baseMp && Number.isFinite(outsideMp), 'fixture: an MP band wider than one point');
     const crafter = { ...state, vitals: { ...state.vitals, mp: baseMp } };
     const reuse = await probe(crafter, { recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll),
         plannerReuse: {} });
-    assert.deepEqual(reuse.first, { wish: 1, action: 1 }, 'one build per mode; the step\'s second action ask joins');
+    assert.deepEqual(reuse.first, { wish: 1, showcase: 1 }, 'one build per mode; the step\'s second visit plan ask joins');
     assert.deepEqual(reuse.actionAgain, reuse.action);
-    assert.deepEqual(reuse.kept, { wish: 1, action: 2 },
-        'the resent row keeps the rows; a finished action serves its step only');
+    assert.deepEqual(reuse.kept, { wish: 1, showcase: 2 },
+        'the resent row keeps the rows; a finished visit plan serves its step only');
     assert.deepEqual(reuse.keptRows, reuse.rows);
-    assert.deepEqual(reuse.keptAction, reuse.action, 'the resent row gives the same action');
-    // The held card's craft is prepared again only out of the band.
-    const craftMp = await probe(crafter, { recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll),
-        craftMp: [[baseMp, baseMp], [baseMp, insideMp], [baseMp, outsideMp]] });
-    assert.deepEqual(craftMp.out, [{ asked: [], kept: true }, { asked: [], kept: true }, { asked: ['action'], kept: false }],
-        'an MP inside the band keeps the card\'s craft; out of it the action is asked');
+    assert.deepEqual(reuse.keptAction, reuse.action, 'the resent row gives the same visit plan');
     assert.equal(reuse.flight, 1, 'a build in flight goes on across main\'s resend of the same row');
     assert.deepEqual(reuse.echoed, reuse.flown);
     assert.equal(reuse.walkedBuilt, 1, 'the route rows are built anew when the bot\'s point moves');

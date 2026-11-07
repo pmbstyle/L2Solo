@@ -6,7 +6,7 @@ const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Assembly = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
 const { ColdSimulationKernel, lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 // The facts a kernel gives lifecycleKind for a bot that leads `led` (its parties table).
-const leading = led => ({ leaderParty: () => led, partyMembers: () => [], buyOrderEscrow: () => 0,
+const leading = led => ({ leaderParty: () => led, partyMembers: () => [],
     hallNeeded: () => false, playerWaiting: () => false });
 const at = Date.now();
 const party = { partyId: 'meeting-roster', leaderId: 1, memberIds: [1, 2], status: 'active',

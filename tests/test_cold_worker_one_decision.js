@@ -58,23 +58,22 @@ module.exports.stepProbe = async (id) => {
         // at the rest, then a trip arrives in town.
         const round = (from, patch, at) => kernel.projectResolve(from, { patch, debug: {}, events: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at, plan);
-        const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
-        // The rest ends with nothing moved since the step's action ask.
-        const back = await round(rest.state, { activity: 'hunting' }, timestamp + 1500);
-        const arrive = at => round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, at);
-        const town = await arrive(timestamp + 2000);
-        // Main drops that step: the same arrival asks again. Once main commits
-        // a step that asked on it, the arrival asks nothing more.
-        const again = await arrive(timestamp + 2500);
-        const proposalId = id + ':edges-probe';
-        kernel.inFlight.set(id, { state: kernel.states.get(id).state, startedAt: timestamp, pendingCommitId: proposalId,
-            actionBaseline: again.actionBaseline });
-        kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId, state: kernel.states.get(id).state }] });
-        const committed = await arrive(timestamp + 3000);
         const Situations = invoke('GameServer/Bot/Situations');
+        // Its own lines are looked at only at their situations (own_lines): none of the
+        // field rounds, once at the arrival in town, its bit cleared on the state committed.
+        const looks = () => Situations.counts().decided.own_lines?.[0] || 0;
+        const looked = looks();
+        // (The rounds reuse the step's packet, made before its look: as the next step's
+        // plan would be, made on the committed state, it carries the look's bit cleared.)
+        if (plan.statsPacket.woken !== undefined) plan.statsPacket = { ...plan.statsPacket, woken: plan.statsPacket.woken & ~Situations.BITS.own_lines };
+        const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
+        const back = await round(rest.state, { activity: 'hunting' }, timestamp + 1500);
+        const fieldLooks = looks() - looked;
+        const town = await round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, timestamp + 2000);
+        const ownLines = [fieldLooks, looks() - looked - fieldLooks, Number(Situations.woken(town.state.stats, 'own_lines'))];
         const built = next => Number(Situations.woken(next.state.stats, 'build'));
         const raised = next => [built(next), Number(next.state.stats.decisionSeq || 0)];
-        return { decided, afterRound, activity: state.activity,
+        return { decided, afterRound, activity: state.activity, ownLines,
             woken: built(projection),
             seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
             rest: raised(rest), town: raised(town),
@@ -82,7 +81,9 @@ module.exports.stepProbe = async (id) => {
             selectedRoot: plan.economy.network.activity?.rootKey,
             execution: plan.economyPlan?.travel,
             baseline: [plan.statsPacket.wishSections?.at, projection.state.stats.wishSections?.at],
-            edges: projection.economyEdges, laterEdges: [rest.economyEdges, back.economyEdges, town.economyEdges, again.economyEdges, committed.economyEdges],
+            // A round carries its step's plan (the taken build's, asked once before it); none asks another.
+            buildPlan: !!plan.economyPlan,
+            fieldPlans: [projection, rest, back].filter(next => next.economyPlan && next.economyPlan !== plan.economyPlan).length,
             card: { updatedAt: projection.economyDecision?.updatedAt, echo: projection.economyDecision?.echo,
                 projectedAt: Number(projection.state.updatedAt || 0), projectedEcho: ColdEconomyDecision.stateEcho(projection.state) } };
     } finally { Economy.forState = original; }
@@ -111,36 +112,25 @@ module.exports.goalProbe = async (id) => {
     };
     try {
         await step(timestamp); await step(timestamp + 1000);
-        const same = await step(timestamp + 2000);
+        // A served step in the field asks no town route rows (only a build or a town visit reads them).
+        const rowsAsk = occupationFor, wishAsks = [];
+        occupationFor = (state, at, options, mode) => { if (mode === 'wish') wishAsks.push(state.activity); return rowsAsk(state, at, options, mode); };
+        let same;
+        try { same = await step(timestamp + 2000); } finally { occupationFor = rowsAsk; }
         const ask = () => ColdEconomyDecision.refusal(kernel.states.get(id).state, kernel.states.get(id).wishAdvisory,
             { goalRevision: goalRevision(id), timestamp: timestamp + 3000 });
         const held = ask();
+        // The body goes near and far again with no decision of its own between: its far card serves.
+        const far = kernel.states.get(id);
+        kernel.states.set(id, { ...far, state: { ...far.state, phase: 'hot' } });
+        kernel.states.set(id, { ...kernel.states.get(id), state: far.state });
+        const handoff = ask();
         tables.apply([{ name: 'goals', from: 0, to: 1, full: false, rows: [[id, goal(2)]], removed: [], last: true }]);
         const refusal = ask();
         const moved = await step(timestamp + 3000);
         const unwoken = Object.keys(invoke('GameServer/Bot/Situations').counts().unwoken).filter(key => key.startsWith('build:'));
-        return { same, held, refusal, moved, unwoken };
+        return { same, wishAsks, held, handoff, refusal, moved, unwoken };
     } finally { Economy.forState = original; }
-};
-// A kept card's craft refresh (a crafter's MP out of its band) asks the action
-// before the round: the step's projection compares against that ask, so the
-// band crossing asks once, though the last committed ask read another level.
-// The probe stands in for the crafter's refresh (refreshCraftPacket) with a
-// real action ask on the step's state.
-module.exports.craftStepProbe = async (id) => {
-    const timestamp = Date.now() + 10000, callers = [];
-    const ask = askAction, refresh = refreshCraftPacket;
-    askAction = (state, at, options) => { callers.push(options.caller); return ask(state, at, options); };
-    refreshCraftPacket = async (state, at, refreshed) => refreshed && { ...refreshed,
-        actionBaseline: (await askAction(state, at, { economy: refreshed.economy, caller: 'craft_mp' })).baseline };
-    try {
-        const record = kernel.states.get(id), state = record.state;
-        record.actionBaseline = ColdEconomyPlan.actionBaseline({ ...state, level: Number(state.level) - 1 });
-        const plan = await kernel.planLifecycle({ state, timestamp });
-        const projection = await kernel.projectResolve(plan.plannedState || state, { patch: {}, debug: {}, events: [],
-            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000 }, timestamp, plan);
-        return { callers, edges: Number(projection.economyEdges || 0), carried: !!projection.actionBaseline };
-    } finally { askAction = ask; refreshCraftPacket = refresh; }
 };
 // A deferred plan's next page: main's write while pages wait asks it, once per
 // state; the bot's own commit and a sent plan with nothing deferred ask none.
@@ -230,42 +220,11 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
 });`;
-
-// The after-round action ask reads the facts of the bot's last action ask
-// (ColdEconomyPlan.edgesSince): with nothing moved, no ask; each moved fact
-// names its bit.
-{
-    const Plan = invoke('GameServer/Bot/Population/ColdEconomyPlan');
-    const Craft = require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
-    const asked = { characterId: 1, level: 30, activity: 'hunting', currentRegion: 'Giran', adena: 100, vitals: { mp: 300 },
-        inventory: { 1864: { selfId: 1864, amount: 5 }, 1463: { selfId: 1463, amount: 100 } }, stats: { dwarvenCraftLevel: 4 } };
-    const lines = [{ lineId: 7, fills: 1 }];
-    const options = { stockFor: (_state, kind) => kind === 'shots' ? { itemId: 1463, keep: 50 } : null, ownLines: lines };
-    const baseline = Plan.actionBaseline(asked, { ownLines: lines });
-    const since = (patch, extra = {}) => Plan.edgesSince(baseline, { ...asked, ...patch }, { ...options, ...extra });
-    assert.equal(Plan.edges({ ...asked, activity: 'resting' }, asked, options), 8, 'a round from rest to hunt is the round\'s edge');
-    assert.equal(since({}), 0, 'nothing moved since the last action ask: no ask, though a rest ended');
-    assert.equal(since({ activity: 'resting' }), 0, 'a rest asks nothing');
-    assert.equal(since({ inventory: { ...asked.inventory, 1865: { selfId: 1865, amount: 1 } } }), 1, 'new loot');
-    assert.equal(since({ inventory: { ...asked.inventory, 1463: { selfId: 1463, amount: 10 } } }), 2, 'a kit stock threshold');
-    assert.equal(since({ inventory: { ...asked.inventory, 1463: { selfId: 1463, amount: 90 } } }), 0, 'a count inside it');
-    assert.equal(since({ activity: 'shopping' }), 8, 'a shopping town reached');
-    assert.equal(since({ level: 31 }), 16, 'a level');
-    assert.equal(since({ activity: 'dead' }), 32, 'a death');
-    const band = Craft.craftMpBand(4, 300), inside = 300 + 0.5, outside = band[3] ? band[2] + 1 : band[2];
-    assert(Craft.sameCraftMp(4, 300, inside), 'fixture: an MP inside its band');
-    assert.equal(since({ vitals: { mp: inside } }), 0, 'an MP inside the band of the craft checks');
-    assert.equal(since({ vitals: { mp: outside } }), 64, 'the craft MP out of its band');
-    assert.equal(since({ vitals: { mp: outside }, stats: { dwarvenCraftLevel: 0 } }), 0, 'a bot with no craft reads no MP');
-    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 2 }] }), 128, 'a trade on an own line');
-    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 1 }, { lineId: 8, fills: 0 }] }), 0, 'a line the bot posted');
-    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 1 }, { lineId: 8, fills: 1 }] }), 128, 'a trade on a line posted since');
-}
 
 (async () => {
     const id = 710031;
@@ -319,15 +278,14 @@ parentPort.on('message', message => {
         assert.equal(step.activity, 'hunting', 'the fixture bot hunts this step');
         assert.equal(step.decided, 1, 'a bot without a held decision builds its economy once, before the round');
         assert.equal(step.afterRound, 0, 'the projection after the round builds no economy');
-        assert(step.edges & 1, 'the looted scroll is an edge the round acts on with the step decision');
-        assert.deepEqual(step.laterEdges.map(bits => bits & 9), [0, 0, 8, 8, 0],
-            'a rest asks nothing, its end with nothing moved since the last action ask asks nothing, the arrival in town asks, '
-            + 'again after main dropped that step, and not after main committed it');
+        assert.equal(step.buildPlan, true, 'a build taken in the field plans its market once');
+        assert.equal(step.fieldPlans, 0, 'loot, a rest and its end ask no market plan in the field');
         // A looted Scroll of Escape is no supply event: the scroll has no line (situations.md B2).
         assert.equal(step.woken, 0, 'on the hunt the round\'s loot wakes no build');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
         assert.equal(step.town[0], 1, 'the arrival in town wakes the build: its shopping moment (arrived_town)');
+        assert.deepEqual(step.ownLines, [0, 1, 0], 'its own lines: no look in the field, one at the arrival in town, held after');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');
@@ -336,15 +294,12 @@ parentPort.on('message', message => {
         const goal = goalResponse.value;
         console.log(JSON.stringify(goal));
         assert.equal(goal.same, 0, 'a quiet step reuses the held decision while the goal revision holds');
+        assert.deepEqual(goal.wishAsks, [], 'and asks no town route rows in the field');
         assert.equal(goal.held, '', 'the held decision holds on the warm state at the same goal revision');
+        assert.equal(goal.handoff, '', 'a near body back far serves its far card: no build for the handoff');
         assert.equal(goal.refusal, 'goal', 'a moved goal revision refuses the held decision');
         assert.equal(goal.moved, 1, 'the next decision point after a goal change builds once');
         assert.deepEqual(goal.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
-        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'craft'), craftStepProbe: id });
-        const craftResponse = await wait(message => message.probeId === 'craft'); if (craftResponse.error) throw Error(craftResponse.error);
-        console.log(JSON.stringify(craftResponse.value));
-        assert.deepEqual(craftResponse.value, { callers: ['craft_mp'], edges: 0, carried: true },
-            'a kept card\'s craft refresh is the step\'s one action ask: the round compares against it, not the last commit');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;

@@ -24,7 +24,6 @@ const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
 const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
-const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');
 const SkillBooks = invoke('GameServer/Skills/SkillBookCatalog');
 DataCache.init();
@@ -376,16 +375,6 @@ try {
     const poor = { ...materialBuyer, adena: 200000 };
     noAuthoredComponentWish(poor);
     assert.strictEqual(materialQuote(poor, 3), null, 'the original 200k wallet cannot fill a 3M component quote');
-    noAuthoredComponentWish({ ...materialBuyer, stats: { ...materialBuyer.stats, marketRetryAfter: 1001 } });
-
-    // The material profile has no authored wish to travel for. Exercise the
-    // actual retry consumer with the same timestamp and a genuine native hot
-    // gear goal instead; this is a refusal, not a successful-trip claim.
-    const retryBuyer = { ...native.buyer, stats: { ...native.buyer.stats, marketRetryAfter: 1001 } };
-    const retryBefore = structuredClone(retryBuyer);
-    assert.strictEqual(GoalExecutor.beginMarketTravel(retryBuyer, native.goal, 1000), null,
-        'a genuine native purchase respects a future retry deadline');
-    assert.deepStrictEqual(retryBuyer, retryBefore, 'retry refusal spends no money or inventory');
 
     const enchanted = { ...pricingItem(178), enchant: 3 };
     assert.strictEqual(Pricing.npcPrice(enchanted), Infinity, 'ordinary NPC stock must not cap enchanted gear');

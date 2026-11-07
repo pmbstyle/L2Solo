@@ -1,8 +1,8 @@
 'use strict';
-// T106: summoners and orc chanters read table roles of their own; a
-// spiritshot class takes Blessed Spiritshot when it holds it, or holds no
-// spiritshot and the blessed rows' extra farm pays their extra cost
-// (docs/game-decisions.md "Shots").
+// T106: summoners and orc chanters read table roles of their own; the earning
+// decision chooses Blessed Spiritshot for a spiritshot class when the blessed
+// rows' extra farm pays their extra cost (decidedKind); a bot fires what it
+// holds, Blessed first, holding neither the kind its held answer chose.
 const assert = require('node:assert/strict');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
@@ -22,8 +22,12 @@ Table.best = (role, level, shots) => shots === 2 ? { exp: blessedExp.get(level),
 try {
     const sorcerer = (level, inventory = {}) => ({ level, stats: { classId: 12 }, inventory });
     // 50: blessed adds 1/2 - 1/3 of the farm for 100 x (45 - 18) a 100000 hour.
-    assert.equal(Shots.planForState(sorcerer(50)).selfId, 3947, 'the blessed farm pays its cost');
-    assert.equal(Shots.planForState(sorcerer(51)).selfId, 2509, 'a blessed farm that does not pay: spiritshot');
+    assert.equal(Shots.decidedKind(sorcerer(50)), 'blessedSpiritshot', 'the blessed farm pays its cost');
+    assert.equal(Shots.decidedKind(sorcerer(51)), 'spiritshot', 'a blessed farm that does not pay: spiritshot');
+    assert.equal(Shots.decidedKind({ level: 50, stats: { classId: 2 } }), 'soulshot', 'a fighter class: soulshots');
+    const answered = (level, shotKind) => ({ level, stats: { classId: 12, earning: { shotKind } }, inventory: {} });
+    assert.equal(Shots.planForState(answered(51, 'blessedSpiritshot')).selfId, 3947, 'holding neither: the held answer\'s kind, not re-judged');
+    assert.equal(Shots.planForState(answered(50, 'spiritshot')).selfId, 2509, 'holding neither: the held answer\'s spiritshot');
     assert.equal(Shots.planForState(sorcerer(50, { 2509: { selfId: 2509, amount: 5 } })).selfId, 2509,
         'held spiritshots are used first');
     assert.equal(Shots.planForState(sorcerer(51, { 3947: { selfId: 3947, amount: 5 } })).selfId, 3947,
@@ -42,9 +46,9 @@ try {
     bag[3948].amount = 0;
     assert.equal(shot().selfId, 2510, 'blessed drunk in the same bag: its spiritshot');
     bag[2510].amount = 0;
-    assert.equal(shot().selfId, 2510, 'neither held at 51: the blessed farm does not pay');
-    fighter.level = 50;
-    assert.equal(shot().selfId, 3948, 'at 50 it pays');
+    assert.equal(shot().selfId, 2510, 'neither held, no held answer: its spiritshot');
+    fighter.stats = { classId: 12, earning: { shotKind: 'blessedSpiritshot' } };
+    assert.equal(shot().selfId, 3948, 'neither held: the held answer\'s blessed');
     fighter.inventory = { 72: worn(72) };
     assert.deepEqual([shot().selfId, shot().rank, shot().perAction], [3949, 'c', count(72, 'spiritshot')], 'a new bag with a C weapon');
     fighter.stats = { classId: 2 };

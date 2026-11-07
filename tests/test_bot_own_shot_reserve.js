@@ -167,11 +167,9 @@ for (const custodyPolicy of [0, 1]) {
     if (custodyPolicy === 0) delete owner.inventory[D_SOULSHOT];
     const ctx = Pricing.traderContext(owner, { economy, board, tripCost: trip });
     assert.strictEqual(ctx.canSell(legacyLine), false);
-    const seen = new (invoke('GameServer/Bot/Economy/BoardLook').SeenLines)();
-    const withdrawals = [];
-    for (let step = 0; step < 2; step++) withdrawals.push(...(Pricing.lookOwn(owner, [legacyLine], ctx, seen)?.withdrawals || []));
+    const withdrawals = Pricing.lookOwn(owner, [legacyLine], ctx)?.withdrawals || [];
     assert(withdrawals.some(row => row.lineId === legacyLine.lineId),
-        'natural review withdraws both backed and conditional legacy personal shots without a new fill');
+        'an own lines look withdraws both backed and conditional legacy personal shots without a new fill');
 }
 
 console.log('test_bot_own_shot_reserve: ok');

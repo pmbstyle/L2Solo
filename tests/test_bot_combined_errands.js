@@ -198,10 +198,16 @@ async function run() {
     console.log('PHYSICAL_EXECUTION_SEAM', JSON.stringify({ inputLevel: buyer.level, arrivalLevel: arrived.level,
         exp: arrived.exp, policyWallet: policyFinished.adena, executedWallet: finished.adena,
         healing: physical(bag, 1060), scrolls: physical(bag, 736), shots: physical(bag, shotPlan.selfId) }));
-    const returning = Goals.finishMarketVisit(finished);
-    assert(returning && returning.activity === 'traveling');
+    // The visit's end goes on to the errand left for another town, then back from there.
+    const onward = Goals.finishMarketVisit(finished);
+    assert(onward && onward.activity === 'traveling');
+    assert.equal(onward.stats.travel.townName, 'Giran', 'the errand pending elsewhere is the next trip');
+    assert.deepEqual(onward.stats.marketReturn, originalReturn, 'the way back stays the field it left');
+    const done = { ...finished, stats: Errands.complete(finished, Errands.pending(finished)[0], Date.now()).stats };
+    const returning = Goals.finishMarketVisit(done);
+    assert(returning && returning.activity === 'traveling' && returning.stats.travel.townName !== 'Giran');
     assert.equal(held(returning, 736), held(finished, 736), 'return consumes no second departure scroll');
-    console.log('PASS native one-town queue, changed quote, supplies and one return');
+    console.log('PASS native one-town queue, changed quote, supplies, onward errand and one return');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     await Database.close();

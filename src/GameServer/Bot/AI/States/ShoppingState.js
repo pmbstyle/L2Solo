@@ -270,8 +270,9 @@ function clearShoppingServiceState(session) {
 // The visit's kit amounts, fixed at its first restock once its sale has
 // settled (shoppingSale): the build's kit rates over the bag and wallet then,
 // at that town's quotes (EconomyContext.keptKit), read by every restock of the
-// visit in that town. None without a town. Temporary until step 6 (the town
-// plan on the worker takes the kit reader).
+// visit in that town. None without a town. The same kit rule cold execution
+// reads on main; picked once per stop, so the body keeps it rather than wait
+// for a worker plan of the visit.
 function shoppingKit(session, bot, town) {
     if (!town) return undefined;
     if (session.shoppingKit?.town !== town) {
@@ -471,7 +472,7 @@ module.exports = {
             || session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
             return;
         }
-        invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 2);
+        invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 2);
         if (session.partyCompanion === true && session.followPlayerSession && !session.companionShopping) {
             session.plan = 'following';
             session.shoppingTarget = undefined;

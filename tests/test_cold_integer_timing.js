@@ -4,7 +4,6 @@ require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
-const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const id = 745601;
 const fields = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt'];
@@ -55,24 +54,8 @@ const fields = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHot
         assert(Protocol.commandCheckpoint(saved), 'native lifecycle saves also publish valid command authority');
         for (const field of fields) assert(Number.isSafeInteger(saved.timing[field]));
 
-        const kernel = new ColdSimulationKernel({ resolveSolo: async () => null, now: () => at + 100000 });
-        kernel.upsert({ state: saved });
-        kernel.wakeBuyer(id, at + 100000, { itemId: 1, price: 1 });
-        kernel.dueCandidates();
-        assert(kernel.commanding.has(id), 'a buyer wake on the repaired bot acquires a command instead of losing its schedule');
-        await kernel.resolveChain;
-        await kernel.shutdown();
-
         const invalid = { ...saved, timing: { ...saved.timing, nextResolveAt: at + .125 } };
         assert.equal(Protocol.commandCheckpoint(invalid), null, 'wire validation still rejects malformed checkpoints');
-        const retry = new ColdSimulationKernel({ resolveSolo: async () => null, now: () => at + 100000 });
-        retry.upsert({ state: invalid });
-        retry.wakeBuyer(id, at + 100000, { itemId: 1, price: 1 });
-        retry.dueCandidates();
-        assert.equal(retry.commanding.has(id), false, 'an invalid checkpoint never gains command authority');
-        assert.equal(retry.scheduleTokens.get(id)?.dueAt, at + 101000,
-            'a command that cannot start retains a bounded retry instead of dropping its owner');
-        await retry.shutdown();
         console.log('PASS legacy timing repair, integer projection, native save and buyer wake scheduling');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

@@ -512,7 +512,6 @@ async function buyAdNeedChanged(record, line) {
         .then(raised => { if (!raised && life().cachedState(record.ownerId)?.phase !== 'hot') forget(); });
     else if (phase === 'hot') {
         if (coordinator()?.requestEconomyLook?.(record.ownerId) !== true) forget();
-        invoke('GameServer/Bot/Economy/HotBoardReviewService').ownerChanged(record.ownerId, 'line');
     }
 }
 async function cancel(characterId) {
@@ -574,6 +573,15 @@ function reset() {
     for (const [token, listeners] of [...resultListeners])
         notifyResult(token, [...listeners].map(listener => listener.actorId), null);
     staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
+}
+// A hot body's break changed (kind: 1 a rest, 2 a town stop, 0 neither; RestingState,
+// ShoppingState, BotAI): a body in a meeting has it checked once at the change, no
+// tick polls it.
+function breakChanged(session, kind) {
+    if (!kind) { delete session.meetingBreakKind; return; }
+    if (session.meetingBreakKind === kind) return;
+    session.meetingBreakKind = kind;
+    if (session.tradeMeetingPresence) wake(session.actor.fetchId());
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
@@ -762,6 +770,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

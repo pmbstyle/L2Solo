@@ -42,13 +42,16 @@ function bestSellOffer(index, selfId, options = {}) {
 // rest, within `money`: { lines: [{ line, count, price }], npc (units from the NPC),
 // units, cost }. One rule for the purchase of a stack (a shot restock,
 // materials): ShotStock.restockPlan and cheapestTown.
-function takeable(line, { npcPrice = 0, maxPrice = Infinity, excludeOwner = 0 }) {
+// countOf(line): the units of a line the buyer may take (its count less what other
+// bots' errands claim, BoardClaims.unclaimed; the line's count by default).
+const lineCount = line => Number(line.count);
+function takeable(line, { npcPrice = 0, maxPrice = Infinity, excludeOwner = 0, countOf = lineCount }) {
     const price = Number(line.price);
     return !(excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner))
-        && price > 0 && price <= maxPrice && !(npcPrice > 0 && price > npcPrice) && Number(line.count) > 0;
+        && price > 0 && price <= maxPrice && !(npcPrice > 0 && price > npcPrice) && countOf(line) > 0;
 }
 function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0,
-    accept = null, acceptFill = null } = {}) {
+    accept = null, acceptFill = null, countOf = lineCount } = {}) {
     let left = Math.max(0, Math.floor(Number(amount) || 0));
     let budget = Math.max(0, Number(money));
     const taken = [];
@@ -57,8 +60,8 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
         if (left <= 0) break;
         const price = Number(line.price);
         if (accept && !accept(line)) continue;
-        if (!takeable(line, { npcPrice, maxPrice, excludeOwner })) continue;
-        const count = Math.min(left, Number(line.count), Math.floor(budget / price));
+        if (!takeable(line, { npcPrice, maxPrice, excludeOwner, countOf })) continue;
+        const count = Math.min(left, countOf(line), Math.floor(budget / price));
         if (count <= 0) break;
         // Some admission evidence covers this exact fill, not the whole
         // quoted stack or a different remainder after earlier lines.
@@ -128,11 +131,12 @@ function boardView(index, selfId, options, amount = 0) {
         read++;
         if (!inspected.has(line.town)) inspected.set(line.town, []);
         inspected.get(line.town).push(line);
-        if (met || !named(line.town) || !takeable(line, { maxPrice, excludeOwner: options.excludeOwner })
+        const countOf = options.countOf || lineCount;
+        if (met || !named(line.town) || !takeable(line, { maxPrice, excludeOwner: options.excludeOwner, countOf })
             || options.accept && !options.accept(line)) continue;
         const before = held.get(line.town) || 0;
-        if (options.acceptFill && !options.acceptFill(line, Math.min(Number(line.count), amount - before))) continue;
-        const units = before + Number(line.count);
+        if (options.acceptFill && !options.acceptFill(line, Math.min(countOf(line), amount - before))) continue;
+        const units = before + countOf(line);
         held.set(line.town, units);
         met = units >= amount;
     }
@@ -145,7 +149,7 @@ function betterOffer(best, options, amount, town, trip, price, lines) {
     const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
     const filled = fill(lines, amount, {
         npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
-        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill
+        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill, countOf: options.countOf
     });
     if (!filled.units) return best;
     const landed = filled.cost + trip;

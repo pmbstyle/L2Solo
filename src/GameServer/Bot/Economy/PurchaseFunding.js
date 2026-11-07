@@ -22,13 +22,6 @@ function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
 function surplus(state = {}, price = 0, reserve = 0) {
     return Math.max(0, budget(state) - nonnegative(price) - nonnegative(reserve));
 }
-function moneyReached(state, escrow = 0) {
-    const packet = state?.stats?.money;
-    if (!Packet.hasMoney(packet) || !(Number(Packet.firstUnfundedPrice(packet)) > 0)) return false;
-    let fundedPrice = 0;
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) fundedPrice = Math.max(fundedPrice, Number(Packet.fundedCumulative(packet, row)) || 0);
-    return budget(state, escrow) - nonnegative(Packet.refillReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
-}
 // The rank r when it is one of the packet's funded rows (its ratio as the packet keeps it), else null.
 function fundedRank(packet, r) {
     if (!(Number(r) > 0) || !Number.isFinite(Number(r))) return null;
@@ -272,6 +265,5 @@ function packetFor(network, hour, reserve) {
     }
     return packet;
 }
-function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

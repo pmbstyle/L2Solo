@@ -339,9 +339,9 @@ function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = nul
     return null;
 }
 
-// Only lines selected by the owner's shared attention roll reach this choice.
+// The own_lines answer over the lines BoardLook.review looks at (its reasons).
 // Native writes retain revision + previousPricing fences; an unchanged price
-// returns no update. Its observation stays in the worker's numeric lookSeen.
+// returns no update.
 function look(state, lines, ctx) {
     const reprices = [];
     const withdrawals = [];
@@ -427,8 +427,9 @@ function look(state, lines, ctx) {
     return reprices.length || withdrawals.length ? { reprices, withdrawals } : null;
 }
 
-function lookOwn(state, lines, ctx, lookSeen) {
-    return BoardLook.review(state, lines, ctx, lookSeen);
+// options: { visit } (BoardLook.review).
+function lookOwn(state, lines, ctx, options = {}) {
+    return BoardLook.review(state, lines, ctx, options);
 }
 
 module.exports = { beliefFor, traderContext, priceForSale, serviceFee, lineState, bestAnswer, disposition, bid, look, lookOwn };

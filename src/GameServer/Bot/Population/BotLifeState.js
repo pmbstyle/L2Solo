@@ -393,7 +393,6 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     const stats = { ...(state.stats || {}) };
     if (Number(stats.marketWanted?.itemId || 0) === Number(plan?.target?.selfId || 0)) {
         stats.marketWanted = null;
-        stats.marketRetryAfter = null;
         stats.marketLead = null;
     }
     let retained = plan?.inputPreparation;
@@ -3677,7 +3676,6 @@ const BotLifeState = {
             stats: {
                 ...purchaseStats,
                 equipment,
-                marketRetryAfter: null,
                 marketWanted: null,
                 marketLead: null,
                 lastMarketPurchase: { selfId, qty: count, price, totalPrice, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }

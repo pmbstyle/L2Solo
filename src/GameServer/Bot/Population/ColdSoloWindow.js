@@ -66,9 +66,9 @@ function huntingRound(result) {
 
 // What ended the window at this round, '' while it runs on. before, after: the
 // round's states, its projection done (its situations raised: the wallet's crossings
-// among them). readers, the worker's and the kernel's: edges(before, after)
-// (ColdEconomyPlan.edges), feasible(after) (EconomyContext.leafOutcome: what the held leaf's execution
-// proved, raised by the step) and kind(after) (lifecycleKind: a state that asks a command).
+// and the supply lines among them). readers, the worker's and the kernel's: feasible(after)
+// (EconomyContext.leafOutcome: what the held leaf's execution proved, raised by the step)
+// and kind(after) (lifecycleKind: a state that asks a command).
 function endOf(before, after, result, readers) {
     if (!huntingRound(result)) return 'round';
     // The round's own end: a rest, a death, a flight.
@@ -76,8 +76,6 @@ function endOf(before, after, result, readers) {
     // A decision woken by the round (Situations: what is heard at work; a level up
     // waits for the rest, situations.md Q7): its step decides. What waits does not end it.
     if (Situations.anyWoken(after.stats)) return 'event';
-    // New loot (bit 1) is no decision point: the commit's edges read it from the window's start.
-    if (readers.edges(before, after) & ~1) return 'supplies';
     if (!readers.feasible(after)) return 'leaf';
     return readers.kind(after) !== 'resolver' ? 'command' : '';
 }

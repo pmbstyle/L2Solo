@@ -347,12 +347,12 @@ async function run() {
         assert(Situations.woken(raised, 'build'), 'its goal in reach wakes the build');
         assert.equal(Card.refusal({ ...published, stats: { ...published.stats, decisionSeq: packet.decisionSeq + 1 } }, card, deps()),
             'decision_seq', 'a card of another decision is refused');
-        // The field guards: a field card serves no dead bot, nor a far bot whose held build is lost.
-        assert.equal(Card.refusal({ ...published, activity: 'dead' }, card, deps()), 'not_field:dead', 'a dead bot builds');
-        // A visit serves only the leaf that ordered it (its own town step: test_detour_own_trip); any
-        // other (a hunting leaf's, a bag cleanup's, a stale one) builds in town at each step.
-        assert.equal(Card.refusal({ ...published, activity: 'shopping', currentRegion: 'Giran' }, card, deps()), 'not_field:shopping',
-            'a visit its leaf did not order builds');
+        // A held card serves wherever the bot stands: a dead bot, a visit its leaf did not order
+        // (its arrival woke the build once) take no build at each step; a far bot whose held
+        // build is lost builds.
+        assert.equal(Card.refusal({ ...published, activity: 'dead' }, card, deps()), '', 'a dead bot serves its card');
+        assert.equal(Card.refusal({ ...published, activity: 'shopping', currentRegion: 'Giran' }, card, deps()), '',
+            'a visit serves the held card at each step');
         Economy.forget(native.characterId);
         assert.equal(Card.refusal(published, card, deps()), 'no_held', 'a lost held build builds');
     }

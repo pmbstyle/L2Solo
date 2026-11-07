@@ -92,8 +92,9 @@ const SITUATIONS = Object.freeze({
     source_stalled: link(0),
     // What an executor proved of the held plan where it acts: its goal reached (a
     // purchase landed, a material hunt's count, a paid piece waits for its exchange);
-    // a town visit's step done or refused (the visit's own check, a review main could
-    // not run): the agenda moves on (Agenda.advance, temporary until step 6).
+    // a town visit's last stop done or refused (the visit's own check, a review main
+    // could not run): the build takes the next leaf. A stop with a stop after it in the
+    // held plan raises nothing: the plan moves on (EconomyContext visitStop).
     'goal_done:goal': link(0),
     'goal_done:visit': link(0),
     'goal_failed:visit': link(0),
@@ -107,11 +108,8 @@ const SITUATIONS = Object.freeze({
     // the step it came for.
     arrived_town: link(0),
     'arrived_town:own': link(0),
-    // Main moved the bot's goal (its goal revision, until AI-5); the step's own review
-    // of a craft or clan market.
+    // Main moved the bot's goal (its goal revision, until goals read the card).
     goal_moved: link(0),
-    craft_bid: link(0),
-    clan_market: link(0),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
     // queue held for it, DecisionSections.moneyCrossings, F3).
     out_of_money: link(0),
@@ -146,11 +144,21 @@ const SITUATIONS = Object.freeze({
     'stock_low:potions': link(0),
     bag_full: link(0),
     // The wallet reached the build's threshold (baseline.affordAt): a broke bot's survival
-    // potions, else an unarmed bot's weapon bridge or its focus (both wake the build only:
-    // one name). Its own failed buy's retry stamp goes with it (stats.marketRetryAfter:
-    // it may buy again, raisedFacts).
+    // potions, else an unarmed bot's weapon bridge, its focus or its gear plan's market
+    // piece (all wake the build only: one name).
     'goal_affordable:potions': link(0),
-    'goal_affordable:focus': link(0)
+    'goal_affordable:focus': link(0),
+    // A board offer its held build wants (MarketBuyerWaiters: a new SELL line, or a cheaper
+    // one, within the want's budget), raised at the bot's next step (payload { itemId,
+    // price }): it answers the trade it hears, as a C4 player answers a WTS shout.
+    offer_posted: link(0),
+    // Its own board lines (the worker's board diff): a SELL line of the same item posted
+    // or repriced below its own in its town (an unplaced ad counts in every town), as a
+    // C4 seller sees a cheaper store or WTS shout; one of its own lines filled (a sale, a
+    // bid answered). Heard at its next stop: a hunting player looks at his store when he
+    // sits down or reaches town.
+    line_undercut: link(0, STOP),
+    'goal_done:line': link(0, STOP)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
@@ -166,10 +174,9 @@ function woke(name, where) {
 // (situations.md §10, §14).
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
-// which names the spot a body walks to), goal_done:visit / goal_failed:visit (the agenda
-// over the held entry, F4: temporary until the town plan holds the visit), the step's
-// market reviews (craft_bid, clan_market) and goal_moved (until goals read the card). A death wakes it
-// through the earning spot (its search runs in the build). Low potions wake the build
+// which names the spot a body walks to), goal_done:visit / goal_failed:visit (a visit
+// whose held plan has no stop left: the next leaf) and goal_moved (until goals read the card). A death wakes
+// the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
 // gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
@@ -184,6 +191,9 @@ function woke(name, where) {
 // gained in the field is read there) and at a recipe learned, held between: levels, worn
 // gear, prices, the board and its own fills wake it not. A bot that is no service crafter
 // takes it as none. It has no held key: only its raises wake it.
+// own_lines: the prices of its own board lines (MarketPricing.look over every own
+// priced line), taken at a town arrival (it sees the stores), a line undercut and a
+// line filled; held between: prices, deals and the clock wake it not. No held key.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
@@ -191,9 +201,10 @@ const DECISIONS = Object.freeze({
     build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
-        'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
+        'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
-    workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned'])
+    workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
+    own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -313,8 +324,6 @@ let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 const GearMarks = require('./AI/GearMarks');
 function raisedFacts(stats, name, payload, dropped = null) {
-    // The wallet in reach of its goal: the retry stamp of its last failed buy goes (debt 24).
-    if (name.startsWith('goal_affordable:')) return stats?.marketRetryAfter != null ? { marketRetryAfter: null } : {};
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
         const gearMarks = GearMarks.withMark(stats, payload.key, dropped);
@@ -334,8 +343,7 @@ function writeFacts(stats, facts) {
     if (facts.earning) stats.earning = facts.earning;
     if (facts.spotMarks) stats.spotMarks = facts.spotMarks;
     if (facts.gearMarks) stats.gearMarks = facts.gearMarks;
-    if (Object.hasOwn(facts, 'marketRetryAfter')) stats.marketRetryAfter = null;
-    return !!facts.earning || !!facts.spotMarks || !!facts.gearMarks || Object.hasOwn(facts, 'marketRetryAfter');
+    return !!facts.earning || !!facts.spotMarks || !!facts.gearMarks;
 }
 // A unit (a body, a far bot's kernel record: memory) that needs a spot while its held
 // earning answer names none it may take (none found, marked, full): an existing answer

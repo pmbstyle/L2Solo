@@ -7,11 +7,14 @@ function key(errand) {
     return `${errand.town}:${Number(errand.selfId)}:${errand.purpose || 'supply'}:${routeTag ? '' : errand.tag || ''}`;
 }
 
+// An errand lapses ERRAND_MS after it was decided (at): its trip, credit and board claims end.
+const lapsed = (at, timestamp = Date.now()) => timestamp - Number(at || 0) >= ERRAND_MS;
+
 function pending(state, timestamp = Date.now(), town = null) {
     const unique = new Map();
     for (const errand of [...(state?.stats?.marketErrands || []), state?.stats?.marketErrand]) {
         if (!errand || !(Number(errand.selfId) > 0) || !(Number(errand.amount) > 0) || !errand.town
-            || timestamp - Number(errand.at || 0) >= ERRAND_MS || (town && errand.town !== town)) continue;
+            || lapsed(errand.at, timestamp) || (town && errand.town !== town)) continue;
         unique.set(key(errand), errand);
     }
     return [...unique.values()].slice(0, 8);
@@ -61,4 +64,4 @@ function visit(state, town, timestamp = Date.now(), reason = null) {
     return { ...state, stats: { ...(state.stats || {}), townVisit: { town, startedAt: timestamp, reason } } };
 }
 
-module.exports = { ERRAND_MS, key, pending, enqueue, complete, withPending, edge, visit };
+module.exports = { ERRAND_MS, key, lapsed, pending, enqueue, complete, withPending, edge, visit };

@@ -715,7 +715,7 @@ const BotAI = {
         if (session.hotBackgroundPartyId && invoke('GameServer/Bot/AI/HotBackgroundParty').tick(session, bot, Generics, this)) return;
         const state = States[session.plan];
         if (!['resting', 'shopping'].includes(session.plan)) {
-            invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 0);
+            invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 0);
         }
         if (state) {
             const stateName = session.plan;

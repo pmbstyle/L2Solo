@@ -9,7 +9,6 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Database = invoke('Database');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -321,54 +320,7 @@ async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
     });
     const refunded = remote?.withdrawn ? remote.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
-    // The refund moves money only: the trip keeps the caller's retry stamp (a
-    // buyer's wake lifted it on the caller's state, not on the saved row).
-    return GoalExecutor.beginMarketTravel({ ...refunded,
-        stats: { ...refunded.stats, marketRetryAfter: state.stats?.marketRetryAfter ?? null } }, goal, timestamp);
-}
-
-// What the bot may pay for its market plan's target: the wallet with the
-// plan's own buy-order escrow, after the higher wishes (a weapon bridge: all).
-function marketPlanBudget(state, plan) {
-    const escrow = PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId));
-    return plan.weaponBridge ? PurchaseFunding.budget(state, escrow)
-        : PurchaseFunding.spendable(state, escrow, { itemId: plan.target?.selfId });
-}
-
-// A buyer's wake (MarketBuyerWaiters → the lifecycle command's marketWakeup,
-// [{ itemId, price }]) lifts a failed visit's retry stamp only for a new offer
-// of the market plan's own target within the bot's budget: the event the stamp
-// waits for (ColdMarketService.retryAfterFailedPurchase). A wake for another
-// item it wants (shots, a recipe) leaves the stamp.
-function wakeLiftsMarketRetry(state, offers) {
-    const plan = state?.stats?.equipmentPlan;
-    const targetId = Number(plan?.target?.selfId || 0);
-    const offer = Array.isArray(offers) && targetId > 0 && plan?.strategy === 'market'
-        ? offers.find(row => Number(row?.itemId) === targetId) : null;
-    return !!offer && Number(offer.price) > 0 && marketPlanBudget(state, plan) >= Number(offer.price);
-}
-
-function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
-    const plan = state?.stats?.equipmentPlan;
-    const targetId = Number(plan?.target?.selfId || 0);
-    const targetSlot = Number(plan?.target?.slot || 0);
-    const requiredClanPurchase = plan?.clanGoal?.priority === 'required';
-    if (!['hunting', 'party_wait'].includes(state?.activity)
-        || plan?.status !== 'active'
-        || plan?.strategy !== 'market'
-        || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
-        || targetId <= 0
-        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
-
-    const price = Number(plan.market?.price || 0);
-    const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || marketPlanBudget(state, plan) < price) return false;
-
-    const combinationRequirement = (plan.combine?.requirements || [])
-        .find((entry) => Number(entry.selfId) === targetId);
-    const required = Math.max(1, Number(combinationRequirement?.amount || 1));
-    const owned = Number(state.inventory?.[String(targetId)]?.amount || 0);
-    return owned < required || LifeState.marketPurchaseBlocker(state, { selfId: targetId }, 1) === null;
+    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
 }
 
 function canResumeWarehouseMarketSale(state) {
@@ -604,15 +556,15 @@ async function resumePartyMarketBreak(state, timestamp) {
     return { ok: !!saved, state: saved || state, reason: 'clan_party_return_wait' };
 }
 
-// need: the cold worker's verdict on this state (a far step's proposal);
-// the command path decides here.
-function inventoryCleanupGoal(state, timestamp = Date.now(), need = PartyMarketBreak.forcedCleanupNeed(state, timestamp)) {
+// need: the cold worker's verdict on this state (a far step's proposal); else the
+// build's held bag trip (stats.cleanupDue): no resolve decides the bag on its own.
+function inventoryCleanupGoal(state, need = PartyMarketBreak.heldCleanup(state)) {
     if (!need) return null;
     return { ...invoke('GameServer/Bot/Goals/NeedsEvaluator').cleanupGoal(need), status: 'active' };
 }
 
 function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation = null, need = undefined) {
-    const cleanupGoal = inventoryCleanupGoal(state, timestamp, need);
+    const cleanupGoal = inventoryCleanupGoal(state, need);
     if (!cleanupGoal) return null;
     const travelState = GoalExecutor.beginMarketTravel(state, cleanupGoal, timestamp);
     if (!travelState) return null;
@@ -1047,11 +999,6 @@ const PopulationService = {
     initialized: false,
     started: false,
     lifeReadyPromise: null,
-    hotBoardReviewGeneration: 0,
-    hotBoardReviewService: null,
-    hotBoardReviewStartPromise: null,
-    hotBoardReviewTickUnsubscribe: null,
-    hotBoardReviewReadyUnsubscribe: null,
     lifecycleSafetyGeneration: 0,
     lifecycleSafetySweep: null,
     lifecycleSafetyStartPromise: null,
@@ -1154,7 +1101,6 @@ const PopulationService = {
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
         this.startBackgroundJobRegistry();
-        this.startHotBoardReviews();
         this.startLifecycleSafetySweep();
         this.startPartyAssemblyEvents();
         Promise.resolve(this.lifeReadyPromise).then(() => this.startOpportunisticRaids())
@@ -1202,7 +1148,6 @@ const PopulationService = {
         ClanActionService.stopEvents();
         this.stopPartyAssemblyEvents();
         this.stopLifecycleSafetySweep();
-        this.stopHotBoardReviews();
         invoke('GameServer/Bot/AI/BotTownTravel').stopSupplyReturns();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
@@ -1776,87 +1721,6 @@ const PopulationService = {
         this.lifecycleSafetyGeneration++;
         this.lifecycleSafetySweep?.stop();
         this.lifecycleSafetyStartPromise = null;
-    },
-
-    startHotBoardReviews() {
-        if (Config.enabled === false || !this.started || !this.backgroundJobRegistry?.started) {
-            return Promise.resolve(false);
-        }
-        if (this.hotBoardReviewStartPromise) return this.hotBoardReviewStartPromise;
-        if (this.hotBoardReviewService || this.hotBoardReviewTickUnsubscribe) return Promise.resolve(false);
-        const generation = ++this.hotBoardReviewGeneration;
-        const registry = this.backgroundJobRegistry;
-        const current = () => this.started && Config.enabled !== false
-            && this.hotBoardReviewGeneration === generation
-            && this.backgroundJobRegistry === registry && registry.started;
-        let nextAttachAt = 0;
-        let attachAttempt = 0;
-        const attach = () => {
-            if (!current() || this.hotBoardReviewService || !AfkTrade.isBoardReady()
-                || Date.now() < nextAttachAt) return false;
-            const attempt = ++attachAttempt;
-            let service;
-            try {
-                service = invoke('GameServer/Bot/Economy/HotBoardReviewService');
-                service.start({
-                    admit: () => {
-                        if (!current() || attachAttempt !== attempt || this.hotBoardReviewService !== service) return null;
-                        const scheduler = Metrics.schedulerState || {};
-                        const admission = BackgroundWorkGovernor.admit({
-                            job: 'hot_market_review', resource: 'sqlite-heavy',
-                            requestedBudgetMs: Math.max(1, Number(Config.schedulerSliceMs) || 12), minimumBudgetMs: 1,
-                            playerProtected: Number(scheduler.realPlayers || 0) > 0 || scheduler.mode === 'player',
-                            realPlayers: scheduler.realPlayers,
-                            lagMs: Math.max(Number(Metrics.currentEventLoopLag?.() || 0), Number(scheduler.lagMs || 0))
-                        });
-                        return admission.ok ? admission.lease : null;
-                    },
-                    complete: (lease, result) => BackgroundWorkGovernor.complete(lease, result)
-                });
-                this.hotBoardReviewService = service;
-                this.hotBoardReviewReadyUnsubscribe?.();
-                this.hotBoardReviewReadyUnsubscribe = null;
-                return true;
-            } catch (error) {
-                try { service?.stop(); } catch (stopError) {
-                    utils.infoWarn('HotMarket', 'failed startup cleanup: %s', stopError.message);
-                }
-                nextAttachAt = Date.now() + Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000);
-                utils.infoWarn('HotMarket', 'startup retries after governor window: %s', error.message);
-                return false;
-            }
-        };
-        const pending = Promise.resolve(this.lifeReadyPromise).then(ready => {
-            if (ready !== true || !current()) return false;
-            this.hotBoardReviewTickUnsubscribe = registry.subscribeTicks(() => {
-                if (!current()) return;
-                if (this.hotBoardReviewService) this.hotBoardReviewService.pump();
-                else attach();
-            });
-            if (AfkTrade.isBoardReady()) return attach();
-            this.hotBoardReviewReadyUnsubscribe = AfkTrade.subscribeBoardChanges(change => {
-                if (change.ready && current()) attach();
-            });
-            return false;
-        }).catch(error => {
-            utils.infoWarn('HotMarket', 'startup waits: %s', error.message);
-            return false;
-        }).finally(() => {
-            if (this.hotBoardReviewStartPromise === pending) this.hotBoardReviewStartPromise = null;
-        });
-        this.hotBoardReviewStartPromise = pending;
-        return pending;
-    },
-
-    stopHotBoardReviews() {
-        this.hotBoardReviewGeneration++;
-        this.hotBoardReviewReadyUnsubscribe?.();
-        this.hotBoardReviewTickUnsubscribe?.();
-        this.hotBoardReviewService?.stop();
-        this.hotBoardReviewReadyUnsubscribe = null;
-        this.hotBoardReviewTickUnsubscribe = null;
-        this.hotBoardReviewService = null;
-        this.hotBoardReviewStartPromise = null;
     },
 
     scheduleClanActions(continuation = false) {
@@ -2982,7 +2846,7 @@ const PopulationService = {
         // With a worker result the fight already happened: the transition
         // branch below applies it first and then starts the cleanup trip.
         const cleanupAfterFight = !!precomputedResult && state.activity !== 'shopping'
-            && !!inventoryCleanupGoal(state, startedAt);
+            && !!inventoryCleanupGoal(state);
         const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) return this.resolveColdCleanupTravel(state, cleanupState, startedAt);
         const elapsedMs = stepElapsedMs(state, startedAt);
@@ -3136,9 +3000,7 @@ const PopulationService = {
                 .hold(updatedState.characterId, workerRequest.precomputedPlan.economyDecision);
             Config.developerDiagnostics && Metrics.recordBackgroundResolve();
             Config.developerDiagnostics && Metrics.recordCombat(result.debug);
-            const recoveredForMarket = state.activity === 'resting'
-                && (canResumeAffordableMarketPlan(updatedState)
-                    || canResumeWarehouseMarketSale(updatedState));
+            const recoveredForMarket = state.activity === 'resting' && canResumeWarehouseMarketSale(updatedState);
             const cleanupTrip = cleanupAfterFight
                 ? inventoryCleanupTravelState(PartyMarketBreak.withoutStartedTrip(state, updatedState), startedAt)
                 : null;
@@ -3530,28 +3392,6 @@ const PopulationService = {
                 return { ok: !!saved, state: checked?.state || saved || state,
                     reason: saved ? 'equipment_improvement_travel' : 'state_write_rejected' };
             }
-            // Worker-owned recovery finishes before the main economy command.
-            // Reconsider a funded weapon purchase before applying another fight,
-            // which could immediately put the buyer back into recovery again.
-            const buyer = state.stats?.marketRetryAfter && wakeLiftsMarketRetry(state, request.marketWakeup)
-                ? { ...state, stats: { ...state.stats, marketRetryAfter: null } } : state;
-            if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
-                && canResumeAffordableMarketPlan(buyer)) {
-                const goal = await GoalService.review(state);
-                const current = LifeState.cachedState(state.characterId) || state;
-                if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
-                    return { ok: false, reason: 'state_changed', state: current };
-                }
-                const travel = await marketTravelWithRefund(buyer, goal?.current, Date.now());
-                const latest = LifeState.cachedState(state.characterId) || current;
-                if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
-                if (travel) {
-                    const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
-                    const checked = saved && await BotAfkMarketService.reviewPurchaseLimits(saved);
-                    return { ok: !!saved, state: checked?.state || saved || state,
-                        reason: saved ? 'goal_market_travel' : 'state_write_rejected' };
-                }
-            }
             return await this.resolveColdState(state, request, options);
         } catch (error) {
             if (!(error instanceof WorkerCommandAdmissionRefusal)) throw error;
@@ -3686,7 +3526,6 @@ PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPoi
 PopulationService.walkerAppearance = walkerAppearance;
 PopulationService.marketListingIntent = marketListingIntent;
 PopulationService.openMarketListing = openMarketListing;
-PopulationService.canResumeAffordableMarketPlan = canResumeAffordableMarketPlan;
 PopulationService.partyLimitsForObjective = partyLimitsForObjective;
 PopulationService.requiresClanEquipmentParty = requiresClanEquipmentParty;
 PopulationService.partyObjectivesShareRoute = partyObjectivesShareRoute;

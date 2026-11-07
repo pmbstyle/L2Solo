@@ -1,13 +1,12 @@
 const { SELL, BUY, offerFields } = require('../../AfkTrade/BoardIndex');
-const Diagnostics = require('./EconomyDiagnostics');
 
 // A want the bot's equipment plan backs (stats.marketWanted.plan), its shot
 // stack (stats.shotDemand) and its shot recipe (stats.shotRecipeDemand) live
 // until their clear events: the item arrives by any path or the plan drops it
 // (BotLifeState.settleMarketWanted), the stock is reached (EconomyContext.shotDemand),
 // the recipe is learned or no longer pays (ColdShotEconomyService). A want only
-// the wish card backs has no drop event yet: it lasts WANTED_TTL_MS (limits.md).
-const WANTED_TTL_MS = 30 * 60 * 1000;
+// the wish card backs lives with the build that held it (stats.decisionSeq, which
+// moves only when a build is taken): the next build drops it.
 
 function timestampForWanted(wanted = {}) {
     const value = wanted || {};
@@ -22,9 +21,8 @@ function demandSignal(state, selfId, timestamp) {
     const plan = state.stats?.equipmentPlan;
     const wantedAt = timestampForWanted(wanted);
     const wants = Number(wanted?.itemId || 0) === Number(selfId) && wantedAt > 0;
-    const recentWanted = wants && (wanted.plan === true || wantedAt + WANTED_TTL_MS > timestamp);
-    // Counted per read of an expired wish-only want (developer diagnostics).
-    if (wants && !recentWanted && Diagnostics.active()) Diagnostics.count('market_want', 'expired_read', 'wish_only');
+    const recentWanted = wants && (wanted.plan === true || wanted.decisionSeq != null
+        && Number(wanted.decisionSeq) === Number(state.stats?.decisionSeq));
     // A hot bot's shots are its live body's; the worker writes the want again when it is cold.
     const recentShot = Number(shotWanted?.itemId || 0) === Number(selfId) && state.phase !== 'hot';
     const recentRecipe = Number(recipeWanted?.itemId || 0) === Number(selfId);
@@ -45,8 +43,7 @@ function demandSignal(state, selfId, timestamp) {
         selfId: Number(selfId), enchant: 0,
         needId: economicWanted?.needId || `own:${state.characterId}:${recentShot ? 'charge'
             : recentRecipe ? `recipe:${selfId}` : material ? `material:${selfId}` : `item:${selfId}`}`,
-        availability: { from: timestamp, until: recentWanted && !recentShot && !recentRecipe && wanted.plan !== true
-            ? wantedAt + WANTED_TTL_MS : timestamp },
+        availability: { from: timestamp, until: timestamp },
         name: state.name || null,
         town: state.currentRegion || null,
         amount: Math.max(1, Number(economicWanted?.amount || (recentWanted ? wanted?.amount : material?.missing) || 1)),
@@ -220,5 +217,5 @@ function snapshot(selfId, options = {}) {
     };
 }
 
-module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals, signalsOfState,
+module.exports = { demandFor, demandSignal, indexSignals, signalsOfState,
     snapshot, supplyFor, timestampForWanted, permittedQuotes, createOwnStock, prepareStockRow, jointStock, knownNeeds };

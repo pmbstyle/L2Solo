@@ -331,11 +331,22 @@ function soloSaleSlotLimit(state = {}, retry) {
     return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
 }
 
-// The cleanup counts of the bag fact (PartyMarketBreak.bagFact): inventoryCleanupNeed's
-// thresholds over what the bag holds, read from the item templates alone: a solo bot's
-// half bag, a skill book, the NPC-only slots, the low-grade gear slots. No sale walk
-// (reservations), no sale retry (the board), no clock: the build that bag_full wakes
-// reads the whole rule (inventoryCleanupNeed). Worn pieces and quest items count nothing.
+// The cleanup thresholds, one rule for the bag fact's counts (cleanupCounted, over what
+// the bag holds) and the build's need (inventoryCleanupNeed, over its sale candidates):
+// a skill book or NPC_ONLY_CLEANUP_MIN_SLOTS NPC-only slots; NPC_SURPLUS_GEAR_MIN_SLOTS
+// low-grade gear slots (lowGradeGear) in a bag of as many. A solo bot's half bag is each
+// caller's own (its inputs differ: the sale retry is the need's).
+const lowGradeGear = (kind, rank, price) => (String(kind || '').startsWith('Weapon.') || String(kind || '').startsWith('Armor.'))
+    && gradeIndex(rank) < gradeIndex('c') && price <= 50000;
+function cleanupThresholds({ slots, npcOnly, books, surplus }) {
+    return { npcOnly: books > 0 || npcOnly >= NPC_ONLY_CLEANUP_MIN_SLOTS,
+        surplus: slots >= NPC_SURPLUS_GEAR_MIN_SLOTS && surplus >= NPC_SURPLUS_GEAR_MIN_SLOTS };
+}
+// The cleanup counts of the bag fact (PartyMarketBreak.bagFact): the thresholds
+// (cleanupThresholds) over what the bag holds, read from the item templates alone, and a
+// solo bot's half bag. No sale walk (reservations), no sale retry (the board), no clock:
+// the build that bag_full wakes reads the whole rule (inventoryCleanupNeed). Worn pieces
+// and quest items count nothing.
 function cleanupCounted(state = {}) {
     let slots = 0, npcOnly = 0, books = 0, surplus = 0;
     for (const item of Object.values(state.inventory || {})) {
@@ -350,12 +361,10 @@ function cleanupCounted(state = {}) {
             npcOnly += loose;
             if (isSkillBookItem(item, template)) books += loose;
         }
-        const kind = kindFor(item, template);
-        if ((kind.startsWith('Weapon.') || kind.startsWith('Armor.')) && gradeIndex(template?.etc?.rank) < gradeIndex('c')
-            && basePrice(item, template) <= 50000) surplus += loose;
+        if (lowGradeGear(kindFor(item, template), template?.etc?.rank, basePrice(item, template))) surplus += loose;
     }
-    return !(state.party?.partyId || state.partyId) && slots >= HALF_FULL_CLEANUP_SLOTS || books > 0
-        || npcOnly >= NPC_ONLY_CLEANUP_MIN_SLOTS || slots >= NPC_SURPLUS_GEAR_MIN_SLOTS && surplus >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+    const over = cleanupThresholds({ slots, npcOnly, books, surplus });
+    return !(state.party?.partyId || state.partyId) && slots >= HALF_FULL_CLEANUP_SLOTS || over.npcOnly || over.surplus;
 }
 
 function inventoryCleanupNeed(state = {}) {
@@ -368,16 +377,11 @@ function inventoryCleanupNeed(state = {}) {
     // starter weapon must not send a newly spawned hunter straight to town.
     const limit = InventoryLimits.forState(state);
     const overCapacity = slots > limit;
-    const accumulatedNpcOnly = skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
     const surplusGearSlots = slots >= NPC_SURPLUS_GEAR_MIN_SLOTS
-        ? candidates.reduce((total, item) => {
-            const lowGradeGear = (String(item.kind || '').startsWith('Weapon.')
-                || String(item.kind || '').startsWith('Armor.'))
-                && gradeIndex(item.rank) < gradeIndex('c');
-            return total + (lowGradeGear && item.npcComparable !== false
-                && item.basePrice <= 50000 ? Number(item.count || 0) : 0);
-        }, 0) : 0;
-    const accumulatedSurplus = surplusGearSlots >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+        ? candidates.reduce((total, item) => total + (item.npcComparable !== false
+            && lowGradeGear(item.kind, item.rank, item.basePrice) ? Number(item.count || 0) : 0), 0) : 0;
+    const over = cleanupThresholds({ slots, npcOnly: npcOnlySlots, books: skillBookSlots, surplus: surplusGearSlots });
+    const accumulatedNpcOnly = over.npcOnly, accumulatedSurplus = over.surplus;
     // Solo bots only: a party member sells from the field (AFK listing) and leaves its
     // party for the market only with a full bag (PartyMarketBreak); and only with
     // something to sell, else the trip would repeat every retry period.

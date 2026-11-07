@@ -12,7 +12,7 @@ const UNANSWERED = Object.freeze({ known: false });
 const MAX_CONTEXTS = 64, MAX_OWNERS = 8, OWNER_UNITS = 4, MAX_UNITS = 32, SLICE_MS = 4;
 // One job per bot per mode (input.mode, required): an ask of one mode never
 // replaces another mode's answer.
-const MODES = Object.freeze(['near', 'page', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
+const MODES = Object.freeze(['near', 'page', 'action', 'showcase', 'meeting', 'wish']);
 const keyOf = (id, mode) => `${mode}:${Number(id)}`;
 
 // Incomplete contexts stay in the working pool (slots, MAX_CONTEXTS) through

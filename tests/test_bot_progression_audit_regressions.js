@@ -220,8 +220,6 @@ async function checkMissingSpotRecovery() {
         Economy.forState = build;
         decisions.forget(buyer.characterId);
     }
-    assert(Population.canResumeAffordableMarketPlan(buyer, at),
-        'the original funded compatible bridge remains eligible for a market review before another fight');
     const originals = { ensure: Spots.ensure, find: Spots.findForState,
         save: Life.upsertState, cachedState: Life.cachedState };
     const state = { ...polearm, characterId: 100, phase: 'cold', activity: 'hunting', inventory: {},
@@ -257,28 +255,15 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(craftResult.state.stats.travel.reason, 'component_craft',
             'a stale worker hunt must not overwrite an executable component craft trip');
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);
-        Goals.review = async () => ({ current: selectedGoal });
-        const purchasedTrip = await Population.executeWorkerLifecycleCommand(buyer, {
+        // The funded buyer's trip is its build's card (the worker's town leaf): main's
+        // lifecycle command reviews no goal and starts no market trip of its own.
+        Goals.review = async () => { throw new Error('a lifecycle command reviewed the goal'); };
+        savedReason = null;
+        const command = await Population.executeWorkerLifecycleCommand(buyer, {
             precomputedResult: { patch: { activity: 'resting' }, materialize: { exp: 100 } }
         });
-        assert(purchasedTrip.ok);
-        assert.strictEqual(savedReason, 'goal_market_travel_before_combat');
-        assert.strictEqual(purchasedTrip.state.stats.travel.reason, selectedGoal.plan.expectedBenefit,
-            'the funded buyer leaves stale party wait for its native chosen market goal before another worker fight');
-        const savesBeforeStaleTrip = saves;
-        let current = buyer;
-        Life.cachedState = () => current;
-        Goals.review = async () => {
-            current = { ...buyer, inventory: { ...buyer.inventory, newlyAcquired: { amount: 1 } } };
-            return { current: selectedGoal };
-        };
-        const staleTrip = await Population.executeWorkerLifecycleCommand(buyer, {
-            precomputedResult: { patch: { activity: 'resting' } }
-        });
-        assert.strictEqual(staleTrip.reason, 'state_changed',
-            'a concurrent state update during goal review must prevent stale market travel');
-        assert.strictEqual(staleTrip.state, current);
-        assert.strictEqual(saves, savesBeforeStaleTrip, 'the stale market trip must not write another lifecycle state');
+        assert.notStrictEqual(command.state?.activity, 'traveling', 'main sends the buyer nowhere on its own');
+        assert.notStrictEqual(savedReason, 'goal_market_travel_before_combat');
     } finally {
         Spots.ensure = originals.ensure;
         Spots.findForState = originals.find; Life.upsertState = originals.save;

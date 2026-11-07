@@ -81,7 +81,6 @@ async function run() {
         inventory: {},
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
         stats: {
-            marketRetryAfter: now + 1,
             equipmentPlan: {
                 next: { itemId: 1880 },
                 materials: [{ selfId: 1880, missing: 20 }]

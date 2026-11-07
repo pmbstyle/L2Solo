@@ -94,12 +94,13 @@ function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
 }
 
-// When a solo hunter carries its bag to town: the cold rule
-// (ItemDisposition.inventoryCleanupNeed) on the live bag. The verdict is kept
-// until the bag, the life state, the level or the party changes, so a tick
-// with nothing new costs a few comparisons (a buyer of the goods the sale
-// retry holds is read at the next bag change).
-function sellTripDue(session, bot, now = Date.now()) {
+// When a solo hunter's held selling leaf (its build's sale) takes the bag to town: while
+// the sale retry does not hold its goods. A full bag's trip is the build's own
+// (stats.cleanupDue, bag_full), never weighed here. The verdict is kept until the bag,
+// the life state, the level, the party or the held decision changes, so a tick with
+// nothing new costs a few comparisons (a buyer of the goods the sale retry holds is
+// read at the next bag change).
+function sellTripDue(session, bot) {
     if (!isSoloHunter(session) || session.pendingTownTrip) return null;
     const items = bot.backpack?.fetchItems?.();
     if (!items) return null;
@@ -113,12 +114,13 @@ function sellTripDue(session, bot, now = Date.now()) {
     if (last && last.items === items && last.count === items.length && last.life === life
         && last.revision === Number(bot.backpack.inventoryRevision || 0) && last.level === level
         && last.partyId === partyId && last.decisionSeq === decisionSeq && last.activityLeaf === activityLeaf) return last.need;
-    const state = MarketListingPolicy.actorState(session);
-    if (partyId) state.partyId = partyId;
-    const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
-    const need = forced || (activity?.activity === 'selling' && !ItemDisposition.saleRetryHolds(state)
-        ? { reason: 'wish_funding', itemIds: activity.items } : null);
+    let need = null;
+    if (activity?.activity === 'selling') {
+        const state = MarketListingPolicy.actorState(session);
+        if (partyId) state.partyId = partyId;
+        if (!ItemDisposition.saleRetryHolds(state)) need = { reason: 'wish_funding', itemIds: activity.items };
+    }
     session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq, activityLeaf,
         revision: Number(bot.backpack.inventoryRevision || 0), need };
     return need;
@@ -1061,13 +1063,6 @@ module.exports = {
         }
 
         if (invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) return;
-
-        if (sellTripDue(session, bot)) {
-            const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
-            pauseSelling(session);
-            const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
-            if (trip !== 'deferred') return;
-        }
 
         let huntingDecision;
         if (isSoloHunter(session) && !session.currentTargetId) {

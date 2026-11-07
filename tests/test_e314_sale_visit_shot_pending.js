@@ -64,7 +64,6 @@ const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', l
         const first = await ColdMarket.finishTownErrands(bot('sell_inventory'), { saleVisit: true });
         assert.equal(meetings.length, 1, 'the sale visit answered the shot ad through a trade meeting');
         assert.equal(first.stats.townVisit.completed, true, 'E314: a pending shot deal ends the sale visit');
-        assert.equal(first.stats.marketRetryAfter, undefined, 'no goal retry is set by the shot deal');
         assert.equal(baskets, 0, 'the staging pass ends with the meeting: no NPC basket on it');
         assert.deepEqual(savedBeforeBuy, [true], 'the ended visit is saved before the meeting is staged');
         assert.equal(saved.stats.townVisit.completed, true, 'the saved row is the ended visit');
@@ -98,7 +97,6 @@ const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', l
         const bought = await ColdMarket.tryPurchase(bot('sell_inventory'), goal);
         assert.equal(meetings.at(-1), WEAPON, 'the goal purchase answered the ad through a trade meeting');
         assert.equal(bought.pending, true, 'the goal purchase is pending');
-        assert.equal(bought.state?.stats?.marketRetryAfter, undefined, 'a pending goal purchase sets no cooldown');
         assert.notEqual(bought.state?.stats?.townVisit?.completed, true, 'a pending goal purchase does not end the visit');
         console.log('E314 pending shot deal ends the sale visit: passed');
     } finally {

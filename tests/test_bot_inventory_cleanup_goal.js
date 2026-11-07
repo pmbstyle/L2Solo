@@ -221,7 +221,7 @@ assert.strictEqual(travel.activity, 'traveling');
 assert.strictEqual(travel.stats.travel.reason, 'market_sale_inventory');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
 
-const proposalTravel = PopulationService.prepareInventoryCleanupProposal(state, now, { revision: 1 });
+const proposalTravel = PopulationService.prepareInventoryCleanupProposal(state, now, { revision: 1 }, state, need);
 assert(proposalTravel, 'worker proposal commit must also start a market trip');
 assert.strictEqual(proposalTravel.activity, 'traveling');
 assert.deepStrictEqual(proposalTravel.simulation, { revision: 1 });
@@ -374,11 +374,6 @@ assert.strictEqual(SurvivalFloor.forState(loadedBag(0.55, retryUntil), now), nul
     'a weight penalty 1 bag is no floor during the sale retry');
 assert.strictEqual(SurvivalFloor.forState(loadedBag(0.7, retryUntil), now)?.weightPenalty, 2,
     'a weight penalty 2 bag stays the floor during the sale retry');
-const weightTrip = (share, retryAfter, extra) => PopulationService.prepareInventoryCleanupProposal(loadedBag(share, retryAfter, extra), now);
-assert.strictEqual(weightTrip(0.55, retryUntil), null,
-    'a weight penalty 1 cleanup must wait for the sale retry');
-assert(weightTrip(0.7, retryUntil), 'a weight penalty 2 cleanup must bypass the sale retry');
-assert(weightTrip(0.55, false), 'a weight penalty 1 cleanup travels without a sale retry');
 assert(!NeedsEvaluator.evaluate(loadedBag(0.55, retryUntil), { now }).some((candidate) => candidate.type === 'sell_inventory'),
     'the planner adds no sale goal for a weight penalty 1 bag during the retry');
 const npcJunk = { [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
@@ -386,7 +381,6 @@ const npcJunk = { [spellbook.selfId]: { selfId: spellbook.selfId, name: spellboo
     instances: [{ id: 9100000, amount: 1, equipped: false, slot: 0 }] } };
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil, npcJunk), { now })?.reason,
     'npc_only_inventory');
-assert(weightTrip(0.55, retryUntil, npcJunk), 'NPC-only junk in a weight penalty 1 bag still bypasses the sale retry');
 const huntSpot = { id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, density: 1, npcSelfIds: [1],
     rewards: { exp: 10, sp: 2, adenaMin: 7, adenaMax: 10 }, mob: { hp: 8, damage: 1 } };
 // Level 3: a weaponless level-1 bag holder would end no gremlin fight above its potion line (BotEncounterReadiness).

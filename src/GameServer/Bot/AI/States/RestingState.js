@@ -155,7 +155,7 @@ module.exports = {
     maybeCastManaRegeneration,
     rested,
     tick(session, bot, Generics, BotAI) {
-        invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 1);
+        invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 1);
         if (session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
             const player = playerSession?.actor;

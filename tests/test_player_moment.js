@@ -71,8 +71,10 @@ const purse = (adena, stats = {}) => ({ ...hunter, phase: 'cold', adena, stats: 
 assert(Situations.detect(purse(1000), purse(6000)).includes('goal_affordable:focus'), 'a far step hears its goal in reach');
 assert(Situations.detect(purse(6000), purse(6000)).includes('goal_affordable:focus'), 'and money main added between steps');
 assert(!Situations.detect(purse(1000), purse(1500)).some(name => name.startsWith('goal_affordable')), 'and nothing on a drift');
-// Its goal in reach clears its failed buy's retry stamp (debt 24).
-assert.equal(Situations.raise({ woken: 0, marketRetryAfter: 99 }, 'goal_affordable:focus').marketRetryAfter, null, 'it may buy again');
+// A board offer its build wants wakes the build, wherever the bot stands (heard at once).
+const heldAll = () => ({ woken: 0, waiting: 0, earning: { spotId: null }, wishSections: {} });
+const offered = Situations.raise(heldAll(), 'offer_posted', { itemId: 1, price: 1 }, Situations.place({ phase: 'cold', activity: 'hunting' }));
+assert.equal(offered.woken, Situations.BITS.build, 'offer_posted wakes the build alone, in the field too');
 // The one table: what a bot hears where it stands.
 const cold = (activity, extra = {}) => ({ ...hunter, phase: 'cold', activity, ...extra });
 const waitsFor = (state, ...links) => links.every(link => !Situations.hears(link, Situations.place(state)));

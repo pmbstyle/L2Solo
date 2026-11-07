@@ -66,7 +66,7 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
     assert.equal(above.purchased, false);
     assert.deepEqual(funded, [], 'no line above the plan price reaches the writer');
     assert.deepEqual(refreshes, [7], 'a miss asks the worker for a new card');
-    assert(above.state.stats.marketRetryAfter > Date.now(), 'the bot waits instead of replanning on main');
+    assert.equal(above.state.stats.marketWanted?.itemId, 48, 'the bot waits for a new offer instead of replanning on main');
     // The worker is posted the written return, not the state before it: a
     // card decided on the old state would never match the bot again.
     assert.equal(refreshedOn[0], above.state, 'the failure is raised after the return is written');

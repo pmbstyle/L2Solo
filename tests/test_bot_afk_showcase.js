@@ -172,6 +172,12 @@ async function groupedReplacement() {
         assert.equal(Afk.ownerRecords(owner).filter(row => row.kind === 'sell_ad').length, 5);
         assert.equal(Afk.findOwnerProjection(owner), null, 'field quoting opens no physical shop');
         assert.deepEqual(await Database.fetchItems(owner), originalBag);
+        // A build taken in the field posts its bids and starts its leaf only: what to sell and a
+        // craft are its town visit's, so its plan keeps the standing ads and lists nothing new.
+        const built = Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null } },
+            { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null, build: true });
+        assert.deepEqual([built.sell, built.withdraw, built.shot, built.take], [[], [], undefined, undefined],
+            'a build in the field lists, withdraws, sells and crafts nothing');
         state = await Life.upsertState({ ...Life.cachedState(owner), activity: 'shopping' }, 'showcase_visit');
         const visit = prepare();
         assert.equal(visit.shop, 'Giran');
@@ -180,10 +186,10 @@ async function groupedReplacement() {
         assert(Buffer.byteLength(JSON.stringify(visit)) <= Plan.MAX_PLAN_PAYLOAD_BYTES);
         // A visit's showcase carries the craft step its held decision prepared: the crafter crafts in town.
         assert.equal(Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null } }, { board: Afk.boardIndex(),
-            now: Date.now(), npcOffersFor: () => [], findSpot: () => null, showcaseOnly: true }).shot, undefined);
+            now: Date.now(), npcOffersFor: () => [], findSpot: () => null, visit: true }).shot, undefined);
         const heldCraft = { wealth: [90001, 2] };
         assert.deepEqual(Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null }, shot: heldCraft },
-            { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null, showcaseOnly: true }).shot, heldCraft);
+            { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null, visit: true }).shot, heldCraft);
         const adsBefore = await Database.fetchAfkTradeShops(owner);
         const ad = adsBefore.find(row => row.lines.some(line => line.selfId === 79));
         const weapon = originalBag.find(row => row.selfId === 79);

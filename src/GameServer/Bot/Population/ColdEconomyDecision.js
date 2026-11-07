@@ -53,7 +53,6 @@ class CompactActivity {
 // the public tuple fields are decoded on demand and are never retained twice.
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const SHOT = 32768;
-const FEASIBILITY = 65536;
 // Keep the original two watch-count bits and use two spare header bits for
 // the shop's three requests plus five meeting adverts.
 const watchCount = counts => ((counts >>> 6) & 3) | (((counts >>> 17) & 3) << 2);
@@ -65,7 +64,7 @@ const MAX_SHOT_PAYLOAD_BYTES = MAX_SHOT_BYTES - COMMAND_HEADER_BYTES;
 const cardWireRoom = echo => MAX_BYTES - 48 - encoder.encode(JSON.stringify(echo ?? null)).length;
 function shotOffset(counts) {
     return 28 + (counts & 63) * 8 + watchCount(counts) * 21 + ((counts >>> 8) & 15) * 12
-        + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & FEASIBILITY ? 8 : 0);
+        + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
 }
 function encodeShot(value) {
     const encoded = value ? encoder.encode(JSON.stringify(value)) : null;
@@ -139,14 +138,6 @@ class CompactDecision {
         const bytes = new DataView(this.data).getUint16(at, true);
         return JSON.parse(decoder.decode(new Uint8Array(this.data, at + 2, bytes)));
     }
-    get feasibility() {
-        const counts = this.counts;
-        if (!(counts & FEASIBILITY) || this.stale) return null;
-        const at = 28 + (counts & 63) * 8 + watchCount(counts) * 21 + ((counts >>> 8) & 15) * 12
-            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
-        const view = new DataView(this.data);
-        return [view.getUint32(at, true), view.getUint16(at + 4, true), view.getUint16(at + 6, true)];
-    }
 }
 function compact(record) {
     if (record.data instanceof ArrayBuffer) {
@@ -167,14 +158,13 @@ function compact(record) {
                 ...(leaf.r !== undefined ? [leaf.r] : [])]
             : leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
-    const feasibility = Array.isArray(record.feasibility) && record.feasibility[2] <= 14 ? record.feasibility : null;
     const shot = encodeShot(record.shot);
     const fixed = 28 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0)
-        + (feasibility ? 8 : 0) + (shot ? shot.length + 2 : 0) + activity.length;
+        + (shot ? shot.length + 2 : 0) + activity.length;
     const wireRoom = cardWireRoom(record.echo);
     const n = Math.min(40, Math.floor(pairs.length / 2), Math.max(0, Math.floor((wireRoom - fixed) / 8)));
     const data = new ArrayBuffer(fixed + n * 8), view = new DataView(data);
-    view.setUint32(0, n | ((w & 3) << 6) | ((w >>> 2) << 17) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0) | (shot ? SHOT : 0) | (feasibility ? FEASIBILITY : 0), true);
+    view.setUint32(0, n | ((w & 3) << 6) | ((w >>> 2) << 17) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0) | (shot ? SHOT : 0), true);
     view.setUint32(4, record.inputHash >>> 0, true);
     new Float32Array(data, 28, n * 2).set(pairs.subarray ? pairs.subarray(0, n * 2) : pairs.slice(0, n * 2));
     let at = 28 + n * 8;
@@ -184,8 +174,6 @@ function compact(record) {
     if (wish) { view.setUint8(at, wish[0]); view.setFloat64(at + 1, wish[1], true); view.setFloat64(at + 9, wish[2], true); at += 17; }
     if (clan) { view.setFloat64(at, clan.horizonHours, true); view.setFloat64(at + 8, clan.huntPerHour, true);
         view.setFloat64(at + 16, clan.plan?.itemId || 0, true); view.setFloat64(at + 24, clan.plan?.valueHours || 0, true); at += 32; }
-    if (feasibility) { view.setUint32(at, feasibility[0], true); view.setUint16(at + 4, feasibility[1], true);
-        view.setUint16(at + 6, feasibility[2], true); at += 8; }
     if (shot) { view.setUint16(at, shot.length, true); new Uint8Array(data, at + 2, shot.length).set(shot); at += shot.length + 2; }
     new Uint8Array(data, at).set(activity);
     return new CompactDecision(record.updatedAt, record.echo, record.riskWeight, record.activity, data);
@@ -210,12 +198,6 @@ function cardWithShot(before, shot) {
     }
     bytes.set(source.subarray(previousEnd), next);
     return compact({ echo: before.echo, data });
-}
-function refreshPreparedCraft(refreshed, shot, mp) {
-    const decision = cardWithShot(refreshed.decision, shot);
-    if (!decision) return null;
-    refreshed.economy.shot = shot;
-    return { ...refreshed, decision, advisory: { ...refreshed.advisory, card: decision, preparedMp: mp } };
 }
 
 // What a decision depends on beyond updatedAt: its echo, [decisionSeq,
@@ -356,8 +338,7 @@ function capture(economy, state, seen = state) {
             Number(wish.object?.amount || 0), Number(wish.price || 0)] : urgency ? [URGENCY_ONLY | (urgency << 6), 0, 0] : null,
         watch: (economy?.watchList || []).slice(0, 8).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
-        shot: economy?.shot || null,
-        feasibility: economy?.feasibility || null
+        shot: economy?.shot || null
     });
     if (Diagnostics.active()) Diagnostics.count('ready_card', 'build', 'decision_pack');
     if (Trace.detailed(state?.characterId)) Trace.detail({ owner: state.characterId,
@@ -574,7 +555,7 @@ function readAdvisoryCard(record) {
         if (card.counts & ~131071 || (card.counts & 63) > 40 || ((card.counts >>> 8) & 15) > 8
             || card.flags || activity !== null && !activity?.activity) return null;
         // Validate all binary ranges before this becomes retained native data.
-        void card.usefulness; void card.watch; void card.materials; void card.feasibility; void card.shot;
+        void card.usefulness; void card.watch; void card.materials; void card.shot;
         return card;
     } catch (error) { FailureLog.note('economy.codec:advisory_card', error); return null; }
 }
@@ -613,14 +594,10 @@ function refusal(state, accepted, deps = {}, options = {}) {
     const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
     if (identity) return identity;
     if (state.incomingPending) return 'incoming';
-    // A card serves a bot in the field (a hunt, a rest, a trip, a party member's fight) and
-    // on the town visit its leaf ordered (Sections.leafVisit), which carries out the step it
-    // came for (its end raised where it is checked, leafOutcome). Any other visit (a bag
-    // cleanup, a forced or stale one, an arrival its leaf did not order), a dead, merchant or
-    // crafting bot's step is none, and a far bot's held build lost (a restart, eviction)
-    // has no answer to serve: both build.
-    if (!Economy.FIELD_ACTIVITIES.has(state.activity) && state.activity !== 'grouped'
-        && !(state.activity === 'shopping' && Sections.leafVisit(state, leaf))) return `not_field:${state.activity}`;
+    // A card serves wherever the bot stands (the field, a town visit, a stall, a craft,
+    // death): its situations wake the build (an arrival its leaf did not order raises
+    // arrived_town). A far bot's held build lost (a restart, eviction) has no answer to
+    // serve: it builds.
     if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
@@ -664,24 +641,20 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
 
 // Compare the existing compact economic output, without decoding it or
 // keeping another per-owner snapshot. Input digest, publication clock and
-// validity/held flags are metadata. The feasibility fingerprint binds its
-// mask to board identities/revisions; the mask itself is an economic result.
+// validity/held flags are metadata.
 function sameEconomicOutput(before, after) {
     if (before.data.byteLength > MAX_BYTES || after.data.byteLength > MAX_BYTES) return null;
     if (before.data.byteLength !== after.data.byteLength || before.counts !== after.counts) return false;
-    const counts = before.counts;
-    const fingerprint = counts & FEASIBILITY ? 28 + (counts & 63) * 8 + watchCount(counts) * 21
-        + ((counts >>> 8) & 15) * 12 + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) : -1;
     const left = new Uint8Array(before.data), right = new Uint8Array(after.data);
     for (let at = 16; at < left.length; at++) {
-        if (at >= 24 && at < 28 || at >= fingerprint && at < fingerprint + 4) continue;
+        if (at >= 24 && at < 28) continue;
         if (left[at] !== right[at]) return false;
     }
     return true;
 }
 
-// A published card made on exactly this state: the one check of decided()
-// and feasibilityFor(). A hot bot's card is current by its post
+// A published card made on exactly this state: the one check of decided().
+// A hot bot's card is current by its post
 // number (nearSeq, checked on arrival), not by updatedAt: the body's row moves
 // on between posts.
 function current(state, entry) {
@@ -775,7 +748,9 @@ class ColdEconomyDecisions {
         card.held = true;
         this.byId.set(Number(id), card);
     }
-    release(id) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale = true; } }
+    // A held card ends with its command: stale (served no more) unless the command left
+    // the row it was decided on as it was (moved false: a plan that changed nothing).
+    release(id, moved = true) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale ||= moved; } }
     forget(id) {
         if (this.byId.delete(Number(id)) && Diagnostics.active()) Diagnostics.count('ready_card', 'eviction', 'owner_release');
     }
@@ -784,15 +759,11 @@ class ColdEconomyDecisions {
         const entry = this.byId.get(Number(id)), clan = entry?.clan;
         return clan ? { ...clan, updatedAt: entry.updatedAt } : null;
     }
-    feasibilityFor(state) {
-        const entry = this.byId.get(Number(state?.characterId));
-        return current(state, entry) ? entry.feasibility : null;
-    }
     clear() {
         if (Diagnostics.active() && this.byId.size) Diagnostics.count('ready_card', 'eviction', 'reset', this.byId.size);
         this.byId.clear();
     }
 }
 
-module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact,
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
     MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

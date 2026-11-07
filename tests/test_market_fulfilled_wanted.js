@@ -31,7 +31,7 @@ async function purchase(id, wantedId) {
         stats: { classId: 4, generatedCold: true, money: [1000, .0001, 0, 0, .001, 1000, 2], equipmentPlan: { status: 'active', strategy: 'market',
             target: { selfId: 2, slot: 7 }, market: { price: 1000, town: 'Giran', sourceType: 'afk_bot_store' } },
             partyRequest: { status: 'open' }, marketWanted: wanted,
-            marketRetryAfter: 100000, marketLead: { itemId: wantedId, town: 'Giran' } }
+            marketLead: { itemId: wantedId, town: 'Giran' } }
     }, 'fixture_public_purchase');
     const shop = await Afk.publishBot(9001, { kind: 'shop', storeType: 1, town: 'Giran', title: 'Long Sword',
         locX: 83000, locY: 148000, locZ: -3400, appearance: { model: { name: 'RareSupplier' } },
@@ -57,7 +57,7 @@ async function purchase(id, wantedId) {
         walletBefore: 1000, walletAfter: 0, sellerCredit: 1000, swordCount: 1,
         returnedWanted: result.state.stats.marketWanted, durableWanted: stats.marketWanted }));
     if (wantedId === 2) {
-        for (const key of ['marketWanted', 'marketRetryAfter', 'marketLead']) {
+        for (const key of ['marketWanted', 'marketLead']) {
             // The atomic settlement clears with a JSON merge patch, which removes the key (71143511).
             assert.equal(result.state.stats[key] ?? null, null, 'matching fulfilled target clears ' + key);
             assert.equal(stats[key] ?? null, null, 'durable matching target clears ' + key);
@@ -65,7 +65,6 @@ async function purchase(id, wantedId) {
     } else {
         assert.deepEqual(result.state.stats.marketWanted, wanted);
         assert.deepEqual(stats.marketWanted, wanted);
-        assert.equal(stats.marketRetryAfter, 100000);
         assert.deepEqual(stats.marketLead, { itemId: wantedId, town: 'Giran' });
     }
 }
@@ -90,10 +89,9 @@ async function run() {
     const acquired = Life.reconcileEquipmentInventory({ ...dual,
         inventory: { ...dual.inventory, 129: { selfId: 129, name: template.template.name, amount: 1,
             equipped: true, slot: 7, rank: template.etc.rank, kind: template.template.kind } },
-        stats: { ...dual.stats, equipmentPlan: plan, marketWanted: wanted, marketRetryAfter: 100000 } });
+        stats: { ...dual.stats, equipmentPlan: plan, marketWanted: wanted } });
     assert.deepEqual(acquired.stats.equipmentPlan, plan);
     assert.deepEqual(acquired.stats.marketWanted, wanted);
-    assert.equal(acquired.stats.marketRetryAfter, 100000);
     console.log('Authored partial combination control preserves plan and wanted');
     await purchase(78, 21);
     await purchase(77, 2);

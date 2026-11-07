@@ -2732,7 +2732,7 @@ function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip, heldItemI
     }
     const patch = {};
     for (const key of ['equipment', 'equipmentPlan', 'partyRequest', 'clanPartyObjective', 'clanEquipmentAcquisition',
-        'marketWanted', 'marketRetryAfter', 'marketLead']) {
+        'marketWanted', 'marketLead']) {
         if (Object.hasOwn(reconciled.stats, key)) patch[key] = reconciled.stats[key];
         else if (Object.hasOwn(stats, key)) patch[key] = null;
     }

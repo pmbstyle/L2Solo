@@ -96,10 +96,6 @@ try {
     result = await BotAfkMarket.reconcile(state, recover);
     assert.deepStrictEqual(stops, [7], 'a legacy material plan alone cannot bypass the actual native choice');
     stops.length = 0;
-    state = (await nativeChoice.capture(crafting({ marketRetryAfter: Date.now() + 60000 }), {}, 'original_retry_window')).state;
-    result = await BotAfkMarket.reconcile(state, recover);
-    assert.deepStrictEqual(stops, [7], 'a material under its market retry window does not hold an order');
-    stops.length = 0;
 
     // Drop and craft plans are run by the resolver, not by a market goal: a
     // drop plan for the ordered item does not keep the order.

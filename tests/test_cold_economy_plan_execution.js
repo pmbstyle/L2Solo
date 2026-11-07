@@ -49,7 +49,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         stub(invoke('GameServer/Bot/Population/BotLifeEvents'), 'recordMany', async () => {});
         stub(invoke('GameServer/Bot/Population/BotGlobalChat'), 'maybeAnnounce', () => {});
         const proposal = { revision: 0,
-            nextState: state, result: { events: [] }, economyEdges: 1,
+            nextState: state, result: { events: [] },
             economyPlan: { sell: [], withdraw: [line.lineId], buyAds: [], travel: null } };
         const result = { ok: true, characterId: id, nextState: state, proposal };
         // The worker's side of a commit: it flushes the proposal, takes main's
@@ -128,7 +128,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         assert.equal(onBoard(), false, 'the review command executes the committed plan');
         const heavy = coordinator.reviewCommittedEconomy;
         coordinator.reviewCommittedEconomy = () => { throw Error('ordinary_loot_main_pass'); };
-        assert.equal((await commit({ economyPlan: undefined, economyEdges: 0 })).review, null,
+        assert.equal((await commit({ economyPlan: undefined })).review, null,
             'an ordinary commit with nothing to review sends no review command');
         coordinator.reviewCommittedEconomy = heavy;
         assert.equal(Population.startLifecycleEconomyEvents, undefined);
@@ -212,7 +212,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         await Afk.repriceBot(id, repriced.lines[0].id, 95, repriced.revision);
         state = await Life.upsertState({ ...Life.cachedState(id), activity: 'resting' }, 'resting_bid_fixture');
         await coordinator.afterCommit({ ...result, nextState: state, proposal: { ...proposal,
-            nextState: state, market: undefined, economyPlan: undefined, economyEdges: 0 } });
+            nextState: state, market: undefined, economyPlan: undefined } });
         assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 80,
             'an ordinary resting commit corrects a standing bid even without a wish plan or new market event');
         assert.equal(Life.cachedState(id).adena, walletBefore);

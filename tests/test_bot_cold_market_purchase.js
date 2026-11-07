@@ -392,8 +392,8 @@ async function run() {
         ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Unknown town' }
     });
     assert.strictEqual(unknownTown.reason, 'different_market_town');
-    assert(unknownTown.state.stats.marketRetryAfter > Date.now(),
-        'an unavailable destination must back off instead of immediately repeating');
+    assert.equal(unknownTown.state.stats.marketWanted?.itemId, goal.target.itemId,
+        'an unavailable destination: the want waits for a new offer, no retry window');
 
     let blockedReserveCalls = 0;
     MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
@@ -445,7 +445,7 @@ async function run() {
     assert.strictEqual(noOffer.purchased, false);
     assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
     assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
-    assert(noOffer.state.stats.marketRetryAfter > Date.now(), 'a buyer with no offer must wait before retrying the same market trip');
+    assert.equal(noOffer.state.stats.marketWanted?.itemId, 999999, 'a buyer with no offer waits for a new one (offer_posted), no retry window');
 
     MarketOpportunity.bestOffer = () => null;
     BuyStoreService.open = () => Promise.reject(new Error('forced buy-store persistence failure'));
@@ -455,7 +455,7 @@ async function run() {
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
     }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a miss on arrival enters the normal market retry path; no WTB opens from main');
-    assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
+    assert.equal(failedBuyStore.state.stats.marketWanted?.itemId, 999999);
     BuyStoreService.open = originals.openBuyStore;
 
     MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
@@ -468,7 +468,7 @@ async function run() {
     }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
     assert.strictEqual(changedOffer.reason, 'offer_changed');
     assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
-    assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');
+    assert.equal(changedOffer.state.stats.marketWanted?.itemId, 2, 'a stale offer: the want waits for a new offer');
 
     const duplicateArmorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,

@@ -127,16 +127,9 @@ assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), 
 
 // ARCH-NOTE: the previous fixture pinned removed percentage reserves and a removed
 // priority ladder. The packet now proves planner/shop agreement on the real shared gate.
-const Population = invoke('GameServer/Bot/Population/PopulationService');
-const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const plan = { status: 'active', strategy: 'market', target: { selfId: 123, slot: 7 }, market: { price: 30000, sourceType: 'npc', town: 'Giran' } };
 const state = { ...saving, phase: 'cold', activity: 'hunting', currentRegion: 'Giran', inventory: {},
     stats: { ...saving.stats, equipmentPlan: plan }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } };
-assert.equal(Population.canResumeAffordableMarketPlan(state), false);
-assert.notEqual(lifecycleKind(state), 'command');
-const funded = { ...state, stats: { ...state.stats, money: [77000, 1e-5, 15000, 0, 4e-5, 30000, 123] } };
-assert.equal(Population.canResumeAffordableMarketPlan(funded), true);
-assert.equal(lifecycleKind(funded), 'command');
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');

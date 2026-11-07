@@ -137,7 +137,7 @@ function bagMarks(actor) {
 }
 
 // A hot bag's sale retry, held while its bag and saved retry are the same
-// (a buyer of its goods is read again at the next bag change, as sellTripDue).
+// (a buyer of its goods is read again at the next bag change).
 const actorRetries = new WeakMap();
 function actorRetryHolds(actor, state) {
     const bag = actorInventory(actor), seen = state?.stats?.marketSellSeen, held = actorRetries.get(actor.backpack);

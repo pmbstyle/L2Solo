@@ -48,7 +48,6 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
             'GameServer/Bot/AI/BotChatReactions': ['offerLocal'],
             'GameServer/ClanHall/BotVisit': ['tick'],
             'GameServer/Bot/AI/HotResourceCompetition': ['tick'],
-            'GameServer/Bot/Economy/HotBoardReviewService': ['naturalBreak'],
             'GameServer/Bot/Population/SurvivalFloor': ['forActor'],
             'GameServer/Bot/AI/DecisionEvents': ['observe'],
             'GameServer/Bot/AI/HotTownRebuff': ['syncVisit', 'needsVisit'],

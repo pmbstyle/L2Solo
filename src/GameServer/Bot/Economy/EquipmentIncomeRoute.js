@@ -74,10 +74,12 @@ function needsDrinks(state, spot, shots) {
 // drinks of it. Written into the earning answer when the decision is taken
 // (answerOf; spotUseOf reads it); the kit's per-bot rates are the build's
 // (StatsPacket.kitRates). Rounded as the kit rates are.
+// shotKind: the earning decision's own choice of shot (ShotStock.decidedKind), the kind a bot
+// holding no shot fires and buys until the decision is taken again.
 function spotRates(state, spot, shots) {
-    const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const Shots = invoke('GameServer/Inventory/ShotStock'), Packet = require('./StatsPacket'), plan = Shots.planForState(state);
     const row = SpotValueTable.value(spot.id, SpotValueTable.roleFor(state), state.level, shots);
-    return { shotKind: plan.kind, shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
+    return { shotKind: Shots.decidedKind(state), shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)), drinks: needsDrinks(state, spot, shots) };
 }
 // The kit's per-spot use for the bot now, one rule on both threads (situations.md
@@ -258,10 +260,12 @@ function answerOf(route, at, error = 0, state = null) {
 // there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
 // situation re-decides the spot. command: the player decided it (isCommanded: a spot contest never makes it
 // avoid, B14).
-// It carries no kit use of its own: spotUseOf reads the spot table there (no table read here).
+// It carries no kit use of its own: spotUseOf reads the spot table there (no table read here); the shot
+// kind the replaced answer chose stays (ShotStock.decidedKind).
 function commanded(held, spotId, at = 0) {
     return { spotId: String(spotId), shots: held?.shots !== false, income: 0, expected: 0, earning: Number(held?.earning) || 0,
-        error: Number(held?.error) || 0, at: Number(at) || 0, command: true, drinks: false };
+        error: Number(held?.error) || 0, at: Number(at) || 0, command: true, drinks: false,
+        ...(held?.shotKind ? { shotKind: held.shotKind } : {}) };
 }
 const isCommanded = held => held?.command === true;
 // The held answer's spot in a catalogue (no search; spots: the catalogue's profiles). null: no answer, none held

@@ -13,7 +13,6 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const { MarketBuyerWaiters } = require('../src/GameServer/Bot/Economy/MarketBuyerWaiters');
-const { SeenLines } = require('../src/GameServer/Bot/Economy/BoardLook');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const now = 1e12;
 const dependencies = { board: new BoardIndex(), spots: invoke('GameServer/Bot/Population/SpotProfiles').ensure(), timestamp: now };
@@ -40,13 +39,14 @@ async function run() {
         }, emit: (type, payload) => {
             if (type === 'proposal_batch') published.push(payload);
         } });
-    kernel.buyerEvents = new MarketBuyerWaiters({ stateFor: id => kernel.states.get(id)?.state,
-        demandsFor: () => [[1864, { ready: true, budget: 1000000 }]], wake: () => true });
+    kernel.buyerEvents = new MarketBuyerWaiters({ wake: () => true });
     const members = [state(9), state(10)].map(bot => ({ ...bot, party: { partyId: 'release-party' } }));
     const party = { partyId: 'release-party', leaderId: 9, memberIds: [9, 10], stats: {}, nextResolveAt: now - 1 };
     for (let id = 1; id <= 10; id++) {
         const bot = members.find(member => member.characterId === id) || state(id);
         kernel.upsert({ state: bot });
+        // The wants its build registered (the worker registers them when a build is taken).
+        if (!bot.party) kernel.buyerEvents.register(id, [{ itemId: 1864, budget: 1000000 }]);
         // The memory table's row (the worker's memory watch).
         kernel.interactionMemory.accept(Policy.empty(id));
         Economy.forState(bot, dependencies);
@@ -62,7 +62,6 @@ async function run() {
     await entered;
     assert.equal(kernel.dirty.size, 8);
     assert.equal(kernel.partyRuns.size, 1, 'party state is retained while its actual resolver waits');
-    for (let id = 1; id <= 10; id++) kernel.lookSeen.set(id, new SeenLines().set(id, { deals: 1, at: now }));
     for (let id = 1; id <= 10; id++) {
         if (id % 2) {
             const fenced = kernel.fence(id);

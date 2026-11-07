@@ -122,15 +122,25 @@ function equippedWeapon(items) {
 // per charge (perAction, the weapon's count as hot charges it; 0 without a
 // weapon, so no shot loads).
 // options.blessed: true Blessed Spiritshot (null for a soulshot class),
-// false the class's own kind; unset, a spiritshot class takes the blessed
-// one when it holds it, or holds no spiritshot and it pays (blessedPays).
+// false the class's own kind; unset, a spiritshot class fires what its bag
+// holds, else the kind its held earning answer chose (choosesBlessed).
 function planForState(state, options = {}) {
     const weapon = stateWeapon(state?.inventory);
     const classId = Number(state?.stats?.classId || state?.classId || 0), rank = weapon ? itemRank(weapon.selfId) : 'none';
     const spirit = classWantsSpiritshots(classId);
     if (options.blessed === true && !spirit) return null;
-    const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId)));
+    const blessed = spirit && (options.blessed ?? choosesBlessed(state?.stats?.earning, rank, selfId => heldAmount(state, selfId),
+        () => decidedKind(state) === 'blessedSpiritshot'));
     return weaponPlan(blessed ? 'blessedSpiritshot' : spirit ? 'spiritshot' : 'soulshot', weapon);
+}
+// The shot kind the earning decision chooses for the bot (EquipmentIncomeRoute.spotRates, held as
+// stats.earning.shotKind): a spiritshot class's Blessed Spiritshot when it pays at its role, level
+// and grade (blessedPays), else its class's own kind. Taken only when that decision is taken.
+function decidedKind(state) {
+    const classId = Number(state?.stats?.classId || state?.classId || 0);
+    if (!classWantsSpiritshots(classId)) return 'soulshot';
+    const weapon = stateWeapon(state?.inventory), rank = weapon ? itemRank(weapon.selfId) : 'none';
+    return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank) ? 'blessedSpiritshot' : 'spiritshot';
 }
 
 // The equipped weapon of a cold inventory, per inventory object: it reads only
@@ -181,14 +191,16 @@ function heldAmount(state, selfId) {
     return Math.max(0, Number(state?.inventory?.[selfId]?.amount) || 0);
 }
 
-// The one shot choice of a spiritshot class, cold (planForState) and hot
-// (planForActor): `held(selfId)` reads the bag; `roleState()` the role and
-// level inputs, read only when the bag holds neither shot.
-function choosesBlessed(roleState, rank, held) {
+// The one shot read of a spiritshot class, cold (planForState) and hot
+// (planForActor): it fires what its bag holds (`held(selfId)`), Blessed first;
+// holding neither, the kind its held earning answer chose (earning.shotKind,
+// decidedKind). An answer held from before the decision named its kind has none:
+// the earning decision's own rule answers it (`decided()`: decidedKind) until its
+// next answer names one. A reader never weighs the kind otherwise.
+function choosesBlessed(earning, rank, held, decided) {
     if (held(BLESSED_SPIRITSHOT_BY_RANK[rank]) > 0) return true;
     if (held(SPIRITSHOT_BY_RANK[rank]) > 0) return false;
-    const state = roleState();
-    return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank);
+    return earning?.shotKind ? earning.shotKind === 'blessedSpiritshot' : decided();
 }
 
 // What a bot pays for a shot (StaticMerchantPricing.botBuyPrice): the one
@@ -345,27 +357,24 @@ function planForKind(kind, rank = 'none') {
 }
 
 // A hot bot's shot: the one its cold state takes (planForState), Blessed
-// Spiritshot by the same choice (choosesBlessed) over the actor's bag, so
-// hot auto shots enable the shot the worker's stock names. A player keeps
-// its class's shot (bought or crafted; a new character starts with CreateNewChar.awardBaseShots).
+// Spiritshot by the same read (choosesBlessed) over the actor's bag and its
+// held earning answer, so hot auto shots enable the shot the worker's stock
+// names. A player keeps its class's shot (bought or crafted; a new character
+// starts with CreateNewChar.awardBaseShots).
 function planForActor(actor) {
     const classId = actorClassId(actor), rank = weaponRankFromActor(actor);
     if (!classWantsSpiritshots(classId)) return planForKind('soulshot', rank);
     // lazy: cycle World loads the inventory stack.
     if (!invoke('GameServer/World/World').isBotSession(actor?.session)) return planForKind('spiritshot', rank);
     const held = selfId => Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.()) || 0);
-    return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held) ? 'blessedSpiritshot' : 'spiritshot', rank);
+    // lazy: cycle BotLifeState loads the inventory stack.
+    const row = () => invoke('GameServer/Bot/Population/BotLifeState').cachedState(actor?.fetchId?.());
+    return planForKind(choosesBlessed(heldEarning(actor?.session), rank, held,
+        () => decidedKind(row()) === 'blessedSpiritshot') ? 'blessedSpiritshot' : 'spiritshot', rank);
 }
-
-// The role and level inputs of a hot bot's shot choice, as its cold state
-// (EconomyContext.stateForActor) carries them.
-function actorRoleState(actor, classId) {
-    const session = actor?.session, stored = session?.coldLifeState;
-    // lazy: cycle DecisionEvents requires this module at its top.
-    const role = invoke('GameServer/Bot/AI/DecisionEvents').decisionStatsFor(session).role;
-    return { characterId: actor?.fetchId?.(), level: actor?.fetchLevel?.(), classId, stats: { classId, role },
-        party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored?.party?.role } : null };
-}
+// A body's held earning answer (its row's stats, DecisionEvents.statsFor).
+// lazy: cycle DecisionEvents requires this module at its top.
+const heldEarning = session => session ? invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session).earning : null;
 
 function planForActorKind(kind, actor) {
     return planForKind(kind, weaponRankFromActor(actor));
@@ -415,15 +424,18 @@ function autoInputs(actor, held) {
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
-    // planForActor reads which spiritshots the bag holds (choosesBlessed): a
-    // stack running out switches the plan.
+    // planForActor reads which spiritshots the bag holds, else the held answer's
+    // kind, else the earning rule's over its row (choosesBlessed, decidedKind): the
+    // key holds the kind it resolves, so a stack running out or a new answer switches the plan.
     const rank = weaponRankFromActor(actor);
     const holds = kind => Number(actor.backpack?.fetchItemFromSelfId?.(planForKind(kind, rank).selfId)?.fetchAmount?.()) > 0;
     const shotsHeld = shotKind === 'spiritshot' ? 2 * holds('blessedSpiritshot') + holds('spiritshot') : 0;
+    const heldKind = shotKind === 'spiritshot' && !shotsHeld ? heldEarning(session)?.shotKind
+        ?? decidedKind(invoke('GameServer/Bot/Population/BotLifeState').cachedState(actor?.fetchId?.())) : null;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
         && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt
-        && held.shotsHeld === shotsHeld) return held;
-    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt, shotsHeld };
+        && held.shotsHeld === shotsHeld && held.heldKind === heldKind) return held;
+    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt, shotsHeld, heldKind };
 }
 function refreshAutoShot(actor) {
     const held = autoUse.get(actor), inputs = autoInputs(actor, held);
@@ -819,6 +831,7 @@ module.exports = {
     planForActor,
     planForActorKind,
     planForState,
+    decidedKind,
     starterPlanFor,
     ensureStarterStock,
     beginnerAmount,

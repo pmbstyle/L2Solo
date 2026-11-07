@@ -44,11 +44,14 @@ async function createWorld(characters) {
 const observer = String.raw`
 module.exports.shotProbe = async () => {
     const entry = kernel.states.get(710021), state = entry.state, timestamp = Date.now();
-    // New loot (an edge) runs the round's action plan.
+    // A round, then the crafter's town visit, whose plan selects its craft step.
     const result = await kernel.projectResolve(state, { patch: {}, materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 1864, amount: 1 }] },
         debug: {}, events: [], nextResolveAt: timestamp + 60000 }, timestamp);
     const index = require('../Economy/ShotMarketIndex').native(), market = index.marketSnapshot(timestamp);
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(result.state, { timestamp });
+    const visiting = { ...result.state, activity: 'shopping', currentRegion: 'Giran' };
+    const visitEconomy = invoke('GameServer/Bot/Economy/EconomyContext').forState(visiting, { timestamp });
+    const visit = await occupationFor(visiting, timestamp, { economy: visitEconomy, stock: visitEconomy.stock('shots'), caller: 'probe' }, 'showcase');
     const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(result.state);
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(20);
     const candidate = require('../Economy/ShotCraftPolicy').craftCandidate(result.state, recipe, { ...market, offersFor: (...args) => index.offersFor(...args), context: { ...economy, mpPerHour: regen.mp * 1200 } });
@@ -67,7 +70,7 @@ module.exports.shotProbe = async () => {
     const duplicate = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
     kernel.remove(state.characterId);
     const removed = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
-    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: [...market.shotDemand.get(1463)], orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: result.economyPlan, edges: result.economyEdges, state: result.state,
+    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: [...market.shotDemand.get(1463)], orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: visit?.economyPlan, state: result.state,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/World\/World\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
@@ -151,9 +154,9 @@ parentPort.on('message', message => {
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'probe'), shotProbe: true });
         const response = await wait(message => message.probeId === 'probe'); if (response.error) throw Error(response.error);
         const result = response.value;
-        console.log(JSON.stringify({ edges: result.edges, shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
+        console.log(JSON.stringify({ shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
         const selectedStep = Policy.unpackStep(result.plan?.shot);
-        assert(result.edges & 1); assert(selectedStep?.recipeTarget > 0, 'native worker with no known recipe selects a profitable executable recipe');
+        assert(selectedStep?.recipeTarget > 0, 'a crafter\'s town visit with no known recipe selects a profitable executable recipe');
         assert(messages.some(message => message.type === 'decision_trace'), 'the worker sends its decision trace to main');
         assert.deepEqual(result.forbiddenLoaded, [], 'pure craft decision loads no World actor, Network or database implementation');
         assert.equal(result.indexHooks.overlay, result.indexHooks.before + 100, 'projected own stock has a transient overlay');

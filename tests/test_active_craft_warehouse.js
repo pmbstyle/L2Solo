@@ -179,38 +179,6 @@ try {
         assert.equal(Trade.retainedProjectIntents(reserved, { moneyPrice: 1 }, () => 100)
             .find(row => row.itemId === olderPart.selfId)?.amount, olderPart.amount,
         'pieces reserved for another obligation do not satisfy this craft');
-        const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-        const board = new BoardIndex(), record = {};
-        const review = require('../src/GameServer/Bot/Population/CraftMarketReview');
-        const candidate = { ...activePersonal, activity: 'hunting', stats: { ...activePersonal.stats, money: [1, 1, 0, 0] } };
-        // The review stands on facts, not a clock: due when a need is short and
-        // its facts (the need, own bids, the board's lines of the item) moved.
-        assert.equal(review.personalBidDue(candidate, record, board), true,
-            'a missing piece with no order gets a natural review at once');
-        assert.equal(review.personalBidDue(candidate, record, board), false,
-            'an unsuccessful review cannot spin while nothing moves');
-        board.put({ id: 870, ownerId: 42, storeType: 1, kind: 'sell_ad', town: 'Giran',
-            lines: [{ lineId: 871, selfId: olderPart.selfId, count: 1, price: 90 }] });
-        assert.equal(review.personalBidDue(candidate, record, board), true,
-            'a seller of the piece on the board is a new fact: reviewed promptly');
-        assert.equal(review.personalBidDue(candidate, record, board), false);
-        board.put({ id: 880, ownerId: candidate.characterId, storeType: 3, kind: 'buy_ad', town: 'Giran',
-            lines: [{ lineId: 881, selfId: olderPart.selfId, count: olderPart.amount, price: 100 }] });
-        assert.equal(review.personalBidDue(candidate, record, board), false,
-            'a sufficient standing bid suppresses an unnecessary replan');
-        board.remove(880);
-        assert.equal(review.personalBidDue(candidate, record, board), true, 'its own bid gone, the need is reviewed again');
-        const retainedOnly = { ...candidate, stats: { ...candidate.stats, equipmentPlan: {
-            status: 'active', strategy: 'direct_drop', target: { selfId: 76, slot: 7 }, inputPreparation: older
-        } } };
-        const retainedBoard = new BoardIndex();
-        assert.equal(review.personalBidDue(retainedOnly, {}, retainedBoard), true,
-            'a missing standing order is recovered even after switching to another goal');
-        const behindClan = { ...candidate, stats: { ...candidate.stats, equipmentPlan: { ...clanPlan, inputPreparation: older } } };
-        assert.equal(review.personalBidDue(behindClan, {}, retainedBoard), true,
-            'a clan objective cannot suppress the personal project behind it');
-        assert.equal(review.personalBidDue({ ...behindClan, stats: { ...behindClan.stats, equipmentPlan: clanPlan } }, {}, retainedBoard), false,
-            'a clan objective alone does not schedule a personal review');
     } finally { planner.considerable = originalConsiderable; }
     const clanBids = Trade.retainedProjectIntents(clanState, { moneyPrice: 1 }, () => 100);
     assert(clanBids.some(row => row.itemId === root.recipeItemId && row.amount === 1),
@@ -244,20 +212,6 @@ try {
             equipmentPlan: { ...offerState.stats.equipmentPlan, next: { itemId: 4113, kind: 'material_drop' } } } };
         assert.deepEqual(Choice.clanCraftPurchase(partFirst, econ, board), [1, root.recipeItemId, 1, 810, 811, 1, 500],
             'a recipe can be bought while the bot pursues a different key input');
-        const review = require('../src/GameServer/Bot/Population/CraftMarketReview');
-        const clanRecord = {};
-        clanRecord.clanMarketSeen = review.clanInputDue(partFirst, clanRecord, board);
-        assert(clanRecord.clanMarketSeen, 'the indexed review sees a recipe offer while the selected next input is a piece');
-        assert.equal(review.clanInputDue(partFirst, clanRecord, board), '',
-            'a reviewed offer is not reviewed again while nothing moves');
-        board.put({ id: 812, ownerId: 45, storeType: 1, kind: 'sell_ad', custodyPolicy: 1, revision: 1, town: 'Giran',
-            lines: [{ lineId: 813, selfId: root.recipeItemId, count: 1, price: 400 }] });
-        assert(review.clanInputDue(partFirst, clanRecord, board), 'a new offer of the recipe is reviewed at once');
-        board.remove(812);
-        const station = { ...partFirst, stats: { ...partFirst.stats, equipmentPlan: { ...partFirst.stats.equipmentPlan,
-            craftProviders: { [root.recipeId]: { publicStation: true } } } } };
-        assert.equal(review.clanInputDue(station, {}, board), '',
-            'a public station does not schedule a recipe purchase');
         const twoTowns = new BoardIndex();
         twoTowns.put({ id: 820, ownerId: 43, storeType: 1, kind: 'sell_ad', custodyPolicy: 1, revision: 1, town: 'Elven Village',
             lines: [{ lineId: 821, selfId: root.recipeItemId, count: 1, price: 100 }] });

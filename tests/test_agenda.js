@@ -112,9 +112,13 @@ async function run() {
         assert(found, 'fixture: a kit kind is a later step of some review');
         assert.equal(shots.heldAtDecision, 2, 'the step keeps the bag it was counted on');
         const part = Math.floor(shots.amount / 2);
-        // The visit's bought steps end (goal_done:visit woke the build): its agenda moves to the step.
-        const next = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }, deps());
+        // The visit's bought steps end: its held plan names a stop after them, and the step
+        // moves on to it (visitStop) with no build taken.
+        const arrived = { ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } };
+        assert.equal(Economy.visitStopsLeft(arrived, deps()), true, 'a stop is left in the held plan');
+        const next = Economy.forState(arrived, { ...deps(), visitStop: 'goal_done:visit' });
         assert.equal(next.network.activity.itemId, ITEM);
+        assert.equal(next.statsPacket.woken, undefined, 'the next stop takes no decision');
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         assert.equal(Decision.remainingToOrder(next.network.activity, { ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }), shots.amount - part,
             'what reached the bag since the review is not bought again');

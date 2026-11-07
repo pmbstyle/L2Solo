@@ -57,25 +57,8 @@ function* reservations(state) {
     return Disposition.reservedEquipmentAmounts(state);
 }
 
-function* feasibility(state, { board, read = () => {} }, reserved = null) {
-    reserved ||= yield* reservations(state);
-    if (!reserved || !board) return null;
-    const Look = invoke('GameServer/Bot/Economy/BoardLook'), lines = board.ownerLines(state.characterId);
-    if (lines.length > Look.MAX_OWNED_LINES) return null;
-    let hash = 0x811c9dc5, blocked = 0, at = 0;
-    for (const line of lines) {
-        read(line.selfId); hash = Look.lineFingerprint(hash, line);
-        if (line.storeType === 1 && Look.indexedFeasibility(state, line, reserved) === false) blocked |= 1 << at;
-        at++; yield 'owned';
-    }
-    return [hash, blocked, lines.length];
-}
-
-// Whether a cold look may keep an own SELL line on sale: the mask's rule
-// (feasibility) on the state it looks at, its reservations read once at the
-// first line asked. A built mask describes its build's state and keys only the
-// lines, not the reservations and item flags its bits read, so a held build's
-// mask is no answer for a later state.
+// Whether a look may keep an own SELL line on sale (BoardLook.indexedFeasibility) on
+// the state it looks at, its reservations read once at the first line asked.
 function canSell(state, lines) {
     const Look = invoke('GameServer/Bot/Economy/BoardLook');
     let reserved;
@@ -94,6 +77,7 @@ function canSell(state, lines) {
 }
 
 const EconomicTrip = require('../Economy/EconomicTrip');
+const BoardClaims = require('../Economy/BoardClaims');
 const { regionalTown, details: tripDetails } = EconomicTrip;
 function recipeIndex(board) {
     initialise();
@@ -171,7 +155,6 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     if (admission) readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
     if (!reserved) return noPlan('unknown_reservations', state, onNoPlan);
-    const preparedFeasibility = targetRecipe ? null : yield* feasibility(state, { board, read }, reserved);
     const targetItems = targetRecipe ? new Set([Number(targetRecipe.productId), Number(targetRecipe.recipeItemId),
         ...(targetRecipe.materials || []).map(row => Number(row.selfId))]) : null;
     const ownStock = new Map(), routes = [];
@@ -247,6 +230,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     // search prices the same input for batches 1..64 and across recipes.
     // A board change of a read item invalidates the request (planner
     // validation), so a table never outlives the board it was read from.
+    // A crafter buys its inputs and recipe only in the town it stands in (no
+    // errand to another town, ColdMarketService.acquire; temporary: cross-town
+    // craft errands return when the market is redesigned): none in the field.
     const purchaseTables = new Map();
     const preparePurchase = function* (owner, id, amount, query = {}) {
         read(id);
@@ -254,14 +240,15 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         const tableKey = `${Number(owner.characterId)}:${Number(id)}:${npc ? 1 : 0}`;
         let table = purchaseTables.get(tableKey);
         if (!table) {
+            const here = owner.activity === 'shopping' ? owner.currentRegion : null;
             // Static NPC stock is the only unlimited ingredient source admitted here.
-            const npcOffers = npc ? npcOffersFor(id) : EMPTY;
-            const towns = new Set(npcOffers.map(offer => offer.town));
-            // Every town of the list: an amount reads past the first asks until one town holds it.
-            for (const town of board?.towns(id, 1) || []) towns.add(town);
-            for (const town of towns) { if (townOrdinal.has(town)) yield* ensureTrip(town); yield 'quote'; }
-            table = OfferQuery.townTable(board, id, { quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
-                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner), npcOffers, cost: trip });
+            const npcOffers = npc && here ? npcOffersFor(id).filter(offer => offer.town === here) : EMPTY;
+            if (here && townOrdinal.has(here)) yield* ensureTrip(here);
+            yield 'quote';
+            // The units other bots' errands claim are gone for this buyer (BoardClaims).
+            table = OfferQuery.townTable(board, id, { towns: [here], quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
+                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner),
+                countOf: line => BoardClaims.unclaimed(line, owner.characterId), npcOffers, cost: trip });
             purchaseTables.set(tableKey, table);
         }
         const best = OfferQuery.cheapestIn(table, amount);
@@ -290,12 +277,12 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             }
         }
     };
-    return { context, feasibility: preparedFeasibility, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
+    return { context, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
         unknownRecipes: () => admission ? admission.rowsFor(craftLevel) : [],
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,

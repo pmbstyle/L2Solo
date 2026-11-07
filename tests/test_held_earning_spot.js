@@ -131,6 +131,19 @@ function onWorker() {
         assert.equal(read.searches, 1, `${name} wakes one search`);
         assert.equal(published(woken, read.result).stats.earning.spotId, 'poor', `${name}: the bot moves to the better spot`);
     }
+    // Woken alone (a contest lost, the recovery lifted), the decision is taken alone: one search, no build
+    // (its new answer wakes none; the hunting leaf reads the answer's spot).
+    {
+        const lost = raised(turned, 'contest_lost');
+        assert.equal(Situations.woken(lost.stats, 'build'), false, 'fixture: the build sleeps');
+        const alone = count(() => Economy.decideEarning(lost, deps(7)));
+        assert.equal(alone.searches, 1, 'one search');
+        assert.equal(alone.result.earning.spotId, 'poor', 'the bot moves to the better spot');
+        const after = { ...lost, stats: { ...lost.stats, ...alone.result } };
+        assert.equal(Situations.woken(after.stats, 'earning_spot'), false, 'its bit cleared');
+        assert.equal(Situations.woken(after.stats, 'build'), false, 'and no build woken');
+        assert.equal(count(() => Economy.decideEarning(after, deps(8))).result, null, 'nothing left to take');
+    }
     // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
     // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line
     // and its money above the refill short of an hour of them); a funded bot stays and buys them. Low potions

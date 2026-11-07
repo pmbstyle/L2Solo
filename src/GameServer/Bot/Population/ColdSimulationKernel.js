@@ -56,12 +56,10 @@ const CraftMaterialPartyRoute = require('./CraftMaterialPartyRoute');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
-const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
-const { eligible: eligibleBuyer } = require('../Economy/MarketBuyerWaiters');
 const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
 const ClanEquipment = require('./ClanEquipmentPartyPolicy');
@@ -217,11 +215,10 @@ function deterministicRandom(state = {}) {
 
 // The facts the kernel reads from its worker tables: the
 // party a bot leads ('parties'), that party's member states (the kernel's
-// own records), the adena its buy orders hold (the board), whether its clan
-// hall needs a visit ('clan_halls') and whether the player waits for it at a
+// own records), whether its clan hall needs a visit ('clan_halls') and whether the player waits for it at a
 // meeting point ('meetings'). A caller without a kernel (BotLifeState, a
 // test) reads none.
-const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [], buyOrderEscrow: () => 0,
+const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [],
     hallNeeded: () => false, playerWaiting: () => false });
 
 // party: the party row this bot leads, or null. The fixed clock its next
@@ -396,14 +393,6 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // preparation metadata; the pure hunt resolver cannot perform that work.
     if (plan.clanGoal?.clanId && (ClanCrystalSupply ||= require('../Economy/ClanCrystalSupply')).requirement(state)) return 'command';
     if ((BotCrystallization ||= require('../Economy/BotCrystallization')).ready(state)) return 'command';
-    if (String(plan.strategy || '') === 'market') {
-        const price = Math.max(0, Number(plan.market?.price || 0));
-        const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-        if (state.activity !== 'hunting'
-            || (price > 0 && (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, facts.buyOrderEscrow(state.characterId)))
-                : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, facts.buyOrderEscrow(state.characterId)),
-                    { itemId: plan.target?.selfId })) >= price)) return 'command';
-    }
     // A published clan wait steps again on its row's next change (ClanPartyDuty.held).
     if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return ClanPartyDuty.held(state) ? 'event_driven' : 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
@@ -477,11 +466,11 @@ function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
 // the worker (it carries functions and is never posted).
 // economy and route are worker-local (the request carries the route's spot).
 function postedPlan(plan) {
-    if (!plan?.economy && !plan?.route && !plan?.actionBaseline) return plan;
+    if (!plan?.economy && !plan?.route && !plan?.boardWakeSeq) return plan;
     const posted = { ...plan };
     delete posted.economy;
     delete posted.route;
-    delete posted.actionBaseline;
+    delete posted.boardWakeSeq;
     return posted;
 }
 
@@ -545,6 +534,8 @@ class RetainedStateMap extends Map {
         super();
         this.shotIndex = shotIndex;
         this.now = now;
+        // cardChanged(record): told when a record's held card is new, replaced or dropped (worker).
+        this.cardChanged = null;
         this.#skillDtos = require('worker_threads').isMainThread ? null
             : new (require('./SkillDtoInterner').SkillDtoInterner)();
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
@@ -584,18 +575,20 @@ class RetainedStateMap extends Map {
         // a field of its record (the record never leaves this thread). A new
         // state is not a new decision: the card the record holds is checked
         // against it. A first row (a restart, a bot this thread held no copy of) restores
-        // the card from its bounded restart prefix in stats; no card crosses
-        // a handoff. Readers prove every dependency before reuse, and
-        // retirement releases the owner.
+        // the card from its bounded restart prefix in stats. A near body keeps its far
+        // card unserved (its decision is the packet it posts to main): back far, it
+        // serves while its decision echo holds (a near build moved it: refused).
+        // Readers prove every dependency before reuse, and retirement releases the owner.
         const record = this.get(id);
         const previousAdvice = current?.wishAdvisory;
         const incomingAdvice = !current && this.#skillDtos ? ColdEconomyDecision.restoreAdvisory(record.state, this.now()) : null;
         const wishAdvisory = ColdEconomyDecision.advisoryPublicationHolds(record.state, incomingAdvice, previousAdvice)
             ? incomingAdvice : ColdEconomyDecision.advisoryPublicationHolds(record.state, previousAdvice) ? previousAdvice : null;
-        if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) {
-            // A near record's decision is the packet it posts to main (no proof), never a card:
-            // the far card is dropped here and none is built while the bot is near.
-            record.wishAdvisory = record.state?.phase === 'cold' ? wishAdvisory : null;
+        if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) record.wishAdvisory = wishAdvisory;
+        // The board wants follow the held card (the worker's cardChanged): a first row
+        // registers the card it restored, a card dropped or replaced here its own.
+        if (this.#skillDtos && record && (!current || (record.wishAdvisory?.eventProof || null) !== (previousAdvice?.eventProof || null))) {
+            this.cardChanged?.(record);
         }
         if (this.#skillDtos) {
             let staged;
@@ -704,8 +697,6 @@ class ColdSimulationKernel {
         // each member's party id.
         this.parties = new Map();
         this.partyByMember = new Map();
-        // The adena a bot's buy orders hold (the worker sums its board rows).
-        this.escrowOf = typeof options.buyOrderEscrow === 'function' ? options.buyOrderEscrow : () => 0;
         // The clan hall rule over the bot's hall row (the worker's 'clan_halls'),
         // the player's meeting waits ('meetings') and a raid boss's row ('raids').
         this.hallNeedOf = typeof options.hallNeeded === 'function' ? options.hallNeeded : () => false;
@@ -722,15 +713,8 @@ class ColdSimulationKernel {
         this.scheduleTokens = new Map();
         this.nextScheduleToken = 1;
         this.buyerEvents = null;
-        // A pending market wake per bot: the offers that woke it, item id ->
-        // the cheapest new price (MarketBuyerWaiters), handed to its command.
-        this.buyerWakeups = new Map();
         // Bots with no step coming whose row a raise woke: one command step answers it.
         this.raiseWakeups = new Set();
-        // Own line observations: <=8 numeric {deals, at} rows per stepping bot.
-        // A step ended without a commit, hot handoff/remove and shutdown discard
-        // them; never saved.
-        this.lookSeen = new Map();
         // Steps by bot, in start order (a Map keeps insertion order): the
         // stall check reads only the oldest entries.
         this.inFlight = new Map();
@@ -928,10 +912,6 @@ class ColdSimulationKernel {
         return members;
     }
 
-    buyOrderEscrow(characterId) {
-        return Number(this.escrowOf(Number(characterId)) || 0);
-    }
-
     // Whether this cold bot needs its clan hall now (lifecycleKind, the command).
     hallNeeded(state) {
         return this.hallNeedOf(state, this.now()) === true;
@@ -1005,7 +985,6 @@ class ColdSimulationKernel {
             // still resolve and receive newer commit ACKs. Preserve monotonic
             // ownership state when an older page arrives out of order.
             this.refreshCommandSource(characterId);
-            this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
             this.refreshPartyMeetingLeader(characterId, current);
             return false;
@@ -1033,7 +1012,6 @@ class ColdSimulationKernel {
             this.occupancy.update(state);
             DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
             this.refreshCommandSource(characterId);
-            this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId, nextDue, nextKind);
             this.refreshPartyMeetingLeader(characterId, current);
             return true;
@@ -1041,8 +1019,7 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         // The bot's one record: { state, version, route, spotFit, materialMemo,
-        // economyPending, economyPlanHash, wishAdvisory, raiseSeq, nearRoute,
-        // actionBaseline }.
+        // economyPending, economyPlanHash, wishAdvisory, raiseSeq, nearRoute }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the kept route (BotRoute.trip) until its
         // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
@@ -1066,7 +1043,6 @@ class ColdSimulationKernel {
         this.occupancy.update(state);
         DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
-        this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId, nextDue, nextKind);
         if (raised && !this.busy(characterId)) this.requeue(characterId, this.now());
         this.refreshPartyMeetingLeader(characterId, current);
@@ -1102,8 +1078,7 @@ class ColdSimulationKernel {
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.buyerEvents?.remove(id);
-        this.buyerWakeups.delete(id); this.raiseWakeups.delete(id);
-        this.lookSeen.delete(id);
+        this.raiseWakeups.delete(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         this.scheduleTokens.delete(id);
@@ -1151,8 +1126,7 @@ class ColdSimulationKernel {
             scheduleTokens: this.scheduleTokens.size, ownerHeapNodes: this.heap.size,
             inFlight: this.inFlight.size, dirty: this.dirty.size,
             commanding: this.commanding.size, commandStartedAt: this.commandStartedAt.size,
-            partyRuns: this.partyRuns.size, partyRequirementProgress: this.partyRequirementProgress.size,
-            buyerWakeups: this.buyerWakeups.size, lookSeen: this.lookSeen.size
+            partyRuns: this.partyRuns.size, partyRequirementProgress: this.partyRequirementProgress.size
         };
     }
 
@@ -1174,32 +1148,35 @@ class ColdSimulationKernel {
         return !!entry && isSchedulableKind(lifecycleKind(entry.state, this));
     }
 
-    buyerStateChanged(characterId) {
-        this.buyerEvents?.ownerChanged(characterId, this.now());
-        if (!eligibleBuyer(this.states.get(characterId)?.state)) this.buyerWakeups.delete(characterId);
-    }
-
-    // offer: { itemId, price } of the new offer that woke the bot; a wake
-    // already pending takes it beside its own.
-    wakeBuyer(characterId, timestamp = this.now(), offer = null) {
-        const id = Number(characterId);
-        // A bot its checkpoint refused takes no wake: each would replace the
-        // queued turn that leaves it its resolver steps.
-        if (this.stopping || !eligibleBuyer(this.states.get(id)?.state) || this.checkpointErrors.has(id)) return false;
-        const pending = this.buyerWakeups.get(id);
-        this.addWakeOffers(id, offer ? [offer] : []);
-        if (pending) return false;
-        if (!this.busy(id)) this.requeue(id, timestamp);
+    // A board situation of a far bot (the worker's board diff: offer_posted from
+    // MarketBuyerWaiters, line_undercut and goal_done:line on its own lines): raised at
+    // the bot's next solo step (planLifecycle reads record.boardWake.raises; a party
+    // member's waits for the step its own decisions are taken on again) and kept until a
+    // step that raised it commits (onCommitAck, completeCommand: its seq), name by name:
+    // one heard again after that step read it (heard: its seq) stays. An offer keeps the
+    // cheapest heard. A bot with no step coming (a craft shop) takes one command step for
+    // it. A worker restart loses a wake not yet committed (counted board:wake:lost by
+    // shutdown). payload: plain data ({ itemId, price } for an offer). True when taken.
+    boardWake(characterId, name, payload = null) {
+        const id = Number(characterId), record = this.states.get(id), state = record?.state;
+        if (this.stopping || state?.phase !== 'cold' || this.checkpointErrors.has(id)) return false;
+        const wake = record.boardWake, seq = (Number(wake?.seq) || 0) + 1, held = wake?.raises?.[name];
+        const kept = held && !(Number(payload?.price) < Number(held.price)) ? held : payload;
+        record.boardWake = { seq, raises: { ...wake?.raises, [name]: kept }, heard: { ...wake?.heard, [name]: seq } };
+        if (!state.party?.partyId && !state.partyId && lifecycleKind(state, this) === 'event_driven') {
+            this.raiseWakeups.add(id);
+            if (!this.busy(id)) this.requeue(id, this.now());
+        }
         return true;
     }
-
-    addWakeOffers(id, offers) {
-        const held = this.buyerWakeups.get(id) || new Map();
-        for (const { itemId, price } of offers) {
-            if (!(Number(price) >= 0)) continue;
-            held.set(Number(itemId), Math.min(Number(price), held.get(Number(itemId)) ?? Infinity));
-        }
-        this.buyerWakeups.set(id, held);
+    // The board wake a committed step raised is answered (its seq): the names heard
+    // after it wait for the next step.
+    boardWakeAnswered(record, seq) {
+        const wake = record?.boardWake;
+        if (!wake || !seq) return;
+        const left = Object.keys(wake.heard).filter(name => wake.heard[name] > seq);
+        record.boardWake = left.length ? { seq: wake.seq, raises: Object.fromEntries(left.map(name => [name, wake.raises[name]])),
+            heard: Object.fromEntries(left.map(name => [name, wake.heard[name]])) } : null;
     }
 
     // dueAt and kind: the due time and lifecycleKind of the stored state when
@@ -1208,10 +1185,6 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         const current = this.states.get(id);
         if (!current || this.busy(id)) return false;
-        if (this.buyerWakeups.has(id) && eligibleBuyer(current.state)) {
-            if (!this.hasNormalCoverage(id) || this.scheduleTokens.get(id).dueAt > this.now()) this.requeue(id, this.now());
-            return true;
-        }
         if (this.hasNormalCoverage(id)) {
             const scheduled = this.scheduleTokens.get(id);
             if (scheduled.heapEntry.playerWaiting !== playerWaitingTransition(current.state, kind, this)
@@ -1288,7 +1261,7 @@ class ColdSimulationKernel {
                 this.requeueAtDue(id);
                 continue;
             }
-            const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state) || this.raiseWakeups.has(id)
+            const kind = this.raiseWakeups.has(id)
                 ? 'command' : lifecycleKind(current.state, this);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
@@ -1509,11 +1482,6 @@ class ColdSimulationKernel {
         const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
             kind, checkpoint, version: current.version, sent: false };
         this.raiseWakeups.delete(id);
-        const wake = kind === 'lifecycle' ? this.buyerWakeups.get(id) : null;
-        if (wake) {
-            this.buyerWakeups.delete(id);
-            attempt.marketWakeup = [...wake].map(([itemId, price]) => ({ itemId, price }));
-        }
         this.commandStartedAt.set(id, attempt);
         this.commanding.add(id);
         return attempt;
@@ -1545,7 +1513,7 @@ class ColdSimulationKernel {
         console.info('ColdWorker :: overdue trace %s', JSON.stringify({ id, main, worker: { at: timestamp, activity: state.activity, phase: state.phase,
             kind: lifecycleKind(state, this), nextResolveAt: state.timing?.nextResolveAt, lastResolvedAt: state.timing?.lastResolvedAt,
             updatedAt: state.updatedAt, revision: state.simulation?.revision, kernelDueInMs: Math.round(this.dueAt(state, timestamp) - timestamp), version,
-            covered: this.hasNormalCoverage(id), busy: this.busy(id), dirty: this.dirty.has(id), wake: this.buyerWakeups.has(id),
+            covered: this.hasNormalCoverage(id), busy: this.busy(id), dirty: this.dirty.has(id), wake: !!record.boardWake,
             token: token ? { dueInMs: Math.round(token.dueAt - timestamp), version: token.version, inHeap: this.heap.positions.has(entry),
                 lead: entry?.lead, startInMs: entry ? Math.round(this.startAt(entry) - timestamp) : null } : null,
             step: step ? { ageMs: timestamp - step.startedAt, sent: !!step.pendingCommitId, dueAt: step.dueAt } : null,
@@ -1560,7 +1528,7 @@ class ColdSimulationKernel {
     // market wake would hold the bot on commands; its resolver steps still run.
     refuseCheckpoint(id, state) {
         this.checkpointsRefused += 1;
-        this.buyerWakeups.delete(id); this.raiseWakeups.delete(id);
+        this.raiseWakeups.delete(id);
         if (this.checkpointErrors.has(id) || this.checkpointErrors.size >= 32) return;
         this.checkpointErrors.add(id);
         console.error(`ColdSimulationKernel :: Error: command checkpoint refused bot ${id} ${state.activity}: ${JSON.stringify(state.timing)} updatedAt ${state.updatedAt}`);
@@ -1639,8 +1607,7 @@ class ColdSimulationKernel {
             if (!this.currentCommand(id, attempt)) return;
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
-            // The facts of the plan's action ask: the bot's baseline once main ran the command.
-            attempt.actionBaseline = lifecyclePlan?.actionBaseline || null;
+            attempt.boardWakeSeq = Number(lifecyclePlan?.boardWakeSeq) || 0;
             const sent = this.emit('command_request', {
                 requests: [{
                     characterId: id,
@@ -1656,20 +1623,16 @@ class ColdSimulationKernel {
                         ? { needed: true, spotId: lifecyclePlan.route.spotId }
                         : { needed: false, spotId: spot?.id ?? null },
                     computedAt: timestamp,
-                    // [{ itemId, price }]: the new offers that woke the buyer.
-                    ...(attempt.marketWakeup ? { marketWakeup: attempt.marketWakeup } : {}),
                     ...(hallVisit ? { hallVisit: true } : {})
                 }]
             });
             if (sent === false && this.cancelCommand(id, attempt)) {
-                if (attempt.marketWakeup) this.addWakeOffers(id, attempt.marketWakeup);
                 this.requeue(id, this.now() + 5000);
             }
         } catch (error) {
             if (!this.currentCommand(id, attempt)) return;
             DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.cancelCommand(id, attempt);
-            if (attempt.marketWakeup) this.addWakeOffers(id, attempt.marketWakeup);
             this.requeue(id, this.fault(id, error || 'command_error', 'command'));
         }
     }
@@ -1707,7 +1670,6 @@ class ColdSimulationKernel {
             const id = Number(characterId), active = this.inFlight.get(id);
             this.inFlight.delete(id);
             this.dirty.delete(id);
-            this.lookSeen.delete(id);
             if (!active) continue;
             this.partyRequirementProgress.delete(String(active.partyId || active.state?.party?.partyId || ''));
             // No review runs the plan a sent proposal stamped.
@@ -2176,7 +2138,6 @@ class ColdSimulationKernel {
                     // made on its party state, so main decides on the solo one.
                     ...(projection?.economyDecision && resolvedParty.status !== 'dissolved'
                         ? { economyDecision: projection.economyDecision } : {}),
-                    economyEdges: resolvedParty.status === 'dissolved' ? 0 : Number(projection?.economyEdges || 0),
                     ...(projection?.economyPlan && resolvedParty.status !== 'dissolved'
                         ? { economyPlan: projection.economyPlan } : {}),
                     result: proposalResult({
@@ -2292,7 +2253,7 @@ class ColdSimulationKernel {
             // The step's one decision (its economy, worker-local) travels
             // through the round: the projection asks no second one.
             const projection = this.projectResolve
-                ? await this.projectResolve(round.state, round.result, round.timestamp, lifecyclePlan, startedAt, resolveState)
+                ? await this.projectResolve(round.state, round.result, round.timestamp, lifecyclePlan, startedAt, round.projected || null)
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
@@ -2316,7 +2277,6 @@ class ColdSimulationKernel {
                 durable: projection?.durable || null,
                 ...(projection?.market ? { market: projection.market } : {}),
                 ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
-                economyEdges: Number(projection?.economyEdges || 0),
                 ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 ...(projection?.buffOffer ? { buffOffer: projection.buffOffer } : {}),
                 ...(cleanupNeed ? { cleanupNeed } : {}),
@@ -2324,9 +2284,7 @@ class ColdSimulationKernel {
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
-            // Worker-local, never posted: the facts of the step's last action
-            // ask, the bot's baseline once main commits the step (onCommitAck).
-            active.actionBaseline = projection?.actionBaseline || null;
+            active.boardWakeSeq = Number(lifecyclePlan?.boardWakeSeq) || 0;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
@@ -2368,7 +2326,11 @@ class ColdSimulationKernel {
         };
         add(first.result);
         for (;;) {
-            const after = await projectRound(round.state, round.result, round.timestamp, plan, writtenAt);
+            // huntedThrough (ColdSoloWindow): the round's start, the end of the credited hunt
+            // when it is the last; a round's own clock (lastResolvedAt) is the same.
+            const stamped = { ...round.result, patch: { ...round.result.patch,
+                stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
+            const after = await projectRound(round.state, stamped, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
             // Three guards bound the loop whatever endOf decides: a round cap, the
             // look-ahead (the next round due past the step's clock + WINDOW_LEAD_MS:
@@ -2379,10 +2341,10 @@ class ColdSimulationKernel {
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) >= first.timestamp + WINDOW_LEAD_MS ? 'lead' : '')
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) > round.timestamp ? '' : 'stalled');
             if (ended) {
-                // huntedThrough (ColdSoloWindow): the last round's start, the end of the credited hunt.
-                const result = { ...round.result, ...(soulCrystals.length ? { soulCrystals } : {}),
-                    patch: { ...round.result.patch, stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
-                return { ...round, result, ended, rounds, loot: { ...result, materialize: { items } }, posted: { events, debug } };
+                // projected: the last round's projection, the step's own (its situations raised
+                // once): the step's projection goes on from it, it does not project the round again.
+                const result = { ...stamped, ...(soulCrystals.length ? { soulCrystals } : {}) };
+                return { ...round, result, projected: after, ended, rounds, loot: { ...result, materialize: { items } }, posted: { events, debug } };
             }
             await nextTurn();
             if (!this.resolverSourceCurrent(source)) return null;
@@ -2591,10 +2553,7 @@ class ColdSimulationKernel {
             // cache is the proposal's state with them.
             const committed = result.ok ? result.state || Protocol.committedState(active.proposed, result) : null;
             if (committed) {
-                // The committed step's action ask is the bot's last (ColdEconomyPlan.edgesSince);
-                // a step that ends otherwise leaves the baseline before it.
-                const record = this.states.get(id);
-                if (record && active.actionBaseline) record.actionBaseline = active.actionBaseline;
+                this.boardWakeAnswered(this.states.get(id), active.boardWakeSeq);
                 // Without result.state main changed nothing: the held state is
                 // the step's own output, not news for its economy (ownOutput).
                 this.upsert({ state: committed, ownOutput: result.state ? null : 'commit' });
@@ -2698,8 +2657,7 @@ class ColdSimulationKernel {
         // A command that threw on main (payload.fault, its stack) is held off as
         // a throw here is (fault); before the upsert, so its schedule keeps the hold.
         if (payload.ok) this.clearFault(id);
-        // A lifecycle command main ran: its plan's action ask is the bot's last.
-        if (payload.ok && attempt.actionBaseline) current.actionBaseline = attempt.actionBaseline;
+        if (payload.ok) this.boardWakeAnswered(current, attempt.boardWakeSeq);
         const retryAt = payload.fault && payload.ok === false
             ? this.fault(id, { message: payload.reason, stack: payload.fault.stack }, 'main_command')
             : this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000);
@@ -2805,8 +2763,8 @@ class ColdSimulationKernel {
         this.stopping = true;
         this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
-        this.buyerWakeups.clear();
-        this.lookSeen.clear();
+        // A board wake no step committed is lost with this worker (a restart re-plans).
+        for (const record of this.states.values()) if (record.boardWake) (Situations ||= require('../Situations')).note('board:wake:lost');
         this.commanding.clear();
         this.commandStartedAt.clear();
         await this.resolveChain.catch(() => null);

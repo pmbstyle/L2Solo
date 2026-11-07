@@ -43,9 +43,10 @@ function cleanupFree(state) {
         && !state.stats?.travel && !BotErrands.busyWith(state, CLEANUP_BUSY_FLAGS)
         && !CLEANUP_BUSY_ACTIVITIES.includes(state.activity);
 }
-// Main's own resolve (no worker step): the bag's need decided where the trip starts.
-function forcedCleanupNeed(state, now) {
-    return cleanupFree(state) ? cleanupNeed(state, now) : null;
+// The bag's trip the build decided (stats.cleanupDue, cleanupDecision), for a bot free to
+// start it: main's resolves start only this trip, they never weigh the bag themselves.
+function heldCleanup(state) {
+    return cleanupFree(state) ? state.stats?.cleanupDue || null : null;
 }
 // A forced cleanup decided over a resolve outranks a trip that resolve
 // started (route, karma), as it did when it was decided before the fight;
@@ -175,5 +176,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { cleanupNeed, bagFact, cleanupDecision, cleanupFree, forcedCleanupNeed, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed, warehouseDeparture,
+module.exports = { cleanupNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed, warehouseDeparture,
     allowed, goal, departure, stats, ready };

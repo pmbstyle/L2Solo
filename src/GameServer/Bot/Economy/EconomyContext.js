@@ -379,6 +379,14 @@ function saleSpent(state, leaf) {
     const tried = state.stats?.marketSellSeen?.items;
     return Array.isArray(tried) && stayed.every(id => tried.includes(Number(id))) ? 'goal_failed' : '';
 }
+// Whether the held plan of a bot on a town visit names a stop after its leaf (the
+// agenda the build that sent it decided, WishNetwork.agendaOf): its leaf's end then
+// moves on to it (deps.visitStop) with no build; with none left the visit's end wakes
+// the build (goal_done:visit / goal_failed:visit), which takes the next leaf.
+function visitStopsLeft(state, deps = {}) {
+    const held = cache.get(actorKeyOf(state, deps));
+    return Situations.onVisit(state) && (held?.plan.network?.agenda?.length || 0) > 0;
+}
 function leafOutcome(state, leaf, deps = {}, heldUnits = leaf?.heldAtDecision) {
     if (!leaf?.activity) return '';
     const visit = Situations.onVisit(state);
@@ -709,6 +717,22 @@ function earningDue(state, deps = {}) {
     const source = deps.spots ?? runtime.spots, spots = typeof source === 'function' ? source() : source;
     return Array.isArray(spots) && spots.length > 0 && Situations.woken(state.stats, 'earning_spot');
 }
+// The earning spot taken alone, when its own situations woke it and not the build's
+// (a contest lost, the recovery lifted, a spot outleveled): the search a build runs
+// (foundation's incomeRouteFor), at the bot's own prices, no wish network. Its answer
+// wakes no dependant (where the bot hunts changes no purchase or trip its build holds):
+// the held build serves on, and its hunting leaf reads the held answer's spot
+// (heldSpotOf). Far steps and near posts alike. Returns the mind keys it writes (the
+// answer, its read marks cleared, the bits left), or null when it is not due here (main, a party member, an incoming projection waiting).
+function decideEarning(state, deps = {}) {
+    if (!earningDue(state, deps) || state.incomingPending) return null;
+    deps = resolved(state, deps, false);
+    const { price, timestamp } = personal(state, deps);
+    const found = IncomeRoute.search(state, { ...deps, timestamp, required: true, price });
+    const earning = IncomeRoute.answerOf(found.route, timestamp, found.error, state);
+    return { earning, spotMarks: null, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
+        subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
+}
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
 // route): the route's one test, BotRoute.leafFitReader, as a yes or no per
 // spot. Only in a worker build (the worker owns the leaf and its planning
@@ -763,7 +787,8 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, hunt.useShots !== false) : null;
     const bestTable = spotTable || Table.best(tableRole, state.level, hunt.useShots !== false);
     const ShotStock = invoke('GameServer/Inventory/ShotStock');
-    const shotPlan = ShotStock.planForState(state);
+    // The shot kind of this build's own earning answer when it took the decision (its search).
+    const shotPlan = ShotStock.planForState(income.searched ? { ...state, stats: { ...state.stats, earning: income.earning } } : state);
     const shotItemId = shotPlan.selfId;
     const potion = HealingPotionStock.purchasePotionFor(state), potionItemId = potion.selfId;
     const hourAdena = Hunt.huntHour(hunt, state);
@@ -965,8 +990,9 @@ function followedGear(state, held) {
     return ids;
 }
 // What the agenda moves to when the held leaf's step ended on a visit (Agenda.advance:
-// why, the leaf check's reason; goal_done:visit / goal_failed:visit woke the build,
-// temporary until the town plan holds the visit). dropped: receives the steps it dropped. facts:
+// why, the leaf check's reason): the visit's next stop, carried out with no build
+// (deps.visitStop, the step's own move), or a woken build's first move. dropped:
+// receives the steps it dropped. facts:
 // the state's facts now, the move's baseline as a build's (Sections.snapshot): gear the
 // visit bought and wore is the build's own answer, no gear_changed later.
 function advanced(held, why, state, deps, dropped, facts) {
@@ -1044,6 +1070,11 @@ function buildForState(state, deps) {
     const visitEnd = decide && held && !deps.fullReview && Situations.onVisit(state)
         ? leafCheck(state, held.plan.network?.activity, deps, { heldUnits: held.heldUnits, current: null, prepared: {} }) : '';
     const next = visitEnd ? advanced(held, visitEnd.reason, state, deps, dropped, current === state ? facts : requestFacts(state, deps)) : null;
+    // The step's next stop (deps.visitStop) that the agenda cannot move to (each stop
+    // left refused or not worth its visit: Agenda.advance ends) is the visit's end: its
+    // outcome raised wakes the build, as with no stop left (EconomyContext.visitStopsLeft).
+    if (visitEnd && !next && deps.visitStop) state = { ...state,
+        stats: Situations.raise({ ...state.stats }, deps.visitStop, null, Situations.place(state), state.characterId) };
     // A reader is served the held entry while its identity holds. A caller that needs
     // the member's graph nodes (a worker group solve) builds unless the held entry kept
     // them (the main thread keeps them, the worker a party member's).
@@ -1069,8 +1100,10 @@ function buildForState(state, deps) {
         // A late price read of a held plan is reported as in its build.
         const late = id => deps.onSourceRead?.(Number(id));
         const served = view(state, entry.plan, deps, { board: sourceBoard, read: late, projection: entry.projection });
-        // The agenda's move is the woken build's answer: it takes the build.
-        if (next) served.statsPacket.woken = Situations.decided(state.stats, 'build', { caller: deps.caller || 'economy_context',
+        // The visit's next stop (deps.visitStop): the held plan moves on, no decision is
+        // taken. Else the agenda's move is the woken build's answer: it takes the build.
+        if (next && deps.visitStop) Situations.note('town_plan:next_stop');
+        else if (next) served.statsPacket.woken = Situations.decided(state.stats, 'build', { caller: deps.caller || 'economy_context',
             subject: state.characterId, answer: !Trace.on() ? null : next.plan.network.activity?.key });
         return served;
     }
@@ -1277,11 +1310,15 @@ function buildForState(state, deps) {
             subject: state.characterId, answer: !Trace.on() ? null : { earning_spot: [base.earning?.spotId ?? 'none', state.stats?.earning?.spotId ?? 'none'],
                 build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]] } }) };
     // The money queue's cumulative costs (its money thresholds, Sections.snapshot): the
-    // focus's (goal_affordable:focus) and the held leaf's funded row's (out_of_money).
+    // focus's and the gear plan's market piece's (goal_affordable:focus), the held leaf's
+    // funded row's (out_of_money).
+    const gearPlan = state.stats?.equipmentPlan;
+    const planned = gearPlan?.strategy === 'market' && gearPlan.status === 'active' ? Number(gearPlan.target?.selfId) || 0 : 0;
     let cumulative = base.refillReserve;
     for (const wish of network.queue) {
         cumulative += cashCharge(wish);
         if (wish.key === network.focus?.[0]) context.goalBudget = cumulative;
+        if (planned && !context.plannedBudget && Network.rootItem(wish.key) === planned) context.plannedBudget = cumulative;
         if (wish.key === network.activity?.rootKey && wish.funded) context.leafBudget = cumulative;
     }
     // The build's facts for its baseline: the request's when they were read
@@ -1832,5 +1869,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
+module.exports = { visitStopsLeft, decideEarning, quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
     heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };

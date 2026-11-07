@@ -48,7 +48,7 @@ async function stock(id, itemId) {
 
 async function errand(state, itemId, amount, settings = {}) {
     const result = await Market.acquire(state, itemId, amount, { towns: ['Giran'], cost: () => 0,
-        money: Funding.spendable(state, 0, { r: RATE }), r: RATE, purpose: 'craft_input', ...settings });
+        money: Funding.spendable(state, 0, { r: RATE }), r: RATE, purpose: 'supply', ...settings });
     assert.equal(result.bought, false);
     assert.equal(result.state.stats.marketErrand.town, 'Giran', 'a real acquisition leaves its trip to the seller');
     return result.state;
@@ -96,6 +96,12 @@ async function noSpend(state, itemId, message) {
     try {
         await Life.init();
         invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
+        // A crafter's input is bought only in the town it stands in: from the field no errand.
+        const crafter = await stateFor();
+        const craftInput = await Market.acquire(crafter, npc.selfId, 1, { towns: ['Giran'], maxPrice: npc.price,
+            money: Funding.spendable(crafter, 0, { r: RATE }), r: RATE, purpose: 'craft_input' });
+        assert.equal(craftInput.bought, false);
+        assert.equal(Errands.pending(craftInput.state).length, 0, 'a craft input sends the bot on no errand');
         const stale = await errand(await stateFor(), npc.selfId, 1, { maxPrice: npc.price });
         const storedRate = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [stale.characterId]]))[0];
         const changed = await arrive(stale, CHANGED);
@@ -244,7 +250,7 @@ async function noSpend(state, itemId, message) {
         assert.equal(await wallet(legacySurvival.characterId), WALLET);
 
         const valueState = await stateFor();
-        const valueTrip = await errand(valueState, 1864, 1, { npc: false, purpose: 'recipe', r: undefined, valueHours: 1 });
+        const valueTrip = await errand(valueState, 1864, 1, { npc: false, r: undefined, valueHours: 1 });
         assert.equal(valueTrip.stats.marketErrand.valueHours, 1, 'value hours, rather than a truthy-rate fallback, survive the trip');
         const valueSaved = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [valueTrip.characterId]]))[0];
         assert.equal(JSON.parse(valueSaved.statsJson).marketErrand.valueHours, 1);
@@ -268,7 +274,7 @@ async function noSpend(state, itemId, message) {
             stats: { ...otherTown.stats, travel: null, townVisit: { completed: true } } }, 'errand_other_town_fixture');
         const replanned = await Market.tryPurchase(rerouted, { type: 'market_errand' });
         assert.equal(replanned.state.stats.marketErrand.r, RATE, 'replanning the remaining trip keeps the same original value rate');
-        assert.equal(replanned.state.stats.marketErrand.purpose, 'craft_input');
+        assert.equal(replanned.state.stats.marketErrand.purpose, 'supply');
         assert.equal(await stock(rerouted.characterId, 1864), 0, 'replanning buys nothing from another town');
 
         const secondSeller = await arrive(await stateFor());

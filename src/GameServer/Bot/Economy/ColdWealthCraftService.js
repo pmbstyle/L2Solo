@@ -159,8 +159,8 @@ async function execute(state, opportunity, options = {}) {
         current = knowledge.state; spent += knowledge.spent;
         if (!knowledge.ready) return { state: knowledge.reason === 'recipe_unavailable'
             ? await rejectAccepted(current, state, { ...knowledge, recipeId: recipe.recipeId }) : current, crafted: false, reason: knowledge.reason, spent };
-        // Each input is bought in its town (the one purchase path): here, or
-        // the bot goes there and the craft waits for the next look.
+        // Each input is bought in the town the bot stands in (the one purchase
+        // path, ColdMarketService.acquire): a crafter goes on no errand for it.
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
         const required = Profit.requirements(recipe, batches) || new Map();
         // Why a chosen seller's line did not fill, for the health line (T190).
@@ -175,9 +175,6 @@ async function execute(state, opportunity, options = {}) {
         current = bought.state || current; spent += Number(bought.spent || 0);
         if (bought.pending) return { state: current, crafted: false, pending: true, spent };
         if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
-        if (!bought.ready && (bought.traveling || current.stats?.marketErrand)) {
-            return { state: current, crafted: false, reason: 'buying_trip', spent };
-        }
         if (!bought.ready) throw Object.assign(Error('purchase_unavailable'), { why: bought.reason || (bought.plan ? 'unbought' : unfilled || bought.short || 'no_source') });
     } catch (error) {
         const failed = withOutcome(error?.message === 'purchase_unavailable'
@@ -349,8 +346,7 @@ async function acquireRecipe(state, opportunity) {
         current = result.state || current; spent += Number(result.spent || 0);
         if (result.pending) return { state: current, ready: false, pending: true, spent };
         if (result.hot || current.phase !== 'cold') return { state: current, ready: false, spent, reason: 'bot_went_hot' };
-        if (!free()) return { state: current, ready: false, spent,
-            reason: result.traveling || current.stats?.marketErrand ? 'buying_trip' : 'recipe_unavailable' };
+        if (!free()) return { state: current, ready: false, spent, reason: 'recipe_unavailable' };
     }
     current = await LifeState.learnCraftableRecipes(current, { recipeIds: [Number(recipe.recipeId)] }) || current;
     return { state: current, ready: await knows(), spent, reason: 'recipe_not_learned' };
