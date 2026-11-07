@@ -51,6 +51,7 @@ const SavedSkills = require('./GameServer/Bot/SavedSkills');
 const InventorySummary = require('./GameServer/Bot/Population/InventorySummary');
 const PartyCandidateProjection = require('./DatabasePartyCandidateProjection');
 const PlayerWarehouse = require('./DatabasePlayerWarehouse');
+const ItemInstances = require('./DatabaseItemInstances');
 const DataCache = invoke('GameServer/DataCache');
 const C4Recipes = require('./GameServer/Items/C4RecipeItems');
 const TradeIntent = require('./GameServer/Bot/Economy/TradeIntent');
@@ -4890,6 +4891,7 @@ const Database = {
     bagRevisionSet,
 
     ...PlayerWarehouse.create({ one, all, write, inTransaction, withCharacterFlush }),
+    ...ItemInstances.create({ all, write, inTransaction, bagRevisionSet, now }),
     openClanRaidPartyAtImpact(request) {
         // The offensive callback cannot await our queue: its registered roster
         // could change meanwhile. Abort this native action when another write
@@ -7658,6 +7660,32 @@ const Database = {
         const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, enchant: Math.max(0, Number(item.enchant ?? 0) || 0), equipped: item.equipped ? 1 : 0, slot: item.slot ?? 0, characterId };
         if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
         return withCharacterFlush(characterId, () => insert('items', values, 'item:insert'));
+    },
+    // A multi-item award is committed before publishing any of its instances.
+    // Equipment always gets one object ID per copy, even at high reward rates.
+    setItemInstances(characterId, item) {
+        const template = ItemTemplateIndex.find(DataCache.items, item.selfId);
+        const amount = Number(item.amount);
+        if (!template || !Number.isSafeInteger(amount) || amount <= 0 || amount > 0x7fffffff) {
+            return Promise.reject(new Error('invalid item award'));
+        }
+        const stackable = (template.etc?.stackable ?? template.stackable) === true && !item.petData;
+        if (!stackable && amount > InventoryLimits.MAX_CAPACITY) {
+            return Promise.reject(new Error('item award exceeds inventory capacity'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const results = [];
+            const petData = item.petData
+                ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData)) : null;
+            for (let index = 0; index < (stackable ? 1 : amount); index++) {
+                const count = stackable ? amount : 1;
+                const packet = write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+                    VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, [item.selfId, item.name || '', count,
+                    Math.max(0, Number(item.enchant) || 0), item.slot ?? 0, petData, characterId]);
+                results.push({ insertId: Number(packet.insertId), amount: count });
+            }
+            return results;
+        }, 'item:award-instances'));
     },
     // caller: a static tag of the call site, counted for developer diagnostics only.
     fetchItems(characterId, caller = 'untagged') {

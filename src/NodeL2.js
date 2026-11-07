@@ -204,6 +204,13 @@ console.info(
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 async function startServer() {
     DataCache.init();
+    const nonStackableItemIds = (DataCache.items || [])
+        .filter(item => item.etc?.stackable !== true)
+        .map(item => Number(item.selfId));
+    const split = await Database.splitNonStackableItems(nonStackableItemIds);
+    if (split.rowsSplit > 0) {
+        utils.infoSuccess('DB', 'split non-stackable items rows=%d extra objects=%d', split.rowsSplit, split.copiesCreated);
+    }
     invoke('GameServer/Clan/ClanPlanningCoordinator').start();
     const stackableItemIds = (DataCache.items || [])
         .filter((item) => item.etc?.stackable === true)

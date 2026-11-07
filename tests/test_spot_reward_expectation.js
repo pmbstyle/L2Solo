@@ -34,7 +34,7 @@ try {
     close(Rewards.value(blue, 33).drop, 20 * .37 / 3, 'gap-fifteen native normal drop');
     assert.equal(Rewards.value(blue, 33).spoil, 0, 'no learned Spoil means no spoil income');
     const landing = Formulas.spoilSuccessChance({ skillId: 254, skillLevel: 1, attackerLevel: 33, targetLevel: 18 });
-    close(Rewards.value(blue, 33, { spoilSkillLevel: 1 }).spoil, 2 * .37 / 3 * landing,
+    close(Rewards.value(blue, 33, { spoilSkillLevel: 1 }).spoil, 2 * .123333 * landing,
         'spoil includes both the reward penalty and native skill landing');
     const lo = Rewards.value(blue, 33), hi = Rewards.value(near, 33), mix = Rewards.value(mixed, 33);
     for (const key of ['adena', 'drop', 'spoil']) close(mix[key], (lo[key] * 3 + hi[key]) / 4,
@@ -44,7 +44,7 @@ try {
     const highRate = Rewards.value(blue, 33, { spoilSkillLevel: 1 });
     close(highRate.adena, .7 * .37 / 3 * 3500, 'high-rate Adena chance divides by drop rate, amount retains base rate');
     close(highRate.drop, 1000, 'normal drop chance saturates while base-rate quantity survives Deep Blue');
-    close(highRate.spoil, 2 * (50 * .37 / 3) * landing, 'spoil quantity uses its penalized rate');
+    close(highRate.spoil, 2 * 6.166667 * landing, 'spoil quantity uses its penalized rate rounded to a Lisvus chance unit');
     assert.notEqual(highRate.drop, lo.drop * 50, 'an x1 reward curve cannot predict saturated high-rate loot');
 
     // Same combat measurements, now backed by concrete native rewards. The table

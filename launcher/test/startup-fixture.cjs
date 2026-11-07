@@ -13,10 +13,13 @@ class Session {
     error() {}
 }
 const service = { init: noop, start: noop, stop: async () => {}, shutdown: async () => {}, warmup: noop, flushAll: async () => {}, loadAll: async () => 0,
+    pendingCount: () => 0,
     events: { drain: async () => ({ drained: true }) } };
 const modules = {
     Server: require(path.join(root, 'src/Server.js')),
-    Database: { init: callback => callback(), compactStackableInventory: async () => ({ skipped: true }), close: async () => {} },
+    Database: { init: callback => callback(), splitNonStackableItems: async () => ({ rowsSplit: 0, copiesCreated: 0 }),
+        compactStackableInventory: async () => ({ skipped: true }), close: async () => {} },
+    FailureLog: { noteUnnamed: (kind, error) => console.error(kind, error), report: noop },
     'GameServer/World/World': { init: async () => {} }, 'GameServer/DataCache': { init: noop, items: [] },
     'GameServer/Clan/ClanService': { init: async () => {} }, 'AuthenticationServer/Session': Session, 'GameServer/Session': Session,
     'GameServer/ProgressionRates': { profile: () => ({}) },
