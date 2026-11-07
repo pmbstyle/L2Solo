@@ -388,7 +388,8 @@ test('release publisher exposes a complete draft only after every asset is uploa
     const create = calls.find(args => args[1] === 'create');
     assert.ok(create.includes('--notes-file'));
     assert.ok(!create.includes('--generate-notes'));
-    assert.match(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), /Manage your local L2Solo server/);
+    const notes = fs.readFileSync(path.join(__dirname, '../../release-notes/launcher.md'), 'utf8').trim();
+    assert.equal(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), `${notes}\n`);
     assert.equal(calls.at(-1)[1], 'edit');
     await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
         ghClient: () => JSON.stringify({ isDraft: false }), fetcher: async () => { throw new Error('Must not fetch a published version'); } }), /already published/);
