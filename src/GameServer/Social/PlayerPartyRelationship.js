@@ -1,5 +1,5 @@
-// Read-time bridge only: the legacy player history and shared field memory
-// keep their own storage. Overlapping positive evidence is not added twice.
+// Read-time bridge only. Legacy snapshots can project the same relationship
+// as shared field memory, so overlapping evidence is not added twice.
 function combine(legacy = {}, relation) {
     const feeling = relation?.effective || relation?.personal;
     const value = n => Number.isFinite(Number(n)) ? Number(n) : 0;
@@ -9,7 +9,7 @@ function combine(legacy = {}, relation) {
             || value(feeling?.hostility) >= 10 || trust <= -6 ? 'relationship_hostile' : null;
     return {
         memory: { ...legacy,
-            trust: Math.max(0, oldTrust, trust) + Math.min(0, oldTrust) + Math.min(0, trust),
+            trust: Math.max(0, oldTrust, trust) + Math.min(0, oldTrust, trust),
             familiarity: Math.max(value(legacy.familiarity), value(feeling?.familiarity)),
             hostility: value(feeling?.hostility), fear: value(feeling?.fear) },
         relation, reason

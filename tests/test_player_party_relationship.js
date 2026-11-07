@@ -73,6 +73,47 @@ const event = type => {
     const partial = { ready: true, personal: { trust: 4, familiarity: 1, hostility: 0 } };
     assert.strictEqual(Bridge.combine({ trust: 4, familiarity: 1 }, partial).memory.trust, 4,
         'overlapping positive evidence is not double credited');
+    const clanDistrust = Bridge.combine({ trust: -4 }, { ready: true,
+        personal: { trust: -4, hostility: 6 }, effective: { trust: -5, hostility: 8 } });
+    assert.strictEqual(clanDistrust.memory.trust, -5,
+        'clan influence retains the stronger distrust without adding personal history twice');
+
+    // Use the real legacy adapter: it already reads the same shared memory.
+    const attackBotId = botId + 1, attackAt = Date.now();
+    const attacked = Policy.apply(Policy.empty(attackBotId), {
+        key: 'party-regression:attacked', sourceId: attackBotId, targetId: 501,
+        type: 'attacked', at: attackAt, playedHours: 0
+    }, attackAt).snapshot;
+    const attackPlayer = { actor: actor(501, 77) };
+    const attackHot = { ...hot, actor: actor(attackBotId, 77) };
+    const attackCold = { ...cold, characterId: attackBotId, stats: { clanId: 77 } };
+    const savedLegacy = { get: Legacy.getSnapshot, peek: Legacy.peekSnapshot, clan: ClanService.findById };
+    try {
+        Legacy.getSnapshot = original.get; Legacy.peekSnapshot = original.peek;
+        ClanService.findById = id => Number(id) === 77 ? { members: [{ id: attackBotId }] } : null;
+        Runtime.accept(attacked);
+        assert.strictEqual(Legacy.peekSnapshot(attackPlayer, attackHot).trust, -4);
+        for (const loadMemory of [false, true]) {
+            const options = { timestamp: attackAt, loadMemory };
+            for (const result of [Availability.evaluate(attackPlayer, attackHot, options),
+                Availability.evaluateState(attackPlayer, attackCold, options)]) {
+                assert(result.clanmate);
+                assert.strictEqual(result.memory.trust, -4, 'one attack contributes distrust only once');
+                assert.strictEqual(result.reason, 'available', 'subthreshold distrust does not veto a party invite');
+            }
+        }
+        const repeated = Policy.apply(attacked, {
+            key: 'party-regression:attacked-again', sourceId: attackBotId, targetId: 501,
+            type: 'attacked', at: attackAt, playedHours: 0
+        }, attackAt).snapshot;
+        Runtime.accept(repeated);
+        assert.strictEqual(Availability.evaluate(attackPlayer, attackHot).reason, 'relationship_hostile');
+        assert.strictEqual(Availability.evaluateState(attackPlayer, attackCold).reason, 'relationship_hostile');
+    } finally {
+        Legacy.getSnapshot = savedLegacy.get; Legacy.peekSnapshot = savedLegacy.peek;
+        ClanService.findById = savedLegacy.clan;
+        Runtime.forget(attackBotId);
+    }
     legacy = { trust: 0, familiarity: 0, recentlyAbandonedAt: at };
     assert(assessBoth().every(r => r.available), 'a recent departure alone is not a hostile relationship');
     const hostileClan = Bridge.combine({ trust: 20 }, { ready: true, personal: null,
