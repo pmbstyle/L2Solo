@@ -80,6 +80,7 @@ function main() {
     }
     if (action !== 'restore' || !Array.isArray(options.files) || options.files.length !== 2) throw new Error('Invalid update recovery request.');
     options.files = options.files.map(file => ({ ...file, path: file.canonicalPath || file.path }));
+    if (options.files[0].path === options.files[1].path) throw new Error('World and history must use different database files.');
     for (const [index, file] of options.files.entries()) {
         if (!path.isAbsolute(file.path) || file.name !== (index ? 'history.sqlite' : 'world.sqlite')) throw new Error('Invalid database backup path.');
         if (file.existed) {

@@ -12,35 +12,38 @@ const markerPath = root => path.join(root, '.l2solo', 'installation.json');
 const journalPath = root => path.join(root, '.l2solo', 'transaction.json');
 
 function needsDatabaseRollback(journal) {
-    if (!journal?.databaseBackup || ['committed', 'rejected'].includes(journal.phase)) return false;
-    return journal.startupProtocolVersion === 2 ? ['migrating', 'recovering'].includes(journal.phase) : true;
+    if (!journal?.databaseBackup?.files?.some(file => file.existed)
+        || journal.databaseRestoreDecision === false || ['committed', 'rejected'].includes(journal.phase)) return false;
+    return journal.startupProtocolVersion === 2 ? ['migrating', 'recovering'].includes(journal.phase)
+        : ['starting', 'migrating', 'recovering'].includes(journal.phase);
 }
 
-async function verifyLegacyRecovery(journal) {
-    for (const file of journal.databaseBackup.files) {
-        const filename = file.canonicalPath || file.path;
-        let stat;
-        try { stat = await fs.promises.stat(filename, { bigint: true }); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
-        if (file.existed !== Boolean(stat) || file.identity && (file.identity.device !== String(stat?.dev) || file.identity.inode !== String(stat?.ino))
-            || file.existed && !file.identity && await sha256(filename) !== file.sha256) {
-            throw new Error('The databases changed outside the legacy update. Automatic recovery stopped without changing files; keep the current databases and pending snapshot.');
-        }
-    }
-}
-
-async function recover(root, log = () => {}, { restoreDatabases, keepPending = false } = {}) {
-    const journal = await readJson(journalPath(root));
+async function recover(root, log = () => {}, { restoreDatabases, confirmDatabaseRestore, recoveryDatabasePaths, keepPending = false } = {}) {
+    let journal = await readJson(journalPath(root));
     if (!journal) return;
     if (!/^[a-f0-9-]{36}$/.test(journal.id) || !Array.isArray(journal.operations)) throw new Error('Invalid installation recovery journal.');
     if (journal.phase === 'committed') { await fs.promises.rm(journalPath(root)); return; }
     if (journal.phase === 'awaiting-start' && keepPending) return;
+    if (needsDatabaseRollback(journal) && !journal.startupDatabasePaths && recoveryDatabasePaths) {
+        // Older journals did not record startup destinations. Pin the pair
+        // shown in the prompt before code recovery or a later INI edit can
+        // change how those paths resolve on the next attempt.
+        journal = { ...journal, startupDatabasePaths: recoveryDatabasePaths };
+        await writeJson(journalPath(root), journal);
+    }
+    if (needsDatabaseRollback(journal) && journal.databaseRestoreDecision !== true) {
+        if (!confirmDatabaseRestore) throw new Error('Choose whether to restore the world backup before recovering this update.');
+        const decision = await confirmDatabaseRestore(journal);
+        if (typeof decision !== 'boolean') throw new Error('Invalid database restore decision.');
+        journal = { ...journal, databaseRestoreDecision: decision };
+        // Persist the answer before changing code or data. An interrupted
+        // recovery continues the same choice without another prompt.
+        await writeJson(journalPath(root), journal);
+    }
     const restoreWorld = needsDatabaseRollback(journal);
     if (restoreWorld && !restoreDatabases) throw new Error('Database recovery is required before this update can continue.');
     if (restoreWorld && journal.phase !== 'recovering') {
-        if (journal.startupProtocolVersion !== 2) await verifyLegacyRecovery(journal);
-        // Once recovery starts, replacement inodes belong to this rollback;
-        // resuming a partially restored pair must repeat the same operation.
+        // An interrupted confirmed restore repeats the same pair replacement.
         await writeJson(journalPath(root), { ...journal, phase: 'recovering' });
     }
     const backup = path.join(root, '.l2solo', 'backups', journal.id);
@@ -58,6 +61,7 @@ async function recover(root, log = () => {}, { restoreDatabases, keepPending = f
     else await fs.promises.rm(markerPath(root), { force: true });
     await fs.promises.rm(journalPath(root));
     log('Previous server files restored.');
+    return { databaseRestored: restoreWorld };
 }
 
 async function commitRelease(root) {
