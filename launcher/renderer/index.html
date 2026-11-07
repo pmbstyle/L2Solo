@@ -22,7 +22,7 @@
     </svg>
     <header class="topbar"><div class="breadcrumb">L2Solo <span>/</span> <strong id="page-name">Home</strong></div><span id="status-pill" class="status-pill"><i></i><span>Server offline</span></span></header>
     <aside class="sidebar">
-        <div class="brand"><img src="assets/logo.png" alt="L2Solo emblem"><div>L2SOLO<span>Server manager</span></div></div>
+        <div class="brand"><img src="assets/logo.png" alt="L2Solo emblem"><div>L2Solo<span>Server manager</span></div></div>
         <nav aria-label="Main navigation">
             <button class="nav-item active" data-view="home"><svg><use href="#i-home"/></svg> Home</button>
             <button class="nav-item" data-view="backups"><svg><use href="#i-backup"/></svg> Backups &amp; data</button>
@@ -36,7 +36,6 @@
         </div>
     </aside>
     <main>
-        <div id="error-banner" class="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
         <section id="view-home" class="view">
             <div class="page-heading"><h1>Server</h1><button class="quiet-button" data-view="settings"><svg><use href="#i-settings"/></svg> Settings</button></div>
             <div class="server-panel">
@@ -67,7 +66,7 @@
             <div class="page-heading"><h1>Updates</h1><button id="updates-check" class="quiet-button"><svg><use href="#i-updates"/></svg> Check for updates</button></div>
             <p id="preview-notice" class="settings-notice" hidden>Preview channel · Test builds from develop. Use a separate test world.</p>
             <div class="update-summary"><div><span class="eyebrow">LAUNCHER</span><h2 id="launcher-update-title">L2Solo Launcher</h2><p id="launcher-update-description">Checking for application updates.</p><progress id="launcher-update-progress" max="100" value="0" aria-label="Launcher update download" hidden></progress></div><button id="launcher-update-action" class="quiet-button" disabled>Check for updates</button></div>
-            <div class="update-summary"><div><span id="server-release-label" class="eyebrow">SERVER · STABLE</span><h2 id="update-title">Check for updates</h2><p id="update-description">Server releases are downloaded from GitHub.</p></div><button id="install-update" class="primary-button compact" disabled>Install latest release</button></div>
+            <div class="update-summary"><div><span id="server-release-label" class="eyebrow">SERVER · STABLE</span><h2 id="update-title">Server updates</h2><p id="update-description">Check for server updates.</p></div><button id="install-update" class="primary-button compact" disabled>Install latest release</button></div>
             <div class="two-columns"><div class="plain-panel"><div class="section-heading"><h2>Release notes</h2><span id="release-tag" class="small-tag">—</span></div><p id="release-date" class="muted"></p><div id="release-notes" class="release-notes">Check for updates to load release notes.</div><button id="release-link" class="text-button" hidden>View on GitHub ↗</button></div><div class="plain-panel maintenance"><h2>Geodata</h2><p>Verify and replace missing or damaged geodata.</p><button id="repair-geodata" class="quiet-button" disabled>Verify &amp; repair</button><hr><h2>Server files</h2><p>Updates preserve your world database, backups and local settings.</p><button id="updates-folder" class="text-button">Open server folder ↗</button></div></div>
             <div id="news-section" hidden><div class="section-heading"><h2>News &amp; Updates</h2><button class="text-button" data-link="https://l2solo.com">All news ↗</button></div><div id="news-grid" class="news-grid"></div></div>
         </section>
@@ -77,6 +76,9 @@
         </section>
     </main>
     <dialog id="confirm-dialog" aria-labelledby="confirm-title"><form method="dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-description"></p><div class="dialog-actions"><button class="quiet-button" value="cancel" autofocus>Cancel</button><button id="confirm-action" class="danger-button" value="confirm">Confirm</button></div></form></dialog>
-    <div id="toast" class="toast" role="status" hidden></div>
+    <div class="notification-stack">
+        <div id="error-banner" class="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+        <div id="toast" class="toast" role="status" hidden></div>
+    </div>
 </body>
 </html>

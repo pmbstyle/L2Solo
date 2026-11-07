@@ -52,8 +52,6 @@ else {
             } });
         async function checkAllUpdates(force = false) {
             const results = await Promise.allSettled([controller.checkUpdates(force), launcherUpdates.check(force)]);
-            controller.state.updateCheckError = results[0].status === 'rejected' ? results[0].reason.message : null;
-            controller.publish();
             const failures = results.filter(result => result.status === 'rejected');
             if (force && failures.length === results.length) throw failures[0].reason;
             return controller.snapshot();

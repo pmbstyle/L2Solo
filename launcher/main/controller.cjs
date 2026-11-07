@@ -7,7 +7,7 @@ const { EventEmitter } = require('node:events');
 const { networkInterfaces } = require('node:os');
 const { readJson, writeJson, acquireLock, canonicalPath } = require('./files.cjs');
 const { readConfig, settings, saveSettings } = require('./config.cjs');
-const { latestRelease, newerVersion, versionOf, channelOf } = require('./releases.cjs');
+const { latestRelease, newerVersion, versionOf, channelOf, ReleaseNotFoundError } = require('./releases.cjs');
 const { markerPath, journalPath, recover, commitRelease, needsDatabaseRollback, stageRelease, installRelease } = require('./installer.cjs');
 const { ReleaseCatalog } = require('./release-catalog.cjs');
 const { holdLock } = require('./locks.cjs');
@@ -49,6 +49,7 @@ class Controller extends EventEmitter {
         this.busy = false;
         this.latest = null;
         this.state = { root: null, installed: false, version: null, releaseChannel: channel, phase: 'stopped', startedAt: null, latest: null,
+            updateCheckStatus: 'idle', updateCheckError: null,
             geodata: null, world: null, connection: null, population: null, progress: { percent: 0, label: 'Choose a server folder' }, logs: [], error: null };
     }
     snapshot() { return { ...this.state, busy: this.busy || Boolean(this.appUpdating) || Boolean(this.launching) }; }
@@ -158,7 +159,21 @@ class Controller extends EventEmitter {
             label: this.state.geodata?.valid ? 'All files ready' : this.state.installed ? 'Geodata needs installation or repair' : 'Ready to install the latest release' });
     }
     async checkUpdates(force = true) {
-        await this.findRelease(force);
+        this.state.updateCheckStatus = 'checking';
+        this.state.updateCheckError = null;
+        this.publish();
+        try {
+            await this.findRelease(force);
+        } catch (error) {
+            if (!(error instanceof ReleaseNotFoundError)) {
+                this.state.updateCheckStatus = 'error';
+                this.state.updateCheckError = error.message;
+                throw error;
+            }
+            this.latest = null;
+            this.state.latest = null;
+            this.state.updateCheckStatus = 'checked';
+        } finally { this.publish(); }
         return this.snapshot();
     }
     async findRelease(force = true) {
@@ -168,6 +183,8 @@ class Controller extends EventEmitter {
         const current = versionOf(this.state.version?.split(' ·')[0] || 'v0.0.0');
         this.state.latest = { ...summary, updateAvailable: newerVersion(versionOf(summary.tag), current),
             launcherUpdateRequired: newerVersion(manifest.minimumLauncherVersion || '0.1.0', this.launcherVersion) };
+        this.state.updateCheckStatus = 'checked';
+        this.state.updateCheckError = null;
         this.publish();
         return release;
     }
