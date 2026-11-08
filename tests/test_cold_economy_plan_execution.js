@@ -106,20 +106,17 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         Object.assign(kernel.states.get(id), { economyPending: 1, economyPlanHash: sentHash });
         coordinator.ready = true;
         const beforeRefused = messages.length, raised = [];
-        stub(Events, 'raiseOn', async (who, name, payload) => { raised.push([who, name, messages.length, payload]); return null; });
+        stub(Events, 'raiseOn', async (who, name, payload) => { raised.push([who, name, payload]); return null; });
         const refused = await review(moved.review);
         assert.equal(refused.ok, false);
         assert.equal(refused.reason, 'stale_command');
         assert.equal(onBoard(), true, 'a refused review withdraws nothing');
-        // The refused plan is no longer the one sent: the visit's step failed,
-        // raised on the row after the ack that made the worker forget it.
+        // A race proves nothing about the stop: the plan is forgotten as sent and the
+        // held step stays (no goal_failed:visit, no rebuild), so the next step resends it.
         assert.equal(kernel.states.get(id).economyPlanHash, null, 'the refused review forgets the plan as sent');
         assert.equal(kernel.states.get(id).economyPending, 1, 'the next state still pages the plan');
-        const ack = messages.slice(beforeRefused).findIndex(message => message.type === 'command_ack');
-        assert(ack >= 0, 'the refused review is acked');
-        assert.deepEqual(raised.map(([who, name]) => [who, name]), [[id, 'goal_failed:visit']], 'the visit\'s step failed');
-        assert(raised[0][2] > beforeRefused + ack, 'raised after the refused ack');
-        assert.equal(raised[0][3]?.impossible, true, 'its leaf dropped: the next decision does not resend the plan');
+        assert(messages.slice(beforeRefused).some(message => message.type === 'command_ack'), 'the refused review is acked');
+        assert.deepEqual(raised, [], 'a refused review raises no outcome: its held step stays');
         coordinator.ready = false;
         // The next step proposes the same plan again and its review runs it.
         const applied = await commit();

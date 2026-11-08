@@ -2026,16 +2026,11 @@ class ColdSimulationCoordinator {
             // so an end after it reaches the worker after the answer.
             const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
             for (const result of results) if (result.waiting && !Meetings.hasPreparation(result.characterId)) delete result.waiting;
+            // A refused review (a race: stale_command, a fence, a stop; a database retry) ran
+            // no plan and proves nothing about its stop: its ack makes the worker forget the
+            // plan as sent (ColdSimulationKernel.forgetSentPlan), the held step stays and its
+            // next step sends the plan again. What a plan that ran proved, executePlan raises.
             this.postCollections('command_ack', { results }, message.msgId);
-            // A refused review ran no plan and its ack made the worker forget it
-            // as sent (ColdSimulationKernel.forgetSentPlan): the visit's step
-            // failed, its leaf dropped (impossible), so the next decision does not
-            // send the same plan again. A hot or fenced bot plans on its own side.
-            requests.forEach(({ request }, index) => {
-                const id = Number(request.characterId);
-                if (request.kind === 'review' && request.economyPlan && !results[index]?.ok
-                    && LifeState.cachedState(id)?.phase === 'cold' && !this.fencedBots.has(id)) DecisionEvents.raiseOn(id, 'goal_failed:visit', { impossible: true });
-            });
         }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
     }
 
