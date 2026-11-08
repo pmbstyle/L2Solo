@@ -35,6 +35,7 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
 - **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
 - **2026-10-30** Clan wars, geodata, bug fixes
 - **2026-10-26** Server stability, better AI, spoil, hunting, bug fixes
@@ -55,11 +56,11 @@ Optional but recommended for a better experience
 - **2026-09-02** AFK trade, market observer, xN mob fix
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
-- **2026-08-27** Add LLM-driven clan management
 
 <details>
 <summary>Earlier</summary>
-  
+
+- **2026-08-27** Add LLM-driven clan management
 - **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 - **2026-08-25** Bot clans update follow-up, bug fixes
 - **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
@@ -71,7 +72,7 @@ Optional but recommended for a better experience
 - **2026-08-15** Blade Dancers and Sword Singers bot progression update
 - **2026-08-15** Raid Encounter and Gameplay Stability Update
 - **2026-08-15** Server stability and performance update
-- **2026-08-13** Fix hot party performance issues, fix raid boss atk freeze
+- **2026-08-13** Fix hot party performance issues, fix raid boss attack freeze
 - **2026-08-13** Raid bosses, better bot progression and market use, skill fixes, party finder update
 - **2026-08-11** Expand C4 world content and bot progression systems
 - **2026-08-09** Expand C4 world content and runtime fidelity
