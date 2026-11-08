@@ -221,7 +221,30 @@ function deferredAcquisitionPlan(state, previous, economy, replanContext = {}, t
     return paused;
 }
 
-function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
+// The plan's review with the route's verdict on its source (withRoutedSource).
+function selectAcquisitionPlan(state, previousPlan, options = {}) {
+    const selection = select(state, previousPlan, options);
+    return { ...selection, acquisitionPlan: withRoutedSource(state, selection.acquisitionPlan,
+        options.spots || [], options.timestamp ?? Date.now()) };
+}
+
+// The route's verdict on an active plan's source, judged with the plan and held with it
+// until its next review: routedSpotId names the source spot when the solo route takes it
+// (the route's own source test, GearAcquisitionPlanner.isPlanSourceViableForState over the
+// catalogue: an eligible source, the voluntary hunt band, the solo source reader), absent
+// when it refuses it. Main reads it where it sends a bot to hunt without searching
+// (DecisionEvents.heldSpotOf), never judges it again; room and the bot's exclusions are
+// met at the trip. A verdict names its spot: one carried onto another source is none.
+function withRoutedSource(state, plan, spots, timestamp) {
+    const spotId = plan?.status === 'active' && plan.next?.spotId != null
+        && GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots, timestamp }) ? String(plan.next.spotId) : undefined;
+    if (!plan || plan.routedSpotId === spotId) return plan;
+    const next = { ...plan, routedSpotId: spotId };
+    if (spotId === undefined) delete next.routedSpotId;
+    return next;
+}
+
+function select(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
     if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
     const economy = preparedEconomy || invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
         spots, timestamp, board: planningOptions.board, buyOrderEscrow: planningOptions.buyOrderEscrow, caller: 'gear_plan'
@@ -366,4 +389,4 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     return { ...result, economy };
 }
 
-module.exports = { selectAcquisitionPlan, deferredWishPlan, deferredAcquisitionPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };
+module.exports = { selectAcquisitionPlan, withRoutedSource, deferredWishPlan, deferredAcquisitionPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };

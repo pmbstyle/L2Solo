@@ -375,21 +375,26 @@ function held(session) {
 // The spot a bot's held decisions name for its hunt, the one reader of every place
 // that sends a bot to hunt without searching (a town or hall visit's end, a body that
 // must leave its ground): its card's hunting leaf (leaf: the caller's read of it),
-// else its gear plan's source while it collects there (not in the leveling recovery
-// the plan holds: a fresh one is the worker's search's to judge),
-// else its held earning answer (stats.earning; a party member's hunt is its party's),
-// in the order the worker's route takes them (BotRoute.trip). A spot its exclusions
-// rule out (spot marks, death marks, death pressure: SpotRiskPolicy) is skipped; null
-// when none is left. Room and viability are met at arrival by the worker's next trip.
-// state: a far row, or a body's view (heldSpotId).
+// else its gear plan's source while it collects there and the route takes it (the
+// worker's verdict held with the plan, routedSpotId: GearPlanSelection.withRoutedSource;
+// not while it waits for a party the plan needs, PartyWaitFallback.waiting: the route
+// sends a waiter to its fallback; not in the leveling recovery the plan holds: a fresh
+// one is the worker's search's to judge), else its held earning answer
+// (EquipmentIncomeRoute.answerSpotId: a party member's hunt is its party's), in the
+// order the worker's route takes them (BotRoute.trip). A spot its exclusions rule out
+// (spot marks, death marks, death pressure at the spot it stands on: SpotRiskPolicy)
+// is skipped; null when none is left. Room is met at arrival by the worker's next trip.
+// state: a far row, or a body's view in the same fields (heldSpotId).
 function heldSpotOf(state = {}, leaf = null) {
     const stats = state.stats || {};
     const excluded = Risk.excludedSpotIdsForStates([state]);
     const plan = stats.equipmentPlan;
-    // lazy: GearAcquisitionPlanner loads the economy modules that load this one.
-    const source = plan?.status === 'active' && plan.next?.spotId != null && !(plan.levelingRecovery
-        && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan)) ? plan.next.spotId : null;
-    const earning = state.party?.partyId || state.partyId ? null : stats.earning?.spotId;
+    // lazy: GearAcquisitionPlanner and PartyWaitFallback load the economy modules that load this one.
+    const source = plan?.status === 'active' && plan.routedSpotId != null && plan.routedSpotId === String(plan.next?.spotId)
+        && !invoke('GameServer/Bot/Population/PartyWaitFallback').waiting(state, plan, stats.partyRequest)
+        && !(plan.levelingRecovery && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan))
+        ? plan.routedSpotId : null;
+    const earning = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerSpotId(state);
     for (const id of [leaf?.activity === 'hunting' ? leaf.spotId : null, source, earning]) {
         if (id != null && !excluded.has(String(id))) return String(id);
     }
@@ -399,9 +404,10 @@ function heldSpotOf(state = {}, leaf = null) {
 // lazy: cycle the coordinator loads PopulationService, which loads this module.
 const farHeldSpot = state => heldSpotOf(state,
     invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state) || null);
-// The same for a near body: its stats and its level (a leveling recovery reads them).
-const heldSpotId = (session, leaf = null) => heldSpotOf({ stats: statsFor(session),
-    level: session.actor?.fetchLevel?.(), exp: session.actor?.fetchExp?.() }, leaf);
+// The same for a near body: its row with its own place, party, stats and level
+// (Economy.bodyPlace, the shape stateForActor gives it; a leveling recovery reads the level).
+const heldSpotId = (session, leaf = null) => heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session),
+    stats: statsFor(session), level: session.actor?.fetchLevel?.(), exp: session.actor?.fetchExp?.() }, leaf);
 // A body that needs a spot (BotDecisionService, HuntingState) while its held answer
 // names none it may take asks again once per answer (Situations.spotAsk over the
 // session: spot_empty raised on 'ask'); 'none' when the answer to its ask names none

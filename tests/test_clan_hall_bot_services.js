@@ -339,15 +339,23 @@ async function main() {
         assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1)), null,
             'with no held answer no teleport: main never chooses a spot');
         // The far bot's other held decisions name the spot before its earning answer,
-        // in the worker's route order: the card's hunting leaf, then the gear plan's source.
+        // in the worker's route order: the card's hunting leaf, then the gear plan's source
+        // the route takes (the worker's verdict held with the plan, routedSpotId).
         {
             const leafSpot = { ...returnSpot, id: 'hall-leaf-test' }, sourceSpot = { ...returnSpot, id: 'hall-source-test' };
             const byId = { [returnSpot.id]: returnSpot, [leafSpot.id]: leafSpot, [sourceSpot.id]: sourceSpot };
             Spots.findById = id => byId[id] || originalFindById.call(Spots, id);
-            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: { status: 'active', strategy: 'direct_drop',
-                next: { spotId: sourceSpot.id } } } };
+            const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: sourceSpot.id }, routedSpotId: sourceSpot.id };
+            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan } };
             assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, sourceSpot.id,
                 'a collector leaves the hall for its gear plan\'s source');
+            const unrouted = { ...plan }; delete unrouted.routedSpotId;
+            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, equipmentPlan: unrouted } }, Runtime.owned(1))?.spot.id,
+                returnSpot.id, 'a source the route refuses is no departure: the held earning answer');
+            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, equipmentPlan: { ...plan, next: { spotId: leafSpot.id } } } },
+                Runtime.owned(1))?.spot.id, returnSpot.id, 'a verdict on another source is none');
+            assert.equal(Departure.plan({ ...collecting, stats: { ...collecting.stats, partyRequest: { status: 'open', priority: 'required' } } },
+                Runtime.owned(1))?.spot.id, returnSpot.id, 'a bot waiting for the party its plan needs is not sent to the source alone');
             const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
             const activity = decisions.activity;
             try {

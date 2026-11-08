@@ -79,6 +79,14 @@ try {
     const retargeted = Planner.retargetPlanSource(hunting, plan, nativeSource);
     assert.equal(retargeted.next.npcId, 1099, 'native plan retargeting updates the combat target with the spot');
     assert.equal(Planner.isPlanSourceViableForState(hunting, retargeted, { spots: routeSpots, timestamp }), true);
+    // The plan's review publishes the route's verdict with it (routedSpotId), the one main
+    // reads where it sends a bot to hunt without searching: none for the refused source,
+    // the spot of the one the route takes.
+    const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
+    const refused = Selection.withRoutedSource(hunting, { ...plan, routedSpotId: unsafe.id }, routeSpots, timestamp);
+    assert.equal(refused.routedSpotId, undefined, 'a source the route refuses is published as none');
+    const routed = Selection.withRoutedSource(hunting, retargeted, routeSpots, timestamp);
+    assert.equal(routed.routedSpotId, alternative.id, 'the source the route takes is published by its spot');
     const options = { profiles: routeSpots, timestamp, hasRoom: () => true };
     assert.equal(Spots.findForState(hunting, options)?.id, alternative.id,
         'the next executable source is chosen before the ordinary hunting fallback');
@@ -100,8 +108,17 @@ try {
             loc: { locX: -80752, locY: 149776, locZ: -3000 }, stats: { ...hunting.stats,
                 equipmentPlan: { ...plan, next: { ...plan.next, spotId: mixed.id } },
                 townVisit: { completed: true }, marketReturn: { spotId: mixed.id, loc: mixed.center, regionName: mixed.name } } };
-        assert.equal(invoke('GameServer/Bot/Goals/GoalExecutor').finishMarketVisit(shopping, timestamp).stats.travel.spotId,
-            mixed.id, 'the return goes to the plan\'s source; the worker\'s trip start retargets it (above)');
+        const Goals = invoke('GameServer/Bot/Goals/GoalExecutor');
+        assert.equal(Goals.finishMarketVisit(shopping, timestamp).stats.travel.spotId,
+            mixed.id, 'the return goes to the spot it hunted; the worker\'s trip start retargets it (above)');
+        // A visit's end reads the route's verdict on the plan's source, never the bare
+        // source: a refused one sends the bot back where it hunted, the routed one to it.
+        const fromHome = { ...shopping, stats: { ...shopping.stats,
+            marketReturn: { spotId: home.id, loc: home.center, regionName: home.name } } };
+        assert.equal(Goals.finishMarketVisit(fromHome, timestamp).stats.travel.spotId, home.id,
+            'a source the route refuses is no destination: the spot it hunted');
+        assert.equal(Goals.finishMarketVisit({ ...fromHome, stats: { ...fromHome.stats, equipmentPlan: routed } }, timestamp)
+            .stats.travel.spotId, alternative.id, 'the source the route takes is the return\'s destination');
     } finally { Service.spots = savedService; Errands.pending = pending; }
 } finally { Spots.cache = original; }
 console.log('test_spot_source_targets: ok');

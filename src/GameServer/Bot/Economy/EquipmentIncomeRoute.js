@@ -268,13 +268,16 @@ function commanded(held, spotId, at = 0) {
         ...(held?.shotKind ? { shotKind: held.shotKind } : {}) };
 }
 const isCommanded = held => held?.command === true;
-// The held answer's spot in a catalogue (no search; spots: the catalogue's profiles). null: no answer, none held
-// (spotId null), a spot the catalogue lost, or a bot in a party: its hunt is the party's (the party comparison
-// reads its solo copy).
-function heldSpot(state, spots = [], mode = null) {
+// The held answer's spot id (no search). null: no answer, none held (spotId null), or a bot in a party: its
+// hunt is the party's (the party comparison reads its solo copy).
+function answerSpotId(state, mode = null) {
     if (state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return null;
-    const held = state.stats?.earning;
-    return held?.spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, held.spotId) || null : null;
+    return state.stats?.earning?.spotId || null;
+}
+// The same spot in a catalogue (spots: the catalogue's profiles); null too for a spot the catalogue lost.
+function heldSpot(state, spots = [], mode = null) {
+    const spotId = answerSpotId(state, mode);
+    return spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId) || null : null;
 }
 // The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
 // (SpotEconomics, as the search reads it), its hour as decided. null: no held spot (heldSpot) or no row there.
@@ -288,4 +291,4 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, isCommanded, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };
+    answerOf, commanded, isCommanded, answerSpotId, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };

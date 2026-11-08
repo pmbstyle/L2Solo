@@ -93,14 +93,20 @@ function stateForActor(actor, session = actor?.session) {
         incomingPending: current ? current.incomingPending === true : stored.incomingPending === true,
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
-        spotId: session?.currentSpot?.id || stored.spotId,
+        ...bodyPlace(session, stored),
         stats: { ...decisionStats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
-        party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored.party?.role } : null,
         activity: session?.plan || 'hunting' };
     const loc = { locX: Number(actor.fetchLocX?.()), locY: Number(actor.fetchLocY?.()), locZ: Number(actor.fetchLocZ?.()) };
     if (!Object.values(loc).every(Number.isFinite)) Object.assign(loc, stored.loc || {});
     state.loc = loc;
     return routeState(state, session);
+}
+// Where a body stands and with whom, in a far row's fields (spotId, party): its current
+// spot and its background party. One shape for every reader of a body as a row
+// (stateForActor, DecisionEvents.heldSpotId). stored: its row (coldLifeState).
+function bodyPlace(session, stored = session?.coldLifeState || {}) {
+    return { spotId: session?.currentSpot?.id || stored.spotId,
+        party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored.party?.role } : null };
 }
 // The live items of a backpack as a state's inventory rows, one per item id
 // (stateForActor).
@@ -1887,4 +1893,4 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { visitStopsLeft, decideEarning, quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, restoreEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, restoreEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, bodyPlace, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };

@@ -171,12 +171,31 @@ test('a first worker answer is awaited separately from an accepted empty occupat
 });
 
 test('a visit\'s end sends a collector to its gear plan\'s source, as the worker\'s route does', () => {
-    const f = fixture(town, null, { ...holds(primary), equipmentPlan: { status: 'active', strategy: 'direct_drop',
-        next: { spotId: alternative.id } } });
+    const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id } };
+    const f = fixture(town, null, { ...holds(primary), equipmentPlan: { ...plan, routedSpotId: alternative.id } });
     f.session.pendingFarmDepartureAnnouncement = true;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id,
-        'the source before the held earning answer');
+        'the source the route takes before the held earning answer');
+    const refused = fixture(town, null, { ...holds(primary), equipmentPlan: plan });
+    refused.session.pendingFarmDepartureAnnouncement = true;
+    assert.equal(Decision.suggest(refused.session.botStatus, refused.session).spot?.id, primary.id,
+        'a source the route refuses: the held earning answer');
     assert.equal(searchCalls.length, 0, 'main searches no spot');
+});
+
+test('a body\'s visit end reads its place and party as a far row\'s does', () => {
+    // Death pressure at the spot it hunted rules that spot out, as for a far bot.
+    const pressed = fixture(town, null, { ...holds(primary),
+        spotRisk: { version: 2, spotId: primary.id, windowFights: 3, windowWins: 0, windowDeaths: 2 } });
+    pressed.session.pendingFarmDepartureAnnouncement = true;
+    assert.equal(Decision.suggest(pressed.session.botStatus, pressed.session).action, 'search_locally',
+        'not back to the spot that killed it');
+    // A party member's hunt is its party's: its own earning answer names none.
+    const member = fixture(town, null, holds(primary));
+    member.session.pendingFarmDepartureAnnouncement = true;
+    member.session.hotBackgroundPartyId = 'hunt-continuation-party';
+    assert.equal(Decision.suggest(member.session.botStatus, member.session).action, 'search_locally',
+        'a party member is not sent to its solo answer');
 });
 
 test('a completed shopping visit with an accepted null leaf starts the farming route', async () => {

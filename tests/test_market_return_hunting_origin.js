@@ -60,10 +60,11 @@ try {
     assert.equal(BotRoute.trip({}, arrived, leaf, { spots, timestamp: timestamp + 30000,
         currentSpot: source, hasRoom: () => true }), null, 'the worker needs no second trip to its source');
 
-    const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: {
-        status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
-        next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } } } };
-    // A viable gear plan's source comes before the held answer, as on the route
+    // The plan as its review publishes it: with the route's verdict on its source.
+    const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: invoke('GameServer/Bot/AI/GearPlanSelection')
+        .withRoutedSource(shopper, { status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
+            next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
+    // A gear plan's source the route takes comes before the held answer, as on the route
     // (BotRoute: an active plan's source is the search's own rule).
     assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, money.id,
         'an active plan\'s viable source is the return, as the route takes it');
