@@ -1377,6 +1377,14 @@ function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
         );
 }
 
+// A clan-locked plan (clanGoalPlanLocked) stands against another plan unless that plan
+// carries the same clan goal: the owner of the refusal a save or a party re-plan meets.
+function clanPlanKeptAgainst(state = {}, plan = null) {
+    const current = state?.stats?.equipmentPlan;
+    return clanGoalPlanLocked(state, current)
+        && String(plan?.clanGoal?.goalKey || '') !== String(current.clanGoal.goalKey);
+}
+
 function isBotEligibleSourceNpcId(npcId) {
     const npc = catalogNpc(npcId);
     return !!npc && BotHuntingTargetPolicy.canHunt(npc);
@@ -1406,6 +1414,21 @@ function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
 // earning route admits fifteen levels below, an ordinary hunt the scorer's.
 function sourceMinLevelGap(economicLower) {
     return economicLower ? -15 : BotTargetScorer.MIN_LEVEL_GAP;
+}
+
+// How many of the voluntary hunt floors (sourceMinLevelGap: the ordinary hunt's,
+// then the equipment earning route's) the plan's source npc stands below the bot's
+// level: 0, 1 or 2; a raid or a plan with no npc 0. Read without the bot's wish
+// focus (which route it is on), so a focus change moves nothing. The bands are our
+// choice, not C4.
+function sourceFloorsBelow(state = {}, plan = {}) {
+    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return 0;
+    const npcId = Number(plan?.next?.npcId || 0);
+    const npc = npcId ? catalogNpc(npcId) : null;
+    const npcLevel = Number(npc?.template?.level || npc?.level || 0), botLevel = Number(state.level || 0);
+    if (!npcLevel || !botLevel) return 0;
+    const gap = npcLevel - botLevel;
+    return Number(gap < sourceMinLevelGap(false)) + Number(gap < sourceMinLevelGap(true));
 }
 
 function isPlanSourceViableForState(state = {}, plan = {}, options = {}) {
@@ -3276,7 +3299,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, clanPlanKeptAgainst, sourceFloorsBelow, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 // One decision outside this module (a wish review) that judges a bot against
 // many sources shares its readiness the same way.

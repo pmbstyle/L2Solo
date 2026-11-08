@@ -106,6 +106,30 @@ async function run() {
             'after the review the held spot is not the outgrown source');
         assert(!Situations.detect(at(58), { ...at(59), stats: { ...state.stats, equipmentPlan: reviewed } }).includes('source_stalled'),
             'a source the route already refuses raises nothing more');
+        // The fact counts the voluntary hunt floors the source lies below (seven levels for a
+        // hunt, fifteen on an equipment earning route) and reads no wish focus: a bot on an
+        // earning route (power: focus) holding a source ten levels below it raises nothing when
+        // its focus changes, and raises once at each floor its level crosses. A baseline is the
+        // decision's own facts at its build.
+        const economic = level => ({ ...at(level), stats: { ...at(level).stats, wishFocus: ['power:2566'] } });
+        const built = value => ({ ...value, stats: { ...value.stats, wishSections: { at: 1, ...Sections.semanticFacts(value) } } });
+        const refocused = built(economic(60));
+        assert(!Situations.detect(refocused, { ...refocused, stats: { ...refocused.stats, wishFocus: ['sell:57'] } })
+            .includes('source_stalled'), 'a wish focus change with no level change raises nothing');
+        const crossed = (from, to) => { const before = built(economic(from));
+            return Situations.detect(before, { ...economic(to), stats: { ...economic(to).stats, wishSections: before.stats.wishSections } })
+                .includes('source_stalled'); };
+        assert(!crossed(56, 57), 'inside the hunt floor nothing');
+        assert(crossed(57, 58), 'crossing the hunt floor raises');
+        assert(!crossed(58, 65), 'between the floors nothing');
+        assert(crossed(65, 66), 'crossing the earning route floor raises once more');
+        assert(!crossed(66, 70), 'past both floors nothing');
+        // A party member's hunt is its party's; a verdict naming another spot is no routed source.
+        const member = level => ({ ...at(level), party: { partyId: 'bgp-outgrown' } });
+        assert(!Situations.detect(member(57), member(58)).includes('source_stalled'), 'a party member outgrowing raises nothing');
+        const elsewhere = level => ({ ...at(level), stats: { ...state.stats, equipmentPlan: { ...drop, routedSpotId: 'other-spot' } } });
+        assert(!Situations.detect(elsewhere(57), elsewhere(58)).includes('source_stalled'),
+            'a plan whose verdict names another spot raises nothing');
     }
     const progressState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 1 } } }, Stall.STALL_KILLS);
     assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 1).failure, null,

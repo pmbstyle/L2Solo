@@ -30,8 +30,22 @@ function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
     };
 }
 
+// A plan the member's row takes in place of its own: neither its clan-locked plan
+// stands against it (GearAcquisitionPlanner.clanPlanKeptAgainst) nor does it serve
+// another clan's goal (ClanMembershipPolicy.foreignGoal). Main's write of a member
+// plan reads the same answer on its copy.
+function mayHold(member, plan) {
+    return !require('../AI/GearAcquisitionPlanner').clanPlanKeptAgainst(member, plan)
+        && !require('../../Clan/ClanMembershipPolicy').foreignGoal(member, plan);
+}
+
+// The member's plan at its party's re-plan: the selection's, unless the member may
+// not hold it; then its current plan stands (nothing to write, the party's objective
+// follows the plans held).
 function plan(state, options) {
-    return require('../AI/GearPlanSelection').selectAcquisitionPlan(state, state.stats?.equipmentPlan, options);
+    const current = state.stats?.equipmentPlan;
+    const selection = require('../AI/GearPlanSelection').selectAcquisitionPlan(state, current, options);
+    return mayHold(state, selection.acquisitionPlan) ? selection : { ...selection, acquisitionPlan: current };
 }
 
 // The party's objective after its members' re-plan: the one of the first member whose
@@ -46,4 +60,4 @@ function partyObjective(members) {
         acquisitionGoal: owner?.stats?.equipmentPlan?.status === 'active' ? owner.stats.equipmentPlan : null };
 }
 
-module.exports = { acquisitionRequirementKey, acquisitionFallbackEvent, plan, partyObjective };
+module.exports = { acquisitionRequirementKey, acquisitionFallbackEvent, mayHold, plan, partyObjective };

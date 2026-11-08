@@ -197,8 +197,8 @@ function relationTargetIds(state, memory = null) {
 // recovery's level penalty, SpotRiskPolicy.recoveryFor), karma (1 while it has any:
 // the karma wash, ColdKarmaPolicy.active), supply ([id, present] per
 // stock item), stores (four identities), bagNeed (the bag fact: 2 at its floor, 1 at a
-// cleanup count, PartyMarketBreak.bagFact), outgrown (1 while the gear plan's routed
-// source lies below the bot's voluntary hunt band: source_stalled at its flip).
+// cleanup count, PartyMarketBreak.bagFact), outgrown (the voluntary hunt floors the gear
+// plan's routed source lies below, outgrownOf: source_stalled at each rise).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), gear: view.gear ?? 0, grade: view.grade, outleveled: view.outleveled, recipes: view.recipes ? hash(view.recipes) : null,
@@ -243,16 +243,24 @@ const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
 const lineAt = (lines, kind) => kind === 'shots' ? Math.floor(lines / 3) : lines % 3;
 // lazy: the market break reads the disposition rules, which read this module.
 let MarketBreak = null;
-// The gear plan's routed source the bot has outgrown: the route took it (routedSpotId) and its
-// npc now stands below the bot's voluntary hunt band (the route's own source test,
-// GearAcquisitionPlanner.isPlanSourceViableForState without the spot reader), 1/0. Its 0 -> 1
-// flip raises source_stalled: the plan's review judges the route again. Gear plans only
-// wake on a grade, gear or clan change, and a level inside one grade outgrows a source.
+// The spot of the gear plan's source while the route takes it for a solo bot: the plan is
+// active and its held route verdict (routedSpotId: GearPlanSelection.withRoutedSource)
+// names the plan's own source spot; a party member's hunt is its party's (null).
+function routedSourceOf(state) {
+    const plan = state.stats?.equipmentPlan;
+    return plan?.status === 'active' && plan.routedSpotId != null && plan.routedSpotId === String(plan.next?.spotId)
+        && !partyIdOf(state) ? plan.routedSpotId : null;
+}
+// How far the bot has outgrown the routed source (routedSourceOf): how many voluntary
+// hunt floors its npc stands below the bot's level (GearAcquisitionPlanner.sourceFloorsBelow:
+// the ordinary hunt's seven levels, the earning route's fifteen), 0-2; 0 with no routed
+// source. A level only moves it, never the bot's wish focus. Each rise raises source_stalled:
+// the plan's review judges the route again. Gear plans only wake on a grade, gear or clan
+// change, and a level inside one grade outgrows a source. The bands are our choice, not C4.
 let Planner = null;
 function outgrownOf(state) {
-    const plan = state.stats?.equipmentPlan;
-    if (plan?.status !== 'active' || plan.routedSpotId == null) return 0;
-    return Number(!(Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).isPlanSourceViableForState(state, plan));
+    return routedSourceOf(state) == null ? 0
+        : (Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).sourceFloorsBelow(state, state.stats.equipmentPlan);
 }
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
@@ -397,5 +405,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, routedSourceOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
     baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, leafTrip, hash, decisionRefusal };

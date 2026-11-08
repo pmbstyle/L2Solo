@@ -1787,7 +1787,9 @@ const PopulationService = {
                             reason: 'near_player'
                         }).accepted;
                         // A row past the budget is not tried: it steps on cold (a cold row is
-                        // invisible to the player) and the next scan takes it first.
+                        // invisible to the player). Nothing remembers it: the rows activated now
+                        // are hot and leave the cold list, so it comes first next scan unless
+                        // nearer rows arrived.
                         const tryRows = async () => {
                             for (const state of floorAware) {
                                 const craft = state.activity === 'crafting' && state.stats?.craftShop;
@@ -2206,11 +2208,13 @@ const PopulationService = {
             if (acquisitionRequirementKey(member.stats?.equipmentPlan) === acquisitionRequirementKey(plan)) continue;
             // Held on the revision of the copy read above: the member's own
             // review runs meanwhile; a write it beat is skipped and the
-            // party's re-plan is marked due again below. A plan the row refuses
-            // (a clan-locked or foreign clan goal, a failed write: null) is
-            // skipped the same way: the party's objective, set from the plans
-            // the re-plan made, would follow a plan no member holds; the next
-            // re-plan starts from the stored plans.
+            // party's re-plan is marked due again below. The worker sends no
+            // plan the member's row would refuse (PartyRequirementRefresh.mayHold),
+            // so a refusal (null) means the row moved since the worker's read
+            // (a clan lock or a clan change landed) or a counted DB failure;
+            // it is skipped the same way: the party's objective, set from the
+            // plans the re-plan made, would follow a plan no member holds; the
+            // next re-plan starts from the stored plans.
             const written = await LifeState.writePartyRequirementPlan(member, plan);
             if (written === false) skip('plan');
             else if (written === null) skip('refused');

@@ -379,9 +379,8 @@ function held(session) {
 // that sends a bot to hunt without searching (a town or hall visit's end, a body that
 // must leave its ground): its card's hunting leaf (leaf: the caller's read of it),
 // else its gear plan's source while it collects there and the route takes it (the
-// worker's verdict held with the plan, routedSpotId: GearPlanSelection.withRoutedSource;
-// a solo bot's only: a party member's hunt is its party's, as the route's party run;
-// not while it waits for a party the plan needs, PartyWaitFallback.waiting: the route
+// worker's verdict held with the plan, DecisionSections.routedSourceOf; a solo bot's
+// only: a party member's hunt is its party's, as the route's party run; not while it waits for a party the plan needs, PartyWaitFallback.waiting: the route
 // sends a waiter to its fallback; not in the leveling recovery the plan holds: a fresh
 // one is the worker's search's to judge), else its held earning answer
 // (EquipmentIncomeRoute.answerSpotId: a party member's hunt is its party's), in the
@@ -393,12 +392,12 @@ function heldSpotOf(state = {}, leaf = null) {
     const stats = state.stats || {};
     const excluded = Risk.excludedSpotIdsForStates([state]);
     const plan = stats.equipmentPlan;
+    const routed = Sections.routedSourceOf(state);
     // lazy: GearAcquisitionPlanner and PartyWaitFallback load the economy modules that load this one.
-    const source = plan?.status === 'active' && plan.routedSpotId != null && plan.routedSpotId === String(plan.next?.spotId)
-        && !Sections.partyIdOf(state)
+    const source = routed != null
         && !invoke('GameServer/Bot/Population/PartyWaitFallback').waiting(state, plan, stats.partyRequest)
         && !(plan.levelingRecovery && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan))
-        ? plan.routedSpotId : null;
+        ? routed : null;
     const earning = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerSpotId(state);
     for (const id of [leaf?.activity === 'hunting' ? leaf.spotId : null, source, earning]) {
         if (id != null && !excluded.has(String(id))) return String(id);

@@ -505,9 +505,9 @@ function factNames(previousFact, current, planned = false) {
     // count was its fact has none to compare.
     const kills = previousFact('kills');
     if (kills !== undefined && Stall.crossed(kills, current.kills, current.stall)) add('source_stalled');
-    // The plan's routed source outgrown (its 0 -> 1 flip): the route refuses it now, the plan's
-    // review judges it again.
-    if (!previousFact('outgrown') && current.outgrown) add('source_stalled');
+    // The plan's routed source outgrown by one more voluntary hunt floor (its rise): the
+    // route may refuse it now, the plan's review judges it again.
+    if (current.outgrown > (previousFact('outgrown') || 0)) add('source_stalled');
     // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
     // fact was recorded has none to compare.
     const karma = previousFact('karma');
@@ -584,7 +584,7 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const own = earning?.facts && Number(earning.at) > (Number(previous.at) || 0) ? earning.facts : null;
     let original;
     // Only a fact the baseline lacks reads the state before; outleveled and outgrown are read
-    // against the decision's own answer only: a baseline without them reads 0 (their flip once).
+    // against the decision's own answer only: a baseline without them reads 0 (their rise once).
     const previousFact = key => own && Object.hasOwn(own, key) ? own[key] : Object.hasOwn(previous, key) ? previous[key]
         : key === 'outleveled' || key === 'outgrown' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which

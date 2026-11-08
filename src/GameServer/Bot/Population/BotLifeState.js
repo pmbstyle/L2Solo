@@ -467,15 +467,13 @@ function reconcileEquipmentInventory(state = {}) {
 
 function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = null) {
     const authoritative = current || cache.get(Number(incoming.characterId)) || null;
-    const currentPlan = authoritative?.stats?.equipmentPlan;
-    if (!GearAcquisitionPlanner.clanGoalPlanLocked(authoritative || {}, currentPlan)) return incoming;
+    if (!authoritative || !GearAcquisitionPlanner.clanPlanKeptAgainst(authoritative, incoming?.stats?.equipmentPlan)) return incoming;
+    // The clan's own goal writes pass, and so does a save whose bag wears the target.
     if (['clan_equipment_goal', 'clan_equipment_beneficiary_rotated'].includes(String(reason))) return incoming;
     if (equipmentTargetFulfilled(authoritative.stats || {}, incoming.inventory || {})) return incoming;
 
-    const currentGoalKey = String(currentPlan?.clanGoal?.goalKey || '');
-    const incomingGoalKey = String(incoming?.stats?.equipmentPlan?.clanGoal?.goalKey || '');
-    if (currentGoalKey && incomingGoalKey === currentGoalKey) return incoming;
-
+    const currentPlan = authoritative.stats.equipmentPlan;
+    const currentGoalKey = String(currentPlan.clanGoal.goalKey);
     const stats = {
         ...(incoming.stats || {}),
         equipmentPlan: currentPlan
@@ -3794,19 +3792,16 @@ const BotLifeState = {
     // One member's plan from its party's requirement refresh
     // (PopulationService.applyWorkerPartyRequirements), held on the revision
     // of the copy read (writeHeldOnRevision: false when a member write beat
-    // it). A clan-locked plan or a foreign clan's goal is not replaced, as the
-    // full save would not replace it (null: nothing to write). A plan needing no
+    // it). A plan the member may not hold (PartyRequirementRefresh.mayHold: a
+    // clan-locked plan stands, a foreign clan's goal is dropped, as the full
+    // save would do) is not written (null). A plan needing no
     // party where the old one needed it ends the member's need of its party: the
     // fact (stats.partyNeedEnded: the party's id) rides the plan's write and, once
     // it landed, party_need_ended wakes the member's stay, which reads both.
     writePartyRequirementPlan(member, plan = null) {
         const id = Number(member?.characterId), reason = 'party_requirement_refresh';
         if (!id) return Promise.resolve(null);
-        const next = preserveClanOwnedEquipmentState({ ...member, stats: { ...(member.stats || {}), equipmentPlan: plan } },
-            reason, member);
-        if (next.stats.equipmentPlan !== plan || ClanMembershipPolicy.reconcileState(next).stats.equipmentPlan !== plan) {
-            return Promise.resolve(null);
-        }
+        if (!require('./PartyRequirementRefresh').mayHold(member, plan)) return Promise.resolve(null);
         const Stay = require('./PartyStay'), partyId = member.party?.partyId;
         const ended = partyId != null && Stay.needsParty(member.stats?.equipmentPlan) && !Stay.needsParty(plan);
         return writeHeldOnRevision(member, { stats: { equipmentPlan: plan, ...(ended ? { partyNeedEnded: partyId } : {}),

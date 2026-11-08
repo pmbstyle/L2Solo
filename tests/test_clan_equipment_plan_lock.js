@@ -292,6 +292,35 @@ async function main() {
         assert.strictEqual(kept.acquisitionGoal.target.selfId, clanPlan.target.selfId, 'party refresh must keep the clan target item');
         assert.strictEqual(kept.acquisitionGoal.clanGoal.goalKey, clanPlan.clanGoal.goalKey,
             'party refresh must keep the clan goal ownership metadata');
+        // A member with no weapon holding the locked clan plan: its re-plan picks the NPC weapon
+        // bridge, which carries no clan goal and which its row refuses. The re-plan keeps the clan
+        // plan (nothing to send, no refused write that would mark the party due again every leader
+        // step) and the party's objective keeps the clan target.
+        {
+            const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
+            const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+            const saved = { npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
+                finalizePlan: GearAcquisitionPlanner.finalizePlan };
+            Object.assign(GearAcquisitionPlanner, {
+                npcEquipmentBridgePlan: () => ({ status: 'active', strategy: 'market', weaponBridge: true,
+                    partyNeedReason: 'weapon_bridge', target: { selfId: 129, slot: 7 }, market: { price: 1 } }),
+                finalizePlan: (_state, _previous, raw) => raw });
+            try {
+                const unarmed = { ...lockedMember, stats: { classId: 0, equipmentPlan: clanPlan } };
+                const selection = Refresh.plan(unarmed, { spots: [], timestamp: Date.now(),
+                    planningOptions: { board: new BoardIndex() } });
+                assert.strictEqual(selection.acquisitionPlan?.target?.selfId, clanPlan.target.selfId,
+                    'the re-plan of an unarmed clan-locked member keeps the clan plan');
+                assert.strictEqual(Refresh.acquisitionRequirementKey(selection.acquisitionPlan),
+                    Refresh.acquisitionRequirementKey(clanPlan), 'so it sends no member plan');
+                const objective = Refresh.partyObjective([{ ...unarmed,
+                    stats: { ...unarmed.stats, equipmentPlan: selection.acquisitionPlan } }]);
+                assert.strictEqual(objective.acquisitionGoal?.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'the party objective keeps the clan target');
+            } finally {
+                Object.assign(GearAcquisitionPlanner, saved);
+            }
+        }
 
         const finalized = GearAcquisitionPlanner.finalizePlan(
             { inventory: {} },
