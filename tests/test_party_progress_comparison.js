@@ -21,7 +21,7 @@ assert.equal(Income.evaluate(level).accept, true, 'a party that levels sooner wi
 assert.equal(Income.evaluate(level).reason, 'party_sooner');
 assert.equal(Income.evaluate({ ...level, party: { exp: 80, income: 5000 } }).reason, 'solo_sooner',
     'a party that earns more but levels slower does not, for a bot saving for nothing');
-assert.equal(Income.evaluate({ ...level, party: { exp: 80, income: 200 }, solo: { exp: 100, deaths: 2, deathHours: .5, income: 1000 } }).accept, true,
+assert.equal(Income.evaluate({ ...level, party: { exp: 80, income: 200 }, solo: { exp: 100, riskHours: 1, income: 1000 } }).accept, true,
     'deaths add time: the exp a death takes and the way back');
 assert.equal(Income.evaluate({ ...level, party: { exp: 120 }, lean: 1.4 }).accept, false, 'a loner needs a party clearly sooner');
 assert.equal(Income.evaluate({ ...level, party: { exp: 80 }, lean: .7 }).accept, true, 'a social bot takes a somewhat slower party');
@@ -34,10 +34,10 @@ assert.equal(Income.evaluate({ ...level, remaining: 0 }).accept, false, 'no leve
 // At the level cap a bot weighs what it still gains: the party that earns more wins, the time its deaths take counted.
 const capped = { remaining: 0, solo: { exp: 0, income: 1000 }, party: { exp: 0, income: 1500 } };
 assert.equal(Income.evaluate(capped).reason, 'party_sooner', 'a capped bot parties where it earns more');
-assert.equal(Income.evaluate({ ...capped, party: { exp: 0, income: 1500, deaths: 1, deathHours: .6 } }).accept, false,
+assert.equal(Income.evaluate({ ...capped, party: { exp: 0, income: 1500, riskHours: .6 } }).accept, false,
     'a capped bot\'s party earning more but dying more is not sooner');
 assert.equal(Income.evaluate({ ...capped, solo: { exp: 0, income: 2000 } }).accept, false, 'nor one that earns less');
-assert.equal(Income.levelHours({ exp: 100, deaths: 1, deathHours: .25 }, 1000), 12.5);
+assert.equal(Income.levelHours({ exp: 100, riskHours: .25 }, 1000), 12.5);
 const base = { cash: 5000, spendable: 0, solo: { exp: 100, income: 1000 }, party: { exp: 100, income: 200 }, remaining: 1000 };
 assert.equal(Income.evaluate(base).accept, false, 'a saver at equal exp: the lower personal margin funds the piece later');
 assert.equal(Income.evaluate({ ...base, party: { exp: 100, income: 3000 }, fee: 100, spendable: 100, assemblyHours: .1 }).accept, true);
@@ -235,7 +235,7 @@ try {
 // Lisvus L2Party); a healer removes the others' rest and deaths.
 {
     const saved = { value: Table.value, cycle: Table.cycle, samples: Hunt.sampledRows, costs: Hunt.consumablePrices,
-        rewards: Rewards.value, ensure: Profiles.ensure };
+        rewards: Rewards.value, ensure: Profiles.ensure, hunt: Hunt.huntIncome };
     try {
         Rewards.value = () => null; Hunt.sampledRows = () => []; Hunt.consumablePrices = () => ({ shots: 1, potions: 10 });
         Profiles.ensure = () => spots;
@@ -261,9 +261,27 @@ try {
         assert.equal(healed.deaths, 0, 'a healed fighter does not die of what it takes');
         const lower = Income.prepare([fighter, { ...other, level: 10 }], { spots, timestamp: at, objective }).rows;
         assert(lower.get(990140).exp > 4 * lower.get(990141).exp, 'the exp splits by squared level');
+        // Its own party's deaths there, once it has fought: a healed fighter that dies is not counted deathless.
+        const party = { partyId: 'p1', memberIds: [990140, 990142], stats: { partySpotRisk: { partyId: 'p1', rosterKey: '990140,990142',
+            spotRisk: { spotId: 'peer', windowFights: 10, windowDeaths: 2 } } } };
+        const lived = Income.prepare([fighter, cleric], { spots, timestamp: at, objective, party }).rows.get(990140);
+        assert(Math.abs(lived.deaths - 18) < 1e-9, 'its share of the deaths its party had a fight, at the party\'s kills');
+        // The party shares the spot's spawns as a solo hunter does: its kills are cut to its share.
+        Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1, production: 60 });
+        assert.equal(Income.prepare([fighter, other], { spots, timestamp: at, objective }).rows.get(990140).kills, 120,
+            'a party kills no more than the spawns give back to its share of the spot');
+        // One reader values both sides: a party of one on its earning spot takes as long as its solo hunt,
+        // its deaths at its time on the spot on both sides.
+        Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1 });
+        Hunt.huntIncome = () => ({ perHour: 1000, expPerHour: 1000 });
+        const hunter = { ...fighter, characterId: 990150, stats: { classId: 0, huntClock: { total: 2, onSpot: 1 },
+            earning: { spotId: 'peer', at, earning: 1000, shots: true } } };
+        const own = Income.compare(hunter, [], { party: { spotId: 'peer' }, objective });
+        assert(own.soloHours > 0 && Math.abs(own.partyHours - own.soloHours) < 1e-9 * own.soloHours,
+            `a party of one is valued as its solo row (${own.soloHours} vs ${own.partyHours})`);
     } finally {
         Table.value = saved.value; Table.cycle = saved.cycle; Hunt.sampledRows = saved.samples;
-        Hunt.consumablePrices = saved.costs; Rewards.value = saved.rewards; Profiles.ensure = saved.ensure;
+        Hunt.consumablePrices = saved.costs; Rewards.value = saved.rewards; Profiles.ensure = saved.ensure; Hunt.huntIncome = saved.hunt;
     }
 }
 
