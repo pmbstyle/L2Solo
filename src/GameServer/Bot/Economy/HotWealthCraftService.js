@@ -43,12 +43,22 @@ function review(session, context) {
             && !(state.stats?.equipmentPlan?.strategy === 'craft'
                 && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status));
         const book = () => actor.backpack?.fetchRecipeBook?.(actor, recipe.type) || [];
+        const refusal = {};
         const ready = state => {
             const opportunity = require('./ColdWealthCraftService').recheck(state,
-                { recipeId: Number(recipe.recipeId), batches: 1, scroll: [-1] }, book());
+                { recipeId: Number(recipe.recipeId), batches: 1, scroll: [-1] }, book(), refusal);
             // Ready when the basket orders nothing: its owned rows already took the
             // free stock through the one quantity reader (remainingQuantity).
+            if (opportunity && opportunity.basket.purchases.length) refusal.reason = 'owned_materials_changed';
             return opportunity && opportunity.basket.purchases.length === 0 ? opportunity : null;
+        };
+        // A craft refused at the act is not picked again until the next town look
+        // (WealthCraftDecision.refusedMark), as a far bot's; short of MP is no fault
+        // of the craft. The mark is a body key: the next near post carries it.
+        const reject = state => {
+            if (refusal.reason !== 'mp_changed') DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session),
+                wealthRefused: require('./WealthCraftDecision').refusedMark(state, recipe.recipeId) });
+            DecisionEvents.rejectSession(session, accepted, `wealth:${refusal.reason || 'source'}`);
         };
         const packet = context.statsPacket || DecisionEvents.statsFor(session);
         const accepted = { characterId: Number(actor.fetchId()), stats: { decisionSeq: packet.decisionSeq, activityLeaf: packet.activityLeaf,
@@ -58,7 +68,7 @@ function review(session, context) {
         if (!permitted(state)) return { attempted: false };
         if (!ready(state)) {
             // A withdrawn bid or changed input rejects this accepted work.
-            DecisionEvents.rejectSession(session, accepted);
+            reject(state);
             retirePreparation();
             return { attempted: false };
         }
@@ -70,7 +80,7 @@ function review(session, context) {
                     { recipeIds: [Number(recipe.recipeId)] });
                 state = liveState();
                 if (!permitted(state)) return { attempted, crafted: false };
-                if (!ready(state)) { DecisionEvents.rejectSession(session, accepted); return { attempted, crafted: false }; }
+                if (!ready(state)) { reject(state); return { attempted, crafted: false }; }
                 if (!book().some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId))) return { attempted, crafted: false };
             }
             attempted = true;

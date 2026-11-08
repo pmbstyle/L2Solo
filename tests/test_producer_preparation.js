@@ -94,6 +94,7 @@ adapters['GameServer/Items/NpcSellRules'] = { npcBuyPrice: () => 0 };
 adapters['GameServer/Bot/Economy/PriceBelief'] = { prior: () => ({ mu: Math.log(100) }), sigma: () => 0.3 };
 const nativePrice = load('PriceDecision.js', name => require(path.resolve(root, name)), invokeAdapter);
 const producerPrice = { ...nativePrice, bidSale: (...args) => supported ? nativePrice.bidSale(...args) : { status: 'unknown' } };
+const Wealth = require('../src/GameServer/Bot/Economy/WealthCraftDecision');
 const provider = load('WishProviders.js' , name => {
     if (name === '../../Items/SoulCrystalProgression') return adapters['GameServer/Items/SoulCrystalProgression'];
     if (name === '../../Items/C4DualSwordCombinations') return adapters['GameServer/Items/C4DualSwordCombinations'];
@@ -127,7 +128,7 @@ const provider = load('WishProviders.js' , name => {
     if (name.endsWith('ItemTemplateIndex')) return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './BotImprovementPolicy') return { isCaster: () => false };
     if (name === './WishPurchaseEvidence') return require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
-    if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0) };
+    if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0), refused: Wealth.refused };
     throw Error(name);
 }, invokeAdapter);
 const context = { timestamp: 1, persona, board, hunt: { perHour: 100, expPerHour: 0 }, deathHours: 0,
@@ -171,6 +172,13 @@ delete state.accountName;
 let prepared = prepare();
 let rootWish = prepared.result.queue.find(row => row.key === 'resale:101');
 assert(rootWish, 'conditional public interest creates a finite producer goal before whole ingredient supply');
+// A craft refused at the act (a near or far bot's) is not nominated again until
+// the bot's next town look reads the market anew.
+state.stats.wealthRefused = Wealth.refusedMark(state, 301);
+assert(!prepare().projection.roots.includes('resale:101'), 'a refused craft is not picked again before the next town look');
+state.stats.townLook = { n: 2 };
+assert(prepare().projection.roots.includes('resale:101'), 'the next town look reads the market anew');
+delete state.stats.wealthRefused; delete state.stats.townLook;
 assert.equal(rootWish.plan.kind, 'craft');
 assert.equal(rootWish.plan.batches, 1);
 assert.equal(rootWish.plan.repeatable, false);

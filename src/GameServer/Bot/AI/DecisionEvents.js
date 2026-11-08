@@ -293,11 +293,11 @@ function applyPendingRaise(session, stats, where, subject = 0) {
     if (raise) raiseBag(stats, raise, raise.impossible === true, where, subject);
 }
 // A hot body's rejection: one impossible raise while it waits for its
-// decision, a second rejection in that window adds nothing.
-function rejectSession(session, accepted) {
+// decision, a second rejection in that window adds nothing. Counted by why.
+function rejectSession(session, accepted, why = 'other') {
     const characterId = Number(session?.actor?.fetchId?.());
     if (!Number.isSafeInteger(characterId) || characterId <= 0 || session.nearRaise?.impossible) return false;
-    if (!rejects({ characterId, stats: decisionStatsFor(session) }, accepted)) return false;
+    if (!rejects({ characterId, stats: decisionStatsFor(session) }, accepted, why)) return false;
     raiseDecision(session, 'goal_failed', { impossible: true });
     return true;
 }
