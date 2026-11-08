@@ -5,6 +5,7 @@ const SearchWork = require('./RaidSearchWork');
 const Priority = require('./RaidRosterPriority');
 const { RaidRosterCoverage } = require('./RaidRosterCoverage');
 const { RaidSearchCounters, LIMITS } = require('./RaidSearchCounters');
+const Trace = require('../DecisionTrace');
 
 // An indexed adventurer pool, one bounded proposal per opportunity, and the
 // native party lifecycle. No boss sweep creates recruitment requests.
@@ -277,6 +278,10 @@ class OpportunisticRaidDirector {
                     const party = needsSupplies
                         ? await this.preparations?.reserve(roster, objective, timestamp)
                         : await this.form(roster, objective);
+                    // A ready roster put to its boss: formed, its supplies' preparation begun, or refused.
+                    if (Trace.on()) Trace.record({ kind: 'raid', bot: Number(roster[0]?.characterId), phase: 'forming',
+                        outcome: !party ? 'refused' : needsSupplies ? 'preparing' : 'formed', party: party?.partyId ? String(party.partyId) : undefined,
+                        npcId: Number(spot.raidBossTemplateId), members: roster.length });
                     if (party) {
                         if (needsSupplies) this.searchCounters.add('preparationsStarted');
                         searchStatus = needsSupplies ? 'preparing' : 'formed';
@@ -299,6 +304,9 @@ class OpportunisticRaidDirector {
                 this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
                 this.searchCounters.pendingRosters = this.deferredRosters.length;
                 this.searchCounters.finish(current() ? searchStatus : 'interrupted');
+                // One record per search run: the situation that made it due, how it ended.
+                if (Trace.on()) Trace.record({ kind: 'raid', phase: 'search', reason: String(this.due || ''),
+                    outcome: String(current() ? searchStatus : 'interrupted') });
                 this.config.developerDiagnostics && console.info('BotPopulation :: raid search woken=%s status=%s', this.due, searchStatus);
                 // Done: a formed party paces the next; one that formed nothing waits for a
                 // situation (the pool's growth among them). A search busy main or the CPU

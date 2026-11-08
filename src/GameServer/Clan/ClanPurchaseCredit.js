@@ -8,6 +8,7 @@
 // (ClanEquipmentService) and the clan-level goal (ClanMarketService).
 const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const Diagnostics = require('../Bot/Economy/EconomyDiagnostics');
+const Trace = require('../Bot/DecisionTrace');
 const Database = () => invoke('Database');
 const LifeState = () => invoke('GameServer/Bot/Population/BotLifeState');
 const PurchaseFunding = () => invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -50,7 +51,12 @@ function hasClanErrand(state, clanId, selfId = null) {
 // or the refund's failure code.
 async function settle(clanId, characterId, clanPart, purchase, kind, bought = !!purchase?.bought) {
     const kept = !!(purchase?.traveling || purchase?.pending || purchase?.errandAt);
-    if (!bought && kept) return { code: 'kept', state: purchase?.state || null };
+    if (!bought && kept) {
+        // An errand left for the clan (not a meeting it waits on) is taken: traced, as its end is (returnUnspent).
+        if ((purchase.traveling || purchase.errandAt) && Trace.on()) traceErrand('taken', characterId, clanId,
+            purchase.plan?.selfId, purchase.traveling ? 'traveling' : 'waiting', purchase.errandAt);
+        return { code: 'kept', state: purchase?.state || null };
+    }
     const amount = !bought ? clanPart
         : kept ? 0 : Math.max(0, Number(clanPart || 0) - Math.max(0, Number(purchase?.spent) || 0));
     const back = await refund(clanId, characterId, amount, kind);
@@ -58,13 +64,21 @@ async function settle(clanId, characterId, clanPart, purchase, kind, bought = !!
     return { code, state: back.state || purchase?.state || null };
 }
 
-// A clan errand that ends on arrival (filled, or no plan left) returns the
-// credit it did not spend; a remainder errand carries its own clanPart.
-async function returnUnspent(characterId, errand, spent) {
+// A clan errand that ends (filled on arrival: outcome done; no plan left, its need gone,
+// its buyer out of the clan: failed, the reason) returns the credit it did not spend; a
+// remainder errand carries its own clanPart.
+async function returnUnspent(characterId, errand, spent, outcome = 'failed', reason = null) {
     const clanId = Number(errand?.tag?.clanId);
+    if (errand?.purpose === 'clan' && Trace.on()) traceErrand(outcome, characterId, clanId, errand.selfId, reason, errand.at);
     const left = Math.max(0, Number(errand?.tag?.clanPart || 0) - Math.max(0, Number(spent) || 0));
     if (errand?.purpose !== 'clan' || !(clanId > 0) || !(left > 0)) return null;
     return refund(clanId, characterId, left, 'clan_errand_refund');
+}
+
+// One record per clan errand event: errandKey names the clan, item what it buys.
+function traceErrand(phase, characterId, clanId, item, reason, at) {
+    Trace.record({ kind: 'errand', bot: Number(characterId), phase, errandKey: `clan:${Number(clanId) || 0}`,
+        item: Number(item) || undefined, errandAt: Number(at) || undefined, ...(reason ? { reason: String(reason) } : {}) });
 }
 
 module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent };

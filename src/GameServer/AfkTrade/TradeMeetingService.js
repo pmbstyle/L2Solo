@@ -5,6 +5,7 @@ const MeetingAnchor = require('./MeetingAnchor');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
+const Trace = require('../Bot/DecisionTrace');
 const staged = new Map();
 const preparedActors = new Map(); // actor -> staged token; one preparation per actor.
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
@@ -156,6 +157,9 @@ function waitForResult(token, characterId, { signal } = {}) {
 // of a meeting write (the hot traveller's too) hands its reply here.
 function acceptRows(result) {
     trackPlayerWaiting(result?.meeting);
+    // A meeting's end (TradeMeeting.terminal names what it closed only when it closed it): traced once.
+    if (Trace.on() && Array.isArray(result?.closed) && result.meeting) traceMeeting(result.meeting.state === 'completed' ? 'delivered' : 'cancelled',
+        result.meeting, result.meeting.token, { recordId: Number(result.meeting.id), reason: String(result.meeting.reason || '') });
     for (const row of Object.values(result?.coldLifeRows || {})) {
         const state = life().acceptLifecycleRow(row);
         // Native reserve/leg/arrival replies owe a worker publication even if
@@ -242,7 +246,13 @@ function stage(request) {
         bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });
     for (const actor of [request.actorA, request.actorB]) preparedActors.set(Number(actor), id);
     pages += count;
+    if (Trace.on()) traceMeeting('prepared', request, id);
     return id;
+}
+// One record per meeting event, under its first actor with the other as target (scripts/trace.js shows it on both
+// timelines); proposalId: the preparation's token, which joins the events of one meeting.
+function traceMeeting(phase, actors, token, extra = {}) {
+    Trace.record({ kind: 'meeting', bot: Number(actors.actorA), target: Number(actors.actorB), phase, proposalId: String(token || ''), ...extra });
 }
 // The board records a preparation's terms quote, at the revisions it read: [recordId, revision].
 function quotedRecords(request) {
@@ -387,11 +397,17 @@ async function accept(id, characterId = null) {
         });
         committed = entry.committed = true;
         countAccept('done');
+        if (Trace.on() && result.meeting?.state === 'accepted') traceMeeting('accepted', result.meeting, id, { recordId: Number(result.meeting.id) });
         // The accept's rows land before its preparation ends (the finally, after accepted's
         // first turn): the end releases the raises held behind it (DecisionEvents.raiseOn)
         // and republishes its actors (Coordinator.preparationEnded), both on the accepted rows.
         // Until then the committed entry stands and its own rows do not void it (init).
         return accepted(result, result.coldLifeRows ? await meetingRecords(result.meeting) : []);
+    } catch (error) {
+        // Refused before its commit: its preparation (a need or an authority moved) or the accept itself.
+        if (!committed && Trace.on()) traceMeeting('refused', { actorA: entry.actors[0], actorB: entry.actors[1] }, id,
+            { reason: String(error?.message || 'error') });
+        throw error;
     } finally { discard(id, !committed); }
 }
 // The accept refused goods a seller's reserves keep (Database.materialFreeUnsafe, the
@@ -558,7 +574,7 @@ async function purchaseNeedChanged(ownerId, errand) {
         }, async () => {
             const saved = errand && await life().retireMarketErrand(ownerId, errand);
             if (saved && errand.purpose === 'clan') await invoke('GameServer/Clan/ClanPurchaseCredit')
-                .returnUnspent(ownerId, errand, 0);
+                .returnUnspent(ownerId, errand, 0, 'failed', 'need_changed');
         });
     } catch (error) { utils.infoWarn('AfkTrade', 'refused purchase of %d refresh: %s', ownerId, error.message); }
     events().raiseOn(ownerId, 'goal_failed', { impossible: true });
