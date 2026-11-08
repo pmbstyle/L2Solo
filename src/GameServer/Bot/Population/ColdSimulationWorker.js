@@ -2017,14 +2017,13 @@ function startKernel(config = {}) {
                 : Economy.forState(preparationState, buildDeps);
             const selectedAcquisition = nullReuse ? {
                 acquisitionPlan: GearPlanSelection.deferredAcquisitionPlan(state, previousPlan, preparedEconomy, nativeReplan, timestamp),
-                replanContext: nativeReplan, reusablePartyRequest: false,
-                excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy: preparedEconomy
+                replanContext: nativeReplan, reusablePartyRequest: false, economy: preparedEconomy
             } : GearPlanSelection
                 .selectAcquisitionPlan(preparationState, previousPlan, {
                     spots, timestamp, preparedEconomy, preparedReplanContext: nativeReplan,
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: escrowFor(state.characterId) }
                 });
-            const { replanContext, reusablePartyRequest, excludedSpotIds, economy } = selectedAcquisition;
+            const { replanContext, reusablePartyRequest, economy } = selectedAcquisition;
             // Selection already incorporates the prepared wish and preserves
             // the old project's inputs and bids. Replacing its result with a
             // second bare wish plan drops that retained chain on every switch.
@@ -2040,12 +2039,6 @@ function startKernel(config = {}) {
                 { plan: previousPlan, request: state.stats?.partyRequest }, { plan: acquisitionPlan, request: partyRequest });
             if (routeDrop) dropRoute(state.characterId, routeDrop);
             const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
-            const partyFallback = partyRouteWaiting
-                ? PartyWaitFallback.spotFor(state, acquisitionPlan, spots,
-                    { excludedSpotIds, timestamp, spotHunters: kernelHunters,
-                        hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]) })
-                : null;
-            const fallbackSpot = partyFallback?.spot || null;
             // A new packet, never the build's own (stepStatsPacket may return economy.statsPacket,
             // which the card shares). The gear plan's full review taken with the build (gear_plan):
             // it planned without the errands the bot failed, whose marks go (GearMarks).
@@ -2058,18 +2051,10 @@ function startKernel(config = {}) {
             const plannedStats = { ...(state.stats || {}), ...statsPacket, equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;
-            // A waiter that is resting finishes its rest first. Its fallback is the trip's
-            // destination (the route search picks it, BotRoute.choose), never its spotId:
-            // spotId stays where it stands until it arrives, so a waiter in town or on a road
-            // travels to its fallback instead of hunting it from where it stands.
-            const plannedState = {
-                ...state,
-                activity: fallbackSpot
-                    && !['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'resting'].includes(state.activity)
-                    ? 'hunting'
-                    : state.activity,
-                stats: plannedStats
-            };
+            // A party waiter's fallback is its trip's destination (the route search picks it,
+            // BotRoute.choose): the trip sets its activity and its spot on arrival; with no trip
+            // it stays as it stands (a rest goes on, a clan wait holds).
+            const plannedState = { ...state, stats: plannedStats };
             const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
             // A town visit plans its listings, bids and craft (showcase); a build taken in the
             // field posts the bids of the wants it registers once and starts its leaf (action);
@@ -2102,7 +2087,11 @@ function startKernel(config = {}) {
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
-                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan?.next?.npcId || 0),
+                // A waiter farms where its trip took it: its planned fallback's NPC, held on the
+                // route the search chose (BotRoute.choose), else its hunting leaf's.
+                targetNpcId: partyRouteWaiting ? Number(kernel.states.get(Number(state.characterId))?.route?.npcId
+                    || (economy.network.activity?.activity === 'hunting' ? economy.network.activity.npcId : 0) || 0)
+                    : Number(acquisitionPlan?.next?.npcId || 0),
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,
                 plannedState: routedState,

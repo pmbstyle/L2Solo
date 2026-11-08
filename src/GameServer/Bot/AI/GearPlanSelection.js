@@ -232,8 +232,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     if (!lockedClan && (['luxury_exchange', 'craft'].includes(preparedAcquisition?.strategy) || preparedAcquisition?.combine?.type === 'dual_sword')) return {
         acquisitionPlan: withRetainedCraftPreparation(state, previousPlan, { ...preparedAcquisition,
             ...(previousPlan?.clanGoal && Number(previousPlan.target?.selfId) === Number(preparedAcquisition.target?.selfId)
-                ? { clanGoal: previousPlan.clanGoal } : {}) }, timestamp), replanContext: {}, reusablePartyRequest: false,
-        excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
+                ? { clanGoal: previousPlan.clanGoal } : {}) }, timestamp), replanContext: {}, reusablePartyRequest: false, economy };
     const chosen = economy.network.queue.find(wish => wish.key === economy.network.activity?.rootKey)
         || economy.network.queue.find(wish => wish.key === economy.network.focus?.[0]);
     const wishTargetId = chosen?.object?.slot ? chosen.object.itemId : null;
@@ -245,8 +244,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         // common engine's book, social, sale or production activity.
         const replanContext = preparedReplanContext || GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
         const acquisitionPlan = deferredAcquisitionPlan(state, previousPlan, economy, replanContext, timestamp);
-        return { acquisitionPlan, replanContext,
-            reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
+        return { acquisitionPlan, replanContext, reusablePartyRequest: false, economy };
     }
     // The selected item's native funding gate reads the packet made by this
     // same review, including the bot's own funded buy-order escrow.
@@ -361,7 +359,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {})
     }, timestamp), timestamp), timestamp);
     const result = { acquisitionPlan: { ...acquisitionPlan },
-        replanContext, reusablePartyRequest, excludedSpotIds, planKey };
+        replanContext, reusablePartyRequest, planKey };
     economy.gearPlanMemo = { key, spots, result };
     return { ...result, economy };
 }

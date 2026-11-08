@@ -41,7 +41,12 @@ const scenarios = {
     106: { plan: { ...soloPlan, inputPreparation: { recipeId: 447, target: { selfId: 148 } } },
         request: null, planned: null },
     // A waiter standing in town (on no catalogue spot) with no spot of its own.
-    107: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, town: true }
+    107: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, town: true },
+    // A waiter holding at a gathering point in town (party_wait: main's command owns it).
+    108: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, town: true, activity: 'party_wait' },
+    // A waiter already on its planned fallback, its hunting leaf naming no spot it may take:
+    // the route search alone names the fallback and its NPC.
+    109: { plan: partyPlan, request, planned: { spotId: current.id, npcId: 321 }, leaf: { activity: 'hunting', spotId: 'nowhere' } }
 };
 const townLoc = { locX: 10 * 6000 + 3000, locY: 20 * 6000 + 3000, locZ: -3000 };
 
@@ -51,7 +56,7 @@ require(workerData.workerPath);
 const scenario = (state) => workerData.scenarios[String(state.characterId)] || {};
 invoke('GameServer/Bot/AI/GearPlanSelection').selectAcquisitionPlan = (state) => ({
     acquisitionPlan: scenario(state).plan, replanContext: {}, reusablePartyRequest: false, excludedSpotIds: new Set(),
-    economy: { statsPacket: {}, network: { queue: [], activity: { activity: scenario(state).resting ? 'resting' : 'hunting',
+    economy: { statsPacket: {}, network: { queue: [], activity: scenario(state).leaf || { activity: scenario(state).resting ? 'resting' : 'hunting',
         ...(scenario(state).planned || {}) } }, riskWeight: 0, stock: () => null }
 });
 invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan = (state) => scenario(state).request || null;
@@ -95,7 +100,7 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         const rows = Object.entries(scenarios).map(([id, scenario]) => ({
             state: {
                 characterId: Number(id), name: `Waiter${id}`, accountName: `bot_${id}`, level,
-                phase: 'cold', activity: scenario.resting ? 'resting' : 'hunting',
+                phase: 'cold', activity: scenario.activity || (scenario.resting ? 'resting' : 'hunting'),
                 spotId: scenario.town ? null : current.id, currentRegion: current.name,
                 loc: scenario.town ? { ...townLoc } : { ...current.center },
                 inventory: {}, adena: 1000,
@@ -108,13 +113,18 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
             }
         }));
         send('snapshot_page', { done: true, rows });
-        const proposals = new Map();
+        // A step the worker plans and resolves (a proposal), or main's command it plans (a
+        // command request carrying the planned state).
+        const proposals = new Map(), commands = new Map();
         const deadline = Date.now() + 20000;
-        while (Object.keys(scenarios).some((id) => !proposals.has(Number(id)))) {
+        while (Object.keys(scenarios).some((id) => !proposals.has(Number(id)) && !commands.has(Number(id)))) {
             if (workerError) throw workerError;
             if (Date.now() >= deadline) throw Error(`proposals: ${JSON.stringify(received.map((m) => m.type))}`);
             for (const message of received.filter((m) => m.type === 'proposal_batch')) {
                 for (const proposal of message.payload.proposals) proposals.set(Number(proposal.characterId), proposal);
+            }
+            for (const message of received.filter((m) => m.type === 'command_request')) {
+                for (const request of message.payload.requests) commands.set(Number(request.characterId), request);
             }
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
@@ -149,6 +159,14 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         assert.strictEqual(planned(107).activity, 'traveling', 'a waiter in town leaves for its fallback');
         assert.strictEqual(planned(107).stats.travel?.spotId, other.id);
         assert.notStrictEqual(planned(107).spotId, other.id, 'no spot is declared before the waiter arrives there');
+        // Only its trip moves a waiter: one held by another owner is neither relabelled a
+        // hunter nor sent off by its gear review.
+        const held = commands.get(108)?.precomputedPlan?.plannedState;
+        assert.strictEqual(held?.activity, 'party_wait', 'a waiter at its gathering point keeps waiting there');
+        assert.strictEqual(held.stats.travel || null, null, 'no trip starts for a waiter another owner holds');
+        // A waiter on its planned fallback farms the fallback's NPC (the route search's answer).
+        assert.strictEqual(planned(109).spotId, current.id);
+        assert.strictEqual(proposals.get(109).result?.debug?.targetNpcId, 321, 'a waiter on its fallback farms its planned NPC');
         assert.strictEqual(planned(106).stats.equipmentPlan.inputPreparation.recipeId, 447,
             'the worker must not replace the selected plan with a bare wish that drops the retained project');
     } finally {
