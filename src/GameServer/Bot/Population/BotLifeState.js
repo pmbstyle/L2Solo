@@ -2747,8 +2747,12 @@ const BotLifeState = {
         const previousRisk = state.stats?.spotRisk;
         const previousDeaths = Number(state.stats?.deaths || 0);
         const nextDeaths = Number(result.patch?.deathCount ?? previousDeaths);
+        // lazy: ColdEconomyDecision loads the economy modules that require this one.
+        const stepLeaf = options.stepPlan ? invoke('GameServer/Bot/Population/ColdEconomyDecision').stepLeaf(options.stepPlan) : null;
         const spotRisk = state.party?.partyId || state.partyId ? previousRisk : SpotRiskPolicy.recordResolve(previousRisk, {
             spotId: nextSpotId || null,
+            itemHunt: !!nextSpotId && String(stepLeaf?.spotId) === String(nextSpotId)
+                && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(stepLeaf),
             timestamp,
             totalDeaths: previousDeaths,
             totalFights: Number(state.stats?.fightsResolved || 0),
@@ -2761,7 +2765,8 @@ const BotLifeState = {
             failedHunts: Math.max(0, Number(result.debug?.fights || 0)
                 - Number(result.debug?.wins || 0) - Math.max(0, nextDeaths - previousDeaths))
         });
-        const soloRiskState = { ...state, spotId: nextSpotId, stats: { ...state.stats, spotRisk } };
+        const soloRiskState = { ...state, spotId: nextSpotId, stats: { ...state.stats, spotRisk, deaths: nextDeaths,
+            fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0) } };
         const soloPressure = !(state.party?.partyId || state.partyId) && SpotRiskPolicy.deathPressure(soloRiskState);
         const newlyFailedSpot = soloPressure && !SpotRiskPolicy.activeBackoffs(state, timestamp)
             .some(entry => entry.spotId === nextSpotId);
@@ -2987,9 +2992,7 @@ const BotLifeState = {
             // raise nothing (ColdEconomyDecision.stepLeaf, the worker's and main's alike).
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
             const seen = {};
-            // lazy: ColdEconomyDecision loads the economy modules that require this one.
-            const leaf = options.stepPlan ? invoke('GameServer/Bot/Population/ColdEconomyDecision').stepLeaf(options.stepPlan) : null;
-            hard = Situations.detect(state, nextState, { escrow, leaf,
+            hard = Situations.detect(state, nextState, { escrow, leaf: stepLeaf,
                 unhuntable: result.debug?.unhuntable === true, out: seen });
             // A decided town trip for the bag (stats.cleanupDue) ends with the bag's need (its fact at 0).
             if (nextState.stats.cleanupDue && !seen.facts.bagNeed) nextState.stats.cleanupDue = null;

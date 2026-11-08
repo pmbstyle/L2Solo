@@ -263,6 +263,30 @@ const FILLED = failure('filled'), SHORT = failure('short'), CRAFT = failure('cra
 const IMPROVEMENT = failure('improvement'), UNSUPPORTED = failure('unsupported');
 const OFFER_NONE = failure('offer_none', 'offer_gone'), OFFER_TOWN = failure('offer_town', 'offer_gone');
 const OFFER_PRICE = failure('offer_price', 'offer_gone'), OFFER_UNITS = failure('offer_units', 'offer_gone');
+const KIT = failure('kit');
+// A kit step buys the kit's item as the build read it. A weapon the plan's own steps
+// bought and wore (no gear_changed: its own answer) or a level crossing moves the
+// kit's shot or potion: the old item is no kit any more, the sale lists it as surplus,
+// and a step that kept ordering it would buy again what the sale takes. The step ends;
+// the next build buys the new item. A shot's kind (a spiritshot class's Blessed or plain)
+// is the build's own choice (its earning answer at search), carried by the step's item:
+// only the worn weapon's grade is checked against it, never the held earning answer.
+// A step of the kit's root that buys a shot's craft input (Soul Ore, crystals) is no
+// consumable of the kit and goes on.
+function kitMoved(state, leaf) {
+    const itemId = Number(leaf.itemId);
+    if (leaf.rootKey === 'stock:shots') {
+        const ShotStock = invoke('GameServer/Inventory/ShotStock');
+        if (!ShotStock.SHOT_IDS.includes(itemId)) return false;
+        const blessed = ShotStock.BLESSED_SPIRITSHOT_IDS.includes(itemId);
+        return itemId !== Number(ShotStock.planForState(state, { blessed })?.selfId);
+    }
+    if (leaf.rootKey === 'stock:potions') {
+        return HealingPotionStock.POTION_IDS.includes(itemId)
+            && itemId !== Number(HealingPotionStock.purchasePotionFor(state).selfId);
+    }
+    return false;
+}
 const withHeldUnits = (leaf, heldUnits) => ColdEconomyDecision.ownItem(leaf) !== null && Number.isFinite(heldUnits)
     ? { ...leaf, heldAtDecision: heldUnits } : leaf;
 // The hunting spot against the bot's marks (died here, was full, avoided a
@@ -285,6 +309,7 @@ const materialDone = (state, leaf, input) => ColdEconomyDecision.materialHunt(le
 const LEAF_CHECKS = Object.freeze({
     hunting: (state, leaf, deps, input) => spotExcluded(state, leaf) || materialDone(state, leaf, input),
     shopping: (state, leaf, deps, input) => {
+        if (kitMoved(state, leaf)) return KIT;
         deps = resolved(state, deps, false);
         const trade = tradeRoute(state, leaf, deps);
         if (!trade || !(leaf.kind === 'buy' && leaf.itemId > 0 && leaf.amount > 0 && leaf.unitPrice > 0

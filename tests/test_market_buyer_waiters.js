@@ -109,6 +109,18 @@ async function main() {
         assert.deepEqual(raised, [], 'a reprice below its rivals raises none: they see it at their next look');
         put(stall(10, 300, 200, 'Giran', 1));
         assert.deepEqual(raised, [[300, 'goal_done:line']], 'its own line filled');
+        // A line priced against a rival at 150 (accepted noise 0.2, log): a new line at 140 is a
+        // move its own look keeps its price through, so it raises none; one at 100 raises.
+        raised.length = 0;
+        const asking = (id, ownerId, price, pricing) => ({ id, ownerId, storeType: 1, town: 'Giran', botOwned: ownerId !== 600,
+            lines: [{ lineId: id, selfId: 2000, count: 5, price, fills: 0, ...(pricing ? { pricing } : {}) }] });
+        put(asking(50, 600, 150));
+        put(asking(51, 601, 200, { price: 200, rival: 150, sigma: 0.2 }));
+        raised.length = 0;
+        put(asking(52, 602, 140));
+        assert.deepEqual(raised, [], 'a rival move inside the line\'s accepted noise raises none');
+        put(asking(53, 603, 100));
+        assert.deepEqual(raised, [[602, 'line_undercut'], [601, 'line_undercut']], 'a move past it raises line_undercut');
         console.log('market buyer waiters: PASS (wants of the build, bounded wakes at the next step, no clock; own-line situations)');
     } finally {
         await kernel.shutdown();

@@ -58,16 +58,19 @@ async function run() {
     // (EconomyContext.basics) is 0: a second computation on main refuses.
     assert.equal(Economy.basics(Life.cachedState(owner)).kitCost(SHOT), 0);
     {
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7]] }),
-            /economy_plan_bid_unfunded/, 'no tranche: the shot ad is refused on main');
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7]] })).stale, true,
+            'no tranche: the shot ad is refused on main');
+        assert.equal(Market.planBidRefused().economy_plan_bid_unfunded, 1, 'the refusal is counted in the status');
         assert.equal((await records()).length, 0);
         await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7], [OTHER, 1, 300]], buyKit: [1000, 0] });
         ads = await records();
         assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count]).sort((a, b) => a[0] - b[0]),
             [[SHOT, 100], [OTHER, 1]].sort((a, b) => a[0] - b[0]));
         assert.equal(await wallet(), 10000);
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]], buyKit: [500] }),
-            /economy_plan_bid_unfunded/, 'a bid above queue + tranche is refused');
+        const before = await records();
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]], buyKit: [500] })).stale, true,
+            'a bid above queue + tranche is refused');
+        assert.deepEqual(await records(), before, 'the refused bid changes no ad');
         await Afk.replaceBotRecords(owner, 'buy_ad', [], { expected: expected(await records()) });
     }
 

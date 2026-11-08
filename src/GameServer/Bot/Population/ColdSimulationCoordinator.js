@@ -578,10 +578,15 @@ class ColdSimulationCoordinator {
         }
     }
 
-    meetingPreparationCurrent(proof, request) {
+    // payer: the proof's side pays in the terms. A non-paying side's proof (its route and
+    // standing offer) holds through its own steps while it keeps its phase; a payer's
+    // holds only at the decision and board reads it was made on.
+    meetingPreparationCurrent(proof, request, { payer = true } = {}) {
         if (!proof || proof.epoch !== this.workerEpoch || proof.worker !== this.worker || this.stopping) return false;
-        const state = LifeState.cachedState(proof.characterId);
-        if (!state || !EconomyCommit.sameAuthority(EconomyCommit.authority(state), proof.authority)) return false;
+        const state = LifeState.cachedState(proof.characterId), now = state && EconomyCommit.authority(state);
+        if (!now || !proof.authority || now.phase !== proof.authority.phase || now.hotAt !== proof.authority.hotAt) return false;
+        if (!payer) return proof.token === request.token;
+        if (now.revision !== proof.authority.revision) return false;
         const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
         const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
         if (!proof.dependencies?.every(([id, boardToken, marketToken, workshopToken]) => {
@@ -782,11 +787,9 @@ class ColdSimulationCoordinator {
                         || !echoHolds(state, decision.echo)) break;
                     this.economyDecisions.hold(id, decision, state);
                     try {
-                        const result = await AfkMarket.executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
+                        // A plan whose bids could not stand raises its outcome (executePlan).
+                        await AfkMarket.executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
                             .catch(error => { this.recordError(error); return null; });
-                        // Units reached the bag since the decision: its goal is done; a stale
-                        // plan cannot run: its step failed.
-                        if (result?.buyPending) DecisionEvents.raiseOn(id, result.stale ? 'goal_failed' : 'goal_done:goal');
                     } finally { this.economyDecisions.release(id); }
                 }
             } else if (payload.phase === 'economy_decided' && !this.stopping) {
@@ -1461,6 +1464,17 @@ class ColdSimulationCoordinator {
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
 
+    // A trade preparation ended (TradeMeetingService.discard: every end, the accept's too):
+    // its far actors' rows go back to the worker. A bot whose command answered that it
+    // waits on it is held unscheduled there; the row schedules it again (a bot that
+    // still has its schedule keeps it). A fenced bot is the hot handoff's.
+    preparationEnded(characterIds) {
+        for (const id of characterIds) {
+            const state = LifeState.cachedState(Number(id));
+            if (state?.phase === 'cold' && !this.fencedBots.has(Number(id))) this.markDirty(state, { critical: true, reason: 'trade_preparation_end' });
+        }
+    }
+
     // An owner's release of the fence it took, by id: the fence goes even when
     // the bot has no cached row; a row there is goes back to the worker.
     releaseFence(characterId, state = LifeState.cachedState(Number(characterId))) {
@@ -1979,7 +1993,10 @@ class ColdSimulationCoordinator {
                         ok: result?.ok !== false,
                         reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
-                            Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
+                            Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) }
+                            // An applied command that waits on its bot's trade preparation: the
+                            // worker holds the bot until the preparation's end (preparationEnded).
+                            : result?.waiting ? { waiting: true } : {}),
                         ...(nextState ? { state: nextState } : {})
                     });
                 } catch (error) {
@@ -2004,6 +2021,11 @@ class ColdSimulationCoordinator {
             if (!sourceCurrent()) return;
             // Each request answered once, in order.
             requests.forEach(({ request }, index) => request.kind === 'review' && this.countReview(request, results[index]));
+            // A preparation that ended since its command answered woke nobody (the bot was
+            // still in its command): its answer no longer waits. Read just before the post,
+            // so an end after it reaches the worker after the answer.
+            const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
+            for (const result of results) if (result.waiting && !Meetings.hasPreparation(result.characterId)) delete result.waiting;
             this.postCollections('command_ack', { results }, message.msgId);
             // A refused review ran no plan and its ack made the worker forget it
             // as sent (ColdSimulationKernel.forgetSentPlan): the visit's step
@@ -2111,10 +2133,13 @@ class ColdSimulationCoordinator {
                     .executePlan(state, request.economyPlan,
                         { beforeWrite, preparedState, step: work => this.step('economyPlan', id, work) }));
                 state = LifeState.cachedState(id) || applied?.state || state;
-                if (applied?.buyPending) DecisionEvents.raiseOn(id, applied.stale ? 'goal_failed' : 'goal_done:goal');
             } finally {
                 this.economyDecisions.release(id, LifeState.cachedState(id) !== preparedState);
             }
+            // A deal of the plan staged a meeting preparation the bot pays in: no write of the
+            // bot's follows (its write voids its consent, read at its revision): its bids and
+            // training wait for the next command's review, a buff offer is dropped as a stale one is.
+            if (invoke('GameServer/AfkTrade/TradeMeetingService').paysInPreparation(id)) return { ok: true, state: LifeState.cachedState(id) || state };
             // The plan may have just started a trip or changed the money packet.
             await this.step('boardLimits', id, async () => {
                 const checked = await AfkMarket
@@ -2430,7 +2455,8 @@ class ColdSimulationCoordinator {
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
-                staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors },
+                staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors,
+                planBidRefused: AfkMarket.planBidRefused() },
             failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,

@@ -175,7 +175,8 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
             'a same-quantity standing bid cannot retain a price above the worker prepared purchase limit');
         await assert.rejects(Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [],
             buyAds: [[1867, 5, 110]], buyCaps: [105], travel: null }, { step: work => work() }),
-        /economy_plan_bid_cap/, 'native publication rejects a quote above its prepared limit');
+        /economy_plan_bid_cap/, 'a quote above its prepared limit is a plan main and the worker disagree on: a fault');
+        assert.equal(Afk.ownerRecords(id).find(row => row.kind === 'buy_ad').lines[0].price, 100, 'the refused quote is not published');
         const standing = Afk.ownerRecords(id).find(row => row.kind === 'buy_ad');
         const bid = standing.lines[0];
         await Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,

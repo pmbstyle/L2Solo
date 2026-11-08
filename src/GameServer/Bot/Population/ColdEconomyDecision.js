@@ -506,6 +506,8 @@ function advisory(economy, state, activity = state.activity) {
     const accepted = { card, eventProof, characterId: Number(state.characterId), decisionSeq: packet ? Number(packet.decisionSeq || 0) : undefined,
         activityLeaf: packet ? Number(packet.activityLeaf || 0) : undefined,
         focus: packet ? packet.wishFocus?.[0] ?? null : undefined, baseline: packet?.wishSections,
+        // The build's own wish fields, re-proposed while its commit has not landed (pendingCommit).
+        decided: packet ? { wishFocus: packet.wishFocus, dormantWishes: packet.dormantWishes } : null,
         activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp) };
     const restartProof = Economy.restartEventProof(eventProof, accepted);
     accepted.saved = restartProof ? RestartDecision.encode({ ...accepted, eventProof: restartProof },
@@ -559,12 +561,29 @@ function readAdvisoryCard(record) {
         return card;
     } catch (error) { FailureLog.note('economy.codec:advisory_card', error); return null; }
 }
-function advisoryMatches(state, accepted) {
+// carried: the commit the card rides is in flight (the kernel's cardInFlight).
+function advisoryMatches(state, accepted, carried = false) {
     if (!accepted || accepted.characterId !== Number(state?.characterId)) return false;
-    return !Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
+    return !Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus)
+        || pendingCommit(state, accepted, carried);
 }
-function advisoryPublicationHolds(state, advice, previous = null) {
-    return advisoryMatches(state, advice) && !(Number(previous?.baseline?.at) > advice.baseline.at
+// A card this thread built whose decision the row does not carry yet: the row is the
+// decision the build replaced (one decisionSeq behind: only that build moved it).
+const unlanded = (state, accepted) => !!accepted?.decided && Number(state?.stats?.decisionSeq || 0) === accepted.decisionSeq - 1;
+// Such a card is still the answer to that row only while the commit it rides is in flight
+// (carried): main's rows sent before it lands (a write of the visit) or its command
+// answered that it waits (a trade preparation). A commit refused or dropped ends it: the
+// card goes and the bot builds, as for any card its row refuses. A restored card (no
+// build fields) or any other echo is refused.
+function pendingCommit(state, accepted, carried) {
+    return carried === true && unlanded(state, accepted);
+}
+// A publication dropped a card whose commit had not landed (counted: its commit was refused or dropped).
+function noteDropped(state, accepted) {
+    if (Diagnostics.active() && unlanded(state, accepted)) Diagnostics.count('card', 'drop', 'commit_unlanded');
+}
+function advisoryPublicationHolds(state, advice, previous = null, carried = false) {
+    return advisoryMatches(state, advice, carried) && !(Number(previous?.baseline?.at) > advice.baseline.at
         || Number(state.updatedAt || 0) > advice.card.updatedAt
             && Number(state.stats?.wishSections?.at) > advice.baseline.at);
 }
@@ -591,7 +610,7 @@ function refusal(state, accepted, deps = {}, options = {}) {
         return 'leaf_kind';
     }
     const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
-    if (identity) return identity;
+    if (identity && !(identity === 'decision_seq' && pendingCommit(state, accepted, options.carried))) return identity;
     if (state.incomingPending) return 'incoming';
     // A card serves wherever the bot stands (the field, a town visit, a stall, a craft,
     // death): its situations wake the build (an arrival its leaf did not order raises
@@ -621,14 +640,19 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     // The craft step the decision holds: a town visit's plan carries it out.
     economy.shot = decision.shot;
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
-    economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
-        decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
+    // A card whose commit has not landed proposes its own decision again; else the row's.
+    const pending = pendingCommit(state, accepted, options.carried);
+    if (pending && Diagnostics.active()) Diagnostics.count('card', 'pending', 'served');
+    const held = pending ? { ...accepted.decided, decisionSeq: accepted.decisionSeq,
+        activityLeaf: accepted.activityLeaf } : state.stats;
+    economy.statsPacket = { wishFocus: held.wishFocus, dormantWishes: held.dormantWishes,
+        decisionSeq: held.decisionSeq, activityLeaf: held.activityLeaf, money: state.stats.money,
         kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline,
         wishAdvisory: accepted.saved || null };
     // A served card is counted and clears no bit: only the decision taken does.
     Situations.decided(state.stats, 'build', { caller: deps.caller || 'card', served: true });
-    Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
-        decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });
+    Object.assign(economy.network, { focus: held.wishFocus, dormant: held.dormantWishes,
+        decisionSeq: held.decisionSeq, activityLeaf: held.activityLeaf });
     Object.defineProperty(economy, 'eventProof', { value: () => accepted.eventProof });
     return { economy, decision, advisory: { ...accepted, card: decision } };
 }
@@ -781,5 +805,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, noteDropped, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
     MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

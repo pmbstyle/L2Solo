@@ -126,6 +126,37 @@ module.exports.heldProbe = async (id) => {
         return { same, wishAsks, held, handoff, later, unwoken };
     } finally { Economy.forState = original; }
 };
+// A step whose commit has not landed: main sends the row of the decision the step's build
+// replaced, one decisionSeq behind its card (a visit's write before the commit, a command
+// answered without its decision; the build woken by a worker-local situation, a board wake
+// or its leaf's outcome, so the row carries no raise). The card is still the answer to that
+// row only while the commit it rides is in flight, or its command answered that it waits on
+// a trade preparation; refused or dropped, the card goes. A waiting card serves the next
+// step with no build, proposing its own decision again.
+module.exports.pendingProbe = async id => {
+    const card = kernel.states.get(id).wishAdvisory, row = kernel.states.get(id).state;
+    const behind = { ...row, stats: { ...row.stats, decisionSeq: card.decisionSeq - 1 } };
+    const commandId = 'lifecycle:probe:1';
+    const publish = ride => {
+        const record = kernel.states.get(id);
+        record.wishAdvisory = card; record.cardCommit = ride;
+        kernel.states.set(id, { ...record, state: behind });
+        return kernel.states.get(id).wishAdvisory === card;
+    };
+    kernel.commandStartedAt.set(id, { kind: 'lifecycle', commandId });
+    const inFlight = publish({ card, id: commandId });
+    kernel.commandStartedAt.delete(id);
+    const refused = publish({ card, id: commandId });
+    const waiting = publish({ card, id: commandId, waiting: true });
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), original = Economy.forState;
+    let builds = 0;
+    Economy.forState = (...args) => { builds++; return original(...args); };
+    try {
+        const plan = await kernel.planLifecycle({ state: behind, timestamp: Date.now() + 10000 });
+        return { echo: [behind.stats.decisionSeq, card.decisionSeq], inFlight, refused, waiting, builds,
+            proposed: Number(plan.statsPacket?.decisionSeq || 0) };
+    } finally { Economy.forState = original; kernel.states.set(id, { ...kernel.states.get(id), state: row }); }
+};
 // A deferred plan's next page: main's write while pages wait asks it, once per
 // state; the bot's own commit and a sent plan with nothing deferred ask none.
 module.exports.pageProbe = async id => {
@@ -214,7 +245,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -293,6 +324,15 @@ parentPort.on('message', message => {
         assert.equal(held.handoff, '', 'a near body back far serves its far card: no build for the handoff');
         assert.equal(held.later, 0, 'with no situation the next decision point builds nothing');
         assert.deepEqual(held.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'pending'), pendingProbe: id });
+        const pendingResponse = await wait(message => message.probeId === 'pending'); if (pendingResponse.error) throw Error(pendingResponse.error);
+        const pending = pendingResponse.value;
+        console.log(JSON.stringify(pending));
+        assert.equal(pending.inFlight, true, 'main\'s row sent before the step\'s commit lands keeps its card');
+        assert.equal(pending.refused, false, 'a commit refused or dropped drops it: no card held past its commit');
+        assert.equal(pending.waiting, true, 'a command answered that it waits on a trade preparation keeps it');
+        assert.equal(pending.builds, 0, 'the next step serves the waiting card: no build');
+        assert.equal(pending.proposed, pending.echo[1], 'and proposes the card\'s own decision again');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;

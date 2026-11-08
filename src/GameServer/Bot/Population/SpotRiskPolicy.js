@@ -94,6 +94,8 @@ function recordResolve(previous = {}, sample = {}) {
         windowDeaths: Math.max(0, Number(base.windowDeaths || 0)) + Math.max(0, Number(sample.deaths || 0)),
         recoveryWins, unrecoveredDeaths,
         failedHuntRecoveryWins,
+        // The round hunted the spot for an item (its held step's material hunt there).
+        ...(sample.itemHunt === true ? { itemHunt: true } : {}),
         // A lucky kill must not erase repeated abandoned fights. Require a
         // short run of clean wins before trusting the same ground again.
         failedHunts: Math.min(MAX_FAILED_HUNTS,
@@ -102,13 +104,28 @@ function recordResolve(previous = {}, sample = {}) {
     };
 }
 
+// Ground the bot hunts for an item (its held step's material hunt) is left at its first
+// death there while that death is a fifth of its fights since it came (our choice): the
+// item has other sources and the market, and a bot that went back died there again (a
+// level-34 Puncher killed level 29-35 bots in 1-3 fights). Wins it had there before keep
+// it; any other ground (earning, progress, a gear plan's, a party's) takes two deaths
+// at a fifth of its fights. Totals are the state's after the round.
+function itemHuntDeath(state, risk, spotId) {
+    if (risk.itemHunt !== true) return null;
+    const deaths = Math.max(0, Number(state.stats?.deaths || 0) - Number(risk.deathsAtEntry || 0));
+    const fights = Math.max(0, Number(state.stats?.fightsResolved || 0) - Number(risk.fightsAtEntry || 0));
+    const deathRate = deaths / Math.max(1, fights);
+    return deaths >= 1 && deathRate >= MIN_DEATH_RATE
+        ? { spotId, deaths, fights, wins: Math.max(0, fights - deaths), deathRate, reason: 'death_pressure' } : null;
+}
+
 function deathPressure(state = {}, spotId = state.spotId) {
     const expectedSpotId = normalizedSpotId(spotId);
     const risk = state.stats?.spotRisk;
     if (!expectedSpotId || normalizedSpotId(risk?.spotId) !== expectedSpotId) return null;
 
     if (Number(risk.version || 0) === RISK_WINDOW_VERSION) {
-        return pressureForWindow({
+        return itemHuntDeath(state, risk, expectedSpotId) || pressureForWindow({
             spotId: expectedSpotId,
             fights: risk.windowFights,
             wins: risk.windowWins,

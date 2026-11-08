@@ -19,6 +19,8 @@ const ids = [731501, 731502];
         await Database.createAccount('bot_loaded_shaman', 'fixture');
         await Database.execute(["UPDATE characters SET username='bot_loaded_shaman' WHERE id IN (?,?)", ids]);
         await Life.init();
+        // The board's init subscribes the owner-bag trim of conditional ads (reconcileOwnStock).
+        Life.subscribePublications(Afk.reconcileOwnStock);
         for (const id of ids) {
             await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 361 });
             if (id === ids[0]) {
@@ -70,6 +72,9 @@ const ids = [731501, 731502];
                 assert.equal(await world.amount(id, 21), 0, 'a current weight floor bypasses the sale retry without a departure marker');
                 assert.equal(await world.amount(id, 28), 0);
                 assert.equal(await world.amount(id, 2368), 1, 'the equipped weapon stays owned');
+                for (let turn = 0; turn < 50 && Afk.boardIndex().ownerLines(id).some(line => [21, 28].includes(line.selfId)); turn++) {
+                    await new Promise(resolve => setImmediate(resolve));
+                }
                 for (const ad of ads) assert.notEqual((await Database.fetchAfkTradeShop(ad))?.status, 'active',
                     'an NPC liquidation retires the conditional offer backed by those goods');
                 assert(!Afk.boardIndex().ownerLines(id).some(line => [21, 28].includes(line.selfId)),

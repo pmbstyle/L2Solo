@@ -65,8 +65,9 @@ function stub(object, key, value) { const original = object[key]; restores.push(
         const after = Afk.ownerRecords(id).find(row => row.kind === 'buy_ad');
         assert.equal(after.id, standing.id); assert.equal(after.lines[0].count, 2,
             'deferring the stale batch preserves the original unaccepted ad');
-        await assert.rejects(Market.executePlan(Life.cachedState(id), proposal.economyPlan, { reviewGoal: false }),
-            /economy_plan_bid_unfunded/, 'ordinary publication still enforces the actual native funding limit');
+        const unfunded = await Market.executePlan(Life.cachedState(id), proposal.economyPlan, { reviewGoal: false });
+        assert.equal(unfunded.stale, true, 'ordinary publication still enforces the actual native funding limit');
+        assert.equal(Afk.ownerRecords(id).find(row => row.kind === 'buy_ad').lines[0].count, 2, 'the refused bid publishes nothing');
         await Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
             buyAds: [[1458, 6, 1500, 1, 76, 7, 0, 1, .001]] }, { reviewGoal: false });
         const refreshed = Afk.ownerRecords(id).find(row => row.kind === 'buy_ad');

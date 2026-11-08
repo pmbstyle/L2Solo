@@ -82,12 +82,29 @@ assert.deepStrictEqual(penalties, [2, 4, 6, 6, 6]);
 assert.strictEqual(Routes.targetLevelForState(dying), 23);
 
 // Spot pressure: 2 deaths at a 20% death rate; a backoff doubles from 60 own steps up to 360; at most 8 spots.
-const pressure = (windowFights, windowDeaths) => Risk.deathPressure({ ...state, stats: { spotRisk: {
-    spotId: 'danger', version: Risk.RISK_WINDOW_VERSION, windowFights, windowWins: windowFights - windowDeaths,
-    windowDeaths, unrecoveredDeaths: 0, failedHunts: 0 } } });
+const pressure = (windowFights, windowDeaths, unrecoveredDeaths = 0) => Risk.deathPressure({ ...state,
+    stats: { spotRisk: { spotId: 'danger', version: Risk.RISK_WINDOW_VERSION, windowFights,
+        windowWins: windowFights - windowDeaths, windowDeaths, unrecoveredDeaths, failedHunts: 0 } } });
 assert.strictEqual(pressure(10, 2)?.reason, 'death_pressure', '2 deaths in 10 fights is a 20% death rate');
 assert.strictEqual(pressure(11, 2), null, '2 deaths in 11 fights is under 20%');
-assert.strictEqual(pressure(1, 1), null, 'one death is never pressure');
+assert.strictEqual(pressure(1, 1, 1), null, 'one death is no pressure on ground it hunts for no item');
+// Ground hunted for an item (the round's held step hunts it there): a first death within a
+// fifth of its fights since it came leaves it; wins it had there before keep it.
+const itemRound = (previous, totals, round) => {
+    const spotRisk = Risk.recordResolve(previous, { spotId: 'danger', itemHunt: true, totalDeaths: totals.deaths,
+        totalFights: totals.fights, totalWins: totals.fights - totals.deaths, ...round });
+    const after = { deaths: totals.deaths + round.deaths, fightsResolved: totals.fights + round.fights };
+    return { spotRisk, pressure: Risk.deathPressure({ ...state, stats: { ...after, spotRisk } }) };
+};
+const quick = itemRound({}, { deaths: 3, fights: 40 }, { fights: 3, wins: 2, deaths: 1 });
+assert.strictEqual(quick.pressure?.reason, 'death_pressure', 'a death in its first fights there leaves the item ground');
+const settled = itemRound({}, { deaths: 3, fights: 40 }, { fights: 12, wins: 12, deaths: 0 });
+assert.strictEqual(settled.pressure, null);
+assert.strictEqual(itemRound(settled.spotRisk, { deaths: 3, fights: 52 }, { fights: 1, wins: 0, deaths: 1 }).pressure, null,
+    'a death after twelve wins there is no first-death pressure');
+assert.strictEqual(Risk.deathPressure({ ...state, stats: { deaths: 4, fightsResolved: 43, spotRisk: Risk.recordResolve({},
+    { spotId: 'danger', totalDeaths: 3, totalFights: 40, fights: 3, wins: 2, deaths: 1 }) } }), null,
+'the same death on ground it hunts for no item is no pressure');
 
 let backedOff = state;
 let startedAt = at;

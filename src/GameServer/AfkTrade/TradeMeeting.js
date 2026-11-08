@@ -121,7 +121,10 @@ function create(io) {
                     incoming.filter(row => row.selfId === line.selfId).reduce((n, row) => n + row.count, 0),
                     incoming.filter(row => row.selfId !== line.selfId).map(row => ({ selfId: row.selfId, amount: row.count })));
             }
-            if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
+            // A paying side accepts at the decision it consented at; a non-paying side's
+            // standing offer holds through its own steps (its goods are checked below).
+            const pays = request.lines.some(line => line.payer === side);
+            if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || pays && Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
             if (life && party.phase === 'hot' && !io.position(id)?.alive) throw Error('trade_meeting_authority_changed');
             if (!life) {

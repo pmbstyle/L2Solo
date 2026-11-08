@@ -619,6 +619,12 @@ async function reconcileSellShop(state, goal) {
 
 // A deal or another move changed the record after the review read it: the
 // move is refused (its idempotency key) and the next review starts afresh.
+// The refusals of a plan's buy step that are outcomes, not faults, and their counts
+// since start (always counted; the set bounds the keys).
+const PLAN_BID_REFUSALS = new Set(['economy_plan_bid_unfunded', 'economy_plan_need_changed', 'afk_trade_shop_changed',
+    'board_cap_reached', 'not_enough_adena']);
+const planBidRefused = {};
+
 function staleMove(error) {
     return error?.message === 'afk_trade_shop_changed';
 }
@@ -771,7 +777,17 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // Executes only the worker's quoted lines. The native writers validate
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
-async function executePlan(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
+// A plan whose bids or purchase could not stand (buyPending) raises its outcome where the
+// bot is, on every path that carries a plan out (a town visit, a review, a refresh): units
+// reached the bag since the decision (its goal is done), or the plan went stale or was
+// refused on main (its step failed: the next build decides anew).
+async function executePlan(state, plan, options = {}) {
+    const result = await executePlanSteps(state, plan, options);
+    if (result?.buyPending) invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(state.characterId),
+        result.stale ? 'goal_failed' : 'goal_done:goal');
+    return result;
+}
+async function executePlanSteps(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
     if (state.stats?.tradeMeeting || invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
     let authority = EconomyCommit.authority(preparedState);
@@ -1023,8 +1039,16 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         }
         await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
         return { state: LifeState.cachedState(ownerId) || state };
+    }).catch((error) => {
+        // An outcome refusal (the money the worker funded a bid with was spent by an
+        // earlier step, a need or a record that moved, a full board) is counted, the
+        // plan's bids go stale (the next build bids again) and the step goes on. Anything
+        // else (a plan main and the worker disagree on, a retired worker) is a fault.
+        if (!PLAN_BID_REFUSALS.has(error?.message) || !FailureLog.refusal(error)) throw error;
+        planBidRefused[error.message] = (planBidRefused[error.message] || 0) + 1;
+        return { state: LifeState.cachedState(ownerId) || state, buyPending: true, stale: true };
     }) : null;
-    if (published?.buyPending) return { state, buyPending: true };
+    if (published?.buyPending) return { state, buyPending: true, ...(published.stale ? { stale: true } : {}) };
     if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {
         const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
@@ -1114,4 +1138,5 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
 module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
+    planBidRefused: () => ({ ...planBidRefused }),
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };

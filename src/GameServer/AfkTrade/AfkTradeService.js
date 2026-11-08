@@ -1072,8 +1072,37 @@ function clearBoard() {
 
 // Restores the board at start. The old world's bot records close once
 // (Database.migrateBoardWorld); then every record comes back into memory.
+// A conditional sell ad keeps its goods in the owner's bag: any write that takes them out
+// (an NPC or fixed-buyer sale, a sale into a buy ad, a deposit, a craft, hot or cold)
+// leaves the ad offering more than the owner holds. The owner's own bag change (a new
+// bag on its published life state) trims its ads to the bag (Database.reconcileConditionalSellAds,
+// which also keeps its reserves). Only an owner the board shows with a line over its bag
+// pays the trim. Goods a meeting holds left the bag and still back their ad: the board
+// line counts only the units not held (the record's availableCount) once the meeting's
+// records are refreshed; an accept publishes the seller's bag before that, and its trim
+// changes nothing. Trims run, by whether they changed an ad (developer diagnostics).
+let unsubscribeOwnStock = null;
+// The unworn units of a bag summary's item at one enchant level.
+function unwornAt(item, enchant) {
+    if (!item) return 0;
+    if (!Array.isArray(item.instances)) return Number(item.enchant || 0) === Number(enchant)
+        ? Number(item.amount || 0) - Number(item.equippedCount || 0) : 0;
+    return item.instances.reduce((sum, row) => sum + (!row.equipped && Number(row.enchant || 0) === Number(enchant) ? Number(row.amount || 0) : 0), 0);
+}
+function reconcileOwnStock({ characterId, state, previousState }) {
+    const id = Number(characterId), bag = state?.inventory;
+    if (!bag || bag === previousState?.inventory || !board.owners.has(id)) return;
+    if (!board.ownerLines(id).some(line => line.kind === 'sell_ad' && line.custodyPolicy === 1
+        && line.count > unwornAt(bag[line.selfId], line.enchant))) return;
+    Database.reconcileConditionalSellAds(id).then(ads => {
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('board', 'own_stock_trim', ads.length ? 'changed' : 'same');
+        ads.forEach(refreshRecord);
+    }).catch(error => require('../../FailureLog').note('board.own_stock_trim', error));
+}
+
 async function init() {
     clearBoard();
+    unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnStock);
     const migrated = await Database.migrateBoardWorld();
     // A cached bot state follows the bags and states the migration changed.
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -1157,6 +1186,7 @@ module.exports = {
     boardIndex: () => board,
     isBoardReady: () => boardReady,
     subscribeBoardChanges,
+    reconcileOwnStock,
     offerOf,
     itemName,
     activeDemandSelfIds,

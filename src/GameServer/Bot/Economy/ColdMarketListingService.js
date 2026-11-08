@@ -77,11 +77,7 @@ function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
         cleanupReason: forcedCleanup.cleanupReason || 'inventory_cleanup',
         town: clearedState.currentRegion || null,
         at: timestamp
-    }).then(async (cleanedState) => {
-        if (cleanedState) {
-            const ads = await invoke('Database').reconcileConditionalSellAds(state.characterId);
-            for (const ad of ads) invoke('GameServer/AfkTrade/AfkTradeService').refreshRecord(ad);
-        }
+    }).then((cleanedState) => {
         return { state: cleanedState || clearedState,
             listed: false, cleaned: !!cleanedState, reason: 'pre_trade_npc_cleanup',
             cleanup: forcedCleanup, liquidated: candidates };

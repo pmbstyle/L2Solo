@@ -128,11 +128,16 @@ class MarketBuyerWaiters {
 // owner's line filled (its fills moved: a sale, a bid answered; a line sold out leaves
 // the record and raises none) raises goal_done:line on it; a new SELL line raises
 // line_undercut on the bot owners of the same item's dearer SELL lines where it sells
-// (its town; an unplaced line every town), at most WAKES_PER_RECORD a line from the
-// cheapest up, each owner past them told to capped(). A C4 seller sees a new stall or
+// (its town; an unplaced line every town) when it moves the best rival price that line
+// was priced against past its accepted noise (MarketPricing.rivalMoved, the look's own
+// test: a smaller move is one the look keeps its price through), at most
+// WAKES_PER_RECORD a line from the cheapest up, each owner past them told to
+// capped(). A C4 seller sees a new stall or
 // shout of his item when it appears; a rival's price change he sees at his own next
 // look (his town arrival, arrived_town), so a reprice raises none: two sellers of one
 // item do not undercut each other at machine speed. wake(ownerId, name).
+// lazy: MarketPricing's graph is loaded after the worker's board modules.
+const Pricing = () => invoke('GameServer/Bot/Economy/MarketPricing');
 function lineEvents(record, previous, board, wake, capped = () => {}) {
     const ownerId = Number(record.ownerId), old = new Map(previous.map(line => [line.lineId, line]));
     if (record.botOwned && record.lines.some(line => line.fills > Number(old.get(Number(line.lineId))?.fills ?? line.fills))) {
@@ -145,6 +150,11 @@ function lineEvents(record, previous, board, wake, capped = () => {}) {
         let raised = 0;
         for (const other of board.lines(Number(line.selfId), 1, record.town)) {
             if (!(other.price > Number(line.price)) || !other.botOwned || other.ownerId === ownerId || woken.has(other.ownerId)) continue;
+            const seen = other.pricing?.rival, sigma = other.pricing?.sigma;
+            if (seen > 0 && sigma > 0) {
+                const rival = board.first(Number(line.selfId), 1, { excludeOwner: other.ownerId, enchant: other.enchant });
+                if (!(rival?.price > 0) || !Pricing().rivalMoved(seen, rival.price, sigma)) continue;
+            }
             woken.add(other.ownerId);
             if (raised === WAKES_PER_RECORD) { capped(); continue; }
             raised++;

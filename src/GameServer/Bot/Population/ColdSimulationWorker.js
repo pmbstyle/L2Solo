@@ -367,7 +367,11 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (input.mode === 'meeting') {
             const request = input.meeting, ownId = Number(input.state.characterId);
             const side = request.actorA === ownId ? 0 : 1, own = request.parties[side];
-            if (!EconomyCommit.sameAuthority(own, EconomyCommit.authority(input.state))) throw Error('trade_meeting_authority_changed');
+            // A paying side prepares at the decision the terms were read at; a non-paying
+            // side (a standing offer) at its current one while it keeps its phase.
+            const current = EconomyCommit.authority(input.state);
+            if (request.lines.some(line => line.payer === side) ? !EconomyCommit.sameAuthority(own, current)
+                : own.phase !== current.phase || own.hotAt !== current.hotAt) throw Error('trade_meeting_authority_changed');
             // Public shot flow can admit another earning recipe before the
             // old graph reads its product. At most five category dependencies
             // cover the craftable grades, including currently absent demand.
@@ -1267,6 +1271,8 @@ function rememberWishAdvisory(owner, advisory, seen = null) {
     }
     const changed = (advisory?.eventProof || null) !== (owner.wishAdvisory?.eventProof || null);
     owner.wishAdvisory = advisory;
+    // The commit this card rides: the command or step in progress, built or served on it.
+    owner.cardCommit = advisory ? { card: advisory, id: kernel.commitOf(owner.state.characterId) } : null;
     if (changed) registerWants(owner);
 }
 
@@ -1781,7 +1787,8 @@ function startKernel(config = {}) {
                         // member's, which its party holds), or no card names its decision;
                         // else the card serves.
                         const woken = Situations.woken(planned.stats, 'build') || EconomyContext.earningDue(planned, deps);
-                        refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(planned, owner?.wishAdvisory, deps, { afterResult: true }) : null;
+                        refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(planned, owner?.wishAdvisory, deps,
+                            { afterResult: true, carried: kernel.cardInFlight(planned.characterId, owner?.wishAdvisory) }) : null;
                         if (refreshed && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result');
                         return { economy: refreshed ? refreshed.economy : EconomyContext.forState(planned, { ...deps, decide: true }),
                             stats: workshop || rebuff ? { ...workshop, ...rebuff } : workshop };
@@ -1953,7 +1960,8 @@ function startKernel(config = {}) {
             // or advisory:skip:<why>).
             const advisory = economyDiagnostics.active() ? (outcome, reason) => economyDiagnostics.count('advisory', outcome, reason) : null;
             const why = [];
-            let refreshed = solo && !woken ? ColdEconomyDecision.refreshAdvisory(state, card, deps, { why }) : null;
+            let refreshed = solo && !woken ? ColdEconomyDecision.refreshAdvisory(state, card, deps,
+                { why, carried: kernel.cardInFlight(state.characterId, card) }) : null;
             if (advisory && !refreshed) {
                 if (!solo) advisory('skip', 'party');
                 else if (woken) advisory('skip', 'woken');

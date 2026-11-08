@@ -28,6 +28,10 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
             loc: { locX: 0, locY: 0, locZ: 0 }, currentRegion: 'Giran', stats: {} }, 'fixture');
         const prepared = Life.cachedState(owner);
         assert.equal(prepared.inventory[ORE].amount, 5);
+        // A plan that waits raises its outcome where the bot is (recorded here: a raise on the
+        // row would move the revision the later plans are prepared on).
+        const raised = [];
+        stub(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseOn', (id, name) => { raised.push(name); return Promise.resolve(null); });
 
         const board = new BoardIndex();
         board.put({ id: 77, ownerId: 99, kind: 'sell_ad', custodyPolicy: 1, revision: 4, storeType: Afk.SELL ?? 1,
@@ -49,6 +53,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.deepEqual(Life.cachedState(owner).acceptedIncoming, { [ORE]: 2 });
         assert.equal((await Market.executePlan(prepared, take)).buyPending, true);
         assert.equal(bought, 1, 'accepted incoming since the decision never buys twice');
+        assert.deepEqual(raised, ['goal_done:goal'], 'units since the decision: its goal is done');
         // A buy ad for the same item waits too and publishes nothing.
         assert.equal((await Market.executePlan(prepared, { buyAds: [[ORE, 2, 237]] })).buyPending, true);
         assert.deepEqual(await Database.fetchAfkTradeShops(owner), records, 'a filled buy ad is not published');
@@ -88,6 +93,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         const older = { ...fresh, simulation: { ...fresh.simulation, revision: -1 } };
         assert.equal((await Market.executePlan(fresh, { shot: [1] }, { preparedState: older })).buyPending, true);
         assert.equal(shots, 0, 'a stale shot step is not executed');
+        assert.equal(raised.at(-1), 'goal_failed', 'a stale plan\'s step failed');
         await Market.executePlan(fresh, { shot: [1] });
         assert.equal(shots, 1, 'a held shot step is executed');
         // The plan's own craft writes the row: its later bids stand on it (no stale plan, no

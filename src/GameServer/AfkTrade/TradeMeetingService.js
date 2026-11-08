@@ -226,16 +226,53 @@ function stage(request) {
     if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
     if ([request.actorA, request.actorB].some(id => preparedActors.has(Number(id)))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
-    staged.set(id, { frames, revisions: request.parties.map(party => party.revision),
+    staged.set(id, { frames, authorities: request.parties.map(party => ({ phase: party.phase, revision: party.revision, hotAt: party.hotAt })),
+        payers: [0, 1].map(side => request.lines.some(line => line.payer === side)), quotes: quotedRecords(request),
         bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });
     for (const actor of [request.actorA, request.actorB]) preparedActors.set(Number(actor), id);
     pages += count;
     return id;
 }
+// The board records a preparation's terms quote, at the revisions it read: [recordId, revision].
+function quotedRecords(request) {
+    const quotes = new Map();
+    for (const line of request.lines) {
+        if (line.adId > 0) quotes.set(line.adId, line.adRevision);
+        if (line.needAdId > 0) quotes.set(line.needAdId, line.needAdRevision);
+    }
+    return [...quotes];
+}
+// What voids an unaccepted preparation (counted under developer diagnostics by cause):
+// a payer's decision moving (its consent, money and certificates were read at its
+// revision), either side leaving its phase (a far bot became near or went offline), or
+// a record its terms quote changing. A non-paying side's ordinary step does not: its
+// standing offer is its consent and the accept re-checks its goods, life and party.
+function preparationVoid(entry, side, state) {
+    const now = state && EconomyCommit.authority(state), was = entry.authorities[side];
+    if (!now || now.phase !== was.phase || now.hotAt !== was.hotAt) return 'phase';
+    return entry.payers[side] && now.revision !== was.revision ? 'payer' : null;
+}
+function quoteMoved(entry, board = afk().boardIndex()) {
+    return entry.quotes.some(([recordId, revision]) => {
+        const rows = board.records.get(Number(recordId));
+        return !rows?.length || rows.some(row => row.revision !== revision);
+    });
+}
+const discardCounted = (key, cause) => { invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('meeting', 'discard', cause); discard(key); };
+// A staged preparation's accept, by outcome (developer diagnostics).
+const countAccept = outcome => invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('meeting', 'accept', outcome);
 // Preparations already hold the bounded participant set; callers use it to
 // avoid changing their own consent while bilateral worker checks are pending.
 function hasPreparation(characterId) {
     return preparedActors.has(Number(characterId));
+}
+// The actor pays in the preparation it is in: its consent, money and certificates were
+// read at its revision, so its own writes void it (preparationVoid). The one question of
+// every guard that holds a bot's writes or steps while a preparation stands: the
+// non-paying side's standing offer holds through its own steps.
+function paysInPreparation(characterId) {
+    const id = Number(characterId), entry = staged.get(preparedActors.get(id));
+    return !!entry && entry.payers[entry.actors.indexOf(id)] === true;
 }
 // The preparation token this actor is in, or null.
 function preparationOf(characterId) {
@@ -253,6 +290,9 @@ function discard(id, notify = true) {
         entry.cancelled = true;
         if (entry.ready) coordinator()?.cancelMeetingPreparation?.(id);
         if (notify && !entry.committed) notifyResult(id, entry.actors, { pending: false, token: id, outcome: 'cancelled' });
+        // Every preparation ends here (the accept's too): a far actor whose command
+        // answered that it waits on it steps again now.
+        coordinator()?.preparationEnded?.(entry.actors);
     }
 }
 function adjustTransportPages(delta, byteDelta = 0) {
@@ -264,7 +304,8 @@ function adjustTransportPages(delta, byteDelta = 0) {
 function validatePrepared(entry, request) {
     if (staged.get(request.token) !== entry || entry.cancelled) throw Error('trade_meeting_preparation_changed');
     for (const proof of entry.proofs || []) {
-        if (!proof.approved || !coordinator().meetingPreparationCurrent(proof, request)) throw Error('trade_meeting_authority_changed');
+        const payer = entry.payers[entry.actors.indexOf(Number(proof.characterId))];
+        if (!proof.approved || !coordinator().meetingPreparationCurrent(proof, request, { payer })) throw Error('trade_meeting_authority_changed');
     }
     return true;
 }
@@ -320,10 +361,27 @@ async function accept(id, characterId = null) {
         const request = require('./TradeMeetingCodec').fromPages(entry.frames);
         const result = await db().acceptTradeMeeting(request, entry.proofs ? {
             validatePreparation: () => validatePrepared(entry, request), freshPreparation: true
-        } : undefined);
+        } : undefined).catch(async error => {
+            countAccept(`refused:${error?.message || 'error'}`);
+            // The refusal ends the preparation before the trim: the trim moves the quoted
+            // ad's revision, which would discard the staged entry as a moved quote first.
+            if (error?.message === 'economy_material_protected') { discard(id); await trimSellerAds(request); }
+            throw error;
+        });
         committed = entry.committed = true;
+        countAccept('done');
         return accepted(result);
     } finally { discard(id, !committed); }
+}
+// The accept refused goods a seller's reserves keep (Database.materialFreeUnsafe, the
+// rule its conditional ads' stock reads too): its ads stop offering them now, not at
+// the next buyer's refusal. A failed trim is counted; the refusal stands.
+async function trimSellerAds(request) {
+    const sellers = new Set(request.lines.map(line => [request.actorA, request.actorB][1 - line.payer]));
+    for (const id of sellers) {
+        try { for (const ad of await db().reconcileConditionalSellAds(id)) afk().refreshRecord(ad); }
+        catch (error) { require('../../FailureLog').note('trade_meeting.seller_ad_trim', error); }
+    }
 }
 async function accepted(result) {
     acceptRows(result);
@@ -419,6 +477,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     stage(request);
     const entry = staged.get(token);
     entry.ready = prepareActors(token).catch(async error => {
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('meeting', 'prepare_failed', error?.message || 'error');
         discard(token);
         // Only the payer's worker refuses a need; on a buy ad the payer is its
         // owner, so the need behind the ad changed. The refusal alone left the
@@ -728,8 +787,8 @@ async function init() {
         // Only bounded unaccepted preparations are replaceable. The durable
         // accepted meeting survives ordinary economic revisions and ad edits.
         for (const [key, entry] of staged) if (entry.actors.includes(id)) {
-            const side = entry.actors.indexOf(id), state = life().cachedState(id);
-            if (!state || EconomyCommit.authority(state).revision !== entry.revisions[side]) discard(key);
+            const cause = preparationVoid(entry, entry.actors.indexOf(id), life().cachedState(id));
+            if (cause) discardCounted(key, cause);
         }
         wake(id);
     });
@@ -739,7 +798,10 @@ async function init() {
     unsubscribeMarketLife = life().subscribeMarketReviewChanges(wake);
     unsubscribeBoard = afk().subscribeBoardChanges(change => {
         const owners = new Set((change.ownerIds || []).map(Number));
-        for (const [key, entry] of staged) if (change.reset || entry.actors.some(id => owners.has(id))) discard(key);
+        for (const [key, entry] of staged) {
+            if (change.reset) discardCounted(key, 'reset');
+            else if (entry.actors.some(id => owners.has(id)) && quoteMoved(entry)) discardCounted(key, 'record');
+        }
     });
     unsubscribePlayer = world().subscribeUserChanges(id => {
         if (!sessionFor(id)) for (const [key, entry] of staged) if (entry.actors.includes(Number(id))) discard(key);
@@ -769,6 +831,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, paysInPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

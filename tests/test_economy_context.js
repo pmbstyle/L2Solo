@@ -432,6 +432,23 @@ async function run() {
         assert.equal(check(bag(3), leaf({ kind: 'exchange', itemId: 1310 })), '',
             'an improvement without an object holds');
         assert.equal(check(bag(2), leaf(null)).reason, 'check:improvement', 'an improving leaf without its improvement refuses');
+        // A kit step for the shot of a weapon the bot no longer wears (its plan bought and wore a
+        // D-grade one) ends: the sale lists the old shots, a step that kept buying them loops.
+        const hammer = { ...base, stats: { ...base.stats, classId: 56 },
+            inventory: { 168: { selfId: 168, amount: 1, equipped: true, equippedCount: 1, slot: 7 } } };
+        const shots = itemId => ({ activity: 'shopping', kind: 'buy', rootKey: 'stock:shots', itemId, amount: 500,
+            unitPrice: 22, sourceType: 'npc', town: 'Gludin' });
+        assert.equal(check(hammer, shots(1835)).reason, 'check:kit', 'no-grade shots are no kit of a D-grade weapon');
+        assert.notEqual(check(hammer, shots(1463)).reason, 'check:kit', 'the worn weapon\'s shot stands');
+        assert.notEqual(check(hammer, shots(1785)).reason, 'check:kit', 'a shot step buying its craft input (Soul Ore) goes on');
+        // A spiritshot class holding neither shot: the build chose Blessed at its search while its
+        // held earning answer still names plain spiritshots. The step's kind is the build's: it
+        // stands at the worn grade, and ends only when the grade moved.
+        const wizard = { ...base, stats: { ...base.stats, classId: 11, earning: { shotKind: 'spiritshot' } },
+            inventory: { 69: { selfId: 69, amount: 1, equipped: true, equippedCount: 1, slot: 7 } } };
+        assert.notEqual(check(wizard, shots(3948)).reason, 'check:kit', 'the build\'s Blessed Spiritshot D stands at a D weapon');
+        assert.notEqual(check(wizard, shots(2510)).reason, 'check:kit', 'and so does its plain Spiritshot D');
+        assert.equal(check(wizard, shots(3947)).reason, 'check:kit', 'a Blessed no-grade step ends at a D weapon');
         // A hunting leaf on a spot the bot marked ("was full") refuses while
         // the mark lives the bot's own steps, then holds again.
         const hunt = { activity: 'hunting', spotId: 'crowded' };

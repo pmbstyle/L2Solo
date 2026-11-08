@@ -339,6 +339,13 @@ function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = nul
     return null;
 }
 
+// Whether the best rival price moved from the one a line was priced against (seen)
+// past the price's accepted noise (sigma, log scale): the own look reprices only then,
+// and a new rival line raises line_undercut on a line only then (lineEvents).
+function rivalMoved(seen, now, sigma) {
+    return Math.abs(Math.log(now / seen)) >= sigma;
+}
+
 // The own_lines answer over the lines BoardLook.review looks at (its reasons).
 // Native writes retain revision + previousPricing fences; an unchanged price
 // returns no update.
@@ -381,10 +388,9 @@ function look(state, lines, ctx) {
         // evidence, but never turn every small quote move into another roll.
         const rival = ctx.board?.first(line.selfId, line.storeType, { excludeOwner: ctx.characterId,
             enchant: line.enchant || 0 });
-        const movement = rival?.price > 0 && line.pricing.rival > 0
-            ? Math.abs(Math.log(rival.price / line.pricing.rival))
-            : Math.abs(belief.mu - Math.log(line.pricing.price || line.price));
-        if (!forced && reason & 1 && movement < acceptedSigma && !(line.price > market.purchaseCap)) continue;
+        const moved = rival?.price > 0 && line.pricing.rival > 0 ? rivalMoved(line.pricing.rival, rival.price, acceptedSigma)
+            : Math.abs(belief.mu - Math.log(line.pricing.price || line.price)) >= acceptedSigma;
+        if (!forced && reason & 1 && !moved && !(line.price > market.purchaseCap)) continue;
         const rollKey = [line.storeType === BUY ? 'bid' : 'ask', ctx.characterId,
             line.lineId, line.selfId, counter.deals, line.fills || 0];
         let chosen;
@@ -432,4 +438,4 @@ function lookOwn(state, lines, ctx, options = {}) {
     return BoardLook.review(state, lines, ctx, options);
 }
 
-module.exports = { beliefFor, traderContext, priceForSale, serviceFee, lineState, bestAnswer, disposition, bid, look, lookOwn };
+module.exports = { beliefFor, traderContext, priceForSale, serviceFee, lineState, bestAnswer, disposition, bid, look, lookOwn, rivalMoved };

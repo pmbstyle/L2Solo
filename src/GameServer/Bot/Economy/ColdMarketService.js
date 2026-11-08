@@ -180,11 +180,16 @@ function buyOffer(state, offer, options = {}) {
             return { state: buyer, purchased: units > 0, units, spent, hot: done.hot,
                 offer, sellerState: null, economyCommand: trade.economyCommand };
         }).catch((error) => {
-            // Either side already has a meeting in preparation: the offer did
-            // not change. Like a pending meeting, no cooldown is set and the
-            // goal stays; the next review asks again. E314: a sale visit's shot restock ends the visit instead (finishTownErrands).
+            // A meeting in preparation already: one the buyer pays in waits (pending: its
+            // command's answer waits for the preparation's end, PopulationService.resolveColdState);
+            // any other (the seller's, or one the buyer only sells in) makes the line not for
+            // sale to this buyer now, as a store busy with another buyer: the visit goes on as
+            // on any line it could not buy (the next line, the NPC, or its end), no cooldown
+            // set. As pending, nothing would end that wait: the unchanged row stepped the
+            // bot again at once until it ended.
             if (error?.message === 'trade_meeting_preparation_busy') return { state: LifeState.cachedState(state.characterId) || state,
-                pending: true, purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
+                ...(invoke('GameServer/AfkTrade/TradeMeetingService').paysInPreparation(state.characterId) ? { pending: true } : {}),
+                purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
             return { state: LifeState.cachedState(state.characterId) || state, purchased: false, reason: 'offer_changed' };
         });

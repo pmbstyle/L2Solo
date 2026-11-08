@@ -2728,8 +2728,11 @@ const PopulationService = {
     },
 
     resolveColdState(state, workerRequest = null, options = {}) {
+        // A bot in a trade meeting preparation takes no step until it ends: its answer
+        // waits, and the worker holds the bot until the end republishes its row
+        // (TradeMeetingService.discard), else the unchanged row would step it again at once.
         if (invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) {
-            return Promise.resolve({ ok: true, pending: true, state });
+            return Promise.resolve({ ok: true, pending: true, waiting: true, state });
         }
         if (workerRequest?.precomputedPlan?.statsPacket) options = { ...options, statsPacket: workerRequest.precomputedPlan.statsPacket };
         // The worker's plan of the step: the projection reads its held leaf (arrived_town:own).
@@ -3104,6 +3107,16 @@ const PopulationService = {
             const board = await BotAfkMarketService.executePlan(updatedState, workerPlan.economyPlan,
                 { reviewGoal: false, beforeWrite });
             updatedState = board.state || updatedState;
+            // A deal of the plan staged a meeting preparation the bot pays in: the visit stops
+            // at the staging point with no write of its own (its write voids its consent, read at
+            // its revision). The round (applyResolve above) is written: its events are recorded
+            // once here, with that write; the rest of the visit runs on the step after the
+            // preparation ends (the answer waits for it), a new round with its own events.
+            if (TradeMeetingService.paysInPreparation(updatedState.characterId)) {
+                await LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events,
+                    ...CraftTelemetry.progressEvents(state, acquisitionPlan, updatedState)]);
+                return { ok: true, pending: true, waiting: true, state: updatedState, debug: result.debug };
+            }
         }
 
         Config.developerDiagnostics && Metrics.recordBackgroundResolve();
@@ -3289,7 +3302,7 @@ const PopulationService = {
         // Native errands can start a new trip after publishing the bids.
         // Finish this owner's resolve against that final route and money
         // packet, including recovery and preparation-pending branches.
-        if (outcome?.ok && outcome.state) {
+        if (outcome?.ok && outcome.state && !TradeMeetingService.paysInPreparation(state.characterId)) {
             const checked = await BotAfkMarketService.reviewPurchaseLimits(outcome.state);
             outcome.state = checked.state || outcome.state;
         }

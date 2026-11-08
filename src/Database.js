@@ -2818,20 +2818,40 @@ function prepareCraftReservationsUnsafe(step, recipe) {
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false, held = 0) {
     if (!step) return;
-    const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = InventorySummary.read(step.row.inventorySummary);
+    if (materialFreeUnsafe(characterId, step, selfId, sale, held) < used) throw Error('economy_material_protected');
+}
+
+// The units of an item a bot may part with (step.row: its life row): its unequipped
+// bag plus `held` less what its reserves keep (materialReserveUnsafe). The one reserve
+// rule of a spend or sale's check (above) and of its conditional sell ads' stock
+// (reconcileConditionalSellAds): an ad never offers what the accept would refuse.
+function materialFreeUnsafe(characterId, step, selfId, sale = false, held = 0) {
+    const reserve = materialReserveUnsafe(step, selfId, sale);
+    if (reserve === Infinity) return 0;
+    const available = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=? AND equipped=0',
+        [characterId, Number(selfId)]).amount) + held;
+    return Math.max(0, available - reserve);
+}
+// What a bot's reserves keep of an item, over all its enchant levels: its gear, craft,
+// clan and explicit reserves (a sale also keeps its production inputs); Infinity for an
+// item its summary protects. The life row's stats and bag are read once per step and
+// row (step.material), the production inputs once per sale step.
+function materialReserveUnsafe(step, selfId, sale = false) {
+    let read = step.material;
+    if (read?.row !== step.row) read = step.material = { row: step.row, inputs: null,
+        stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: InventorySummary.read(step.row.inventorySummary) };
+    const { stats, inventory } = read;
     // Bilateral market acceptance also rechecks the current gear/craft/clan
     // reserves inside its transaction, without a prepared economy command.
     step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats, inventory });
     const item = inventory[selfId] || {};
-    if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) throw Error('economy_material_protected');
+    if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return Infinity;
     const goalReserve = stats.equipmentPlan?.status === 'active' && Number(stats.equipmentPlan.target?.selfId) === Number(selfId) ? 1 : 0;
-    const reserve = Math.max(Number(stats.clanMaterialDemand?.[selfId] || 0), goalReserve,
+    if (sale) read.inputs ??= invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({ stats });
+    return Math.max(Number(stats.clanMaterialDemand?.[selfId] || 0), goalReserve,
         Number(step.reserved?.[selfId] || 0), Number(item.protectedAmount || 0), Number(item.starterMobLootAmount || 0), Number(item.reservedAmount || 0))
-        + (sale ? Number(invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({ stats })[selfId] || 0) : 0);
-    const available = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=? AND equipped=0',
-        [characterId, Number(selfId)]).amount) + held;
-    if (available - reserve < used) throw Error('economy_material_protected');
+        + (sale ? Number(read.inputs[selfId] || 0) : 0);
 }
 
 // An AFK fill changes the items of a far bot the cold worker may be stepping;
@@ -11941,11 +11961,22 @@ Object.assign(Database, {
         return withCharacterFlush(id, () => inTransaction(() => {
             const changed = [], meetings = TradeMeetings.active(id);
             const ads = all("SELECT * FROM afk_trade_shops WHERE ownerId=? AND kind='sell_ad' AND custodyPolicy=1 ORDER BY id", [id]);
+            // A bot's ad offers only what its sale may part with (materialFreeUnsafe's rule):
+            // an item's free units (its unworn bag at every enchant less its reserves, read
+            // once per item) are shared by its lines in record order, each also bounded by
+            // its own enchant's bag.
+            const life = ads.length ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null, step = life ? { row: life } : null;
+            const free = new Map();
+            const freeOf = selfId => {
+                if (!free.has(selfId)) free.set(selfId, materialFreeUnsafe(id, step, selfId, true));
+                return free.get(selfId);
+            };
             for (const ad of ads) {
                 let updated = false;
                 for (const line of all('SELECT * FROM afk_trade_lines WHERE shopId=?', [ad.id])) {
-                    const available = Number(one(`SELECT COALESCE(SUM(amount),0) amount FROM items
+                    const bag = Number(one(`SELECT COALESCE(SUM(amount),0) amount FROM items
                         WHERE characterId=? AND selfId=? AND enchant=? AND equipped=0`, [id, line.selfId, line.enchant]).amount);
+                    const available = step ? Math.min(bag, freeOf(line.selfId)) : bag;
                     // Goods already reserved for a meeting still back the ad
                     // until native completion consumes its advertised count.
                     const held = meetings.length ? Number(one(`SELECT COALESCE(SUM(heldCount),0) amount FROM board_trade_meeting_lines
@@ -11953,6 +11984,7 @@ Object.assign(Database, {
                         AND selfId=? AND enchant=? AND custodyType='trade'`,
                     [...meetings.map(row => row.id), ad.id, line.selfId, line.enchant]).amount) : 0;
                     const count = Math.min(Number(line.count), available + held);
+                    if (step) free.set(line.selfId, free.get(line.selfId) - Math.max(0, count - held));
                     if (count === Number(line.count)) continue;
                     write('UPDATE afk_trade_lines SET count=?,updatedAt=? WHERE id=?', [count, now(), line.id]);
                     updated = true;

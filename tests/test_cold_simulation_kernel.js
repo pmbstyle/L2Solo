@@ -474,6 +474,15 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(commandKernel.scheduleTokens.has(3), true,
         'a same-revision command ACK must restore the consumed due token');
     assert.strictEqual(commandKernel.snapshot().commanding, 0);
+    // A command answered that it waits on its bot's trade preparation: the bot takes no step
+    // (no poll) until the preparation's end sends its row again, which schedules it.
+    commandKernel.tick();
+    await commandKernel.resolveChain;
+    assert.strictEqual(commandKernel.commanding.has(3), true, 'the overdue shopping bot runs its next command');
+    commandAck(commandKernel, { characterId: 3, waiting: true, state: { ...commandState } });
+    assert.strictEqual(commandKernel.scheduleTokens.has(3), false, 'a waiting answer leaves the bot unscheduled');
+    commandKernel.upsert({ state: { ...commandState } });
+    assert.strictEqual(commandKernel.scheduleTokens.has(3), true, 'the row the preparation\'s end sends schedules it');
 
     const commandPressureMessages = [];
     const commandPressureKernel = recordingKernel({ resolveSolo: resolver, now: () => now,

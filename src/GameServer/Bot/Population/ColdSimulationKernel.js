@@ -536,6 +536,8 @@ class RetainedStateMap extends Map {
         this.now = now;
         // cardChanged(record): told when a record's held card is new, replaced or dropped (worker).
         this.cardChanged = null;
+        // cardRides(id, card): the card's commit is in flight (the kernel's cardInFlight).
+        this.cardRides = null;
         this.#skillDtos = require('worker_threads').isMainThread ? null
             : new (require('./SkillDtoInterner').SkillDtoInterner)();
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
@@ -583,8 +585,10 @@ class RetainedStateMap extends Map {
         const previousAdvice = current?.wishAdvisory;
         const incomingAdvice = !current && this.#skillDtos ? ColdEconomyDecision.restoreAdvisory(record.state, this.now()) : null;
         const wishAdvisory = ColdEconomyDecision.advisoryPublicationHolds(record.state, incomingAdvice, previousAdvice)
-            ? incomingAdvice : ColdEconomyDecision.advisoryPublicationHolds(record.state, previousAdvice) ? previousAdvice : null;
+            ? incomingAdvice : ColdEconomyDecision.advisoryPublicationHolds(record.state, previousAdvice, null,
+                this.cardRides?.(id, previousAdvice) === true) ? previousAdvice : null;
         if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) record.wishAdvisory = wishAdvisory;
+        if (previousAdvice && !wishAdvisory) ColdEconomyDecision.noteDropped(record.state, previousAdvice);
         // The board wants follow the held card (the worker's cardChanged): a first row
         // registers the card it restored, a card dropped or replaced here its own.
         if (this.#skillDtos && record && (!current || (record.wishAdvisory?.eventProof || null) !== (previousAdvice?.eventProof || null))) {
@@ -687,6 +691,7 @@ class ColdSimulationKernel {
         // or the coldCombat packet requires a shared-state task, not another
         // detached copy or an unmeasured fixed-memory subtraction.
         this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()), options.shotIndex, this.now);
+        this.states.cardRides = (id, advice) => this.cardInFlight(id, advice);
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         // Worker tables the steps read (partyPut): party rows by party id,
@@ -839,6 +844,23 @@ class ColdSimulationKernel {
         return previous;
     }
 
+    // The commit a card built or served now rides: the bot's lifecycle or review command
+    // in progress (its id), else its step's proposal; null with neither.
+    commitOf(characterId) {
+        const command = this.commandStartedAt.get(Number(characterId));
+        return command && command.kind !== 'meeting' ? command.commandId : this.proposalIdOf(characterId);
+    }
+
+    // A card whose decision main has not written yet is still the answer to the row while
+    // the commit it rides (record.cardCommit, tied when the worker remembered it) is in
+    // flight, or its command answered that it waits (a trade preparation): main's rows
+    // sent meanwhile are one decisionSeq behind it. A commit refused, dropped or answered
+    // without its decision leaves the card unanswered: the row refuses it (a build).
+    cardInFlight(characterId, advice) {
+        const ride = advice ? this.states.get(Number(characterId))?.cardCommit : null;
+        return !!ride && ride.card === advice && (ride.waiting === true || ride.id !== null && ride.id === this.commitOf(characterId));
+    }
+
     // The party row this bot is a member of, or null.
     // The proposal id of the step a bot has in flight (its commit ack names it), null
     // with none: the spot contest keys an arrival's outcome on it (the worker's outbox).
@@ -981,12 +1003,13 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         // The bot's one record: { state, version, route, spotFit, materialMemo,
-        // economyPending, economyPlanHash, wishAdvisory, raiseSeq, nearRoute }.
+        // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the kept route (BotRoute.trip) until its
         // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
         // each keyed on what it reads), the material memo (partyRequestForPlan), the economy
-        // plan sent and its hash, the card it holds, the facts of its last
+        // plan sent and its hash, the card it holds and the commit that card
+        // rides (cardInFlight), the facts of its last
         // committed action ask (onCommitAck) and, for a near bot, the
         // last raise applied and the route rows of its last decision
         // (ColdSimulationWorker nearEvents, publish).
@@ -2672,6 +2695,11 @@ class ColdSimulationKernel {
             || attempt.commandId !== identity.commandId
             || !Protocol.sameCommandCheckpoint(attempt.checkpoint, identity.checkpoint)) return false;
         this.cancelCommand(id, attempt);
+        // A command answered that it waits on its bot's trade preparation (main holds its
+        // step until the end): the card it carried stays the answer until the end, which
+        // republishes the bot's row (Coordinator.preparationEnded) and schedules it.
+        const waiting = payload.ok && payload.waiting === true, ride = current.cardCommit;
+        if (ride?.id === attempt.commandId) current.cardCommit = waiting ? { ...ride, waiting: true } : null;
         // A refused review did not run its plan; main asks for a refresh.
         if (attempt.kind === 'review' && payload.ok === false && attempt.economyPlan) this.forgetSentPlan(id);
         // A command that threw on main (payload.fault, its stack) is held off as
@@ -2699,11 +2727,20 @@ class ColdSimulationKernel {
                 ownOutput: attempt.kind === 'review' && attempt.economyPlan && payload.ok !== false ? 'review' : null });
             // Rejected commands often return the unchanged overdue state. Do
             // not let that timestamp immediately re-enter the head of the queue.
-            if ((payload.ok === false || Number(payload.retryAfterMs) > 0) && this.scheduleTokens.has(id)) {
+            if (waiting) this.unschedule(id);
+            else if ((payload.ok === false || Number(payload.retryAfterMs) > 0) && this.scheduleTokens.has(id)) {
                 this.requeue(id, Math.max(this.scheduleTokens.get(id).dueAt, retryAt));
             }
-        } else this.requeue(id, retryAt);
+        } else if (!waiting) this.requeue(id, retryAt);
         return true;
+    }
+
+    // A bot held off the heap until a row of main's schedules it again (upsert:
+    // ensureScheduled); its record and version stay.
+    unschedule(characterId) {
+        const id = Number(characterId);
+        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
+        this.scheduleTokens.delete(id);
     }
 
     // A step or command of this bot (key: its id) or a party run (`party:<id>`)
