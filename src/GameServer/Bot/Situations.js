@@ -154,6 +154,10 @@ const SITUATIONS = Object.freeze({
     // sits down or reaches town.
     line_undercut: link(STOP),
     'goal_done:line': link(STOP),
+    // Its last look at its own lines could not be applied where main writes them (the row
+    // moved during the write, the body left): the look is lost, so it looks again at its
+    // next stop, as a seller whose reprice did not go through looks at his store again.
+    'goal_failed:line': link(STOP),
     // Its last hunting buff ended (BotBuffs.rebuffable: a guide's, a hall's or a buffer's;
     // a far bot's buffed fact fell, or it is first read unbuffed on a solo field step,
     // buffFact; a body's last such effect expired, EffectTicker): heard at its next stop,
@@ -201,8 +205,8 @@ const SITUATIONS = Object.freeze({
 // hears it (heardBy); one not yet a service crafter takes it as none. It has no held
 // key: only its raises wake it.
 // own_lines: the prices of its own board lines (MarketPricing.look over every own
-// priced line), taken at a town arrival (it sees the stores), a line undercut and a
-// line filled; held between: prices, deals and the clock wake it not. No held key.
+// priced line), taken at a town arrival (it sees the stores), a line undercut, a
+// line filled and its last look lost where main writes it; held between: prices, deals and the clock wake it not. No held key.
 // rebuff: how the bot renews its hunting buffs now (Bot/AI/Rebuff: none, the Newbie
 // Guide, its clan hall, a buffer), taken when its last buff ended and at a town
 // arrival; held between (stats.rebuff, carried out once). No held key: none held reads none.
@@ -222,7 +226,7 @@ const DECISIONS = Object.freeze({
         'clan_changed', 'spot_empty', 'player_command', 'spot_unreachable', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
-    own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
+    own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line', 'goal_failed:line']),
     rebuff: Object.freeze(['buffs_expired', 'arrived_town', 'arrived_town:own']),
     party_stay: Object.freeze(['died', 'bag_full', 'goal_affordable:focus', 'grade_changed', 'party_outleveled', 'party_need_ended'])
 });

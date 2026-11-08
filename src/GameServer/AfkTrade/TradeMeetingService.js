@@ -576,7 +576,10 @@ async function purchaseNeedChanged(ownerId, errand) {
             if (saved && errand.purpose === 'clan') await invoke('GameServer/Clan/ClanPurchaseCredit')
                 .returnUnspent(ownerId, errand, 0);
         });
-    } catch (error) { utils.infoWarn('AfkTrade', 'refused purchase of %d refresh: %s', ownerId, error.message); }
+    } catch (error) {
+        if (FailureLog.refusal(error)) utils.infoWarn('AfkTrade', 'refused purchase of %d refresh: %s', ownerId, error.message);
+        else FailureLog.note('trade_meeting.need_changed', error);
+    }
     events().raiseOn(ownerId, 'goal_failed', { impossible: true });
 }
 

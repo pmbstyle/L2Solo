@@ -1626,9 +1626,10 @@ class ColdSimulationCoordinator {
 
     // An own_lines look main could not apply (its row moved during the write, the body
     // left): the decision's bit was cleared where it was taken, so the look is asked
-    // again where the bot is (line_undercut), else its reprice is lost.
+    // again where the bot is (goal_failed:line, the executor's outcome: no rival moved),
+    // else its reprice is lost.
     relookOwnLines(id, market) {
-        if (market) DecisionEvents.raiseOn(id, 'line_undercut');
+        if (market) DecisionEvents.raiseOn(id, 'goal_failed:line');
     }
 
     // A post-commit step that throws is skipped; the commit stays (it is durable). A refusal its owner

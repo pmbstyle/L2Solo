@@ -1704,13 +1704,14 @@ function shotDemand(economy, state, timestamp, previous = null) {
 // decided under spot occupancy, never a second earning-spot read. A bot no
 // build has rated yet (no row) buys no kit and keeps its bag as it is,
 // counted kit:unrated (no fallback to the basics).
-// kit:unrated counts each unrated bot once (not each read): how many bots read a kit before their first build.
+// kit:unrated counts each unrated bot once (not each read): how many bots read a kit before
+// their first build. Always counted (health line); the set holds at most one id a bot, cleared by forget.
 const unratedBots = new Set();
 function ratesOf(state, quiet) {
     const rates = Packet.ratesOf(state.stats?.kitRates, IncomeRoute.spotUseOf(state));
-    if (!rates && !quiet && Diagnostics.active() && !unratedBots.has(state.characterId)) {
+    if (!rates && !quiet && !unratedBots.has(state.characterId)) {
         unratedBots.add(state.characterId);
-        Diagnostics.count('kit', 'unrated', isMainThread ? 'main' : 'worker');
+        Situations.note(`kit:unrated@${isMainThread ? 'main' : 'worker'}`);
     }
     return rates;
 }
