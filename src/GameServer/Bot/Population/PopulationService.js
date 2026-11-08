@@ -1744,6 +1744,13 @@ const PopulationService = {
         return state.activity !== 'merchant';
     },
 
+    // Did the last near-player scan refuse this row by its own state (no placement a
+    // player would see: HotActivation byState)? Such a row will not turn hot as it
+    // stands, so the near hold lets it step and move; the next scan tries it again.
+    nearActivationRefused(characterId) {
+        return this.nearRefused?.has(Number(characterId)) === true;
+    },
+
     activateNearPlayers() {
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
@@ -1751,6 +1758,8 @@ const PopulationService = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         const ambientActivated = [];
+        // The rows this scan refused by their own state: the near hold's answer.
+        const refused = new Set();
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
@@ -1791,16 +1800,14 @@ const PopulationService = {
                         // here. The old fixed local target made a player see
                         // only a fixed handful of bots even when hundreds of
                         // eligible cold states occupied the same area. Keep a
-                        // bounded per-pass activation budget so the population
-                        // converges gradually and player pressure can still
-                        // interrupt the work between scans.
-                        const ambientRemaining = Math.max(
-                            0,
-                            Config.maxActivationsPerScan - ambientActivated.length
-                        );
+                        // bounded per-pass activation budget (counted in bots
+                        // activated, below) so the population converges gradually
+                        // and player pressure can still interrupt the work between
+                        // scans. The floor and a refused placement are judged
+                        // before the budget: a row on another floor or one that
+                        // cannot be placed takes no place from the next nearest.
                         const ambient = standalone.filter(state => state.activity !== 'crafting');
-                        const candidates = [...parties, ...crafters, ...ambient]
-                            .slice(0, parties.length + crafters.length + ambientRemaining);
+                        const candidates = [...parties, ...crafters, ...ambient];
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
                             playerLoc: loc,
                             reason: 'near_player'
@@ -1824,6 +1831,7 @@ const PopulationService = {
                                     return result;
                                 });
                             }).then((result) => {
+                                if (result.byState) refused.add(Number(state.characterId));
                                 if (result.ok) {
                                     activated.push(result);
                                     if (state.activity !== 'crafting' || !state.stats?.craftShop) {
@@ -1837,7 +1845,10 @@ const PopulationService = {
             });
         });
 
-        return chain.then(() => activated);
+        return chain.then(() => {
+            this.nearRefused = refused;
+            return activated;
+        });
     },
 
     // Walkers near a player appear within the same activation budget

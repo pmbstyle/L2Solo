@@ -64,6 +64,14 @@ function playerAt(locX, locY, locZ) {
         assert.notStrictEqual(await coordinator.prepareProposal(proposal), null, `${label} near a player steps on`);
         assert.strictEqual(proposal.prepareRefusal, undefined, `${label} is not held`);
     }
+    // A row the scan refused by its own state (it cannot be placed) will not turn hot
+    // as it stands: it steps on, and a held one goes back to the worker.
+    await LifeState.upsertState(visible, 'visibility_fixture');
+    coordinator.population.nearActivationRefused = id => Number(id) === visible.characterId;
+    const refusedProposal = { characterId: visible.characterId, nextState: { ...visible, activity: 'hunting' }, revision: 1 };
+    assert.notStrictEqual(await coordinator.prepareProposal(refusedProposal), null, 'a row the scan cannot place steps on');
+    assert.strictEqual(refusedProposal.prepareRefusal, undefined, 'a row the scan cannot place is not held');
+    delete coordinator.population.nearActivationRefused;
     // Held until the player leaves: the scan's pass sends the row back to the worker, once.
     await LifeState.upsertState(visible, 'visibility_fixture');
     const marked = [];

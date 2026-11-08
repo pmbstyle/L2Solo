@@ -207,6 +207,24 @@ async function run() {
     assert.strictEqual(activated[0], 'Group0',
         'a visible party must be activated before standalone cold simulation can consume the scan budget');
 
+    // A row the scan cannot place (its own state refuses it) takes no place in the
+    // scan's budget: the next nearest rows are tried and shown, and the refused row
+    // is no longer one the scan will turn hot (the near hold lets it step).
+    Parties.find = originalFindParty;
+    Config.maxActivationsPerScan = 2;
+    LifeState.coldNear = async () => [301, 302, 303, 304, 305].map(id => ({ characterId: id, name: `Row${id}`, level: 45, activity: 'hunting' }));
+    activated.length = 0;
+    PopulationService.requestActivation = async state => {
+        if (state.characterId <= 302) return { ok: false, reason: 'no_safe_activation_placement', state, byState: true };
+        activated.push(state.name);
+        return { ok: true, state };
+    };
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['Row303', 'Row304'],
+        'rows that cannot be placed do not use up the scan: the next nearest are shown, within the budget');
+    assert.strictEqual(PopulationService.nearActivationRefused(301), true, 'the scan refused the row it cannot place');
+    assert.strictEqual(PopulationService.nearActivationRefused(305), false, 'a row left for budget is still to be shown');
+
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
     PopulationService.resolving = false;

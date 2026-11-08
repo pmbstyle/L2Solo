@@ -9,10 +9,11 @@ const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
 // An activation the bot's own state refuses (in transit, no placement a player
-// would see): counted by reason (PopulationMetrics), never logged.
+// would see): counted by reason (PopulationMetrics), never logged. byState: the
+// row as it stands will not turn hot (the near hold lets it step, PopulationService).
 function refused(reason, state) {
     Metrics.recordActivationRefusal(reason);
-    return { ok: false, reason, state };
+    return { ok: false, reason, state, byState: true };
 }
 
 function activationPlan(state, options = {}) {
@@ -287,7 +288,7 @@ const HotActivation = {
                     // (refused); any other failure is logged.
                     if (error.activationRefusal) Metrics.recordActivationRefusal(error.activationRefusal);
                     else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
-                    return { ok: false, reason: failureReason, state };
+                    return { ok: false, reason: failureReason, state, ...(error.activationRefusal ? { byState: true } : {}) };
                 });
             });
         });

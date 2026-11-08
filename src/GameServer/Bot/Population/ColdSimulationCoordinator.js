@@ -1477,8 +1477,7 @@ class ColdSimulationCoordinator {
     releaseNearHolds() {
         for (const id of this.nearHolds) {
             const state = LifeState.cachedState(id);
-            if (state?.phase === 'cold' && !this.fencedBots.has(id) && this.population?.activationCandidate?.(state) === true
-                && this.visibleToRealPlayer(state, CLIENT_VISIBILITY_RADIUS)) continue;
+            if (state?.phase === 'cold' && !this.fencedBots.has(id) && this.heldNear(state)) continue;
             this.nearHolds.delete(id);
             if (state?.phase !== 'cold' || this.fencedBots.has(id)) continue;
             this.refusals.nearReleased += 1;
@@ -1534,6 +1533,15 @@ class ColdSimulationCoordinator {
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    // Will the near-player scan turn this cold row hot? Its candidate rule, a player
+    // that sees it, and no refusal by its own state at the scan's last try (a row that
+    // cannot be placed steps on and moves). The near hold's one answer.
+    heldNear(state) {
+        return this.population?.activationCandidate?.(state) === true
+            && this.population.nearActivationRefused?.(state.characterId) !== true
+            && this.visibleToRealPlayer(state, CLIENT_VISIBILITY_RADIUS);
     }
 
     // radius: the activation's (the safety repair keeps clear of a bot it may
@@ -1628,8 +1636,7 @@ class ColdSimulationCoordinator {
         // step waits for that, held off the worker's heap (prepareRefusal
         // near_player) until the activation fences it or the player leaves
         // (releaseNearHolds republishes the row). A row the scan skips steps on.
-        if (this.population?.activationCandidate?.(state) === true
-            && this.visibleToRealPlayer(state, CLIENT_VISIBILITY_RADIUS)) {
+        if (this.heldNear(state)) {
             proposal.prepareRefusal = 'near_player';
             const id = Number(proposal.characterId);
             if (!this.nearHolds.has(id)) {
@@ -2455,6 +2462,8 @@ class ColdSimulationCoordinator {
         if (!this.worker || !this.ready) return 'worker_not_ready';
         if (this.commandInflight.has(characterId)) return 'command_inflight';
         if (this.fencedBots.has(characterId)) return 'hot_handoff_fenced';
+        // Held unscheduled for the near-player scan's activation (heldNear).
+        if (this.nearHolds.has(characterId)) return 'near_held';
         const beat = this.lastWorkerSnapshot || {};
         const occupied = Number(beat.inFlight || 0) + Number(beat.commanding || 0);
         const max = Number(this.workerMaxInFlight || 0);
