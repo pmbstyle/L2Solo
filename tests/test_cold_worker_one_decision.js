@@ -252,6 +252,63 @@ module.exports.rebuffProbe = async (id) => {
             woken: [Situations.woken(main, 'rebuff'), Situations.woken(main, 'build')] };
     } finally { kernel.states.set(id, saved); }
 };
+// A situation raised where the bot stands wakes the decisions that declare it, and its next
+// decision point takes them: a far bot's step (raised at its place in the field), a near body's
+// post (its bag heard where the body stands; one heard at a stop waits for its rest's end).
+// Each case: the decisions it woke, those the decision point took (counted as taken, none
+// unwoken), those still woken after, and the earning answer.
+module.exports.cellsProbe = async (id) => {
+    const saved = kernel.states.get(id), service = CraftEligibility.isServiceCrafter;
+    CraftEligibility.isServiceCrafter = () => true;
+    const names = Object.keys(Situations.BITS), wokenOf = stats => names.filter(d => Situations.woken(stats, d));
+    const taken = d => Situations.counts().decided[d]?.[0] || 0;
+    const unwoken = ds => Object.entries(Situations.counts().unwoken).filter(([key]) => ds.includes(key.split(':')[0]))
+        .reduce((sum, [, n]) => sum + n, 0);
+    const marked = String(saved.state.stats?.earning?.spotId ?? planningSpots[0].id);
+    const commanded = String(planningSpots.find(spot => String(spot.id) !== marked).id);
+    let at = Date.now() + 20000;
+    const out = [];
+    try {
+        // An Artisan (a class line that crafts hears its workshop), its workshop held.
+        const start = saved.state;
+        kernel.states.set(id, { ...saved, wishAdvisory: null, state: { ...start, phase: 'cold', activity: 'hunting',
+            stats: { ...start.stats, classId: 56, woken: (Number(start.stats.woken) || 0) & ~Situations.BITS.workshop } } });
+        for (const [name, payload] of [['spot_unreachable', { spotId: marked, reason: 'route_unavailable' }],
+            ['goal_affordable:potions'], ['karma_changed'], ['source_stalled'], ['player_command', { spotId: commanded, at }]]) {
+            const base = kernel.states.get(id).state, state = { ...base, stats: { ...base.stats } };
+            const before = wokenOf(state.stats);
+            Situations.raise(state.stats, name, payload ?? null, Situations.place(state), id);
+            const woke = wokenOf(state.stats).filter(d => !before.includes(d)), counts = woke.map(taken), u = unwoken(woke);
+            kernel.states.set(id, { ...kernel.states.get(id), wishAdvisory: null, state });
+            const plan = await kernel.planLifecycle({ state, timestamp: at += 1000 });
+            const next = { ...(plan.plannedState || state), stats: { ...(plan.plannedState || state).stats, ...plan.statsPacket } };
+            next.activity = 'hunting'; next.phase = 'cold';
+            kernel.states.set(id, { ...kernel.states.get(id), wishAdvisory: null, state: next });
+            out.push({ place: 'far', name, woke, taken: woke.filter((d, i) => taken(d) > counts[i]), left: woke.filter(d => Situations.woken(next.stats, d)),
+                unwoken: unwoken(woke) - u, earning: next.stats.earning?.spotId ?? null });
+        }
+        let seq = 0;
+        for (const [name, payload, stop] of [['party_left'], ['goal_affordable:potions'], ['karma_changed'], ['recipe_learned', null, 'rest'],
+            ['source_stalled'], ['clan_call', null, 'rest'], ['clan_changed', null, 'rest'], ['player_command', { spotId: commanded, at }]]) {
+            const entry = kernel.states.get(id), base = entry.state;
+            seq = Math.max(seq, Number(entry.raiseSeq) || 0) + 1;
+            const row = { ...base, phase: 'hot', activity: 'hunting', nearSeq: Number(base.nearSeq || 0) + 1,
+                updatedAt: Number(base.updatedAt || 0) + 1, stats: { ...base.stats },
+                raise: { seq, names: [{ name, payload: payload ?? null, seq }], impossible: false, ...(stop ? { stop } : {}) } };
+            const before = wokenOf(base.stats);
+            kernel.states.set(id, { ...entry, state: row });
+            // Its bag was heard as the post landed; its decisions are taken on the planner's turn.
+            const woke = wokenOf(row.stats).filter(d => !before.includes(d)), counts = woke.map(taken), u = unwoken(woke);
+            // The body's answer: published on the record once its decisions are taken.
+            for (const deadline = Date.now() + 30000; Date.now() < deadline
+                && (kernel.states.get(id).state !== row || woke.some(d => Situations.woken(row.stats, d)));)
+                await new Promise(resolve => setTimeout(resolve, 10));
+            out.push({ place: 'near', name, woke, taken: woke.filter((d, i) => taken(d) > counts[i]),
+                left: woke.filter(d => Situations.woken(row.stats, d)), unwoken: unwoken(woke) - u, earning: row.stats.earning?.spotId ?? null });
+        }
+        return { cells: out, marked, commanded };
+    } finally { CraftEligibility.isServiceCrafter = service; kernel.states.set(id, saved); }
+};
 module.exports.occupationProbe = async (id) => {
     const saved = kernel.states.get(id), state = saved.state;
     kernel.states.set(id, { ...saved, wishAdvisory: null, route: null,
@@ -273,7 +330,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -397,6 +454,29 @@ parentPort.on('message', message => {
         assert.equal(occupation.execution, occupation.root, 'the selected purchase reaches native execution');
         assert.equal(occupation.resumedExecution, occupation.root, 'resuming a held decision still supplies its physical execution');
         assert.equal(occupation.route, null, 'the purchase cannot be replaced with an unrelated field trip');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'cells'), cellsProbe: id });
+        const cellsResponse = await wait(message => message.probeId === 'cells');
+        if (cellsResponse.error) throw Error(cellsResponse.error);
+        const { cells, marked, commanded } = cellsResponse.value;
+        console.log(JSON.stringify(cells));
+        // The decisions each situation wakes (Situations.DECISIONS), far and near alike.
+        const wakes = { spot_unreachable: ['earning_spot', 'build'], 'goal_affordable:potions': ['earning_spot', 'build'],
+            karma_changed: ['earning_spot'], source_stalled: ['build', 'gear_plan'], player_command: ['build'], party_left: ['earning_spot', 'build'],
+            recipe_learned: ['build', 'workshop'], clan_call: ['build'], clan_changed: ['build', 'gear_plan'] };
+        assert.deepEqual(cells.map(cell => `${cell.place} ${cell.name}`), ['far spot_unreachable', 'far goal_affordable:potions', 'far karma_changed',
+            'far source_stalled', 'far player_command', 'near party_left', 'near goal_affordable:potions', 'near karma_changed', 'near recipe_learned',
+            'near source_stalled', 'near clan_call', 'near clan_changed', 'near player_command']);
+        for (const cell of cells) {
+            const what = `${cell.place} ${cell.name}`;
+            assert(wakes[cell.name].every(decision => cell.woke.includes(decision)), `${what} wakes ${wakes[cell.name]} (woke ${cell.woke})`);
+            assert.deepEqual(cell.taken, cell.woke, `${what}: its decision point takes every decision it woke`);
+            assert.deepEqual(cell.left, [], `${what}: none is left woken`);
+            assert.equal(cell.unwoken, 0, `${what}: none taken unwoken`);
+        }
+        for (const cell of cells.filter(cell => cell.name === 'spot_unreachable'))
+            assert.notEqual(cell.earning, marked, `${cell.place}: the spot it could not reach is passed by`);
+        for (const cell of cells.filter(cell => cell.name === 'player_command'))
+            assert.equal(cell.earning, commanded, `${cell.place}: the commanded spot is the held answer the build hunts`);
         console.log('One economy decision per far solo step passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

@@ -159,8 +159,10 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     assert.strictEqual(replanned.party.stats.acquisitionGoal?.target?.selfId, 9301);
     assert(Situations.partyWoken(replanned.party), 'a new objective is a new question for the party\'s spot: its next step decides');
     // Its next step: the member whose need ended (its plan and fact written by main, its stay
-    // woken) leaves, the party goes on.
-    const needEnded = { partyNeedEnded: 'stay', equipmentPlan: solo, woken: Situations.BITS.party_stay };
+    // woken by party_need_ended where it stands) leaves, the party goes on.
+    const ended = { ...member(3).stats, partyNeedEnded: 'stay', equipmentPlan: solo };
+    const needEnded = Situations.raise(ended, 'party_need_ended', null, Situations.place(member(3)), 3);
+    assert(Situations.woken(needEnded, 'party_stay'), 'party_need_ended wakes the member\'s stay');
     const done = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
         member(3, { stats: needEnded })], { stats: replanned.party.stats });
     assert.deepStrictEqual(done.party.memberIds, [1, 2]);
