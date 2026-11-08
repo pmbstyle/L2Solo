@@ -130,7 +130,7 @@ const mixedPick = Cold.npcForSpot(mixed, () => 0.99, { soloSafety: true, pull: t
 assert.deepStrictEqual([mixedPick.pull, mixedPick.usualPull], [2, 2], 'a trio roll becomes a pair');
 assert.deepStrictEqual(Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0], { soloSafety: true }),
     { efficiency: Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0], { soloSafety: true }).efficiency,
-        canHunt: true, share: 0.7, allowed: [[2, 0.7]] });
+        canHunt: true, share: 0.7, allowed: [[2, 0.7]], whole: false });
 assert.strictEqual(Cold.npcForSpot(mixed, () => 0.99, { pull: true }).pull, 3, 'without safety the whole mix is rolled');
 // User 10-29: a round counts only the spawns the bot may fight. One lone gremlin group
 // (production 6 a hour) beside 45 trio spawns it cannot survive feeds one kill in ten

@@ -1145,10 +1145,7 @@ function killDraw(entries, encounterEntries, options = {}) {
     const preferred = preferredNpcId > 0
         ? entries.find((entry) => number(entry.selfId) === preferredNpcId) || null
         : null;
-    const interrupters = preferred
-        ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
-            && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
-        : [];
+    const interrupters = preferred ? interruptersOf(encounterEntries, preferredNpcId) : [];
     const interruption = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
     return { preferred, interrupters, interruption, pool: interrupters.length ? interrupters : entries };
 }
@@ -1178,9 +1175,18 @@ function killChances(draw) {
     return draw.preferred ? [{ entry: draw.preferred, chance: preferredChance }, ...chances] : chances;
 }
 
-function npcForSpot(spot = {}, rng = Math.random, options = {}) {
+// The monsters that may engage a targeted kill of preferredNpcId first (killDraw's
+// interruption): the encounter's aggressive others. A targeted source's ground is
+// admitted only when its hunter survives each of them (GearAcquisitionPlanner.sourceRouteReader).
+function interruptersOf(encounterEntries, preferredNpcId) {
+    return encounterEntries.filter((entry) => number(entry.selfId) !== number(preferredNpcId)
+        && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true);
+}
+// A spot's huntable monsters, the encounter a kill draws from: its raid boss only
+// on an explicit raid (options.allowRaid).
+function encounterOf(spot = {}, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
-    let entries = rawEntries.filter((entry) => {
+    return rawEntries.filter((entry) => {
         const npc = ItemTemplateIndex.find(DataCache.npcs, entry.selfId);
         const explicitRaid = options.allowRaid === true && spot.raidBoss === true
             && BotRaidSafety.isRaidBoss(npc)
@@ -1188,6 +1194,10 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
         return npc && (explicitRaid
             || !BotRaidSafety.isProtectedRaidEntity(npc) && BotHuntingTargetPolicy.canHunt(npc));
     });
+}
+
+function npcForSpot(spot = {}, rng = Math.random, options = {}) {
+    let entries = encounterOf(spot, options);
     if (entries.length === 0) return null;
     const encounterEntries = entries;
     const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
@@ -1576,7 +1586,7 @@ module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, profileFor, buildCount, buildMs, withBuildSite,
     fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitEvents, gearOf, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
-    spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
+    spotSpawns, npcForSpot, killDraw, killChances, encounterOf, interruptersOf, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,
     // The cold fight's views, hit roll, action times, shots and opening (BackgroundResolver, the solo gate).
     hitSources, attackerView, defenderView, forgetViews, hitSucceeds, expectedHitChance, actionDelayMs, summonAttackMs,
