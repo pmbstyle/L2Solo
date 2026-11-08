@@ -2126,7 +2126,7 @@ class ColdSimulationKernel {
             // Collection quotas and their physical receipts share the same
             // commit, including completion with no funded helper contract.
             const atomicParty = raid || paidHelp || materialHunt || resolvedParty.status === 'dissolved';
-            const memoryGroup = atomicParty || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+            let memoryGroup = atomicParty || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${stepProposalId(run.party.leaderId, run.startedAt)}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
             if (atomicParty) resolvedParty.updatedAt = Math.max(resolveStartedAt, Number(run.party.updatedAt) + 1);
@@ -2160,7 +2160,7 @@ class ColdSimulationKernel {
                 EconomyDiagnostics.count('party_replan', 'opened', reason);
             };
             if (run.requirementRefresh) openRequirements('event');
-            const memberPlans = [];
+            const Refresh = require('./PartyRequirementRefresh'), planned = new Map();
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -2185,14 +2185,23 @@ class ColdSimulationKernel {
                         economy: projection?.build });
                     lastRequirementPlanMs = performance.now() - planningStarted;
                     requirementMs += lastRequirementPlanMs;
-                    // Compared with the plan the re-plan started from (the projection's): a plan
-                    // the projection changed rides its own proposal.
+                    // Compared with the plan the re-plan started from (the projection's). A changed
+                    // plan rides the member's own commit, its one writer. A plan needing no party
+                    // where the held one needed it ends the member's need of this party: the fact
+                    // (partyNeedEnded: the party's id) and party_need_ended, which wakes its stay,
+                    // ride the same commit.
                     const plan = selection?.acquisitionPlan, held = projectedState.stats?.equipmentPlan;
-                    if (require('./PartyRequirementRefresh').acquisitionRequirementKey(held)
-                        !== require('./PartyRequirementRefresh').acquisitionRequirementKey(plan)) {
-                        memberPlans.push({ characterId: id, plan });
+                    if (Refresh.acquisitionRequirementKey(held) !== Refresh.acquisitionRequirementKey(plan)) {
+                        planned.set(id, plan);
+                        const stats = { ...projectedState.stats, equipmentPlan: plan };
+                        const Stay = require('./PartyStay');
+                        if (Stay.needsParty(held) && !Stay.needsParty(plan)) {
+                            stats.partyNeedEnded = run.party.partyId;
+                            (Situations ||= require('../Situations')).raise(stats, 'party_need_ended', null, Situations.place(projectedState), id);
+                        }
+                        projectedState = { ...projectedState, stats };
                         if (selection.replanContext?.failure) result.events = [...(result.events || []),
-                            require('./PartyRequirementRefresh').acquisitionFallbackEvent(projectedState, held, selection.replanContext.failure, plan)];
+                            Refresh.acquisitionFallbackEvent(projectedState, held, selection.replanContext.failure, plan)];
                     }
                     requirementProgress.add(id);
                 }
@@ -2226,24 +2235,29 @@ class ColdSimulationKernel {
                 };
                 proposals.push(proposal);
             }
-            // The re-plan ends when every member is planned (the leader's commit carries its
-            // plans) or the party ends. Done, the party's objective follows its members' plans,
-            // on the party row the leader's commit carries (main writes the plans, takes no
-            // decision of its own).
+            // The re-plan ends when every member is planned or the party ends. Done, the party's
+            // objective follows its members' plans, on the party row the leader's commit carries.
             const leader = proposals.find(proposal => proposal.characterId === Number(run.party.leaderId));
             const replanning = !!requirementProgress && !meetingPending && !materialHunt;
             const replanned = replanning && !!leader && run.members.every(member => requirementProgress.has(Number(member.characterId)));
             if (replanned || replanning && resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
-            const planned = new Map(memberPlans.map(entry => [Number(entry.characterId), entry.plan]));
             const party = replanned && resolvedParty.status !== 'dissolved' ? { ...resolvedParty, stats: { ...resolvedParty.stats,
-                ...require('./PartyRequirementRefresh').partyObjective(run.members.map(member => planned.has(Number(member.characterId))
+                ...Refresh.partyObjective(run.members.map(member => planned.has(Number(member.characterId))
                     ? { ...member, stats: { ...member.stats, equipmentPlan: planned.get(Number(member.characterId)) } } : member)) } }
                 : resolvedParty;
+            // The objective follows the plans this step changed: they commit together, so a
+            // refused member plan also refuses the re-plan's end (requirementRefreshedAt) and
+            // main's due mark stays for the next step to re-plan from the stored rows.
+            if (replanned && planned.size && !memoryGroup) {
+                memoryGroup = { id: `hunt:${stepProposalId(run.party.leaderId, run.startedAt)}`,
+                    memberIds: proposals.map(proposal => proposal.characterId) };
+                for (const proposal of proposals) Object.assign(proposal, { priority: 'P1', atomicGroup: memoryGroup });
+            }
             if (atomicParty) memoryGroup.partyChanges = [fencedPartyChange(run, party)];
             // What the leader's commit carries: main writes the party row from it (the row's
-            // next due), the members' plans, and starts its members' duty trips (stayTrips).
+            // next due) and starts its members' duty trips (stayTrips).
             const leaderResolution = { partyId: run.party.partyId, party, ...(recruitCheck ? { recruitCheck } : {}),
-                ...(replanning && leader ? { memberPlans } : {}), ...(replanned ? { requirementRefreshedAt: startedAt } : {}) };
+                ...(replanned ? { requirementRefreshedAt: startedAt } : {}) };
             if (leader) leader.partyResolution = leaderResolution;
             if (!current()) return;
             if (!proposals.length) {

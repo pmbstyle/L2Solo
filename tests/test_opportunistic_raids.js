@@ -133,8 +133,7 @@ async function run() {
         status: 'active', spotId: spot.id, startedAt: at, stats: { objective } };
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const mission = JSON.stringify(formation);
-    assert.deepEqual(await Population.applyWorkerPartyRequirements(formation, {
-        requirementRefreshedAt: at, memberPlans: party.map(s => ({ characterId: s.characterId, plan: null })) }), []);
+    Population.applyWorkerPartyRequirements(formation, { requirementRefreshedAt: at });
     assert.equal(JSON.stringify(formation), mission, 'ordinary gear replanning cannot replace or release an agreed raid expedition');
     const Calculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
     const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');

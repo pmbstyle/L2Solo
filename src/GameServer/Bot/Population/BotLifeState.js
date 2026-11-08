@@ -3774,28 +3774,6 @@ const BotLifeState = {
             : columns }, reason);
     },
 
-    // One member's plan from its party's requirement refresh
-    // (PopulationService.applyWorkerPartyRequirements), held on the revision
-    // of the copy read (writeHeldOnRevision: false when a member write beat
-    // it). A plan the member may not hold (PartyRequirementRefresh.mayHold: a
-    // clan-locked plan stands, a foreign clan's goal is dropped, as the full
-    // save would do) is not written (null). A plan needing no
-    // party where the old one needed it ends the member's need of its party: the
-    // fact (stats.partyNeedEnded: the party's id) rides the plan's write and, once
-    // it landed, party_need_ended wakes the member's stay, which reads both.
-    writePartyRequirementPlan(member, plan = null) {
-        const id = Number(member?.characterId), reason = 'party_requirement_refresh';
-        if (!id) return Promise.resolve(null);
-        if (!require('./PartyRequirementRefresh').mayHold(member, plan)) return Promise.resolve(null);
-        const Stay = require('./PartyStay'), partyId = member.party?.partyId;
-        const ended = partyId != null && Stay.needsParty(member.stats?.equipmentPlan) && !Stay.needsParty(plan);
-        return writeHeldOnRevision(member, { stats: { equipmentPlan: plan, ...(ended ? { partyNeedEnded: partyId } : {}),
-            lastReason: reason } }, reason)
-            .then(written => written && ended
-                ? DecisionEvents.raiseFar(id, [{ name: 'party_need_ended', payload: null }], 'party_need_ended').then(raised => raised || written)
-                : written);
-    },
-
     retireMarketErrand(characterId, expected) {
         const current = cache.get(Number(characterId));
         if (!current || current.phase !== 'cold' || !expected) return Promise.resolve(null);

@@ -264,26 +264,8 @@ async function main() {
             spotId: 'clan-spot', stats: { objective: { priority: 'required' } } };
         PopulationService.markPartyRequirementsDue(refreshParty, null);
         assert(PopulationService.partyRequirementRefreshDue.has('bgp-clan-lock'), 'a new party is due for its member plans');
-        const refreshed = await PopulationService.applyWorkerPartyRequirements(refreshParty, { memberPlans: [], requirementRefreshedAt: Date.now() });
-        assert.deepStrictEqual(refreshed, [], 'a locked plan needs no party refresh write');
-        // A re-plan that gave a clan-locked member another plan: the row keeps the clan
-        // plan, so the objective the re-plan put on the party row follows a plan no member
-        // holds; the party stays due and its next re-plan starts from the stored plans.
-        const lockedMember = { characterId: 1001, name: 'ClanMember', level: 35, phase: 'cold', inventory: {},
-            party: { partyId: 'bgp-clan-lock' }, simulation: { revision: 3 }, stats: { equipmentPlan: clanPlan } };
-        const originalCachedState = LifeState.cachedState;
-        LifeState.cachedState = id => Number(id) === 1001 ? lockedMember : null;
-        try {
-            const replacement = { ...clanPlan, target: { selfId: 9202, name: 'Wrong Replacement', slot: 7 },
-                next: { spotId: 'wrong-spot', npcId: 4321, itemId: 9202 }, clanGoal: undefined };
-            const refused = await PopulationService.applyWorkerPartyRequirements(refreshParty,
-                { memberPlans: [{ characterId: 1001, plan: replacement }], requirementRefreshedAt: Date.now() });
-            assert.deepStrictEqual(refused, [], 'the locked member keeps its clan plan');
-            assert(PopulationService.partyRequirementRefreshDue.has('bgp-clan-lock'),
-                'a refused member plan leaves the party due for a re-plan from the stored plans');
-        } finally {
-            LifeState.cachedState = originalCachedState;
-        }
+        PopulationService.applyWorkerPartyRequirements(refreshParty, { requirementRefreshedAt: Date.now() });
+        assert(!PopulationService.partyRequirementRefreshDue.has('bgp-clan-lock'), 'a complete re-plan clears the due mark');
 
         assert.strictEqual(plannerCalls, 0, 'party refresh must not invoke the generic planner for clan goals');
         // The re-plan's objective (the worker's, carried on the leader's party row) keeps the clan target.
@@ -298,6 +280,8 @@ async function main() {
         // again; the clan's own goal write lands over the bridge.
         {
             const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
+            const lockedMember = { characterId: 1001, name: 'ClanMember', level: 35, phase: 'cold', inventory: {},
+                party: { partyId: 'bgp-clan-lock' }, simulation: { revision: 3 }, stats: { equipmentPlan: clanPlan } };
             const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
             const saved = { npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
                 finalizePlan: GearAcquisitionPlanner.finalizePlan };

@@ -15,13 +15,12 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // unsafe ground for it, a spot it could not reach, a player's command naming a
 // spot, its wallet, its last hunting buff ended (HotTownRebuff.buffEnded); and what main's executors raise on a far row that went near
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag, an own lines'
-// look main could not apply (goal_failed:line: look again), a recipe learned, a member's
-// party need ended by its party's re-plan. Every name main raises on a far row is
+// look main could not apply (goal_failed:line: look again), a recipe learned. Every name main raises on a far row is
 // here: a row that went hot before the raise landed takes it in its body's bag.
 // Its own facts it detects on its post (detectNear).
 const reasons = new Set(['arrived_town', 'arrived_town:own', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
     'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_done:visit', 'goal_failed:visit', 'bag_full', 'goal_failed:line', 'buffs_expired',
-    'recipe_learned', 'party_need_ended']);
+    'recipe_learned']);
 const ARRIVALS = new Set(['arrived_town', 'arrived_town:own']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.

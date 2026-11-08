@@ -273,7 +273,7 @@ async function main() {
             Population.partyRequirementRefreshDue.clear();
             await Parties.createOrUpdate({ ...Parties.find(partyId), stats: { objective: null } });
             assert.equal(Population.partyRequirementRefreshDue.has(partyId), true, 'the leader\'s row with the new objective marks');
-            await Population.applyWorkerPartyRequirements(Parties.find(partyId), { memberPlans: [], requirementRefreshedAt: true });
+            await Population.applyWorkerPartyRequirements(Parties.find(partyId), { requirementRefreshedAt: true });
             assert.equal(Population.partyRequirementRefreshDue.has(partyId), false, 'the re-plan\'s own writes leave no mark');
         } finally { unsubscribe(); Population.partyRequirementRefreshDue.clear(); }
     }

@@ -32,8 +32,8 @@ function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
 
 // A plan the member's row takes in place of its own: neither its clan-locked plan
 // stands against it (GearAcquisitionPlanner.clanPlanKeptAgainst) nor does it serve
-// another clan's goal (ClanMembershipPolicy.foreignGoal). Main's write of a member
-// plan reads the same answer on its copy.
+// another clan's goal (ClanMembershipPolicy.foreignGoal). A clan write landing after
+// the worker read moves the member's revision: the commit carrying the plan is refused.
 function mayHold(member, plan) {
     return !require('../AI/GearAcquisitionPlanner').clanPlanKeptAgainst(member, plan)
         && !require('../../Clan/ClanMembershipPolicy').foreignGoal(member, plan);

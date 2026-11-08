@@ -53,7 +53,7 @@ function joins(member, { now, bridgeReason = null } = {}) {
 const needsParty = plan => plan?.partyNeed === 'required' || plan?.requiresParty === true;
 // What it came for is done (as a C4 player leaves once his drop came): its party's re-plan
 // gave it a plan needing no party where it needed this party (stats.partyNeedEnded: that
-// party's id, written with the plan, LifeState.writePartyRequirementPlan) and its plan still
+// party's id, committed with the plan by its party's step) and its plan still
 // needs none. A member whose plan never needed the party (a recruited healer, a fill) helps on.
 const needEnded = member => member.stats?.partyNeedEnded != null && member.party?.partyId != null
     && String(member.stats.partyNeedEnded) === String(member.party.partyId) && !needsParty(member.stats?.equipmentPlan);

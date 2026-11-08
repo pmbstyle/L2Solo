@@ -198,7 +198,7 @@ function occupiedPartySlots() {
     return Math.max(0, Number(BackgroundPartyState.counts().active || 0)) + partyAdmission.pending;
 }
 
-const { acquisitionRequirementKey, acquisitionFallbackEvent } = require('./PartyRequirementRefresh');
+const { acquisitionFallbackEvent } = require('./PartyRequirementRefresh');
 
 function partyObjectivesShareRoute(left, right) {
     const leftClanGoal = String(left?.clanGoalKey || '');
@@ -1468,21 +1468,13 @@ const PopulationService = {
         if (this.partyRequirementRefreshDue.delete(String(partyId))) BackgroundPartyState.publish(partyId);
     },
 
-    // A member's plan write a concurrent write beat: the party row carries the
-    // mark to the worker, whose leader step re-plans (run.requirementRefresh).
-    markPartyRequirementReplan(partyId) {
-        this.partyRequirementRefreshDue.add(String(partyId));
-        BackgroundPartyState.publish(partyId);
-    },
-
     // Trigger 1 of the party re-plan (the second is a member's kit, at the
     // party's step in the background thread): a published party row whose
     // members or objective moved against the previous row. A pending join
     // marks nothing: the leader's step reads it from the party row itself
     // (ColdSimulationKernel), and the join it answers moves the members. The
-    // re-plan's own objective (the leader's row) and plan writes mark here too;
-    // its apply clears the mark after its last write (applyWorkerPartyRequirements),
-    // so they open nothing.
+    // re-plan's own objective (the leader's row) marks here too; its apply clears
+    // the mark after that write (applyWorkerPartyRequirements), so it opens nothing.
     markPartyRequirementsDue(party, previous) {
         const id = String(party.partyId);
         if (party.status !== 'active') {
@@ -2168,51 +2160,15 @@ const PopulationService = {
     partyCapacityLimit,
     partyObjectiveForState,
 
-    async applyWorkerPartyRequirements(party, resolution) {
-        if (require('./OpportunisticRaidPolicy').isObjective(party.stats?.objective)) {
-            this.clearPartyRequirementDue(party.partyId);
-            return [];
-        }
+    // The leader's commit of the party's re-plan: the members' plans rode their own
+    // commits (the worker's step), so main only clears the due mark once the re-plan
+    // is complete (requirementRefreshedAt); a refused member plan refused it too.
+    applyWorkerPartyRequirements(party, resolution) {
         // Material completion is checked against the physical bag by the
-        // native resolver. A generic gear refresh must not evict its core.
-        if (CraftMaterialParty.isObjective(party.stats?.objective)) {
-            this.clearPartyRequirementDue(party.partyId);
-            return [];
-        }
-        if (party.status !== 'active') {
-            this.clearPartyRequirementDue(party.partyId);
-            return [];
-        }
-        let changed = false, skipped = false;
-        const skip = (kind) => {
-            skipped = true;
-            Config.developerDiagnostics && Diagnostics.count('party_requirement', 'member_write', `skipped_${kind}`);
-        };
-        for (const { characterId, plan } of resolution.memberPlans || []) {
-            const member = LifeState.cachedState(characterId);
-            if (!member || member.phase !== 'cold' || member.party?.partyId !== party.partyId) continue;
-            if (acquisitionRequirementKey(member.stats?.equipmentPlan) === acquisitionRequirementKey(plan)) continue;
-            // Held on the revision of the copy read above: the member's own
-            // review runs meanwhile; a write it beat is skipped and the
-            // party's re-plan is marked due again below. The worker sends no
-            // plan the member's row would refuse (PartyRequirementRefresh.mayHold),
-            // so a refusal (null) means the row moved since the worker's read
-            // (a clan lock or a clan change landed) or a counted DB failure;
-            // it is skipped the same way: the party's objective, set from the
-            // plans the re-plan made, would follow a plan no member holds; the
-            // next re-plan starts from the stored plans.
-            const written = await LifeState.writePartyRequirementPlan(member, plan);
-            if (written === false) skip('plan');
-            else if (written === null) skip('refused');
-            changed = !!written || changed;
-        }
-        // A bounded worker re-plan may span steps: its mark clears only with its complete
-        // projection (requirementRefreshedAt), whose objective rode the leader's party row.
-        // The plans are all main writes: the members' stays (party_need_ended) and the
-        // party's spot (party_spot) decide on the worker.
-        if (skipped) this.markPartyRequirementReplan(party.partyId);
-        else if (resolution.requirementRefreshedAt) this.clearPartyRequirementDue(party.partyId);
-        return changed ? [party.partyId] : [];
+        // native resolver; a raid expedition's plans are agreed; an ended party has none.
+        if (require('./OpportunisticRaidPolicy').isObjective(party.stats?.objective)
+            || CraftMaterialParty.isObjective(party.stats?.objective) || party.status !== 'active'
+            || resolution.requirementRefreshedAt) this.clearPartyRequirementDue(party.partyId);
     },
 
     // The answer of a pending join's recruit check, from the leader's step

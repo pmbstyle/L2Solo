@@ -86,7 +86,7 @@ async function main() {
     assert.equal(proposal.nextState.activity, 'shopping');
     assert(proposal.atomicGroup && batch.payload.proposals.every(entry => entry.atomicGroup.id === proposal.atomicGroup.id));
     assert.equal(proposal.options.allowParty, true);
-    assert(!batch.payload.proposals.some(entry => entry.partyResolution?.memberPlans));
+    assert(!batch.payload.proposals.some(entry => entry.partyResolution?.requirementRefreshedAt), 'a pending meeting holds the re-plan');
 
     const selected = [];
     let selectorAt = at;

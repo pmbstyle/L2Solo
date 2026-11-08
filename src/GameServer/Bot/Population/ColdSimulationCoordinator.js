@@ -1750,7 +1750,7 @@ class ColdSimulationCoordinator {
                     Metrics.recordPartyDissolution();
                 } else {
                     Metrics.recordPartyResolve();
-                    // ARCH-NOTE: the duty trips and the member plans run after the flush
+                    // ARCH-NOTE: the duty trips and the re-plan's end run after the flush
                     // but before the leader's commit_ack. Until that ack the kernel holds
                     // every member inFlight (ColdSimulationKernel claim check), so no party
                     // commit can land the party row while main writes it: the worker's
@@ -1767,7 +1767,7 @@ class ColdSimulationCoordinator {
                 }
             }
         });
-        // It writes member rows and the party row: deferred and held like the goal review, after it.
+        // The re-plan's end clears main's due mark and re-publishes the party row: after the flush.
         if (entry.proposal.partyResolution?.party && this.population?.applyWorkerPartyRequirements) {
             later('partyPlans', () => this.population.applyWorkerPartyRequirements(
                 BackgroundPartyState.find(entry.proposal.partyResolution.partyId) || entry.proposal.partyResolution.party,
@@ -1784,11 +1784,8 @@ class ColdSimulationCoordinator {
             Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
         });
         await step('announce', () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
-        // onResults starts it after the flush. A member's own review command (its
-        // training, buff, plan) runs meanwhile: a party write holds on the revision
-        // it read (LifeState.writePartyRequirementPlan), so a member write landing
-        // in between wins and the party write is skipped. A replaced worker or a stop skips the rest: its kernel no longer holds these
-        // members inFlight.
+        // onResults starts it after the flush. A replaced worker or a stop skips the rest:
+        // its kernel no longer holds these members inFlight.
         if (deferred.length) entry.deferred = async () => {
             for (const work of deferred) {
                 if (this.stopping || source && (source.worker !== this.worker || source.epoch !== this.workerEpoch)) return;

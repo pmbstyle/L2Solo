@@ -172,8 +172,8 @@ const SITUATIONS = Object.freeze({
     // too far below the party's), raised by the party step on the member (its flip).
     party_outleveled: link(NOW),
     // Its gear plan, re-planned by its party's step, came to need no party where it did
-    // (the drop it grouped for came, its target moved): raised on the member's row once
-    // that plan is written (LifeState.writePartyRequirementPlan, with its partyNeedEnded fact).
+    // (the drop it grouped for came, its target moved): raised by that step on the member,
+    // with its partyNeedEnded fact, on the commit that writes the plan.
     party_need_ended: link(NOW)
 });
 

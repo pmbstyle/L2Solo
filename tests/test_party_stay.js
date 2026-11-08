@@ -88,7 +88,7 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     await kernel.resolvePartyStep(party.partyId);
     const proposals = messages.find(m => m.type === 'proposal_batch').payload.proposals;
     const resolution = proposals.find(p => p.partyResolution).partyResolution;
-    return { party: resolution.party, stayTrips: resolution.stayTrips, resolution, states: proposals.map(p => p.nextState) };
+    return { party: resolution.party, stayTrips: resolution.stayTrips, resolution, proposals, states: proposals.map(p => p.nextState) };
 }
 
 (async () => {
@@ -149,11 +149,11 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         assert.deepStrictEqual(both.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'two full bags: one trip');
         assert(Situations.woken(both.states.find(state => state.characterId === 3).stats, 'party_stay'), 'the other waits woken');
     } finally { Disposition.inventoryCleanupNeed = () => null; Disposition.cleanupCounted = cleanupCounted; }
-    // A required party's re-plan (the worker's, at its step): its members' plans ride the
-    // leader's commit (main writes them: the member whose need ended hears it once its
-    // plan is written, test_party_requirement_member_write); the party's objective follows
-    // the plans of the members who still need it, carried on the leader's row, and its
-    // spot answer, taken for the old objective, holds none: the next step decides its spot.
+    // A required party's re-plan (the worker's, at its step): each changed plan rides its
+    // member's own commit, the member whose need ended holds that fact and its stay woken
+    // there; the party's objective follows the plans of the members who still need it,
+    // carried on the leader's row, and its spot answer, taken for the old objective, holds
+    // none: the next step decides its spot. The plans and the re-plan's end commit together.
     const drop = (target, spotId) => ({ status: 'active', strategy: 'direct_drop', partyNeed: 'required', requiresParty: true,
         target: { selfId: target }, next: { spotId, npcId: 20100 + target, itemId: target } });
     const solo = { status: 'active', strategy: 'market', partyNeed: 'solo_ok', target: { selfId: 9399 }, next: {} };
@@ -166,17 +166,20 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     const replans = { 1: drop(9301, 'drop-spot'), 2: drop(9302, 'drop-spot'), 3: solo };
     const replanned = await step(needing, { stats: required }, { run: { requirementRefresh: true },
         options: { planPartyRequirement: ({ state }) => ({ acquisitionPlan: replans[state.characterId] }) } });
-    assert.deepStrictEqual(replanned.resolution.memberPlans.map(entry => [entry.characterId, entry.plan]),
-        [[1, replans[1]], [3, solo]], 'the leader\'s commit carries the changed plans');
+    const committed = id => replanned.states.find(state => state.characterId === id).stats;
+    assert.deepStrictEqual([1, 2, 3].map(id => committed(id).equipmentPlan), [replans[1], needing[1].stats.equipmentPlan, solo],
+        'each member\'s commit carries its plan');
+    assert.strictEqual(committed(3).partyNeedEnded, 'stay', 'the member whose need ended holds the fact with its plan');
+    assert(Situations.woken(committed(3), 'party_stay'), 'party_need_ended wakes its stay on that commit');
+    assert(committed(1).partyNeedEnded == null && !Situations.woken(committed(1), 'party_stay'), 'a member still needing it hears nothing');
     assert.strictEqual(replanned.resolution.requirementRefreshedAt, at, 'the re-plan is complete');
+    assert(replanned.proposals.every(proposal => proposal.atomicGroup?.id && proposal.atomicGroup.id === replanned.proposals[0].atomicGroup.id),
+        'a refused member plan refuses the re-plan\'s end');
     assert.strictEqual(replanned.party.stats.objective?.spotId, 'drop-spot', 'the objective follows the members still needing it');
     assert.strictEqual(replanned.party.stats.acquisitionGoal?.target?.selfId, 9301);
     assert(Situations.partyWoken(replanned.party), 'a new objective is a new question for the party\'s spot: its next step decides');
-    // Its next step: the member whose need ended (its plan and fact written by main, its stay
-    // woken by party_need_ended where it stands) leaves, the party goes on.
-    const ended = { ...member(3).stats, partyNeedEnded: 'stay', equipmentPlan: solo };
-    const needEnded = Situations.raise(ended, 'party_need_ended', null, Situations.place(member(3)), 3);
-    assert(Situations.woken(needEnded, 'party_stay'), 'party_need_ended wakes the member\'s stay');
+    // Its next step: the member whose need ended (as its commit left it) leaves, the party goes on.
+    const needEnded = committed(3);
     const done = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
         member(3, { stats: needEnded })], { stats: replanned.party.stats });
     assert.deepStrictEqual(done.party.memberIds, [1, 2]);
