@@ -162,6 +162,10 @@ async function run() {
         assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots, memo }).reason, 'party_progress');
         assert.strictEqual(Request.partyRequestForPlan(earner, null, at + 60000, { spots, memo }).reason, 'party_progress');
         assert.strictEqual(weighed, 1, 'an unchanged ask is held, not weighed at every build');
+        const open = Request.partyRequestForPlan(earner, null, at + 90000, { spots, memo });
+        assert.strictEqual(Request.partyRequestForPlan({ ...earner, stats: { ...earner.stats, partyRequest: open } }, null, at + 100000,
+            { spots, memo }).reason, 'party_progress');
+        assert.strictEqual(weighed, 1, 'the bot holding its own ask does not weigh it again');
         Income.compare = () => { weighed++; return { accept: false }; };
         assert.strictEqual(Request.partyRequestForPlan({ ...earner, level: earner.level + 1 }, null, at + 120000, { spots, memo }), null,
             'a new level weighs it again');

@@ -68,7 +68,8 @@ const PARTY_PROGRESS = 'party_progress';
 // level it aims at), its held earning answer (its time and spot: the solo row, renewed
 // at its situations: a level, new gear, a death...), its persona (the party lean, the
 // death weight, the belief error) and its saving goal (the price it saves for, its
-// focus, its plan step and request: the piece's hours). Read when it decides, stale
+// focus, its plan step and a request that names a piece, not one that only meets at a
+// spot as this ask's own answer does: the piece's hours). Read when it decides, stale
 // until one of these moves: the exp inside a level, the wallet, prices, samples and
 // the crowd (as the held earning answer's own inputs).
 function progressAskKey(state, earning) {
@@ -77,7 +78,7 @@ function progressAskKey(state, earning) {
     return JSON.stringify([stats.classId ?? state.classId ?? null, Number(state.level) || 0, earning.at ?? null, earning.spotId,
         traits.sociability ?? null, traits.caution ?? null, traits.resilience ?? null, traits.understanding ?? null,
         stats.wishSections?.affordAt?.at ?? null, stats.wishSections?.affordAt?.kind ?? null, stats.wishFocus?.[0] ?? null,
-        goal(stats.equipmentPlan?.next), goal(stats.partyRequest)]);
+        goal(stats.equipmentPlan?.next), goal(meetsAtSpot(stats.partyRequest) ? null : stats.partyRequest)]);
 }
 function progressObjective(state, { spots, timestamp, economy = null, memo = null }) {
     const earning = economy?.statsPacket?.earning || state?.stats?.earning;
@@ -234,7 +235,6 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;
         const amount = Math.max(1, Math.floor(Number(objective.materialParty ? objective.amount : plan?.next?.amount || 1)));
-        // ARCH-NOTE: party value is pending; the help fee buys progress on its requested item.
         const fee = Math.floor(Math.min(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state, 0, { itemId: objective.itemId }),
             Math.max(0, Number(context.worth(objective.itemId)) || 0) * amount));
         if (fee > 0) objective = { ...objective, helpDeal: { payerId: Number(state.characterId),
