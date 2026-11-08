@@ -146,7 +146,7 @@ assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), true);
 
 // Inventory cleanup: the goal planner's goal.
-const originalNeed = ItemDisposition.inventoryCleanupNeed;
+const originalNeed = ItemDisposition.inventoryCleanupNeed, originalCounted = ItemDisposition.cleanupCounted;
 let needCalls = 0;
 const capacity = { reason: 'inventory_capacity', slots: 81, limit: 80, npcOnlySlots: 3 };
 ItemDisposition.inventoryCleanupNeed = () => { needCalls += 1; return capacity; };
@@ -165,7 +165,9 @@ try {
         target: { itemCount: 81, npcOnlySlots: undefined, cleanupReason: 'no_slot' },
         plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' } }], 'a real 81-instance bag imposes the mandatory unload');
 
-    // Inventory cleanup: the clan-duty market break takes only a bag over 80.
+    // Inventory cleanup: the clan-duty market break takes only a bag over 80 (the
+    // fixture's bag fact at a count, its count the mocked need).
+    ItemDisposition.cleanupCounted = () => true;
     const clanParty = { partyId: 'clan-party', stats: { objective: { priority: 'required', clanGoalKey: 'clan:1' } } };
     const member = bot(FIGHTER, ratios(1, 1), { characterId: 42 });
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), true);
@@ -176,7 +178,7 @@ try {
         plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' }
     }, 'the clan break goal is the planner cleanup goal');
     const callsBefore = needCalls;
-    const given = PartyMarketBreak.cleanupNeed(member, now);
+    const given = PartyMarketBreak.bagNeed(member, now);
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now, given), true);
     assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, now, given), breakGoal);
     PartyMarketBreak.departure(clanParty, member, { stats: {} }, now, given);
@@ -193,7 +195,7 @@ try {
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), false,
         'NPC junk does not break a clan duty');
 } finally {
-    ItemDisposition.inventoryCleanupNeed = originalNeed;
+    ItemDisposition.inventoryCleanupNeed = originalNeed; ItemDisposition.cleanupCounted = originalCounted;
 }
 assert(needCalls > 0);
 

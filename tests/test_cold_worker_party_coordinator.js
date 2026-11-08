@@ -158,13 +158,6 @@ let coordinator = null;
         await wait(50);
         snapshot = coordinator.snapshot();
     }
-    const formationProposal = await coordinator.requestRequiredPartyFormation({ candidateLimit: 12 });
-    assert.strictEqual(formationProposal.ok, true, 'main must receive a required-party proposal from the worker');
-    assert.deepStrictEqual(
-        formationProposal.candidates.map((candidate) => Number(candidate.characterId)).sort((a, b) => a - b),
-        [...requiredIds].sort((a, b) => a - b),
-        'worker proposal must contain the compatible unassigned required requests'
-    );
     const goalMembers = await LifeState.statesByIds(requiredIds, { unassigned: true });
     const goalParty = { partyId: 'worker-first-goal', memberIds: goalMembers.map(member => member.characterId),
         leaderId: goalMembers[0].characterId, stats: { objective: { sourceKind: 'raid', spotId: spot.id } } };

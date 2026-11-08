@@ -1,11 +1,5 @@
 const SurvivalFloor = require('./SurvivalFloor');
 const BotErrands = require('./BotErrands');
-// The bag's need to go sell, one rule for the clan break, the solo forced
-// cleanup and the cold worker's step: the native slot/weight floor first
-// (its bag part only), else the author's cleanup thresholds. { reason, slots, limit } or null.
-function cleanupNeed(member, now) {
-    return floorNeed(SurvivalFloor.bagFor(member, now)) || countNeed(member, now);
-}
 // A floor that unloads, as the bag's need.
 const floorNeed = floor => floor?.action === 'unload'
     ? { ...floor, reason: floor.reason === 'no_slot' ? 'inventory_capacity' : 'inventory_overweight' } : null;
@@ -31,7 +25,14 @@ function bagFact(state, kitHashes = null) {
 // Held in stats.cleanupDue until its trip starts (the far kernel's step with
 // main's cleanup goal, a body's HuntingState) or the bag fact falls to 0.
 function cleanupDecision(state, now) {
-    if (state.party?.partyId || state.partyId) return null;
+    return state.party?.partyId || state.partyId ? null : bagNeed(state, now);
+}
+// The bag's need to go sell, read from the bag fact, one rule for a solo bot's build
+// (cleanupDecision) and a party member's stay and its duty trip (PartyStay): the floor
+// (fact 2: no slot, overweight) whatever the sale retry, else the cleanup count's reason
+// (fact 1). A party member's count has no half-full line and no sale retry
+// (inventoryCleanupNeed reads them for a solo bot only). { reason, slots, limit } or null.
+function bagNeed(state, now) {
     const fact = bagFact(state);
     return fact === 2 ? floorNeed(SurvivalFloor.bagFloor(state)) : fact === 1 ? countNeed(state, now) : null;
 }
@@ -73,18 +74,18 @@ function pending(party, now = Date.now()) {
 const FLOOR_REASONS = ['inventory_capacity', 'inventory_overweight'];
 function allowed(party, member, now = Date.now(), need = undefined) {
     if (warDuty(party) || !clanDuty(party) || pending(party, now).length) return false;
-    return FLOOR_REASONS.includes((need === undefined ? cleanupNeed(member, now) : need)?.reason);
+    return FLOOR_REASONS.includes((need === undefined ? bagNeed(member, now) : need)?.reason);
 }
 // The unload goal of a member allowed its trip. The native purchase/travel gate
 // still checks its quote and cash.
 function goal(party, member, now, need = undefined) {
-    const bag = need === undefined ? cleanupNeed(member, now) : need;
+    const bag = need === undefined ? bagNeed(member, now) : need;
     return FLOOR_REASONS.includes(bag?.reason) ? { ...cleanupGoal(bag), status: 'active' } : null;
 }
 // The allowed member's trip with its return ticket: the party holds its place until
 // it comes back (PopulationService.resumePartyMarketBreak) or the ticket expires.
 function departure(party, member, travel, now, given = undefined) {
-    const need = given === undefined ? cleanupNeed(member, now) : given;
+    const need = given === undefined ? bagNeed(member, now) : given;
     const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
         objective: { ...party.stats.objective }, startedAt: now, cleanupReason: need?.reason,
         slots: need?.slots, limit: need?.limit };
@@ -99,5 +100,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { cleanupNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, warDuty, pending,
+module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, warDuty, pending,
     allowed, goal, departure, stats, ready, FLOOR_REASONS };

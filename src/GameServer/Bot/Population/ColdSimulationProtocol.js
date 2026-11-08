@@ -19,7 +19,6 @@ const MAIN_TYPES = new Set([
     'commit_ack',
     'command_ack',
     'command_request',
-    'party_formation_request',
     'party_goal_request',
     'fence',
     'fence_ack',
@@ -39,7 +38,6 @@ const WORKER_TYPES = new Set([
     'proposal_batch',
     'command_request',
     'command_ack',
-    'party_formation_proposal',
     'party_goal_result',
     'heartbeat',
     'fence_ack',
@@ -356,8 +354,7 @@ function validateEnvelope(message, direction, options = {}) {
         proposal_batch: 'proposals',
         commit_ack: 'results',
         command_request: 'requests',
-        command_ack: 'results',
-        party_formation_proposal: 'candidates'
+        command_ack: 'results'
     };
     const batchField = batchFields[message.type];
     const batch = batchField ? message.payload[batchField] : null;

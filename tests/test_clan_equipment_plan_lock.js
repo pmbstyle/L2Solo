@@ -55,7 +55,6 @@ async function main() {
     const originalSpotEnsure = SpotProfiles.ensure;
 
     let plannerCalls = 0;
-    let savedParty = null;
     GearAcquisitionPlanner.planFor = () => {
         plannerCalls += 1;
         return {
@@ -77,10 +76,7 @@ async function main() {
             stats: { equipmentPlan: clanPlan }
         }]]
     ]));
-    PartyState.createOrUpdate = async (party) => {
-        savedParty = party;
-        return party;
-    };
+    PartyState.createOrUpdate = async (party) => party;
     SpotProfiles.ensure = () => [];
 
     try {
@@ -272,17 +268,12 @@ async function main() {
         assert.deepStrictEqual(refreshed, [], 'a locked plan needs no party refresh write');
 
         assert.strictEqual(plannerCalls, 0, 'party refresh must not invoke the generic planner for clan goals');
-        assert(savedParty, 'party refresh should still publish its current party snapshot');
-        assert.strictEqual(
-            savedParty.stats.acquisitionGoal.target.selfId,
-            clanPlan.target.selfId,
-            'party refresh must keep the clan target item'
-        );
-        assert.strictEqual(
-            savedParty.stats.acquisitionGoal.clanGoal.goalKey,
-            clanPlan.clanGoal.goalKey,
-            'party refresh must keep the clan goal ownership metadata'
-        );
+        // The re-plan's objective (the worker's, carried on the leader's party row) keeps the clan target.
+        const kept = require('../src/GameServer/Bot/Population/PartyRequirementRefresh')
+            .partyObjective((await LifeState.cachedStatesForParties([refreshParty])).get('bgp-clan-lock'));
+        assert.strictEqual(kept.acquisitionGoal.target.selfId, clanPlan.target.selfId, 'party refresh must keep the clan target item');
+        assert.strictEqual(kept.acquisitionGoal.clanGoal.goalKey, clanPlan.clanGoal.goalKey,
+            'party refresh must keep the clan goal ownership metadata');
 
         const finalized = GearAcquisitionPlanner.finalizePlan(
             { inventory: {} },

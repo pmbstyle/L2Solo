@@ -8,7 +8,6 @@ const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Request = require('../src/GameServer/Bot/Population/PartyRequestPlanner');
 const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const Composition = require('../src/GameServer/Bot/Population/BackgroundPartyComposition');
-const Formation = require('../src/GameServer/Bot/Population/RequiredPartyFormation');
 const Agreement = require('../src/GameServer/Bot/Population/PartyAgreement');
 const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
 const timestamp = Date.now();
@@ -245,9 +244,6 @@ try {
     const groups = invoke('GameServer/Bot/Population/PopulationService').groupPartyCandidatesByObjective(members);
     assert(groups.some(group => members.every(member => group.includes(member))),
         'different target NPCs at the same camp share their core and a remote support candidate');
-    const proposal = Formation.proposalFromStates(members, { timestamp });
-    assert.equal(proposal.materialParty, true);
-    assert.deepEqual(new Set(proposal.candidates.map(row => row.characterId)), new Set(members.map(row => row.characterId)));
     const selected = Material.selectMembers(members, { timestamp });
     assert.equal(selected.length, 3);
     assert.equal(Composition.roleCoverage(selected).healer, 1);

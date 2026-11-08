@@ -3483,31 +3483,12 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
-        const read = state;
         const timestamp = now();
         const cached = cache.get(Number(state.characterId));
         // The one leave rule (BackgroundPartyLifecycle.releaseMember): the solo state,
         // party_left raised on a far member's stats; each write below carries it on the
         // revision it was built on.
         const nextState = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle').releaseMember(state, timestamp, reason);
-        const needsSoloResume = nextState.activity !== state.activity;
-        const nextActivity = nextState.activity;
-        // A party's release of a far member (applyWorkerPartyRequirements):
-        // only what the departure changes is written, held on the revision of
-        // the copy passed; false when a member write beat it. Its travel is
-        // kept or dropped, never a new paid trip, so no trip payment follows.
-        if (options.heldOnRevision === true) {
-            return writeHeldOnRevision(read, {
-                stats: Object.fromEntries(Object.entries(nextState.stats).filter(([key, value]) => value !== read.stats?.[key])),
-                columns: {
-                    partyId: null,
-                    ...(nextState.spotId !== read.spotId ? { spotId: nextState.spotId || null } : {}),
-                    ...(needsSoloResume ? { activity: nextActivity } : {}),
-                    ...(nextState.timing !== state.timing ? { activityStartedAt: nextState.timing.activityStartedAt,
-                        nextResolveAt: nextState.timing.nextResolveAt } : {})
-                }
-            }, `party_left_${reason}`);
-        }
         const row = rowFromState(nextState);
         if (options.ownerHandoff === true) {
             return invoke('GameServer/Bot/Population/ColdSimulationOwner').handoffToMain(state, {

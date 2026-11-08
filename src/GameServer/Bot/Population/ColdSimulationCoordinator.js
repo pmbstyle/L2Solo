@@ -20,7 +20,6 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ClanSocial = invoke('GameServer/Clan/ClanSocialRuntime');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
@@ -835,8 +834,7 @@ class ColdSimulationCoordinator {
         case 'proposal_batch':
             this.handleProposalBatch(message, worker, epoch);
             break;
-        case 'party_goal_result':
-        case 'party_formation_proposal': {
+        case 'party_goal_result': {
             const waiter = this.waiters.get(message.msgId);
             if (waiter && (!waiter.expectedType || waiter.expectedType === message.type)) {
                 this.waiters.delete(message.msgId);
@@ -929,39 +927,6 @@ class ColdSimulationCoordinator {
             heartbeatMs: Math.max(250, Number(Config.coldWorkerHeartbeatMs) || 1000),
             loopIntervalMs: Math.max(5, Number(Config.coldWorkerLoopIntervalMs) || 20)
         };
-    }
-
-    async requestRequiredPartyFormation(options = {}) {
-        if (!this.worker || !this.ready || !this.snapshotsLoaded || this.stopping) {
-            return { ok: false, reason: 'worker_not_ready', candidates: [] };
-        }
-        const queue = this.queue.snapshot();
-        if (queue.depth > 0 || queue.flushing) {
-            return { ok: false, reason: 'commit_queue_busy', candidates: [] };
-        }
-        const timeoutMs = Math.max(50, Number(options.timeoutMs) || 500);
-        const msgId = this.post('party_formation_request', {
-            timestamp: Number(options.timestamp || Date.now()),
-            candidateLimit: Math.max(2, Math.min(64, Number(options.candidateLimit) || 12)),
-            priorityClanIds: [...new Set((options.priorityClanIds || []).map(Number).filter(id => id > 0))].slice(0, 64),
-            minSize: Math.max(2, Number(options.minSize) || 2),
-            maxSize: Math.max(2, Number(options.maxSize) || 5),
-            levelRange: Math.max(0, Number(options.levelRange ?? PartyComposition.DEFAULT_LEVEL_RANGE))
-        });
-        if (!msgId) return { ok: false, reason: 'request_send_failed', candidates: [] };
-        let timer = null;
-        try {
-            const proposal = await new Promise((resolve, reject) => {
-                timer = setTimeout(() => reject(new Error('party_formation_worker_timeout')), timeoutMs);
-                this.waiters.set(msgId, { resolve, reject });
-            });
-            return { ok: true, ...proposal };
-        } catch (error) {
-            this.waiters.delete(msgId);
-            return { ok: false, reason: error.message, candidates: [] };
-        } finally {
-            clearTimeout(timer);
-        }
     }
 
     async requestPartyGoals(party, members, options = {}) {
@@ -1845,8 +1810,7 @@ class ColdSimulationCoordinator {
         await step('announce', () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         // onResults starts it after the flush. A member's own review command (its
         // training, buff, plan) runs meanwhile: a party write holds on the revision
-        // it read (LifeState.writePartyRequirementPlan, a departure through
-        // LifeState.leaveParty heldOnRevision), so a member write landing
+        // it read (LifeState.writePartyRequirementPlan), so a member write landing
         // in between wins and the party write is skipped. A replaced worker or a stop skips the rest: its kernel no longer holds these
         // members inFlight.
         if (deferred.length) entry.deferred = async () => {

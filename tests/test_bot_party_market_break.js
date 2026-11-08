@@ -69,13 +69,15 @@ async function departureChecks() {
         assert.strictEqual((await durable(leaver)).partyId, null);
     }
 
-    const originals = [[GoalExecutor, 'beginMarketTravel'], [Disposition, 'inventoryCleanupNeed']]
+    const originals = [[GoalExecutor, 'beginMarketTravel'], [Disposition, 'inventoryCleanupNeed'], [Disposition, 'cleanupCounted']]
         .map(([owner, name]) => [owner, name, owner[name]]);
     let leaving = 0;
     GoalExecutor.beginMarketTravel = (member, goal) => goal?.type === 'sell_inventory' ? { ...member, activity: 'traveling',
         stats: { ...member.stats, travel: { reason: 'market_sale_inventory', arrivalActivity: 'shopping',
             arrivalAt: Date.now() + 60000, to: { ...loc } } } } : null;
     Disposition.inventoryCleanupNeed = member => member.characterId === leaving ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
+    // The bag fact at a count wherever the mocked count names a need.
+    Disposition.cleanupCounted = member => member.characterId === leaving;
     const objective = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear', clanId: 1, clanOperation: 'equipment',
         minPartySize: 2, maxPartySize: 9 };
     const bagTrip = id => [{ characterId: id, reason: 'bag_full' }];

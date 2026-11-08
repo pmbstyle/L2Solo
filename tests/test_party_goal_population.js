@@ -13,7 +13,6 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Policy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
 const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
-const Formation = require('../src/GameServer/Bot/Population/RequiredPartyFormation');
 const restore = [];
 function stub(target, name, value) {
     const old = target[name]; restore.push(() => { target[name] = old; }); target[name] = value;
@@ -34,16 +33,14 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Date, 'now', () => clock);
     stub(Config, 'enabled', true); stub(Config, 'backgroundPartyEnabled', true);
     stub(Config, 'partyMinSize', 2); stub(Config, 'partyMaxSize', 5);
-    stub(Config, 'maxPlayingPopulation', 40); stub(Config, 'protectedPartyFormationMainBudgetMs', 50);
+    stub(Config, 'maxPlayingPopulation', 40);
     stub(Population, 'playerActivityProfile', () => ({ protected: true }));
     stub(Population, 'realPlayerSessions', () => []);
     stub(Database, 'isReady', () => false); stub(Database, 'stats', () => ({ pending: 0 }));
     stub(Metrics, 'currentEventLoopLag', () => 0);
     stub(Coordinator, 'snapshot', () => ({ ready: true, snapshotsLoaded: true, queue: {} }));
-    // Selection/hydration are covered by protected-party and atomic DB tests;
-    // here the input is the final complete roster whose goal awaits the worker.
-    stub(Formation, 'proposalFromStates', () => ({ candidates: members,
-        spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4 }));
+    // A player is online (protected): forming runs its one path, the roster's goal awaits the worker.
+    stub(Life, 'cachedState', id => members.find(member => member.characterId === Number(id)));
     stub(Parties, 'admitted', () => []); stub(Parties, 'counts', () => ({ active: 0 }));
     stub(Profiles, 'findById', () => spot);
     // The formation announcement commits with the party in one transaction.
@@ -69,24 +66,20 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
         return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: Policy.joint(party, selected,
             { context: { network: { activity: { activity: 'hunting', spotId: 'goal-spot', npcId: 123, nodeKey: '0:goal' } } } }) };
     });
-    Population.nextProtectedPartyFormationAt = 0; Population.partyFormationRunning = false;
-    const formation = Population.formProtectedRequiredParty(Date.now(), members);
+    Population.partyFormationRunning = false;
+    const formation = Population.formBackgroundParties(members);
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(writes, 0, 'no party exists before the worker result');
     assert.equal(announcements, 0, 'no formation announcement before worker result');
     const formed = await formation;
-    assert.equal(formed.length, 1, JSON.stringify({ queries, writes, announcements,
-        failures: Population.protectedPartyFormationFailures }));
+    assert.equal(formed.length, 1, JSON.stringify({ queries, writes, announcements }));
     assert.equal(announcements, 1);
-    assert.equal(Population.protectedPartyFormationFailures, 0, 'worker wait does not consume main budget');
     const count = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'worker_not_ready' });
-    Population.nextProtectedPartyFormationAt = 0;
-    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), members), []);
+    assert.deepEqual(await Population.formBackgroundParties(members), []);
     assert.equal(writes, count); assert.equal(announcements, 1, 'unavailable worker causes no fallback or announcement');
     Coordinator.requestPartyGoals = async (party, selected) => joins(party, selected) || { ok: false, reason: 'party_goal_busy' };
-    Population.nextProtectedPartyFormationAt = 0;
-    const busyFormed = await Population.formProtectedRequiredParty(Date.now(), members);
+    const busyFormed = await Population.formBackgroundParties(members);
     assert.equal(busyFormed.length, 1, 'a busy worker after the verdict does not fail formation');
     assert.equal(busyFormed[0].stats.objective.spotId, 'goal-spot', 'formation keeps its own objective');
     assert.equal(busyFormed[0].stats.memberGoals.length, 2);
@@ -96,26 +89,20 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
         stats: { ...member.stats, equipmentPlan: { target: { selfId: 5726 + index } },
             partyRequest: { ...member.stats.partyRequest, materialParty: true, reason: 'craft_material',
                 itemId: 4097 + index, targetId: 5726 + index, requiredTotal: 12, amount: 12 } } }));
-    Formation.proposalFromStates = () => ({ candidates: materialMembers,
-        spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4, materialParty: true });
     Life.cachedState = id => materialMembers.find(member => member.characterId === Number(id));
     stub(Income, 'prepare', () => { throw Error('main must never forecast a cold material roster'); });
     Coordinator.requestPartyGoals = async (party, selected) => {
         return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
             memberGoals: selected.map(Policy.declaration) } };
     };
-    Population.nextProtectedPartyFormationAt = 0;
-    const materialFormed = await Population.formProtectedRequiredParty(Date.now(), materialMembers);
+    const materialFormed = await Population.formBackgroundParties(materialMembers);
     assert.equal(materialFormed.length, 1, 'worker-admitted material roster commits without main economic computation');
     const writesBeforeBusy = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
-    Population.nextProtectedPartyFormationAt = 0;
     // Moved members: the verdict on the formed ones is held, a new one is asked.
     const movedMembers = materialMembers.map(member => ({ ...member, updatedAt: Number(member.updatedAt || 0) + 1 }));
     Life.cachedState = id => movedMembers.find(member => member.characterId === Number(id));
-    Formation.proposalFromStates = () => ({ candidates: movedMembers,
-        spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4, materialParty: true });
-    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), movedMembers), []);
+    assert.deepEqual(await Population.formBackgroundParties(movedMembers), []);
     assert.equal(writes, writesBeforeBusy, 'a busy worker defers the forming verdict: no main admission');
     console.log('PASS all three cold group readers: no main network, delayed formation, budget, lifecycle CAS, stale rejection');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
