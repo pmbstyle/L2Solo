@@ -1786,7 +1786,7 @@ class ColdSimulationKernel {
             && !CraftMaterialPartyRoute.evacuating(party);
         const duty = PartyMarketBreak.clanDuty(party);
         // A required objective (not a material hunt's, whose quotas end it) goes on while
-        // enough members' plans still need a party; a member whose plan needs none is done.
+        // enough members' plans still need a party; a member whose need of it ended is done.
         const objective = party.stats?.objective;
         const required = objective?.priority === 'required' && !CraftMaterialParty.isObjective(objective)
             && run.members.filter(member => Stay.needsParty(member.stats?.equipmentPlan)).length >= this.partyMinSize;
@@ -1801,7 +1801,7 @@ class ColdSimulationKernel {
             }
             if (decides && Situations.woken(stats, 'party_stay')) {
                 const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
-                    objectiveDone: required && !Stay.needsParty(member.stats?.equipmentPlan),
+                    requiredObjective: required,
                     bridgeReason: this.equipmentBridgeReason,
                     soloSooner: () => !!this.soloSooner?.({ member, party, members: run.members, timestamp, shares }) });
                 stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
@@ -2111,10 +2111,7 @@ class ColdSimulationKernel {
             const memoryGroup = atomicParty || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${stepProposalId(run.party.leaderId, run.startedAt)}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
-            if (atomicParty) {
-                resolvedParty.updatedAt = Math.max(resolveStartedAt, Number(run.party.updatedAt) + 1);
-                memoryGroup.partyChanges = [fencedPartyChange(run, resolvedParty)];
-            }
+            if (atomicParty) resolvedParty.updatedAt = Math.max(resolveStartedAt, Number(run.party.updatedAt) + 1);
             if (raid) {
                 // Even a preparation or unavailable-boss result is atomic.
                 const snapshot = staged.snapshot || run.spot.raidAuthority || {
@@ -2146,13 +2143,6 @@ class ColdSimulationKernel {
             };
             if (run.requirementRefresh) openRequirements('event');
             const memberPlans = [];
-            // What the leader's commit carries: main writes the party row from
-            // it (the row's next due) and starts its members' duty trips (stayTrips).
-            const leaderResolution = {
-                partyId: run.party.partyId,
-                party: resolvedParty,
-                ...(recruitCheck ? { recruitCheck } : {})
-            };
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -2183,13 +2173,6 @@ class ColdSimulationKernel {
                         memberPlans.push({ characterId: id, plan });
                         if (selection.replanContext?.failure) result.events = [...(result.events || []),
                             require('./PartyRequirementRefresh').acquisitionFallbackEvent(state, state.stats?.equipmentPlan, selection.replanContext.failure, plan)];
-                        // Its plan needs no party where it did: its stay hears it (party_need_ended).
-                        const Stay = require('./PartyStay');
-                        if (projectedState && Stay.needsParty(state.stats?.equipmentPlan) && !Stay.needsParty(plan)) {
-                            projectedState = { ...projectedState, stats: { ...(projectedState.stats || {}) } };
-                            (Situations ||= require('../Situations')).raise(projectedState.stats, 'party_need_ended', null,
-                                Situations.place(projectedState), id);
-                        }
                     }
                     requirementProgress.add(id);
                 }
@@ -2219,30 +2202,29 @@ class ColdSimulationKernel {
                         ]
                     }),
                     options: { allowParty: true, allowLifecycle: true },
-                    partyResolution: id === Number(run.party.leaderId) ? leaderResolution : null
+                    partyResolution: null
                 };
                 proposals.push(proposal);
             }
-            if (requirementProgress && !meetingPending && !materialHunt) {
-                const leader = proposals.find(proposal => proposal.partyResolution);
-                if (leader) {
-                    leader.partyResolution.memberPlans = memberPlans;
-                    if (run.members.every(member => requirementProgress.has(Number(member.characterId)))) {
-                        leader.partyResolution.requirementRefreshedAt = startedAt;
-                        this.partyRequirementProgress.delete(String(run.party.partyId));
-                        // The re-plan done: the party's objective follows its members' plans, carried
-                        // on the leader's party row (main writes the plans, takes no decision of its own).
-                        if (resolvedParty.status !== 'dissolved') {
-                            const planned = new Map(memberPlans.map(entry => [Number(entry.characterId), entry.plan]));
-                            resolvedParty.stats = { ...resolvedParty.stats, ...require('./PartyRequirementRefresh').partyObjective(
-                                run.members.map(member => planned.has(Number(member.characterId)) ? { ...member,
-                                    stats: { ...member.stats, equipmentPlan: planned.get(Number(member.characterId)) } } : member)) };
-                            if (memoryGroup?.partyChanges) memoryGroup.partyChanges[0] = fencedPartyChange(run, resolvedParty);
-                        }
-                    }
-                }
-                if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
-            }
+            // The re-plan ends when every member is planned (the leader's commit carries its
+            // plans) or the party ends. Done, the party's objective follows its members' plans,
+            // on the party row the leader's commit carries (main writes the plans, takes no
+            // decision of its own).
+            const leader = proposals.find(proposal => proposal.characterId === Number(run.party.leaderId));
+            const replanning = !!requirementProgress && !meetingPending && !materialHunt;
+            const replanned = replanning && !!leader && run.members.every(member => requirementProgress.has(Number(member.characterId)));
+            if (replanned || replanning && resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
+            const planned = new Map(memberPlans.map(entry => [Number(entry.characterId), entry.plan]));
+            const party = replanned && resolvedParty.status !== 'dissolved' ? { ...resolvedParty, stats: { ...resolvedParty.stats,
+                ...require('./PartyRequirementRefresh').partyObjective(run.members.map(member => planned.has(Number(member.characterId))
+                    ? { ...member, stats: { ...member.stats, equipmentPlan: planned.get(Number(member.characterId)) } } : member)) } }
+                : resolvedParty;
+            if (atomicParty) memoryGroup.partyChanges = [fencedPartyChange(run, party)];
+            // What the leader's commit carries: main writes the party row from it (the row's
+            // next due), the members' plans, and starts its members' duty trips (stayTrips).
+            const leaderResolution = { partyId: run.party.partyId, party, ...(recruitCheck ? { recruitCheck } : {}),
+                ...(replanning && leader ? { memberPlans } : {}), ...(replanned ? { requirementRefreshedAt: startedAt } : {}) };
+            if (leader) leader.partyResolution = leaderResolution;
             if (!current()) return;
             if (!proposals.length) {
                 // No member result (the resolver found no spot): the whole
@@ -2255,7 +2237,7 @@ class ColdSimulationKernel {
                     timing: { ...(state.timing || {}), nextResolveAt: resolvedParty.nextResolveAt } }));
                 const group = partyTransitionProposals(run, waiting, resolvedParty, startedAt, this.now(), null, 'party_no_result', true);
                 group.find(proposal => proposal.partyResolution).partyResolution = {
-                    ...leaderResolution, party: { ...resolvedParty, updatedAt: group[0].atomicGroup.partyChanges[0].updatedAt } };
+                    ...leaderResolution, party: { ...party, updatedAt: group[0].atomicGroup.partyChanges[0].updatedAt } };
                 proposals.push(...group);
             }
             publish(proposals);
