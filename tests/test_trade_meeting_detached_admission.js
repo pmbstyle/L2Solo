@@ -88,6 +88,10 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
             'native acceptance persists the fresh production certificate');
         assert.equal((await Database.fetchAfkTradeShop(ad.id)).lines[0].availableCount, 6);
         if (row?.state === 'accepted') await Meetings.cancel(ids[0]);
+        // The meeting ends on its own queue (TradeMeetingService finishMeeting: the owners'
+        // settlement moves the buyer's revision, then both receipts): wait for the receipt,
+        // or that settlement lands inside the next preparation and voids its refusal evidence.
+        for (let pass = 0; pass < 100 && !await Database.fetchTradeMeetingReceipt(result.token, ids[0]); pass++) await tick();
         const buyerState = Life.cachedState(ids[0]);
         await Life.upsertState({ ...buyerState, stats: { ...buyerState.stats, money: [100, 0, 1000, 0] } }, 'price_refusal_fixture');
         Afk.boardIndex().put({ id: 999103, ownerId: 999101, revision: 1, storeType: 1, town: 'Giran',
