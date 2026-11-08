@@ -12,7 +12,6 @@ const Profit = require('./CraftProfitPolicy');
 const BidPurchaseAlternative = require('./BidPurchaseAlternative');
 const { npcOwnsPurchase } = require('./TradeIntent');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
-const MeetingPriceRefusals = require('./MeetingPriceRefusals');
 const PartyAdmission = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const BoardLook = require('./BoardLook');
@@ -144,8 +143,6 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
         if (line.custodyPolicy === 1 && !PartyAdmission.personalOfferAllowed(line, ctx.state)) continue;
-        if (line.custodyPolicy === 1 && MeetingPriceRefusals.rejects(line,
-            Math.min(units, line.count), PartyAdmission.counterpartyState(line.ownerId))) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;

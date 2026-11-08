@@ -97,5 +97,4 @@ function personalOfferAllowed(offer, ownState, otherState, ownSession = null, ot
             MeetingAnchor.of(otherState, otherState ? null : playerAnchorFor(otherId))])
         && MeetingFare.sellerCanReach(offer, seller);
 }
-module.exports = { PartyAdmission, limit, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission,
-    counterpartyState: id => tradeStateFor(Number(id)) };
+module.exports = { PartyAdmission, limit, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission };

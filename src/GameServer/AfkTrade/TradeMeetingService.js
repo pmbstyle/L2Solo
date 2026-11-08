@@ -520,10 +520,11 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     entry.ready = prepareActors(token).catch(async error => {
         invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('meeting', 'prepare_failed', error?.message || 'error');
         discard(token);
-        // Only the payer's worker refuses a need; on a buy ad the payer is its
-        // owner, so the need behind the ad changed. The refusal alone left the
-        // ad on the board for every later seller (E198 (2)).
-        if (error.message === 'trade_meeting_need_changed' && record.storeType === 3) await buyAdNeedChanged(record, line);
+        // Only the payer's worker refuses; on a buy ad the payer is its owner.
+        // A buy store never refuses a seller: an owner that no longer needs the
+        // line, or will not pay its price, closes it and decides anew.
+        if (record.storeType === 3 && ['trade_meeting_need_changed', 'trade_meeting_purchase_price_changed']
+            .includes(error.message)) await buyAdRefused(record, line);
         else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand);
         else if (error.message === 'trade_meeting_purchase_price_changed'
             && life().cachedState(buyer)?.phase === 'cold') {
@@ -536,10 +537,8 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
     return quote;
 }
-// Stop advertising the exact quote its payer just refused, then let the
-// owner publish its fresh quantities/value. A later revision survives this
-// cleanup; sibling shop lines and both physical wallets are preserved.
-const refusedAds = new Map();
+// A buyer's price refusal of a seller's ad: the buyer will not pick the same
+// quote again while its proof holds (seller-side advice, not consent).
 function rememberPriceRefusal(buyer, request, evidence) {
     const state = life().cachedState(buyer), scopes = evidence?.scopes, purchase = evidence?.purchase;
     if (!state || !purchase || !Array.isArray(scopes) || scopes.length > 40
@@ -580,7 +579,11 @@ async function purchaseNeedChanged(ownerId, errand) {
     events().raiseOn(ownerId, 'goal_failed', { impossible: true });
 }
 
-async function buyAdNeedChanged(record, line) {
+// Stop advertising the exact quote its payer just refused, then let the
+// owner publish its fresh quantities/value. A later revision survives this
+// cleanup; sibling shop lines and both physical wallets are preserved.
+const refusedAds = new Map();
+async function buyAdRefused(record, line) {
     const key = `${record.id}:${line.id}`;
     if (refusedAds.get(key) === record.revision) return;
     refusedAds.delete(key); refusedAds.set(key, record.revision);
@@ -603,7 +606,7 @@ async function buyAdNeedChanged(record, line) {
     // A raise or request that did not land (no far row and no body; the worker not ready
     // yet) is asked again on the next refusal of this quote.
     const forget = () => { if (refusedAds.get(key) === record.revision) refusedAds.delete(key); };
-    // The need behind the ad failed: its owner decides anew, its step dropped as other
+    // The owner refused its own ad: it decides anew, its step dropped as other
     // executors' refusals (a far row's raise, after any command of the owner's in flight;
     // not awaited: this refusal may run inside it). null: not on a far row, its body took
     // it when the owner is near now, else it was lost.
