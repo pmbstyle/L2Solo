@@ -1715,9 +1715,7 @@ const PopulationService = {
     // Would the near-player scan activate this cold row? Not a traveller or a
     // pk hunter (no hot equivalent of its run), not a bot on a supply errand, a
     // party only while its row is active (one candidate for the roster), a
-    // crafter only with its shop, never a merchant. The cold commit holds only
-    // such a row near a player (ColdSimulationCoordinator.prepareProposal): a
-    // row this scan skips would wait there forever.
+    // crafter only with its shop, never a merchant.
     activationCandidate(state) {
         if (!state || ['pk_hunting', 'traveling'].includes(state.activity)
             || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return false;
@@ -1727,11 +1725,13 @@ const PopulationService = {
         return state.activity !== 'merchant';
     },
 
-    // Did the last near-player scan refuse this row by its own state (no placement a
-    // player would see: HotActivation byState)? Such a row will not turn hot as it
-    // stands, so the near hold lets it step and move; the next scan tries it again.
-    nearActivationRefused(characterId) {
-        return this.nearRefused?.has(Number(characterId)) === true;
+    // Will the near-player scan turn this cold row hot? The last scan reached it (a
+    // candidate on the player's floor among the nearest it reads) and left it only for
+    // its per-scan budget, so the next scan tries it first. A row it activated is hot; a
+    // row it refused, on another floor or past its read is not taken and steps on. The
+    // cold commit's near hold reads this answer (ColdSimulationCoordinator.heldNear).
+    nearActivationTakes(characterId) {
+        return this.nearTaking?.has(Number(characterId)) === true;
     },
 
     activateNearPlayers() {
@@ -1741,8 +1741,8 @@ const PopulationService = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         const ambientActivated = [];
-        // The rows this scan refused by their own state: the near hold's answer.
-        const refused = new Set();
+        // The rows this scan left for its budget (members of a party too): the near hold's answer.
+        const taking = new Set();
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
@@ -1786,50 +1786,47 @@ const PopulationService = {
                         // bounded per-pass activation budget (counted in bots
                         // activated, below) so the population converges gradually
                         // and player pressure can still interrupt the work between
-                        // scans. The floor and a refused placement are judged
+                        // scans. The floor and a refused activation are judged
                         // before the budget: a row on another floor or one that
-                        // cannot be placed takes no place from the next nearest.
+                        // cannot be shown takes no place from the next nearest.
                         const ambient = standalone.filter(state => state.activity !== 'crafting');
                         const candidates = [...parties, ...crafters, ...ambient];
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
                             playerLoc: loc,
                             reason: 'near_player'
                         }).accepted;
-                        const shown = floorAware.reduce((stateChain, state) => (
-                            stateChain.then(() => {
+                        // Rows past the budget are only noted (no activation request): the
+                        // next scan takes them first.
+                        const tryRows = async () => {
+                            for (const state of floorAware) {
                                 const craft = state.activity === 'crafting' && state.stats?.craftShop;
-                                const size = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId)?.memberIds.length || 1 : 1;
+                                const memberIds = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId)?.memberIds : null;
+                                const size = memberIds?.length || 1;
                                 // One full party may exceed the solo per-scan budget
                                 // (9 versus 6), but may not be split or starve forever.
                                 if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) {
-                                    return { ok: false, reason: 'activation_budget' };
+                                    for (const id of memberIds || [state.characterId]) taking.add(Number(id));
+                                    continue;
                                 }
-                                return this.requestActivation(state, 'near_player', {
+                                const result = await this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
                                     keepStoreLocation: state.activity === 'crafting' && !!state.stats?.craftShop,
                                     playerLoc: loc
-                                }).then((result) => {
-                                    logPartyFailure(state?.party?.partyId, 'activation', result);
-                                    return result;
                                 });
-                            }).then((result) => {
-                                if (result.byState) refused.add(Number(state.characterId));
-                                if (result.ok) {
-                                    activated.push(result);
-                                    if (state.activity !== 'crafting' || !state.stats?.craftShop) {
-                                        ambientActivated.push(...Array(result.count || 1).fill(result));
-                                    }
-                                }
-                            })
-                        ), Promise.resolve());
-                        return shown.then(() => this.showWalkersNear(loc, activated, ambientActivated));
+                                logPartyFailure(state?.party?.partyId, 'activation', result);
+                                if (!result.ok) continue;
+                                activated.push(result);
+                                if (!craft) ambientActivated.push(...Array(result.count || 1).fill(result));
+                            }
+                        };
+                        return tryRows().then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });
             });
         });
 
         return chain.then(() => {
-            this.nearRefused = refused;
+            this.nearTaking = taking;
             return activated;
         });
     },
@@ -3290,7 +3287,8 @@ const PopulationService = {
 
     logSummary(reason = 'summary') {
         // Without diagnostics only the cheap cold-queue scan runs, for the line below.
-        const summary = Config.developerDiagnostics ? this.summary() : { enabled: false, coldQueue: LifeState.coldDueSummary() };
+        const summary = Config.developerDiagnostics ? this.summary() : { enabled: false,
+            coldQueue: LifeState.coldDueSummary(Date.now(), ColdSimulationCoordinator.nearHolds) };
         const coordinator = summary.line ? null : ColdSimulationCoordinator.snapshot();
         if (summary.line) console.info('BotPopulation :: %s %s', reason, summary.line);
         else console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));

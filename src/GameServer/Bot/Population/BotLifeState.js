@@ -107,25 +107,29 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
 }
 
 // A near body's fight on its row (session.coldLifeState), recorded as a far round's
-// (SpotRiskPolicy.recordHunt: the spot's risk window, its death mark, the leveling
-// recovery) so a death near a player keeps the bot off that spot as a far death does.
-// outcome: won (its kill, NpcDied) or died (Die), each one fight; the spot is the one
-// the body hunts. Main only; the row reaches the worker by the body's next post.
-function recordNearFight(session, state, { won = false, died = false, timestamp = now() } = {}) {
+// so a death near a player keeps the bot off that spot as a far death does.
+// outcome: won (its kill, NpcDied) or died (Die; pvp: a playable killed it), each one fight.
+// The spot's record (SpotRiskPolicy.recordHunt: risk window, death mark, leveling recovery)
+// takes only what a far hunting round's does: a fight with a monster on the spot it hunts
+// (SpotService.arrivedAt). A PvP death only adds to deaths, as a far one (ColdPvpResolver);
+// a fight off its spot (on the road, in town) is no hunt there. Main only; the row reaches
+// the worker by the body's next post.
+function recordNearFight(session, state, { won = false, died = false, pvp = false, timestamp = now() } = {}) {
     const stats = state.stats || {};
-    const spotId = session.currentSpot?.id ?? state.spotId ?? null;
+    const fights = died && pvp ? 0 : 1;
+    const counted = { fightsWon: Number(stats.fightsWon || 0) + (won ? 1 : 0),
+        fightsResolved: Number(stats.fightsResolved || 0) + fights, deaths: Number(stats.deaths || 0) + (died ? 1 : 0) };
     const actor = session.actor;
+    const loc = actor && { locX: actor.fetchLocX?.(), locY: actor.fetchLocY?.(), locZ: actor.fetchLocZ?.() };
+    const spotId = fights && SpotService.arrivedAt(session.currentSpot, loc) ? session.currentSpot.id : null;
+    if (spotId == null) return { ...state, stats: { ...stats, ...counted } };
     const exp = Number(actor?.fetchExp?.() ?? state.exp ?? 0);
     // The held step's leaf, as the body's target scan reads it.
     const leaf = session.heldEconomy?.network.activity || session.activationEconomyDecision?.activity;
     const hunt = SpotRiskPolicy.recordHunt(state, { spotId, timestamp, fights: 1, wins: won ? 1 : 0, deaths: died ? 1 : 0,
-        itemHunt: spotId != null && String(leaf?.spotId) === String(spotId)
-            && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(leaf),
+        itemHunt: String(leaf?.spotId) === String(spotId) && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(leaf),
         exp, expBeforeDeath: died ? Number(actor?.deathExperience?.expBeforeDeath ?? exp) : exp });
-    return { ...state, stats: { ...stats, ...hunt,
-        fightsWon: Number(stats.fightsWon || 0) + (won ? 1 : 0),
-        fightsResolved: Number(stats.fightsResolved || 0) + 1,
-        deaths: Number(stats.deaths || 0) + (died ? 1 : 0) } };
+    return { ...state, stats: { ...stats, ...hunt, ...counted } };
 }
 
 // A near bot's body moved a fact (reason: bag, equip, level, death, revive,
@@ -3963,7 +3967,9 @@ const BotLifeState = {
         return counts;
     },
 
-    coldDueSummary(timestamp = now()) {
+    // held: the rows main holds unstepped for the near-player activation
+    // (ColdSimulationCoordinator.nearHolds): waiting for it, not queued.
+    coldDueSummary(timestamp = now(), held = null) {
         // overdue: due longer than a step takes from its time to its commit
         // on main; a bot inside that span is being stepped, not queued.
         const summary = {
@@ -3983,7 +3989,7 @@ const BotLifeState = {
                 dueAt, lastResolvedAt: Number(state.timing?.lastResolvedAt || 0) };
         };
         cache.forEach((state) => {
-            if (state.phase !== 'cold'
+            if (state.phase !== 'cold' || held?.has(state.characterId)
                 || state.activity === 'pk_hunting'
                 || state.party?.partyId
                 || (state.activity === 'crafting' && state.stats?.craftShop)) {

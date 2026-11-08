@@ -54,7 +54,6 @@ const RecomputeGeneration = require('./RecomputeGeneration');
 
 const ClanRaidRoster = require('../../Clan/ClanRaidRoster');
 const GeodataEngine = require('../../Geodata/GeodataEngine');
-const { CLIENT_VISIBILITY_RADIUS } = require('../../World/WorldConstants');
 const SpotValueTable = require('../AI/SpotValueTable');
 // Private main-thread provenance survives the queue's shallow clone but is
 // excluded from JSON/wire sizing and cannot be supplied by a Worker message.
@@ -1435,7 +1434,7 @@ class ColdSimulationCoordinator {
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
 
-    // A held row (nearHolds) no player sees any more (or the scan no longer takes) goes back to the worker,
+    // A held row (nearHolds) the scan no longer takes (a player left, it was refused) goes back to the worker,
     // which schedules it; a row that left the cold phase (activated) or is
     // fenced is the handoff's. Run after each near-player scan (the phase
     // policy's), the one place that follows where players stand.
@@ -1500,18 +1499,17 @@ class ColdSimulationCoordinator {
         }
     }
 
-    // Will the near-player scan turn this cold row hot? Its candidate rule, a player
-    // that sees it, and no refusal by its own state at the scan's last try (a row that
-    // cannot be placed steps on and moves). The near hold's one answer.
+    // Will the near-player scan turn this cold row hot? The scan's own answer
+    // (PopulationService.nearActivationTakes: a row it left only for its budget); any
+    // other row near a player steps on. The near hold's one answer.
     heldNear(state) {
-        return this.population?.activationCandidate?.(state) === true
-            && this.population.nearActivationRefused?.(state.characterId) !== true
-            && this.visibleToRealPlayer(state, CLIENT_VISIBILITY_RADIUS);
+        return this.population?.nearActivationTakes?.(state.characterId) === true;
     }
 
-    // radius: the activation's (the safety repair keeps clear of a bot it may
-    // activate) or the client's view (a commit held for the activation).
-    visibleToRealPlayer(state, radius = Math.max(1, Number(Config.activationRadius) || 9000)) {
+    // Within the activation's radius of a player, on its floor: the safety repair keeps
+    // clear of a bot the activation may take.
+    visibleToRealPlayer(state) {
+        const radius = Math.max(1, Number(Config.activationRadius) || 9000);
         if (!state || ['pk_hunting', 'traveling'].includes(state.activity) || state.stats?.supplyErrand) return false;
         const candidateLoc = state.stats?.craftShop?.loc || state.loc;
         if (!candidateLoc) return false;
@@ -1597,10 +1595,10 @@ class ColdSimulationCoordinator {
         if (Number(state.stats?.clanId) > 0) proposal[CLAN_BEFORE] = { level: state.level, sp: state.sp, inventory: state.inventory };
         const partyId = String(state.party?.partyId || state.partyId || '');
         if (partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)) return null;
-        // A player sees this row and the near-player scan will activate it: the
-        // step waits for that, held off the worker's heap (prepareRefusal
-        // near_player) until the activation fences it or the player leaves
-        // (releaseNearHolds republishes the row). A row the scan skips steps on.
+        // The near-player scan will activate this row (it waits for the scan's
+        // budget): the step waits for that, held off the worker's heap
+        // (prepareRefusal near_player) until the activation fences it or the scan
+        // no longer takes it (releaseNearHolds republishes the row). Any other row steps on.
         if (this.heldNear(state)) {
             proposal.prepareRefusal = 'near_player';
             const id = Number(proposal.characterId);

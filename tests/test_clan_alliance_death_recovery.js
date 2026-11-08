@@ -210,7 +210,7 @@ assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoni
     const prior = { characterId: 3, level: 20, spotId: 'spot-a', stats: { dangerPrice: [2, 1], economyClock: now - 3600000,
         playedHours: 1, frustration: 1 } };
     const victim = { accountId: 'bot_death_price', actor: actor(3), coldLifeState: prior, populationActivating: true,
-        currentSpot: { id: 'spot-a' }, dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+        currentSpot: { id: 'spot-a', center: { locX: 10000, locY: 10000, locZ: -3000 } }, dataSendToMeAndOthers() {}, dataSendToOthers() {} };
     victim.actor.session = victim;
     const persona = Economy.personal(prior, { timestamp: now }).persona;
     const expected = Valuation.progressStats(prior, { timestamp: now, losses: 1, lossHours: Valuation.liveDeathHours(2),
@@ -237,5 +237,22 @@ assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoni
     assert.strictEqual(victim.coldLifeState.stats.deaths, 2);
     assert.strictEqual(Risk.excludedSpotIdsForStates([victim.coldLifeState]).has('spot-a'), true,
         'two near deaths at the spot keep the bot off it, as two far deaths do');
+    // Only a monster's kill on the spot it hunts is the spot's, as a far hunting round's:
+    // a PvP death (a far one only adds to deaths) and a death off its spot (on the road,
+    // in town) count as deaths and leave the spot's record and the recovery as they were.
+    const spotRecord = () => JSON.stringify([victim.coldLifeState.stats.spotRisk, victim.coldLifeState.stats.huntingRecovery,
+        victim.coldLifeState.stats.spotBackoffs]);
+    const before = spotRecord();
+    victim.actor.state.dead = false;
+    victim.actor.hp = 0;
+    die(victim, victim.actor, { killer: actor(9, 10050) });
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 3, 'a PvP death is counted');
+    assert.strictEqual(spotRecord(), before, 'a PvP death is not the spot\'s');
+    victim.actor.state.dead = false;
+    victim.actor.hp = 0;
+    victim.actor.x = 30000;
+    die(victim, victim.actor);
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 4, 'a death off its spot is counted');
+    assert.strictEqual(spotRecord(), before, 'a death off its spot is not the spot\'s');
 }
 console.log('Clan alliance immediate death recovery: native packets, town, continuation, stale landing, cancellation and scope passed');
