@@ -262,6 +262,10 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
     };
 }
 
+// What an ungrouped bot asks of a party now: its open request (its build issued it) or
+// its clan's open call. An objective its build did not issue (a plan needing a party
+// while the bot could not ask: a request deferred or closed) asks for nothing: it
+// anchors no roster and sets no party's objective; the bot is willing fill at most.
 function partyObjectiveForState(state) {
     if (closed(state)) return null;
     if (state?.stats?.equipmentPlan?.levelingRecovery) return null;
@@ -274,10 +278,16 @@ function partyObjectiveForState(state) {
         }
         return clanObjective;
     }
-    if (request) {
-        return request.status === 'open' ? request : null;
-    }
-    return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanObjective;
+    return request?.status === 'open' ? request : null;
+}
+
+// A party member's objective at its party's re-plan (PartyRequirementRefresh): what it
+// asks, else what its gear plan needs from a party, else its clan's deferred call. A
+// member holds no request (joining a party clears it), so its plan speaks for it there.
+function memberObjective(state) {
+    const asked = partyObjectiveForState(state);
+    if (asked || closed(state) || state?.stats?.equipmentPlan?.levelingRecovery || state?.stats?.partyRequest) return asked;
+    return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanPartyObjectiveForState(state);
 }
 
 module.exports = {
@@ -294,5 +304,6 @@ module.exports = {
     partyObjectiveForPlan,
     clanPartyObjectiveForState,
     partyRequestForPlan,
-    partyObjectiveForState
+    partyObjectiveForState,
+    memberObjective
 };

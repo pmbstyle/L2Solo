@@ -35,13 +35,14 @@ function plan(state, options) {
 }
 
 // The party's objective after its members' re-plan: the one of the first member whose
-// plan needs a party, else of the first holding one (its open request, its clan's call,
-// its plan); none when no member holds one. acquisitionGoal: that member's active plan.
+// plan needs a party, else of the first holding one (PartyRequestPlanner.memberObjective:
+// its open request, its clan's call, its plan); none when no member holds one.
+// acquisitionGoal: that member's active plan.
 function partyObjective(members) {
     const Request = require('./PartyRequestPlanner'), Stay = require('./PartyStay');
-    const owner = members.find(member => Stay.needsParty(member.stats?.equipmentPlan) && Request.partyObjectiveForState(member))
-        || members.find(member => Request.partyObjectiveForState(member));
-    return { objective: owner ? Request.partyObjectiveForState(owner) : null,
+    const owner = members.find(member => Stay.needsParty(member.stats?.equipmentPlan) && Request.memberObjective(member))
+        || members.find(member => Request.memberObjective(member));
+    return { objective: owner ? Request.memberObjective(owner) : null,
         acquisitionGoal: owner?.stats?.equipmentPlan?.status === 'active' ? owner.stats.equipmentPlan : null };
 }
 

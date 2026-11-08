@@ -228,6 +228,16 @@ async function run() {
         null,
         'a closed request keeps no formation objective alive'
     );
+    // A plan needing a party whose build issued no request (built while travelling: it
+    // could not ask) asks for nothing: no required asker anchors a roster or names its
+    // objective. Inside a party its plan speaks for it (a member holds no request).
+    const travelling = { activity: 'traveling', stats: { equipmentPlan: requestPlan } };
+    assert.strictEqual(Planner.partyRequestForPlan(travelling, requestPlan, timestamp, { economy: { worth: () => 0 } }), null,
+        'fixture: a travelling bot\'s build issues no request');
+    assert.strictEqual(PopulationService.partyObjectiveForState(travelling), null,
+        'an objective the build never issued is no party request');
+    assert.strictEqual(Planner.memberObjective({ ...travelling, party: { partyId: 'p' } })?.objectiveKey, 'farm:unsafe_target:77',
+        'a party member\'s plan still names its party\'s objective');
     const reopened = Planner.partyRequestForPlan({
         ...oldRequestState,
         stats: { ...oldRequestState.stats, partyRequest: closed }
