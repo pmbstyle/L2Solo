@@ -3,7 +3,7 @@
 const path = require('node:path');
 const { readJson, writeJson } = require('./files.cjs');
 const { listReleases } = require('./releases.cjs');
-const interval = 4 * 60 * 60 * 1000;
+const interval = 5 * 60 * 1000;
 
 class ReleaseCatalog {
     constructor({ userData, fetcher = fetch }) {

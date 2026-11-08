@@ -21,7 +21,7 @@ Our first desktop launcher is available for Windows, Linux and macOS, including 
 
 🔄 **Updates from the app**
 
-- Check server and launcher updates separately and read release notes inside the launcher. Update checks run in the background.
+- Server and launcher updates are checked automatically in the background at startup and every five minutes. You can also check manually and read release notes inside the launcher.
 - Download server updates while playing, then stop the server to apply them. Updates preserve your world, local settings and manual backups.
 - Before applying a server update, the launcher snapshots the world and its history. If the updated server fails its initial startup verification, the previous server and world are restored.
 - Windows Setup and Linux AppImage builds support in-app launcher updates. On macOS, download the matching DMG, quit the launcher and replace the app. Windows portable and Linux DEB builds use a replacement installer.

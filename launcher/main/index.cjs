@@ -124,9 +124,10 @@ else {
         });
         await window.loadURL('l2solo://app/index.html');
         await controller.initialize();
+        // Refresh both components even when the shared catalog cache is recent.
         // Update discovery is informational; an offline machine can still play.
-        if (!process.env.L2SOLO_SMOKE_DIR) checkAllUpdates().catch(() => {});
-        const updateTimer = setInterval(() => checkAllUpdates().catch(() => {}), interval);
+        if (!process.env.L2SOLO_SMOKE_DIR) checkAllUpdates(true).catch(() => {});
+        const updateTimer = setInterval(() => checkAllUpdates(true).catch(() => {}), interval);
         updateTimer.unref();
         if (!app.isPackaged && process.env.L2SOLO_SMOKE_DIR) {
             await require('../test/ui-smoke.cjs')({ window, controller, directory: process.env.L2SOLO_SMOKE_DIR });
