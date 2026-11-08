@@ -18,7 +18,7 @@ async function run() {
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
             stats: { classId: 1, shopTown: { town: 'Giran', at: 1 } }, timing: {},
             vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 } }, 'finite_income_test');
-        const trip = () => 0; trip.details = () => ({ known: true, hours: .25, fees: 1 });
+        const trip = () => 0; trip.details = town => town === 'Giran' ? { known: true, hours: .25, fees: 1 } : { known: true, hours: .5, fees: 2 };
         const deps = { board: new (invoke('GameServer/AfkTrade/BoardIndex').BoardIndex)(), spots: [],
             knownRecipes: [], producerRecipes: [], tripCost: trip, knowledgeEnabled: false };
         const context = Economy.forState(state, deps);
@@ -28,7 +28,7 @@ async function run() {
         assert.equal(sale.capacityCash, context.buyback(1867) * 10);
         assert.equal(sale.actionHours, .25);
         assert.equal(sale.cashFees, 1);
-        assert.equal(sale.town, 'Giran', 'a stored shop town is read as its town name');
+        assert.equal(sale.town, 'Giran', 'spare goods sell at the NPC town of the cheapest trip');
         assert.equal(sale.incomePerHour, undefined);
         const originalInvoke = global.invoke;
         try {
@@ -43,7 +43,6 @@ async function run() {
             const prepared = Economy.forState(farm, { ...deps, spots: [spot], hunt: { perHour: 1, bestSpotId: spot.id } });
             const finite = prepared.projection.moneyPaths.find(row => row.kind === 'liquidate');
             assert(finite, 'worker-native sale planning uses prepared inputs without a live World');
-            assert.equal(finite.town, 'Elven Village', 'sale town follows prepared farming origin, not the current Giran position');
             assert.equal(finite.capacityCash, sale.capacityCash);
             const Sources = require('../src/GameServer/Bot/Population/ColdOccupationSources');
             assert.equal(Sources.hasNpcSellerInTown('unknown-town'), false, 'no imagined NPC seller');

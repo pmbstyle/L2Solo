@@ -4,13 +4,7 @@ const path = require('node:path');
 
 // Test files that exist but are not run by the suite, each with the reason.
 // A file is in `tests` or here, never both and never neither (checked below).
-const notRunTests = new Map([
-    ['tests/test_beginner_shot_policy.js', 'red: a cold fight fires no beginner shot (Cold.resolveSolo shotActions 0); debt 34'],
-    ['tests/test_cold_armor_set_effects.js', 'new red 2026-10-14: AssertionError: strictEqual 445 !== 468'],
-    ['tests/test_finite_market_income.js', 'new red 2026-10-14: AssertionError: a stored shop town is read as its town name'],
-    ['tests/test_task4_b5_hot_cold_same.js', 'red since 2026-10-14: canTradeRemotely refuses its buy goal, no ad opens; debt 34'],
-    ['tests/test_task4_survival_tranche.js', 'red: the refill tranche funds no shot bid (BuyAdPolicy.bidFor null); debt 34'],
-]);
+const notRunTests = new Map([]);
 
 const tests = [
     'tests/test_perf_cpu_profile.js',
@@ -271,11 +265,14 @@ const tests = [
     'tests/test_shot_stock_weapon_rank.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_shot_economy.js',
+    'tests/test_beginner_shot_policy.js',
     'tests/test_live_player_store_purchase.js',
     'tests/test_live_player_market_services.js',
     'tests/test_live_player_shot_craft_order.js',
     'tests/test_shot_market_restock.js',
     'tests/test_cold_shot_economy.js',
+    'tests/test_cold_armor_set_effects.js',
+    'tests/test_finite_market_income.js',
     'tests/test_shot_economy_persistence.js',
     'tests/test_cold_shot_consumption.js',
     'tests/test_cold_potion_consumption.js',
@@ -1258,6 +1255,8 @@ const tests = [
     'tests/test_station_workshop.js',
     'tests/test_task4_arrival_step.js',
     'tests/test_task4_b5_authority_bump.js',
+    'tests/test_task4_b5_hot_cold_same.js',
+    'tests/test_task4_survival_tranche.js',
     'tests/test_task4_b5_craft_chain.js',
     'tests/test_task4_b5_duplicate_ack.js',
     'tests/test_task4_b5_expiry_reorder.js',

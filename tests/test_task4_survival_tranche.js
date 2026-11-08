@@ -79,7 +79,9 @@ async function run() {
     // shots buys floor(1000 / price) (e.g. 7: 142 = 994): the worker, main
     // and the native check must all allow it, not 100 x price (700).
     const kitCost = (id, unitPrice = null) => Number(id) === SHOT ? 100 * (unitPrice > 0 ? unitPrice : 10) : 0;
-    const economy = { kitCost, worth: () => 7, moneyPrice: 0 };
+    // A meeting in the bot's own town: no fare (a bid pays its own trip, MarketPricing.bid).
+    const trip = Object.assign(() => 0, { details: () => ({ known: true, hours: 0, fees: 0 }) });
+    const economy = { kitCost, worth: () => 7, moneyPrice: 0, trip };
     const goal = { type: 'buy_craft_material', target: { itemId: SHOT, amount: 250, adena: 7 },
         plan: { estimatedCost: 7, priceSource: 'market' } };
     const poor = Life.cachedState(owner);
@@ -106,7 +108,7 @@ async function run() {
     const lines = BuyAdPolicy.linesFor(poor, goal, { economy, board: null, watchList: [], money });
     assert.deepEqual(lines.map(line => [line.selfId, line.count, line.price, line.survivalCost]), [[SHOT, bid.count, bid.price, 1000]]);
     const batch = invoke('GameServer/Bot/Population/ColdEconomyPlan').buyBatch(lines);
-    assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyKit: [1000] });
+    assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyCaps: [bid.purchaseCap], buyKit: [1000] });
     await Market.executePlan(Life.cachedState(owner), batch);
     ads = await records();
     assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count, ad.lines[0].price]), [[SHOT, bid.count, bid.price]]);
