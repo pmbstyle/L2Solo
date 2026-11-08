@@ -29,6 +29,7 @@ const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const ColdOccupationSources = require('../Bot/Population/ColdOccupationSources');
 const PartyAdmission = require('../Bot/Population/PartyAdmission');
 const Trace = require('../Bot/DecisionTrace');
+const FailureLog = require('../../FailureLog');
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 MarketCounters.publish(TableChannel.shared);
 // The board goes to the planning workers as the 'board' table (ColdTableChannel):
@@ -45,12 +46,7 @@ function boardRows() {
     for (const entry of entriesById.values()) if (entry.boardRow) rows.push(entry.boardRow);
     return rows;
 }
-// Records close by events only (user, 2026-10-05): no deadline. What a deal
-// left on the board for a bot that turned near before its step commit merged
-// it is merged every SETTLE_TICK_MS on the main thread, one run at a time.
-const SETTLE_TICK_MS = 5000;
-let settleTimer = null;
-let settling = false;
+// Records close by events only (user, 2026-10-05): no deadline.
 const boardChangeListeners = new Set();
 let boardReady = false;
 let boardChangeDepth = 0;
@@ -65,7 +61,7 @@ function notifyBoardChange(change) {
     else for (const id of change.selfIds || []) production.update(id);
     for (const listener of boardChangeListeners) {
         try { listener(change); }
-        catch (error) { utils.infoWarn('AfkTrade', 'board listener failed: %s', error.message); }
+        catch (error) { FailureLog.note('board.listener', error); }
     }
 }
 
@@ -614,8 +610,8 @@ async function settleOwners(ownerIds = []) {
         try {
             result = await Database.settleBoardOwner(ownerId);
         } catch (error) {
-            // It stays on the board; the next tick tries again.
-            utils.infoWarn('AfkTrade', 'settlement for %d waits: %s', ownerId, error.message);
+            // It stays on the board for the bot's next hand-over or far step commit.
+            FailureLog.note('board.settle', error);
             continue;
         }
         if (result.settled) syncOnlineInventory(ownerId, result.ownerInventory);
@@ -649,9 +645,7 @@ async function finalizeTrade(result, kind, counterpartyId) {
     if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(result.line?.selfId))) {
         const buyer = onlineSession(kind === 'sale' ? counterpartyId : result.shop.ownerId);
         if (buyer && isBotSession(buyer)) {
-            await invoke('GameServer/Bot/BotSkillTraining').review(buyer).catch((error) => {
-                utils.infoWarn('BotSkills', 'training after book purchase failed: %s', error.message);
-            });
+            await invoke('GameServer/Bot/BotSkillTraining').review(buyer).catch(error => FailureLog.note('skills.book_training', error));
         }
     }
     if (String(result.shop?.ownerAccount || '').startsWith('bot_')
@@ -904,7 +898,8 @@ async function activate(session, store) {
         commandMessage(session, 'AFK trade is active. Use .afkstop to close it remotely.');
         return true;
     } catch (error) {
-        utils.infoWarn('AfkTrade', 'failed to activate shop for %s: %s', actor.fetchName(), error.message);
+        // A refusal code is the player's answer; anything else is a failure.
+        if (!FailureLog.refusal(error)) FailureLog.note('board.activate', error);
         commandMessage(session, `AFK trade could not be opened: ${error.message}`);
         return false;
     }
@@ -982,7 +977,7 @@ async function deliverTrade(result, kind, characterId) {
     catch (error) {
         // The physical transaction already committed. Auxiliary delivery may
         // wait, but a counter/notification failure cannot become a new debit.
-        utils.infoWarn('AfkTrade', 'postcommit delivery waits for %d: %s', characterId, error.message || error);
+        FailureLog.note('board.postcommit_delivery', error);
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const coldState = acceptFenced(result, characterId) || LifeState.cachedState(characterId);
         return { ...result, coldState, deliveryPending: true };
@@ -1054,7 +1049,6 @@ function activeDemandSelfIds() {
 function clearBoard() {
     boardReady = false;
     notifyBoardChange({ reset: true, ready: false });
-    stopTimers();
     for (const entry of entriesById.values()) {
         if (entry.indexedRecordId) TableChannel.shared.changed('board', { key: entry.indexedRecordId, removed: true });
     }
@@ -1081,6 +1075,7 @@ function clearBoard() {
 // accept before it publishes the seller's bag (TradeMeetingService.accepted). Trims run,
 // by whether they changed an ad (developer diagnostics).
 let unsubscribeOwnStock = null;
+let unsubscribeHandOver = null;
 // The unworn units of a bag summary's item at one enchant level.
 function unwornAt(item, enchant) {
     if (!item) return 0;
@@ -1096,12 +1091,13 @@ function reconcileOwnStock({ characterId, state, previousState }) {
     Database.reconcileConditionalSellAds(id).then(ads => {
         invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('board', 'own_stock_trim', ads.length ? 'changed' : 'same');
         ads.forEach(refreshRecord);
-    }).catch(error => require('../../FailureLog').note('board.own_stock_trim', error));
+    }).catch(error => FailureLog.note('board.own_stock_trim', error));
 }
 
 async function init() {
     clearBoard();
     unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnStock);
+    unsubscribeHandOver ||= invoke('GameServer/Bot/Population/BotLifeState').subscribeMarketReviewChanges(settleHandedOver);
     const migrated = await Database.migrateBoardWorld();
     // A cached bot state follows the bags and states the migration changed.
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -1139,7 +1135,7 @@ async function init() {
         .map(shop => Number(shop.ownerId)));
     for (const ownerId of buyOwners) {
         try { await BotMarket.withdrawSourceInvalidBuyAds(ownerId); }
-        catch (error) { utils.infoWarn('AfkTrade', 'source-invalid buy ads of %d stay: %s', ownerId, error.message); }
+        catch (error) { FailureLog.note('board.source_invalid_buy_ads', error); }
     }
     // The market counters learn the board's last deals again (group E, E58).
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
@@ -1149,32 +1145,17 @@ async function init() {
     boardReady = true;
     await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });
-    startTimers();
+    // Bots main took before the board was ready get theirs now.
+    await settleOwners(Database.boardSettlementOwners()).catch(error => FailureLog.note('board.settle', error));
     return shops.length;
 }
 
-function startTimers() {
-    stopTimers();
-    settleTimer = setInterval(() => {
-        if (settling) return;
-        settling = true;
-        settlePending()
-            .catch((error) => utils.infoWarn('AfkTrade', 'board settlement failed: %s', error.message))
-            .finally(() => { settling = false; });
-    }, SETTLE_TICK_MS);
-    settleTimer.unref?.();
-}
-
-function stopTimers() {
-    clearInterval(settleTimer);
-    settleTimer = null;
-}
-
-// The owners with settlements still on the board that main holds now (a bot
-// turned near before its commit, a settle that failed) get them merged.
-function settlePending() {
-    const owners = Database.boardSettlementOwners();
-    return owners.length ? settleOwners(owners) : Promise.resolve();
+// A far bot handed to main (its row turned hot: activation, a hand-over) gets
+// what deals left for it on the board at that event; a far bot's waits for its
+// own step commit (Database settleBoardOwner).
+function settleHandedOver(characterId) {
+    if (!boardReady || invoke('GameServer/Bot/Population/BotLifeState').cachedState(characterId)?.phase === 'cold') return;
+    settleOwners([characterId]).catch(error => FailureLog.note('board.settle', error));
 }
 
 module.exports = {
@@ -1213,7 +1194,6 @@ module.exports = {
     sellToShop,
     settleOwners,
     syncOnlineInventory,
-    settlePending,
     stop,
     _resetForTests() {
         require('./TradeMeetingService').reset();

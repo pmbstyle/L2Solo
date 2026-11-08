@@ -74,7 +74,7 @@ function notifyMarketReviewState(state, previous) {
     if (previous?.phase === state.phase && left.revision === right.revision) return;
     for (const listener of marketReviewListeners) {
         try { listener(state.characterId); }
-        catch (error) { utils.infoWarn('BotLife', 'market lifecycle listener failed: %s', error.message); }
+        catch (error) { FailureLog.note('botlife.market_listener', error); }
     }
 }
 
@@ -89,7 +89,7 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
         try {
             listener(state, reason);
         } catch (error) {
-            utils.infoWarn('BotLife', 'state change listener failed: %s', error.message);
+            FailureLog.note('botlife.change_listener', error);
         }
     });
     if (!state?.characterId || state.phase !== 'cold') return;
@@ -489,7 +489,7 @@ function enqueueEquipmentGoalAdvance(signal) {
         }
         return result;
     }).catch((error) => {
-        utils.infoWarn('BotLife', 'failed to enqueue clan equipment advance for %s: %s', signal.goalKey, error.message || error);
+        FailureLog.note('botlife.clan_advance_enqueue', error);
         return null;
     });
 }
@@ -747,7 +747,7 @@ function rewriteMarketState(state, reason) {
             notifyColdSnapshot(snapshot, 'market_sale', { critical: true });
             return snapshot;
         }).catch((error) => {
-            utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
+            FailureLog.note('botlife.market_rollback', error);
             return null;
         });
 }
@@ -1135,7 +1135,7 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
             if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
             return snapshot;
         }).catch((error) => {
-            utils.infoWarn('BotLife', 'failed held write %s for %s: %s', reason, id, error.message);
+            FailureLog.note('botlife.held_write', error);
             return null;
         });
 }

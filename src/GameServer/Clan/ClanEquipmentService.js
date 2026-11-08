@@ -1021,15 +1021,16 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
 }
 
 // How long a clan raid's selected roster stays committed (ours; temporary: until
-// the clan planners' pass ends a raid assembly on its events, not on age).
+// the clan planners' pass ends a raid assembly on its events, not on age). An
+// assembly its events would still hold but its age releases is counted
+// (`raid_assembly_bound`, each check that finds it).
 const RAID_ASSEMBLY_COMMIT_MS = 15 * 60 * 1000;
 function raidAssemblyCommitted(clan, goal) {
     const Roster = require('./ClanRaidRoster');
     const marker = goal?.fullRoster;
     if (ClanRaidFailurePolicy.blockedSpotIds(goal, clan.state).has(marker?.sourceId)) return false;
     if (clan.state?.mode !== 'autonomous' || goal?.status !== 'executing' || !Roster.valid(marker)
-        || number(marker.clanId) !== number(clan.id) || marker.goalKey !== goal.goalKey
-        || Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt)) > RAID_ASSEMBLY_COMMIT_MS) return false;
+        || number(marker.clanId) !== number(clan.id) || marker.goalKey !== goal.goalKey) return false;
     const profile = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(marker.sourceId);
     const source = profile && RaidEncounterScope.projectSource(profile);
     if (!source || source.raidWorldAvailable === false || marker.raidInstanceId !== source.raidInstanceId
@@ -1056,8 +1057,11 @@ function raidAssemblyCommitted(clan, goal) {
             || !Roster.exact(party.memberIds, marker.memberIds) || ClanEquipmentPartyPolicy.abandonedRaid(party)
             || ['failed', 'defeated'].includes(party.stats?.raidEncounter?.status);
     })) return false;
-    return ClanRaidPolicy.assessment({ ...clan, members }, source, goal,
-        { desiredMembers: 9, preferredMemberIds: marker.memberIds }).ready;
+    if (!ClanRaidPolicy.assessment({ ...clan, members }, source, goal,
+        { desiredMembers: 9, preferredMemberIds: marker.memberIds }).ready) return false;
+    if (Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt)) <= RAID_ASSEMBLY_COMMIT_MS) return true;
+    recordReason('raid_assembly_bound');
+    return false;
 }
 
 async function resolveClan(clan, previousGoal = null, options = {}) {
