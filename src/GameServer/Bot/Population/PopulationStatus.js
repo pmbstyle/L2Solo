@@ -99,7 +99,7 @@ const PopulationStatus = {
     // diagnostics), from the coordinator's snapshot: nearFacts=bag/equip/
     // level/death/revive/near_spot/near_left/activated, their fact posts queued since
     // start; nearRaises=, the posts a named raise made (DecisionEvents
-    // raiseDecision: arrived_town, money, revived, goal_failed, ...); nearDecisions=
+    // raiseDecision: arrived_town, money, goal_failed, ...); nearDecisions=
     // accepted/refused/dropped/linesStale, the decisions their bodies took, refused as
     // older than the one held, or dropped as the bot cooled before they came; their own
     // lines' looks refused as the row moved before main applied them.

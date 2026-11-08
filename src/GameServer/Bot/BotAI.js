@@ -608,7 +608,6 @@ const BotAI = {
                 Generics.revive(session, bot, { delayMs: 0,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
-                raiseDecision(session, 'revived');
                 session.clanHallVisit = null;
                 session.deathTimerStart = undefined;
                 session.currentTargetId = undefined;

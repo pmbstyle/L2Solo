@@ -99,9 +99,8 @@ function buffEnded(actor, timestamp = Date.now()) {
     const session = invoke('GameServer/Bot/BotManager').findSessionById(actor?.fetchId?.());
     if (!session || session.actor !== actor || session.followPlayerSession || session.partyCompanion
         || session.hotBackgroundPartyId || BotBuffs.buffedAt(EffectStore.list(actor), timestamp)) return false;
-    const Events = invoke('GameServer/Bot/AI/DecisionEvents'), stats = Events.statsFor(session);
-    if (session.nearRaise?.names.some(entry => entry.name === 'buffs_expired')
-        || ((Number(stats.woken) || 0) | (Number(stats.waiting) || 0)) & invoke('GameServer/Bot/Situations').BITS.rebuff) return false;
+    const Events = invoke('GameServer/Bot/AI/DecisionEvents');
+    if (Events.inBag(session, 'buffs_expired') || invoke('GameServer/Bot/Situations').raised(Events.statsFor(session), 'rebuff')) return false;
     Events.raiseDecision(session, 'buffs_expired');
     return true;
 }

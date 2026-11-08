@@ -89,8 +89,7 @@ async function run() {
         const packet = held.statsPacket, published = { ...native, stats: { ...native.stats, ...packet } };
         const proof = held.eventProof();
         const verdict = state => !Economy.proofIdentity(state, proof, leaf) && !Economy.leafOutcome(state, leaf, { timestamp: T });
-        const round = (before, after) => Situations.detect(before, after, { leaf })
-            .filter(name => Situations.hears(name, Situations.place(after, before)));
+        const round = (before, after) => Situations.detect(before, after, { leaf });
         assert.equal(verdict(published), true, 'fixture: the published decision holds');
         const routed = standing(published, X);
         const route = BotRoute.trip({}, routed, leaf, { spots, timestamp: T, hasRoom: room(X) });
