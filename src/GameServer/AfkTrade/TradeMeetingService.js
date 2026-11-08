@@ -680,7 +680,6 @@ async function processOwner(id) {
 }
 async function finishMeeting(row) {
     await syncActors(row);
-    await afk().settleOwners([row.actorA, row.actorB]);
     await refreshMeetingRecords(row);
     for (const actor of [row.actorA, row.actorB]) await db().acknowledgeTradeMeeting(row.id, actor);
     notifyResult(row.token, [row.actorA, row.actorB], {

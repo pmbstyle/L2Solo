@@ -102,9 +102,9 @@ async function run() {
         await assert.rejects(buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3, expectedPrice: 100, expectedRevision: shop.revision }),
         /afk_trade_shop_changed/);
-        assert.strictEqual((await Database.settleBoardOwner(owner)).settled, true);
-        assert.strictEqual((await Database.settleBoardOwner(owner)).settled, false);
-        assert.strictEqual(await balance(owner), 300);
+        assert.strictEqual((await Database.settleBoardOwner(owner)).settled, false, 'a far owner\'s price waits for its own commit');
+        assert(Database.boardSettlementOwners().includes(owner));
+        assert.strictEqual(await balance(owner), 0);
     });
 
     await check('publication and main-worker board round trip retain line pricing', async () => {

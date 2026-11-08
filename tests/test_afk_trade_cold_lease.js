@@ -76,11 +76,11 @@ async function coldBot(id, account, name) {
     }, 'test_cold_seed');
 }
 
-// A deal on a far bot's record (step 3.3) settles at once, and the merge
-// moves the row's revision. The worker steps the owner, a buyer or seller
+// A deal on a far bot's record leaves what it owes the owner on
+// the board and its row alone. The worker steps the owner, a buyer or seller
 // fills its record, then the worker commits a hunt (+30 adena, 2 Stems)
-// projected from the inventory it stepped from: the commit is refused and
-// the retry from the merged row keeps the hunt and the deal.
+// projected from the inventory it stepped from: the commit lands and merges
+// the deal in the same save, keeping the hunt and the deal once.
 async function fillDuringStep({ label, storeType, lines, ownerItems, counterpartyItems = [], write, settled }) {
     const owner = await makeCharacter(`bot_${label}_owner`, `${label}Owner`, ownerItems);
     const counterparty = await makeCharacter(`pl_${label}`, `${label}Player`, counterpartyItems);
@@ -95,29 +95,18 @@ async function fillDuringStep({ label, storeType, lines, ownerItems, counterpart
     const before = await amounts(owner.id);
     const store = AfkTrade.findOwnerProjection(owner.id).actor.fetchPrivateStore();
     await write(store, counterparty, owner);
-    const merged = await amounts(owner.id);
-    for (const [selfId, delta] of Object.entries(settled)) {
-        assert.strictEqual(Number(merged[selfId] || 0), Number(before[selfId] || 0) + delta, `${label}: the deal settles at once`);
-    }
-    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits on the board`);
+    assert.deepStrictEqual(await amounts(owner.id), before, `${label}: the deal leaves the far owner's bag alone`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [owner.id], `${label}: what it owes waits on the board`);
+    assert.strictEqual(LifeState.cachedState(owner.id).simulation.revision, stepRevision, `${label}: and the row is not moved`);
 
     const next = structuredClone(stepped.inventory);
     next['57'].amount += 30;
     next['1864'] = { selfId: 1864, name: 'Stem', amount: 2 };
-    const [refused] = await Owner.commitBatch([{ revision: stepRevision,
+    const step = () => Owner.commitBatch([{ revision: stepRevision,
         nextState: { ...stepped, adena: next['57'].amount, inventory: next },
         proposal: InventorySummary.bagChange(stepped.inventory, next) }], { timestamp: Date.now() });
-    assert.strictEqual(refused.reason, 'stale_revision', `${label}: the step from before the deal is refused`);
-
-    const retry = LifeState.cachedState(owner.id);
-    assert.strictEqual(retry.adena, merged[57], `${label}: the retry starts from the merged wallet`);
-    const hunted = structuredClone(retry.inventory);
-    hunted['57'].amount += 30;
-    hunted['1864'] = { selfId: 1864, name: 'Stem', amount: 2 };
-    const [commit] = await Owner.commitBatch([{ revision: retry.simulation.revision,
-        nextState: { ...retry, adena: hunted['57'].amount, inventory: hunted },
-        proposal: InventorySummary.bagChange(retry.inventory, hunted) }], { timestamp: Date.now() });
-    assert(commit.ok, `${label}: the retry commits`);
+    const [commit] = await step();
+    assert(commit.ok && commit.settled, `${label}: the step from before the deal commits and merges it`);
     const after = await amounts(owner.id);
     const expected = { ...settled, 57: 30 + Number(settled[57] || 0) };
     for (const [selfId, delta] of Object.entries(expected)) {
@@ -125,12 +114,16 @@ async function fillDuringStep({ label, storeType, lines, ownerItems, counterpart
             `${label}: item ${selfId} holds the hunt and the deal`);
     }
     assert.strictEqual(Number(after[1864] || 0), 2, `${label}: the hunt's stems stay`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits on the board`);
     const cached = LifeState.cachedState(owner.id);
     assert.strictEqual(cached.adena, after[57], `${label}: the bot goes on with the merged wallet`);
     // A cache behind the row's updatedAt would make every later command of
     // this bot stale against the row (L127).
     const [lifeRow] = await Database.execute(['SELECT updatedAt FROM bot_life_state WHERE characterId = ?', [owner.id]]);
     assert.strictEqual(cached.updatedAt, Number(lifeRow.updatedAt), `${label}: the cached checkpoint follows the row`);
+    const [replayed] = await step();
+    assert(!replayed.ok, `${label}: a replay of the step is refused`);
+    assert.deepStrictEqual(await amounts(owner.id), after, `${label}: the deal is merged once`);
 }
 
 // The worker steps the owner, the owner's own move (a close, reprice or

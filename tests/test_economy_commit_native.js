@@ -141,8 +141,8 @@ async function run() {
     Commit.finish(1, retrySale.command);
     assert(savedSale.replayed);
     assert.equal(await amount(1, 1870), 2);
-    await Database.settleBoardOwner(2);
-    assert.equal(await amount(2, 1870), 2);
+    const [owed] = await Database.execute(['SELECT SUM(amount) AS amount FROM board_settlements WHERE ownerId = 2 AND selfId = 1870']);
+    assert.equal(Number(owed.amount), 2, 'the far buyer\'s coal waits on the board for its own commit');
     const beforeRefund = await amount(2, 57);
     await Database.closeAfkTradeShop(2);
     assert.equal(await amount(2, 57), beforeRefund + 20, 'partial order returns exactly its remaining escrow');

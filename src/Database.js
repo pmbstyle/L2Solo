@@ -4664,12 +4664,12 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
         coldLifeRows: difference ? fenceAfkTradePartiesUnsafe([characterId], [57]) : {} };
 }
 
-// Merges a bot's settlements into its bag; its cold row follows: the summary
-// entries of the merged items and the adena are read back from the items, as
-// a fenced write does (writeColdInventorySnapshotUnsafe). `advance` moves the
-// row's simulationRevision (a main-thread settle); a commit that already set
-// it passes false. Returns { changedIds, row } or null when nothing waited.
-function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
+// Merges a bot's settlements into its bag; a far bot's row follows inside its
+// own step commit (the commit set the revision): the summary entries of the
+// merged items and the adena are read back from the items, as a fenced write
+// does (writeColdInventorySnapshotUnsafe). Returns { changedIds, row } or null
+// when nothing waited.
+function mergeBoardSettlementsUnsafe(characterId) {
     const id = Number(characterId);
     const rows = all('SELECT * FROM board_settlements WHERE ownerId = ? ORDER BY id', [id]);
     if (!rows.length) {
@@ -4693,9 +4693,8 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
         if (physical[selfId]) inventory[selfId] = physical[selfId];
         else delete inventory[selfId];
     }
-    write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
-        simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
-    [InventorySummary.saved(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
+    write('UPDATE bot_life_state SET inventorySummary = ?, adena = ?, updatedAt = ? WHERE characterId = ?',
+        [InventorySummary.saved(inventory), Number(physical[57]?.amount || 0), now(), id]);
     return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
 }
 
@@ -5647,17 +5646,17 @@ const Database = {
         }, 'board:leave'));
     },
 
-    // A main-thread save of what waits for a bot on the board, merged at once;
-    // the merge moves the revision, so a far bot's step under way is refused
-    // and rebases on this row. Returns the bot's row when its cold state
-    // changed, and its bag.
+    // What waits for a bot on the board reaches its bag here only while main
+    // holds the bot (it turned near after the deal): a far bot's settlement
+    // waits for its own step commit, which merges it in the same transaction,
+    // so main never moves a far row under a step in flight (that step would be
+    // refused stale and rebuilt). Returns the bag when something merged.
     settleBoardOwner(ownerId) {
         const characterId = Number(ownerId);
         if (!characterId || !pendingSettlementOwners.has(characterId)) return Promise.resolve({ settled: false });
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const merged = mergeBoardSettlementsUnsafe(characterId, { advance: true });
-            if (!merged) return { settled: false };
-            return { settled: true, row: merged.row, ownerInventory: afkTradeInventoryUnsafe(characterId) };
+            if (settlesLaterUnsafe(characterId) || !mergeBoardSettlementsUnsafe(characterId)) return { settled: false };
+            return { settled: true, ownerInventory: afkTradeInventoryUnsafe(characterId) };
         }, 'board:settle'));
     },
 
@@ -6569,7 +6568,7 @@ const Database = {
             // the worker held it reaches its bag with this save.
             EconomyJournal.detail('board_settlement');
             const settled = pendingSettlementOwners.has(characterId)
-                ? mergeBoardSettlementsUnsafe(characterId, { advance: false }) : null;
+                ? mergeBoardSettlementsUnsafe(characterId) : null;
             EconomyJournal.detail(null);
             // Persist the entitlement under the same revision fence and
             // transaction as EXP. Cold-to-hot resurrection reads this durable record.
@@ -11783,11 +11782,18 @@ Object.assign(Database, require('./GameServer/ClanHall/Repository')({
 
 const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     one, all, write, now, take: afkTradeTakeItemUnsafe, debit: afkTradeDebitAdenaUnsafe,
-    credit: (owner, item, count, at) => {
+    // A meeting's receipts and refunds go straight into the bags, a far actor's
+    // too: the terminal fences both actors' rows in the same transaction
+    // (`snapshot` below), and that row carries the bag to the worker; a board
+    // settlement would wait for the actor's next commit instead.
+    credit: (owner, item, count) => {
         const bag = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [owner, item.selfId]).amount);
         const pending = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM board_settlements WHERE ownerId=? AND selfId=?', [owner, item.selfId]).amount);
         if (!Number.isSafeInteger(bag + pending + count)) throw Error('trade_meeting_integer');
-        return creditRecordOwnerUnsafe(owner, item, count, at);
+        const amount = Math.floor(Number(count) || 0);
+        if (amount <= 0) return;
+        if (Number(item.selfId) === 57) afkTradeCreditAdenaUnsafe(owner, amount);
+        else afkTradeCreditItemUnsafe(owner, item, amount);
     }, funding: checkEconomyFundingUnsafe,
     canReceive: (id, life, itemId, count, pending) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending),
     canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
