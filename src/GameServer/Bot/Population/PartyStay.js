@@ -28,8 +28,8 @@ function decide(member, reads = {}) {
     const bridge = reads.bridgeReason?.(member);
     if (bridge) return { answer: 'leave', reason: bridge };
     if (reads.outleveled) return { answer: 'leave', reason: 'party_outleveled' };
-    // The bag at its floor or a cleanup count.
-    const bag = MarketBreak.cleanupNeed(member, reads.now);
+    // The bag fact that woke it (bag_full): at its floor, or a cleanup count.
+    const bag = MarketBreak.bagNeed(member, reads.now);
     if (bag && (!reads.clanDuty || FLOOR.has(bag.reason))) return { answer: 'trip', reason: 'bag_full' };
     // A new grade (or any other wake): the held solo answer against its party share.
     if (reads.soloSooner?.()) return { answer: 'leave', reason: 'solo_sooner' };

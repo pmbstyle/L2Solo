@@ -18,8 +18,10 @@ const member = (id, extra = {}) => ({ characterId: id, name: `Member${id}`, leve
     vitals: { hp: 500, maxHp: 500, mp: 200, maxMp: 200 }, timing: { lastResolvedAt: at - 45000, nextResolveAt: at },
     inventory: {}, simulation: { revision: 1 }, ...extra,
     stats: { classId: 0, role: 'dps', backgroundPartyId: 'stay', woken: 0, waiting: 0, ...extra.stats } });
-const cleanupNeed = Disposition.inventoryCleanupNeed;
+const cleanupNeed = Disposition.inventoryCleanupNeed, cleanupCounted = Disposition.cleanupCounted;
 Disposition.inventoryCleanupNeed = () => null;
+// The bag fact at a cleanup count wherever the fixture's count names a need.
+Disposition.cleanupCounted = state => !!Disposition.inventoryCleanupNeed(state);
 try {
     // The decision reads the member's facts now.
     assert.deepStrictEqual(Stay.decide(member(1)), { answer: 'stay', reason: 'stay' });
@@ -62,7 +64,7 @@ try {
     assert(!Situations.woken({ woken: Situations.BITS.party_stay, waiting: 0, backgroundPartyId: null }, 'party_stay')
         && !Situations.anyWoken({ woken: Situations.BITS.party_stay, waiting: 0, earning: {}, wishSections: {} }),
     'a stay bit on a solo row wakes nothing');
-} finally { Disposition.inventoryCleanupNeed = cleanupNeed; }
+} finally { Disposition.inventoryCleanupNeed = cleanupNeed; Disposition.cleanupCounted = cleanupCounted; }
 
 // One party step: { leader's party row, member states, batch }. round: each member's
 // round result (none: an empty one); project: the step's projection (none: as resolved).
@@ -121,6 +123,7 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     // A clan duty member's bag trip rides the leader's commit whichever exit the step
     // takes, here a party still on its road: main starts it (stayTrips).
     Disposition.inventoryCleanupNeed = state => state.characterId === 2 ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
+    Disposition.cleanupCounted = state => state.characterId === 2;
     try {
         const duty = { objective: { priority: 'required', clanGoalKey: 'clan:1' },
             travel: { reason: 'party_spot_replan', spotId: 'stay-spot', startedAt: at - 1000, arrivalAt: at + 60000 } };
@@ -128,6 +131,21 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         const road = await step([member(1), member(2, { stats: full })], { stats: duty });
         assert.deepStrictEqual(road.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the duty trip rides the travel wait');
         assert.deepStrictEqual(road.party.memberIds, [1, 2]);
-    } finally { Disposition.inventoryCleanupNeed = () => null; }
+    } finally { Disposition.inventoryCleanupNeed = () => null; Disposition.cleanupCounted = cleanupCounted; }
+    // A member at weight penalty 1 whose last sale visit tried every kind it carries (the
+    // sale retry holds): the bag fact at its floor woke the stay, and the stay reads that
+    // fact, as a solo bot's build does: it goes to unload, never hunts on as its load grows.
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile'), Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
+    const maxLoad = Profile.profileFor(member(4), 0).maxLoad;
+    const loaded = member(4, { inventory: { 999001: { selfId: 999001, amount: 1, stackable: true, mass: Math.ceil(maxLoad * 0.55) } },
+        stats: { marketSellSeen: { items: [999001], buyers: null } } });
+    assert.strictEqual(Floor.bagFloor(loaded)?.weightPenalty, 1, 'the fixture is at weight penalty 1');
+    const holds = Disposition.saleRetryHolds;
+    Disposition.saleRetryHolds = () => true;
+    try {
+        assert.strictEqual(Floor.bagFor(loaded), null, 'the fixture\'s sale retry holds');
+        assert.deepStrictEqual(Stay.decide(loaded, { now: at }), { answer: 'trip', reason: 'bag_full' },
+            'a member at its weight floor goes to unload whatever the sale retry says');
+    } finally { Disposition.saleRetryHolds = holds; }
     console.log('party stay: ok');
 })().catch((err) => { console.error(err); process.exit(1); });

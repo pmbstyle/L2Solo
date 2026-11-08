@@ -364,7 +364,7 @@ async function applyPartyStayTrips(party, trips = [], timestamp = Date.now()) {
         const member = LifeState.cachedState(characterId);
         if (!member || member.phase !== 'cold' || DecisionSections.partyIdOf(member) !== String(party.partyId)) continue;
         if (PartyMarketBreak.pending(party, timestamp).length) { Situations.note('party:stay_trip:held'); continue; }
-        const need = PartyMarketBreak.cleanupNeed(member, timestamp);
+        const need = PartyMarketBreak.bagNeed(member, timestamp);
         const goal = PartyMarketBreak.allowed(party, member, timestamp, need) ? PartyMarketBreak.goal(party, member, timestamp, need) : null;
         const travel = goal && GoalExecutor.beginMarketTravel(member, goal, timestamp);
         const departure = travel && PartyMarketBreak.departure(party, member, travel, timestamp, need);
