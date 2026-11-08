@@ -292,33 +292,60 @@ async function main() {
         assert.strictEqual(kept.acquisitionGoal.target.selfId, clanPlan.target.selfId, 'party refresh must keep the clan target item');
         assert.strictEqual(kept.acquisitionGoal.clanGoal.goalKey, clanPlan.clanGoal.goalKey,
             'party refresh must keep the clan goal ownership metadata');
-        // A member with no weapon holding the locked clan plan: its re-plan picks the NPC weapon
-        // bridge, which carries no clan goal and which its row refuses. The re-plan keeps the clan
-        // plan (nothing to send, no refused write that would mark the party due again every leader
-        // step) and the party's objective keeps the clan target.
+        // A member with no weapon holding the locked clan plan: a C4 player without a weapon
+        // buys one first, so the NPC weapon bridge beats the clan lock, at the party re-plan
+        // and at the save that carries it. Once the bag holds a weapon the clan plan stands
+        // again; the clan's own goal write lands over the bridge.
         {
             const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
             const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
             const saved = { npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
                 finalizePlan: GearAcquisitionPlanner.finalizePlan };
+            const bridge = { status: 'active', strategy: 'market', weaponBridge: true,
+                partyNeedReason: 'weapon_bridge', target: { selfId: 129, slot: 7 }, market: { price: 1 } };
             Object.assign(GearAcquisitionPlanner, {
-                npcEquipmentBridgePlan: () => ({ status: 'active', strategy: 'market', weaponBridge: true,
-                    partyNeedReason: 'weapon_bridge', target: { selfId: 129, slot: 7 }, market: { price: 1 } }),
+                npcEquipmentBridgePlan: () => bridge,
                 finalizePlan: (_state, _previous, raw) => raw });
             try {
-                const unarmed = { ...lockedMember, stats: { classId: 0, equipmentPlan: clanPlan } };
+                const unarmed = { ...lockedMember, stats: { classId: 0, clanId: 77, equipmentPlan: clanPlan } };
                 const selection = Refresh.plan(unarmed, { spots: [], timestamp: Date.now(),
                     planningOptions: { board: new BoardIndex() } });
-                assert.strictEqual(selection.acquisitionPlan?.target?.selfId, clanPlan.target.selfId,
-                    'the re-plan of an unarmed clan-locked member keeps the clan plan');
-                assert.strictEqual(Refresh.acquisitionRequirementKey(selection.acquisitionPlan),
-                    Refresh.acquisitionRequirementKey(clanPlan), 'so it sends no member plan');
-                const objective = Refresh.partyObjective([{ ...unarmed,
-                    stats: { ...unarmed.stats, equipmentPlan: selection.acquisitionPlan } }]);
-                assert.strictEqual(objective.acquisitionGoal?.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
-                    'the party objective keeps the clan target');
+                assert.strictEqual(selection.acquisitionPlan?.target?.selfId, 129,
+                    'the re-plan of an unarmed clan-locked member takes the weapon bridge');
+                assert.notStrictEqual(Refresh.acquisitionRequirementKey(selection.acquisitionPlan),
+                    Refresh.acquisitionRequirementKey(clanPlan), 'so it sends the member plan');
+                const bridgeSave = { ...unarmed, stats: { ...unarmed.stats, equipmentPlan: bridge } };
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(bridgeSave, 'market_visit_complete', unarmed)
+                    .stats.equipmentPlan.target.selfId, 129, 'the save of an unarmed member keeps the bridge');
+                const armedSave = { ...bridgeSave,
+                    inventory: { 129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 } } };
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(armedSave, 'market_visit_complete', unarmed)
+                    .stats.equipmentPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'with a weapon in the bag the clan plan comes back');
+                const bridgeRow = bridgeSave;
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(unarmed, 'clan_equipment_goal', bridgeRow)
+                    .stats.equipmentPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'the clan goal write lands over the bridge');
             } finally {
                 Object.assign(GearAcquisitionPlanner, saved);
+            }
+        }
+        // A member of another clan holding this clan's plan: its re-plan keeps that plan, which
+        // the member may not hold; refused, it leaves no plan (its row drops the foreign goal)
+        // instead of keeping the foreign one.
+        {
+            const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
+            const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+            const saved = GearAcquisitionPlanner.finalizePlan;
+            GearAcquisitionPlanner.finalizePlan = (_state, _previous, raw) => raw;
+            try {
+                const foreign = { ...lockedMember, stats: { classId: 0, clanId: 5, equipmentPlan: clanPlan },
+                    inventory: { 129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 } } };
+                const selection = Refresh.plan(foreign, { spots: [], timestamp: Date.now(),
+                    planningOptions: { board: new BoardIndex() } });
+                assert.strictEqual(selection.acquisitionPlan, null, 'a foreign clan goal is not kept by the re-plan');
+            } finally {
+                GearAcquisitionPlanner.finalizePlan = saved;
             }
         }
 

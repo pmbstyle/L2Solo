@@ -723,6 +723,29 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
     assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
     assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
+    // A member whose own step changed its plan (the projection), re-planned to that same
+    // plan: the plan rides its own proposal; no member plan and no fallback event go out.
+    {
+        const projectedMessages = [];
+        const projectedPlan = { status: 'active', strategy: 'market', target: { selfId: 57 } };
+        const projectedKernel = recordingKernel({ resolveSolo: resolver, now: () => now,
+            resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+                partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+            projectResolve: state => ({ state: state.characterId === 121
+                ? { ...state, stats: { ...state.stats, equipmentPlan: projectedPlan } } : state }),
+            planPartyRequirement: ({ state }) => ({ acquisitionPlan: state.stats.equipmentPlan,
+                replanContext: state.characterId === 121 ? { failure: { reason: 'combat_unviable', targetId: 56 } } : {} }),
+            emit: (type, payload) => projectedMessages.push({ type, payload }) });
+        projectedKernel.upsert(standOn(projectedKernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
+        projectedKernel.upsert({ state: refreshMembers[1] });
+        projectedKernel.partyPut(refreshParty.partyId, { ...refreshParty, requirementRefresh: true }); projectedKernel.tick();
+        await projectedKernel.resolveChain;
+        const proposals = projectedMessages.find(message => message.type === 'proposal_batch').payload.proposals;
+        assert.deepStrictEqual(proposals.find(proposal => proposal.partyResolution).partyResolution.memberPlans || [], [],
+            'a plan the projection already holds is not sent as a member plan');
+        assert(!proposals.some(proposal => proposal.result.events.some(event => event.type === 'gear_acquisition_fallback')),
+            'nor is a fallback event raised for it');
+    }
 
     // A member whose own step moved its kit opens the re-plan with
     // no due mark from main; members already passed wait for the next step.

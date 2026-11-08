@@ -303,10 +303,14 @@ function select(state, previousPlan, { spots = [], timestamp = Date.now(), plann
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';
     if (clanRaidPlan) planOptions.allowRaidSources = true;
-    const weaponBridgePlan = !GearAcquisitionPlanner.combatReadiness(state).hasWeapon
+    const bridge = !GearAcquisitionPlanner.combatReadiness(state).hasWeapon
         ? GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planOptions) : null;
-    const clanGoalLocked = !weaponBridgePlan
-        && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+    // The bridge is taken unless the held clan plan stands against it (clanPlanKeptAgainst:
+    // a weapon bridge beats the lock, an armour bridge does not).
+    const weaponBridgePlan = bridge && !GearAcquisitionPlanner.clanPlanKeptAgainst(
+        state.stats?.equipmentPlan === previousPlan ? state : { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } },
+        bridge) ? bridge : null;
+    const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
     const finishedOffer = !weaponBridgePlan && !clanGoalLocked && previousPlan?.strategy === 'craft'
         && ['active', 'component_ready'].includes(previousPlan.status)
         ? GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, planOptions) : null;

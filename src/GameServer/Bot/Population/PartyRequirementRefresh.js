@@ -41,11 +41,14 @@ function mayHold(member, plan) {
 
 // The member's plan at its party's re-plan: the selection's, unless the member may
 // not hold it; then its current plan stands (nothing to write, the party's objective
-// follows the plans held).
+// follows the plans held), or none when that plan serves another clan's goal (its
+// row drops it). A refused selection carries no replan context: its failure belongs
+// to the plan not taken.
 function plan(state, options) {
     const current = state.stats?.equipmentPlan;
     const selection = require('../AI/GearPlanSelection').selectAcquisitionPlan(state, current, options);
-    return mayHold(state, selection.acquisitionPlan) ? selection : { ...selection, acquisitionPlan: current };
+    return mayHold(state, selection.acquisitionPlan) ? selection
+        : { acquisitionPlan: require('../../Clan/ClanMembershipPolicy').foreignGoal(state, current) ? null : current };
 }
 
 // The party's objective after its members' re-plan: the one of the first member whose

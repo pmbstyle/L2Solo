@@ -467,10 +467,11 @@ function reconcileEquipmentInventory(state = {}) {
 
 function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = null) {
     const authoritative = current || cache.get(Number(incoming.characterId)) || null;
-    if (!authoritative || !GearAcquisitionPlanner.clanPlanKeptAgainst(authoritative, incoming?.stats?.equipmentPlan)) return incoming;
-    // The clan's own goal writes pass, and so does a save whose bag wears the target.
+    // The incoming bag decides what the save may replace (a weapon bridge while unarmed,
+    // a clan target it wears).
+    if (!authoritative || !GearAcquisitionPlanner.clanPlanKeptAgainst(authoritative, incoming?.stats?.equipmentPlan, incoming)) return incoming;
+    // The clan's own goal writes pass.
     if (['clan_equipment_goal', 'clan_equipment_beneficiary_rotated'].includes(String(reason))) return incoming;
-    if (equipmentTargetFulfilled(authoritative.stats || {}, incoming.inventory || {})) return incoming;
 
     const currentPlan = authoritative.stats.equipmentPlan;
     const currentGoalKey = String(currentPlan.clanGoal.goalKey);

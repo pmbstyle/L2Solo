@@ -1377,12 +1377,20 @@ function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
         );
 }
 
-// A clan-locked plan (clanGoalPlanLocked) stands against another plan unless that plan
-// carries the same clan goal: the owner of the refusal a save or a party re-plan meets.
-function clanPlanKeptAgainst(state = {}, plan = null) {
-    const current = state?.stats?.equipmentPlan;
-    return clanGoalPlanLocked(state, current)
-        && String(plan?.clanGoal?.goalKey || '') !== String(current.clanGoal.goalKey);
+// Whether the clan-locked plan held (clanGoalPlanLocked on `held`, whose plan and
+// facts count) stands against another plan: the one owner of the answer for a gear
+// selection, a save and a party re-plan. `bag` is the state whose inventory is true
+// for this write (a save's incoming bag; else the held copy). It gives way to a plan
+// carrying the same clan goal, to a weapon bridge while the bag holds no usable
+// weapon (a C4 player without a weapon buys one first; the clan goal returns at the
+// clan's next goal review), and once the bag wears the clan's target.
+function clanPlanKeptAgainst(held = {}, plan = null, bag = held) {
+    const current = held?.stats?.equipmentPlan;
+    if (!isClanOwnedPlan(current)) return false;
+    if (String(plan?.clanGoal?.goalKey || '') === String(current.clanGoal.goalKey)) return false;
+    if (plan?.weaponBridge === true && !combatReadiness(bag).hasWeapon) return false;
+    if (equipmentTargetFulfilled(bag, current)) return false;
+    return clanGoalPlanLocked(held, current);
 }
 
 function isBotEligibleSourceNpcId(npcId) {
@@ -1405,9 +1413,25 @@ function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
     if (source?.sourceKind === 'raid' || source?.raidBoss === true) return true;
     const botLevel = Number(state.level || 0);
     const sourceLevel = Number(source.npcLevel || source.spotLevel || 0);
-    if (!botLevel || !sourceLevel) return true;
-    const economic = state.economicLower || invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state);
-    return sourceLevel - botLevel >= sourceMinLevelGap(economic);
+    return gapWithinVoluntaryBand(state, botLevel && sourceLevel ? sourceLevel - botLevel : null);
+}
+
+// Whether an npc-minus-bot level gap (null: nothing to judge) lies in the bot's voluntary
+// hunt band: the equipment earning route's floor while the bot is on it, else the
+// ordinary hunt's (sourceMinLevelGap). The route is read only for a gap to judge.
+function gapWithinVoluntaryBand(state = {}, gap = null) {
+    return gap === null || gap >= sourceMinLevelGap(state.economicLower
+        || invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state));
+}
+
+// The plan's source npc level minus the bot's; null for a raid, a plan with no npc or
+// an unknown level.
+function planSourceLevelGap(state = {}, plan = {}) {
+    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return null;
+    const npcId = Number(plan?.next?.npcId || 0);
+    const npc = npcId ? catalogNpc(npcId) : null;
+    const npcLevel = Number(npc?.template?.level || npc?.level || 0), botLevel = Number(state.level || 0);
+    return npcLevel && botLevel ? npcLevel - botLevel : null;
 }
 
 // The lowest npc-minus-bot level gap a bot hunts voluntarily: an equipment
@@ -1422,12 +1446,8 @@ function sourceMinLevelGap(economicLower) {
 // focus (which route it is on), so a focus change moves nothing. The bands are our
 // choice, not C4.
 function sourceFloorsBelow(state = {}, plan = {}) {
-    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return 0;
-    const npcId = Number(plan?.next?.npcId || 0);
-    const npc = npcId ? catalogNpc(npcId) : null;
-    const npcLevel = Number(npc?.template?.level || npc?.level || 0), botLevel = Number(state.level || 0);
-    if (!npcLevel || !botLevel) return 0;
-    const gap = npcLevel - botLevel;
+    const gap = planSourceLevelGap(state, plan);
+    if (gap === null) return 0;
     return Number(gap < sourceMinLevelGap(false)) + Number(gap < sourceMinLevelGap(true));
 }
 
@@ -1436,10 +1456,7 @@ function isPlanSourceViableForState(state = {}, plan = {}, options = {}) {
     if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return true;
     const npcId = Number(plan?.next?.npcId || 0);
     if (!npcId) return true;
-    const npc = catalogNpc(npcId);
-    if (!sourceWithinVoluntaryHuntBand(state, {
-        npcLevel: Number(npc?.template?.level || npc?.level || 0)
-    })) return false;
+    if (!gapWithinVoluntaryBand(state, planSourceLevelGap(state, plan))) return false;
     const allowed = options.spots && soloPlanSourceReader(state, plan, options.spots, options);
     return !allowed || allowed(SpotIndex.spotById(options.spots, plan.next.spotId), npcId);
 }

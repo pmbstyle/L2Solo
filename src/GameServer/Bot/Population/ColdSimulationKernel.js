@@ -2167,12 +2167,14 @@ class ColdSimulationKernel {
                         economy: projection?.build });
                     lastRequirementPlanMs = performance.now() - planningStarted;
                     requirementMs += lastRequirementPlanMs;
-                    const plan = selection?.acquisitionPlan;
-                    if (require('./PartyRequirementRefresh').acquisitionRequirementKey(state.stats?.equipmentPlan)
+                    // Compared with the plan the re-plan started from (the projection's): a plan
+                    // the projection changed rides its own proposal.
+                    const plan = selection?.acquisitionPlan, held = projectedState.stats?.equipmentPlan;
+                    if (require('./PartyRequirementRefresh').acquisitionRequirementKey(held)
                         !== require('./PartyRequirementRefresh').acquisitionRequirementKey(plan)) {
                         memberPlans.push({ characterId: id, plan });
                         if (selection.replanContext?.failure) result.events = [...(result.events || []),
-                            require('./PartyRequirementRefresh').acquisitionFallbackEvent(state, state.stats?.equipmentPlan, selection.replanContext.failure, plan)];
+                            require('./PartyRequirementRefresh').acquisitionFallbackEvent(projectedState, held, selection.replanContext.failure, plan)];
                     }
                     requirementProgress.add(id);
                 }
