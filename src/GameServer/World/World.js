@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const GameTime       = invoke('GameServer/World/GameTime');
 const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
+const GardenOfEvaDoors = require('./GardenOfEvaDoors');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
@@ -325,6 +326,7 @@ const World = {
     async init() {
         RaidBossMinionManager.stop(this);
         DayNightSpawnManager.stop(this);
+        GardenOfEvaDoors.stop(this);
         this.user  = { sessions : [], revision: 0 };
         createUserLocationIndex(this.user);
         this.gameTime = GameTime;
@@ -340,6 +342,7 @@ const World = {
         this.items = { spawns   : [], nextId: 5000000, byLeader: new Map() };
 
         World.spawnNpcs();
+        GardenOfEvaDoors.start(this);
         RaidBossMinionManager.start(this);
         this.indexSpawnsInGrid();
         DayNightSpawnManager.start(this);

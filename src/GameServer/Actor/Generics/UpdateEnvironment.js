@@ -19,6 +19,7 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
 
     if (forceRefresh || new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
         require('../../ClanHall/Doors').sync(session, actor, true);
+        require('../../World/GardenOfEvaDoors').sync(session, actor, true);
         invoke('GameServer/AfkTrade/AfkTradeService').refreshVisibility(session, actor);
         const sourceIsBot = isBotSession(session);
         // A bot's session discards packets (BotSession.dataSendToMe): no NpcInfo or timer for it.
