@@ -4,10 +4,7 @@ const TendencyRoll = require('../AI/TendencyRoll');
 const PartyProgressComparison = require('./PartyProgressComparison');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
-const Packet = require('../Economy/StatsPacket');
-const Rewards = require('../Economy/SpotRewardExpectation');
 const PartyStay = require('./PartyStay');
-const { fnv1a32 } = require('../Fnv1a');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 
 const positive = value => Math.max(0, Number(value) || 0);
@@ -48,40 +45,8 @@ function pending(party, members) {
     return { objective: party.stats?.objective, memberGoals: members.map(declaration) };
 }
 
-// The inputs of a party's progress review (PartyProgressComparison.prepare and
-// compare), each moved by an event, hashed: the roster and the objective with
-// its help deal and material needs (party writes), and per member its level,
-// class, learned Spoil level, kit (the decision's kit fact), observed hunt
-// (the decision's observation baseline: the observation event renews it when
-// what the member measures drifts beyond its own error, at its rest),
-// solo income (its packet's hour: its held earning spot's, renewed when that is
-// searched again) and goal (its wish focus, the price it saves for (affordAt),
-// its party request and plan step), and the spot the forecast reads
-// (PartyProgressComparison.prepare's: the objective's, else the party's, else
-// the first member's). The review runs when this moves, never on the clock.
-// Not in it: the exp inside a level (its hours to the level go stale until the
-// level or another input moves); the wallet, heard in
-// town by the member's own decision; the solo route of a member whose
-// decision holds no earning spot (PartyProgressComparison.soloRoute's own memo).
-function progressReviewKey(party, members, objective) {
-    const goal = row => row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? row.kind ?? null,
-        row.amount ?? null] : null;
-    const help = party.stats?.agreement?.help || objective?.helpDeal;
-    return fnv1a32(JSON.stringify([members.map(member => Number(member.characterId)).sort((a, b) => a - b),
-        objective?.spotId || party.spotId || members[0]?.spotId || null, goal(objective), help ? [help.status ?? null, help.fee ?? null, help.remaining ?? null, help.payerId ?? null,
-            help.helperIds ?? null] : null,
-        (party.stats?.agreement?.materialNeeds || []).map(row => [row.characterId, row.collected ?? null, row.quota ?? null]),
-        members.map(member => {
-            const stats = member.stats || {};
-            return [Number(member.characterId), Number(member.level || 0), stats.classId ?? member.classId ?? null,
-                Rewards.spoilSkillLevel(member), stats.wishSections?.build ?? null, stats.wishSections?.sample ?? null,
-                Number(Packet.hourAdena(stats.money)) || 0, stats.wishFocus?.[0] ?? null, stats.wishSections?.affordAt?.at ?? null,
-                goal(stats.partyRequest), goal(stats.equipmentPlan?.next)];
-        })]));
-}
-
-function joint(party, members, { context = null, spots, timestamp = context?.timestamp || Date.now() } = {}) {
-    if (CraftMaterialParty.isObjective(party.stats?.objective)) return CraftMaterialParty.joint(party, members, { timestamp, spots });
+function joint(party, members, { context = null } = {}) {
+    if (CraftMaterialParty.isObjective(party.stats?.objective)) return CraftMaterialParty.joint(party, members);
     const goals = members.map(declaration);
     // The same wish engine merges members' actual wishes. Its selected leaf
     // carries a native route; a shopping/crafting leaf does not teleport a party.
@@ -94,16 +59,7 @@ function joint(party, members, { context = null, spots, timestamp = context?.tim
     const objective = previous?.clanGoalKey || previous?.sourceKind === 'raid' || previous?.helpDeal
         ? previous : selected ? { ...previous, ...selected, status: 'open', priority: previous?.priority || 'preferred',
             objectiveKey: ['joint', selected.spotId, selected.npcId || 0].join(':') } : previous;
-    let review = {}, key = null;
-    if (!previous?.clanGoalKey && previous?.sourceKind !== 'raid' && !previous?.helpDeal
-        && members.every(member => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member))
-        && members.some(member => member.spotId)
-        && (key = progressReviewKey(party, members, previous)) !== party.stats?.progressReviewKey) {
-        const prepared = PartyProgressComparison.prepare(members, { party, objective: previous, timestamp, spots });
-        review = { lastProgressReviewAt: timestamp, progressReviewKey: key, progressReviews: members.map(member => ({ characterId: Number(member.characterId),
-            ...PartyProgressComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
-    }
-    return { objective, memberGoals: goals, ...(context?.statsPacket || {}), ...review };
+    return { objective, memberGoals: goals, ...(context?.statsPacket || {}) };
 }
 
 function participation(state, peers, { persona, roll = 0.5, bonus = 0 } = {}) {
@@ -161,11 +117,11 @@ function acceptedMembers(members, requested, options) {
 }
 
 // The forming verdict of one roster, asked once before main builds the party (main for an
-// all-near roster, the worker's party goal request otherwise): the accepted ids. A material
-// roster also carries its reviews, and only an economic accept admits a material hunt (a member
-// without a camp forecast is refused). Not held: a refused roster's requests close (forming's
-// no) and it is not asked again until its group moves (PartyAssemblyEvents: a request reopened
-// by its build, a member in or out, its held solo answer).
+// all-near roster, the worker's party goal request otherwise): the accepted ids. Only an
+// economic accept admits a material hunt (a member without a camp forecast is refused). Not
+// held: a refused roster's requests close (forming's no) and it is not asked again until its
+// group moves (PartyAssemblyEvents: a request reopened by its build, a member in or out, its
+// held solo answer).
 function formingVerdict(members, requested, { spots, timestamp = Date.now() } = {}) {
     if (!verdictFree(requested)) spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     return judgeForming(members, requested, { spots, timestamp });
@@ -178,18 +134,8 @@ function judgeForming(members, requested, { spots, timestamp, solo }) {
     const formed = new Set(formingMembers(members, requested, { spots, timestamp, solo,
         onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
         .map(member => Number(member.characterId)));
-    const progressReviews = members.map(member => {
-        // The wire packet carries only the validated economic fields of the comparison.
-        const characterId = Number(member.characterId), checked = decisions.get(characterId);
-        const reviewed = checked?.at === timestamp;
-        const row = { characterId, ...(reviewed ? checked
-            : { ...PartyProgressComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }),
-        accept: reviewed && formed.has(characterId) };
-        delete row.probability; delete row.roll; delete row.goal;
-        return row;
-    });
-    return { formingAccepted: progressReviews.filter(row => row.accept).map(row => row.characterId),
-        lastProgressReviewAt: timestamp, progressReviews };
+    return { formingAccepted: members.map(member => Number(member.characterId))
+        .filter(id => formed.has(id) && decisions.get(id)?.at === timestamp) };
 }
 
 // A prospective roster needs one bounded progress/safety forecast, not new
@@ -200,7 +146,7 @@ function recruitment(party, members, { spots, timestamp = Date.now() } = {}) {
     const goals = CraftMaterialParty.isObjective(objective) ? CraftMaterialParty.needs(members, objective, party.stats.agreement) : null;
     return { objective, memberGoals: members.map(member => goals
         ? { characterId: Number(member.characterId), ...goals.find(goal => goal.characterId === Number(member.characterId)) }
-        : declaration(member)), lastProgressReviewAt: timestamp,
+        : declaration(member)),
     progressReviews: members.map(member => ({ characterId: Number(member.characterId),
         ...(PartyProgressComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective })
             || { ...PartyProgressComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }) })) };
@@ -219,5 +165,5 @@ function itemNeed(state, item, projected) {
     return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, pending, joint, progressReviewKey, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
+module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
     recruitment, itemNeed };

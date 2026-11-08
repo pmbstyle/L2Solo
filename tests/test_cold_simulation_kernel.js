@@ -760,7 +760,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             projectResolve: state => ({ state }),
             reviewRecruits: ({ members }) => {
                 reviewed.push(members.map(member => member.characterId));
-                return outcome === 'accepted' ? { memberGoals: [], progressReviews: [], lastProgressReviewAt: now, agreement: null } : null;
+                return outcome === 'accepted' ? { memberGoals: [], agreement: null } : null;
             },
             emit: (type, payload) => joinMessages.push({ type, payload }) });
         joinKernel.upsert(standOn(joinKernel, { state: joinMembers[0] }, { id: 'refresh-spot' }));

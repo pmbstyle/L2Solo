@@ -105,7 +105,6 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     forming('material-admission', materialMembers, materialObjective);
     const admission = await verdict('material-admission');
     assert.deepEqual(admission.formingAccepted, [], 'a missing camp forecast refuses unsafe formation in the worker');
-    assert.equal(admission.progressReviews.length, 2);
     worker.postMessage({ queryProbe: 'canonical' });
     const prepared = await wait(message => message.probe === 'canonical');
     assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 0,
@@ -129,16 +128,7 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
         replyBy: Date.now() + 5000 }, 'income');
     const income = await wait(message => message.type === 'party_goal_result' && message.msgId === 'income');
     assert.equal(income.payload.ok, true, income.payload.reason);
-    assert.equal(income.payload.joint.lastProgressReviewAt, timestamp);
-    assert.equal(income.payload.joint.progressReviews.length, members.length);
     assert(Protocol.validateEnvelope(income, 'worker').ok, 'native worker income packet is admitted on main');
-    assert(Number.isSafeInteger(income.payload.joint.progressReviewKey), 'the review carries the hash of its inputs');
-    const unreviewed = { ...income.payload.joint };
-    delete unreviewed.lastProgressReviewAt; delete unreviewed.progressReviews;
-    assert.equal(Protocol.validateEnvelope({ ...income, payload: { ...income.payload, joint: unreviewed } }, 'worker').ok, false,
-        'a review key without its review is refused');
-    assert(income.payload.joint.progressReviews.every(row => row.partySource === 'table_party'),
-        'the worker uses its planning catalogue for native party forecasts');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };
     post('party_goal_request', { ...request, members: changed, replyBy: Date.now() + 5000 }, 'changed');
     const fresh = await wait(message => message.type === 'party_goal_result' && message.msgId === 'changed');

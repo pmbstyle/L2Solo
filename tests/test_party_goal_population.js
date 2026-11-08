@@ -102,8 +102,7 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Income, 'prepare', () => { throw Error('main must never forecast a cold material roster'); });
     Coordinator.requestPartyGoals = async (party, selected) => {
         return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
-            memberGoals: selected.map(Policy.declaration), lastProgressReviewAt: timestamp,
-            progressReviews: selected.map(member => ({ characterId: member.characterId, accept: true })) } };
+            memberGoals: selected.map(Policy.declaration) } };
     };
     Population.nextProtectedPartyFormationAt = 0;
     const materialFormed = await Population.formProtectedRequiredParty(Date.now(), materialMembers);

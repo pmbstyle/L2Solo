@@ -93,7 +93,7 @@ async function run() {
         members[0] = { ...members[0], phase: 'hot' };
         const assigned = [];
         LifeState.assignParty = (state, partyId) => { assigned.push([state.characterId, partyId]); return Promise.resolve(state); };
-        Calculation.recruitCheck = () => ({ memberGoals: [], lastProgressReviewAt: at, progressReviews: [] });
+        Calculation.recruitCheck = () => ({ memberGoals: [] });
         const joined = await PopulationService.recruitBackgroundMembers([seeker]);
         assert.deepStrictEqual([...joined], [9001]);
         assert.deepStrictEqual(assigned.filter(([id]) => id === 9001), [[9001, 'bgp_far']], 'the seeker joins the far party');

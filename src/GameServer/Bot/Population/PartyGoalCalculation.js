@@ -63,7 +63,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     // Declared material needs do not require personal or group wish rebuilds.
     if (require('./CraftMaterialParty').isObjective(party.stats?.objective)) {
         if (!current()) throw new Error('party_goal_expired');
-        return require('./PartyGoalPolicy').joint(party, members, { timestamp, spots });
+        return require('./PartyGoalPolicy').joint(party, members);
     }
     const contexts = [];
     for (const member of members) {
@@ -73,7 +73,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     }
     const policy = require('./PartyGoalPolicy');
     const context = policy.groupContext(party, members, { timestamp, memberContexts: contexts, rememberGroup: false });
-    return policy.joint(party, members, { context, timestamp, spots });
+    return policy.joint(party, members, { context });
 }
 
 // The recruit check of a pending join: the members with the recruits on one
@@ -98,7 +98,7 @@ function recruitCheck(party, members, { spots, timestamp }) {
     const refused = members.some(member => (material ? Progression.adventurer(member) : Progression.personal(member))
         && !joint.progressReviews.find(row => row.characterId === Number(member.characterId))?.accept)
         || members.some(member => !current.has(Number(member.characterId)) && !require('./PartyStay').joins(member, timestamp));
-    return refused ? null : { ...joint, agreement: agreement || null };
+    return refused ? null : { objective: joint.objective, memberGoals: joint.memberGoals, agreement: agreement || null };
 }
 
 module.exports = { source, sources, sameSource, matches, validMembers, calculate, recruitCheck };

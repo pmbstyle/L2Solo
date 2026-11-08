@@ -115,36 +115,7 @@ try {
             'ordinary clan-member parties must also beat the safe solo earning route');
         assert.equal(Income.compare(member, [memberPeer], { prepared, objective: { clanGoalKey: 'clan-kit' } }), null);
         assert.deepEqual(Goals.formingMembers([member, memberPeer], { clanGoalKey: 'clan-kit' }), [member, memberPeer]);
-        const review = Goals.joint({ startedAt: at - 5 * 60000, spotId: 'peer', stats: {} },
-            [member, memberPeer], { timestamp: at, spots });
-        assert.equal(review.progressReviews?.length, 2,
-            'ordinary party income review also runs for members of a clan with a warehouse');
     }
-    // The review runs when its inputs move (PartyGoalPolicy.progressReviewKey), never on the clock.
-    const reviewed = Goals.joint({ startedAt: at, spotId: 'peer', memberIds: [state.characterId, peer.characterId], stats: {} },
-        [state, peer], { timestamp: at, spots });
-    assert(Number.isSafeInteger(reviewed.progressReviewKey) && reviewed.progressReviews.length === 2,
-        'a party with no reviewed inputs reviews at once, without waiting for the clock');
-    const held = { startedAt: at, spotId: 'peer', stats: { lastProgressReviewAt: at, progressReviewKey: reviewed.progressReviewKey,
-        progressReviews: reviewed.progressReviews } };
-    const later = Goals.joint(held, [state, peer], { timestamp: at + 24 * 3600000, spots });
-    assert.equal(later.progressReviews, undefined, 'unchanged inputs are not reviewed again, however long');
-    assert.equal(later.lastProgressReviewAt, undefined);
-    const moved = { level: { ...peer, level: 21 }, kit: { ...peer, stats: { ...peer.stats, wishSections: { build: 7 } } },
-        observed: { ...peer, stats: { ...peer.stats, wishSections: { sample: 's1:AAAA' } } },
-        solo: { ...peer, stats: { ...peer.stats, money: [1500, .001, 0, 5000] } },
-        goal: { ...peer, stats: { ...peer.stats, wishFocus: ['power:2:7', 0, 9000] } },
-        saving: { ...peer, stats: { ...peer.stats, wishSections: { affordAt: { at: 9000, kind: 'focus' } } } } };
-    for (const [input, changed] of Object.entries(moved)) {
-        const review = Goals.joint(held, [state, changed], { timestamp: at + 1, spots });
-        assert.equal(review.progressReviews?.length, 2, `a moved ${input} reviews at once`);
-        assert.notEqual(review.progressReviewKey, reviewed.progressReviewKey);
-    }
-    assert.equal(Goals.joint({ ...held, spotId: 'lower' }, [state, peer], { timestamp: at + 1, spots }).progressReviews?.length, 2,
-        'a party moved to another ground (the spot its forecast reads) reviews at once');
-    const third = { ...peer, characterId: 990132 };
-    assert.equal(Goals.joint(held, [state, peer, third], { timestamp: at + 1, spots }).progressReviews?.length, 3,
-        'a roster change reviews at once');
     assert.equal(builds, 0);
     const provider = { ...peer, level: 20, adena: 100000, spotId: 'lower',
         stats: { classId: 15, role: 'healer' } };

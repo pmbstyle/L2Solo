@@ -221,21 +221,11 @@ function departureRequest(party, state) {
     return { ...objective, ...request, attempts: positive(objective.attempts) + 1 };
 }
 
-function joint(party, members, { timestamp = Date.now(), spots } = {}) {
+function joint(party, members) {
     const goals = needs(members, party.stats.objective, party.stats.agreement);
-    const Progress = require('./PartyProgressComparison');
-    let review = {};
-    // The progress review runs when its inputs moved since the last one.
-    // lazy: the joint policy loads this module
-    const key = require('./PartyGoalPolicy').progressReviewKey(party, members, party.stats.objective);
-    if (key !== party.stats.progressReviewKey) {
-        const prepared = Progress.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
-        review = { lastProgressReviewAt: timestamp, progressReviewKey: key, progressReviews: members.map(member => ({ characterId: Number(member.characterId),
-            ...Progress.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };
-    }
     return { objective: { ...party.stats.objective, status: goals.length ? 'open' : 'completed' },
         memberGoals: members.map(member => ({ characterId: Number(member.characterId),
-            ...goals.find(goal => goal.characterId === Number(member.characterId)) })), ...review };
+            ...goals.find(goal => goal.characterId === Number(member.characterId)) })) };
 }
 
 function target(party, members) {

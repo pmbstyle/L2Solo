@@ -334,9 +334,9 @@ async function jointPartyGoals(party, members, timestamp, options = {}) {
     if (party.stats?.forming && !members.some(member => member.phase === 'cold'))
         return Policy.formingVerdict(members, party.stats.forming.requested, { timestamp });
     if (!members.some(member => member.phase === 'cold') && CraftMaterialParty.isObjective(party.stats?.objective))
-        return Policy.joint(party, members, { timestamp, spots: SpotProfiles.ensure() });
+        return Policy.joint(party, members);
     if (!members.some(member => member.phase === 'cold'))
-        return Policy.joint(party, members, { context: Policy.groupContext(party, members, { timestamp }), timestamp });
+        return Policy.joint(party, members, { context: Policy.groupContext(party, members, { timestamp }) });
     const result = await ColdSimulationCoordinator.requestPartyGoals(party, members, { timestamp,
         onWorkerWait: ms => { options.workerWaitMs = Number(options.workerWaitMs || 0) + ms; } });
     // Two other parties hold the worker's goal slots: keep the current
@@ -597,7 +597,6 @@ function joinPartyRecruits(party, members, recruits, joint) {
             : party.stats?.agreement;
     const stats = {
         ...(party.stats || {}),
-        ...(joint ? { lastProgressReviewAt: joint.lastProgressReviewAt, progressReviews: joint.progressReviews } : {}),
         memberGoals: joint?.memberGoals || allMembers.map(PartyGoalPolicy.declaration),
         agreement: agreement ? { ...agreement, memberIds: allMembers.map(member => member.characterId) } : null
     };
@@ -761,7 +760,6 @@ async function formingVerdict(members, requested, options) {
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
     if (members.length < Config.partyMinSize) return null;
-    let review = null;
     if (!PartyGoalPolicy.verdictFree(requested)) {
         // Judged where the party will hunt: its required objective, else the spot its members'
         // objective names (a preferred request's), never where its first member stands now.
@@ -774,9 +772,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
             if (verdict) await options.onRefused?.(); else options.onDeferred?.();
             return null;
         }
-        // A material roster keeps the reviews of its admission (CraftMaterialParty: economic accepts only).
-        if (verdict.progressReviews) review = { lastProgressReviewAt: verdict.lastProgressReviewAt,
-            progressReviews: verdict.progressReviews.filter(row => accepted.has(row.characterId)) };
     }
     const leader = PartyComposition.chooseLeader(members);
     if (!leader) { await options.onRefused?.(); return null; }
@@ -814,7 +809,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         .propose(leader, members, objective, { persona: BotPersona.of(leader) });
     const joint = await jointPartyGoals(party, members, timestamp, options);
     if (!joint) { options.onDeferred?.(); return null; }
-    party.stats = { ...party.stats, ...joint, ...review,
+    party.stats = { ...party.stats, ...joint,
         agreement: PartyAgreement.propose(leader, members, objective,
             { persona: BotPersona.of(leader), rng: invoke('GameServer/Bot/AI/TendencyRoll').seeded(`agreement:${partyId}`) }) };
     const partyEvent = {
