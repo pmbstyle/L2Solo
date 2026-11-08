@@ -566,10 +566,13 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const builtAt = state => Number(state.stats?.wishSections?.at) || 0;
     const represented = builtAt(after) > builtAt(before) ? after.stats.wishSections : null;
     const previous = represented || before.stats?.wishSections || {};
+    // The earning spot taken alone after the build kept its own situations' facts (withOwnFacts).
+    const earning = after.stats?.earning ?? before.stats?.earning;
+    const own = earning?.facts && Number(earning.at) > (Number(previous.at) || 0) ? earning.facts : null;
     let original;
     // Only a fact the baseline lacks reads the state before; outleveled is read against
     // the build's own answer only: a baseline without it reads 0 (its flip once).
-    const previousFact = key => Object.hasOwn(previous, key) ? previous[key]
+    const previousFact = key => own && Object.hasOwn(own, key) ? own[key] : Object.hasOwn(previous, key) ? previous[key]
         : key === 'outleveled' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which
     // reads them. A party left is raised at the leave (party_left), not read here.
@@ -591,6 +594,19 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
         names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
+}
+// The facts whose situations wake the earning spot alone for a solo bot (died, spot_outleveled,
+// moved_by_world, spot_dangerous, recovered, karma_changed): the earning answer taken alone
+// (EconomyContext.decideEarning, ColdKarmaPolicy's) keeps them as they stand, with its spot's
+// outleveled, as its baseline beside the build's (detect reads them while the answer is the
+// newer): else each fact the build's baseline lacks raises again after every answer until a
+// build. ~70 B on the answer. earning: the new answer; returned with its facts.
+const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma']);
+function withOwnFacts(state, earning) {
+    const now = readers().semanticFacts({ ...state, stats: { ...state.stats, earning } });
+    const facts = {};
+    for (const key of EARNING_FACTS) facts[key] = now[key];
+    return { ...earning, facts };
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
 // now: the step's view of after (stateView); was: a body's previous post's facts, else
@@ -689,5 +705,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
-    DECISIONS, ALL, FIRST, raise, delta, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, FIRST, raise, delta, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

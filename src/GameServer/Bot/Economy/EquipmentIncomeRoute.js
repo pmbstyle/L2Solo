@@ -247,7 +247,7 @@ function earnsOnRoute(state, required = false) {
 // the bot believes it), expected (the same without its belief bias: SpotEconomics expected), earning (the bot's hour:
 // its best income among the spots it may hunt), error (its own error on a row's income, SpotEconomics incomeError),
 // at, and the spot's kit use (spotRates: shotKind, shotsPerHour, potionsPerHour, drinks; read by the kit's line and
-// amounts, StatsPacket.ratesOf/lineOf) }. ~110 B. found: search's { route }; error: the search's
+// amounts, StatsPacket.ratesOf/lineOf); an answer taken alone also its facts, Situations.withOwnFacts }. ~110 B. found: search's { route }; error: the search's
 // evaluate.incomeError; state: the bot (its spot rates).
 function answerOf(route, at, error = 0, state = null) {
     return route ? { spotId: String(route.spot.id), shots: route.row.useShots !== false, income: Number(route.row.income) || 0,
