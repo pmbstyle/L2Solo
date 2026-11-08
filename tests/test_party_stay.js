@@ -29,6 +29,8 @@ try {
     assert.deepStrictEqual(Stay.decide(member(1, { stats: { karma: 10 } })), { answer: 'stay', reason: 'stay' }, 'karma is no leave');
     assert(Stay.joins(member(1, { party: { partyId: null }, stats: { karma: 10 } })), 'forming takes a candidate with karma');
     assert.strictEqual(Stay.decide(member(1), { bridgeReason: () => 'weapon_bridge' }).reason, 'weapon_bridge');
+    assert(!Stay.joins(member(1, { party: { partyId: null } }), { now: at, bridgeReason: () => 'weapon_bridge' }),
+        'forming takes no candidate that would leave at its first stay to buy its funded bridge');
     assert.strictEqual(Stay.decide(member(1), { outleveled: true }).reason, 'party_outleveled');
     assert.strictEqual(Stay.decide(member(1), { soloSooner: () => true }).reason, 'solo_sooner');
     Disposition.inventoryCleanupNeed = () => ({ reason: 'npc_only_inventory', slots: 10, limit: 80 });

@@ -39,11 +39,13 @@ function decide(member, reads = {}) {
 }
 
 // Whether a candidate stays in a party it would join now (forming's verdict, a recruit
-// check): the stay read on its own facts only (the bag; no share or bridge read
-// before it is in a party). A candidate with karma joins (C4 bars no PK from a party). A candidate that would leave
-// at once is not taken: forming builds no party to dissolve.
-function joins(member, now = Date.now()) {
-    return decide(member, { now }).answer === 'stay';
+// check): the stay read on its own facts (its bag, a funded weapon or armour bridge it
+// would leave to buy: the same bridgeReason the party step's stay reads); the share
+// reads (outleveled, soloSooner) are the forming verdict's own comparison. A candidate
+// with karma joins (C4 bars no PK from a party). A candidate that would leave at once is
+// not taken: forming builds no party to dissolve. reads: { now, bridgeReason }.
+function joins(member, { now = Date.now(), bridgeReason = null } = {}) {
+    return decide(member, { now, bridgeReason }).answer === 'stay';
 }
 
 // Whether a gear plan needs a party (its drop is party-only): what a required party

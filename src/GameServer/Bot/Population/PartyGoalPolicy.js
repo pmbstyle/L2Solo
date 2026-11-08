@@ -86,9 +86,9 @@ function formingMembers(members, requested, options = {}) {
 }
 
 function acceptedMembers(members, requested, options) {
-    // A candidate whose own stay would leave the party now (its bag:
+    // A candidate whose own stay would leave the party now (its bag, a funded bridge:
     // PartyStay.joins) is not taken: no party formed to dissolve.
-    members = members.filter(member => PartyStay.joins(member, options.timestamp));
+    members = members.filter(member => PartyStay.joins(member, { now: options.timestamp, bridgeReason: options.bridgeReason }));
     const filter = roster => {
         const prepared = PartyProgressComparison.prepare(roster, { objective: requested, ...options });
         return roster.filter(member => {
@@ -122,16 +122,17 @@ function acceptedMembers(members, requested, options) {
 // held: a refused roster's requests close (forming's no) and it is not asked again until its
 // group moves (PartyAssemblyEvents: a request reopened by its build, a member in or out, its
 // held solo answer).
-function formingVerdict(members, requested, { spots, timestamp = Date.now() } = {}) {
+// bridgeReason: the thread's funded-bridge read (PartyStay.joins).
+function formingVerdict(members, requested, { spots, timestamp = Date.now(), bridgeReason = null } = {}) {
     if (!verdictFree(requested)) spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
-    return judgeForming(members, requested, { spots, timestamp });
+    return judgeForming(members, requested, { spots, timestamp, bridgeReason });
 }
 
-function judgeForming(members, requested, { spots, timestamp, solo }) {
+function judgeForming(members, requested, { spots, timestamp, solo, bridgeReason }) {
     if (!CraftMaterialParty.isObjective(requested)) return { formingAccepted: formingMembers(members, requested,
-        { spots, timestamp, solo }).map(member => Number(member.characterId)) };
+        { spots, timestamp, solo, bridgeReason }).map(member => Number(member.characterId)) };
     const decisions = new Map();
-    const formed = new Set(formingMembers(members, requested, { spots, timestamp, solo,
+    const formed = new Set(formingMembers(members, requested, { spots, timestamp, solo, bridgeReason,
         onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
         .map(member => Number(member.characterId)));
     return { formingAccepted: members.map(member => Number(member.characterId))

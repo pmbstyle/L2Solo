@@ -958,6 +958,10 @@ function setRecordEscrow(key, ownerId, amount) {
     }
 }
 const escrowFor = characterId => escrowByOwner.get(Number(characterId)) || 0;
+// A funded weapon or armour bridge the bot would leave a party to buy: one read for a
+// member's stay and a candidate's join (PartyStay), on this worker's NPC offers.
+const bridgeReason = state => GearAcquisitionPlanner.equipmentBridgeReason(state, {
+    ...planningNpcCatalog.plannerOptions, buyOrderEscrow: escrowFor(state.characterId) });
 // A near bot's post (BotLifeState.notifyNearFacts) against the row before
 // it, on the posted row before it is stored: the raises main named and
 // detected (once per raise). The decision is then taken on this row (mode near).
@@ -1593,7 +1597,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             return EconomyContext.forState(member, { timestamp, spots: planningSpots, board: boardReady(), routeRows,
                 buyOrderEscrow: payload.escrows[at], caller: 'workerPartyGoal', withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
-            && partyMembersAvailable(members), { spots: planningSpots });
+            && partyMembersAvailable(members), { spots: planningSpots, bridgeReason });
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
             send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);
     }).catch(error => {
@@ -1716,10 +1720,7 @@ function startKernel(config = {}) {
         playerWaiting: id => playerWaits.has(id),
         raidRow: id => tables.rows('raids').get(id) || null,
         spotOf: standingSpot,
-        equipmentBridgeReason: (state) => GearAcquisitionPlanner.equipmentBridgeReason(state, {
-            ...planningNpcCatalog.plannerOptions,
-            buyOrderEscrow: escrowFor(state.characterId)
-        }),
+        equipmentBridgeReason: bridgeReason,
         partyArrival,
         // A party member's stay (PartyStay): its held solo answer at the inputs now
         // against its share of its party's hunt in hours to its next level (both one
@@ -1887,7 +1888,7 @@ function startKernel(config = {}) {
             planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: escrowFor(state.characterId), board: boardReady() }
         }),
         reviewRecruits: ({ party, members, timestamp }) => PartyGoalCalculation.recruitCheck(party, members,
-            { spots: planningSpots, timestamp }),
+            { spots: planningSpots, timestamp, bridgeReason }),
         planLifecycle: async ({ state, timestamp }) => {
             if (state.stats?.tradeMeeting) return null;
             // The bot's record as the kernel handed the step over (its card).

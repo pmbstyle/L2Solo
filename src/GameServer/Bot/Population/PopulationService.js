@@ -327,11 +327,16 @@ function requiresClanEquipmentParty(state) {
         && Number(objective?.clanId || 0) > 0;
 }
 
+// A funded weapon or armour bridge a near bot would leave a party to buy (PartyStay.joins,
+// the worker's bridgeReason on main's NPC offers and escrow).
+const bridgeReason = state => GearAcquisitionPlanner.equipmentBridgeReason(state,
+    { buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId) });
+
 async function jointPartyGoals(party, members, timestamp, options = {}) {
     const Policy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
     if (party.stats?.objective?.opportunisticRaid === true) return Policy.pending(party, members);
     if (party.stats?.forming && !members.some(member => member.phase === 'cold'))
-        return Policy.formingVerdict(members, party.stats.forming.requested, { timestamp });
+        return Policy.formingVerdict(members, party.stats.forming.requested, { timestamp, bridgeReason });
     if (!members.some(member => member.phase === 'cold') && CraftMaterialParty.isObjective(party.stats?.objective))
         return Policy.joint(party, members);
     if (!members.some(member => member.phase === 'cold'))
@@ -2368,7 +2373,7 @@ const PopulationService = {
                     const allMembers = [...members, ...hydratedRecruits];
                     const joint = PartyGoalCalculation.recruitCheck(
                         { ...party, leaderId: leaderIdForMembers(party, members) || Number(hydratedRecruits[0]?.characterId || 0) },
-                        allMembers, { spots: SpotProfiles.ensure(), timestamp: Date.now() });
+                        allMembers, { spots: SpotProfiles.ensure(), timestamp: Date.now(), bridgeReason });
                     return joint ? joinPartyRecruits(party, members, hydratedRecruits, joint).then(claim) : null;
                 });
             }), Promise.resolve())).then(() => claimed);

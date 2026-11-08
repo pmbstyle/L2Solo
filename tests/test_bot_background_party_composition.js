@@ -78,6 +78,11 @@ try {
     assert(accepts(clerics) && accepts(mixed), 'fixture: every member accepts its peers');
     assert.deepStrictEqual(Goals.formingMembers(clerics, null), [], 'a roster of healers only does not form');
     assert.strictEqual(Goals.formingMembers(mixed, null).length, 2, 'a healer and a fighter form');
+    // A fighter that can buy its weapon bridge now leaves at its first stay (PartyStay): forming
+    // does not take it, so no party is formed to dissolve.
+    assert.deepStrictEqual(Goals.formingMembers(mixed, null,
+        { bridgeReason: state => state.characterId === 1104 ? 'weapon_bridge' : null }), [],
+    'a candidate leaving for its funded bridge is no join: the healer alone forms none');
     assert.strictEqual(builds, 0);
 } finally { Object.assign(Economy, original); }
 
