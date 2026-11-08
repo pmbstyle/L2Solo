@@ -134,6 +134,20 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         const road = await step([member(1), member(2, { stats: full })], { stats: duty });
         assert.deepStrictEqual(road.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the duty trip rides the travel wait');
         assert.deepStrictEqual(road.party.memberIds, [1, 2]);
+        // A clan duty lets one member go at a time: behind another member's absence the
+        // trip is not taken and its stay stays woken; the absence over, the next step sends it.
+        const away = { ...duty, marketAbsences: { 9: { characterId: 9, until: at + 60000 } } };
+        const behind = await step([member(1), member(2, { stats: full })], { stats: away });
+        assert.deepStrictEqual(behind.stayTrips || [], [], 'no trip while another member is away');
+        assert(Situations.woken(behind.states.find(state => state.characterId === 2).stats, 'party_stay'), 'its stay waits woken');
+        const over = await step([member(1), member(2, { stats: full })], { stats: { ...away, marketAbsences: { 9: { until: at - 1 } } } });
+        assert.deepStrictEqual(over.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the absence over, the trip goes');
+        Disposition.inventoryCleanupNeed = state => state.characterId >= 2 ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
+        Disposition.cleanupCounted = state => state.characterId >= 2;
+        const both = await step([member(1), member(2, { stats: full }), member(3, { stats: Situations.raise({ ...member(3).stats }, 'bag_full', null, Situations.OPEN) })],
+            { stats: duty });
+        assert.deepStrictEqual(both.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'two full bags: one trip');
+        assert(Situations.woken(both.states.find(state => state.characterId === 3).stats, 'party_stay'), 'the other waits woken');
     } finally { Disposition.inventoryCleanupNeed = () => null; Disposition.cleanupCounted = cleanupCounted; }
     // A required party's re-plan (the worker's, at its step): its members' plans ride the
     // leader's commit (main writes them: the member whose need ended hears it once its

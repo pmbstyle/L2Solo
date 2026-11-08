@@ -353,13 +353,12 @@ async function jointPartyGoals(party, members, timestamp, options = {}) {
 }
 
 // The trips the worker's party_stay answered for members of a clan duty party
-// (ColdSimulationKernel.partyStay): main starts each with the party's return ticket
+// (ColdSimulationKernel.partyStay: one at a time, none behind another member's
+// absence): main starts each with the party's return ticket
 // (PartyMarketBreak.departure) and the member leaves until it comes back
-// (resumePartyMarketBreak). One the duty does not let go now stays on duty, counted:
-// behind another member's absence (party:stay_trip:held), its bag is heard again when
-// that absence ends (absenceEnded); a bag no longer at its floor or a trip that
-// cannot start (party:stay_trip:refused) waits for its next situation. The worker
-// decided; main executes.
+// (resumePartyMarketBreak). A bag no longer at its floor or a trip that cannot start
+// (party:stay_trip:refused) waits for its next situation. The worker decided; main
+// executes.
 async function applyPartyStayTrips(party, trips = [], timestamp = Date.now()) {
     party = BackgroundPartyState.find(party?.partyId) || party;
     const departed = [];
@@ -367,9 +366,8 @@ async function applyPartyStayTrips(party, trips = [], timestamp = Date.now()) {
         if (party?.status !== 'active') break;
         const member = LifeState.cachedState(characterId);
         if (!member || member.phase !== 'cold' || DecisionSections.partyIdOf(member) !== String(party.partyId)) continue;
-        if (PartyMarketBreak.pending(party, timestamp).length) { Situations.note('party:stay_trip:held'); continue; }
         const need = PartyMarketBreak.bagNeed(member, timestamp);
-        const goal = PartyMarketBreak.allowed(party, member, timestamp, need) ? PartyMarketBreak.goal(party, member, timestamp, need) : null;
+        const goal = PartyMarketBreak.goal(party, member, timestamp, need);
         const travel = goal && GoalExecutor.beginMarketTravel(member, goal, timestamp);
         const departure = travel && PartyMarketBreak.departure(party, member, travel, timestamp, need);
         if (!departure) { Situations.note('party:stay_trip:refused'); continue; }
@@ -390,27 +388,6 @@ async function applyPartyStayTrips(party, trips = [], timestamp = Date.now()) {
     }
     return { party, departed, dissolved: false };
 }
-
-// A clan duty lets one member go at a time: a member whose trip it held behind that
-// absence (applyPartyStayTrips) hears its bag again when the absence ends, however it
-// ends (the absent member back, its ticket dropped or expired, its trip given up):
-// each member still in that party at its bag floor raises bag_full (its stay decides
-// again). Read on every published row of a far bot (absenceEnded); a row that carried
-// no live ticket costs one field read.
-function absenceEnded({ state, previousState }) {
-    const token = previousState?.stats?.partyMarketReturn;
-    if (!token?.partyId || !(Number(token.until) > Number(previousState.updatedAt || 0))) return;
-    const ticket = state?.stats?.partyMarketReturn;
-    if (ticket?.partyId === token.partyId && Number(ticket.until) > Number(state.updatedAt || 0)) return;
-    const party = BackgroundPartyState.find(token.partyId);
-    if (party?.status !== 'active') return;
-    for (const id of party.memberIds || []) {
-        const member = Number(id) !== Number(token.characterId) && LifeState.cachedState(id);
-        if (member?.phase === 'cold' && DecisionSections.partyIdOf(member) === String(party.partyId)
-            && PartyMarketBreak.bagFact(member) === 2) DecisionEvents.raiseOn(id, 'bag_full');
-    }
-}
-LifeState.subscribePublications(absenceEnded);
 
 async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;

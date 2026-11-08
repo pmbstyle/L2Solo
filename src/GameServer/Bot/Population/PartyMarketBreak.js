@@ -63,21 +63,15 @@ function clanDuty(party) {
     const objective = party?.stats?.objective;
     return objective?.priority === 'required' && !!objective.clanGoalKey;
 }
-// The order owns the roster through its physical return, even after expiry.
-const warDuty = party => !!party?.stats?.warOperation;
 function pending(party, now = Date.now()) {
     return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
 }
 // The trips a clan duty lets its member go on (its stay answered one,
-// ColdSimulationKernel.partyStay): an unload of a bag at its floor, one absence at a
-// time; a war or any other party lets none (no stay decision is taken at war).
+// ColdSimulationKernel.partyStay, one absence at a time): an unload of a bag at its
+// floor; a war lets none (no stay decision is taken at war).
 const FLOOR_REASONS = ['inventory_capacity', 'inventory_overweight'];
-function allowed(party, member, now = Date.now(), need = undefined) {
-    if (warDuty(party) || !clanDuty(party) || pending(party, now).length) return false;
-    return FLOOR_REASONS.includes((need === undefined ? bagNeed(member, now) : need)?.reason);
-}
-// The unload goal of a member allowed its trip. The native purchase/travel gate
-// still checks its quote and cash.
+// The unload goal of a member whose trip its stay answered. The native purchase/travel
+// gate still checks its quote and cash.
 function goal(party, member, now, need = undefined) {
     const bag = need === undefined ? bagNeed(member, now) : need;
     return FLOOR_REASONS.includes(bag?.reason) ? { ...cleanupGoal(bag), status: 'active' } : null;
@@ -100,5 +94,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, warDuty, pending,
-    allowed, goal, departure, stats, ready, FLOOR_REASONS };
+module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, pending,
+    goal, departure, stats, ready, FLOOR_REASONS };

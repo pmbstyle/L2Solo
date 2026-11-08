@@ -98,46 +98,6 @@ async function departureChecks() {
         assert.strictEqual(LifeState.cachedState(drifted).party.partyId, null, 'the leader sync writes no one who left back in');
         await assertLeaderHandedOver('mbdrift', leaving);
 
-        // A trip the duty does not let go now (a member already away) holds: the member
-        // stays on duty, and hears its bag again when the absent member is back.
-        const busyParty = await formParty('mbbusy', 4, { objective }, { clanId: 1 });
-        const [away, heldId] = busyParty.ids;
-        leaving = away;
-        assert.strictEqual((await Population.applyPartyStayTrips(busyParty.party, bagTrip(away))).departed.length, 1);
-        const fullBag = Object.fromEntries(Array.from({ length: 81 }, (_, index) => [9700 + index,
-            { selfId: 9700 + index, amount: 1, stackable: false, kind: 'Other.Book', name: 'Book' }]));
-        await LifeState.upsertState({ ...LifeState.cachedState(heldId), inventory: fullBag }, 'market_break_fixture');
-        assert.strictEqual(require('../src/GameServer/Bot/Population/PartyMarketBreak').bagFact(LifeState.cachedState(heldId)), 2,
-            'the held member\'s bag is at its floor');
-        leaving = heldId;
-        const held = await Population.applyPartyStayTrips(PartyState.find('mbbusy'), bagTrip(heldId));
-        assert.strictEqual(held.departed.length, 0, 'one absence at a time');
-        assert.strictEqual(LifeState.cachedState(heldId).party.partyId, 'mbbusy');
-        const Situations = invoke('GameServer/Bot/Situations');
-        const staysWoken = () => Situations.woken(LifeState.cachedState(heldId).stats, 'party_stay');
-        assert(!staysWoken(), 'the held member\'s stay was decided');
-        const back = LifeState.cachedState(away);
-        const backed = await Population.resolveColdState(await LifeState.upsertState({ ...back, activity: 'party_wait',
-            stats: { ...back.stats, travel: null, marketReturn: null } }, 'market_break_fixture'));
-        assert.strictEqual(backed.reason, 'returned_to_clan_party');
-        for (let turn = 0; turn < 20 && !staysWoken(); turn++) await new Promise(resolve => setImmediate(resolve));
-        assert(staysWoken(), 'the absence ended: the held member\'s full bag wakes its stay again');
-        // An absence that ends with no return (its ticket expired) wakes the held member too.
-        const expiryParty = await formParty('mbexpiry', 4, { objective }, { clanId: 1 });
-        const [gone, onDuty] = expiryParty.ids;
-        leaving = gone;
-        await Population.applyPartyStayTrips(expiryParty.party, bagTrip(gone));
-        await LifeState.upsertState({ ...LifeState.cachedState(onDuty), inventory: fullBag }, 'market_break_fixture');
-        leaving = onDuty;
-        assert.strictEqual((await Population.applyPartyStayTrips(PartyState.find('mbexpiry'), bagTrip(onDuty))).departed.length, 0);
-        const onDutyWoken = () => Situations.woken(LifeState.cachedState(onDuty).stats, 'party_stay');
-        assert(!onDutyWoken());
-        const away2 = LifeState.cachedState(gone);
-        await LifeState.upsertState({ ...away2, stats: { ...away2.stats,
-            partyMarketReturn: { ...away2.stats.partyMarketReturn, until: Date.now() - 1 } } }, 'market_break_fixture');
-        for (let turn = 0; turn < 20 && !onDutyWoken(); turn++) await new Promise(resolve => setImmediate(resolve));
-        assert(onDutyWoken(), 'an expired ticket ends the absence: the held member hears its bag again');
-
         const clanParty = await formParty('mbtoken', 2, { objective }, { clanId: 1 });
         const [leader, retained] = clanParty.ids;
         leaving = leader;
@@ -181,15 +141,8 @@ async function run() {
     const clanParty = { ...party, stats: { ...party.stats,
         objective: { priority: 'required', clanGoalKey: 'clan-duty', clanId: 1, clanOperation: 'equipment' } } };
     const floor = { reason: 'inventory_capacity', slots: 81, limit: 80 };
-    assert(Break.allowed(clanParty, members[2], now, floor), 'a bag at its floor may leave clan duty');
-    assert(!Break.allowed(clanParty, members[2], now, null), 'a refill waits for the clan\'s call');
-    assert.strictEqual(Break.goal(clanParty, members[2], now, null), null);
-    assert(!Break.allowed({ ...clanParty, stats: { ...clanParty.stats, marketAbsences: {
-        2: { until: now + 60000 } } } }, members[2], now, floor), 'only one member may be away at a time');
-    const warParty = { ...clanParty, status: 'active', stats: { ...clanParty.stats,
-        warOperation: { id: 'live-war', status: 'holding', expiresAt: now - 1 } } };
-    assert(!Break.allowed(warParty, members[2], now, floor), 'no trip leaves an unfinished war');
-    assert(!Break.allowed(party, members[2], now, floor), 'an ordinary party starts no duty trip: its member leaves');
+    assert.strictEqual(Break.goal(clanParty, members[2], now, floor).status, 'active', 'a bag at its floor leaves clan duty');
+    assert.strictEqual(Break.goal(clanParty, members[2], now, null), null, 'a refill waits for the clan\'s call');
     await departureChecks();
     console.log('Bot party market break checks passed');
 }
