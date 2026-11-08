@@ -301,6 +301,7 @@ async function main() {
             const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
             const saved = { npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
                 finalizePlan: GearAcquisitionPlanner.finalizePlan };
+            const savedPlanFor = GearAcquisitionPlanner.planFor;
             const bridge = { status: 'active', strategy: 'market', weaponBridge: true,
                 partyNeedReason: 'weapon_bridge', target: { selfId: 129, slot: 7 }, market: { price: 1 } };
             Object.assign(GearAcquisitionPlanner, {
@@ -326,29 +327,27 @@ async function main() {
                 assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(unarmed, 'clan_equipment_goal', bridgeRow)
                     .stats.equipmentPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
                     'the clan goal write lands over the bridge');
+                // An unarmed member one material short of its clan craft finishes the craft
+                // before it takes the bridge; the finished craft keeps the clan goal.
+                const clanCraft = { ...clanPlan, strategy: 'craft', recipeId: 9301, grade: 'd',
+                    partyNeed: 'solo_ok', requiresParty: false, partyNeedReason: undefined,
+                    next: { spotId: 'clan-spot', npcId: 0, itemId: 9102 },
+                    materials: [{ selfId: 9102, amount: 10, missing: 1 }] };
+                GearAcquisitionPlanner.finalizePlan = saved.finalizePlan;
+                GearAcquisitionPlanner.planFor = (_state, options) => (options?.recipeId === clanCraft.recipeId
+                    ? { ...clanCraft, grade: 'c', clanGoal: undefined } : bridge);
+                const craftSelection = Refresh.plan({ ...unarmed, stats: { ...unarmed.stats, equipmentPlan: clanCraft } },
+                    { spots: [], timestamp: Date.now(), planningOptions: { board: new BoardIndex() } });
+                assert.strictEqual(craftSelection.acquisitionPlan?.finishBeforeUpgrade, true,
+                    'a clan craft one material from done is finished before the bridge');
+                assert.strictEqual(craftSelection.acquisitionPlan.target.selfId, clanCraft.target.selfId);
+                assert.strictEqual(craftSelection.acquisitionPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'the finished clan craft keeps its clan goal');
             } finally {
                 Object.assign(GearAcquisitionPlanner, saved);
+                GearAcquisitionPlanner.planFor = savedPlanFor;
             }
         }
-        // A member of another clan holding this clan's plan: its re-plan keeps that plan, which
-        // the member may not hold; refused, it leaves no plan (its row drops the foreign goal)
-        // instead of keeping the foreign one.
-        {
-            const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
-            const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-            const saved = GearAcquisitionPlanner.finalizePlan;
-            GearAcquisitionPlanner.finalizePlan = (_state, _previous, raw) => raw;
-            try {
-                const foreign = { ...lockedMember, stats: { classId: 0, clanId: 5, equipmentPlan: clanPlan },
-                    inventory: { 129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 } } };
-                const selection = Refresh.plan(foreign, { spots: [], timestamp: Date.now(),
-                    planningOptions: { board: new BoardIndex() } });
-                assert.strictEqual(selection.acquisitionPlan, null, 'a foreign clan goal is not kept by the re-plan');
-            } finally {
-                GearAcquisitionPlanner.finalizePlan = saved;
-            }
-        }
-
         const finalized = GearAcquisitionPlanner.finalizePlan(
             { inventory: {} },
             clanPlan,

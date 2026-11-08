@@ -385,22 +385,6 @@ function inventoryStateFromItems(state, items = []) {
     };
 }
 
-function equipmentTargetFulfilled(stats = {}, inventory = {}) {
-    const target = stats.equipmentPlan?.target;
-    const selfId = Number(target?.selfId || 0);
-    const slot = Number(target?.slot || 0);
-    if (selfId <= 0 || slot <= 0) return false;
-    const combineResultId = Number(stats.equipmentPlan?.combine?.resultId || 0);
-    if (combineResultId > 0 && selfId !== combineResultId) return false;
-    const item = inventory[String(selfId)];
-    const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item || {}, item?.slot);
-    return !!item?.equipped
-        && equippedSlots.some((equippedSlot) => (
-            equippedSlot === slot
-            || [7, 14].includes(equippedSlot) && [7, 14].includes(slot)
-        ));
-}
-
 // Whether the equipment plan, while it acts, wants an item: its target, its
 // next input or a material it still misses.
 function planWants(plan, itemId) {
@@ -433,7 +417,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
             ...progress.componentRequirement(plan)
         } } };
     }
-    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
+    if (!GearAcquisitionPlanner.equipmentTargetFulfilled(state, state.stats?.equipmentPlan)) return state;
     const stats = { ...(state.stats || {}) };
     if (Number(stats.marketWanted?.itemId || 0) === Number(plan?.target?.selfId || 0)) {
         stats.marketWanted = null;
@@ -442,7 +426,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     let retained = plan?.inputPreparation;
     while (retained && (retained.reason === 'cancelled'
         || !(retained.recipeId || retained.exchange?.kind === 'luxury_exchange' || retained.combine) || !retained.target?.selfId
-        || equipmentTargetFulfilled({ equipmentPlan: retained }, state.inventory))) retained = retained.inputPreparation;
+        || GearAcquisitionPlanner.equipmentTargetFulfilled(state, retained))) retained = retained.inputPreparation;
     if (retained) {
         // Completing a temporary equipment goal must not erase the separate
         // unfinished recipe that was waiting behind it.
@@ -490,7 +474,7 @@ function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = n
 function equipmentCompletionSignal(state = {}) {
     const clanGoal = state.stats?.equipmentPlan?.clanGoal;
     if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
-    if (!equipmentTargetFulfilled(state.stats, state.inventory)
+    if (!GearAcquisitionPlanner.equipmentTargetFulfilled(state, state.stats?.equipmentPlan)
         && !invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress').componentAcquired(state)) return null;
     return {
         clanId: Number(clanGoal.clanId),

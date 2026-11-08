@@ -306,11 +306,13 @@ function select(state, previousPlan, { spots = [], timestamp = Date.now(), plann
     const bridge = !GearAcquisitionPlanner.combatReadiness(state).hasWeapon
         ? GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planOptions) : null;
     // The bridge is taken unless the held clan plan stands against it (clanPlanKeptAgainst:
-    // a weapon bridge beats the lock, an armour bridge does not).
+    // a weapon bridge beats the lock, an armour bridge does not). A taken bridge lifts the
+    // lock, so a craft one step from done (personal or clan) is still finished first
+    // (shouldFinishPreviousPlan): our choice, not C4.
     const weaponBridgePlan = bridge && !GearAcquisitionPlanner.clanPlanKeptAgainst(
         state.stats?.equipmentPlan === previousPlan ? state : { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } },
         bridge) ? bridge : null;
-    const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+    const clanGoalLocked = !weaponBridgePlan && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
     const finishedOffer = !weaponBridgePlan && !clanGoalLocked && previousPlan?.strategy === 'craft'
         && ['active', 'component_ready'].includes(previousPlan.status)
         ? GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, planOptions) : null;
