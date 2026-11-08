@@ -9,15 +9,17 @@ const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const WishProviders = invoke('GameServer/Bot/Economy/WishProviders');
 const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-// The situations a body raises by name (raiseDecision): its arrival in town, its
+// The situations a body raises by name (raiseDecision): its arrival in town (on the
+// trip its held leaf ordered to that town: :own), a town visit's end (done, or failed), its
 // respawn, a step proved impossible, leaving a party, a spot empty of prey or
 // unsafe ground for it, a spot it could not reach, a player's command naming a
 // spot, its wallet, its last hunting buff ended (HotTownRebuff.buffEnded); and what main's executors raise on a far row that went near
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag, an own lines'
 // look main could not apply (line_undercut: look again). Its own
 // facts it detects on its post (detectNear).
-const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
-    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired']);
+const reasons = new Set(['arrived_town', 'arrived_town:own', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
+    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_done:visit', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired']);
+const ARRIVALS = new Set(['arrived_town', 'arrived_town:own']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.
 const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);
@@ -61,16 +63,16 @@ function decisionStatsFor(session) {
 // { spotId, reason }, player_command's { spotId, at }).
 function raiseDecision(session, reason, { impossible = false, payload: fact = null } = {}) {
     if (!reasons.has(reason)) throw new TypeError('unknown_decision_event');
-    // Visit ends share the arrival clock until a single native arrival event
-    // exists. A fact of the body, kept on its stats: never part of a raise.
-    if (reason === 'arrived_town') replaceStats(session, { ...statsFor(session), visitEvery: TownVisitInterval.arrived(statsFor(session)) });
+    // The visit clock moves at the arrival, once a visit (ShoppingState.arrive). A fact
+    // of the body, kept on its stats: never part of a raise.
+    if (ARRIVALS.has(reason)) replaceStats(session, { ...statsFor(session), visitEvery: TownVisitInterval.arrived(statsFor(session)) });
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {
         const raise = nearBag(session, [{ name: reason, payload: fact }], true);
         if (impossible) { raise.impossible = true; raise.impossibleSeq = raise.seq; raise.impossibleName = reason; }
         // A body's arrival in town is its stop there too: what waited for the town wakes.
-        if (reason === 'arrived_town') raise.stop = 'town';
+        if (ARRIVALS.has(reason)) raise.stop = 'town';
         // A command a body that never posts cannot be answered: dropped, counted.
         if (reason === 'player_command' && !Life.nearPosts(session)) {
             FailureLog.note('near.command_lost', new Error(`player_command on ${session.actor.fetchId?.()}: the body posts nothing`));
