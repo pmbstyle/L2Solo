@@ -11892,7 +11892,10 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         // return trip to finish, which clears its old marketReturn on arrival.
         const marketReturn = !stats.marketReturn && row.activity === 'hunting'
             ? { loc: travel.from, regionName: row.currentRegion || null, spotId: row.spotId || null } : null;
-        write("UPDATE bot_life_state SET activity='traveling',activityStartedAt=?,nextResolveAt=?,statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)) WHERE characterId=?", [at, travel.arrivalAt, JSON.stringify({ travel,
+        // The leg replaces a trip still on the row (a return the meeting overtook): a merge
+        // would keep that trip's keys, and its clearMarketReturn would drop the outing's
+        // return at the meeting point, leaving the bot in town with nowhere to go back to.
+        write("UPDATE bot_life_state SET activity='traveling',activityStartedAt=?,nextResolveAt=?,statsJson=json_patch(json_remove(COALESCE(statsJson,'{}'),'$.travel'),json(?)) WHERE characterId=?", [at, travel.arrivalAt, JSON.stringify({ travel,
             ...(marketReturn ? { marketReturn } : {}) }), id]);
         return true;
     },
