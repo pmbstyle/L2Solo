@@ -195,6 +195,50 @@ async function main() {
     assert.equal(action.id, future.actionId, 'a future-only queue admits exactly at its ready time');
     await finish(action);
     assert.equal((await Database.claimClanAction({ at: at + 1000 })).action, null);
+
+    // A player clan's legacy review storm must not starve another clan's
+    // funded payment, even when every old action has a higher aged priority.
+    await reset();
+    for (const clanId of [2, 3]) {
+        await Database.execute(['INSERT INTO clans(id,name,leaderId) VALUES(?,?,1)', [clanId, `Fair${clanId}`]]);
+        await Database.execute([`INSERT INTO clan_simulation_clans(clanId,createdAt,updatedAt,stateJson)
+            VALUES(?,1,1,'{}')`, [clanId]]);
+    }
+    const clanWork = (clanId, readyAt = at) => Database.enqueueClanAction({ clanId, actionType: 'contribution',
+        actionKey: `clan-fairness:${++sequence}`, availableAt: readyAt, priority: clanId === 1 ? 1000 : 1 });
+    for (let index = 0; index < 30; index++) await clanWork(1, at - 300 * 60000);
+    await clanWork(2); await clanWork(3);
+    const clans = [];
+    for (let index = 0; index < 3; index++) {
+        action = (await Database.claimClanAction({ at })).action;
+        clans.push(action.clanId);
+        await finish(action);
+        await clanWork(action.clanId);
+    }
+    assert.deepEqual(clans, [1, 2, 3], 'each ready clan receives a turn inside a continuously busy type');
+    action = (await Database.claimClanAction({ at })).action;
+    assert.equal(action.clanId, 1, 'the next clan round continues durably');
+    await release(action, at, false, true);
+    const refundedClan = (await Database.claimClanAction({ at })).action;
+    assert.equal(refundedClan.clanId, action.clanId, 'an unused budget turn restores the clan cursor too');
+    await finish(refundedClan);
+
+    await reset();
+    const continuationWork = await clanWork(1);
+    const ordinaryWork = await clanWork(1);
+    await clanWork(2);
+    action = (await Database.claimClanAction({ at })).action;
+    assert.equal(action.id, continuationWork.actionId);
+    await release(action, at, true);
+    for (let turn = 0; turn < 3; turn++) {
+        action = (await Database.claimClanAction({ at })).action;
+        if (action.clanId === 2) { await finish(action); await clanWork(2); }
+        else { assert.equal(action.id, continuationWork.actionId); await release(action, at, true); }
+    }
+    action = (await Database.claimClanAction({ at })).action;
+    assert.equal(action.id, ordinaryWork.actionId,
+        'another clan ordinary turn cannot reset this clan continuation/ordinary alternation');
+    await finish(action);
     console.log('Clan actions: fair types, native priorities, durable bounded continuations, retry times and lease fencing passed');
 }
 

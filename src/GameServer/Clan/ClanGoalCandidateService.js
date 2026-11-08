@@ -163,15 +163,17 @@ function goalStallAssessment(clan, previousGoal, candidates, options = {}) {
     if (ageMs >= hardStallMs) {
         return { stalled: true, reason: 'goal_hard_stalled', ageMs, hardStallMs };
     }
-    if (!current || current.route.partyNeed !== 'required') {
+    const assignedIds = new Set((previousGoal.assignedMemberIds || []).map(number).filter(Boolean));
+    const assigned = (clan?.members || []).filter((member) => assignedIds.has(memberId(member)));
+    const goalKey = String(previousGoal.goalKey || '');
+    const clanRequired = assigned.some(member => member.stats?.clanPartyObjective?.clanGoalKey === goalKey
+        && member.stats.clanPartyObjective.priority === 'required');
+    if (!current || current.route.partyNeed !== 'required' && !clanRequired) {
         return { stalled: false, reason: null, ageMs };
     }
     const partyStallMs = Math.max(1000, number(options.partyStallMs, Config.equipmentPartyStallMs));
     if (ageMs < partyStallMs) return { stalled: false, reason: null, ageMs, partyStallMs };
 
-    const assignedIds = new Set((previousGoal.assignedMemberIds || []).map(number).filter(Boolean));
-    const assigned = (clan?.members || []).filter((member) => assignedIds.has(memberId(member)));
-    const goalKey = String(previousGoal.goalKey || '');
     const sourceSpotId = String(current.route.source?.spotId || '');
     const matchingObjective = (member) => {
         const objective = member?.stats?.clanPartyObjective;

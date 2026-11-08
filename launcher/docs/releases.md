@@ -1,19 +1,19 @@
 # Releases and updates
 
-## Versions and first publication
+## Versions and publication
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The current launcher is `0.2.0`, the server is `0.1.0`, and schema-2 server packages require launcher `0.2.0` or newer. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable versions are launcher `0.2.2` and server `0.1.1`. Schema-2 server packages still require launcher `0.2.0` or newer; this update does not raise the updater protocol requirement. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
 # After review, commit and integration of the intended release source:
-git tag launcher-v0.2.0
-git push origin launcher-v0.2.0
+git tag launcher-v0.2.2
+git push origin launcher-v0.2.2
 
 # Wait for the launcher release workflow and all platform artifacts.
-git tag server-v0.1.0
-git push origin server-v0.1.0
+git tag server-v0.1.1
+git push origin server-v0.1.1
 ```
 
 Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI requires the tagged commit to be in `main`. Future server-only releases reuse the same launcher binaries until a new launcher version is published. PRs never publish releases. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases, but no longer trigger new publications.

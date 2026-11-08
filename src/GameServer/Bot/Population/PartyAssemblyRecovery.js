@@ -25,6 +25,8 @@ function expired(party) {
 function coolingDown(state, timestamp = Date.now()) {
     const request = state?.stats?.partyRequest;
     return (request?.deferReason === REASON
+        || request?.status === 'deferred' && request.clanGoalKey
+            && request.clanGoalKey === state.stats?.clanPartyObjective?.clanGoalKey
         || request?.materialParty === true && request.deferReason === 'party_material_route_unavailable')
         && Number(request.deferredUntil || 0) > timestamp;
 }

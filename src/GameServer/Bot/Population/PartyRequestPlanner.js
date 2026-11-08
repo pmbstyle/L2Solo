@@ -68,6 +68,26 @@ function expire(request, now = Date.now()) {
     };
 }
 
+function expireState(state, timestamp = Date.now()) {
+    if (state.partyId || state.party?.partyId) return state;
+    const request = state.stats?.partyRequest;
+    const expired = expire(request, timestamp);
+    const objective = state.stats?.clanPartyObjective;
+    const staleClanPause = request?.status === 'deferred' && objective?.status === 'open'
+        && request.clanGoalKey && request.clanGoalKey === objective.clanGoalKey;
+    if (expired === request && !staleClanPause) return state;
+    if (!request.clanGoalKey || request.clanGoalKey !== objective?.clanGoalKey) {
+        return { ...state, stats: { ...state.stats, partyRequest: expired } };
+    }
+    const stats = { ...state.stats, partyRequest: { ...expired, deferReason: 'party_assembly_timeout' },
+        clanPartyObjective: { ...objective, status: 'deferred', deferredUntil: expired.deferredUntil },
+        lastReason: 'party_assembly_timeout' };
+    // The clan retains the goal; its failed route must not become a solo hunt.
+    if (stats.equipmentPlan?.clanGoal?.goalKey === request.clanGoalKey) delete stats.equipmentPlan;
+    return { ...state, stats, activity: state.activity === 'party_wait' ? 'hunting' : state.activity,
+        timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp + 1000 } };
+}
+
 // Party size and level spread: a clan equipment duty sets its own within
 // fixed bounds, any other party uses the defaults (the configured sizes
 // unless the caller gives its own).
@@ -250,6 +270,7 @@ module.exports = {
     maxAgeMs,
     cooldownMs,
     expire,
+    expireState,
     limitsForObjective,
     objectiveSpot,
     partyObjectiveForPlan,

@@ -110,7 +110,9 @@ async function main() {
             characterId: index + 1,
             phase: 'cold',
             level: 40 - Math.min(index, 4),
-            stats: { classId: index === 9 ? 54 : index === 0 ? 4 : index === 1 ? 15 : index === 2 ? 17 : 1 }
+            stats: { classId: index === 9 ? 54 : index === 0 ? 4 : index === 1 ? 15 : index === 2 ? 17 : 1,
+                ...(index === 9 ? { coldCombat: { skillSource: 'database',
+                    skills: [{ selfId: 254, level: 4 }, { selfId: 42, level: 1 }] } } : {}) }
         }));
         const roster = EquipmentService.equipmentRoster({ id: 7, members }, members[0], null, plan(99101, 10, 'spoil'));
         assert(roster.includes(10), 'a spoil-backed clan goal must explicitly reserve a spoiler in its operation roster');
@@ -154,6 +156,14 @@ async function main() {
         assert.equal(normalizedLegacy.progressAt, old.createdAt, 'initializing a legacy snapshot cannot turn old stock into new progress');
         assert.equal(CandidateService.goalStallAssessment(clan, rebuilt, [], { now }).reason, 'goal_hard_stalled',
             'a fresh updatedAt cannot hide eight hours without progress');
+        const waitingClan = { ...clan, members: [{ ...clan.members[0], stats: { classId: 4,
+            clanPartyObjective: { clanGoalKey: 'mandatory-duty', priority: 'required', status: 'open' } } }] };
+        const waitingGoal = { ...old, goalKey: 'mandatory-duty', assignedMemberIds: [1],
+            progressAt: now - 16 * 60000 };
+        const soloCandidate = { assessment: { current: true }, route: { available: true,
+            partyNeed: 'solo_ok', source: { spotId: 'spoil-test' } } };
+        assert.equal(CandidateService.goalStallAssessment(waitingClan, waitingGoal, [soloCandidate], { now }).stalled, true,
+            'a required clan assignment times out even when its beneficiary could fight alone');
         const advancedMember = { ...clan.members[0], stats: { ...clan.members[0].stats,
             targetCombat: { targetNpcId: currentPlan.next.npcId, targetKills: 1 } } };
         const advanced = Policy.buildGoal(clan, { member: advancedMember, plan: currentPlan }, rebuilt, now + 1000);

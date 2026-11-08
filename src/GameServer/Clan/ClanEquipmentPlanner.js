@@ -96,6 +96,8 @@ function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
         maxSourceLevel: number(member.level) + Config.operationMaxTargetLevelGap,
         maxMarketPrice: marketBudget,
         spoilCapable: options.spoilCapable === true,
+        ...(Array.isArray(options.spoilProviders) ? { sourceAllowed: source =>
+            require('../Bot/Population/ClanEquipmentPartyPolicy').spoilSourceAllowed(options.spoilProviders, source) } : {}),
         allowRaidSources: options.allowRaidSources === true,
         ...(options.excludedTargetIds ? { excludedTargetIds: options.excludedTargetIds } : {})
     };
