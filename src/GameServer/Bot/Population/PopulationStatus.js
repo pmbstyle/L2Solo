@@ -154,7 +154,13 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.linksText(worker.links) + (worker.nodeCapBuilds === undefined ? '' : ` nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
+            + this.decisionText(worker);
+    },
+
+    // The worker's decision counts (links, the build's node cap, doors, situations, solo
+    // windows): on the goal line and on the full diagnostics line alike.
+    decisionText(worker = {}) {
+        return this.linksText(worker.links) + (worker.nodeCapBuilds === undefined ? '' : ` nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -482,7 +488,7 @@ const PopulationStatus = {
         }
         summary.line += ` mainKits=${ColdCombatProfile.kitStoreSize()}`;
         summary.line += ` snapshot=${snapshots.dirty || 0}/${snapshots.critical || 0}/${snapshots.inFlight ? 1 : 0} snapshotLast=${lastSnapshot.mode || 'none'}/${lastSnapshot.rows || 0}/${lastSnapshot.pages || 0}/${lastSnapshot.durationMs || 0}ms snapshotRuns=${snapshots.fullRuns || 0}/${snapshots.dirtyRuns || 0}/${snapshots.criticalRuns || 0} snapshotDeferrals=${snapshots.deferrals || 0} snapshotYields=${snapshots.yields || 0}`;
-        summary.line += ` ${this.nearText(coldWorker)}`;
+        summary.line += ` ${this.nearText(coldWorker)}${this.decisionText(worker)}`;
         return summary;
     }
 };
