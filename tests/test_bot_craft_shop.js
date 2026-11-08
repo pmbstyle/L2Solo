@@ -41,6 +41,14 @@ async function run() {
             );
         }
     });
+    // Only a class line that crafts hears the workshop decision: a town arrival wakes a dwarf's, never a knight's.
+    const Situations = invoke('GameServer/Bot/Situations');
+    const arrived = (classId) => Situations.raise({ woken: 0, waiting: 0, classId, earning: {}, wishSections: {} }, 'arrived_town');
+    assert(Situations.woken(arrived(53), 'workshop') && Situations.woken(arrived(56), 'workshop'), 'a dwarf\'s town arrival wakes its workshop');
+    assert(!Situations.woken(arrived(4), 'workshop') && Situations.woken(arrived(4), 'own_lines'),
+        'a human knight takes no workshop decision at its town arrival');
+    assert(!Situations.woken({ woken: Situations.BITS.workshop, waiting: 0, classId: 15, earning: {}, wishSections: {} }, 'workshop'),
+        'a workshop bit a non-crafter\'s row kept wakes nothing');
     assert.strictEqual(CraftShopService.craftLevelFor({ level: 41, stats: { classId: 57 } }), 4,
         'a Warsmith keeps the Artisan craft level 4 until it learns level 5 at 43');
     assert.strictEqual(CraftShopService.craftLevelFor({ level: 60, stats: { classId: 0 } }), 0,

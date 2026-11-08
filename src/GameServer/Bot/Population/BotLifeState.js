@@ -1161,7 +1161,7 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
     const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
     const bits = { woken: 0, waiting: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
     const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks, gearMarks: cached?.stats?.gearMarks,
-        backgroundPartyId: true }, written = {};
+        backgroundPartyId: true, classId: cached?.stats?.classId }, written = {};
     // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
     let seen = Number(cached?.stats?.woken ?? Situations.FIRST);
     for (const { name, payload = null } of raises) {

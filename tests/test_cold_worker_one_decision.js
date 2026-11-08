@@ -217,7 +217,8 @@ module.exports.workshopProbe = async (id) => {
             return { ...plan.plannedState, stats: { ...plan.plannedState.stats, ...plan.statsPacket } };
         };
         const learned = state => ({ ...state, stats: Situations.raise({ ...state.stats }, 'recipe_learned', null, Situations.OPEN, id) });
-        let state = await step(learned({ ...saved.state, stats: { ...saved.state.stats, workshop: undefined } }), at);
+        // An Artisan: only a class line that crafts hears the workshop.
+        let state = await step(learned({ ...saved.state, stats: { ...saved.state.stats, classId: 56, workshop: undefined } }), at);
         state = await step({ ...state, stats: { ...state.stats, workshop: { entries: [] } } }, at + 500);
         state = await step({ ...state, adena: Number(state.adena) + 5000 }, at + 1000);
         await step(learned(state), at + 2000);
