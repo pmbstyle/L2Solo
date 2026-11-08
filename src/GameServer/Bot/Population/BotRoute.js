@@ -142,21 +142,24 @@ function heldVerdict(frame, slot, spot, state, ready, judge) {
     return allowed;
 }
 
-// The search: { spotId (null: none found), materialRoute, materialSources }
-// or null when the bot may not be routed now or the search threw (nothing
-// to keep: the next trip start searches again). Reads no leaf and no focus.
+// The search: { spotId (null: none found), npcId (a party waiter's planned
+// fallback: the NPC its plan farms there, PartyWaitFallback.spotFor),
+// materialRoute, materialSources } or null when the bot may not be routed now
+// or the search threw (nothing to keep: the next trip start searches again).
+// Reads no leaf and no focus.
 function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp, frame = null }) {
     if (!routable(state, party, partyMembers)) return null;
     frame = frame || frameFor(state, party, partyMembers, timestamp);
     const { partyRoute, excludedSpotIds, role, options } = frame;
     const currentId = currentSpotId(state, currentSpot, party, spots);
-    let fallbackSpot = null;
+    let fallback = null;
     if (!partyRoute && PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) {
         try {
-            fallbackSpot = PartyWaitFallback.spotFor(state, state.stats?.equipmentPlan, spots,
-                { excludedSpotIds, timestamp, hasRoom: options.hasRoom, spotHunters: options.spotHunters })?.spot || null;
-        } catch (error) { FailureLog.note('route.wait_fallback', error); fallbackSpot = null; }
+            fallback = PartyWaitFallback.spotFor(state, state.stats?.equipmentPlan, spots,
+                { excludedSpotIds, timestamp, hasRoom: options.hasRoom, spotHunters: options.spotHunters });
+        } catch (error) { FailureLog.note('route.wait_fallback', error); fallback = null; }
     }
+    const fallbackSpot = fallback?.spot || null;
     const routeState = partyRoute
         ? {
             ...state,
@@ -206,6 +209,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
         } else EconomyDiagnostics.count('route', 'party', 'none');
     }
     return { spotId: selected ? selected.id : null, ...(objectiveEnded ? { objectiveEnded: true } : {}),
+        ...(selected && selected === fallbackSpot && fallback.npcId ? { npcId: fallback.npcId } : {}),
         ...(materialRoute ? { materialRoute: true, materialSources: materialRoute.sources } : {}) };
 }
 
