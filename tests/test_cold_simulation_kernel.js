@@ -814,32 +814,34 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     }
     // The re-plan holds only the members whose plan landed (main committed it). Each step
     // below: { kit: the members whose own step moves their kit, refuse: the members whose
-    // commit main refuses }; returns what each step planned and sent. A re-plan a moved kit
+    // commit main refuses, lose: the batch never leaves and the stall recovery frees the
+    // steps }; returns what each step planned and sent. A re-plan a moved kit
     // opened has no due mark on main to re-plan from: the worker's re-plan is its only record.
     {
         const steps = async (script, due = false) => {
             let at = now, revision = 3;
             const messages = [], planned = [];
-            let kit = [];
+            let kit = [], lost = false;
             const kernel = recordingKernel({ resolveSolo: resolver, now: () => at,
                 resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
                     partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
                 projectResolve: state => ({ state, kitMoved: kit.includes(state.characterId) }),
                 planPartyRequirement: ({ state }) => { planned.push(state.characterId); return { acquisitionPlan: state.characterId === 121
                     ? { status: 'active', strategy: 'market', target: { selfId: 57 } } : state.stats.equipmentPlan }; },
-                emit: (type, payload) => messages.push({ type, payload }) });
+                emit: (type, payload) => { messages.push({ type, payload }); return !(lost && type === 'proposal_batch'); } });
             kernel.upsert(standOn(kernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
             kernel.upsert({ state: refreshMembers[1] });
             const out = [];
-            for (const [index, { kit: moved = [], refuse = [] }] of script.entries()) {
-                kit = moved; planned.length = 0; messages.length = 0; revision += 1;
+            for (const [index, { kit: moved = [], refuse = [], lose = false }] of script.entries()) {
+                kit = moved; lost = lose; planned.length = 0; messages.length = 0; revision += 1;
                 kernel.partyPut(refreshParty.partyId, { ...refreshParty, nextResolveAt: at, requirementRefresh: due && index === 0 });
                 kernel.tick();
                 await kernel.resolveChain;
                 const sent = messages.find(message => message.type === 'proposal_batch')?.payload.proposals || [];
                 out.push({ planned: [...planned], end: sent.find(proposal => proposal.partyResolution)?.partyResolution.requirementRefreshedAt,
                     plan: id => sent.find(proposal => proposal.characterId === id)?.nextState.stats.equipmentPlan });
-                commitAck(kernel, { results: sent.map(proposal => refuse.includes(proposal.characterId)
+                if (lose) kernel.recoverStalled(at + 30001);
+                else commitAck(kernel, { results: sent.map(proposal => refuse.includes(proposal.characterId)
                     ? { ok: false, characterId: proposal.characterId, reason: 'stale_revision',
                         state: { ...kernel.states.get(proposal.characterId).state, simulation: { revision } } }
                     : { ok: true, characterId: proposal.characterId, state: { ...proposal.nextState, simulation: { revision } } }) });
@@ -864,6 +866,17 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.strictEqual(end[1].end, now + 60000);
         assert.deepStrictEqual(end[2].planned, [120]);
         assert.strictEqual(end[2].end, now + 120000, 'the end is sent again');
+        // A member refused on a step that carried no new plan of its: its landed plan stands.
+        const kept = await steps([{ kit: [121] }, { refuse: [121] }, {}]);
+        assert.strictEqual(kept[1].end, now + 60000);
+        assert.deepStrictEqual(kept[2].planned, [], 'the re-plan ended: nothing to plan again');
+        // A member's new plan lost with its step (never sent, the stall frees it): the next step
+        // plans it again, its commit carries the plan, and the end goes.
+        const lost = await steps([{ kit: [121], lose: true }, {}]);
+        assert.deepStrictEqual(lost[0].planned, [121]);
+        assert.deepStrictEqual(lost[1].planned, [120, 121], 'the re-plan stays open at the lost member');
+        assert.strictEqual(lost[1].plan(121).target.selfId, 57, 'its commit carries its plan');
+        assert.strictEqual(lost[1].end, now + 60000, 'every member planned: the re-plan ends');
     }
     // A member whose own step changed its plan (the projection), re-planned to that same
     // plan: the plan rides its own proposal; no member plan and no fallback event go out.

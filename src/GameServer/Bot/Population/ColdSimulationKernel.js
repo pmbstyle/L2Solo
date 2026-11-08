@@ -1024,7 +1024,8 @@ class ColdSimulationKernel {
         // plan sent and its hash, the card it holds and the commit that card
         // rides (cardInFlight), the facts of its last
         // committed action ask (onCommitAck), a clan duty member's held stay trip
-        // (partyStay: the situationSeq it was held at) and, for a near bot, the
+        // (partyStay: { partyId, seq }, the party and situationSeq it was held at, kept
+        // while that absence holds and its stay stays woken) and, for a near bot, the
         // last raise applied and the route rows of its last decision
         // (ColdSimulationWorker nearEvents, publish).
         // A held event wait (lifecycleKind 'event_driven', stats.eventWait) ends
@@ -1062,7 +1063,8 @@ class ColdSimulationKernel {
         const partyId = String(this.inFlight.get(id)?.partyId
             || this.partyOf(id)?.partyId || current?.state?.party?.partyId || '');
         if (partyId && typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(partyId);
-        this.partyRequirementProgress.delete(partyId);
+        // A member gone from the party leaves its re-plan; the others' landed plans stand.
+        this.partyRequirementProgress.get(partyId)?.delete(id);
         const run = this.partyRuns.get(partyId);
         if (run?.purpose.memberIds.includes(id)) {
             // Retire the captured party before any pending resolver continues;
@@ -1670,7 +1672,7 @@ class ColdSimulationKernel {
 
     // A step that ends without a commit ack (an error, an oversized proposal,
     // a stall, a removed party member): its slot frees here, and what the step
-    // kept goes. The caller requeues.
+    // kept goes: a re-plan it carried is open again at that member. The caller requeues.
     abandonSteps(characterIds) {
         for (const characterId of characterIds) {
             const id = Number(characterId), active = this.inFlight.get(id);
@@ -1678,9 +1680,18 @@ class ColdSimulationKernel {
             Trace.settle(id, false);
             this.dirty.delete(id);
             if (!active) continue;
-            this.partyRequirementProgress.delete(String(active.partyId || active.state?.party?.partyId || ''));
+            this.reopenReplan(active, id, 'abandoned');
             // No review runs the plan a sent proposal stamped.
             if (active.economyPlan) this.forgetSentPlan(id);
+        }
+    }
+
+    // A step that carried the party re-plan (a member's new plan, or the leader's end) and
+    // did not land: the re-plan plans that member again. A plan landed earlier stands.
+    reopenReplan(active, id, reason) {
+        if (!active.replanCarried) return;
+        if (this.partyRequirementProgress.get(String(active.partyId || active.state?.party?.partyId || ''))?.delete(id)) {
+            EconomyDiagnostics.count('party_replan', 'reopened', reason);
         }
     }
 
@@ -1789,9 +1800,10 @@ class ColdSimulationKernel {
     // time: a trip answered while another member's absence holds (its ticket live) or
     // another trip went this step is not taken, its bit stays woken
     // (party:stay_trip:held, once per held trip) and the party step after the absence
-    // ends decides again. While that absence holds and no situation was raised on the
-    // member since (its situationSeq, kept on its record: stayHeld), the held answer
-    // stands and no step decides it again.
+    // ends decides again. While that absence holds, its stay stays woken and no situation
+    // was raised on the member since (the party and situationSeq it was held at, kept on
+    // its record: stayHeld), the held answer stands and no step decides it again; any
+    // other step ends the hold, and a trip held after it is a new one.
     // Not while the party meets a player, carries a dead member, fights a war or a
     // started raid, or evacuates: the bits wait. Returns { members (new copies where
     // anything moved), leaving: Map(id -> reason), trips: [{ characterId, reason }] }.
@@ -1818,14 +1830,16 @@ class ColdSimulationKernel {
                 if (outleveled) Situations.raise(stats, 'party_outleveled', null, Situations.place(member), id);
             }
             const record = this.states.get(id), seq = Number(stats.situationSeq) || 0;
-            if (decides && Situations.woken(stats, 'party_stay') && !(absent && record?.stayHeld === seq)) {
+            const woken = Situations.woken(stats, 'party_stay');
+            if (record?.stayHeld && !(absent && woken && record.stayHeld.partyId === String(party.partyId))) record.stayHeld = null;
+            if (decides && woken && record?.stayHeld?.seq !== seq) {
                 const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
                     requiredObjective: required,
                     bridgeReason: this.equipmentBridgeReason,
                     soloSooner: () => !!this.soloSooner?.({ member, party, members: run.members, timestamp, shares }) });
                 if (answer === 'trip' && duty && (absent || trips.length)) {
-                    if (record?.stayHeld == null) Situations.note('party:stay_trip:held');
-                    if (record) record.stayHeld = seq;
+                    if (!record?.stayHeld) Situations.note('party:stay_trip:held');
+                    if (record) record.stayHeld = { partyId: String(party.partyId), seq };
                 } else {
                     if (record) record.stayHeld = null;
                     stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
@@ -2149,8 +2163,9 @@ class ColdSimulationKernel {
                     revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
             }
             let requirementMs = 0, lastRequirementPlanMs = 0;
-            // The open re-plan of the party's needs: the members whose plan landed (planned
-            // here, its commit not refused: onCommitAck takes a refused member out, so this
+            // The open re-plan of the party's needs: the members planned, whose plan stands
+            // (unchanged, or a new plan whose commit landed: a step that carried one and did
+            // not land, refused or abandoned, takes that member out, reopenReplan, so this
             // step plans it again). It opens on main's due mark (a member joined or left, the
             // objective moved: run.requirementRefresh) or on a member whose step raised its
             // build section (its kit moved, below). Every member planned, the end rides the
@@ -2206,6 +2221,10 @@ class ColdSimulationKernel {
                     const plan = selection?.acquisitionPlan, held = projectedState.stats?.equipmentPlan;
                     if (Refresh.acquisitionRequirementKey(held) !== Refresh.acquisitionRequirementKey(plan)) {
                         planned.set(id, plan);
+                        // The member's step (this run's slot) carries its new plan: unlanded, the
+                        // re-plan reopens at it.
+                        const entry = sources.find(source => source.id === id)?.active;
+                        if (entry) entry.replanCarried = true;
                         const stats = { ...projectedState.stats, equipmentPlan: plan };
                         const Stay = require('./PartyStay');
                         if (Stay.needsParty(held) && !Stay.needsParty(plan)) {
@@ -2250,8 +2269,9 @@ class ColdSimulationKernel {
             }
             // The re-plan ends when every member is planned or the party ends. Done, the party's
             // objective follows its members' plans, on the party row the leader's commit carries
-            // with the end (requirementRefreshedAt). Each plan rides its member's own commit: a
-            // refused one re-opens the re-plan at that member, whose next plan sends the end again.
+            // with the end (requirementRefreshedAt). Each plan rides its member's own commit: one
+            // that does not land (refused, abandoned) re-opens the re-plan at that member, whose
+            // next plan sends the end again; an end that does not land re-opens it at the leader.
             const leader = proposals.find(proposal => proposal.characterId === Number(run.party.leaderId));
             const replanning = !!requirementProgress && !meetingPending && !materialHunt;
             const replanned = replanning && !!leader && run.members.every(member => requirementProgress.has(Number(member.characterId)));
@@ -2266,6 +2286,8 @@ class ColdSimulationKernel {
             const leaderResolution = { partyId: run.party.partyId, party, ...(recruitCheck ? { recruitCheck } : {}),
                 ...(replanned ? { requirementRefreshedAt: startedAt } : {}) };
             if (leader) leader.partyResolution = leaderResolution;
+            const leaderEntry = replanned ? sources.find(source => source.id === leader.characterId)?.active : null;
+            if (leaderEntry) leaderEntry.replanCarried = true;
             if (!current()) return;
             if (!proposals.length) {
                 // No member result (the resolver found no spot): the whole
@@ -2671,10 +2693,8 @@ class ColdSimulationKernel {
                 this.ackUnbuilt += 1;
                 requeued.push(id);
             } else {
-                // Its plan did not land: the party's open re-plan plans it again.
-                if (this.partyRequirementProgress.get(String(active.partyId || active.state?.party?.partyId || ''))?.delete(id)) {
-                    EconomyDiagnostics.count('party_replan', 'reopened', 'refused');
-                }
+                // A re-plan it carried did not land: the party's open re-plan plans it again.
+                this.reopenReplan(active, id, 'refused');
                 // No review runs the plan this step stamped as sent.
                 if (active?.economyPlan) this.forgetSentPlan(id);
                 this.stepsRefused += 1;

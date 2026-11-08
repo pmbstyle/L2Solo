@@ -151,6 +151,13 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         const over = await step([member(1), member(2, { stats: full })], { stats: { ...away, marketAbsences: { 9: { until: at - 1 } } } },
             { kernel: behind.kernel });
         assert.deepStrictEqual(over.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the absence over, the trip goes');
+        // A step where its stay is not woken ends the hold: a trip held behind an absence after
+        // it is a new held trip.
+        const holds = held(), first = await step([member(1), member(2, { stats: full })], { stats: away });
+        await step([member(1), member(2)], { stats: away }, { kernel: first.kernel });
+        const again = await step([member(1), member(2, { stats: full })], { stats: away }, { kernel: first.kernel });
+        assert.deepStrictEqual(again.stayTrips || [], []);
+        assert.strictEqual(held() - holds, 2, 'two holds, each counted');
         Disposition.inventoryCleanupNeed = state => state.characterId >= 2 ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
         Disposition.cleanupCounted = state => state.characterId >= 2;
         const both = await step([member(1), member(2, { stats: full }), member(3, { stats: Situations.raise({ ...member(3).stats }, 'bag_full', null, Situations.OPEN) })],
