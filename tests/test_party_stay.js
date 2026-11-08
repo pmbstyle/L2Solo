@@ -27,7 +27,7 @@ try {
     assert.deepStrictEqual(Stay.decide(member(1)), { answer: 'stay', reason: 'stay' });
     assert.strictEqual(Stay.decide(member(1, { vitals: { hp: 0 }, stats: { karma: 10 } })).answer, 'stay', 'a dead member is carried');
     assert.deepStrictEqual(Stay.decide(member(1, { stats: { karma: 10 } })), { answer: 'stay', reason: 'stay' }, 'karma is no leave');
-    assert(Stay.joins(member(1, { party: { partyId: null }, stats: { karma: 10 } })), 'forming takes a candidate with karma');
+    assert(Stay.joins(member(1, { party: { partyId: null }, stats: { karma: 10 } }), { now: at }), 'forming takes a candidate with karma');
     assert.strictEqual(Stay.decide(member(1), { bridgeReason: () => 'weapon_bridge' }).reason, 'weapon_bridge');
     assert(!Stay.joins(member(1, { party: { partyId: null } }), { now: at, bridgeReason: () => 'weapon_bridge' }),
         'forming takes no candidate that would leave at its first stay to buy its funded bridge');
@@ -44,7 +44,7 @@ try {
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
     assert.strictEqual(Sections.lineAt(Sections.linesOf(Sections.supplyOf(dry)), 'shots'), Sections.LINE_OUT, 'the fixture holds no shots');
     assert.deepStrictEqual(Stay.decide(dry), { answer: 'stay', reason: 'stay' });
-    assert(Stay.joins(dry), 'forming takes a candidate out of shots');
+    assert(Stay.joins(dry, { now: at }), 'forming takes a candidate out of shots');
 
     // A member's own situations wake its stay only while it is in a party.
     assert(!Situations.woken({}, 'party_stay') && Situations.woken({}, 'gear_plan'),

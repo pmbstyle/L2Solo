@@ -774,7 +774,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         // decides its spot (no answer held: party_spot reads woken).
         spotId: objective?.spotId || leader.spotId,
         startedAt: timestamp,
-        nextResolveAt: timestamp + 45000 + Math.round(Math.random() * 90000),
+        nextResolveAt: firstResolveAt(timestamp),
         cohesion: 0.55 + Math.random() * 0.25,
         risk: 0.18 + Math.random() * 0.22,
         roleCoverage: coverage,
@@ -824,6 +824,13 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         );
         return savedParty;
     });
+}
+
+// A new party's first step comes as a hunting party's next one does after a fight
+// (BackgroundPartyResolver: its minimum wait and spread).
+function firstResolveAt(timestamp) {
+    const { PARTY_RESOLVE_MIN_MS, PARTY_RESOLVE_SPREAD_MS } = require('./BackgroundPartyResolver'); // lazy: a worker module, read at a formation
+    return timestamp + PARTY_RESOLVE_MIN_MS + Math.round(Math.random() * PARTY_RESOLVE_SPREAD_MS);
 }
 
 // The members a party keeps after a departure, the owner's newest copies

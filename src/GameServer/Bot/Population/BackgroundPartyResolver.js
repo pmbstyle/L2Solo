@@ -958,4 +958,5 @@ BackgroundPartyResolver.resolve = (options = {}) => {
 const resolveWithCompetition = BackgroundPartyResolver.resolve;
 BackgroundPartyResolver.resolve = (options = {}) => PartySpotRiskPolicy.record(
     options.party, resolveWithCompetition(options), options.timestamp ?? Date.now());
+Object.assign(BackgroundPartyResolver, { PARTY_RESOLVE_MIN_MS, PARTY_RESOLVE_SPREAD_MS });
 module.exports = BackgroundPartyResolver;
