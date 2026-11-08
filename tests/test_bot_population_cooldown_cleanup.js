@@ -8,6 +8,11 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const Actor = invoke('GameServer/Actor/Actor');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+const FailureLog = require('../src/FailureLog');
+const Data = invoke('GameServer/DataCache');
 
 const originalUsers = World.user;
 const originalSessions = BotManager.sessions;
@@ -76,6 +81,30 @@ async function run() {
     assert.strictEqual(fencedDestroyed, false, 'actor must remain authoritative until the worker acknowledges cold handoff');
     assert(fencedSession.actor, 'failed handoff must keep the hot actor alive');
     assert(BotManager.sessions.includes(fencedSession), 'failed handoff must keep the session in the hot population');
+
+    // A cooled bot's body has left the world: a timed buff it carried ends with
+    // no packet about it to anyone around and no failure.
+    Data.init();
+    const sent = [];
+    const buffedSession = { accountId: 'bot_buffed', dataSendToMe: (packet) => sent.push(packet),
+        dataSendToOthers: (packet) => sent.push(packet), dataSendToMeAndOthers: (packet) => sent.push(packet) };
+    buffedSession.actor = new Actor(buffedSession, { id: 481518, name: 'BuffedBot', title: '',
+        ...utils.crushOb(Data.classTemplates.find((row) => row.classId === 0)), level: 20, hp: 100, mp: 100,
+        locX: 0, locY: 0, locZ: 0, items: [], paperdoll: utils.tupleAlloc(16, {}) });
+    const shield = EffectStore.apply(buffedSession.actor, { key: 'shield', id: 1040, level: 1, type: 'buff', durationMs: 40 });
+    assert.strictEqual(EffectTicker.scheduleExpiry(buffedSession, buffedSession.actor, shield), true);
+    BotManager.sessions = [buffedSession];
+    World.user = { sessions: [playerSession, buffedSession] };
+    ColdSimulationCoordinator.acceptColdState = () => Promise.resolve({ ok: true, reason: 'test_ack' });
+    const failures = JSON.stringify(FailureLog.snapshot());
+    assert.strictEqual((await Cooldown.transitionToColdState(buffedSession, { characterId: 481518, name: 'BuffedBot' },
+        'test_buff_cleanup')).ok, true);
+    sent.length = 0;
+    packets.length = 0;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.deepStrictEqual(sent, [], 'an expiring buff sends nothing about a cooled bot');
+    assert.deepStrictEqual(packets, []);
+    assert.strictEqual(JSON.stringify(FailureLog.snapshot()), failures, 'no failure when a cooled bot\'s buff ends');
 }
 
 run()

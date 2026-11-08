@@ -35,6 +35,10 @@ class Actor extends ActorModel {
     }
 
     destructor() {
+        // Every teardown (logout, restart, disconnect, a bot cooling or leaving)
+        // ends its effect timers here: a buff expiring after it would refresh a
+        // body that is no longer in the world.
+        invoke('GameServer/Effects/EffectTicker').clearAll(this);
         require('./CombatStance').clear(this);
         invoke('GameServer/Skills/ChargeLifecycle').dispose(this);
         // A player-owned summon retains follow/feed/lifetime timers. Dispose it
