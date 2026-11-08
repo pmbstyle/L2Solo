@@ -175,7 +175,7 @@ function equipmentRoster(clan, beneficiary, previousGoal = null, plan = null) {
     const retained = (previousGoal?.assignedMemberIds || []).map(number)
         .filter((id) => memberIds.has(id));
     const requiresSpoiler = String(plan?.next?.kind || '') === 'spoil';
-    const spoilerFor = member => ClanPolicy.rosterRole(member) === 'spoiler' || RosterDemand.ownedSpoilCapability(clan, member, plan);
+    const spoilerFor = member => !!member && ClanEquipmentPartyPolicy.canSpoil(member);
     const retainedHasSpoiler = retained.some((id) => (
         spoilerFor((clan?.members || []).find((member) => memberId(member) === id))
     ));
@@ -200,6 +200,7 @@ function equipmentRoster(clan, beneficiary, previousGoal = null, plan = null) {
             selected.push(spoilerId);
         }
     }
+    if (requiresSpoiler && !selected.some(id => spoilerFor(eligible.find(member => memberId(member) === id)))) return [];
     return [...new Set(selected.map(number).filter(Boolean))];
 }
 
@@ -272,8 +273,24 @@ function stateHasSameClanObjective(state, objective) {
         && String(state?.stats?.clanPartyObjective?.objectiveKey || '') === String(objective?.objectiveKey || '')
         && sameRosterRequirement(state?.stats?.clanPartyObjective, objective)
         && sameRosterRequirement(state?.stats?.partyRequest, objective)
-        && state?.stats?.partyRequest?.status === 'open'
+        && state?.stats?.partyRequest?.status === objective.status
+        && state?.stats?.clanPartyObjective?.status === objective.status
         && state.stats.partyRequest.priority === objective.priority;
+}
+
+function memberObjective(state, objective, timestamp = Date.now()) {
+    if (!objective) return null;
+    const prior = state.stats?.partyRequest;
+    if (!prior || prior.clanGoalKey !== objective.clanGoalKey || prior.objectiveKey !== objective.objectiveKey) return objective;
+    if (prior.status === 'deferred') {
+        return Number(prior.deferredUntil) > timestamp
+            ? { ...objective, status: 'deferred', requestedAt: prior.requestedAt || objective.requestedAt,
+                deferredUntil: prior.deferredUntil, expiredAt: prior.expiredAt, deferReason: prior.deferReason,
+                attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null }
+            : objective;
+    }
+    return { ...objective, requestedAt: prior.requestedAt || objective.requestedAt,
+        attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null };
 }
 
 async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
@@ -492,10 +509,11 @@ async function buyGoalItem(memberId, plan, clan) {
 
 async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {
     const id = number(member.characterId ?? member.id);
-    const objective = clanPartyObjective(plan, goal, priority, clan.id);
+    let objective = clanPartyObjective(plan, goal, priority, clan.id);
     await LifeState.init();
     let current = await LifeState.findByCharacterId(id);
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
+    objective = memberObjective(current, objective);
     const currentPartyId = current.partyId || current.party?.partyId || null;
     if (objective && currentPartyId) {
         const sameGoal = String(current.stats?.clanPartyObjective?.clanGoalKey || '') === String(goal?.goalKey || '');
@@ -542,6 +560,10 @@ async function assignPlan(member, plan, clan, goal) {
     await LifeState.init();
     const current = await LifeState.findByCharacterId(id);
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
+    if (current.stats?.partyRequest?.clanGoalKey === goal.goalKey
+        && require('../Bot/Population/PartyAssemblyRecovery').coolingDown(current)) {
+        return { ok: true, changed: false, coolingDown: true, memberId: id };
+    }
 
     const handoff = await handoffWarehouseMaterials(current, plan, clan, goal);
     const currentState = handoff.state || current;
@@ -581,9 +603,9 @@ async function assignPlan(member, plan, clan, goal) {
             clanId: number(clan.id),
             equipmentPlan: clanPlan(plan, clan, goal),
             clanMaterialDemand: plan.clanMaterialDemand,
-            clanPartyObjective: clanPartyObjective(plan, goal, 'required', clan.id),
+            clanPartyObjective: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id)),
             // A stale personal request must not hide the new clan objective.
-            partyRequest: clanPartyObjective(plan, goal, 'required', clan.id)
+            partyRequest: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id))
         }
     };
     const saved = await LifeState.upsertState(nextState, 'clan_equipment_goal');
@@ -805,11 +827,12 @@ async function planningForClanAdmitted(clan, previousGoal = null, options = {}) 
     const clanShare = require('./ClanStrategyPolicy').spendingAllowed(clan, 'equipment')
         ? invoke('GameServer/ClanHall/Policy').freeAdena(warehouseRows, clan, clan.state?.mode, clan.state?.goal) : 0;
     const previousAssigned = new Set((previousGoal?.assignedMemberIds || []).map(number).filter(Boolean));
-    const spoilCapable = (clan.members || []).some((member) => (
+    const spoilProviders = ClanEquipmentPartyPolicy.spoilProvidersFor((clan.members || []).filter((member) => (
         member?.phase === 'cold'
         && (!member?.partyId || previousAssigned.has(memberId(member)))
-        && (ClanPolicy.rosterRole(member) === 'spoiler' || RosterDemand.ownedSpoilCapability(clan, member))
-    ));
+        && !member.recruitmentReserved && !member.stats?.tradeMeeting && !member.stats?.playerPartyTakeover
+    )));
+    const spoilCapable = spoilProviders.length > 0;
     const members = planningMemberOrder(
         clan.members || [],
         previousMemberId,
@@ -846,6 +869,7 @@ async function planningForClanAdmitted(clan, previousGoal = null, options = {}) 
             economicCraftAllowed: require('../Bot/Economy/ProductionPolicy').buyersDisabled() === false,
             ignoreExistingPlan: previousFulfilled && id === previousMemberId,
             spoilCapable,
+            spoilProviders,
             allowRaidSources: memberSpots.some((spot) => spot.raidBoss === true),
             maxExpectedKills: Config.equipmentMaxExpectedKills,
             clanShare,
@@ -1203,6 +1227,18 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     // successful assignment, and a failed one keeps the previous goal.
     let rotation = persistedGoal ? await releasePreviousBeneficiary(clan, previousGoal, goal) : null;
     const expectedObjective = clanPartyObjective(selection.plan, goal, 'required', clan.id);
+    if (expectedObjective && assignedMemberIds.length < expectedObjective.minPartySize) {
+        goal.status = 'preparing';
+        goal.assignedMemberIds = [];
+        goal.reasonCodes = ['clan_equipment_party_unavailable'];
+        const saved = await Database.updateAutonomousClanGoal({ clanId: clan.id, goal, ownerSection: section,
+            expectedUpdatedAt: number(clan.state?.updatedAt), eventType: 'equipment_party_wait',
+            reasonCode: 'clan_equipment_party_unavailable', supersededProductionGoalKey });
+        if (!saved.ok) return saved;
+        const suspension = await suspendWaitingAssignments(clan, goal, previousGoal);
+        return { ok: true, goal, plans, selection, persistedGoal: true, ownerSection: section,
+            suspension, reason: 'clan_equipment_party_unavailable' };
+    }
     const craftReady = ['ready_to_craft', 'component_ready'].includes(selection.plan?.status);
     const craftMembers = craftReady ? Object.values(selection.plan.craftProviders || {}).map(provider => number(provider.characterId)) : [];
     const partyReform = await releaseConflictingRosterParties([...new Set([...assignedMemberIds, ...craftMembers])], goal, expectedObjective);

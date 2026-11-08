@@ -276,10 +276,7 @@ function partyObjectivesShareRoute(left, right) {
 
 
 function expirePartyRequestForState(state, timestamp = Date.now()) {
-    const request = state?.stats?.partyRequest;
-    const expired = PartyRequestPlanner.expire(request, timestamp);
-    if (expired === request) return state;
-    return { ...state, stats: { ...(state.stats || {}), partyRequest: expired } };
+    return PartyRequestPlanner.expireState(state, timestamp);
 }
 
 function partyObjectiveGroupingKey(objective) {

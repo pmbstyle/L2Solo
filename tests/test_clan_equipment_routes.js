@@ -39,6 +39,27 @@ try {
         'an attainable missing armour slot competes with the inaccessible next-grade weapon');
     assert.equal(Gear.acquisitionTargetAllowed(member, plan), true);
 
+    const PartyPolicy = require('../src/GameServer/Bot/Population/ClanEquipmentPartyPolicy');
+    const robePlan = { status: 'active', strategy: 'direct_drop', grade: 'c',
+        rateModelVersion: Gear.RATE_MODEL_VERSION, rateProfileSignature: Gear.rateProfileSignature(),
+        target: { selfId: 440, name: 'Robe of Seal', slot: 15 },
+        next: { spotId: 'lilim-test', npcId: 1175, itemId: 440, kind: 'spoil' } };
+    const mage = { characterId: 7000002, classId: 27, level: 45, phase: 'cold', adena: 0,
+        inventory: Life.inventorySummaryFromItems(Kits.planFor({ classId: 27, level: 40 }).items),
+        stats: { classId: 27, equipmentPlan: robePlan } };
+    const butcherSpot = { id: 'lilim-test', avgLevel: 48, npcEntries: [{ selfId: 1175, count: 1 }] };
+    const spoilOptions = level => ({ craftRecipes: [], allowedRecipeIds: [], spoilCapable: true,
+        spoilProviders: PartyPolicy.spoilProvidersFor([{ classId: 55, level, stats: { classId: 55 } }]) });
+    assert.notEqual(planForMember(mage, [butcherSpot], [], spoilOptions(40)).next?.kind, 'spoil',
+        'a level-40 clan spoiler cannot unlock the level-48 Lilim Butcher route');
+    assert.equal(planForMember(mage, [butcherSpot], [], spoilOptions(43)).next?.kind, 'spoil',
+        'the same route becomes executable when its spoiler reaches the clan source level limit');
+    const Equipment = invoke('GameServer/Clan/ClanEquipmentService');
+    const lowSpoiler = { characterId: 7000003, classId: 55, level: 40, phase: 'cold', stats: { classId: 55,
+        coldCombat: { skillSource: 'database', skills: [{ selfId: 254, level: 5 }, { selfId: 42, level: 1 }] } } };
+    assert.deepEqual(Equipment.equipmentRoster({ id: 7, members: [mage, lowSpoiler] }, mage, null, robePlan), [],
+        'an unexecutable spoil roster must not reserve only the beneficiary');
+
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(366);
     const normalSpots = Data.npcs.filter(npc => npc.template?.level >= 40 && npc.template?.level <= 60
         && Gear.isBotEligibleSourceNpcId(npc.selfId)).map(npc => ({ id: `npc:${npc.selfId}`,
