@@ -612,6 +612,19 @@ assert(strongPartyResult.memberResults.every((entry) => entry.result.materialize
     assert(ratio > 1.6 && ratio < 2.4, `two damage dealers kill about twice one alone (${pair.debug.wins} vs ${alone.debug.wins})`);
 }
 
+// A party hunts the mobs it may fight, judged by its strength together: on ground that
+// also spawns a level-80 monster two level-12 fighters do not take it, so they live
+// and their kills, walk and share are those of the gremlins they can take.
+{
+    const ground = { ...spot, id: 'party_admitted', density: 30,
+        npcEntries: [{ selfId: 1, count: 1, production: 3600 }, { selfId: 7917, count: 1, production: 3600 }], npcSelfIds: [1, 7917] };
+    const pair = BackgroundPartyResolver.resolve({ party: { partyId: 'admitted_pair', cohesion: 0.65, risk: 0, stats: {} },
+        members: [fighter, { ...fighter, characterId: 932 }], spot: ground, elapsedMs: 120000, timestamp, rng: () => 0.6 });
+    assert(pair.debug.wins > 0, 'the pair hunts the gremlins');
+    assert(pair.debug.defeatedNpcIds.every(id => id === 1), `the pair fights only what it may take (${pair.debug.defeatedNpcIds})`);
+    assert.strictEqual(pair.debug.deaths, 0, 'no member meets the monster too strong for the party');
+}
+
 const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
 const toughResult = BackgroundResolver.resolveSolo({ state: fighter, spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },

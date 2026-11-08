@@ -2102,8 +2102,11 @@ function applyPartyHotTicks(fighter, at) {
     }
 }
 
+// partyProfiles: a hunting round's party matchup profiles (BackgroundPartyResolver
+// partyRound): the pick takes only the mobs the party may fight, judged by its
+// strength together, the set its round's walk and share read.
 function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now(), encounter = null,
-    partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false }) {
+    partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false, partyProfiles = null }) {
     const encounterKey = sharedEncounterKey || PveEncounter.key(members, spot, partyId);
     const pending = PveEncounter.read(encounter, encounterKey, timestamp, {
         maxSlices: sharedEncounter ? 1000 : PveEncounter.MAX_SLICES
@@ -2143,14 +2146,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             now: timestamp
         };
     });
-    const matchupProfiles = pending ? [] : fighters.filter(f => f.vitals.hp > 0)
+    const matchupProfiles = pending ? [] : partyProfiles || fighters.filter(f => f.vitals.hp > 0)
         .flatMap(f => TargetMatchup.coldProfiles(f.profile, f.state, timestamp, { shot: f.shot }));
     const persistedRaid = sharedEncounter
         ? coldRaidEncounterProfile(pending, spot, targetNpcId)
         : { mob: pending?.mob || null, hp: Number(pending?.hp), upgraded: false };
     // The saved mob is copied as the solo fight's (resolveFight).
     const mob = (persistedRaid.mob && { ...persistedRaid.mob }) || ColdCombatProfile.npcForSpot(spot, rng, {
-        preferredNpcId: targetNpcId, matchupProfiles, allowRaid: sharedEncounter
+        preferredNpcId: targetNpcId, matchupProfiles, soloSafety: !!partyProfiles, allowRaid: sharedEncounter
     }) || {
         level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,

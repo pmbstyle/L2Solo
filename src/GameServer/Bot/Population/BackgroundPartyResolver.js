@@ -14,6 +14,7 @@ const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity'
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const ColdRaidEncounter = require('./ColdRaidEncounter');
 const { RUN_SPEED } = require('./ColdTrip');
@@ -49,25 +50,33 @@ function memberVitals(state) {
 // together (two damage dealers kill a mob in about half the time, as in C4),
 // and the gap heals theirs; a rest ends the round (the rest is its own step).
 // At most the longest resolve interval: like a solo bot, a party does not
-// catch up on a long gap such as a server stop. The walk is the shortest of
-// the members' (the first to reach a mob engages it); the kills are at most
-// the party's share of what the spot's spawns give back, one hunter's share
-// per member (soloShareMobs over the spot's bots), its fraction carried to the
-// next round on the spot (stats.coldShare). fights: the CPU bound, one per walk
-// that starts in the round, as solo's, 48 actions each.
+// catch up on a long gap such as a server stop. The mobs it hunts are the ones
+// the party may fight, judged by its strength together (the party matchup
+// verdict, as its forecast reads it: TargetMatchup.spotShares over the members'
+// buffed profiles), so they may hold mobs a member skips alone and leave out
+// what is too dangerous for the party. The walk is the shortest of the
+// members' (the first to reach a mob engages it) at those mobs' density; the
+// kills are at most one hunter's share of their production per member
+// (soloShareMobs over the spot's bots), its fraction carried to the next round
+// on the spot (stats.coldShare). fights: the CPU bound, one per walk that
+// starts in the round, as solo's, 48 actions each. profiles: the pick's (its
+// fights take only those mobs).
 function partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp }) {
     const budgetMs = Math.min(Math.max(0, elapsedMs), PARTY_RESOLVE_MAX_MS);
+    const profiles = TargetMatchup.stateProfiles(members[0], { capacityStates: members, buffed: true, timestamp });
+    const admitted = TargetMatchup.spotShares(profiles, spot, { soloSafety: true });
+    const density = BackgroundResolver.admittedDensity(spot, admitted);
     let walkMs = Infinity;
     for (const state of members) {
         const profile = ColdCombatProfile.fightProfile(state, timestamp);
-        walkMs = Math.min(walkMs, BackgroundResolver.soloWalkMs(Number(spot.density) || 1, profile.runSpd || RUN_SPEED,
+        walkMs = Math.min(walkMs, BackgroundResolver.soloWalkMs(density, profile.runSpd || RUN_SPEED,
             spot.spawnArea || undefined, ColdCombatProfile.attackReach(profile)));
     }
     const fights = Math.ceil(budgetMs / Math.max(1, walkMs)) + 1;
-    const share = BackgroundResolver.soloShareMobs(spot, budgetMs, spotHunters);
+    const share = BackgroundResolver.soloShareMobs(spot, budgetMs, spotHunters, admitted);
     const carry = share !== null && String(party.stats?.coldShare?.spotId) === String(spot.id)
         ? Number(party.stats.coldShare.carry) || 0 : 0;
-    return { budgetMs, walkMs, fights, actions: fights * 48, share,
+    return { budgetMs, walkMs, fights, actions: fights * 48, share, profiles,
         shareMobs: share === null ? Infinity : share * members.length + carry };
 }
 
@@ -523,7 +532,8 @@ const BackgroundPartyResolver = {
                 encounter: pending,
                 partyId: party.partyId,
                 encounterKey: raidSnapshot?.key || null,
-                sharedEncounter: raid
+                sharedEncounter: raid,
+                partyProfiles: round?.profiles || null
             });
             if (encounter.avoided) {
                 avoidedReason = encounter.reason;
