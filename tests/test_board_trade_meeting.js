@@ -195,7 +195,9 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         await Life.upsertState({ ...Life.cachedState(ids[0]), activity: 'shopping', stats: { ...Life.cachedState(ids[0]).stats, travel: undefined } }, 'fixture_arrival');
         const completed = await Database.arriveTradeMeeting(completedId);
         assert.equal(completed.meeting.state, 'completed');
-        assert.equal(completed.coldLifeRows[ids[0]].acceptedIncoming[1867], 6, 'terminal held goods become pending delivery, never both');
+        assert.equal(completed.coldLifeRows[ids[0]].acceptedIncoming[1867], undefined, 'terminal held goods are delivered, not still incoming');
+        assert.equal((await bag(ids[0]))[1867], 26, 'the completion puts them straight into the buyer\'s bag, once');
+        assert.equal(JSON.parse(completed.coldLifeRows[ids[0]].inventorySummary)[1867].amount, 26, 'and its fenced row carries them');
         await Database.arriveTradeMeeting(completedId);
         await Database.cancelTradeMeeting(completedId, 'late-cancel');
         for (const actor of ids) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(completedId, actor); }
