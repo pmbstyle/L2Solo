@@ -154,6 +154,22 @@ function onWorker() {
             'the answer taken alone keeps its facts: the death is not raised again');
         const again = { ...answered, stats: { ...answered.stats, spotRisk: { ...answered.stats.spotRisk, windowDeaths: 2 } } };
         assert(Situations.detect(answered, again).includes('spot_dangerous'), 'a new death after it still is');
+        // Its shots ran out since the build (shots_out wakes the earning spot alone): the answer taken alone
+        // keeps the supply lines it was taken on, so the next post does not raise it again until a build.
+        const shotId = invoke('GameServer/Inventory/ShotStock').planForState(turned).selfId;
+        const rates = Packet.kitRates({ shotId, shotUse: 100, shotBenefit: 1, shotsCanRestock: true, potionId: 1060,
+            potionUse: 0, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+        const shots = amount => ({ ...turned, spotId: turned.stats.earning.spotId, inventory: { ...turned.inventory, [shotId]: { selfId: shotId, amount } },
+            stats: { ...turned.stats, kitRates: rates, earning: { ...turned.stats.earning, shotsPerHour: 100, potionsPerHour: 0 } } });
+        // The build kept its lines with the shots above their line.
+        const kept = { ...turned.stats.wishSections, lines: invoke('GameServer/Bot/Economy/DecisionSections').semanticFacts(shots(1000)).lines };
+        const empty = { ...shots(0), stats: { ...shots(0).stats, wishSections: kept } };
+        assert(Situations.detect(empty, empty).includes('shots_out'), 'fixture: the shots ran out since the build');
+        const out = raised(empty, 'shots_out');
+        assert.equal(Situations.woken(out.stats, 'build'), false, 'fixture: shots_out wakes the earning spot alone');
+        const taken = { ...out, stats: { ...out.stats, ...Economy.decideEarning(out, deps(10)) } };
+        assert.equal(Situations.detect(taken, taken).includes('shots_out'), false,
+            'the answer taken alone keeps its supply lines: shots_out is not raised again');
     }
     // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
     // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line

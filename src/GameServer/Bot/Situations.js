@@ -599,12 +599,12 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
 // The facts whose situations wake the earning spot alone for a solo bot (died, spot_outleveled,
-// moved_by_world, spot_dangerous, recovered, karma_changed): the earning answer taken alone
+// moved_by_world, spot_dangerous, recovered, karma_changed, shots_out: the lines fact): the earning answer taken alone
 // (EconomyContext.decideEarning, ColdKarmaPolicy's) keeps them as they stand, with its spot's
 // outleveled, as its baseline beside the build's (detect reads them while the answer is the
 // newer): else each fact the build's baseline lacks raises again after every answer until a
 // build. ~70 B on the answer. earning: the new answer; returned with its facts.
-const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma']);
+const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma', 'lines']);
 function withOwnFacts(state, earning) {
     const now = readers().semanticFacts({ ...state, stats: { ...state.stats, earning } });
     const facts = {};
