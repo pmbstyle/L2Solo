@@ -15,10 +15,13 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // unsafe ground for it, a spot it could not reach, a player's command naming a
 // spot, its wallet, its last hunting buff ended (HotTownRebuff.buffEnded); and what main's executors raise on a far row that went near
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag, an own lines'
-// look main could not apply (line_undercut: look again). Its own
-// facts it detects on its post (detectNear).
+// look main could not apply (line_undercut: look again), a recipe learned, a member's
+// party need ended by its party's re-plan. Every name main raises on a far row is
+// here: a row that went hot before the raise landed takes it in its body's bag.
+// Its own facts it detects on its post (detectNear).
 const reasons = new Set(['arrived_town', 'arrived_town:own', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
-    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_done:visit', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired']);
+    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_done:visit', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired',
+    'recipe_learned', 'party_need_ended']);
 const ARRIVALS = new Set(['arrived_town', 'arrived_town:own']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.
@@ -377,6 +380,7 @@ function held(session) {
 // must leave its ground): its card's hunting leaf (leaf: the caller's read of it),
 // else its gear plan's source while it collects there and the route takes it (the
 // worker's verdict held with the plan, routedSpotId: GearPlanSelection.withRoutedSource;
+// a solo bot's only: a party member's hunt is its party's, as the route's party run;
 // not while it waits for a party the plan needs, PartyWaitFallback.waiting: the route
 // sends a waiter to its fallback; not in the leveling recovery the plan holds: a fresh
 // one is the worker's search's to judge), else its held earning answer
@@ -391,6 +395,7 @@ function heldSpotOf(state = {}, leaf = null) {
     const plan = stats.equipmentPlan;
     // lazy: GearAcquisitionPlanner and PartyWaitFallback load the economy modules that load this one.
     const source = plan?.status === 'active' && plan.routedSpotId != null && plan.routedSpotId === String(plan.next?.spotId)
+        && !Sections.partyIdOf(state)
         && !invoke('GameServer/Bot/Population/PartyWaitFallback').waiting(state, plan, stats.partyRequest)
         && !(plan.levelingRecovery && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan))
         ? plan.routedSpotId : null;

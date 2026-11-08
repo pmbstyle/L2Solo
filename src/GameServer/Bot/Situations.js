@@ -89,7 +89,8 @@ const SITUATIONS = Object.freeze({
     // cannot stand.
     goal_failed: link(0),
     // The gear plan's craft route collected nothing for its stall's kills (the far
-    // kill count crossed equipmentPlan.stall, GearAcquisitionPlanner.stallCrossed).
+    // kill count crossed equipmentPlan.stall, GearAcquisitionPlanner.stallCrossed), or
+    // the bot outgrew the source the route took (DecisionSections outgrown).
     source_stalled: link(0),
     // What an executor proved of the held plan where it acts: its goal reached (a
     // purchase landed, a material hunt's count, a paid piece waits for its exchange);
@@ -504,6 +505,9 @@ function factNames(previousFact, current, planned = false) {
     // count was its fact has none to compare.
     const kills = previousFact('kills');
     if (kills !== undefined && Stall.crossed(kills, current.kills, current.stall)) add('source_stalled');
+    // The plan's routed source outgrown (its 0 -> 1 flip): the route refuses it now, the plan's
+    // review judges it again.
+    if (!previousFact('outgrown') && current.outgrown) add('source_stalled');
     // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
     // fact was recorded has none to compare.
     const karma = previousFact('karma');
@@ -579,10 +583,10 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const earning = after.stats?.earning ?? before.stats?.earning;
     const own = earning?.facts && Number(earning.at) > (Number(previous.at) || 0) ? earning.facts : null;
     let original;
-    // Only a fact the baseline lacks reads the state before; outleveled is read against
-    // the build's own answer only: a baseline without it reads 0 (its flip once).
+    // Only a fact the baseline lacks reads the state before; outleveled and outgrown are read
+    // against the decision's own answer only: a baseline without them reads 0 (their flip once).
     const previousFact = key => own && Object.hasOwn(own, key) ? own[key] : Object.hasOwn(previous, key) ? previous[key]
-        : key === 'outleveled' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
+        : key === 'outleveled' || key === 'outgrown' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which
     // reads them. A party left is raised at the leave (party_left), not read here.
     const view = Sections.stateView(after);

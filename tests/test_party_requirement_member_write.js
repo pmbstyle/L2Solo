@@ -105,6 +105,35 @@ const plan = target => ({ status: 'active', strategy: 'direct_drop', partyNeed: 
         assert(!woke(helper), 'nor wakes a stay');
         console.log('PASS a plan that ends a member\'s party need wakes its stay with the plan written');
 
+        // A member whose body went near a player between its plan's write and the raise: the
+        // raise lands in its body's bag (its row takes it when the body cools), and the party's
+        // other members are still planned.
+        const World = invoke('GameServer/World/World');
+        const turning = await member('TurnsHot', PARTY, id, { backgroundPartyId: PARTY, equipmentPlan: plan(9501), woken: 0, waiting: 0 });
+        const next = await member('PlannedAfter', PARTY, id, { backgroundPartyId: PARTY, equipmentPlan: null, woken: 0, waiting: 0 });
+        // The body's bag is what is checked: this fixture body posts nothing (no bot account).
+        const body = { actor: { fetchId: () => turning } };
+        const keptLookup = World.registeredActorById, keptRaise = Life.raiseOnRow;
+        World.registeredActorById = actorId => Number(actorId) === turning ? { session: body } : null;
+        Life.raiseOnRow = async (characterId, raises, reason) => {
+            if (Number(characterId) === turning) {
+                const [hot] = await Database.execute(['UPDATE bot_life_state SET phase = \'hot\' WHERE characterId = ? RETURNING *',
+                    [turning], { read: true }]);
+                body.coldLifeState = Life.acceptLifecycleRow(hot);
+            }
+            return keptRaise.call(Life, characterId, raises, reason);
+        };
+        try {
+            await Population.applyWorkerPartyRequirements({ ...party, memberIds: [id, turning, next] },
+                { memberPlans: [{ characterId: turning, plan: { ...solo, target: { selfId: 9502 } } },
+                    { characterId: next, plan: { ...solo, target: { selfId: 9503 } } }] });
+        } finally { World.registeredActorById = keptLookup; Life.raiseOnRow = keptRaise; }
+        assert.equal(JSON.parse((await row(turning)).statsJson).equipmentPlan?.target?.selfId, 9502, 'the turned member\'s plan is written');
+        assert.equal(Life.cachedState(turning).phase, 'hot', 'fixture: the member\'s body went near');
+        assert((body.nearRaise?.names || []).some(entry => entry.name === 'party_need_ended'), 'its body\'s bag holds party_need_ended');
+        assert.equal(JSON.parse((await row(next)).statsJson).equipmentPlan?.target?.selfId, 9503, 'the next member is still planned');
+        console.log('PASS a member gone near before its need\'s raise takes it in its body\'s bag');
+
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }
