@@ -577,9 +577,10 @@ class RetainedStateMap extends Map {
         // a field of its record (the record never leaves this thread). A new
         // state is not a new decision: the card the record holds is checked
         // against it. A first row (a restart, a bot this thread held no copy of) restores
-        // the card from its bounded restart prefix in stats. A near body keeps its far
-        // card unserved (its decision is the packet it posts to main): back far, it
-        // serves while its decision echo holds (a near build moved it: refused).
+        // the card from its bounded restart prefix in stats. A near body's record holds
+        // its card unserved (its decision is the packet it posts to main), the card of
+        // its last near build once it took one: back far, it serves while its decision
+        // echo holds.
         // Readers prove every dependency before reuse, and retirement releases the owner.
         const record = this.get(id);
         const previousAdvice = current?.wishAdvisory;
