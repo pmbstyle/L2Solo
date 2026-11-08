@@ -77,10 +77,12 @@ try {
     } finally { Rewards.value = nativeValue; }
     const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
-    const savedMatch = Match.spotMatchup, savedCosts = Hunt.consumablePrices;
+    const savedMatch = Match.spotMatchup, savedCosts = Hunt.consumablePrices, savedCycle = Table.cycle;
     try {
         Match.spotMatchup = () => ({ eligible: true });
         Hunt.consumablePrices = () => ({ shots: 0, potions: 0 });
+        // The fixture table has no hunt cycle columns: a kill of 18 s (10 fight, 4 rest, 4 walk).
+        Table.cycle = () => ({ kph: 200, fight: 10, rest: 4, cap: 1000 });
         const spoiler = { characterId: 990190, level: 20, spotId: 'S', stats: { classId: 54, role: 'spoiler',
             coldCombat: { skills: [{ selfId: 254, level: 1 }] } } };
         const fighter = { characterId: 990191, level: at, spotId: 'S', stats: { classId: 0, role: 'dps' } };
@@ -96,7 +98,7 @@ try {
         const second = two.rows.get(secondSpoiler.characterId);
         close(second.income, second.kills * (partyYield.adena + partyYield.drop) / 3,
             'only the first native party spoiler receives spoil; two spoilers do not duplicate income');
-    } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; }
+    } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; Table.cycle = savedCycle; }
     useRate('x1');
     close(Table.value('S', 'dps', at).loot, row.kills * tableLow.drop, 'rate change invalidates table value memo');
     useRate('x50');

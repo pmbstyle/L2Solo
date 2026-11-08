@@ -174,6 +174,30 @@ function withEffects(state, effects) {
         effects: [...(state.stats?.coldCombat?.effects || []).filter(effect => !families.has(Loadout.family(effect.key))), ...effects] } } };
 }
 
+// A party's kills per hour from its members' kills (prepare's cycles: fight, rest,
+// walk and cap seconds of each one's table row; null for a member without one), by
+// the cold party round's terms (BackgroundPartyResolver.partyRound): one walk per
+// kill, the shortest (the first to reach a mob engages it); the fight at the members'
+// damage together (damage rates add: 1 / sum of 1 / fight); the rest the party sits
+// together per kill, the longest of the members', each scaled to the shorter fight
+// (the HP taken and the MP spent follow the fight's time); at most the highest cap
+// (the party takes the mobs any member may). One member: its own row's kills.
+function partyKills(cycles) {
+    let rate = 0, walk = Infinity, cap = 0;
+    for (const cycle of cycles) {
+        if (!cycle) continue;
+        rate += 1 / cycle.fight;
+        walk = Math.min(walk, cycle.walk);
+        cap = Math.max(cap, cycle.cap);
+    }
+    if (!(rate > 0)) return 0;
+    const fight = 1 / rate;
+    let rest = 0;
+    for (const cycle of cycles) if (cycle) rest = Math.max(rest, cycle.rest * fight / cycle.fight);
+    const kills = 3600 / Math.max(1e-9, walk + fight + rest);
+    return cap > 0 ? Math.min(cap, kills) : kills;
+}
+
 // One bounded forecast for a complete roster. Static point lookups are
 // cached by role/level/rates in SpotValueTable. No wish graph or combat roll.
 function prepare(members, { objective, party, spots, timestamp = Date.now() } = {}) {
@@ -199,38 +223,38 @@ function prepare(members, { objective, party, spots, timestamp = Date.now() } = 
         }
         return member;
     });
-    const values = members.map((member, index) => {
-        const row = Table.value(spot.id, Table.roleFor(member), member.level, true,
-            { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
-        if (!row || buffed[index] === member) return row;
-        const damage = Match.damageRate(Match.stateProfiles(member, { timestamp, buffed: true }));
-        const gain = damage > 0 ? Match.damageRate(Match.stateProfiles(buffed[index], { timestamp, buffed: true })) / damage : 1;
-        // Native buff stats change damage throughput, never drop rates or the
-        // member's ownership share. Recovery gains wait for real samples.
-        return { ...row, kills: row.kills * Math.max(1, gain) };
-    });
     // A party's healer heals what the others take (a C4 party takes one for it): a
-    // member that does not rest for mana fights on without its rest (a kill takes
-    // the reference's kill time less its rest, SpotValueTable.cycle, at most the
-    // spot's cap) and does not die of the damage. Our choice: no heal model beyond.
+    // member that does not rest for mana fights on without its rest and does not
+    // die of the damage. Our choice: no heal model beyond.
     const healed = members.map((member, index) => !Roles.shouldRestForMana(member)
         && members.some((peer, other) => other !== index && Roles.isHealer(peer)));
-    for (let index = 0; index < members.length; index++) {
-        const row = values[index];
-        if (!healed[index] || !row) continue;
-        const cycle = Table.cycle(spot.id, Table.roleFor(members[index]), members[index].level, true);
-        const kill = cycle?.kph > 0 ? 3600 / cycle.kph : 0;
-        if (!(kill > positive(cycle?.rest)) || !(cycle.rest > 0)) continue;
-        const kills = row.kills * kill / (kill - cycle.rest);
-        values[index] = { ...row, kills: cycle.cap > 0 ? Math.min(cycle.cap, kills) : kills };
-    }
+    const values = members.map(member => Table.value(spot.id, Table.roleFor(member), member.level, true,
+        { spoilSkillLevel: Rewards.spoilSkillLevel(member) }));
+    // Each member's kill of its table row (SpotValueTable.cycle: the reference's fight,
+    // rest and walk at the member's level), its fight shortened by the damage a native
+    // buff adds (buff stats change damage throughput, never drop rates or the member's
+    // ownership share).
+    const cycles = members.map((member, index) => {
+        if (!values[index]) return null;
+        const cycle = Table.cycle(spot.id, Table.roleFor(member), member.level, true,
+            { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
+        if (!(cycle?.kph > 0) || !(cycle.fight > 0)) return null;
+        let fight = cycle.fight;
+        if (buffed[index] !== member) {
+            const damage = Match.damageRate(Match.stateProfiles(member, { timestamp, buffed: true }));
+            const gain = damage > 0 ? Match.damageRate(Match.stateProfiles(buffed[index], { timestamp, buffed: true })) / damage : 1;
+            fight /= Math.max(1, gain);
+        }
+        const rest = positive(cycle.rest);
+        return { fight, rest: healed[index] ? 0 : rest,
+            walk: Math.max(0, 3600 / cycle.kph - cycle.fight - rest), cap: positive(cycle.cap) };
+    });
     const gross = Table.value(spot.id, 'dps', level, true) || Table.value(spot.id, 'mage', level, true);
     const safe = Match.spotMatchup(spot, Match.stateProfiles(buffed[0],
         { timestamp, capacityStates: buffed, mode: 'party', buffed: true }), { soloSafety: true }).eligible;
-    const totalKills = values.reduce((sum, row) => sum + positive(row?.kills), 0);
-    // The cold resolver opens at most one encounter per 12 seconds, shared
-    // by all members. A large group cannot multiply that supply of monsters.
-    const kills = Math.min(300, totalKills) * Math.min(1, positive(party?.cohesion || 0.65));
+    const kills = partyKills(cycles);
+    // A member's share of the party's kills: its share of their damage.
+    const rate = cycles.reduce((sum, cycle) => sum + (cycle ? 1 / cycle.fight : 0), 0);
     // The party's exp (C4, L2J Lisvus L2Party.distributeXpAndSp: each kill's exp at
     // the party's top level, times the party bonus by members, split by squared
     // level, low members cut off: PartyRewardMath, the cold party's own split).
@@ -239,18 +263,16 @@ function prepare(members, { objective, party, spots, timestamp = Date.now() } = 
     const expOf = new Map(expShares.map(share => [share.index, share.exp]));
     const rows = new Map();
     for (let index = 0; index < members.length; index++) {
-        const member = members[index], row = values[index], onSpot = Hunt.onSpotShare(member);
+        const member = members[index], raw = values[index], onSpot = Hunt.onSpotShare(member);
         // Its own row's deaths per kill over its share of the party's kills; none healed.
-        const raw = row && Table.value(spot.id, Table.roleFor(member), member.level, true,
-            { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
-        const share = row?.kills > 0 && totalKills > 0 ? row.kills / totalKills : 0;
+        const share = cycles[index] && rate > 0 ? 1 / cycles[index].fight / rate : 0;
         const deaths = healed[index] || !(raw?.kills > 0) ? 0 : positive(raw.deaths) / raw.kills * kills * share * onSpot;
         const observed = Hunt.sampledRows(member, timestamp, 'party')
             .filter(sample => sample.spotId === spot.id && sample.partyRoster === key);
         const actual = Hunt.bestIncome(observed, onSpot);
         if (actual) { rows.set(member.characterId, { income: actual.perHour, exp: actual.expPerHour, deaths,
             kills: observed[0].kills / observed[0].cycleMs * HOUR_MS, spotId, source: 'own_party', travelHours: 0 }); continue; }
-        if (!safe || !gross?.kills || !row?.kills || !kills) continue;
+        if (!safe || !gross?.kills || !raw?.kills || !share || !kills) continue;
         const costs = Hunt.consumablePrices(member);
         const expected = Rewards.value(spot, level, { spoilSkillLevel: index === spoilerIndex ? Rewards.spoilSkillLevel(member) : 0,
             spoilerLevel: member.level });

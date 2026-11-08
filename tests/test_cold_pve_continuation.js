@@ -146,7 +146,9 @@ try {
     assert(won, 'party must eventually finish its shared mob');
     assert.strictEqual(party.stats.fightsResolved, 1);
     assert.strictEqual(party.stats.fightsWon, 1);
-    assert.strictEqual(party.stats.pveEncounter, null);
+    // The round lives the rest of its time: the finished mob is not pending; the walk
+    // to a next one may engage it (a newly picked mob).
+    assert(party.stats.pveEncounter === null || selected === 2, 'the finished mob does not stay pending');
     // A fight the slice bound gives up is a fight's end: a member below its line rests then.
     {
         mobHp = 1e7;

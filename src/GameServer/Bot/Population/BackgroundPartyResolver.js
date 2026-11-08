@@ -16,6 +16,8 @@ const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const ColdRaidEncounter = require('./ColdRaidEncounter');
+const { RUN_SPEED } = require('./ColdTrip');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 const RAID_RESOLVE_INTERVAL_MS = 15000;
 // A hunting party resolves again 45-135 s after a fight.
@@ -41,17 +43,32 @@ function memberVitals(state) {
     };
 }
 
-function estimateFightCount({ party, members, spot, elapsedMs }) {
-    // Windows are counted from at most the longest resolve interval: like a
-    // solo bot, a party does not catch up on a long gap such as a server stop.
-    const baseWindows = Math.max(1, Math.floor(Math.min(elapsedMs, PARTY_RESOLVE_MAX_MS) / 12000));
-    const densityFactor = clamp(Number(spot.density || 1) / 3, 0.7, 2.2);
-    const cohesionFactor = clamp(Number(party.cohesion || 0.65), 0.35, 1.15);
-
-    // Party actions are individually simulated, so party size must not
-    // multiply work.  Keep the same short active window as solo combat:
-    // at most one fight per 12-second window of the elapsed time, as solo.
-    return Math.max(1, Math.min(baseWindows, Math.round(baseWindows * densityFactor * cohesionFactor)));
+// A hunting party's round lives the time behind it as a solo round does
+// (BackgroundResolver.resolveSolo, the same walk and share rules): each new mob
+// costs the walk to it, each fight its simulated time, at the members' damage
+// together (two damage dealers kill a mob in about half the time, as in C4),
+// and the gap heals theirs; a rest ends the round (the rest is its own step).
+// At most the longest resolve interval: like a solo bot, a party does not
+// catch up on a long gap such as a server stop. The walk is the shortest of
+// the members' (the first to reach a mob engages it); the kills are at most
+// the party's share of what the spot's spawns give back, one hunter's share
+// per member (soloShareMobs over the spot's bots), its fraction carried to the
+// next round on the spot (stats.coldShare). fights: the CPU bound, one per walk
+// that starts in the round, as solo's, 48 actions each.
+function partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp }) {
+    const budgetMs = Math.min(Math.max(0, elapsedMs), PARTY_RESOLVE_MAX_MS);
+    let walkMs = Infinity;
+    for (const state of members) {
+        const profile = ColdCombatProfile.fightProfile(state, timestamp);
+        walkMs = Math.min(walkMs, BackgroundResolver.soloWalkMs(Number(spot.density) || 1, profile.runSpd || RUN_SPEED,
+            spot.spawnArea || undefined, ColdCombatProfile.attackReach(profile)));
+    }
+    const fights = Math.ceil(budgetMs / Math.max(1, walkMs)) + 1;
+    const share = BackgroundResolver.soloShareMobs(spot, budgetMs, spotHunters);
+    const carry = share !== null && String(party.stats?.coldShare?.spotId) === String(spot.id)
+        ? Number(party.stats.coldShare.carry) || 0 : 0;
+    return { budgetMs, walkMs, fights, actions: fights * 48, share,
+        shareMobs: share === null ? Infinity : share * members.length + carry };
 }
 
 function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
@@ -183,8 +200,9 @@ const BackgroundPartyResolver = {
     },
 
     // lastFight: the party's next act waits for the engaged fight: it starts no new one (PveEncounter.holdsTrip).
-    resolve({ party, members, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
-        episodeId = null, assessRelationship = null, raidOwner = null }) {
+    // spotHunters: the bots on the spot, from the caller's occupancy (the kill share).
+    resolve({ party, members, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random,
+        timestamp = Date.now(), episodeId = null, assessRelationship = null, raidOwner = null }) {
         const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp, episodeId, assessRelationship });
         if (meeting) return meeting;
         if (!party || !members?.length || !spot) {
@@ -446,7 +464,8 @@ const BackgroundPartyResolver = {
         const alreadyFailed = raid && members.filter(member => member.vitals.hp <= 0).some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index,
                 remainingHpRatio: Number(raidSnapshot?.hp) / Math.max(1, Number(raidSnapshot?.maxHp || 1)) }) !== 'continue');
-        const fightBudget = raid ? Number(!alreadyFailed) : estimateFightCount({ party, members, spot, elapsedMs });
+        const round = raid ? null : partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp });
+        const fightBudget = raid ? Number(!alreadyFailed) : round.fights;
         let fights = 0;
         let attemptedFights = 0;
         let pending = raid
@@ -484,8 +503,17 @@ const BackgroundPartyResolver = {
         // for a pet it cannot heal (RestPolicy), sends it to rest at a fight's end.
         const restsNow = (state, resolved, vitals) => !raid && BackgroundResolver.needsRest(state, vitals, { party: true,
             pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) });
+        let mobsKilled = 0;
         for (let i = 0; i < fightBudget; i++) {
             if (lastFight && !pending) break;
+            // The first fight starts in any round; a new mob needs a whole one of the share and its walk.
+            if (round && i > 0 && (combatMs >= round.budgetMs || combatActions >= round.actions)) {
+                // cold_fight:party:action_bound: a round its CPU bound cut before its time.
+                if (combatMs < round.budgetMs && Diagnostics.active()) Diagnostics.count('cold_fight', 'party', 'action_bound');
+                break;
+            }
+            if (round && !pending && mobsKilled + 1 > round.shareMobs) break;
+            const walkMs = round && !pending ? round.walkMs : 0;
             const encounter = BackgroundResolver.resolvePartyFight({
                 members: combatMembers,
                 spot,
@@ -501,13 +529,18 @@ const BackgroundPartyResolver = {
                 avoidedReason = encounter.reason;
                 break;
             }
+            // No mob to walk to, no walk.
+            combatMs += walkMs;
             attemptedFights += 1;
             pending = encounter.encounter || null;
             if (raid) raidSnapshot = ColdRaidEncounter.record(party, raidSnapshot, encounter, timestamp);
             if (encounter.won || !pending) fights += 1;
             for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
-            combatMs += Number(encounter.debug?.durationMs || 0);
+            // A kill costs at least its killing action, as solo's (T126): the swing or
+            // cast that killed ends after the kill (the members' actions end by then).
+            combatMs += Math.max(Number(encounter.debug?.durationMs || 0),
+                encounter.won ? Math.max(0, ...encounter.members.map(member => Number(member.readyAt) || 0)) : 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
             musicUses += encounter.members.reduce((sum, member) => sum + Number(member.musicUses || 0), 0);
@@ -555,6 +588,7 @@ const BackgroundPartyResolver = {
             }));
             if (encounter.won) {
                 wins += 1;
+                mobsKilled += 1;
                 if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
                 overhitContexts.push(encounter.debug?.overhitContext || null);
             }
@@ -820,6 +854,9 @@ const BackgroundPartyResolver = {
                     ...(lootDistribution.agreement ? { agreement: lootDistribution.agreement } : {}),
                     ...(materialHunt ? { materialTargetNpcId: targetNpcId } : {}),
                     pveEncounter: raid ? null : pending,
+                    // Whole mobs left unused stay for the other hunters (resolveSolo's carry).
+                    ...(round?.share != null ? { coldShare: { spotId: spot.id, carry: (left => Math.round((left < 0 ? left : left % 1)
+                        * 1000) / 1000)(round.shareMobs - mobsKilled) } } : {}),
                     recommendationHunt: huntActivity,
                     ...(raid ? { raidEncounter: raidSnapshot } : {}),
                     ...(marked && attemptedFights > 0 ? { raidAdmission: admission.proof } : {}),

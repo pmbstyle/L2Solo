@@ -59,8 +59,7 @@ function pending(party, members) {
 // (PartyProgressComparison.prepare's: the objective's, else the party's, else
 // the first member's). The review runs when this moves, never on the clock.
 // Not in it: the exp inside a level (its hours to the level go stale until the
-// level or another input moves); the party's cohesion, which drifts every fight
-// and scales only the table forecast, which departs nobody; the wallet, heard in
+// level or another input moves); the wallet, heard in
 // town by the member's own decision; the solo route of a member whose
 // decision holds no earning spot (PartyProgressComparison.soloRoute's own memo).
 function progressReviewKey(party, members, objective) {

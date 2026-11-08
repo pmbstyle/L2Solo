@@ -2061,6 +2061,7 @@ class ColdSimulationKernel {
                 raidOwner: run.raidOwner || null,
                 members: run.members,
                 spot: run.spot,
+                spotHunters: this.spotHunters(run.spot),
                 targetNpcId: run.targetNpcId,
                 lastFight: fightHoldsTrip,
                 elapsedMs: Math.max(1000, startedAt - lastResolvedAt),

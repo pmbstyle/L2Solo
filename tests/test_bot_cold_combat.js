@@ -596,6 +596,22 @@ assert.deepStrictEqual(
 );
 assert(strongPartyResult.memberResults.every((entry) => entry.result.materialize.adena === 0));
 
+// A party kills at its members' damage together (C4: why players party): over the
+// same time on the same ground two damage dealers kill about twice what one kills
+// alone, and a party round lives the time behind it as a solo round does.
+{
+    const hunter = { ...strongColdHunter, characterId: 930, stats: { ...strongColdHunter.stats, coldCombat: {
+        ...strongColdHunter.stats.coldCombat, equipment: { ...strongColdHunter.stats.coldCombat.equipment, pAtk: 300 } } } };
+    // Dense (a short walk), a mob of several blows that can hardly hurt them, no spawn production (no share).
+    const ground = { ...gigantSpot, id: 'party_throughput', density: 5000 };
+    const alone = BackgroundResolver.resolveSolo({ state: hunter, spot: ground, elapsedMs: 120000, timestamp, rng: () => 0.1 });
+    const pair = BackgroundPartyResolver.resolve({ party: { partyId: 'throughput_pair', cohesion: 0.65, risk: 0, stats: {} },
+        members: [hunter, { ...hunter, characterId: 931 }], spot: ground, elapsedMs: 120000, timestamp, rng: () => 0.1 });
+    assert(alone.debug.wins >= 5, `the solo round kills several mobs (${alone.debug.wins})`);
+    const ratio = pair.debug.wins / alone.debug.wins;
+    assert(ratio > 1.6 && ratio < 2.4, `two damage dealers kill about twice one alone (${pair.debug.wins} vs ${alone.debug.wins})`);
+}
+
 const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
 const toughResult = BackgroundResolver.resolveSolo({ state: fighter, spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },

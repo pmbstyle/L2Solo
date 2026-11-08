@@ -46,7 +46,7 @@ assert.equal(Income.evaluate({ ...base, party: { exp: 100, income: 1000 }, rewar
 for (const multiplier of [1, 10, 50]) assert.equal(Income.evaluate({ ...base,
     solo: { exp: 100, income: 1000 * multiplier }, party: { exp: 100, income: 200 * multiplier } }).accept, false);
 
-const original = { value: Table.value, ranked: Table.rankedIncome, rankedIds: Table.rankedSpotIds, hunt: Hunt.huntIncome,
+const original = { value: Table.value, cycle: Table.cycle, ranked: Table.rankedIncome, rankedIds: Table.rankedSpotIds, hunt: Hunt.huntIncome,
     samples: Hunt.sampledRows, costs: Hunt.consumablePrices, ensure: Profiles.ensure, gate: Routes.isSpotAllowedForState, reader: Routes.spotAllowedReaderFor,
     forState: Economy.forState, forGroup: Economy.forGroup, npcs: Data.npcs, rewards: Data.npcRewards,
     rewardValue: Rewards.value };
@@ -72,6 +72,8 @@ try {
     Rewards.value = () => null;
     Table.value = (id, role, level, shots) => id === 'lower' ? row(shots ? 650 : 600, shots ? 200 : 0)
         : row(shots ? 1200 : 300, shots ? 900 : 0);
+    // A kill: 24 s of fight, 12 s of walk, no rest (the rows' 100 kills an hour).
+    Table.cycle = () => ({ kph: 100, fight: 24, rest: 0, cap: 1000 });
     Table.rankedIncome = (role, level, costs, gap, shots) => spots.map(spot => ({ ...Table.value(spot.id, role, level, shots), spotId: spot.id }));
     Table.rankedSpotIds = () => spots.map(spot => spot.id);
     Hunt.huntIncome = () => ({ perHour: 1000, expPerHour: 100 });
@@ -212,7 +214,7 @@ try {
     assert.equal(ingredient.soloHours, 5000 / ingredient.soloIncome, 'a component is not the final gear completion time');
     assert.equal(ingredient.accept, false);
 } finally {
-    Table.value = original.value; Table.rankedIncome = original.ranked; Table.rankedSpotIds = original.rankedIds;
+    Table.value = original.value; Table.cycle = original.cycle; Table.rankedIncome = original.ranked; Table.rankedSpotIds = original.rankedIds;
     Hunt.huntIncome = original.hunt; Hunt.sampledRows = original.samples; Hunt.consumablePrices = original.costs;
     Profiles.ensure = original.ensure; Routes.isSpotAllowedForState = original.gate; Routes.spotAllowedReaderFor = original.reader;
     Economy.forState = original.forState; Economy.forGroup = original.forGroup;
@@ -221,28 +223,35 @@ try {
     BuffPolicy.priceFor = originalBuffPrice;
 }
 
-// A party's hour (prepare): each kill's exp at the party's top level times the C4 party
-// bonus, split by squared level (L2J Lisvus L2Party); a healer removes the others'
-// rest and deaths.
+// A party's hour (prepare): its kills by the cold party round's terms (one walk a kill,
+// the fight at the members' damage together, the rest it sits together); each kill's
+// exp at the party's top level times the C4 party bonus, split by squared level (L2J
+// Lisvus L2Party); a healer removes the others' rest and deaths.
 {
     const saved = { value: Table.value, cycle: Table.cycle, samples: Hunt.sampledRows, costs: Hunt.consumablePrices,
         rewards: Rewards.value, ensure: Profiles.ensure };
     try {
         Rewards.value = () => null; Hunt.sampledRows = () => []; Hunt.consumablePrices = () => ({ shots: 1, potions: 10 });
         Profiles.ensure = () => spots;
-        Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1 });
-        Table.cycle = () => ({ kph: 100, rest: 12, cap: 1000 }); // a kill: 36 s, 12 of them the rest
         const fighter = { characterId: 990140, level: 20, spotId: 'peer', activity: 'hunting', loc: { locX: 0, locY: 0 },
             inventory: {}, vitals: { hp: 100, mp: 100, maxMp: 100 }, stats: { classId: 0 } };
         const other = { ...fighter, characterId: 990141 }, cleric = { ...fighter, characterId: 990142, stats: { classId: 15 } };
+        Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1 });
+        // A kill alone: 36 s, 12 of fight, 12 of rest, 12 of walk; the cleric's rest (its own mana) 4 s.
+        const healerRole = Table.roleFor(cleric);
+        Table.cycle = (spotId, role) => ({ kph: 100, fight: 12, rest: role === healerRole ? 4 : 12, cap: 1000 });
         const objective = { spotId: 'peer' };
+        const alone = Income.prepare([fighter], { spots, timestamp: at, objective }).rows.get(990140);
+        assert.equal(alone.kills, 100, 'a party of one kills as its own row');
         const pair = Income.prepare([fighter, other], { spots, timestamp: at, objective }).rows.get(990140);
-        // 200 kills x 0.65 cohesion x 10 exp a kill x 1.3 (two members), half each.
-        assert.equal(pair.exp, 845);
-        assert(Math.abs(pair.deaths - .65) < 1e-9, 'its deaths per kill over its share of the party\'s kills');
+        // Two fighters: 12 s of walk, 6 of fight, 6 of rest a kill: 150 kills, 10 exp a kill x 1.3 (two members), half each.
+        assert.equal(pair.kills, 150, 'two damage dealers kill faster than one, by their damage together');
+        assert.equal(pair.exp, 975);
+        assert(Math.abs(pair.deaths - .75) < 1e-9, 'its deaths per kill over its share of the party\'s kills');
         const healed = Income.prepare([fighter, cleric], { spots, timestamp: at, objective }).rows.get(990140);
-        // The fighter's 100 kills without their rest: 150; with the cleric's 100: 250 x 0.65 x 10 x 1.3 / 2.
-        assert.equal(healed.exp, 1056, 'a healer\'s party levels its fighter sooner');
+        // The fighter rests none; the party sits for the cleric's 4 s scaled to the 6 s fight: 2 s. 20 s a kill: 180 kills.
+        assert.equal(healed.kills, 180, 'a healer\'s party rests less');
+        assert(healed.exp > pair.exp, 'a healer\'s party levels its fighter sooner');
         assert.equal(healed.deaths, 0, 'a healed fighter does not die of what it takes');
         const lower = Income.prepare([fighter, { ...other, level: 10 }], { spots, timestamp: at, objective }).rows;
         assert(lower.get(990140).exp > 4 * lower.get(990141).exp, 'the exp splits by squared level');
