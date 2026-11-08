@@ -328,7 +328,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
         }
         clearChatArrival(session, 'shop');
         const travelMode = invoke('GameServer/Bot/AI/BotTownTravel').request(
-            session, bot, invoke('GameServer/Bot/BotAI'), 'player_chat_restock', { announce: false });
+            session, bot, invoke('GameServer/Bot/BotAI'), 'player_chat_restock', { announce: false, forced: true });
         if (!['escape', 'walk', 'deferred'].includes(travelMode)) return { applied: false, reason: 'restock_unavailable' };
         const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: true, reason: travelMode === 'deferred' ? 'shop_after_combat' : 'shop',

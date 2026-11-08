@@ -85,7 +85,9 @@ const DEFAULTS = {
     backgroundGovernorPlayerDbQueueMax: 8,
     backgroundGovernorLagAbortMs: 120,
     partyFormationIdleBudgetMs: 3000,
-    partyFormationPlayerBudgetMs: 600,
+    // With a player online a forming pass starts no new recruit or roster past 25 ms
+    // (one party a pass at most) and waits out main's writes (membershipWritesWait).
+    partyFormationPlayerBudgetMs: 25,
     partyFormationSliceMs: 12,
     // Existing cold population predates full class progression. Reconcile it
     // in small batches so restart never becomes a database migration spike.

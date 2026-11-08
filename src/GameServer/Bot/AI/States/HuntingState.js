@@ -144,7 +144,7 @@ function isPartyCompanion(session) {
     return session.partyCompanion === true && !!session.followPlayerSession;
 }
 
-function startShopping(session, bot, BotAI, reason, townName = null) {
+function startShopping(session, bot, BotAI, reason, townName = null, options = {}) {
     if (isPartyCompanion(session)) {
         session.plan = 'following';
         session.shoppingTarget = undefined;
@@ -161,9 +161,9 @@ function startShopping(session, bot, BotAI, reason, townName = null) {
 
     const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
         .find(town => town.name === townName) : null;
-    return BotTownTravel.request(session, bot, BotAI, reason, destination ? {
+    return BotTownTravel.request(session, bot, BotAI, reason, destination ? { ...options,
         destinationTown: { name: destination.name, x: destination.locX, y: destination.locY, z: destination.locZ }
-    } : {});
+    } : options);
 }
 
 function startWorkshopOrder(session, bot, BotAI, economy) {
@@ -729,7 +729,7 @@ module.exports = {
             const bag = MarketListingPolicy.actorState(session);
             const needed = PartyMarketBreak.bagFact(bag) > 0;
             if (needed && !ItemDisposition.saleRetryHolds(bag)) pauseSelling(session);
-            const trip = needed ? startShopping(session, bot, BotAI, `Inventory ${cleanupDue.reason}. Heading to town.`) : null;
+            const trip = needed ? startShopping(session, bot, BotAI, `Inventory ${cleanupDue.reason}. Heading to town.`, null, { forced: true }) : null;
             const started = trip === 'walk' || trip === 'escape', refused = needed && !started && trip !== 'deferred';
             if (!needed || started || refused || trip === 'deferred' && session.pendingTownTrip)
                 DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session), cleanupDue: null });
@@ -1055,7 +1055,7 @@ module.exports = {
                     spotName: destination?.name || currentGround.name
                 };
                 if (destination) beginSpotRelocation(session, bot, destination, BotAI);
-                else if (none) BotTownTravel.request(session, bot, BotAI, 'no_hunting_spot', { announce: false });
+                else if (none) BotTownTravel.request(session, bot, BotAI, 'no_hunting_spot', { announce: false, forced: true });
                 return;
             }
             if (session.dangerousGround != null) session.dangerousGround = null;

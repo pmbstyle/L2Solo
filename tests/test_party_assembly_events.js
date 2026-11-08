@@ -67,6 +67,9 @@ async function main() {
     const GoalPolicy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
     const GoalCalculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
     const originalPartyGoals = Coordinator.requestPartyGoals;
+    // A ready worker with no commit queue (the player-online pass waits out a busy one).
+    const originalSnapshot = Coordinator.snapshot;
+    Coordinator.snapshot = () => ({ ready: true, snapshotsLoaded: true, queue: { depth: 0 } });
     // This event fixture has no world/spot atlas. Supply a reachable party
     // goal with no solo route; the economic policy has its own native tests.
     const Income = require('../src/GameServer/Bot/Population/PartyProgressComparison');
@@ -205,7 +208,7 @@ async function main() {
     }
     console.log('PASS a player online: a healer\'s LFP meets a damage dealer asking at another spot');
     Population.started = false; Population.playerActivityProfile = savedProfile;
-    Coordinator.requestPartyGoals = originalPartyGoals;
+    Coordinator.requestPartyGoals = originalPartyGoals; Coordinator.snapshot = originalSnapshot;
     Income.compare = originalIncome;
     Config.partyMinSize = originalMin; Config.partyMaxSize = originalMax;
     console.log('PASS addressed publication group performs real native membership commit without formation timers');

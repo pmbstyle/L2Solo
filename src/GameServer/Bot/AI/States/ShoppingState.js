@@ -458,8 +458,9 @@ async function craftAtWorkshop(session, bot, target) {
 }
 
 // A body's arrival in town, once a trip (BotTownTravel.request stamps its start,
-// shopTimer): the first tick it stands in a town. Its shopping moment, as a far bot's
-// (Situations.detect): on the trip its held leaf ordered to this town (:own) the town's
+// shopTimer, and whether it was forced, townTripForced): the first tick it stands in a
+// town. Its shopping moment, as a far bot's (Situations.detect): on the trip its held leaf
+// ordered to this town (:own, DecisionSections.leafTrip, the far rule's) the town's
 // decisions wake but not the build, the visit carries out the step it came for. A visit's
 // stages end with their outcome (goal_done:visit / goal_failed:visit), never another
 // arrival. A player's companion follows its leader's errand: no arrival of its own.
@@ -468,8 +469,8 @@ function arrive(session, bot) {
     const town = TownTransitPolicy.townAt(bot);
     if (!town) return;
     session.townArrival = session.shopTimer;
-    const leaf = held(session)?.network?.activity;
-    const own = leaf?.town != null && leaf.activity !== 'hunting' && String(leaf.town) === town;
+    const own = invoke('GameServer/Bot/Economy/DecisionSections').leafTrip(held(session)?.network?.activity, town,
+        session.townTripForced === true);
     raiseDecision(session, own ? 'arrived_town:own' : 'arrived_town');
 }
 

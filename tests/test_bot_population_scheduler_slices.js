@@ -41,6 +41,38 @@ async function run() {
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = false;
     PopulationService.partyFormationPending = false;
+    // A player online shares main with forming: a pass waits out main's writes (here the DB
+    // queue) and its group is retried, reading no candidate; a pass its small budget stopped
+    // is retried too, not dropped until the group's next move.
+    {
+        const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+        const originalSnapshot = Coordinator.snapshot, originalRecruit = PopulationService.recruitBackgroundMembers;
+        const originalNow = Date.now;
+        Coordinator.snapshot = () => ({ ready: true, snapshotsLoaded: true, queue: { depth: 0 } });
+        let read = 0, clock = originalNow();
+        const page = [];
+        page.some = () => { read++; return false; };
+        try {
+            Database.pending = () => 1;
+            assert.deepStrictEqual(await PopulationService.formBackgroundParties(page), []);
+            assert.strictEqual(read, 0, 'a busy DB queue with a player online: no candidate read');
+            assert.strictEqual(PopulationService.partyFormationPending, true, 'the waiting group is retried');
+            Database.pending = () => 0;
+            Date.now = () => clock;
+            PopulationService.recruitBackgroundMembers = (states, options) => {
+                clock += Config.partyFormationPlayerBudgetMs;
+                options.markBudgetStop();
+                return Promise.resolve(new Set());
+            };
+            assert.deepStrictEqual(await PopulationService.formBackgroundParties(page), []);
+            assert(read > 0, 'a quiet main with a player online forms');
+            assert.strictEqual(PopulationService.partyFormationPending, true, 'a pass its budget stopped is retried');
+        } finally {
+            Coordinator.snapshot = originalSnapshot; PopulationService.recruitBackgroundMembers = originalRecruit;
+            Date.now = originalNow; Database.pending = originalDatabasePending;
+            PopulationService.partyFormationPending = false;
+        }
+    }
 
     PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
     const idleBudget = PopulationService.partyFormationBudgetMs();
