@@ -3,8 +3,9 @@ const PartyMarketBreak = require('./PartyMarketBreak');
 const Situations = require('../Situations');
 const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
-const { PartyAdmission, priority: admissionPriority } = require('./PartyAdmission');
-const partyAdmission = new PartyAdmission();
+const { PartyAdmission, limit: partyLimit, priority: admissionPriority } = require('./PartyAdmission');
+// A reservation the party bound refuses is counted (situations party:cap:hit).
+const partyAdmission = new PartyAdmission({ onCap: () => Situations.note('party:cap:hit') });
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Database = invoke('Database');
@@ -190,7 +191,7 @@ function leaderIdForMembers(party, members = []) {
 }
 
 function partyCapacityLimit() {
-    return Math.max(0, Math.floor(Number(Config.maxBackgroundParties) || 0));
+    return partyLimit(Config);
 }
 
 function occupiedPartySlots() {
@@ -2122,6 +2123,7 @@ const PopulationService = {
                 const slots = Math.max(0, partyCapacityLimit() - activeParties);
                 const clanDemand = states.some(state => ClanPartyCapacity.required(objectiveOf(state)));
                 if (slots <= 0 && !clanDemand) {
+                    Situations.note('party:cap:hit');
                     this.partyAssemblyEvents?.waitSlot(states.filter(state => objectiveOf(state)?.status === 'open'));
                     return [];
                 }
@@ -3404,7 +3406,7 @@ const PopulationService = {
             return result;
         }
         if (members.some(state => requiresClanEquipmentParty(state))) return { rejected: 'clan_objective' };
-        if (occupiedPartySlots() >= partyCapacityLimit()) return { rejected: 'party_capacity' };
+        if (occupiedPartySlots() >= partyCapacityLimit()) { Situations.note('party:cap:hit'); return { rejected: 'party_capacity' }; }
         return createAndCommitBackgroundParty(members, {
                 status: 'open', priority: 'preferred', reason: 'shared_target',
                 objectiveKey: `competition:${event.spotId}:${event.npcId}`,

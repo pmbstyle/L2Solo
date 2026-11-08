@@ -141,9 +141,6 @@ const DEFAULTS = {
     pvpAggression: 0.5,
     partyMinSize: 2,
     partyMaxSize: 5,
-    // Shared safety ceiling for every background party. Admission never
-    // depends on social/clan origin or opens extra slots for a backlog.
-    maxBackgroundParties: 72,
     // Dissolved party rows are operational history, not durable state. Keep
     // a short diagnostic window without allowing every rotation to grow the
     // population database forever.

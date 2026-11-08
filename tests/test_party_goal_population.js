@@ -34,7 +34,7 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Date, 'now', () => clock);
     stub(Config, 'enabled', true); stub(Config, 'backgroundPartyEnabled', true);
     stub(Config, 'partyMinSize', 2); stub(Config, 'partyMaxSize', 5);
-    stub(Config, 'maxBackgroundParties', 10); stub(Config, 'protectedPartyFormationMainBudgetMs', 50);
+    stub(Config, 'maxPlayingPopulation', 40); stub(Config, 'protectedPartyFormationMainBudgetMs', 50);
     stub(Population, 'playerActivityProfile', () => ({ protected: true }));
     stub(Population, 'realPlayerSessions', () => []);
     stub(Database, 'isReady', () => false); stub(Database, 'stats', () => ({ pending: 0 }));

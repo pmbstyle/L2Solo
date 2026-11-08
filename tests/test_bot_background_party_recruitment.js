@@ -52,7 +52,7 @@ const originals = {
     requestPartyGoals: ColdSimulationCoordinator.requestPartyGoals,
     partyMinSize: Config.partyMinSize,
     partyMaxSize: Config.partyMaxSize,
-    maxBackgroundParties: Config.maxBackgroundParties,
+    maxPlayingPopulation: Config.maxPlayingPopulation,
     partyFormationBatchSize: Config.partyFormationBatchSize
 };
 const originalFormationState = {
@@ -365,7 +365,7 @@ async function run() {
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
     const socialParty = { ...electiveParty, partyId: 'bgp_social', stats: { capacityPool: 'social' } };
     PartyState.active = () => [electiveParty, requiredParty, socialParty];
-    Config.maxBackgroundParties = 2;
+    Config.maxPlayingPopulation = 8; // the party bound: a quarter of it, 2
     Config.partyFormationBatchSize = 2;
     assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'without a backlog the base party capacity must remain unchanged');
     assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'all requests share one capacity ceiling');
@@ -675,7 +675,7 @@ run().catch((err) => {
     ColdSimulationCoordinator.requestPartyGoals = originals.requestPartyGoals;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;
-    Config.maxBackgroundParties = originals.maxBackgroundParties;
+    Config.maxPlayingPopulation = originals.maxPlayingPopulation;
     Config.partyFormationBatchSize = originals.partyFormationBatchSize;
     Object.assign(PopulationService, originalFormationState);
     await world.close();
