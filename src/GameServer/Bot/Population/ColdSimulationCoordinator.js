@@ -1263,7 +1263,7 @@ class ColdSimulationCoordinator {
         }).filter(Boolean);
         for (const entry of invalid) {
             const { party, reason } = entry;
-            const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+            const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved', reason);
             if (dissolved) {
                 const released = await LifeState.releaseDissolvedPartyMembers(
                     party.partyId,

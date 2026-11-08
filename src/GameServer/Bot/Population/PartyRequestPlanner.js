@@ -2,6 +2,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Material = require('./CraftMaterialParty');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
+const Trace = require('../DecisionTrace');
 
 // No solo ground -> a party (decision 10-30, T106): a healer or buffer (BotRoles)
 // with no gear plan source to hunt (an active plan's next spot is its solo hunt) whose
@@ -207,8 +208,16 @@ function clanPartyObjectiveForState(state) {
 
 // options: spots, economy (the bot's own economy, built in the background
 // thread; required, no build here), memo (the bot's worker record) and search
-// (the worker's route search inputs, supportWithoutGround).
+// (the worker's route search inputs, supportWithoutGround). A request opened (none
+// open before, or one for another objective) is traced once, as its close is
+// (forming's no: BotLifeState.deferUnformablePartyRequests; a leave: releaseMember).
 function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) {
+    const request = requestForPlan(state, plan, timestamp, options), previous = state?.stats?.partyRequest;
+    if (Trace.on() && request?.status === 'open' && !(previous?.status === 'open' && previous.objectiveKey === request.objectiveKey))
+        Trace.record({ kind: 'party', bot: state?.characterId, phase: 'request', outcome: 'open', reason: String(request.reason || '') });
+    return request;
+}
+function requestForPlan(state, plan, timestamp, options) {
     const previous = state?.stats?.partyRequest;
     const supplyPause = Material.supplyPause(state, plan, { ...options, timestamp });
     if (supplyPause) return supplyPause;

@@ -60,7 +60,7 @@ function releaseBackgroundParty(state, reason) {
     if (invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)
         || BackgroundPartyState.find(partyId)?.status === 'hot') return Promise.reject(Error('party_transition_pending'));
 
-    return BackgroundPartyState.setStatus(partyId, 'dissolved')
+    return BackgroundPartyState.setStatus(partyId, 'dissolved', `hot_activation_${reason}`)
         .then(saved => {
             if (!saved) throw Error('background_party_release_failed');
             return LifeState.releaseDissolvedPartyMembers(partyId, `hot_activation_${reason}`);

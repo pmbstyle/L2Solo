@@ -804,10 +804,14 @@ function* nearDecision(input, iterator) {
 // The gear plan's full review taken (gear_plan), one rule for a far step and a near
 // decision: its bit cleared over the build's packet, and the marks of the errands the bot
 // failed dropped (GearMarks.afterReview: the review planned without them). The mind keys it writes.
+// Traced with its answer, the gear it works toward (strategy:item), against the plan it replaces.
 function gearPlanTaken(stats, packet, plan, subject, caller) {
-    return { woken: Situations.decided({ ...stats, ...packet, equipmentPlan: plan }, 'gear_plan', { caller, subject }),
-        gearMarks: GearMarks.afterReview() };
+    const traced = Trace.on();
+    return { woken: Situations.decided({ ...stats, ...packet, equipmentPlan: plan }, 'gear_plan', { caller, subject,
+        answer: traced ? gearAnswer(plan) : null, was: traced ? gearAnswer(stats?.equipmentPlan) : null }),
+    gearMarks: GearMarks.afterReview() };
 }
+const gearAnswer = plan => plan ? `${plan.strategy || plan.status || '-'}:${Number(plan.target?.selfId) || '-'}` : 'none';
 // options: { economy, stock, routeRows, routeKey } a step already holds, and
 // a party goal query's own (main's) buyOrderEscrow;
 // caller: the asking site, counted per mode with what answered it (diagnostics:

@@ -285,7 +285,7 @@ async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
     const parties = BackgroundPartyState.activeByGoalKey(previousGoalKey, 'clan_beneficiary');
     let releasedMembers = 0;
     for (const party of parties) {
-        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved', 'clan_equipment_goal_rotated');
         if (dissolved) {
             releasedMembers += number(await LifeState.releaseDissolvedPartyMembers(
                 party.partyId,
@@ -334,7 +334,7 @@ async function releaseConflictingRosterParties(assignedMemberIds, goal, expected
     });
     let releasedMembers = 0;
     for (const party of parties) {
-        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved', 'clan_equipment_party_reformed');
         if (!dissolved) continue;
         releasedMembers += number(await LifeState.releaseDissolvedPartyMembers(
             party.partyId,

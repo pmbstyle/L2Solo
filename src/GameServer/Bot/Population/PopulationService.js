@@ -300,7 +300,7 @@ function canResumeWarehouseMarketSale(state) {
 }
 
 function dissolveBackgroundParty(party, reason, memberCount = 0) {
-    return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
+    return BackgroundPartyState.setStatus(party.partyId, 'dissolved', reason)
         .then(() => LifeState.releaseDissolvedPartyMembers(party.partyId, reason))
         .then((cleared) => {
             Config.developerDiagnostics && Metrics.recordPartyDissolution();

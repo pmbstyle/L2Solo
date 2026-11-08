@@ -1,6 +1,8 @@
 'use strict';
 // The decision trace (situations.md §13, level 2): one record per situation raised, stop heard, decision taken,
-// death (with its killer), worker restart and survived failure, for every bot, while `[BotPopulation] decisionTrace`
+// death (with its killer), worker restart and survived failure, and per lifecycle event of a party (request opened
+// or closed, formed, joined, dissolved), a trade meeting (prepared, accepted, refused, cancelled, delivered), a clan
+// errand (taken, done, failed) and a raid (search, forming, outcome), for every bot, while `[BotPopulation] decisionTrace`
 // is on (off by default; its own switch: developerDiagnostics keeps the counters and timings). Both threads record:
 // the cold worker's records travel to main (`decision_trace` messages, ColdSimulationCoordinator), main's to the
 // history thread (HistoryDatabase), whose writer (DecisionTraceWriter) appends them to logs/decision-trace.jsonl and
@@ -21,7 +23,7 @@ const NUMBER_FIELDS = ['revision', 'item', 'need', 'actual', 'remaining', 'recor
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'nativeId', 'sequence',
     'errandAt', 'receiptUnits', 'receiptSpent', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
-    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level', 'attackers', 'playerDist'];
+    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level', 'attackers', 'playerDist', 'members'];
 const TEXT_FIELDS = ['kind', 'name', 'place', 'woke', 'waits', 'decision', 'how', 'answer', 'was', 'killer', 'spot', 'worker', 'site',
     'trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId',
     'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party', 'plan', 'tier'];
@@ -83,7 +85,8 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker', no
         rate++; if (detail) detailInSecond++;
         rows ||= []; rows.push(row); bytes += size; pump(); return true;
     }
-    // A level-2 record: kind raise | stop | decided | death | restart | failure. A held bot's waits for its step's end.
+    // A level-2 record: kind raise | stop | decided | death | restart | failure, or a lifecycle event: kind party |
+    // meeting | errand | raid, its phase, outcome and reason. A held bot's waits for its step's end.
     function record(fields) {
         if (!on()) return false;
         const rows = held?.get(Number(fields?.bot ?? fields?.owner));
