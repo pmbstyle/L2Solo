@@ -169,7 +169,18 @@ class PartyAssemblyEvents {
     }
 
     // A roster refused for want of a party slot: its groups run when a party ends.
-    waitSlot(states) { if (this.active) for (const state of states) this.slotWaiters.add(Number(state.characterId)); }
+    // Returns how many of its groups were refused at a revision not refused before
+    // (a group's later pages and retries at the same revision are the same refusal).
+    waitSlot(states) {
+        if (!this.active) return 0;
+        let refused = 0;
+        for (const state of states) {
+            const id = Number(state.characterId), group = this.groups.get(this.records.get(id)?.key);
+            this.slotWaiters.add(id);
+            if (group && group.slotRefused !== group.revision) { group.slotRefused = group.revision; refused++; }
+        }
+        return refused;
+    }
 
     // The member's group runs now, its rosters judged.
     wakeNow(id) {

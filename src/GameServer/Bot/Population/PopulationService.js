@@ -4,7 +4,8 @@ const Situations = require('../Situations');
 const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, limit: partyLimit, priority: admissionPriority } = require('./PartyAdmission');
-// A reservation the party bound refuses is counted (situations party:cap:hit).
+// A roster the party bound refuses is counted (situations party:cap:hit): a reservation, a
+// competition pair, a formation group once per revision (PartyAssemblyEvents.waitSlot).
 const partyAdmission = new PartyAdmission({ onCap: () => Situations.note('party:cap:hit') });
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -2124,8 +2125,10 @@ const PopulationService = {
                 const slots = Math.max(0, partyCapacityLimit() - activeParties);
                 const clanDemand = states.some(state => ClanPartyCapacity.required(objectiveOf(state)));
                 if (slots <= 0 && !clanDemand) {
-                    Situations.note('party:cap:hit');
-                    this.partyAssemblyEvents?.waitSlot(states.filter(state => objectiveOf(state)?.status === 'open'));
+                    // Counted once per roster refused: a group at a revision the cap had not refused.
+                    if (this.partyAssemblyEvents?.waitSlot(states.filter(state => objectiveOf(state)?.status === 'open')) > 0) {
+                        Situations.note('party:cap:hit');
+                    }
                     return [];
                 }
                 // A live player keeps a small formation reserve, but that

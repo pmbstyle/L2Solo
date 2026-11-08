@@ -309,10 +309,12 @@ async function main() {
     stampService.rewakeOn([judged]);
     assert.deepEqual([...stampService.dirty], ['spot:B'], 'a roster refused on a row that has moved since runs at once');
     stampService.dirty.clear();
-    stampService.waitSlot([stampCache.get(4002)]);
+    assert.equal(stampService.waitSlot([stampCache.get(4002)]), 1, 'a roster refused for want of a slot is one cap hit');
+    assert.equal(stampService.waitSlot([stampCache.get(4002)]), 0, 'its next page or retry at the same revision is the same refusal');
     stampPartyListener({ partyId: 'dissolved-C', status: 'dissolved', spotId: 'C', memberIds: [] },
         { status: 'active', spotId: 'C', memberIds: [] });
     assert.deepEqual([...stampService.dirty], ['spot:B'], 'a roster refused for want of a slot runs when any party ends');
+    assert.equal(stampService.waitSlot([stampCache.get(4002)]), 1, 'refused again after it ran on that end, it is a new hit');
     stampService.stop(); console.log('PASS waking stamp, 100 loot publications, request edge and one-spot dissolve');
 
     // A C4 LFP is heard across its region: a seeker's page takes the askers of its

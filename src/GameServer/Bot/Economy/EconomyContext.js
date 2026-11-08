@@ -25,6 +25,8 @@ const { WishNetwork, remember, admitRoots, remainingQuantity, moneyQueue, cashCh
 const { isMainThread } = require('node:worker_threads');
 const { createHash } = require('node:crypto');
 const RecomputeGeneration = require('../Population/RecomputeGeneration');
+const PartyAdmission = require('../Population/PartyAdmission');
+const PopulationConfig = require('../Population/PopulationConfig');
 const Recipes = require('../../Items/C4RecipeItems');
 const CraftInputReservations = require('./CraftInputReservations');
 const Bytes = require('./CompactBytes');
@@ -69,10 +71,11 @@ function registerProvider(key, provider) {
 const cache = new Map();
 // Groups apart, so a party composition that weighs many candidate groups
 // never evicts the bots' own reviews: `group:<partyId>` -> { key, ids,
-// context }, removed when the party ends (forgetGroup) and bounded besides;
+// context }, removed when the party ends (forgetGroup) and bounded besides by the
+// background party cap (PartyAdmission.limit: one entry per party it admits);
 // a proposed composition (`proposal:` party id) is built and not kept.
 const groups = new Map();
-const GROUP_LIMIT = 256;
+const groupLimit = () => PartyAdmission.limit(PopulationConfig);
 const positive = value => Math.max(0, Number(value) || 0);
 
 function stateForActor(actor, session = actor?.session) {
@@ -1785,7 +1788,7 @@ function forGroup(group, members, deps = {}) {
     const held = proposal ? null : groups.get(actorKey);
     if (held?.key === key) {
         if (diagnostic) Diagnostics.count('context_group', 'hit', 'same_members');
-        return remember(groups, actorKey, held, GROUP_LIMIT).context;
+        return remember(groups, actorKey, held, groupLimit()).context;
     }
     const started = diagnostic ? performance.now() : 0;
     if (diagnostic) Diagnostics.count('context_group', 'miss', proposal ? 'uncached_proposal'
@@ -1852,9 +1855,9 @@ function forGroup(group, members, deps = {}) {
         Diagnostics.duration('context_group', performance.now() - started);
     }
     if (!proposal) {
-        if (diagnostic && !groups.has(actorKey) && groups.size >= GROUP_LIMIT)
+        if (diagnostic && !groups.has(actorKey) && groups.size >= groupLimit())
             Diagnostics.count('context_group', 'eviction', 'capacity');
-        remember(groups, actorKey, { key, ids: contexts.map(member => Number(member.state.characterId)), context }, GROUP_LIMIT);
+        remember(groups, actorKey, { key, ids: contexts.map(member => Number(member.state.characterId)), context }, groupLimit());
     }
     return context;
 }
