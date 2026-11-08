@@ -1,7 +1,7 @@
 'use strict';
 // party_stay: does a party member stay in its party now? One member's decision
 // (Situations: woken by its own death, a full bag, its weapon bridge funded, a new
-// grade, the party outleveling it), taken on the worker at the party's step (ColdSimulationKernel.partyStay) for a far party, a
+// grade, the party outleveling it, its gear plan needing no party any more), taken on the worker at the party's step (ColdSimulationKernel.partyStay) for a far party, a
 // hot party at its first cold step; held until the next of those. Pure: the member's
 // facts read now, as a C4 player in a party leaves when he must, never on a clock.
 // Answers { answer: 'stay' | 'leave' | 'trip', reason }: a leave is released by the
@@ -21,13 +21,16 @@ const STAY = Object.freeze({ answer: 'stay', reason: 'stay' });
 // the member goes to buy, GearAcquisitionPlanner.equipmentBridgeReason), outleveled
 // (the party's XP share excludes it, PartyRewardMath), soloSooner() (its held solo
 // answer brings it to its next level sooner than its party share, its persona weighing
-// it, PartyProgressComparison), clanDuty, now }.
+// it, PartyProgressComparison), objectiveDone (the party holds a required objective,
+// the member's plan needs no party and enough members still need it to go on: what it
+// came for is done, as a C4 player leaves once his drop came), clanDuty, now }.
 function decide(member, reads = {}) {
     // Dead: the party's rescue rule holds it (a party revives or carries its dead).
     if (Number(member.vitals?.hp) <= 0 || member.activity === 'dead') return STAY;
     const bridge = reads.bridgeReason?.(member);
     if (bridge) return { answer: 'leave', reason: bridge };
     if (reads.outleveled) return { answer: 'leave', reason: 'party_outleveled' };
+    if (reads.objectiveDone) return { answer: 'leave', reason: 'party_objective_complete' };
     // The bag fact that woke it (bag_full): at its floor, or a cleanup count.
     const bag = MarketBreak.bagNeed(member, reads.now);
     if (bag && (!reads.clanDuty || FLOOR.has(bag.reason))) return { answer: 'trip', reason: 'bag_full' };
@@ -44,4 +47,8 @@ function joins(member, now = Date.now()) {
     return decide(member, { now }).answer === 'stay';
 }
 
-module.exports = { decide, joins };
+// Whether a gear plan needs a party (its drop is party-only): what a required party
+// objective is for.
+const needsParty = plan => plan?.partyNeed === 'required' || plan?.requiresParty === true;
+
+module.exports = { decide, joins, needsParty };

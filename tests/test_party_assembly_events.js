@@ -233,21 +233,23 @@ async function main() {
     } finally { DB.execute = originalExecute; Parties.active = originalActive; unpublish(); Population.partyRequirementRefreshDue?.clear(); }
     console.log('PASS five-party cache reads, no publications, cache authority and addressed refresh marks');
 
-    // The apply's own party write (its new objective) publishes through the
-    // same subscription as any change; the due delete after its last write
-    // erases that mark, so a re-plan never triggers the next one.
+    // The re-plan's own party write (its new objective, on the leader's party row) publishes
+    // through the same subscription as any change; the apply that follows clears the mark
+    // after its last write, so a re-plan never triggers the next one.
     {
         const owner = await seed(), other = await seed(), partyId = 'apply-own-write';
         for (const member of [owner, other]) await Life.upsertState({ ...member, activity: 'grouped',
             party: { partyId, leaderId: owner.characterId } }, 'apply_fixture');
-        await Parties.createOrUpdate({ partyId, leaderId: owner.characterId, memberIds: [owner.characterId, other.characterId],
-            status: 'active', spotId: 'event-fixture', stats: { objective: { objectiveKey: 'spot:old' } } });
+        const row = { partyId, leaderId: owner.characterId, memberIds: [owner.characterId, other.characterId],
+            status: 'active', spotId: 'event-fixture', stats: { objective: { objectiveKey: 'spot:old' } } };
+        await Parties.createOrUpdate(row);
         const unsubscribe = Parties.subscribeChanges((party, previous) => Population.markPartyRequirementsDue(party, previous));
         try {
             Population.partyRequirementRefreshDue.clear();
+            await Parties.createOrUpdate({ ...Parties.find(partyId), stats: { objective: null } });
+            assert.equal(Population.partyRequirementRefreshDue.has(partyId), true, 'the leader\'s row with the new objective marks');
             await Population.applyWorkerPartyRequirements(Parties.find(partyId), { memberPlans: [], requirementRefreshedAt: true });
-            assert.equal(Parties.find(partyId).stats.objective, null, 'the apply wrote its own new objective');
-            assert.equal(Population.partyRequirementRefreshDue.has(partyId), false, 'the apply\'s own writes leave no mark');
+            assert.equal(Population.partyRequirementRefreshDue.has(partyId), false, 'the re-plan\'s own writes leave no mark');
         } finally { unsubscribe(); Population.partyRequirementRefreshDue.clear(); }
     }
     console.log('PASS the re-plan apply marks nothing by its own writes');

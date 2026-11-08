@@ -1509,8 +1509,9 @@ const PopulationService = {
     // members or objective moved against the previous row. A pending join
     // marks nothing: the leader's step reads it from the party row itself
     // (ColdSimulationKernel), and the join it answers moves the members. The
-    // apply's own writes mark here too; it clears the mark after its last
-    // write (applyWorkerPartyRequirements), so they open nothing.
+    // re-plan's own objective (the leader's row) and plan writes mark here too;
+    // its apply clears the mark after its last write (applyWorkerPartyRequirements),
+    // so they open nothing.
     markPartyRequirementsDue(party, previous) {
         const id = String(party.partyId);
         if (party.status !== 'active') {
@@ -2343,56 +2344,13 @@ const PopulationService = {
             if (written === false) skip('plan');
             changed = !!written || changed;
         }
-        // ARCH-NOTE: A bounded worker refresh may span resolves; release members only after its complete projection.
-        if (!resolution.requirementRefreshedAt) {
-            if (skipped) this.markPartyRequirementReplan(party.partyId);
-            return [];
-        }
-        const members = (await LifeState.cachedStatesForParties([party])).get(String(party.partyId)) || [];
-        const refreshedMembers = members;
-        const releasable = party.stats?.objective?.priority === 'required'
-            ? refreshedMembers.filter((member) => (
-                member.stats?.equipmentPlan?.partyNeed !== 'required'
-                && member.stats?.equipmentPlan?.requiresParty !== true
-            ))
-            : [];
-        const departures = refreshedMembers.length - releasable.length >= Config.partyMinSize
-            ? releasable
-            : [];
-        // Held on the revision of the copy read above, as the plan writes: a
-        // member write in between keeps the member in the party, re-planned.
-        const departed = new Set();
-        await departures.reduce((chain, member) => chain.then(async () => {
-            const left = await LifeState.leaveParty(member, 'party_objective_complete', { heldOnRevision: true });
-            // Beaten (false) or failed (null): the member stays, re-planned.
-            if (left) departed.add(Number(member.characterId));
-            else skip('departure');
-        }), Promise.resolve());
-        // The copies read before the departures are stale for a member whose
-        // own review beat its departure: the leader sync below writes the
-        // member whole, so it takes the owner's newest copy.
-        const retainedMembers = refreshedMembers
-            .filter((member) => !departed.has(Number(member.characterId)))
-            .map((member) => LifeState.cachedState(member.characterId) || member);
-        const objectiveMember = retainedMembers.find((member) => (
-            member.stats?.equipmentPlan?.partyNeed === 'required'
-        )) || retainedMembers.find((member) => partyObjectiveForState(member));
-        const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
-        const nextParty = { ...partyWithRoster(party, retainedMembers, {
-            objective: objective || null,
-            acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
-                ? objectiveMember.stats.equipmentPlan
-                : null
-        }), spotId: objective?.spotId || party.spotId };
-        if (Number(nextParty.leaderId) !== Number(party.leaderId)) {
-            await syncPartyLeader(retainedMembers, nextParty, nextParty.leaderId);
-        }
-        await BackgroundPartyState.createOrUpdate(nextParty);
-        // After the last write: it also erases the marks of this apply's own
-        // writes (leaveParty, createOrUpdate publish inside their awaits).
+        // A bounded worker re-plan may span steps: its mark clears only with its complete
+        // projection (requirementRefreshedAt), whose objective rode the leader's party row.
+        // The plans are all main writes: the members' stays (party_need_ended) and the
+        // party's spot (party_spot) decide on the worker.
         if (skipped) this.markPartyRequirementReplan(party.partyId);
-        else this.clearPartyRequirementDue(party.partyId);
-        return changed || departed.size ? [party.partyId] : [];
+        else if (resolution.requirementRefreshedAt) this.clearPartyRequirementDue(party.partyId);
+        return changed ? [party.partyId] : [];
     },
 
     // The answer of a pending join's recruit check, from the leader's step

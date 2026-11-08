@@ -1785,6 +1785,11 @@ class ColdSimulationKernel {
         const decides = !meetingPending && !rescuing && !party.stats?.warOperation && !BackgroundPartyLifecycle.raidStarted(party)
             && !CraftMaterialPartyRoute.evacuating(party);
         const duty = PartyMarketBreak.clanDuty(party);
+        // A required objective (not a material hunt's, whose quotas end it) goes on while
+        // enough members' plans still need a party; a member whose plan needs none is done.
+        const objective = party.stats?.objective;
+        const required = objective?.priority === 'required' && !CraftMaterialParty.isObjective(objective)
+            && run.members.filter(member => Stay.needsParty(member.stats?.equipmentPlan)).length >= this.partyMinSize;
         // shares: the party's income split, worked out once a step for every member whose stay reads it.
         const leaving = new Map(), trips = [], shares = {};
         const members = run.members.map((member, index) => {
@@ -1796,6 +1801,7 @@ class ColdSimulationKernel {
             }
             if (decides && Situations.woken(stats, 'party_stay')) {
                 const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
+                    objectiveDone: required && !Stay.needsParty(member.stats?.equipmentPlan),
                     bridgeReason: this.equipmentBridgeReason,
                     soloSooner: () => !!this.soloSooner?.({ member, party, members: run.members, timestamp, shares }) });
                 stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
@@ -2177,6 +2183,13 @@ class ColdSimulationKernel {
                         memberPlans.push({ characterId: id, plan });
                         if (selection.replanContext?.failure) result.events = [...(result.events || []),
                             require('./PartyRequirementRefresh').acquisitionFallbackEvent(state, state.stats?.equipmentPlan, selection.replanContext.failure, plan)];
+                        // Its plan needs no party where it did: its stay hears it (party_need_ended).
+                        const Stay = require('./PartyStay');
+                        if (projectedState && Stay.needsParty(state.stats?.equipmentPlan) && !Stay.needsParty(plan)) {
+                            projectedState = { ...projectedState, stats: { ...(projectedState.stats || {}) } };
+                            (Situations ||= require('../Situations')).raise(projectedState.stats, 'party_need_ended', null,
+                                Situations.place(projectedState), id);
+                        }
                     }
                     requirementProgress.add(id);
                 }
@@ -2217,6 +2230,15 @@ class ColdSimulationKernel {
                     if (run.members.every(member => requirementProgress.has(Number(member.characterId)))) {
                         leader.partyResolution.requirementRefreshedAt = startedAt;
                         this.partyRequirementProgress.delete(String(run.party.partyId));
+                        // The re-plan done: the party's objective follows its members' plans, carried
+                        // on the leader's party row (main writes the plans, takes no decision of its own).
+                        if (resolvedParty.status !== 'dissolved') {
+                            const planned = new Map(memberPlans.map(entry => [Number(entry.characterId), entry.plan]));
+                            resolvedParty.stats = { ...resolvedParty.stats, ...require('./PartyRequirementRefresh').partyObjective(
+                                run.members.map(member => planned.has(Number(member.characterId)) ? { ...member,
+                                    stats: { ...member.stats, equipmentPlan: planned.get(Number(member.characterId)) } } : member)) };
+                            if (memoryGroup?.partyChanges) memoryGroup.partyChanges[0] = fencedPartyChange(run, resolvedParty);
+                        }
                     }
                 }
                 if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));

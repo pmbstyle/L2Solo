@@ -1838,8 +1838,7 @@ class ColdSimulationCoordinator {
         await step('announce', () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         // onResults starts it after the flush. A member's own review command (its
         // training, buff, plan) runs meanwhile: a party write holds on the revision
-        // it read (LifeState.writePartyRequirementPlan, a departure through
-        // LifeState.leaveParty heldOnRevision), so a member write landing
+        // it read (LifeState.writePartyRequirementPlan), so a member write landing
         // in between wins and the party write is skipped. A replaced worker or a stop skips the rest: its kernel no longer holds these
         // members inFlight.
         if (deferred.length) entry.deferred = async () => {

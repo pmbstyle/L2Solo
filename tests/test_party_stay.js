@@ -68,10 +68,11 @@ try {
 
 // One party step: { leader's party row, member states, batch }. round: each member's
 // round result (none: an empty one); project: the step's projection (none: as resolved).
-async function step(members, extra = {}, { round = () => ({}), project = state => ({ state }) } = {}) {
+// options: the kernel's own (a re-plan's planner), run: the run's (a re-plan due).
+async function step(members, extra = {}, { round = () => ({}), project = state => ({ state }), options = {}, run = {} } = {}) {
     const messages = [], party = { partyId: 'stay', leaderId: 1, memberIds: members.map(m => m.characterId), status: 'active',
         spotId: 'stay-spot', revision: 1, nextResolveAt: at, stats: {}, ...extra };
-    const kernel = new ColdSimulationKernel({ now: () => at, partyMinSize: 2,
+    const kernel = new ColdSimulationKernel({ now: () => at, partyMinSize: 2, ...options,
         resolveSolo: () => { throw Error('no solo round'); },
         resolveParty: ({ members: roster }) => ({ memberResults: roster.map(state => ({ state, result: round(state) })), events: [],
             nextResolveAt: at + 45000, partyPatch: {} }),
@@ -81,11 +82,11 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         kernel.upsert({ state });
         kernel.inFlight.set(state.characterId, { state, startedAt: at, partyId: party.partyId });
     }
-    kernel.partyRuns.set(party.partyId, { party, members, spot: { id: 'stay-spot' }, startedAt: at });
+    kernel.partyRuns.set(party.partyId, { party, members, spot: { id: 'stay-spot' }, startedAt: at, ...run });
     await kernel.resolvePartyStep(party.partyId);
     const proposals = messages.find(m => m.type === 'proposal_batch').payload.proposals;
     const resolution = proposals.find(p => p.partyResolution).partyResolution;
-    return { party: resolution.party, stayTrips: resolution.stayTrips, states: proposals.map(p => p.nextState) };
+    return { party: resolution.party, stayTrips: resolution.stayTrips, resolution, states: proposals.map(p => p.nextState) };
 }
 
 (async () => {
@@ -132,6 +133,35 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         assert.deepStrictEqual(road.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the duty trip rides the travel wait');
         assert.deepStrictEqual(road.party.memberIds, [1, 2]);
     } finally { Disposition.inventoryCleanupNeed = () => null; Disposition.cleanupCounted = cleanupCounted; }
+    // A required party's re-plan (the worker's, at its step): a member whose plan comes to
+    // need no party hears it (party_need_ended); the party's objective follows the plans of
+    // the members who still need it, carried on the leader's row (main only writes plans).
+    const drop = (target, spotId) => ({ status: 'active', strategy: 'direct_drop', partyNeed: 'required', requiresParty: true,
+        target: { selfId: target }, next: { spotId, npcId: 20100 + target, itemId: target } });
+    const solo = { status: 'active', strategy: 'market', partyNeed: 'solo_ok', target: { selfId: 9399 }, next: {} };
+    const required = { objective: { status: 'open', priority: 'required', objectiveKey: 'old', spotId: 'stay-spot' } };
+    const needing = [member(1, { stats: { equipmentPlan: drop(9301, 'stay-spot') } }), member(2, { stats: { equipmentPlan: drop(9302, 'drop-spot') } }),
+        member(3, { stats: { equipmentPlan: drop(9303, 'stay-spot') } })];
+    const replans = { 1: drop(9301, 'drop-spot'), 2: drop(9302, 'drop-spot'), 3: solo };
+    const replanned = await step(needing, { stats: required }, { run: { requirementRefresh: true },
+        options: { planPartyRequirement: ({ state }) => ({ acquisitionPlan: replans[state.characterId] }) } });
+    assert(Situations.woken(replanned.states.find(state => state.characterId === 3).stats, 'party_stay'),
+        'the member whose plan needs no party hears it');
+    assert(!Situations.woken(replanned.states.find(state => state.characterId === 2).stats, 'party_stay'), 'one still needing it hears nothing');
+    assert.strictEqual(replanned.resolution.requirementRefreshedAt, at, 'the re-plan is complete');
+    assert.strictEqual(replanned.party.stats.objective?.spotId, 'drop-spot', 'the objective follows the members still needing it');
+    assert.strictEqual(replanned.party.stats.acquisitionGoal?.target?.selfId, 9301);
+    assert.strictEqual(replanned.party.spotId, 'stay-spot', 'the re-plan moves no party: its spot stays the spot decision\'s');
+    // Its next step: the member whose need ended leaves (its plan written by main), the party goes on.
+    const ended = replanned.states.find(state => state.characterId === 3);
+    const done = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
+        member(3, { stats: { ...ended.stats, equipmentPlan: solo } })], { stats: replanned.party.stats });
+    assert.deepStrictEqual(done.party.memberIds, [1, 2]);
+    assert.strictEqual(done.states.find(state => state.characterId === 3).stats.partyBreakReason, 'party_objective_complete');
+    // Too few left needing it to go on: the member stays and helps (the party is not built to dissolve).
+    const pair = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(3, { stats: { ...ended.stats, equipmentPlan: solo } })],
+        { stats: replanned.party.stats });
+    assert.deepStrictEqual(pair.party.memberIds, [1, 3], 'one member still needing it keeps its helper');
     // A member at weight penalty 1 whose last sale visit tried every kind it carries (the
     // sale retry holds): the bag fact at its floor woke the stay, and the stay reads that
     // fact, as a solo bot's build does: it goes to unload, never hunts on as its load grows.
