@@ -197,7 +197,8 @@ function relationTargetIds(state, memory = null) {
 // recovery's level penalty, SpotRiskPolicy.recoveryFor), karma (1 while it has any:
 // the karma wash, ColdKarmaPolicy.active), supply ([id, present] per
 // stock item), stores (four identities), bagNeed (the bag fact: 2 at its floor, 1 at a
-// cleanup count, PartyMarketBreak.bagFact).
+// cleanup count, PartyMarketBreak.bagFact), outgrown (1 while the gear plan's routed
+// source lies below the bot's voluntary hunt band: source_stalled at its flip).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), gear: view.gear ?? 0, grade: view.grade, outleveled: view.outleveled, recipes: view.recipes ? hash(view.recipes) : null,
@@ -206,7 +207,7 @@ function factsOf(view, memory = null) {
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
         lines: linesOf(view.supply), stores: hash(view.stores),
-        bag: hash([view.bagNeed]), bagNeed: view.bagNeed, kills: view.kills, stall: view.stall };
+        bag: hash([view.bagNeed]), bagNeed: view.bagNeed, kills: view.kills, stall: view.stall, outgrown: view.outgrown };
 }
 // The supply fact: per kind [kind, itemId, where the count stands against
 // its line] (LINE_ABOVE, LINE_BELOW: under one hour of use, LINE_OUT: none
@@ -242,6 +243,17 @@ const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
 const lineAt = (lines, kind) => kind === 'shots' ? Math.floor(lines / 3) : lines % 3;
 // lazy: the market break reads the disposition rules, which read this module.
 let MarketBreak = null;
+// The gear plan's routed source the bot has outgrown: the route took it (routedSpotId) and its
+// npc now stands below the bot's voluntary hunt band (the route's own source test,
+// GearAcquisitionPlanner.isPlanSourceViableForState without the spot reader), 1/0. Its 0 -> 1
+// flip raises source_stalled: the plan's review judges the route again. Gear plans only
+// wake on a grade, gear or clan change, and a level inside one grade outgrows a source.
+let Planner = null;
+function outgrownOf(state) {
+    const plan = state.stats?.equipmentPlan;
+    if (plan?.status !== 'active' || plan.routedSpotId == null) return 0;
+    return Number(!(Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).isPlanSourceViableForState(state, plan));
+}
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
 // no recipe book.
@@ -264,6 +276,7 @@ function stateView(state, recipes = null) {
     view.outleveled = outleveledOn(state, stats.earning);
     // The kill count and the gear plan's stall (GearStall: source_stalled at the crossing).
     view.kills = Stall.killsOf(state); view.stall = Stall.stallKills(state);
+    view.outgrown = outgrownOf(state);
     view.supply = supplyOf(state);
     view.stores = storesOf(state);
     // What the bag holds against its floor and its cleanup counts (situations.md F2:

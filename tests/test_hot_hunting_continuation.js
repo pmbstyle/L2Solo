@@ -196,6 +196,14 @@ test('a body\'s visit end reads its place and party as a far row\'s does', () =>
     member.session.hotBackgroundPartyId = 'hunt-continuation-party';
     assert.equal(Decision.suggest(member.session.botStatus, member.session).action, 'search_locally',
         'a party member is not sent to its solo answer');
+    // Nor to its own gear plan's source the route took for it alone.
+    const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id }, routedSpotId: alternative.id };
+    const collector = fixture(town, null, { ...holds(primary), equipmentPlan: plan });
+    collector.session.pendingFarmDepartureAnnouncement = true;
+    collector.session.hotBackgroundPartyId = 'hunt-continuation-party';
+    assert.equal(Events.heldSpotId(collector.session), null, 'a party member\'s hunt is its party\'s, not its plan\'s source');
+    assert.equal(Decision.suggest(collector.session.botStatus, collector.session).action, 'search_locally',
+        'a party member is not sent to its solo gear source');
 });
 
 test('a completed shopping visit with an accepted null leaf starts the farming route', async () => {
