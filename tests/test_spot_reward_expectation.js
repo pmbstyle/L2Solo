@@ -9,6 +9,8 @@ const Formulas = invoke('GameServer/Formulas');
 const Drops = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+// Loading SpotProfiles makes the server's catalogue the table's spot source: loaded first, the fixture's catalogue holds.
+invoke('GameServer/Bot/Population/SpotProfiles');
 const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
 const original = { npcs: Data.npcs, rewards: Data.npcRewards, items: Data.items,
     rate: process.env.L2NODE_PROGRESSION_RATE, roll: Rates.rewardGroupRoll };
@@ -90,13 +92,13 @@ try {
             party: { spotId: 'S', cohesion: 1 }, timestamp: 1791656778971 });
         const personal = prepared.rows.get(spoiler.characterId);
         const partyYield = Rewards.value(blue, at, { spoilSkillLevel: 1, spoilerLevel: 20 });
-        close(personal.income, personal.kills * ((partyYield.adena + partyYield.drop) / 2 + partyYield.spoil),
+        close(personal.adena + personal.loot, personal.kills * ((partyYield.adena + partyYield.drop) / 2 + partyYield.spoil),
             'party spoil uses the older killer penalty and the actual spoiler skill, retaining personal spoil');
         const secondSpoiler = { ...spoiler, characterId: 990192 };
         const two = Income.prepare([spoiler, secondSpoiler, fighter], { spots: [blue, near],
             party: { spotId: 'S', cohesion: 1 }, timestamp: 1791656778971 });
         const second = two.rows.get(secondSpoiler.characterId);
-        close(second.income, second.kills * (partyYield.adena + partyYield.drop) / 3,
+        close(second.adena + second.loot, second.kills * (partyYield.adena + partyYield.drop) / 3,
             'only the first native party spoiler receives spoil; two spoilers do not duplicate income');
     } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; Table.cycle = savedCycle; }
     useRate('x1');

@@ -110,13 +110,20 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // A table row as the bot's own samples scale it (calibration).
     const calibrated = row => row && (calibration === 1 ? row : { ...row, exp: row.exp * calibration,
         adena: row.adena * calibration, loot: row.loot * calibration, kills: row.kills * calibration });
-    const reader = (spot, shots = hunt.useShots !== false) => {
+    // given: an hour of the bot on the spot other than its solo row, valued as
+    // that row is (the belief bias, the death price): its share of a party's hunt
+    // (PartyProgressComparison.prepare: { kills, exp, adena, loot, shots, potions,
+    // deaths } an hour on the spot, the crowd cut there; measured: its own party
+    // samples, with their costs an hour). A forecast takes the bot's calibration;
+    // its deaths are the party's own (no solo death sample, no crowd here).
+    const reader = (spot, shots = hunt.useShots !== false, given = null) => {
         // Charged observations cannot estimate a deliberately uncharged hunt.
-        const observed = shots ? own.find(row => row.spotId === spot.id) : null;
+        const observed = !given && shots ? own.find(row => row.spotId === spot.id) : null;
         const rate = observed ? 3600000 / observed.cycleMs : 0;
-        const table = calibrated(Table.value(spot.id, tableRole, state.level, shots, rewardOptions));
+        const measured = given?.measured ? given : null;
+        const table = given ? null : calibrated(Table.value(spot.id, tableRole, state.level, shots, rewardOptions));
         const theoretical = table && crowded(spot, table);
-        const base = observed ? {
+        const base = given ? measured || calibrated(given) : observed ? {
             exp: observed.exp * rate, adena: observed.adena * rate, loot: observed.loot * rate,
             kills: observed.kills * rate, deaths: theoretical?.deaths || 0, costs: Number(observed.costs || 0) * rate
         } : theoretical;
@@ -128,7 +135,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
             adena: base.adena * bias, loot: base.loot * bias };
         // Own deaths calibrate danger independently, then receive the same
         // learned personal evaluation floor as income.
-        const sample = state.stats?.spotRisk?.spotId === spot.id ? state.stats.spotRisk : null;
+        const sample = !given && state.stats?.spotRisk?.spotId === spot.id ? state.stats.spotRisk : null;
         if (sample?.windowFights > 0) row.deaths = row.kills * positive(sample.windowDeaths) / sample.windowFights;
         // How the spot's hunters move this row (EquipmentIncomeRoute's crowd
         // key): the share of the production, huntShare(production, hunters,
@@ -144,9 +151,9 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         // row's; an own observed row's costs are its samples', no price):
         // the costs are a line in each price (EquipmentIncomeRoute.search
         // reads them for the prices its answer stands over).
-        row.shotUnits = observed ? 0 : Number(base.shots || 0) * calibration;
-        row.potionUnits = observed ? 0 : Number(base.potions || 0) * calibration;
-        row.costs = observed ? Number(observed.costs || 0) * rate
+        row.shotUnits = observed || measured ? 0 : Number(base.shots || 0) * calibration;
+        row.potionUnits = observed || measured ? 0 : Number(base.potions || 0) * calibration;
+        row.costs = observed ? Number(observed.costs || 0) * rate : measured ? positive(measured.costs)
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
         // The same income without the bot's own belief bias (spot_disappoints weighs a stay against it).

@@ -1034,12 +1034,13 @@ class ColdSimulationKernel {
         }
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
-        // The bot's one record: { state, version, route, spotFit, materialMemo,
+        // The bot's one record: { state, version, route, spotFit, materialMemo, progressAsk,
         // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the kept route (BotRoute.trip) until its
         // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
-        // each keyed on what it reads), the material memo (partyRequestForPlan), the economy
+        // each keyed on what it reads), the material memo and the held party
+        // progress ask (partyRequestForPlan), the economy
         // plan sent and its hash, the card it holds and the commit that card
         // rides (cardInFlight), the facts of its last
         // committed action ask (onCommitAck) and, for a near bot, the

@@ -21,8 +21,11 @@ const helper = { ...core, characterId: 910002, adena: 0, stats: { classId: 8, ro
 const members = [core, helper];
 const agreement = Material.agreement(members, objective);
 const spot = { id: objective.spotId, avgLevel: 60, npcEntries: [{ selfId: source, count: 1 }] };
+// Each member's party hour on the camp (PartyProgressComparison.prepare), valued by its own reader.
 const prepared = { spots: [spot], spot, timestamp: at, rows: new Map(members.map(member => [member.characterId,
-    { income: 100000, exp: 100000, kills: 100, source: 'table_party', travelHours: 0 }])) };
+    { kills: 100, exp: 100000, adena: 100000, loot: 0, shots: 0, potions: 0, deaths: 0, source: 'table_party', travelHours: 0 }])) };
+// The fixture's one NPC is no knowledge curriculum: no belief error on the rows.
+invoke('GameServer/Bot/Population/PopulationConfig').knowledgeErrorsEnabled = false;
 const original = { search: Route.search, held: Route.heldRoute, allowed: Routes.isSpotAllowedForState, share: Hunt.onSpotShare,
     forState: Economy.forState, forGroup: Economy.forGroup, npc: Data.npcs, rewards: Data.npcRewards };
 let scans = 0, exact = 0;

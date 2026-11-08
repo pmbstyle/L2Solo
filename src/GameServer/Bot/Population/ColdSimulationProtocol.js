@@ -220,7 +220,7 @@ function validPartyProgressReviews(joint, sources) {
     return joint.progressReviews.every((row, index) => row && typeof row === 'object' && !Array.isArray(row)
         && Object.keys(row).every(key => PROGRESS_REVIEW_KEYS.has(key))
         && row.characterId === sources[index]?.characterId && typeof row.accept === 'boolean'
-        && ['solo_sooner', 'help_fee_unfunded', 'progress_unknown', 'goal_requires_party', 'party_sooner'].includes(row.reason)
+        && ['solo_sooner', 'help_fee_unfunded', 'progress_unknown', 'goal_requires_party', 'party_sooner', 'party_at_loss'].includes(row.reason)
         && row.at === joint.lastProgressReviewAt
         && ['soloIncome', 'partyIncome', 'soloHours', 'partyHours'].every(key => nullableNumber(row[key]))
         && ['soloHours', 'partyHours'].every(key => row[key] === null || row[key] >= 0)

@@ -278,13 +278,14 @@ function heldSpot(state, spots = [], mode = null) {
 }
 // The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
 // (SpotEconomics, as the search reads it), its hour as decided. null: no held spot (heldSpot) or no row there.
-function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = null } = {}) {
+// values: the caller's valuesFor of the same state, when it values another hour beside (the party comparison).
+function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = null, values = null } = {}) {
     const spot = heldSpot(state, spots, mode);
     if (!spot) return null;
     const held = state.stats.earning;
-    const row = valuesFor(state, timestamp, price).evaluate(spot, held.shots !== false);
+    const row = (values || valuesFor(state, timestamp, price)).evaluate(spot, held.shots !== false);
     return row ? { spot, row, earning: Number(held.earning) || 0 } : null;
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, isCommanded, heldSpot, heldRoute, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };
+    answerOf, commanded, isCommanded, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };

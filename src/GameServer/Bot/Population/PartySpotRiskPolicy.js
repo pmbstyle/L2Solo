@@ -51,6 +51,11 @@ function marksInSteps(stats, partyId, now) {
     }
     return stats;
 }
+// The party's death window at its spot for its roster now ({ spotId, windowFights, windowDeaths }), or none.
+function spotRisk(party) {
+    const memory = party?.stats?.partySpotRisk;
+    return memory && memory.partyId === party.partyId && memory.rosterKey === rosterKey(party) ? memory.spotRisk || null : null;
+}
 function excludedSpotIds(party, timestamp) {
     return Risk.excludedSpotIdsForStates([state(party)], timestamp);
 }
@@ -79,4 +84,4 @@ function record(party, result, timestamp) {
     return { ...result, partyPatch: { ...result.partyPatch, stats: { ...result.partyPatch?.stats,
         partySpotRisk: memory(party, { ...previous, spotRisk, stepCount }) } } };
 }
-module.exports = { rosterKey, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, record, marks, withMark };
+module.exports = { rosterKey, spotRisk, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, record, marks, withMark };

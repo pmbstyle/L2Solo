@@ -155,6 +155,19 @@ async function run() {
         assert.strictEqual(Persona.backgroundIntent({ ...earner, stats: { ...earner.stats, partyRequest: asked } }).reason, 'party_progress');
         Income.compare = () => ({ accept: false });
         assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots }), null, 'solo is sooner: no request');
+        // The ask is held on what it stands on: asked again with nothing moved it is not weighed again; a level is.
+        let weighed = 0;
+        Income.compare = () => { weighed++; return { accept: true }; };
+        const memo = {};
+        assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots, memo }).reason, 'party_progress');
+        assert.strictEqual(Request.partyRequestForPlan(earner, null, at + 60000, { spots, memo }).reason, 'party_progress');
+        assert.strictEqual(weighed, 1, 'an unchanged ask is held, not weighed at every build');
+        Income.compare = () => { weighed++; return { accept: false }; };
+        assert.strictEqual(Request.partyRequestForPlan({ ...earner, level: earner.level + 1 }, null, at + 120000, { spots, memo }), null,
+            'a new level weighs it again');
+        assert.strictEqual(Request.partyRequestForPlan({ ...earner, stats: { ...earner.stats, earning: { ...earner.stats.earning, at: at + 1 } } },
+            null, at + 180000, { spots, memo }), null);
+        assert.strictEqual(weighed, 3, 'a new earning answer weighs it again');
     } finally { Income.compare = compare; }
 
     Config.developerDiagnostics = previousDiagnostics;
