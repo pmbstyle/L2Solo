@@ -21,10 +21,10 @@ const NUMBER_FIELDS = ['revision', 'item', 'need', 'actual', 'remaining', 'recor
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'nativeId', 'sequence',
     'errandAt', 'receiptUnits', 'receiptSpent', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
-    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level'];
+    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level', 'attackers'];
 const TEXT_FIELDS = ['kind', 'name', 'place', 'woke', 'waits', 'decision', 'how', 'answer', 'was', 'killer', 'spot', 'worker', 'site',
     'trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId',
-    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party'];
+    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party', 'plan'];
 const LONG_TEXT = new Set(['wishKey', 'errandKey', 'site']);
 
 function create({ config = Config, thread = isMainThread ? 'main' : 'worker', now = Date.now } = {}) {

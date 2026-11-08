@@ -90,7 +90,13 @@ function die(session, actor, context = {}) {
         const Trace = invoke('GameServer/Bot/DecisionTrace');
         if (Trace.on()) {
             const killer = context.killer ?? context.source;
-            Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(prior?.spotId ?? ''), level: Number(actor.fetchLevel?.()) || undefined,
+            // Where and how the body died: the spot it hunts (the row's may be the one it left), what it was
+            // doing, the mobs still on it and its time since it went hot (near and far deaths compared).
+            const hotAt = Number(victimSession.populationHotAt) || 0;
+            Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(victimSession.currentSpot?.id ?? prior?.spotId ?? ''),
+                level: Number(actor.fetchLevel?.()) || undefined, plan: String(victimSession.plan || ''),
+                attackers: invoke('GameServer/Bot/AI/PartyAwareness').npcsAttackingActor(actor, 900).length,
+                ...(hotAt > 0 ? { durationMs: Math.max(0, Number(context.timestamp || Date.now()) - hotAt) } : {}),
                 killer: !killer || killer === actor ? 'unknown' : killer.fetchKind ? `npc:${killer.fetchSelfId?.() ?? '?'}`
                     : `char:${killer.fetchId?.()}` });
         }

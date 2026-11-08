@@ -103,6 +103,15 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
         session.tradeMeetingPresence = { id: 7, actorId: bot.fetchId() + 1 };
         AI.tick(session);
         assert.equal(shoppingTicks, 1, 'another character marker cannot hold the current actor');
+        // A hot bot out of every player's view: ambient ticks skip its hunt, a fight it is in runs it (it defends itself).
+        let huntTicks = 0;
+        stub(invoke('GameServer/Bot/AI/States/HuntingState'), 'tick', () => { huntTicks++; });
+        session.tradeMeetingPresence = undefined;
+        for (const combat of [false, true]) {
+            lod.evaluate = () => ({ tier: 'full', playerVisible: false, combat });
+            session.plan = 'hunting'; AI.tick(session);
+        }
+        assert.equal(huntTicks, 1, 'an unseen bot hunts on only while it fights');
         console.log('PASS hot meeting AI ownership: walk, arrival wait, completion/cancellation, combat/death priority, actor binding and shopping continuation');
     } finally { for (const restore of restores.reverse()) restore(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -147,19 +147,19 @@ function evaluate(session, sessions = [], now = Date.now()) {
     ), Infinity);
     const context = playerContext(session, realPlayers, now, World);
     if (context) promote(session, context, now);
-    // Visible combat is full while it lasts and no longer: the combat stance
-    // (fetchCombats) stays on 15 s after the last landed blow or offensive cast
-    // (CombatStance, Lisvus), so its end is the event; no hold after it.
-    const visibleCombat = nearestDistance <= CLIENT_VISIBILITY_RADIUS && !!(
-        bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.()
-    );
+    // Combat is full while it lasts and no longer, seen by a player or not: a body a mob
+    // hits answers it (defends itself, drinks, retreats) as a C4 character does, or a hot
+    // bot out of every player's view stands still and dies. The combat stance
+    // (fetchCombats) stays on 15 s after the last landed blow, offensive cast or hit
+    // taken (CombatStance, Lisvus), so its end is the event; no hold after it.
+    const combat = !!(bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.());
 
     const heldPromotion = Number(state.promotedUntil || 0) > now;
     let tier;
     let reason;
-    if (visibleCombat) {
+    if (combat) {
         tier = 'full';
-        reason = 'visible_combat';
+        reason = 'combat';
     } else if (heldPromotion) {
         tier = 'full';
         reason = state.lastPromotionReason || 'promotion_hold';
@@ -179,8 +179,9 @@ function evaluate(session, sessions = [], now = Date.now()) {
     state.evaluatedAt = now;
     // playerVisible: a real player is within the client's view of the bot (the
     // nearest one, from this same read); BotAI's far-away gate and local chat read it.
+    // combat: BotAI's far-away gate lets a fighting bot think.
     return { tier, reason, nearestPlayerDistance: nearestDistance, playerVisible: nearestDistance <= CLIENT_VISIBILITY_RADIUS,
-        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion || visibleCombat };
+        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion || combat, combat };
 }
 
 function nextTickDelay(session, context, random = Math.random) {
