@@ -1078,9 +1078,9 @@ function clearBoard() {
 // bag on its published life state) trims its ads to the bag (Database.reconcileConditionalSellAds,
 // which also keeps its reserves). Only an owner the board shows with a line over its bag
 // pays the trim. Goods a meeting holds left the bag and still back their ad: the board
-// line counts only the units not held (the record's availableCount) once the meeting's
-// records are refreshed; an accept publishes the seller's bag before that, and its trim
-// changes nothing. Trims run, by whether they changed an ad (developer diagnostics).
+// line counts only the units not held (the record's availableCount), refreshed by an
+// accept before it publishes the seller's bag (TradeMeetingService.accepted). Trims run,
+// by whether they changed an ad (developer diagnostics).
 let unsubscribeOwnStock = null;
 // The unworn units of a bag summary's item at one enchant level.
 function unwornAt(item, enchant) {

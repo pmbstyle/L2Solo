@@ -163,17 +163,23 @@ function acceptRows(result) {
         }
     }
 }
-async function refreshMeetingRecords(row) {
-    if (!db().fetchAfkTradeShops) return;
+// The two actors' board records as they stand (a line counts only the units no meeting holds).
+async function meetingRecords(row) {
+    const records = [];
+    if (!db().fetchAfkTradeShops) return records;
     for (const actor of [row.actorA, row.actorB]) {
         try {
-            for (const record of await db().fetchAfkTradeShops(actor)) afk().refreshRecord(record);
+            records.push(...await db().fetchAfkTradeShops(actor));
         } catch (error) {
             // Publication must not strand already committed custody before
             // wake can start the paid route or acknowledge a terminal receipt.
             utils.infoWarn('AfkTrade', 'meeting records for %d: %s', actor, error.message);
         }
     }
+    return records;
+}
+async function refreshMeetingRecords(row) {
+    for (const record of await meetingRecords(row)) afk().refreshRecord(record);
 }
 function setPresenceMarker(session, id, anchor) {
     session.tradeMeetingPresence = anchor ? { id: anchor.id, actorId: Number(id),
@@ -384,11 +390,15 @@ async function trimSellerAds(request) {
     }
 }
 async function accepted(result) {
-    acceptRows(result);
     const row = result.meeting;
+    // The records first, in the same turn as the rows: the seller's new bag is published
+    // (its own-stock trim, AfkTradeService.reconcileOwnStock, reads the board) against
+    // lines that no longer count the units this meeting holds.
+    const records = result.coldLifeRows ? await meetingRecords(row) : [];
+    for (const record of records) afk().refreshRecord(record);
+    acceptRows(result);
     if (row.state === 'accepted') { enroll(row.actorA, row.id); enroll(row.actorB, row.id); }
     else { unenroll(row.actorA, row.id); unenroll(row.actorB, row.id); }
-    if (result.coldLifeRows) await refreshMeetingRecords(row);
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
     notifyPlayerTravel(row);
     wake(row.actorA); wake(row.actorB);
