@@ -15,7 +15,7 @@ const memberId = member => Number(member?.characterId ?? member?.id);
 // Plan inputs the same for every member of a job (ClanEquipmentService
 // planningForClanAdmitted): the clan's craft options (~780 recipes with
 // providers) and warehouse rows, read once per run.
-const JOB_PLAN_OPTIONS = ['craftRecipes', 'allowedRecipeIds', 'craftProviders'];
+const JOB_PLAN_OPTIONS = ['craftRecipes', 'allowedRecipeIds', 'craftProviders', 'spoilProviders'];
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 // The item-origin catalog (ItemAcquisitionCatalog) reads only which NPCs
 // spawn (total > 0) and the creation grants; ship one row per spawned NPC

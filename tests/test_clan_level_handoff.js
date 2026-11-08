@@ -317,6 +317,13 @@ async function main() {
         await sql("UPDATE clan_simulation_clans SET mode='player_managed' WHERE clanId=?", [first.clanId]);
         for (let i = 0; i < 2; i++) await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,status,availableAt,createdAt,updatedAt)
             VALUES(?,?,'goal_plan','pending',?,?,?)`, [first.clanId, `player-order:${i}`, at, at, at]);
+        const playerCommand = await Database.enqueueClanAction({ clanId: first.clanId, actionType: 'goal_plan',
+            actionKey: `clan:${first.clanId}:order:99:r1:goal_plan`, payload: { orderId: 99 } });
+        for (const type of ['goal_plan', 'contribution']) for (let i = 0; i < 3; i++) {
+            await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,status,availableAt,payloadJson,createdAt,updatedAt)
+                VALUES(?,?,?,'pending',?,?,?,?)`, [first.clanId, `clan:${first.clanId}:after:${100 + i}:${type}:1`, type,
+                at, JSON.stringify({ goalType: 'level' }), at, at]);
+        }
         let afterId = 0, cancelled = 0;
         for (;;) {
             const page = await Database.repairClanProgressionQueue({ afterId });
@@ -325,13 +332,24 @@ async function main() {
             if (!page.scanned) break;
             afterId = page.afterId;
         }
-        assert.equal(cancelled, 150);
+        assert.equal(cancelled, 154, 'autonomous and legacy player-clan review storms are repaired');
         pending = await queued();
         assert.equal(pending.filter(row => row.actionType === 'contribution').length, 1);
         assert.equal(pending.filter(row => row.actionType === 'goal_plan').length, 1);
         assert.equal((await one('SELECT status FROM clan_actions WHERE id=?', [leased.actionId])).status, 'running');
         assert.equal((await one("SELECT COUNT(*) n FROM clan_actions WHERE clanId=? AND actionKey LIKE 'player-order:%'", [first.clanId])).n, 2,
             'repair does not merge player orders');
+        assert.equal((await one('SELECT status FROM clan_actions WHERE id=?', [playerCommand.actionId])).status, 'pending',
+            'a real player order revision retains its durable command');
+        for (const actionType of ['goal_plan', 'contribution']) {
+            const review = await Database.enqueueClanAction({ clanId: first.clanId, actionType, coalescePending: true,
+                actionKey: `test:player-review:${actionType}`, payload: { reason: 'warehouse_changed' } });
+            assert(review.coalesced, 'new player-clan wake-ups merge into the repaired chain');
+            const again = await Database.enqueueClanAction({ clanId: first.clanId, actionType, coalescePending: true,
+                actionKey: `test:player-review:${actionType}:again`, payload: { reasons: ['board_changed'] } });
+            assert.equal(again.actionId, review.actionId, 'explicit review opt-in persists across generated keys');
+            assert.notEqual(review.actionId, playerCommand.actionId, 'a review never absorbs the player command');
+        }
         const cancelledActions = await Database.fetchClanActions({ clanId: strategic.clanId, status: 'cancelled', limit: 200 });
         assert.equal(cancelledActions.length, 150, 'removed duplicates remain in durable history');
         assert(cancelledActions.some(row => row.reasonCode === 'clan_strategy_review_replaced'));

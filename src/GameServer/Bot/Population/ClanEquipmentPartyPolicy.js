@@ -46,6 +46,20 @@ function allowed(member, objective) {
     return !(member.stats?.clanHuntBackoffs || []).some(entry =>
         String(entry.spotId) === String(objective.spotId) && Risk.markActive(entry, member));
 }
+function canSpoil(member) {
+    const skills = invoke('GameServer/Clan/ClanCandidateCapabilities').learnedSkills(member);
+    return [254, 42].every(id => skills.some(skill => Number(skill.selfId) === id && Number(skill.level) > 0));
+}
+// Only source admission facts cross the planning worker boundary, once per job.
+function spoilProvidersFor(members) {
+    return members.filter(canSpoil).map(member => ({ level: Number(member.level), stats: {
+        stepCount: member.stats?.stepCount, clanHuntBackoffs: member.stats?.clanHuntBackoffs || []
+    } }));
+}
+function spoilSourceAllowed(providers, source) {
+    return source.kind !== 'spoil' || providers.some(member => allowed(member,
+        { ...source, clanOperation: 'equipment', clanId: 1 }));
+}
 function needsReview(party, members) {
     const objective = party?.stats?.objective;
     if (party?.stats?.raidEncounter?.status === 'failed') return true;
@@ -85,4 +99,5 @@ function recordOutcome(state, result, objective, timestamp) {
     return { ...result, patch: { ...result.patch, stats: { ...result.patch?.stats,
         clanHuntRisk: risk, clanHuntBackoffs: remembered.stats.spotBackoffs } } };
 }
-module.exports = { sourceLevel, raidLevelAllowed, applies, abandonedRaid, allowed, needsReview, recordOutcome };
+module.exports = { sourceLevel, raidLevelAllowed, applies, abandonedRaid, allowed, canSpoil, spoilProvidersFor,
+    spoilSourceAllowed, needsReview, recordOutcome };

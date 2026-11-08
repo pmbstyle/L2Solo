@@ -56,6 +56,22 @@ assert.strictEqual(Composition.selectMembers(review.states, { timestamp: timesta
 assert.strictEqual(Requests.partyRequestForPlan(review.states[0], members[0].stats.equipmentPlan,
     timestamp + Recovery.RETRY_MS, { economy: { worth: () => 0 } }).status, 'open');
 
+const requiredClan = { ...objective, clanId: 7, clanGoalKey: 'expired-clan', requestedAt: at - 60 * minute };
+const expiredWaiter = Requests.expireState({ ...members[0], activity: 'party_wait', party: { partyId: null },
+    stats: { eventWait: 'clan_party_assembly', clanPartyObjective: requiredClan, partyRequest: requiredClan,
+        equipmentPlan: { ...members[0].stats.equipmentPlan, clanGoal: { goalKey: requiredClan.clanGoalKey } } } }, at);
+assert.equal(expiredWaiter.activity, 'hunting');
+assert.equal(expiredWaiter.stats.clanPartyObjective.status, 'deferred');
+assert.equal(expiredWaiter.stats.equipmentPlan, undefined, 'a failed clan route cannot turn into solo combat');
+assert.equal(Requests.partyObjectiveForState(expiredWaiter), null);
+assert.equal(Duty.waiting(expiredWaiter), false);
+assert.equal(Recovery.coolingDown(expiredWaiter, at), true);
+assert.equal(Requests.partyRequestForPlan(expiredWaiter, null, at), expiredWaiter.stats.partyRequest,
+    'ordinary replanning retains the failed clan assembly cooldown');
+assert.equal(require('../src/GameServer/Bot/Population/ColdSoloWindow').stepElapsedMs(expiredWaiter, at), 1000,
+    'the expired wait does not award its idle hour as hunting');
+assert.equal(Requests.expireState({ ...expiredWaiter, party: { partyId: 'active-clan' } }, at + minute).party.partyId, 'active-clan');
+
 const gathered = members.map(s => ({ ...s, loc: { ...members[0].loc } }));
 const rescued = Lifecycle.review(restored, gathered, timestamp);
 assert.strictEqual(rescued.leaving.size, 0, 'a successful gathering just before review must preserve the party');

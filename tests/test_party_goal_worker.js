@@ -144,6 +144,10 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
         'a review key without its review is refused');
     assert(income.payload.joint.incomeReviews.every(row => row.partySource === 'table_party'),
         'the worker uses its planning catalogue for native party forecasts');
+    const meleeIncome = structuredClone(income);
+    for (const row of meleeIncome.payload.joint.incomeReviews) row.partySource = 'native_party_forecast';
+    assert(Protocol.validateEnvelope(meleeIncome, 'worker').ok,
+        'a safe starter melee forecast crosses the worker boundary too');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };
     post('party_goal_request', { ...request, members: changed, replyBy: Date.now() + 5000 }, 'changed');
     const fresh = await wait(message => message.type === 'party_goal_result' && message.msgId === 'changed');

@@ -89,6 +89,7 @@ function exitAfterFinalWrites() {
 async function drainServices(progress) {
     const steps = [
         ['cold simulation drain', () => invoke('GameServer/Bot/Population/PopulationService').stop()],
+        ['Garden of Eva doors', () => invoke('GameServer/World/GardenOfEvaDoors').stop()],
         ['pathfinding workers', () => PathfindingWorkerPool.shutdown()],
         ['clan planning worker', () => invoke('GameServer/Clan/ClanPlanningCoordinator').shutdown()],
         ['tracing', () => LangfuseTracing.shutdown()],

@@ -61,6 +61,29 @@ const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
 const LOCAL_TARGET_SEARCH_RADIUS = 2500;
 const SHOP_DEPARTURE_RADIUS = 900;
 
+function shopDepartureTarget(town, bot) {
+    const center = { ...town.center };
+    center.locZ = GeodataEngine.getHeight(center.locX, center.locY, center.locZ);
+    const first = Math.abs(Number(bot.fetchId()) % 16);
+    // An offset around the square can land on a counter, stairs or a roof.
+    // Keep the spread only on the square's reachable floor, in both directions.
+    for (let step = 0; step < 16; step++) {
+        const angle = (first + step) * Math.PI / 8;
+        const point = {
+            locX: Math.round(center.locX + Math.cos(angle) * 160),
+            locY: Math.round(center.locY + Math.sin(angle) * 160),
+            locZ: center.locZ
+        };
+        point.locZ = GeodataEngine.getHeight(point.locX, point.locY, point.locZ);
+        if (Math.abs(point.locZ - center.locZ) <= 64
+            && GeodataEngine.hasLineOfSight(center.locX, center.locY, center.locZ, point.locX, point.locY, point.locZ)
+            && GeodataEngine.hasLineOfSight(point.locX, point.locY, point.locZ, center.locX, center.locY, center.locZ)) {
+            return { ...point, town: town.name };
+        }
+    }
+    return { ...center, town: town.name };
+}
+
 function leaveShop(session, bot, now = Date.now()) {
     if (!isSoloHunter(session) || !session.pendingFarmDepartureAnnouncement || session.spotRelocation
         || BotTownTravel.hasCombatThreat(session, bot) || bot.state?.fetchCasts?.()) return false;
@@ -69,23 +92,20 @@ function leaveShop(session, bot, now = Date.now()) {
     const point = botLocation(bot);
     const town = TownPathfinder.getTown(point);
     if (!town || SpotService.distance2d(point, town.center) <= SHOP_DEPARTURE_RADIUS) return false;
-    if (Number(session.shopDepartureRetryAt || 0) > now) return true;
+    if (Number(session.shopDepartureRetryAt || 0) > now) return false;
     // Choose a farming destination after clearing the shop, even when no
     // suitable hunt is available yet. Do not wander against the counter wall.
-    const angle = Math.abs(Number(bot.fetchId()) % 16) * Math.PI / 8;
-    const destination = {
-        locX: Math.round(town.center.locX + Math.cos(angle) * 160),
-        locY: Math.round(town.center.locY + Math.sin(angle) * 160),
-        locZ: town.center.locZ,
-        town: town.name
-    };
+    const destination = shopDepartureTarget(town, bot);
     TownNpcApproach.reset(session);
     const navigation = CompanionNavigationRecovery.move(session, bot, destination, 'shop_departure',
         { targetActor: null, arrivalRadius: 160 });
     session.lastDecision = { action: 'leave_shop', reason: navigation.status, town: town.name, at: now };
     if (navigation.status === 'exhausted') {
-        session.shopDepartureRetryAt = now + 5000;
+        // Clearing the shop is optional. Let hunting choose its actual trip
+        // (including normal gatekeeper recovery) instead of retrying forever.
+        session.shopDepartureRetryAt = now + FAILED_SPOT_RETRY_MS;
         CompanionNavigationRecovery.clear(session);
+        return false;
     }
     return true;
 }

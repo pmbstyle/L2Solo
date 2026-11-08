@@ -58,6 +58,16 @@ assert.strictEqual(Policy.townAt({ locX: 74000, locY: 147904, locZ: -3500 }), nu
 const destination = { locX: 1000, locY: 1000, locZ: 0 };
 const session = {};
 const bot = actor({ locX: 0, locY: 0, locZ: 0 });
+const idleSession = { activeMoveGoal: { requestedTo: destination } };
+assert.strictEqual(Recovery.move(idleSession, bot, destination, 'shopping', { targetActor: null }).status, 'started',
+    'an old movement goal without an active executor must not freeze the next shopping leg');
+idleSession.pendingPathRequest = { requestedTo: destination };
+assert.strictEqual(Recovery.move(idleSession, bot, destination, 'shopping', { targetActor: null }).status, 'moving',
+    'a real queued path must still retain ownership without duplicate requests');
+delete idleSession.pendingPathRequest;
+idleSession.moveTimer = 1;
+assert.strictEqual(Recovery.move(idleSession, bot, destination, 'shopping', { targetActor: null }).status, 'moving',
+    'an active movement timer must still retain ownership of its route');
 for (const error of ['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED', 'PATH_BUDGET']) {
     session.lastPathfinding = { requestedTo: destination, routeUsable: false, error, at: Date.now() + 100 + (session.companionNavigationRecovery?.lastFailureAt || 0) };
     const recovery = Recovery.move(session, bot, destination, 'town_gatekeeper', { targetActor: null });

@@ -146,6 +146,32 @@ async function main() {
         const second = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(second.changed, 0, 'an active clan gear goal must remain durable between resolves');
 
+        const equipmentService = invoke('GameServer/Clan/ClanEquipmentService');
+        const waiting = await LifeState.findByCharacterId(firstGoal.target.memberId);
+        const beganAt = Date.now() - 20 * 60000;
+        const oldRequest = { ...waiting.stats.partyRequest, requestedAt: beganAt };
+        await LifeState.upsertState({ ...waiting, activity: 'party_wait', stats: { ...waiting.stats,
+            eventWait: 'clan_party_assembly', partyRequest: oldRequest, clanPartyObjective: oldRequest } }, 'fixture_wait');
+        const fixtureClan = await ClanGoalService.clanProjectionById(created.clanId);
+        const fixtureMember = fixtureClan.members.find(member => Number(member.characterId ?? member.id) === firstGoal.target.memberId);
+        await equipmentService.assignPlan(fixtureMember, { ...waiting.stats.equipmentPlan,
+            materials: [{ selfId: 1864, amount: 1 }] }, fixtureClan, firstGoal);
+        const refreshedWait = await LifeState.findByCharacterId(firstGoal.target.memberId);
+        assert.equal(refreshedWait.stats.partyRequest.requestedAt, beganAt,
+            'revising the clan plan must not restart an unchanged assembly deadline');
+        const expired = PartyRequestPlanner.expireState(refreshedWait, Date.now());
+        await LifeState.upsertState(expired, 'fixture_timeout');
+        await equipmentService.assignPlan(fixtureMember, waiting.stats.equipmentPlan, fixtureClan, firstGoal);
+        const cooling = await LifeState.findByCharacterId(firstGoal.target.memberId);
+        assert.equal(cooling.activity, 'hunting');
+        assert.equal(cooling.stats.partyRequest.status, 'deferred', 'clan reviews preserve the saved cooldown');
+        assert.equal(cooling.stats.equipmentPlan, undefined, 'the expired farm route stays suspended while cooling down');
+        await LifeState.upsertState({ ...cooling, stats: { ...cooling.stats,
+            partyRequest: { ...cooling.stats.partyRequest, deferredUntil: Date.now() - 1 } } }, 'fixture_retry');
+        await equipmentService.assignPlan(fixtureMember, waiting.stats.equipmentPlan, fixtureClan, firstGoal);
+        assert.equal((await LifeState.findByCharacterId(firstGoal.target.memberId)).stats.partyRequest.status, 'open',
+            'the clan can retry the retained goal after the assembly cooldown');
+
         await Database.setItem(firstGoal.target.memberId, {
             selfId: firstGoal.target.itemId,
             name: firstGoal.target.itemName,

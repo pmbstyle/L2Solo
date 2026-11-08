@@ -127,6 +127,79 @@ async function run() {
     assert.strictEqual(Request.partyRequestForPlan(young, null, at, { spots }), null, 'no request for a support with solo ground');
     assert.strictEqual(Persona.backgroundIntent(young).reason, 'prefers_solo', 'its persona decides as before');
 
+    // Live regression: 170 level-one Orc Mystics had level-fitting keltirs,
+    // but no safe solo pull and no request after 8-13 played hours.
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const field = { id: '-9_-19', name: 'Prairie Keltir fields', minLevel: 1, maxLevel: 3, avgLevel: 2,
+        density: 26, center: { locX: -50124, locY: -111341, locZ: -240 },
+        tags: [], tagsAuthoritative: true, localStarterRegions: ['orc'], localUntilLevel: 5,
+        npcSelfIds: [535, 538, 531], npcEntries: [
+            { selfId: 535, count: 11, production: 1980 },
+            { selfId: 538, count: 9, production: 1620 },
+            { selfId: 531, count: 6, production: 1080 }
+        ] };
+    const starter = characterId => {
+        const state = { characterId, name: `Mystic${characterId}`, accountName: `bot_${characterId}`,
+            phase: 'cold', activity: 'hunting', level: 1, exp: 0, adena: 85, spotId: field.id,
+            loc: { ...field.center }, timing: {}, stats: { classId: 49, role: 'buffer',
+                generatedCold: true, populationWave: 1, starterRegion: 'orc',
+                wishFocus: ['power:1129:12', 0, 529], money: [1, 1, 1188, 529],
+                coldCombat: { skillSource: 'database',
+                    skills: Cold.skillSnapshotsFromRecords(Cold.skillRecordsFromTree(49, 1)) } },
+            inventory: Object.fromEntries([[425, 10], [461, 11], [2368, 14]].map(([selfId, slot]) =>
+                [selfId, { selfId, amount: 1, equipped: true, equippedSlots: [slot], slot }])) };
+        const profile = Cold.profileFor(state, at);
+        state.vitals = { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp };
+        return state;
+    };
+    const mystic = starter(910049);
+    assert(Matchup.admitsNone(Matchup.spotShares(Matchup.stateProfiles(mystic, { mode: 'solo' }), field,
+        { soloSafety: true })), 'the real starter kit cannot safely pull even the young keltirs');
+    const search = { owner: { route: { spotId: field.id } }, timestamp: at };
+    assert(Request.supportWithoutGround(mystic, [field], search),
+        'a fitting level band cannot hide an unsafe starter kit, including a held route');
+    const starters = [mystic, starter(910050), starter(910051), starter(910052)].map(state => ({ ...state,
+        stats: { ...state.stats, partyRequest: Request.partyRequestForPlan(state, null, at, { spots: [field], search }) } }));
+    assert(starters.every(state => Request.seeksParty(state)), 'every stranded starter opens the native support request');
+    assert.deepStrictEqual(PopulationService.groupPartyCandidatesByObjective(starters)
+        .map(group => group.length), [4], 'stranded mystics can meet each other at their home field');
+    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+    const objective = starters[0].stats.partyRequest;
+    const forecast = Income.prepare(starters, { objective, spots: [field], timestamp: at });
+    assert.equal(forecast.rows.size, 4, 'missing solo table rows do not erase a safe melee roster income');
+    assert([...forecast.rows.values()].every(row => row.income > 0 && row.kills > 0));
+    assert.equal(Income.compare(starters[0], starters.slice(1), { prepared: forecast, objective }).reason,
+        'goal_requires_party', 'the party pays for real equipment through loot, without valuing bonus XP');
+    assert.deepStrictEqual(invoke('GameServer/Bot/Population/PartyGoalPolicy')
+        .formingVerdict(starters, objective, { spots: [field], timestamp: at }).formingAccepted,
+    starters.map(state => state.characterId), 'the native formation verdict admits all starters');
+    assert.equal(Income.prepare([mystic], { objective, spots: [field], timestamp: at }).rows.size, 0,
+        'the fallback cannot invent safe solo income');
+    const bowParty = starters.map(member => {
+        const inventory = { ...member.inventory };
+        delete inventory[2368];
+        inventory[13] = { selfId: 13, amount: 1, equipped: true, equippedSlots: [14], slot: 14 };
+        return { ...member, inventory };
+    });
+    const bowProfiles = Matchup.stateProfiles(bowParty[0],
+        { timestamp: at, capacityStates: bowParty, mode: 'party', buffed: true });
+    assert(bowProfiles.every(profile => profile.equipment.weaponKind === 'Weapon.Bow' && profile.equipment.bowMp > 0),
+        'the real Short Bow spends MP even when its owner has no offensive skills');
+    assert.strictEqual(require('../src/GameServer/Bot/Population/MeleePartyForecast').forecast(bowParty, bowProfiles, field,
+        { timestamp: at, cohesion: 1 }), null, 'a melee forecast cannot price bow attacks without their MP recovery');
+    const partyId = 'orc-starter-recovery';
+    const hunt = invoke('GameServer/Bot/Population/BackgroundPartyResolver').resolve({
+        party: { partyId, leaderId: starters[0].characterId, memberIds: starters.map(state => state.characterId),
+            spotId: field.id, cohesion: 1, risk: 0, roleCoverage: { buffer: 4 },
+            stats: { objective: starters[0].stats.partyRequest } },
+        members: starters.map(state => ({ ...state, party: { partyId, role: 'buffer' } })),
+        spot: field, elapsedMs: 60000, timestamp: at, rng: () => 0.1
+    });
+    assert(hunt.debug.wins > 0, 'the native party fight beats the real starter mobs');
+    assert(hunt.memberResults.every(entry => entry.result.materialize.exp > 0),
+        'all four mystics earn real shared XP without granting levels or equipment');
+
     Config.developerDiagnostics = previousDiagnostics;
     console.log('Support without solo ground checks passed');
 }

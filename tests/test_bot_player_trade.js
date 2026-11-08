@@ -140,6 +140,59 @@ const botTellCalls = [];
         assert.strictEqual(botTellCalls.at(-1).text, 'These items would overload me. Reduce the trade amounts.');
         assert.strictEqual(heavy.fetchAmount(), 20, 'weight refusal keeps the sender items');
         assert.strictEqual(bot.actor.backpack.items.length, 0, 'weight refusal awards nothing');
+
+        const playerAdena = item(9902, 57, 3000000, 'Adena');
+        player.actor.backpack.items = [playerAdena];
+        Database.transferInventoryBetweenCharacters = async (entries) => {
+            assert.strictEqual(entries.length, 1);
+            assert.strictEqual(entries[0].amount, 1000000, 'the transfer must persist the full offered Adena amount');
+            return entries.map(entry => ({ ...entry, targetItemId: 9903,
+                remaining: playerAdena.fetchAmount() - entry.amount }));
+        };
+        function offerAdena(amount) {
+            const packet = Buffer.alloc(13);
+            packet[0] = 0x16;
+            packet.writeInt32LE(playerAdena.fetchId(), 5);
+            packet.writeInt32LE(amount, 9);
+            addTradeItem(player, packet);
+            return playerPackets.at(-1);
+        }
+        assert(BotTradeService.startPlayerTrade(player, bot).ok);
+        const millionPacket = offerAdena(1000000);
+        assert.strictEqual(millionPacket[0], 0x20);
+        assert.strictEqual(millionPacket.readInt32LE(13), 1000000, 'the trade window must display one million Adena');
+        assert.strictEqual(player.activeTrade.playerItems.get(9902).count, 1000000);
+        assert.strictEqual(playerAdena.fetchAmount(), 3000000, 'offering Adena must not deduct it before confirmation');
+        await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
+        assert.strictEqual(playerAdena.fetchAmount(), 2000000);
+        assert.strictEqual(bot.actor.backpack.fetchItemFromSelfId(57).fetchAmount(), 1000000);
+
+        assert(BotTradeService.startPlayerTrade(player, bot).ok);
+        offerAdena(750000);
+        assert.strictEqual(offerAdena(250000).readInt32LE(13), 1000000,
+            'repeated Adena additions must accumulate above the ordinary item cap');
+        BotTradeService.cancel(player, 'test_cancel', false);
+        assert.strictEqual(playerAdena.fetchAmount(), 2000000, 'cancelling must keep the offered Adena');
+
+        playerAdena.setAmount(2147483647);
+        assert(BotTradeService.startPlayerTrade(player, bot).ok);
+        assert.strictEqual(offerAdena(2147482647).readInt32LE(13), 2147482647,
+            'large Adena offers must fit the signed 32-bit client count');
+        assert.deepStrictEqual(BotTradeService.addItem(player, 9902, 1), { ok: false, reason: 'insufficient_item' },
+            'large offers must still respect the minimum retained Adena');
+        BotTradeService.cancel(player, 'test_cleanup', false);
+
+        assert(BotTradeService.startBuffTrade(player, bot, { playerId: 100, providerId: 200, price: 15000 }).ok);
+        assert.strictEqual(offerAdena(30000).readInt32LE(13), 15000,
+            'buff payments must still be capped at the quoted price');
+        BotTradeService.cancel(player, 'test_cleanup', false);
+
+        const material = item(9904, 1864, 40000, 'Stem');
+        player.actor.backpack.items = [material];
+        assert(BotTradeService.startPlayerTrade(player, bot).ok);
+        assert.strictEqual(BotTradeService.addItem(player, 9904, 20000).line.count, 10000,
+            'the ordinary item cap must remain unchanged');
+        BotTradeService.cancel(player, 'test_cleanup', false);
         console.log('Bot player trade packet checks passed');
     } finally {
         Database.transferInventoryBetweenCharacters = original.transfer;

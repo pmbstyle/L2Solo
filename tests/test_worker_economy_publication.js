@@ -8,6 +8,7 @@ require('../src/Global');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
+const { rowOf } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 async function runWorker(state, predicate, followUp = null) {
     const epoch = `economy-publication-${state.characterId}`, received = [];
@@ -80,6 +81,13 @@ async function runWorker(state, predicate, followUp = null) {
             table([{ name: 'clan_supplies', from: null, to: 0, full: true, last: 1, removed: [],
                 rows: [[9, [9, 1, [[1864, 3]], 5]]] }]);
             await until(message => message !== result && decidedFor(state.characterId)(message));
+            // Crafted materials enter the workshop only with actual demand;
+            // permanent resource buyers take raw materials, not product 1882.
+            const buyer = { id: 765415, ownerId: 765416, storeType: 3, town: 'Giran',
+                revision: 1, escrowAdena: 100000,
+                lines: [{ id: 7654150, selfId: 1882, count: 100, price: 1000 }] };
+            table([{ name: 'board', from: 0, to: 1, full: false, last: 1, removed: [],
+                rows: [[buyer.id, rowOf(buyer)]] }]);
             post(far);
             // A moved item marks a done slot only: pages repeat until the far one has finished.
             for (let version = 0; !seen(staleFor(far.characterId)); version++) {

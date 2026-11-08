@@ -1665,6 +1665,41 @@ function publishDeferredPartyRequests(rows) {
     }
 }
 
+// The native batch writers publish the same safe clan pause as expireState.
+// Materialize the current rows inside this statement: neither a preliminary
+// SELECT nor a later repair may release a clan hold with its farm route intact.
+function partyRequestDeferralSql(selection, withReason = false) {
+    const clanStats = `json_set(deferred.statsJson,
+        '$.clanPartyObjective.status', 'deferred',
+        '$.clanPartyObjective.deferredUntil', json_extract(deferred.statsJson, '$.partyRequest.deferredUntil'),
+        '$.partyRequest.deferReason', 'party_assembly_timeout', '$.lastReason', 'party_assembly_timeout')`;
+    const released = `activity = 'party_wait' AND characterId IN (SELECT characterId FROM deferred WHERE clanDuty)`;
+    return `WITH deferred AS MATERIALIZED (
+        SELECT characterId, json_set(COALESCE(statsJson, '{}'),
+            '$.partyRequest.status', 'deferred',
+            '$.partyRequest.deferredUntil', CASE WHEN partyRequestStatus = 'deferred'
+                THEN json_extract(statsJson, '$.partyRequest.deferredUntil') ELSE ? + (ABS(characterId) % ?) END,
+            '$.partyRequest.expiredAt', ?,
+            '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0)
+                + CASE WHEN partyRequestStatus = 'open' THEN 1 ELSE 0 END
+            ${withReason ? ", '$.partyRequest.lastReason', ?" : ''}) AS statsJson,
+            NULLIF(json_extract(statsJson, '$.partyRequest.clanGoalKey'), '')
+                = json_extract(statsJson, '$.clanPartyObjective.clanGoalKey') AS clanDuty
+        FROM ${TABLE} WHERE ${selection}
+    ) UPDATE ${TABLE} SET
+        statsJson = (SELECT CASE WHEN clanDuty THEN
+            CASE WHEN json_extract(deferred.statsJson, '$.equipmentPlan.clanGoal.goalKey')
+                    = json_extract(deferred.statsJson, '$.partyRequest.clanGoalKey')
+                THEN json_remove(${clanStats}, '$.equipmentPlan') ELSE ${clanStats} END
+            ELSE deferred.statsJson END FROM deferred WHERE deferred.characterId = ${TABLE}.characterId),
+        activity = CASE WHEN ${released} THEN 'hunting' ELSE activity END,
+        activityStartedAt = CASE WHEN ${released} THEN ? ELSE activityStartedAt END,
+        nextResolveAt = CASE WHEN ${released} THEN ? ELSE nextResolveAt END,
+        simulationRevision = COALESCE(simulationRevision, 0) + 1,
+        updatedAt = ?
+    WHERE characterId IN (SELECT characterId FROM deferred) RETURNING *`;
+}
+
 // Start-up only: a request left open across a restart is deferred once here;
 // at run time each request expires at its own deadline (PartyAssemblyEvents).
 function expireStalePartyRequests() {
@@ -1678,27 +1713,23 @@ function expireStalePartyRequests() {
     const target = `phase = 'cold'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
-        AND partyRequestStatus = 'open'
-        AND partyRequestedAt <= ?
-        AND (COALESCE(partyRequestPriority, '') <> 'required' OR partyRequestedAt <= ?)`;
-    const sql = `UPDATE ${TABLE}
-        SET statsJson = json_set(
-                COALESCE(statsJson, '{}'),
-                '$.partyRequest.status', 'deferred',
-                '$.partyRequest.deferredUntil', ? + (ABS(characterId) % ?),
-                '$.partyRequest.expiredAt', ?,
-                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1
-            ),
-            simulationRevision = COALESCE(simulationRevision, 0) + 1,
-            updatedAt = ?
-        WHERE ${target} RETURNING *`;
+        AND ((partyRequestStatus = 'open'
+            AND partyRequestedAt <= ?
+            AND (COALESCE(partyRequestPriority, '') <> 'required' OR partyRequestedAt <= ?))
+            OR (partyRequestStatus = 'deferred'
+                AND json_extract(statsJson, '$.clanPartyObjective.status') = 'open'
+                AND NULLIF(json_extract(statsJson, '$.partyRequest.clanGoalKey'), '')
+                    = json_extract(statsJson, '$.clanPartyObjective.clanGoalKey')))`;
+    const sql = partyRequestDeferralSql(target);
     const params = [
         timestamp + cooldownMs,
         Math.max(1, staggerMs),
         timestamp,
-        timestamp,
         timestamp - preferredMaxAge,
-        timestamp - requiredMaxAge
+        timestamp - requiredMaxAge,
+        timestamp,
+        timestamp + 1000,
+        timestamp
     ];
     const staleParams = [timestamp - preferredMaxAge, timestamp - requiredMaxAge];
     const selectStale = () => Database.execute([
@@ -1741,25 +1772,16 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         .map((row) => pendingWrites.get(Number(row.characterId || 0)))
         .filter(Boolean)
         .map((pending) => pending.catch(() => null)));
-    const sql = `UPDATE ${TABLE}
-        SET statsJson = json_set(
-                COALESCE(statsJson, '{}'),
-                '$.partyRequest.status', 'deferred',
-                '$.partyRequest.deferredUntil', ? + (ABS(characterId) % ?),
-                '$.partyRequest.expiredAt', ?,
-                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1,
-                '$.partyRequest.lastReason', ?
-            ),
-            simulationRevision = COALESCE(simulationRevision, 0) + 1,
-            updatedAt = ?
-        WHERE ${selection} RETURNING *`;
+    const sql = partyRequestDeferralSql(selection, true);
     const params = [
         timestamp + cooldownMs,
         Math.max(1, staggerMs),
         timestamp,
         String(reason || 'no_compatible_level_match'),
+        ...ids,
         timestamp,
-        ...ids
+        timestamp + 1000,
+        timestamp
     ];
     return selectCurrent()
         .then(waitForPending)

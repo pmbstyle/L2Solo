@@ -346,18 +346,25 @@ function soloGroundMissing(state, spots, search = null) {
     if (plan?.status === 'active' && String(plan.next?.spotId || '') === String(state.spotId)) return false;
     const spot = SpotIndex.spotById(spots, state.spotId);
     const level = LevelingRoutes.targetLevelForState(state, { mode: 'solo' });
-    if (!spot || spot.raidBoss === true || SpotService.isSuitable(spot, level)) return false;
-    if (!search?.owner) return true;
-    const { owner, timestamp = Date.now(), hasRoom = null, spotHunters = null } = search;
+    if (!spot || spot.raidBoss === true) return false;
+    const { owner = null, timestamp = Date.now(), hasRoom = null, spotHunters = null } = search || {};
     const frame = frameFor(state, null, [], timestamp, hasRoom, spotHunters);
     frame.owner = owner;
+    // Level fit alone is not solo ground. A level-one Orc Mystic's home
+    // keltirs fit its level while its starter kit fails the same safety gate
+    // that refuses its fights. It must seek a party rather than wait forever.
+    const fits = candidate => candidate && candidate.raidBoss !== true && SpotService.isSuitable(candidate, level)
+        && heldVerdict(frame, 'seeking', candidate, state, false,
+            () => LevelingRoutes.isSpotAllowedForState(candidate, state, frame.solo()));
+    if (fits(spot)) return false;
+    if (!search?.owner) return true;
     const chosen = owner.route || choose(state, SpotService.standingSpot(state, spots), null, [], { spots, timestamp, frame });
     // No search now (choose: a bot on a rest, a trip, a duty): no verdict. Only
     // a search that found nothing, { spotId: null }, means no ground.
     if (chosen === null) return false;
     if (!owner.route) owner.route = chosen;
     const routed = chosen?.spotId ? SpotIndex.spotById(spots, chosen.spotId) : null;
-    return !routed || routed.raidBoss === true || !SpotService.isSuitable(routed, level);
+    return !fits(routed);
 }
 
 // The solo trip of a step: to the spot the step's own leaf names when the
