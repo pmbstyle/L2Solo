@@ -875,13 +875,16 @@ class ColdSimulationKernel {
     // writer moved the row (stale_revision of a step, stale_command of a command) stays the
     // answer to the row main sends back (cardInFlight 'stale'), counted card:stale_hold by
     // the commit's kind. Once: the same card refused so again on its next commit (ride.held,
-    // set when the worker remembered it after a hold) is dropped (card:stale_drop): the row
-    // keeps moving under it, the bot builds. Returns whether the card is held.
+    // set when the worker remembered it after a hold) is dropped (card:stale_drop) with its
+    // ride: the row keeps moving under it, so no later step serves it again; the bot builds.
+    // Returns whether the card is held.
     staleRide(record, commitId, result, kind) {
         const ride = record?.cardCommit;
         if (!ride || ride.id !== commitId || ![result?.reason, result?.detail].includes(ROW_MOVED[kind])) return false;
         if (ride.held === true) {
             record.cardCommit = null;
+            record.wishAdvisory = null;
+            this.states.cardChanged?.(record);
             EconomyDiagnostics.count('card', 'stale_drop', kind);
             return false;
         }

@@ -170,6 +170,12 @@ module.exports.pendingProbe = async id => {
         const ride = kernel.states.get(id).cardCommit;
         const again = kernel.staleRide(kernel.states.get(id), ride?.id ?? null, { ok: false, reason: 'stale_command' }, 'command');
         const droppedAgain = kernel.states.get(id).cardCommit;
+        // Dropped, the card is gone for good: a step on the row its decision landed on (no
+        // longer behind it) builds, it does not serve the dropped card on a fresh ride.
+        kernel.states.set(id, { ...kernel.states.get(id), state: row });
+        builds = 0;
+        await kernel.planLifecycle({ state: row, timestamp: Date.now() + 15000 });
+        const afterDrop = builds;
         // A row moved past the card's money threshold (a settlement paid the bot): the gate
         // reads it as the build would and builds.
         const threshold = card.baseline.affordAt?.at > 0 ? card.baseline.affordAt.at : 0;
@@ -184,7 +190,7 @@ module.exports.pendingProbe = async id => {
         }
         return { echo: [behind.stats.decisionSeq, card.decisionSeq], inFlight, refused, waiting, rejected, restarted, stale, builds: builtServing,
             proposed: Number(plan.statsPacket?.decisionSeq || 0), held: ride?.held === true, again, droppedAgain,
-            threshold, movedBuilds };
+            afterDrop, threshold, movedBuilds };
     } finally { Economy.forState = original; kernel.states.set(id, { ...kernel.states.get(id), state: row }); }
 };
 // A deferred plan's next page: main's write while pages wait asks it, once per
@@ -369,6 +375,7 @@ parentPort.on('message', message => {
         assert.equal(pending.held, true, 'its next commit carries the same decision held once');
         assert.equal(pending.again, false, 'refused as stale again, it is not held');
         assert.equal(pending.droppedAgain, null, 'it goes');
+        assert.equal(pending.afterDrop, 1, 'and is not served again: the bot builds');
         assert(pending.threshold > 0, 'the probe\'s card waits for money');
         assert.equal(pending.movedBuilds, 1, 'a row moved past the card\'s money threshold builds');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
