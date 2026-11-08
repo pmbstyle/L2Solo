@@ -70,6 +70,14 @@ try {
     PartyComposition.selectRecruits(twelve.slice(0, 2), twelve.slice(2));
     Goals.decide(twelve[0], twelve.slice(1, 3));
     assert(Goals.formingMembers(twelve, null).length > 0);
+    // A party needs someone whose job is the kill: two clerics who would both join (their
+    // seeded rolls accept) form none; the same cleric and a fighter do.
+    const member = (id, classId) => ({ characterId: id, level: 30, inventory: {}, stats: { classId } });
+    const accepts = roster => roster.every(state => Goals.decide(state, roster.filter(peer => peer !== state)).accept);
+    const clerics = [member(1100, 15), member(1104, 15)], mixed = [member(1100, 15), member(1104, 1)];
+    assert(accepts(clerics) && accepts(mixed), 'fixture: every member accepts its peers');
+    assert.deepStrictEqual(Goals.formingMembers(clerics, null), [], 'a roster of healers only does not form');
+    assert.strictEqual(Goals.formingMembers(mixed, null).length, 2, 'a healer and a fighter form');
     assert.strictEqual(builds, 0);
 } finally { Object.assign(Economy, original); }
 

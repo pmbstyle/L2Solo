@@ -8,6 +8,7 @@ const Packet = require('../Economy/StatsPacket');
 const Rewards = require('../Economy/SpotRewardExpectation');
 const PartyStay = require('./PartyStay');
 const { fnv1a32 } = require('../Fnv1a');
+const Roles = invoke('GameServer/Bot/AI/BotRoles');
 
 const positive = value => Math.max(0, Number(value) || 0);
 
@@ -119,8 +120,16 @@ function verdictFree(requested) {
     return !!requested?.clanGoalKey || requested?.sourceKind === 'raid';
 }
 
+// A roster of healers only does not form: a party needs a member whose job is
+// the kill (our choice; C4 does not forbid it, but a healer's own blows are its
+// side line, and seekers from across a region would otherwise pair healers).
 function formingMembers(members, requested, options = {}) {
     if (verdictFree(requested)) return members;
+    const roster = acceptedMembers(members, requested, options);
+    return roster.every(member => Roles.isHealer(member)) ? [] : roster;
+}
+
+function acceptedMembers(members, requested, options) {
     // A candidate whose own stay would leave the party now (karma, its bag:
     // PartyStay.joins) is not taken: no party formed to dissolve.
     members = members.filter(member => PartyStay.joins(member, options.timestamp));
