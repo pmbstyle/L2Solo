@@ -130,9 +130,12 @@ module.exports.heldProbe = async (id) => {
 // replaced, one decisionSeq behind its card (a visit's write before the commit, a command
 // answered without its decision; the build woken by a worker-local situation, a board wake
 // or its leaf's outcome, so the row carries no raise). The card is still the answer to that
-// row only while the commit it rides is in flight, or its command answered that it waits on
-// a trade preparation; refused or dropped, the card goes. A waiting card serves the next
-// step with no build, proposing its own decision again.
+// row only while the commit it rides is in flight, its command answered that it waits on
+// a trade preparation, or the commit was refused as stale (another writer moved the row
+// first: a board settlement); refused otherwise (a worker restart's stale source included)
+// or dropped, the card goes. A card held so serves the next step with no build, proposing
+// its own decision again, once: refused so again, it goes. It serves only while the moved
+// row, judged against the card's baseline, wakes no build (money past its threshold does).
 module.exports.pendingProbe = async id => {
     const card = kernel.states.get(id).wishAdvisory, row = kernel.states.get(id).state;
     const behind = { ...row, stats: { ...row.stats, decisionSeq: card.decisionSeq - 1 } };
@@ -148,13 +151,40 @@ module.exports.pendingProbe = async id => {
     kernel.commandStartedAt.delete(id);
     const refused = publish({ card, id: commandId });
     const waiting = publish({ card, id: commandId, waiting: true });
+    const answered = reason => {
+        const record = kernel.states.get(id);
+        record.cardCommit = { card, id: commandId };
+        return kernel.staleRide(record, commandId, { ok: false, reason }, 'command') ? record.cardCommit : null;
+    };
+    const rejected = answered('command_rejected');
+    const restarted = answered('stale_worker_source');
+    const stale = publish(answered('stale_command'));
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), original = Economy.forState;
     let builds = 0;
     Economy.forState = (...args) => { builds++; return original(...args); };
     try {
         const plan = await kernel.planLifecycle({ state: behind, timestamp: Date.now() + 10000 });
-        return { echo: [behind.stats.decisionSeq, card.decisionSeq], inFlight, refused, waiting, builds,
-            proposed: Number(plan.statsPacket?.decisionSeq || 0) };
+        const builtServing = builds;
+        // The served card rides its next commit as the same decision held once: refused as
+        // stale again, it goes.
+        const ride = kernel.states.get(id).cardCommit;
+        const again = kernel.staleRide(kernel.states.get(id), ride?.id ?? null, { ok: false, reason: 'stale_command' }, 'command');
+        const droppedAgain = kernel.states.get(id).cardCommit;
+        // A row moved past the card's money threshold (a settlement paid the bot): the gate
+        // reads it as the build would and builds.
+        const threshold = card.baseline.affordAt?.at > 0 ? card.baseline.affordAt.at : 0;
+        const paid = { ...behind, adena: threshold };
+        let movedBuilds = null;
+        if (threshold) {
+            publish(answered('stale_command'));
+            kernel.states.set(id, { ...kernel.states.get(id), state: paid });
+            builds = 0;
+            await kernel.planLifecycle({ state: paid, timestamp: Date.now() + 20000 });
+            movedBuilds = builds;
+        }
+        return { echo: [behind.stats.decisionSeq, card.decisionSeq], inFlight, refused, waiting, rejected, restarted, stale, builds: builtServing,
+            proposed: Number(plan.statsPacket?.decisionSeq || 0), held: ride?.held === true, again, droppedAgain,
+            threshold, movedBuilds };
     } finally { Economy.forState = original; kernel.states.set(id, { ...kernel.states.get(id), state: row }); }
 };
 // A deferred plan's next page: main's write while pages wait asks it, once per
@@ -331,8 +361,16 @@ parentPort.on('message', message => {
         assert.equal(pending.inFlight, true, 'main\'s row sent before the step\'s commit lands keeps its card');
         assert.equal(pending.refused, false, 'a commit refused or dropped drops it: no card held past its commit');
         assert.equal(pending.waiting, true, 'a command answered that it waits on a trade preparation keeps it');
-        assert.equal(pending.builds, 0, 'the next step serves the waiting card: no build');
+        assert.equal(pending.rejected, null, 'a command rejected (not stale) leaves no hold');
+        assert.equal(pending.restarted, null, 'nor one refused for a worker restart\'s source');
+        assert.equal(pending.stale, true, 'a command refused as stale keeps it on the moved row');
+        assert.equal(pending.builds, 0, 'the next step serves the held card: no build');
         assert.equal(pending.proposed, pending.echo[1], 'and proposes the card\'s own decision again');
+        assert.equal(pending.held, true, 'its next commit carries the same decision held once');
+        assert.equal(pending.again, false, 'refused as stale again, it is not held');
+        assert.equal(pending.droppedAgain, null, 'it goes');
+        assert(pending.threshold > 0, 'the probe\'s card waits for money');
+        assert.equal(pending.movedBuilds, 1, 'a row moved past the card\'s money threshold builds');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;

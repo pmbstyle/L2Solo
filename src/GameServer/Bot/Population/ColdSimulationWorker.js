@@ -1271,8 +1271,10 @@ function rememberWishAdvisory(owner, advisory, seen = null) {
     }
     const changed = (advisory?.eventProof || null) !== (owner.wishAdvisory?.eventProof || null);
     owner.wishAdvisory = advisory;
-    // The commit this card rides: the command or step in progress, built or served on it.
-    owner.cardCommit = advisory ? { card: advisory, id: kernel.commitOf(owner.state.characterId) } : null;
+    // The commit this card rides: the command or step in progress, built or served on it;
+    // held: the same decision (its proof) served again after a stale hold (kernel.staleRide).
+    const held = !!advisory?.eventProof && owner.cardCommit?.stale === true && owner.cardCommit.card?.eventProof === advisory.eventProof;
+    owner.cardCommit = advisory ? { card: advisory, id: kernel.commitOf(owner.state.characterId), ...(held ? { held } : {}) } : null;
     if (changed) registerWants(owner);
 }
 

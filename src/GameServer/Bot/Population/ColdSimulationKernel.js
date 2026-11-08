@@ -59,6 +59,9 @@ const PartyHuntingTarget = require('./PartyHuntingTarget');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const BotErrands = require('./BotErrands');
+// The refusal of a commit whose base another writer moved, by the commit's kind: a step's
+// revision fence (Database.coldSimulationConflict), a command's checkpoint (Coordinator.admitWorkerCommand).
+const ROW_MOVED = Object.freeze({ step: 'stale_revision', command: 'stale_command' });
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
@@ -586,7 +589,7 @@ class RetainedStateMap extends Map {
         const incomingAdvice = !current && this.#skillDtos ? ColdEconomyDecision.restoreAdvisory(record.state, this.now()) : null;
         const wishAdvisory = ColdEconomyDecision.advisoryPublicationHolds(record.state, incomingAdvice, previousAdvice)
             ? incomingAdvice : ColdEconomyDecision.advisoryPublicationHolds(record.state, previousAdvice, null,
-                this.cardRides?.(id, previousAdvice) === true) ? previousAdvice : null;
+                !!this.cardRides?.(id, previousAdvice)) ? previousAdvice : null;
         if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) record.wishAdvisory = wishAdvisory;
         if (previousAdvice && !wishAdvisory) ColdEconomyDecision.noteDropped(record.state, previousAdvice);
         // The board wants follow the held card (the worker's cardChanged): a first row
@@ -854,11 +857,37 @@ class ColdSimulationKernel {
     // A card whose decision main has not written yet is still the answer to the row while
     // the commit it rides (record.cardCommit, tied when the worker remembered it) is in
     // flight, or its command answered that it waits (a trade preparation): main's rows
-    // sent meanwhile are one decisionSeq behind it. A commit refused, dropped or answered
-    // without its decision leaves the card unanswered: the row refuses it (a build).
+    // sent meanwhile are one decisionSeq behind it. A commit refused because another
+    // writer moved the row first (staleRide: a board settlement most often) leaves it the
+    // answer to the moved row once: 'stale', which the gate judges (ColdEconomyDecision.
+    // refusal: the moved row against the card's own baseline; a situation there wakes the
+    // build), else serves the card and proposes its decision again. A commit refused
+    // otherwise, dropped or answered without its decision leaves the card unanswered: the
+    // row refuses it (a build). Returns true, 'stale' or false.
     cardInFlight(characterId, advice) {
         const ride = advice ? this.states.get(Number(characterId))?.cardCommit : null;
-        return !!ride && ride.card === advice && (ride.waiting === true || ride.id !== null && ride.id === this.commitOf(characterId));
+        if (!ride || ride.card !== advice) return false;
+        if (ride.stale === true) return 'stale';
+        return ride.waiting === true || ride.id !== null && ride.id === this.commitOf(characterId);
+    }
+
+    // The card that rode a commit (commitId: its command or proposal) refused because another
+    // writer moved the row (stale_revision of a step, stale_command of a command) stays the
+    // answer to the row main sends back (cardInFlight 'stale'), counted card:stale_hold by
+    // the commit's kind. Once: the same card refused so again on its next commit (ride.held,
+    // set when the worker remembered it after a hold) is dropped (card:stale_drop): the row
+    // keeps moving under it, the bot builds. Returns whether the card is held.
+    staleRide(record, commitId, result, kind) {
+        const ride = record?.cardCommit;
+        if (!ride || ride.id !== commitId || ![result?.reason, result?.detail].includes(ROW_MOVED[kind])) return false;
+        if (ride.held === true) {
+            record.cardCommit = null;
+            EconomyDiagnostics.count('card', 'stale_drop', kind);
+            return false;
+        }
+        record.cardCommit = { card: ride.card, id: null, stale: true };
+        EconomyDiagnostics.count('card', 'stale_hold', kind);
+        return true;
     }
 
     // The party row this bot is a member of, or null.
@@ -2613,6 +2642,7 @@ class ColdSimulationKernel {
                 this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
                 // No review runs the plan this step stamped as sent.
                 if (active?.economyPlan) this.forgetSentPlan(id);
+                this.staleRide(this.states.get(id), identity.proposalId, result, 'step');
                 this.stepsRefused += 1;
                 if (DiagnosticConfig.developerDiagnostics && Protocol.staleRefusal(result)) this.stats.stale += 1;
                 EconomyDiagnostics.count('commit_ack', 'refused', result.detail || result.reason);
@@ -2699,7 +2729,9 @@ class ColdSimulationKernel {
         // step until the end): the card it carried stays the answer until the end, which
         // republishes the bot's row (Coordinator.preparationEnded) and schedules it.
         const waiting = payload.ok && payload.waiting === true, ride = current.cardCommit;
-        if (ride?.id === attempt.commandId) current.cardCommit = waiting ? { ...ride, waiting: true } : null;
+        if (ride?.id === attempt.commandId && !(payload.ok === false && this.staleRide(current, attempt.commandId, payload, 'command'))) {
+            current.cardCommit = waiting ? { ...ride, waiting: true } : null;
+        }
         // A refused review did not run its plan; main asks for a refresh.
         if (attempt.kind === 'review' && payload.ok === false && attempt.economyPlan) this.forgetSentPlan(id);
         // A command that threw on main (payload.fault, its stack) is held off as
