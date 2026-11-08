@@ -94,8 +94,9 @@ const SITUATIONS = Object.freeze({
     // What an executor proved of the held plan where it acts: its goal reached (a
     // purchase landed, a material hunt's count, a paid piece waits for its exchange);
     // a town visit's last stop done or refused (the visit's own check, a review main
-    // could not run): the build takes the next leaf. A stop with a stop after it in the
-    // held plan raises nothing: the plan moves on (EconomyContext visitStop).
+    // could not run; a body's visit stage, ShoppingState): the build takes the next leaf.
+    // A far stop with a stop after it in the held plan raises nothing: the plan moves on
+    // (EconomyContext visitStop).
     'goal_done:goal': link(0),
     'goal_done:visit': link(0),
     'goal_failed:visit': link(0),
@@ -104,9 +105,9 @@ const SITUATIONS = Object.freeze({
     // stand.
     spot_empty: link(0),
     // A far bot's arrival in town (detect: the step that leaves the field for a town
-    // visit) or a body's (ShoppingState); a far bot's on the trip its held leaf ordered
-    // to the town it names (:own), which the build does not hear: the visit carries out
-    // the step it came for.
+    // visit) or a body's (ShoppingState.arrive: its first tick in town), once a visit; on
+    // the trip its held leaf ordered to the town it names (:own), which the build does not
+    // hear: the visit carries out the step it came for.
     arrived_town: link(0),
     'arrived_town:own': link(0),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
@@ -603,12 +604,12 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
 // The facts whose situations wake the earning spot alone for a solo bot (died, spot_outleveled,
-// moved_by_world, spot_dangerous, recovered, karma_changed): the earning answer taken alone
+// moved_by_world, spot_dangerous, recovered, karma_changed, shots_out: the lines fact): the earning answer taken alone
 // (EconomyContext.decideEarning, ColdKarmaPolicy's) keeps them as they stand, with its spot's
 // outleveled, as its baseline beside the build's (detect reads them while the answer is the
 // newer): else each fact the build's baseline lacks raises again after every answer until a
 // build. ~70 B on the answer. earning: the new answer; returned with its facts.
-const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma']);
+const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma', 'lines']);
 function withOwnFacts(state, earning) {
     const now = readers().semanticFacts({ ...state, stats: { ...state.stats, earning } });
     const facts = {};

@@ -413,7 +413,7 @@ async function craftAtWorkshop(session, bot, target) {
             session.shoppingServicePhase = undefined;
             session.shoppingDoneAnnounced = false;
             EconomyContext.forget(bot.fetchId());
-            raiseDecision(session, 'arrived_town');
+            raiseDecision(session, 'goal_failed:visit');
             return;
         }
         const options = { batches: Math.min(batches, Math.max(1, Number(station.capacityBatches || batches)),
@@ -446,20 +446,37 @@ async function craftAtWorkshop(session, bot, target) {
         session.shoppingTarget = undefined;
         session.shoppingServicePhase = undefined;
         session.shoppingDoneAnnounced = false;
-        raiseDecision(session, 'arrived_town');
+        raiseDecision(session, 'goal_done:visit');
     } catch (error) {
         if (!session.workshopOriginal) {
             session.shoppingTarget = undefined;
             session.shoppingServicePhase = undefined;
-            raiseDecision(session, 'arrived_town', { impossible: true });
+            raiseDecision(session, 'goal_failed:visit', { impossible: true });
         }
         utils.infoWarn('Workshop', '%s: %s', bot.fetchName(), error.message);
     } finally { session.workshopCrafting = false; }
 }
 
+// A body's arrival in town, once a trip (BotTownTravel.request stamps its start,
+// shopTimer): the first tick it stands in a town. Its shopping moment, as a far bot's
+// (Situations.detect): on the trip its held leaf ordered to this town (:own) the town's
+// decisions wake but not the build, the visit carries out the step it came for. A visit's
+// stages end with their outcome (goal_done:visit / goal_failed:visit), never another
+// arrival. A player's companion follows its leader's errand: no arrival of its own.
+function arrive(session, bot) {
+    if (!session.shopTimer || session.townArrival === session.shopTimer || session.partyCompanion === true) return;
+    const town = TownTransitPolicy.townAt(bot);
+    if (!town) return;
+    session.townArrival = session.shopTimer;
+    const leaf = held(session)?.network?.activity;
+    const own = leaf?.town != null && leaf.activity !== 'hunting' && String(leaf.town) === town;
+    raiseDecision(session, own ? 'arrived_town:own' : 'arrived_town');
+}
+
 module.exports = {
-    workshopTarget, stockWorkshopTarget, craftAtWorkshop,
+    workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
     tick(session, bot, Generics, BotAI) {
+        arrive(session, bot);
         // The receipt/return callback owns the rest of this visit. Rejoining
         // the counter queue during its delay steals time from real shoppers.
         if (session.shoppingDoneAnnounced) {
@@ -551,7 +568,7 @@ module.exports = {
                 session.shoppingTarget = townMerchantTarget(closestTown, bot);
                 if (!session.shoppingTarget) {
                     session.plan = 'hunting';
-                    raiseDecision(session, 'arrived_town', { impossible: true });
+                    raiseDecision(session, 'goal_failed:visit', { impossible: true });
                     session.shoppingDoneAnnounced = false;
                     session.preShopLocation = undefined;
                     clearShoppingServiceState(session);
@@ -662,7 +679,7 @@ module.exports = {
                 TownTransitPolicy.defer(session, bot, 'shopping_route_unreachable');
                 session.plan = returningToCompanion ? 'following' : 'hunting';
                 // ARCH-NOTE: an unreachable shopping route also ends this town visit.
-                if (session.plan === 'hunting') raiseDecision(session, 'arrived_town', { impossible: true });
+                if (session.plan === 'hunting') raiseDecision(session, 'goal_failed:visit', { impossible: true });
                 session.shoppingDoneAnnounced = false;
                 session.shoppingTarget = undefined;
                 session.companionShopping = undefined;
@@ -692,7 +709,7 @@ module.exports = {
         if (session.shoppingServicePhase === 'improvement') {
             Improvements.reviewHot(session).then(result => {
                 if (result) { session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
-                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; raiseDecision(session, 'arrived_town'); }
+                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; raiseDecision(session, 'goal_done:visit'); }
             }).catch(error => utils.infoWarn('Improvement', '%s', error));
             return;
         }
@@ -780,7 +797,7 @@ module.exports = {
             TownChatter.say(session, BotAI, 'return-to-party', Speech.lines('town.return-to-party'), { priority: 'coordination' });
             bot.moveTo({ from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
                 to: { locX: leader.actor.fetchLocX(), locY: leader.actor.fetchLocY(), locZ: leader.actor.fetchLocZ() } });
-        } else if (!following) raiseDecision(session, 'arrived_town');
+        } else if (!following) raiseDecision(session, failed ? 'goal_failed:visit' : 'goal_done:visit');
     },
 
     async sellAndRestock(session, bot, Generics, BotAI) {
@@ -1150,7 +1167,6 @@ module.exports = {
             session.shoppingRestock = undefined;
             if (restockFailure) {
                 session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;
-                raiseDecision(session, 'arrived_town');
                 if (session.shoppingRestockFailures < MAX_RESTOCK_ATTEMPTS) {
                     session.shoppingRestockRetryAt = Date.now() + RESTOCK_RETRY_MS;
                     session.lastDecision = { action: 'shopping_retry', reason: restockFailure, at: Date.now() };
@@ -1159,7 +1175,7 @@ module.exports = {
             }
             const companionResume = session.resumeAfterShopping;
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
-            // A solo bot's rebuff hears the town arrival raised here (a guide answer is
+            // A solo bot's rebuff heard its town arrival (arrive; a guide answer is
             // carried out from the hunt, HuntingState); a player's companion renews its
             // blessing at the guide before it returns (its own threshold, player-led).
             const townBuffVisit = returningToCompanion ? HotTownRebuff.syncVisit(session, bot, BotAI) : null;
@@ -1168,9 +1184,9 @@ module.exports = {
             session.plan = rebuffBeforeLeaving
                 ? 'getting_buffed'
                 : (returningToCompanion ? 'following' : 'hunting');
-            // ARCH-NOTE: shopping may finish with a buff stop; that continuation
-            // belongs to this town event and returning from the buff raises nothing.
-            if (!returningToCompanion) raiseDecision(session, 'arrived_town');
+            // The visit's end, its restock bought or given up: the build takes the next
+            // leaf. A buff stop after it belongs to this visit and raises nothing.
+            if (!returningToCompanion) raiseDecision(session, restockFailure ? 'goal_failed:visit' : 'goal_done:visit');
             BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: restockFailure ? 'shopping_deferred' : 'shopping_completed',
@@ -1253,7 +1269,7 @@ module.exports = {
                 ? 'following'
                 : 'hunting';
             // ARCH-NOTE: hidden supply errands already advance in their cold round.
-            if (session.plan === 'hunting' && !wasSupplyErrand) raiseDecision(session, 'arrived_town');
+            if (session.plan === 'hunting' && !wasSupplyErrand) raiseDecision(session, 'goal_done:visit');
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;

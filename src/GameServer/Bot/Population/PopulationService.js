@@ -3096,6 +3096,12 @@ const PopulationService = {
                 // A deal in preparation keeps the bot in town: a sale visit saved its
                 // end before the meeting was staged (ColdMarketService.finishTownErrands).
                 if (TradeMeetingService.hasPreparation(restockedState.characterId)) return restockedState;
+                // So does a meeting accepted while the errands ran (its marker on the row,
+                // not on the state this step began from): the meeting holds the bot and its
+                // end resumes the visit. Ended here, the bot went home with the meeting
+                // still accepted and its leg restarted from the field.
+                const meeting = LifeState.cachedState(restockedState.characterId);
+                if (meeting?.stats?.tradeMeeting) return meeting;
                 const improvement = invoke('GameServer/Bot/Economy/BotImprovementService');
                 const continuation = improvement.acquisitionTravel(restockedState,
                     ColdSimulationCoordinator.economyDecisions.activity(restockedState));
@@ -3129,7 +3135,7 @@ const PopulationService = {
         });
         return marketStatePromise.then((persistedState) => persistedState || purchasedState)
             .then((marketState) => {
-            if (TradeMeetingService.hasPreparation(marketState.characterId)) return marketState;
+            if (TradeMeetingService.hasPreparation(marketState.characterId) || marketState.stats?.tradeMeeting) return marketState;
             // The needs after the visit's purchases and sales: read once for the board
             // reconcile and the trip below. A failed read is no goal (none): the
             // reconcile does not evaluate them again.

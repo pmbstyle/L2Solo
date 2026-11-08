@@ -4,8 +4,8 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const saved = [];
 function stub(object, key, value) { const old = object[key]; saved.push(() => object[key] = old); object[key] = value; }
-const events = [], timers = [];
-stub(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseDecision', () => {});
+const events = [], timers = [], raised = [];
+stub(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseDecision', (session, name) => raised.push(name));
 const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
 const Shot = invoke('GameServer/Inventory/ShotStock');
 const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
@@ -50,18 +50,33 @@ let failed = true;
         assert.equal(session.plan, 'shopping', 'a refused purchase keeps the visit active');
         assert.equal(session.lastDecision.action, 'shopping_retry');
         assert.equal(events.length, 0, 'a failed debit cannot publish shopping_completed');
+        assert.deepEqual(raised, [], 'a restock retried within the visit raises nothing');
         Shopping.scheduleRestock(session, bot, null, ai);
         assert.equal(timers.length, 0, 'the retry waits instead of looping each AI tick');
         failed = false;
         await attempt();
         assert.equal(session.plan, 'hunting');
         assert.equal(events.at(-1).eventType, 'shopping_completed', 'a later successful purchase ends the visit');
+        assert.deepEqual(raised.splice(0), ['goal_done:visit'], 'its end wakes the build once, no second town arrival');
         session.plan = 'shopping'; session.shoppingLiveShotStopChecked = true; session.shoppingTarget = { town: 'Giran' };
         failed = true;
         await attempt(); await attempt(); await attempt();
         assert.equal(session.plan, 'hunting', 'persistent failure cannot trap the bot in town forever');
         assert.equal(events.at(-1).eventType, 'shopping_deferred');
         assert.equal(events.at(-1).meta.reason, 'npc_seller_changed');
-        console.log('Hot restock: refusal, delayed retry, success and bounded deferral passed');
+        assert.deepEqual(raised.splice(0), ['goal_failed:visit'], 'a restock given up ends the visit once, failed');
+        // The body's arrival in town: once a trip, at its first tick there (its trip's
+        // start stamps shopTimer), whatever stages its visit then runs.
+        const visit = { actor: bot, plan: 'shopping', shopTimer: 1, shoppingDoneAnnounced: true, heldEconomy: { network: { activity: null } } };
+        Shopping.tick(visit, bot, null, ai); Shopping.tick(visit, bot, null, ai);
+        assert.deepEqual(raised.splice(0), ['arrived_town'], 'one arrival a visit');
+        const field = { ...bot, fetchLocX: () => 163095, fetchLocY: () => -216000, fetchLocZ: () => -3616 };
+        const trip = { ...visit, shopTimer: 2, actor: field };
+        Shopping.tick(trip, field, null, ai);
+        assert.deepEqual(raised.splice(0), [], 'none on the way, before it stands in a town');
+        trip.actor = bot; trip.heldEconomy = { network: { activity: { activity: 'shopping', town: 'Giran' } } };
+        Shopping.tick(trip, bot, null, ai);
+        assert.deepEqual(raised.splice(0), ['arrived_town:own'], 'the trip its held leaf ordered to this town is the leaf\'s own');
+        console.log('Hot restock: refusal, delayed retry, success and bounded deferral; one town arrival a visit passed');
     } finally { saved.reverse().forEach(restore => restore()); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -784,8 +784,9 @@ module.exports = {
             if (economy.network.activity?.activity === 'shopping') {
                 // The held shopping leaf is its build's decision (the visit weighed when it
                 // chose it: EconomicValuation.visitPays): its trip starts once per decision, no
-                // tick weighs it again; who sells what is read at the market, whose arrival
-                // wakes the build (arrived_town). A trip a fight defers is asked again.
+                // tick weighs it again; who sells what is read at the market, where the visit
+                // carries the step out (its arrival is the leaf's own, arrived_town:own) and its
+                // end wakes the build (goal_done:visit). A trip a fight defers is asked again.
                 const leaf = economy.network.activity;
                 const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(bot, session);
                 const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
