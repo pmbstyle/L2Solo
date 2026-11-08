@@ -454,11 +454,12 @@ const BotManager = {
         const actor = session.actor;
 
         actor.state.setDead(false);
+        // A spawn starts at full HP/MP; the guide's blessing (buffs only) sends the
+        // vitals with its own refresh.
+        actor.fillupVitals();
         if (botData.fullNewbieBlessing !== false && BotBuffs.isNewbieEligible(actor)) {
             return BotBuffs.applyFullNewbieBlessing(session, actor, Generics);
         }
-
-        actor.fillupVitals();
         actor.statusUpdateVitals(actor);
         return { buffs: [], expiresAt: null };
     },

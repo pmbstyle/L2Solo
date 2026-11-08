@@ -352,13 +352,20 @@ function nearHeld(record, row) {
 // The decision bits a raise set since the bot's last state (its woken bits as
 // raised, Situations: a step answers them).
 const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Number(before?.stats?.woken || 0));
-// A step main carries out itself (PopulationService's entry branch): the rebuff's
-// guide answer (ColdGuideVisit) or its hall's step (VisitNeed.needed over the
-// worker's hall row: a visit under way, the rebuff's hall answer, a restart there).
-let Rebuff = null;
+// A step main carries out itself (PopulationService's entry branch): its hall's
+// step (VisitNeed.needed over the worker's hall row: a visit under way, the
+// rebuff's hall answer, a restart there).
 function mainVisit(state, facts) {
-    return !!state.stats?.clanHallVisit || !!(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')
-        || facts.hallNeeded(state);
+    return !!state.stats?.clanHallVisit || facts.hallNeeded(state);
+}
+// A far bot's held guide answer (ColdGuideVisit) is its step's round, pure, here; a
+// party member's buffs are its party's. The step's packet holds the answer as
+// decided and is merged after the round: it carries the round's done answer too.
+let Rebuff = null;
+function guideRound(state, plan, timestamp) {
+    if (state.party?.partyId || state.partyId || !(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')) return null;
+    const result = require('./ColdGuideVisit').plan(state, timestamp), rebuff = result.patch.stats.rebuff;
+    return { result, plan: plan?.statsPacket?.rebuff ? { ...plan, statsPacket: { ...plan.statsPacket, rebuff } } : plan };
 }
 // A held clan waiter (ClanPartyDuty.held) takes no step where the solo resolver
 // would plan it: the resolver only holds it again. A command still runs first.
@@ -1581,15 +1588,17 @@ class ColdSimulationKernel {
             const elapsedMs = stepElapsedMs(current.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(current.state, timestamp);
             const hallVisit = !raidPreparing && mainVisit(current.state, this);
-            const lifecyclePlan = !hallVisit && !raidPreparing && this.planLifecycle
+            let lifecyclePlan = !hallVisit && !raidPreparing && this.planLifecycle
                 ? await this.planLifecycle({ state: current.state, timestamp })
                 : null;
             if (!this.currentCommand(id, attempt)) return;
             const resolveState = lifecyclePlan?.plannedState || current.state;
             const spot = this.spotOf(current.state);
+            const guide = !hallVisit && !raidPreparing && guideRound(resolveState, lifecyclePlan, timestamp);
+            if (guide) lifecyclePlan = guide.plan;
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
+                : guide ? guide.result : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
@@ -2294,7 +2303,8 @@ class ColdSimulationKernel {
             // (T120) goes on from its end, it lives that time once.
             const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0, ownClock(active.state)));
             const elapsedMs = stepElapsedMs(active.state, timestamp);
-            const lifecyclePlan = !require('./RaidSupplyPolicy').held(active.state, timestamp) && this.planLifecycle
+            const raidPreparing = require('./RaidSupplyPolicy').held(active.state, timestamp);
+            let lifecyclePlan = !raidPreparing && this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, timestamp })
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
@@ -2307,7 +2317,9 @@ class ColdSimulationKernel {
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
                     (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0)
             };
-            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
+            const guide = !raidPreparing && guideRound(resolveState, lifecyclePlan, timestamp);
+            if (guide) lifecyclePlan = guide.plan;
+            const result = guide ? guide.result : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 ...roundOptions,
                 state: resolveState,
                 lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),

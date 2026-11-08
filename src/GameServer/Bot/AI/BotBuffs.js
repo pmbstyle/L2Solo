@@ -189,6 +189,8 @@ function applySupportBuff(session, actor, buffType, Generics, source) {
     return applyBuff(session, actor, buffType, Generics, source);
 }
 
+// The Newbie Guide's blessing: its buffs only, no HP/MP (C4: L2J Lisvus's newbie
+// helper casts its buff skills and restores nothing).
 function applyFullNewbieBlessing(session, actor, Generics) {
     if (!actor) return null;
 
@@ -204,8 +206,6 @@ function applyFullNewbieBlessing(session, actor, Generics) {
         invoke('GameServer/Effects/EffectTicker').scheduleExpiry(session, actor, effect);
     });
 
-    actor.setHp(actor.fetchMaxHp());
-    actor.setMp(actor.fetchMaxMp());
     refreshActorPackets(session, actor, Generics);
 
     return {

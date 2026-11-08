@@ -1082,9 +1082,9 @@ try {
         getClosestNewbieGuide: () => ({ locX: 0, locY: 0, locZ: 0 }),
         say() {}
     });
-    assert.strictEqual(inviteBotSession.plan, 'getting_buffed', 'a low-level companion accepted while resting in town should recover at the Newbie Guide');
-    assert.strictEqual(inviteBot.state.fetchSeated(), false, 'Newbie Guide recovery should stand the invited companion up');
-    assert.strictEqual(inviteBotSession.roleDecision.reason, 'newbie_guide_recovery', 'the city recovery transition should be visible in companion status');
+    // C4: the Newbie Guide only buffs, it restores no HP/MP: a low companion rests where it is.
+    assert.notStrictEqual(inviteBotSession.plan, 'getting_buffed', 'a low-level companion accepted while resting in town walks to no Newbie Guide');
+    assert.strictEqual(inviteBot.state.fetchSeated(), true, 'it stays seated: no walk to the Newbie Guide to recover');
 
     const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
     movingBot.state.setTowards('move');
@@ -2429,22 +2429,9 @@ try {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.strictEqual(recoverySession.plan, 'getting_buffed', 'a low-level companion already in a Newbie Guide town should recover there instead of sitting');
-    assert.strictEqual(recoverySession.roleDecision.reason, 'newbie_guide_recovery', 'Newbie Guide recovery should be visible in bot status');
-
-    // An abandoned guide trip waits for its retry time: the companion sits instead.
-    const retryRecoveryBot = fakeActor(2000077, { locX: -84001, locY: 243227, locZ: -3723, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
-    const retryRecoverySession = fakeSession('bot_newbie_retry_recovery_party', retryRecoveryBot);
-    retryRecoverySession.followPlayerSession = recoveryLeaderSession;
-    retryRecoverySession.partyCompanion = true;
-    retryRecoverySession.plan = 'following';
-    retryRecoverySession.newbieGuideRetryAt = Date.now() + 60000;
-    publishSessions([recoveryLeaderSession, retryRecoverySession]);
-    FollowingState.tick(retryRecoverySession, retryRecoveryBot, {}, {
-        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
-        say() {}, executeCombat() {}, executePvPCombat() {}
-    });
-    assert.strictEqual(retryRecoverySession.plan, 'resting', 'a companion whose guide route waits for its retry time should rest instead of retrying the trip');
+    // C4: the Newbie Guide only buffs: a low companion sits even beside it.
+    assert.strictEqual(recoverySession.plan, 'resting', 'a low-level companion in a Newbie Guide town sits to recover');
+    assert.strictEqual(recoverySession.roleDecision.reason, 'resting', 'it recovers seated, no guide trip');
 
     const fieldRecoveryBot = fakeActor(2000045, { locX: 0, locY: 0, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
     const fieldRecoverySession = fakeSession('bot_field_recovery_party', fieldRecoveryBot);
