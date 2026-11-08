@@ -186,7 +186,10 @@ function woke(name, where) {
 // (situations.md §10, §14).
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
-// which names the spot a body walks to), goal_done:visit / goal_failed:visit (a visit
+// which names the spot a body walks to), spot_unreachable (the spot a body could not
+// walk to is its hunting leaf's, which the build chose: a material hunt's source spot
+// as well as the earning spot; the earning answer alone would retire the mark and send
+// the body back to the same leaf spot), goal_done:visit / goal_failed:visit (a visit
 // whose held plan has no stop left: the next leaf). A death wakes
 // the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
@@ -221,7 +224,7 @@ const DECISIONS = Object.freeze({
     build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
-        'clan_changed', 'spot_empty', 'player_command', 'offer_posted']),
+        'clan_changed', 'spot_empty', 'player_command', 'spot_unreachable', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
     own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
@@ -331,6 +334,9 @@ function took(stats, bits, caller, subject = 0, was = null) {
 function delta(name, payload = null, where = OPEN, stats = null) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
+    // A spot already marked under the held answer is no news: the decisions its first
+    // mark woke answer it (a body that fails the same walk again while it waits).
+    if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
     // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
@@ -352,6 +358,11 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 const GearMarks = require('./AI/GearMarks');
+function marked(stats, name, payload) {
+    if (!stats || payload?.spotId == null || !MARKS.has(name)) return false;
+    Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    return Risk.isMarked(stats, payload.spotId);
+}
 function raisedFacts(stats, name, payload, dropped = null) {
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
