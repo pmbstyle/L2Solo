@@ -527,18 +527,21 @@ function factNames(previousFact, current, planned = false) {
 // BotLifeState.prepareResolve): a rebuffable effect in force at the state's time
 // (BotBuffs.buffedAt). Its value is kept on the row (stats.buffed) and compared there,
 // not against the step's state before: a rest or a write between rounds would hide the
-// flip. Out of the field, dead or in a party the row holds none (null): a town visit, a
-// death and a party's buffs are no hunt's. A solo field step that finds the bot
-// unbuffed raises buffs_expired once when the row held it buffed (its last buff ended)
-// or held none (a new row, back from town, a death's restart, a party left): a hunter
-// who sees no buffs on him renews them at his next stop. next: the stats written;
+// flip. Dead or in a party the row holds none (null): a death and a party's buffs are no
+// hunt's. Out of the field (a town visit) the fact is not read and stands as it was: a
+// trip ends no buff, and a rebuff in town that answered none leaves an unbuffed hunter
+// unbuffed, no news on its way back. A solo field step that finds the bot unbuffed
+// raises buffs_expired once when the row held it buffed (its last buff ended, in the
+// field or on the trip) or held none (a new row, a death's restart, a party left): a
+// hunter who sees no buffs on him renews them at his next stop. next: the stats written;
 // field: the step's activity is a field one (FIELD_ACTIVITIES); returns the situation
 // name or null.
 function buffFact(next, effects, at, { field = true, dead = false, grouped = false } = {}) {
-    if (!field || dead || grouped) {
+    if (dead || grouped) {
         if (next.buffed != null) next.buffed = null;
         return null;
     }
+    if (!field) return null;
     const buffed = Number((Buffs ||= invoke('GameServer/Bot/AI/BotBuffs')).buffedAt(effects, at)), was = next.buffed;
     if (was !== buffed) next.buffed = buffed;
     return was !== 0 && !buffed ? 'buffs_expired' : null;

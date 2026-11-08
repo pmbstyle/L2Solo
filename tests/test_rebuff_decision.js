@@ -18,8 +18,8 @@ const blessing = Buffs.newbieEffects(at);
 const ends = blessing[0].expiresAt;
 
 // The buffed fact: its 1 -> 0 fall raises buffs_expired once, kept on the row; a solo
-// field step that first reads the bot unbuffed (a new row, back from town, a death's
-// restart, a party left) raises it once too.
+// field step that first reads the bot unbuffed (a new row, a death's restart, a party
+// left) raises it once too; a town trip leaves the fact as it was.
 {
     const stats = {};
     assert.equal(Situations.buffFact(stats, blessing, at + 1000), null, 'getting buffed raises nothing');
@@ -31,9 +31,13 @@ const ends = blessing[0].expiresAt;
     const dying = { buffed: 1 };
     assert.equal(Situations.buffFact(dying, [], ends, { dead: true }), null, 'a death clears buffs and raises none');
     assert.equal(Situations.buffFact(dying, [], ends + 1), 'buffs_expired', 'its restart in the field reads them gone');
+    // A town trip ends no buff: an unbuffed hunter whose rebuff in town answered none is no news back in the field.
     const visiting = { buffed: 0 };
     assert.equal(Situations.buffFact(visiting, [], ends, { field: false }), null, 'a town visit raises none');
-    assert.equal(Situations.buffFact(visiting, [], ends + 1), 'buffs_expired', 'back in the field unbuffed');
+    assert.equal(Situations.buffFact(visiting, [], ends + 1), null, 'back in the field unbuffed as it left');
+    const buffedTrip = { buffed: 1 };
+    assert.equal(Situations.buffFact(buffedTrip, [], ends, { field: false }), null, 'its buff ends on the trip');
+    assert.equal(Situations.buffFact(buffedTrip, [], ends + 1), 'buffs_expired', 'back in the field its last buff ended');
     const grouped = { buffed: 1 };
     assert.equal(Situations.buffFact(grouped, [], ends, { grouped: true }), null, 'a party\'s buffs are its own');
     assert.equal(Situations.buffFact(grouped, blessing, at), null, 'solo again and buffed: nothing to renew');
