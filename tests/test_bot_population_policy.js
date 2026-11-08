@@ -144,10 +144,13 @@ async function run() {
         return Promise.resolve({ ok: true, state });
     };
 
+    const budgetCuts = () => Number(invoke('GameServer/Bot/Population/PopulationMetrics').interval.activationRefusalReasons.get('activation_budget') || 0);
+    const cutsBefore = budgetCuts();
     await PopulationService.activateNearPlayers();
     assert.strictEqual(coldLimit, 100, 'activation must inspect the complete local service row');
     assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree', 'ColdA'],
         'craft services must not be capped by the ambient budget and the uncapped local population must ramp one ambient bot');
+    assert.strictEqual(budgetCuts(), cutsBefore + 1, 'a scan whose budget left near rows cold is counted once, not per row left out');
     const ambientRequest = activationRequests.find((entry) => entry.state.name === 'ColdA');
     assert.strictEqual(ambientRequest.reason, 'near_player');
     assert.strictEqual(ambientRequest.options.readyOnActivation, true,
@@ -190,6 +193,7 @@ async function run() {
     await PopulationService.activateNearPlayers();
     assert.deepStrictEqual(activated, ['ColdLevel45'],
         'physical proximity must activate the local cold bot without a player-level filter');
+    assert.strictEqual(budgetCuts(), cutsBefore + 1, 'a scan that showed every near row counts no budget cut');
 
     const grouped = Array.from({ length: 9 }, (_, i) => ({ characterId: 200 + i, name: `Group${i}`, level: 45,
         activity: 'grouped', party: { partyId: 'full-party' } }));

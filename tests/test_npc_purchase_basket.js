@@ -241,6 +241,11 @@ async function run() {
     const basics = Economy.basics;
     Economy.basics = () => assert.fail('an unrated kit builds no basics');
     try { assert.equal(potionLine(unrated), 0, 'an unrated bot buys no potions'); } finally { Economy.basics = basics; }
+    // Counted on the health line without developer diagnostics: each unrated bot once, not each read.
+    const unratedCount = () => invoke('GameServer/Bot/Situations').counts().raised['kit:unrated@main'] || 0;
+    const unratedOnce = unratedCount();
+    potionLine(unrated);
+    assert(unratedOnce >= 1 && unratedCount() === unratedOnce, 'an unrated bot is counted once');
     // Each step of a restock reads the bag after the virtual purchases before
     // it: an extra bought between the potions and the shots is in the sale
     // list the shots' step reads (a new bag, not the potions' one edited).

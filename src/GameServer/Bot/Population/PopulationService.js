@@ -1788,15 +1788,17 @@ const PopulationService = {
                         // A row past the budget is not tried: it steps on cold (a cold row is
                         // invisible to the player). Nothing remembers it: the rows activated now
                         // are hot and leave the cold list, so it comes first next scan unless
-                        // nearer rows arrived.
+                        // nearer rows arrived. A scan that left rows out counts once
+                        // (activation_budget): the player stands among more bots than it shows.
                         const tryRows = async () => {
+                            let cut = false;
                             for (const state of floorAware) {
                                 const craft = state.activity === 'crafting' && state.stats?.craftShop;
                                 const memberIds = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId)?.memberIds : null;
                                 const size = memberIds?.length || 1;
                                 // One full party may exceed the solo per-scan budget
                                 // (9 versus 6), but may not be split or starve forever.
-                                if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) continue;
+                                if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) { cut = true; continue; }
                                 const result = await this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
@@ -1808,6 +1810,7 @@ const PopulationService = {
                                 activated.push(result);
                                 if (!craft) ambientActivated.push(...Array(result.count || 1).fill(result));
                             }
+                            if (cut) Metrics.recordActivationRefusal('activation_budget');
                         };
                         return tryRows().then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });

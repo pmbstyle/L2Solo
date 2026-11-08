@@ -14,7 +14,7 @@ const { format } = require('node:util');
 // unnamed sites (one per distinct throw) cannot crowd the named ones out.
 const MAX_SITES = 128;
 const MAX_UNNAMED_SITES = 32;
-const OTHER_SITES = 'other sites', OTHER_UNNAMED = 'other unnamed sites';
+const OTHER_SITES = 'other sites', OTHER_UNNAMED = 'other unnamed sites', TRACE_SITE = 'failure_log.trace';
 
 const counts = new Map();
 let trace = null;
@@ -33,7 +33,10 @@ function record(site, error, isNamed) {
     counts.set(key, count);
     // Every failure is a record of the decision trace too (when it is on): where a bot's story broke.
     // lazy: cycle the trace's config loads modules that note failures.
-    try { (trace ||= require('./GameServer/Bot/DecisionTrace')).record({ kind: 'failure', site: String(key) }); } catch { /* The trace never fails a failure path. */ }
+    // The trace never fails a failure path; its own failure is counted under its site
+    // here, never through record() (no recursion).
+    try { (trace ||= require('./GameServer/Bot/DecisionTrace')).record({ kind: 'failure', site: String(key) }); }
+    catch { counts.set(TRACE_SITE, (counts.get(TRACE_SITE) || 0) + 1); }
     if (count === 1) warn('%s (repeats are counted, not logged): %s', site, error?.stack || error);
 }
 

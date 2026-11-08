@@ -75,6 +75,14 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(sites['unhandled rejection: row # refused'], 5, 'ids in a message do not split a site');
     assert.ok(sites['other unnamed sites'] > 0, 'unnamed sites past their cap share one count');
     assert.strictEqual(sites['test.named_after_flood'], 1, 'a flood of unnamed sites leaves room for a named one');
+    // A failure whose decision-trace record throws is still counted, and so is the trace's own failure.
+    const Trace = invoke('GameServer/Bot/DecisionTrace'), traceRecord = Trace.record;
+    Trace.record = () => { throw Error('trace queue broken'); };
+    console.warn = console.info = () => {};
+    try { FailureLog.note('test.trace_broken', Error('a failure while the trace fails')); }
+    finally { Trace.record = traceRecord; console.info = info; console.warn = warn; }
+    assert.strictEqual(FailureLog.snapshot()['test.trace_broken'], 1);
+    assert.strictEqual(FailureLog.snapshot()['failure_log.trace'], 1, 'the trace failing on a failure path is counted');
     const rejectedAcks = [];
     const rejectedQueue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [],
         onResults: rows => rejectedAcks.push(...rows) });
