@@ -437,7 +437,8 @@ class ColdCommitQueue {
                 try {
                     const nextState = await this.prepare(proposal);
                     if (!nextState) {
-                        results.push({ ok: false, characterId: proposal.characterId, reason: 'prepare_rejected', proposal });
+                        results.push({ ok: false, characterId: proposal.characterId, reason: 'prepare_rejected',
+                            ...(proposal.prepareRefusal ? { detail: proposal.prepareRefusal } : {}), proposal });
                         continue;
                     }
                     prepared.push({ proposal, revision: proposal.revision, nextState, options: proposal.options || {},

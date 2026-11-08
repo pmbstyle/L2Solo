@@ -1221,7 +1221,11 @@ const PopulationService = {
 
         this.phasePolicyRunning = true;
         return this.activateNearPlayers()
-            .then((activated) => this.cooldownEligibleHot().then((cooled) => ({ activated, cooled })))
+            .then((activated) => {
+                // After this scan's activations: a held cold row no player sees any more steps again.
+                ColdSimulationCoordinator.releaseNearHolds();
+                return this.cooldownEligibleHot().then((cooled) => ({ activated, cooled }));
+            })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'phase policy failed: %s', err.message);
                 return { activated: [], cooled: [] };
@@ -1725,6 +1729,21 @@ const PopulationService = {
         return invoke('GameServer/Bot/AI/RestPolicy').needsRest(state, hpPct, mpPct, { party });
     },
 
+    // Would the near-player scan activate this cold row? Not a traveller or a
+    // pk hunter (no hot equivalent of its run), not a bot on a supply errand, a
+    // party only while its row is active (one candidate for the roster), a
+    // crafter only with its shop, never a merchant. The cold commit holds only
+    // such a row near a player (ColdSimulationCoordinator.prepareProposal): a
+    // row this scan skips would wait there forever.
+    activationCandidate(state) {
+        if (!state || ['pk_hunting', 'traveling'].includes(state.activity)
+            || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return false;
+        const partyId = state.party?.partyId;
+        if (partyId) return BackgroundPartyState.find(partyId)?.status === 'active';
+        if (state.activity === 'crafting') return !!state.stats?.craftShop;
+        return state.activity !== 'merchant';
+    },
+
     activateNearPlayers() {
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
@@ -1754,13 +1773,10 @@ const PopulationService = {
                         // A party contributes one candidate; its lifecycle
                         // transition reserves and materializes the full roster.
                         const seenParties = new Set();
-                        const available = states.filter((state) => (
-                            !['pk_hunting', 'traveling'].includes(state.activity) &&
-                            !BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)
-                        )).filter(state => {
+                        const available = states.filter(state => this.activationCandidate(state)).filter(state => {
                             const partyId = state.party?.partyId;
                             if (!partyId) return true;
-                            if (seenParties.has(partyId) || BackgroundPartyState.find(partyId)?.status !== 'active') return false;
+                            if (seenParties.has(partyId)) return false;
                             seenParties.add(partyId);
                             return true;
                         });
@@ -1782,9 +1798,7 @@ const PopulationService = {
                             0,
                             Config.maxActivationsPerScan - ambientActivated.length
                         );
-                        const ambient = standalone.filter((state) => (
-                            state.activity !== 'merchant' && state.activity !== 'crafting'
-                        ));
+                        const ambient = standalone.filter(state => state.activity !== 'crafting');
                         const candidates = [...parties, ...crafters, ...ambient]
                             .slice(0, parties.length + crafters.length + ambientRemaining);
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {

@@ -273,7 +273,7 @@ function request(session, bot, BotAI, reason, options = {}) {
 
 async function requestMeeting(session, bot, meeting, side) {
     if (hasCombatThreat(session, bot) || bot.isDead() || session.meetingTravel || session.pendingActorTeleport) return;
-    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const Database = invoke('Database');
     const Routes = require('../Travel/TravelRoutes'), suffix = side ? 'B' : 'A';
     const token = session.meetingTravel = { id: meeting.id };
     const point = { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
@@ -281,8 +281,7 @@ async function requestMeeting(session, bot, meeting, side) {
     const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot);
     const cancelRoute = async reason => {
         session.meetingTravel = undefined;
-        const cancelled = await Database.cancelTradeMeeting(meeting.id, reason);
-        for (const row of Object.values(cancelled?.coldLifeRows || {})) Life.acceptLifecycleRow(row);
+        TradeMeetings.acceptRows(await Database.cancelTradeMeeting(meeting.id, reason));
         TradeMeetings.wake(bot.fetchId());
     };
     const pay = async (legId, fee, scroll) => {
@@ -290,8 +289,7 @@ async function requestMeeting(session, bot, meeting, side) {
         if (!valid() || latest?.state !== 'accepted') return null;
         const saved = JSON.parse(latest[`leg${suffix}`] || 'null');
         const sequence = saved?.legId === legId ? saved.sequence : latest[`nextLeg${suffix}`];
-        const paid = await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll);
-        const row = paid.coldLifeRows?.[bot.fetchId()]; if (row) Life.acceptLifecycleRow(row);
+        TradeMeetings.acceptRows(await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll));
         await invoke('GameServer/AfkTrade/AfkTradeService').syncOnlineInventory(bot.fetchId(), await Database.fetchItems(bot.fetchId(), 'town_travel_meeting'));
         return sequence;
     };

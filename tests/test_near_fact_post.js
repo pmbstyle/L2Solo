@@ -91,6 +91,23 @@ async function run() {
     assert(!(session.nearRaise?.names || []).some(entry => entry.name === 'moved_by_world'),
         'a body\'s own spot change raises no moved_by_world');
 
+    // Several changes of one turn (a loot of several kinds, a level) are one post,
+    // built after all of them: one row carrying every item.
+    sent.length = 0;
+    const seqBefore = Number(session.nearSeq || 0);
+    session.actor.backpack.insertItem(9003, 1864, { amount: 5 });
+    session.actor.backpack.insertItem(9004, 1865, { amount: 3 });
+    Life.notifyNearFacts(session, 'level');
+    await new Promise(resolve => setImmediate(resolve));
+    await Coordinator.sendSnapshots(false);
+    assert.strictEqual(Number(session.nearSeq), seqBefore + 1, 'the turn\'s changes are one post');
+    const looted = sent.filter(message => message.type === 'snapshot_page')
+        .flatMap(message => message.payload.rows.map(entry => entry.state || entry))
+        .filter(candidate => Number(candidate.characterId) === id);
+    assert.strictEqual(looted.length, 1, 'one row reaches the worker for the turn');
+    assert(Number(looted[0].inventory?.[1864]?.amount) === 5 && Number(looted[0].inventory?.[1865]?.amount) === 3,
+        'the post carries every change of the turn');
+
     // A player's bag change sends nothing.
     sent.length = 0;
     session.accountId = 'player_near_1';
