@@ -304,13 +304,17 @@ const SpotProfiles = {
         // answer's spot, else (it found none, or the caller's exclusions or the room
         // refuse it) the bot stays where it may until a situation re-decides. Only a
         // bot with no answer yet (its first decision pending) walks the list below. A
-        // gear plan's source and a protected starter's field keep their own rules.
-        if (soloSearch && !protectedStarterCohort && !collectingGear && state.stats?.earning !== undefined
-            && !state.party?.partyId && !state.partyId) {
+        // gear plan's source comes first while the source takes the bot (below); a
+        // refused source falls to the held answer, not to the list. A protected
+        // starter's field keeps its own rule.
+        const holdsAnswer = soloSearch && !protectedStarterCohort && state.stats?.earning !== undefined
+            && !state.party?.partyId && !state.partyId;
+        const heldPick = () => {
             const held = EquipmentIncomeRoute.heldSpot(state, profiles, mode);
             if (held && !excludedSpotIds.has(String(held.id)) && !full(held)) return held;
             return currentSpot && !mustRelocate ? LevelingRoutes.decorateSpot(currentSpot, currentMatch) : null;
-        }
+        };
+        if (holdsAnswer && !collectingGear) return heldPick();
 
         if (keepCurrentSpot) {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
@@ -344,6 +348,7 @@ const SpotProfiles = {
             const planned = SpotIndex.spotById(profiles, plannedSource ? plannedSource.spotId : acquisitionPlan.next?.spotId);
             if (plannedAllowed(planned, plannedSource?.npcId || acquisitionPlan.next?.npcId)) return planned;
         }
+        if (holdsAnswer) return heldPick();
 
         if (currentSpot && !mustRelocate && SpotService.isSuitable(currentSpot, targetLevel, options)) {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);

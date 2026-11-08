@@ -372,16 +372,36 @@ function held(session) {
     view.statsPacket = statsFor(session);
     return session.heldEconomy = view;
 }
-// The spot a body's held decisions name for its hunt (main executes it, never
-// chooses one, situations.md §8): its card's hunting leaf (leaf: the caller's read
-// of it), else its held earning answer (stats.earning). None when there is none or
-// its situations ruled it out (its spot marks: unreachable, unsafe ground; SpotRiskPolicy).
-const heldSpotId = (session, leaf = null) => heldSpotOf(statsFor(session), leaf);
-// The same over a bot's stats (a far row's: GoalExecutor) and its card's leaf.
-function heldSpotOf(stats = {}, leaf = null) {
-    const id = leaf?.activity === 'hunting' && leaf.spotId != null ? leaf.spotId : stats?.earning?.spotId;
-    return id != null && !Risk.isMarked(stats, id) ? String(id) : null;
+// The spot a bot's held decisions name for its hunt, the one reader of every place
+// that sends a bot to hunt without searching (a town or hall visit's end, a body that
+// must leave its ground): its card's hunting leaf (leaf: the caller's read of it),
+// else its gear plan's source while it collects there (not in the leveling recovery
+// the plan holds: a fresh one is the worker's search's to judge),
+// else its held earning answer (stats.earning; a party member's hunt is its party's),
+// in the order the worker's route takes them (BotRoute.trip). A spot its exclusions
+// rule out (spot marks, death marks, death pressure: SpotRiskPolicy) is skipped; null
+// when none is left. Room and viability are met at arrival by the worker's next trip.
+// state: a far row, or a body's view (heldSpotId).
+function heldSpotOf(state = {}, leaf = null) {
+    const stats = state.stats || {};
+    const excluded = Risk.excludedSpotIdsForStates([state]);
+    const plan = stats.equipmentPlan;
+    // lazy: GearAcquisitionPlanner loads the economy modules that load this one.
+    const source = plan?.status === 'active' && plan.next?.spotId != null && !(plan.levelingRecovery
+        && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan)) ? plan.next.spotId : null;
+    const earning = state.party?.partyId || state.partyId ? null : stats.earning?.spotId;
+    for (const id of [leaf?.activity === 'hunting' ? leaf.spotId : null, source, earning]) {
+        if (id != null && !excluded.has(String(id))) return String(id);
+    }
+    return null;
 }
+// The same for a far row on main: its held card's leaf as the coordinator holds it.
+// lazy: cycle the coordinator loads PopulationService, which loads this module.
+const farHeldSpot = state => heldSpotOf(state,
+    invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state) || null);
+// The same for a near body: its stats and its level (a leveling recovery reads them).
+const heldSpotId = (session, leaf = null) => heldSpotOf({ stats: statsFor(session),
+    level: session.actor?.fetchLevel?.(), exp: session.actor?.fetchExp?.() }, leaf);
 // A body that needs a spot (BotDecisionService, HuntingState) while its held answer
 // names none it may take asks again once per answer (Situations.spotAsk over the
 // session: spot_empty raised on 'ask'); 'none' when the answer to its ask names none
@@ -407,5 +427,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, farHeldSpot, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

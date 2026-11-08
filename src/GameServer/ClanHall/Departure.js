@@ -1,13 +1,13 @@
 const Services = require('./Services');
 const Karma = require('../Karma');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 // The hall's departure teleports the bot to the spot its held decisions name (main
-// never chooses one, situations.md §8): spotId (a hot body's, DecisionEvents.heldSpotId),
-// else its held earning answer (stats.earning). None, or one its marks exclude
-// (died, was full, unreachable): no teleport, it leaves the hall as it came.
-function plan(state, hall, timestamp = Date.now(), options = {}) {
+// never chooses one): spotId, a hot body's (DecisionEvents.heldSpotId), else a far
+// bot's (DecisionEvents.farHeldSpot: its row and its held card's leaf). None
+// (none held, or all its exclusions rule out: died, was full, unreachable): no
+// teleport, it leaves the hall as it came.
+function plan(state, hall, options = {}) {
     if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Karma.closesTowns(state.stats?.karma))
         return null;
     const point = {
@@ -17,8 +17,8 @@ function plan(state, hall, timestamp = Date.now(), options = {}) {
     };
     if (!require('./Runtime').Policy.inside(hall, point) && !Services.near(point, Services.manager(hall)))
         return null;
-    const spotId = options.spotId !== undefined ? options.spotId : state.stats?.earning?.spotId;
-    if (spotId == null || SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp).has(String(spotId))) return null;
+    const spotId = options.spotId !== undefined ? options.spotId : invoke('GameServer/Bot/AI/DecisionEvents').farHeldSpot(state);
+    if (spotId == null) return null;
     const spot = SpotService.findById(spotId);
     if (!spot) return null;
     const destination = SpotService.arrivalPointForState(state, spot);
@@ -27,7 +27,7 @@ function plan(state, hall, timestamp = Date.now(), options = {}) {
     return { spot, destination };
 }
 
-function hot(session, actor, hall, timestamp = Date.now()) {
+function hot(session, actor, hall) {
     const state = {
         ...session.coldLifeState,
         characterId: actor.fetchId(),
@@ -39,7 +39,7 @@ function hot(session, actor, hall, timestamp = Date.now()) {
         stats: { ...session.coldLifeState?.stats, classId: actor.fetchClassId(), karma: actor.fetchKarma?.() || 0 }
     };
     const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-    const departure = plan(state, hall, timestamp, { spotId: Events.heldSpotId(session, Events.held(session)?.network.activity) });
+    const departure = plan(state, hall, { spotId: Events.heldSpotId(session, Events.held(session)?.network.activity) });
     return !!departure && invoke('GameServer/Bot/AI/BotSpotTravel').startFromClanHall(
         session, actor, departure.spot, departure.destination
     );

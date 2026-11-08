@@ -333,21 +333,40 @@ async function main() {
             center: { locX: 10000, locY: 15000, locZ: -3000 }, npcNames: [] };
         Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
         Spots.arrivalPointForState = () => ({ ...returnSpot.center });
-        assert.equal(Departure.plan(state, Runtime.owned(1), at)?.spot.id, returnSpot.id, 'the hall sends the bot to its held spot');
+        assert.equal(Departure.plan(state, Runtime.owned(1))?.spot.id, returnSpot.id, 'the hall sends the bot to its held spot');
         assert.equal(Departure.plan({ ...state, stats: { ...state.stats,
-            spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1), at), null, 'never to one it died at');
-        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1), at), null,
+            spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1)), null, 'never to one it died at');
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1)), null,
             'with no held answer no teleport: main never chooses a spot');
+        // The far bot's other held decisions name the spot before its earning answer,
+        // in the worker's route order: the card's hunting leaf, then the gear plan's source.
+        {
+            const leafSpot = { ...returnSpot, id: 'hall-leaf-test' }, sourceSpot = { ...returnSpot, id: 'hall-source-test' };
+            const byId = { [returnSpot.id]: returnSpot, [leafSpot.id]: leafSpot, [sourceSpot.id]: sourceSpot };
+            Spots.findById = id => byId[id] || originalFindById.call(Spots, id);
+            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: { status: 'active', strategy: 'direct_drop',
+                next: { spotId: sourceSpot.id } } } };
+            assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, sourceSpot.id,
+                'a collector leaves the hall for its gear plan\'s source');
+            const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+            const activity = decisions.activity;
+            try {
+                decisions.activity = () => ({ activity: 'hunting', spotId: leafSpot.id });
+                assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, leafSpot.id,
+                    'the held card\'s hunting leaf names the hall\'s departure spot');
+            } finally { decisions.activity = activity; }
+            Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
+        }
         // Karma closes the hall's teleport: any karma above 0 blocks it; none,
         // zero or negative karma does not.
         for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
-            assert.strictEqual(!!Departure.plan({ ...state, stats: { ...state.stats, karma } }, Runtime.owned(1), at), !blocked,
+            assert.strictEqual(!!Departure.plan({ ...state, stats: { ...state.stats, karma } }, Runtime.owned(1)), !blocked,
                 `hall departure with karma ${karma}`);
         }
-        assert.equal(Departure.plan({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } }, Runtime.owned(1), at), null,
+        assert.equal(Departure.plan({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } }, Runtime.owned(1)), null,
             'hall departure is not a free teleport from anywhere');
         Spots.arrivalPointForState = () => null;
-        assert.equal(Departure.plan(state, Runtime.owned(1), at), null, 'no teleport without a valid arrival point');
+        assert.equal(Departure.plan(state, Runtime.owned(1)), null, 'no teleport without a valid arrival point');
         Spots.arrivalPointForState = () => ({ ...returnSpot.center });
         let hotDestination;
         global.invoke = (name) => name === 'GameServer/Actor/Generics/TeleportTo'

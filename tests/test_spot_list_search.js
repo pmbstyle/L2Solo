@@ -90,6 +90,15 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
         'a full planned source is skipped: the first spot of the list');
     assert.equal(Spots.findForState(planning(source.id), { ...options, hasRoom: () => false })?.id, source.id,
         'a planned source the bot stands on is taken even when it counts as full');
+    // A collector that holds an earning answer: a refused source falls to the answer's
+    // spot, never to the list walk (the walk serves only a bot with no answer yet).
+    const collecting = planning();
+    collecting.stats = { ...collecting.stats, earning: { spotId: String(next.id), shots: true } };
+    assert.equal(Spots.findForState(collecting, options)?.id, source.id, 'a source with room comes before the answer');
+    assert.equal(Spots.findForState(collecting, { ...options, hasRoom: noRoomAt(source.id) })?.id, next.id,
+        'a full planned source: the held earning answer\'s spot, not the first spot of the list');
+    assert.equal(Spots.findForState(collecting, { ...options, excludedSpotIds: new Set([String(source.id), String(next.id)]) }), null,
+        'a refused source and a refused answer: no list walk either');
 
     // The held earning answer is every solo bot's spot (situations.md B12): read, no
     // search here (the worker decides it). One the room or the bot's marks refuse
