@@ -53,7 +53,10 @@ const scenarios = {
     109: { plan: partyPlan, request, planned: { spotId: current.id, npcId: 321 }, leaf: { activity: 'hunting', spotId: 'nowhere' } },
     // A clan member called to a required clan hunt while it buys its gear on the market:
     // forming never takes it, so the call does not hold it.
-    110: { plan: marketPlan, request: null, planned: null, clanCall: true }
+    110: { plan: marketPlan, request: null, planned: null, clanCall: true },
+    // A clan member already held waiting for the clan hunt when it turned to the market:
+    // the call no longer holds it, it goes back to its hunt.
+    111: { plan: marketPlan, request: null, planned: null, clanCall: true, activity: 'party_wait', heldWait: true }
 };
 const townLoc = { locX: 10 * 6000 + 3000, locY: 20 * 6000 + 3000, locZ: -3000 };
 
@@ -117,7 +120,8 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
                 timing: { lastResolvedAt: now - 45000, nextResolveAt: now - 1 },
                 stats: { generatedCold: true, classId: 0, role: 'dps', equipment: [],
                     ...(scenario.resting ? { restUntil: now + 60000 } : {}),
-                    ...(scenario.clanCall ? { clanId: 7, clanPartyObjective: clanCall, equipmentPlan: scenario.plan } : {}) }
+                    ...(scenario.clanCall ? { clanId: 7, clanPartyObjective: clanCall, equipmentPlan: scenario.plan } : {}),
+                    ...(scenario.heldWait ? { eventWait: 'clan_party_assembly', partyRequest: clanCall } : {}) }
             }
         }));
         send('snapshot_page', { done: true, rows });
@@ -180,6 +184,11 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         assert.notStrictEqual(shopper.stats.eventWait, 'clan_party_assembly', 'no clan wait holds a bot forming never takes');
         assert.notStrictEqual(shopper.activity, 'party_wait');
         assert.notStrictEqual(lifecycleKind(shopper), 'event_driven', 'its own plan steps it, no party it cannot join');
+        const released = proposals.get(111)?.nextState;
+        assert(released, 'the released clan waiter is stepped by the worker, not handed to main');
+        assert.strictEqual(released.activity, 'hunting', 'a waiter the clan call no longer holds hunts again');
+        assert.strictEqual(released.stats.eventWait, undefined, 'no wait holds it');
+        assert.strictEqual(released.stats.partyRequest, undefined, 'it asks for no clan party');
         assert.strictEqual(planned(106).stats.equipmentPlan.inputPreparation.recipeId, 447,
             'the worker must not replace the selected plan with a bare wish that drops the retained project');
     } finally {
