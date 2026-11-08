@@ -95,6 +95,14 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
         townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
 }
 
+// The held card's purchase when its town is another one, else null.
+function purchaseElsewhere(state, timestamp) {
+    // lazy: cycle NeedsEvaluator reads ColdMarketService, which loads this module.
+    const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { now: timestamp });
+    return ['upgrade_gear', 'buy_craft_material'].includes(goal?.type) && goal.plan?.marketTown
+        && goal.plan.marketTown !== state.currentRegion ? goal : null;
+}
+
 // The held earning answer's spot (situations.md §10; the worker decides it).
 const heldEarningSpot = state => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldSpot(state, SpotProfiles.ensure());
 
@@ -103,13 +111,16 @@ function finishVisit(state, timestamp, options) {
     if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
         || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;
     // An errand its job decided during the visit for another town (ColdMarketService.acquire:
-    // a bot in a visit leaves at its end) is the visit's next trip, before the way back: a C4
-    // player done in one town goes on to the next for what he still has to buy there.
-    const errand = !state.stats?.partyMarketReturn && !state.party?.partyId && !state.partyId
-        ? CombinedErrands.pending(state, timestamp).find(pending => pending.town !== state.currentRegion) : null;
+    // a bot in a visit leaves at its end), else the held step's purchase in another town (the
+    // visit deferred it, ColdMarketService.tryPurchase), is the visit's next trip, before the
+    // way back: a C4 player done in one town goes on to the next for what he still has to buy
+    // there, then back to hunt.
+    const solo = !state.stats?.partyMarketReturn && !state.party?.partyId && !state.partyId;
+    const errand = solo ? CombinedErrands.pending(state, timestamp).find(pending => pending.town !== state.currentRegion) : null;
     // lazy: cycle ColdMarketService loads this module.
-    const onward = errand && beginMarketTravel({ ...state, activity: 'hunting' },
-        invoke('GameServer/Bot/Economy/ColdMarketService').errandGoal(errand), timestamp);
+    const next = errand ? invoke('GameServer/Bot/Economy/ColdMarketService').errandGoal(errand)
+        : solo ? purchaseElsewhere(state, timestamp) : null;
+    const onward = next && beginMarketTravel({ ...state, activity: 'hunting' }, next, timestamp);
     if (onward) return { ...onward, stats: { ...onward.stats, marketReturn: state.stats?.marketReturn || onward.stats.marketReturn } };
     let destination = state.stats?.marketReturn;
     const returningParty = state.stats?.partyMarketReturn

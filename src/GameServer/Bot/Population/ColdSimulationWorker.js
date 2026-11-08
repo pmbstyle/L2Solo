@@ -2040,7 +2040,10 @@ function startKernel(config = {}) {
             // A new packet, never the build's own (stepStatsPacket may return economy.statsPacket,
             // which the card shares). The gear plan's full review taken with the build (gear_plan):
             // it planned without the errands the bot failed, whose marks go (GearMarks).
-            let statsPacket = stepStatsPacket(state, economy, timestamp);
+            // The workshop and rebuff taken on this step ride it as on a served step: main
+            // applies the packet over its row, so an answer left out is lost (a newbie's guide
+            // visit answered at a town arrival). The build's woken, read after them, wins.
+            let statsPacket = { ...workshopKeys, ...rebuffKeys, ...stepStatsPacket(state, economy, timestamp) };
             if (deps.fullReview && !nullReuse) statsPacket = { ...statsPacket,
                 ...gearPlanTaken(state.stats, statsPacket, acquisitionPlan, state.characterId, 'step') };
             const plannedStats = { ...(state.stats || {}), ...statsPacket, equipmentPlan: acquisitionPlan };

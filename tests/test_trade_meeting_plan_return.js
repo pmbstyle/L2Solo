@@ -116,6 +116,31 @@ const arrive = async id => {
             `walk:${point.locX}:${point.locY}:${point.locZ}`, 0, false));
         assert.deepEqual(Life.cachedState(ids[0]).stats.marketReturn.loc, origins[0],
             'the meeting departing after the old trip saves the actual reached field');
+        await arrive(ids[0]);
+        adopt(await Database.cancelTradeMeeting(delayed, 'fixture_cancel'));
+        for (const id of ids) {
+            await Database.settleBoardOwner(id);
+            Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
+            await Database.acknowledgeTradeMeeting(delayed, id);
+        }
+        // A leg that starts while the return trip is still on the row replaces that trip:
+        // the meeting's arrival keeps the outing's return, and the visit's end goes back.
+        const overtaken = { ...Life.cachedState(ids[0]), activity: 'traveling',
+            loc: point, stats: { ...Life.cachedState(ids[0]).stats, marketReturn: existing,
+                travel: { from: point, to: origins[0], regionName: 'Field0', arrivalActivity: 'hunting',
+                    reason: 'return_after_market', clearMarketReturn: true,
+                    startedAt: Date.now(), arrivalAt: Date.now() + 60000 } } };
+        await Life.upsertState(overtaken, 'fixture_overtaken_return');
+        const overtaking = await accept('return-overtaken');
+        adopt(await Database.payTradeMeetingLeg(overtaking, 0, 1,
+            `walk:${point.locX}:${point.locY}:${point.locZ}`, 0, false));
+        const atMeeting = await arrive(ids[0]);
+        assert.equal(atMeeting.activity, 'shopping');
+        assert.deepEqual(atMeeting.stats.marketReturn, existing, 'the meeting keeps the outing the return trip was going to');
+        adopt(await Database.cancelTradeMeeting(overtaking, 'fixture_cancel'));
+        const back = Goals.finishMarketVisit(Life.cachedState(ids[0]), Date.now());
+        assert.equal(back?.stats.travel.reason, 'return_after_market', 'the visit after the meeting returns to the field');
+        assert.deepEqual(back.stats.travel.to, existing.loc);
         console.log('PASS native buyer/seller meeting completion, original plan, return travel and cancellation recovery');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

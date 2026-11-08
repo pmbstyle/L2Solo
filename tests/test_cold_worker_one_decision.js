@@ -224,6 +224,21 @@ module.exports.workshopProbe = async (id) => {
         return { counts };
     } finally { CraftEligibility.isServiceCrafter = service; kernel.states.set(id, saved); }
 };
+// A newbie's rebuff taken at a town arrival, on the step that takes the build the arrival
+// woke: the guide answer reaches main in the step's packet (main applies the packet over
+// its own row), held there until main's guide visit carries it out.
+module.exports.rebuffProbe = async (id) => {
+    const saved = kernel.states.get(id), guide = BotBuffs.GUIDES[0];
+    try {
+        const state = { ...saved.state, loc: { locX: guide.locX + 1000, locY: guide.locY, locZ: guide.locZ },
+            stats: Situations.raise({ ...saved.state.stats }, 'arrived_town', null, Situations.OPEN, id) };
+        kernel.states.set(id, { ...saved, wishAdvisory: null, state });
+        const plan = await kernel.planLifecycle({ state, timestamp: Date.now() });
+        const main = { ...state.stats, ...plan.statsPacket };
+        return { built: plan.buildTaken === true, via: main.rebuff?.via ?? null, done: !!main.rebuff?.done,
+            woken: [Situations.woken(main, 'rebuff'), Situations.woken(main, 'build')] };
+    } finally { kernel.states.set(id, saved); }
+};
 module.exports.occupationProbe = async (id) => {
     const saved = kernel.states.get(id), state = saved.state;
     kernel.states.set(id, { ...saved, wishAdvisory: null, route: null,
@@ -245,7 +260,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -348,6 +363,11 @@ parentPort.on('message', message => {
         assert.deepEqual(workshopResponse.value.counts, [1, 0, 0, 1],
             'a crafter takes its workshop at a recipe learned (as none while main has not loaded its book: no later step '
             + 'takes it again), never for a listing or a wallet that moved');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'rebuff'), rebuffProbe: id });
+        const rebuffResponse = await wait(message => message.probeId === 'rebuff');
+        if (rebuffResponse.error) throw Error(rebuffResponse.error);
+        assert.deepEqual(rebuffResponse.value, { built: true, via: 'guide', done: false, woken: [false, false] },
+            'a newbie reaching a town with a guide holds the guide answer on main\'s row, taken with the build it woke');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'page'), pageProbe: id });
         const pageResponse = await wait(message => message.probeId === 'page'); if (pageResponse.error) throw Error(pageResponse.error);
         assert.deepEqual(pageResponse.value, { own: false, main: true, none: false },
