@@ -247,9 +247,9 @@ class ColdOccupationPlanner {
     }
 
     // A failed build ends as an empty result (an unknown answer): counted per mode, the
-    // first logged with its stack (FailureLog). A meeting's refusal is its answer.
+    // first logged with its stack (FailureLog). A meeting's refusal (a bare code) is its answer.
     reportError(entry, error) {
-        if (entry.mode !== 'meeting') FailureLog.note(`occupation.${entry.mode}_failed`, error);
+        if (entry.mode !== 'meeting' || !FailureLog.refusal(error)) FailureLog.note(`occupation.${entry.mode}_failed`, error);
     }
 
     finish(entry, value) {

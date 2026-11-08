@@ -85,10 +85,12 @@ class SpotContestOutbox {
         while (this.queue.length && events.length < FRAME_EVENTS) {
             const event = this.queue[0];
             if (at - event.at > EVENT_TTL_MS) { this.queue.shift(); this.note('stale'); continue; }
-            let copy = null;
-            try { copy = structuredClone({ ...event, at }); } catch { copy = null; }
-            if (copy && (!sizing || sizing.offer(copy))) { this.queue.shift(); events.push(freeze(copy)); continue; }
-            if (copy && events.length) break;
+            let copy;
+            // An event that cannot be copied is a failure, not a frame's fit: it goes, counted by site.
+            try { copy = structuredClone({ ...event, at }); }
+            catch (error) { this.queue.shift(); FailureLog.note('spot_contest.event_clone', error); continue; }
+            if (!sizing || sizing.offer(copy)) { this.queue.shift(); events.push(freeze(copy)); continue; }
+            if (events.length) break;
             this.queue.shift(); this.note('unfit');
         }
         if (!events.length) return null;
