@@ -2728,7 +2728,9 @@ const BackgroundResolver = {
                 nextResolveAt: timestamp + 30000, debug: { reason: `survival_${floor.reason}`, fights: 0, wins: 0 } };
         }
 
-        if (invoke('GameServer/Bot/Population/ClanPartyDuty').waiting(state)) return invoke('GameServer/Bot/Population/ClanPartyDuty').hold(state, timestamp);
+        const clanDuty = invoke('GameServer/Bot/Population/ClanPartyDuty');
+        if (clanDuty.released(state)) return clanDuty.release(state, timestamp);
+        if (clanDuty.waiting(state)) return clanDuty.hold(state, timestamp);
 
         if (invoke('GameServer/Bot/Population/RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
             const cleared = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);

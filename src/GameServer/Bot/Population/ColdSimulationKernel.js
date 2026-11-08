@@ -395,8 +395,10 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // preparation metadata; the pure hunt resolver cannot perform that work.
     if (plan.clanGoal?.clanId && (ClanCrystalSupply ||= require('../Economy/ClanCrystalSupply')).requirement(state)) return 'command';
     if ((BotCrystallization ||= require('../Economy/BotCrystallization')).ready(state)) return 'command';
-    // A published clan wait steps again on its row's next change (ClanPartyDuty.held).
-    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return resolverOrHeld(state);
+    // A published clan wait steps again on its row's next change (ClanPartyDuty.held);
+    // a released one goes back to its hunt (ClanPartyDuty.release).
+    ClanPartyDuty ||= require('./ClanPartyDuty');
+    if (ClanPartyDuty.waiting(state) || ClanPartyDuty.released(state)) return resolverOrHeld(state);
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.

@@ -29,4 +29,17 @@ function hold(state, timestamp) {
         materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp,
         debug: { activity: 'clan_party_assembly', fights: 0, wins: 0 } };
 }
-module.exports = { objective, waiting, held, hold };
+// A clan waiter the call no longer holds (it buys on the market or serves a
+// shop: formingSkips) hunts its own spot again; the call stays for a later build.
+function released(state) {
+    return state?.activity === 'party_wait' && !state.party?.partyId && !state.partyId
+        && !!objective(state) && !waiting(state);
+}
+function release(state, timestamp) {
+    const stats = { ...state.stats };
+    if (stats.partyRequest?.clanGoalKey === objective(state).clanGoalKey) delete stats.partyRequest;
+    return { patch: { activity: 'hunting', stats }, events: [],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp,
+        debug: { activity: 'clan_party_released', fights: 0, wins: 0 } };
+}
+module.exports = { objective, waiting, held, hold, released, release };
