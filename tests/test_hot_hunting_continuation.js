@@ -474,6 +474,8 @@ test('a player\'s spot command is the body\'s held answer at once, raised for th
         Events.raiseDecision(f.session, 'player_command', { payload: { spotId: alternative.id, at: 1 } });
         assert.equal(f.session.coldLifeState.stats.earning.spotId, alternative.id, 'the commanded spot is held');
         assert.equal(f.session.coldLifeState.stats.earning.earning, 1000, 'with the bot\'s hour kept');
+        assert.equal(Events.heldSpotId(f.session), alternative.id,
+            'a visit\'s end or a body leaving its ground goes to the commanded spot before the worker publishes it');
         assert.deepEqual(f.session.nearRaise.names.map(entry => entry.name), ['player_command'], 'it rides the body\'s bag');
         assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_command_answer',
             'the card naming the old spot does not pull it back while the answer is pending');

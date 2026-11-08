@@ -156,6 +156,36 @@ try {
         assert.deepEqual(Route.huntSpotHeld(record, collector, null, options), keys);
         assert.equal(Goals.finishMarketVisit({ ...lost, stats: { ...lost.stats, ...keys } }, timestamp, { recoverMissingReturn: true })
             .stats.travel.spotId, first.id, 'main serves what the worker published');
+        // One search: with the first source full, the trip's room filter takes another, and
+        // the published spot is that same choice, not the full source.
+        const roomRecord = {}, hasRoom = id => String(id) !== first.id;
+        const roomTrip = Route.trip(roomRecord, collector, null, { spots: twoSpots, timestamp, hasRoom })?.spotId;
+        assert(roomTrip && roomTrip !== first.id, 'fixture: the trip skips the full source');
+        assert.equal(Route.huntSpotHeld(roomRecord, collector, null, options)?.huntSpot.spotId, roomTrip,
+            'the published spot is where the trip goes');
+        // A step the route may not take the bot on (a clan party wait) publishes nothing: the
+        // spot it holds stands, and the next step asks again.
+        const ClanPartyDuty = invoke('GameServer/Bot/Population/ClanPartyDuty'), waiting = ClanPartyDuty.waiting;
+        try {
+            ClanPartyDuty.waiting = () => true;
+            assert.equal(Route.huntSpotHeld(record, { ...collector, stats: { ...collector.stats, ...keys } },
+                { activity: 'shopping' }, options), null, 'a clan wait does not erase the published spot');
+        } finally { ClanPartyDuty.waiting = waiting; }
+        // A gear change (the build's route facts move: the step drops the route) chooses the
+        // published spot again: a leaf's spot it may no longer hunt is not served on.
+        Spots.cache = spots; Service.spots = spots;
+        const leafSpot = safe, leafOf = { activity: 'hunting', spotId: leafSpot.id };
+        const kitted = { ...state, spotId: home.id }, naked = { ...kitted, inventory: {} };
+        const fits = row => { const read = Route.leafFitReader(row, { spots, timestamp }); return spots.map(s => `${s.id}:${read(s.id)}`).join(' '); };
+        const why = `kitted ${fits(kitted)}; naked ${fits(naked)}`;
+        const gearRecord = {}, leafOptions = { spots, timestamp };
+        const published2 = Route.huntSpotHeld(gearRecord, kitted, leafOf, leafOptions);
+        assert.equal(published2?.huntSpot.spotId, leafSpot.id, `fixture: the leaf's spot is published (${why})`);
+        const stripped = { ...naked, stats: { ...naked.stats, ...published2 } };
+        assert.notEqual(Route.huntSpot(stripped, leafOf, leafOptions), leafSpot.id, `fixture: without its kit it may not hunt there (${why})`);
+        Route.drop(gearRecord, 'sections');
+        const chosenAgain = Route.huntSpotHeld(gearRecord, stripped, leafOf, leafOptions);
+        assert(chosenAgain && chosenAgain.huntSpot.spotId !== leafSpot.id, 'the route facts moved: the published spot is chosen again');
     } finally { Service.spots = savedService; Errands.pending = pending; }
 } finally { Spots.cache = original; }
 console.log('test_spot_source_targets: ok');

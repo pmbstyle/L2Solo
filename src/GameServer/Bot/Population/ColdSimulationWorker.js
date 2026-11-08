@@ -794,6 +794,9 @@ function occupationWork(input, iterator) {
 function* nearDecision(input, iterator) {
     yield* iterator;
     const fields = DecisionEvents.nearFields(input.economy, input.state);
+    // The build's route facts moved (a gear change, a karma step): the kept route and
+    // the published hunt spot are chosen again, as on a far step.
+    if (input.economy?.routeMoved === true) dropRoute(input.state.characterId, 'sections');
     // The workshop's keys under the build's packet: a build taken after it keeps its bits.
     const statsPacket = { ...input.workshopTaken, ...fields.statsPacket, ...input.nearMind,
         ...huntSpotKeys(input.state, input.economy.network?.activity, input.timestamp) };
@@ -2064,10 +2067,11 @@ function startKernel(config = {}) {
             // BotRoute.choose): the trip sets its activity and its spot on arrival; with no trip
             // it stays as it stands (a rest goes on, a clan wait holds).
             const plannedState = { ...state, stats: plannedStats };
-            // The spot it goes to when sent to hunt, chosen on the planned state.
+            const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
+            // The spot it goes to when sent to hunt, chosen on the planned state after the
+            // trip: a search reads the route the trip kept (its room filter's answer).
             const huntKeys = huntSpotKeys(plannedState, economy.network?.activity, timestamp);
             if (huntKeys) statsPacket = { ...statsPacket, ...huntKeys };
-            const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
             // A town visit plans its listings, bids and craft (showcase); a build taken in the
             // field posts the bids of the wants it registers once and starts its leaf (action);
             // a held card in the field only starts its town leaf.

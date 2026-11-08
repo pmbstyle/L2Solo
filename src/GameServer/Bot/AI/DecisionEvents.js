@@ -382,16 +382,22 @@ function held(session) {
 // while what it was chosen on stands on the row (its gear plan's source and its earning
 // answer's spot, BotRoute.huntBasis) and the bot is solo (a party member's hunt is its
 // party's); a spot its exclusions rule out (spot marks, death marks, death pressure at
-// the spot it stands on: SpotRiskPolicy) is none. null: none served, the caller's
-// fallback runs; the worker's next step publishes it anew. Room is met at arrival.
-// state: a far row, or a body's view in the same fields (heldSpotId).
+// the spot it stands on: SpotRiskPolicy) is none. A player's command the worker has not
+// published a spot for yet (the earning answer it wrote on the row, on either thread:
+// EquipmentIncomeRoute.commanded) is served as its spot, under the same exclusions.
+// null: none served, the caller's fallback runs; the worker's next step publishes it
+// anew. Room is met at arrival. state: a far row, or a body's view in the same fields
+// (heldSpotId).
 function heldSpotOf(state = {}) {
     const stats = state.stats || {}, held = stats.huntSpot;
-    if (held?.spotId == null || Sections.partyIdOf(state)) return null;
+    if (Sections.partyIdOf(state)) return null;
     // lazy: BotRoute loads the spot modules that load this one.
     const basis = invoke('GameServer/Bot/Population/BotRoute').huntBasis(stats);
-    if (held.plan !== basis.plan || held.earning !== basis.earning) return null;
-    return Risk.excludedSpotIdsForStates([state]).has(String(held.spotId)) ? null : String(held.spotId);
+    const commanded = held?.earning !== basis.earning
+        && invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').isCommanded(stats.earning);
+    const spotId = commanded ? basis.earning
+        : held?.spotId != null && held.plan === basis.plan && held.earning === basis.earning ? String(held.spotId) : null;
+    return spotId == null || Risk.excludedSpotIdsForStates([state]).has(spotId) ? null : spotId;
 }
 // The same for a near body: its row with its own place and party (Economy.bodyPlace,
 // the shape stateForActor gives it) and its stats.
