@@ -109,34 +109,45 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
 // A near bot's body moved a fact (reason: bag, equip, level, death, revive,
 // near_spot, near_left, activated): its row goes to its slot in the worker, whose one fact
 // function decides whether that is an event. A delivery, not a save: neither
-// the cache nor the database is written. The row is built on the next turn, so
-// it reads the body after the change; several changes in one turn stay one
-// queue entry per bot. The far poster's gate above stays for far bots.
+// the cache nor the database is written. The row is built once on the next turn
+// (session.nearPost: the turn's reasons), so it reads the body after every change
+// of the turn (a loot of several kinds is one post) and its facts are detected
+// once against the previous post: no situation is lost, the latest bag wins.
+// The far poster's gate above stays for far bots.
 // Does this body post its facts at all (a bot's own body, not an arena copy)? An
 // activating one posts once activated.
 const nearPosts = session => !!session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true;
 // A body's arrival on a spot and its leave are the spot aggregate's arrivals on the
-// background thread (its hot arrival hook): sent at once, not batched with the bag.
+// background thread (its hot arrival hook): its post is critical (sent at once).
 const SPOT_POSTS = new Set(['near_spot', 'near_left']);
 function notifyNearFacts(session, reason) {
     if (!nearPosts(session)) return;
     // Ownership is persisted before enterWorld finishes. That provisional
     // body must not look like a changed kit to the occupation planner.
     if (session.populationActivating === true) return;
+    if (session.nearPost) {
+        if (!session.nearPost.includes(reason)) session.nearPost.push(reason);
+        return;
+    }
+    const reasons = session.nearPost = [reason];
     const handle = setImmediate(() => {
+        if (session.nearPost === reasons) session.nearPost = null;
+        // The turn's last spot post (near_spot / near_left) is the one the body stands by.
+        const spotReason = reasons.findLast(entry => SPOT_POSTS.has(entry));
+        const label = reasons.join(',');
         try {
             const actor = session.actor;
             if (!actor || session.populationActivating === true) return;
             const current = cache.get(Number(actor.fetchId()));
             if (current?.phase !== 'hot') return;
-            const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', reason,
+            const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', label,
                 { physicalLocation: true });
             // The cached row owns the revision (the handoff moved it);
             // session.coldLifeState may lag it.
             row.simulation = current.simulation;
             // The spot the bot was given, as a far traveler counts at its
             // travel spot; loc stays physical. A body that left its spot stands on none.
-            row.spotId = session.currentSpot?.id ?? (reason === 'near_left' ? null : row.spotId);
+            row.spotId = session.currentSpot?.id ?? (spotReason === 'near_left' ? null : row.spotId);
             row.updatedAt = now();
             // Not saved: the number of this post and the raise it carries,
             // with the situations of the body's own facts (A1: detected here).
@@ -145,16 +156,16 @@ function notifyNearFacts(session, reason) {
             // Not saved either: the body's last spot post (near_spot / near_left), numbered,
             // carried by every post: the background thread hears each arrival or leave once
             // (ColdSimulationWorker.nearArrival), whatever spot a later post falls back to.
-            if (SPOT_POSTS.has(reason)) session.nearSpot = { seq: Number(session.nearSpot?.seq || 0) + 1,
-                spotId: reason === 'near_left' ? null : session.currentSpot?.id ?? null };
+            if (spotReason) session.nearSpot = { seq: Number(session.nearSpot?.seq || 0) + 1,
+                spotId: spotReason === 'near_left' ? null : session.currentSpot?.id ?? null };
             if (session.nearSpot) row.nearSpot = session.nearSpot;
             // lazy: worker the native market owner is main-thread only.
             DecisionEvents.detectNear(session, row, invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(row.characterId));
             if (session.nearRaise) row.raise = DecisionEvents.postedBag(session);
             // lazy: cycle the coordinator requires this module at its top.
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').markDirty(row,
-                { reason, critical: isCriticalSnapshotReason(reason, row) || row.raise?.named === true
-                    || SPOT_POSTS.has(reason), near: true });
+                { reason: label, critical: isCriticalSnapshotReason(label, row) || row.raise?.named === true
+                    || !!spotReason, near: true });
         } catch (error) {
             // The post and the facts detected on it (DecisionEvents.detectNear): counted by site.
             FailureLog.note('botlife.near_post', error);
