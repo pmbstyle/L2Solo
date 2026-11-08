@@ -195,7 +195,6 @@ async function run() {
     Database.init();
     assert(Database.boardSettlementOwners().includes(holder), 'the settlement is still known after a restart');
     await AfkTrade.init();
-    await AfkTrade.settlePending();
     assert.strictEqual((await bag(holder))[57], undefined, 'the board does not merge a far bot\'s settlement');
     const [row] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [holder]]);
     assert.strictEqual(Number(row.simulationRevision), stepFrom.simulation.revision, 'the deal and the board left the seller\'s row alone');

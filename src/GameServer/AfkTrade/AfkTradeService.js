@@ -46,12 +46,7 @@ function boardRows() {
     for (const entry of entriesById.values()) if (entry.boardRow) rows.push(entry.boardRow);
     return rows;
 }
-// Records close by events only (user, 2026-10-05): no deadline. What a deal
-// left on the board for a bot that turned near before its step commit merged
-// it is merged every SETTLE_TICK_MS on the main thread, one run at a time.
-const SETTLE_TICK_MS = 5000;
-let settleTimer = null;
-let settling = false;
+// Records close by events only (user, 2026-10-05): no deadline.
 const boardChangeListeners = new Set();
 let boardReady = false;
 let boardChangeDepth = 0;
@@ -615,7 +610,7 @@ async function settleOwners(ownerIds = []) {
         try {
             result = await Database.settleBoardOwner(ownerId);
         } catch (error) {
-            // It stays on the board; the next tick tries again.
+            // It stays on the board for the bot's next hand-over or far step commit.
             FailureLog.note('board.settle', error);
             continue;
         }
@@ -1054,7 +1049,6 @@ function activeDemandSelfIds() {
 function clearBoard() {
     boardReady = false;
     notifyBoardChange({ reset: true, ready: false });
-    stopTimers();
     for (const entry of entriesById.values()) {
         if (entry.indexedRecordId) TableChannel.shared.changed('board', { key: entry.indexedRecordId, removed: true });
     }
@@ -1081,6 +1075,7 @@ function clearBoard() {
 // accept before it publishes the seller's bag (TradeMeetingService.accepted). Trims run,
 // by whether they changed an ad (developer diagnostics).
 let unsubscribeOwnStock = null;
+let unsubscribeHandOver = null;
 // The unworn units of a bag summary's item at one enchant level.
 function unwornAt(item, enchant) {
     if (!item) return 0;
@@ -1102,6 +1097,7 @@ function reconcileOwnStock({ characterId, state, previousState }) {
 async function init() {
     clearBoard();
     unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnStock);
+    unsubscribeHandOver ||= invoke('GameServer/Bot/Population/BotLifeState').subscribeMarketReviewChanges(settleHandedOver);
     const migrated = await Database.migrateBoardWorld();
     // A cached bot state follows the bags and states the migration changed.
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -1149,32 +1145,17 @@ async function init() {
     boardReady = true;
     await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });
-    startTimers();
+    // Bots main took before the board was ready get theirs now.
+    await settleOwners(Database.boardSettlementOwners()).catch(error => FailureLog.note('board.settle', error));
     return shops.length;
 }
 
-function startTimers() {
-    stopTimers();
-    settleTimer = setInterval(() => {
-        if (settling) return;
-        settling = true;
-        settlePending()
-            .catch(error => FailureLog.note('board.settle_tick', error))
-            .finally(() => { settling = false; });
-    }, SETTLE_TICK_MS);
-    settleTimer.unref?.();
-}
-
-function stopTimers() {
-    clearInterval(settleTimer);
-    settleTimer = null;
-}
-
-// The owners with settlements still on the board that main holds now (a bot
-// turned near before its commit, a settle that failed) get them merged.
-function settlePending() {
-    const owners = Database.boardSettlementOwners();
-    return owners.length ? settleOwners(owners) : Promise.resolve();
+// A far bot handed to main (its row turned hot: activation, a hand-over) gets
+// what deals left for it on the board at that event; a far bot's waits for its
+// own step commit (Database settleBoardOwner).
+function settleHandedOver(characterId) {
+    if (!boardReady || invoke('GameServer/Bot/Population/BotLifeState').cachedState(characterId)?.phase === 'cold') return;
+    settleOwners([characterId]).catch(error => FailureLog.note('board.settle', error));
 }
 
 module.exports = {
@@ -1213,7 +1194,6 @@ module.exports = {
     sellToShop,
     settleOwners,
     syncOnlineInventory,
-    settlePending,
     stop,
     _resetForTests() {
         require('./TradeMeetingService').reset();
