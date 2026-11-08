@@ -1517,8 +1517,7 @@ const PopulationService = {
             || !['hunting', 'resting', 'party_wait'].includes(state.activity)) return null;
         const objective = partyObjectiveForState(state);
         const spotId = partyObjectiveSpotForState(state, objective);
-        if (!spotId || state.stats?.equipmentPlan?.strategy === 'market'
-            || invoke('GameServer/Bot/AI/BotServiceIdentity').isStaticService(state)) return null;
+        if (!spotId || PartyRequestPlanner.formingSkips(state)) return null;
         const request = state.stats?.partyRequest;
         // A bot looking for a party says so (a C4 player's LFP): an open party request or
         // its clan's open call. Only its moves wake its group; a bot merely willing to

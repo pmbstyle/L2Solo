@@ -133,6 +133,13 @@ const meetsAtSpot = objective => MEETING_REASONS.has(objective?.reason) || objec
 // next build, which asks again (reopens it) or drops it; forming skips it.
 const closed = state => state?.stats?.partyRequest?.status === 'closed';
 
+// A bot forming never takes: one buying its gear on the market (its plan shops
+// first; the end of the plan, a write of its row, makes it a candidate again)
+// or a static service (a merchant or craft station stays at its post). It is on
+// no forming page, so no clan call holds it waiting for a party either.
+const formingSkips = state => state?.stats?.equipmentPlan?.strategy === 'market'
+    || invoke('GameServer/Bot/AI/BotServiceIdentity').isStaticService(state);
+
 // Party size and level spread: a clan equipment duty sets its own within
 // fixed bounds, any other party uses the defaults (the configured sizes
 // unless the caller gives its own).
@@ -314,6 +321,7 @@ module.exports = {
     meetsAtSpot,
     meetingKey,
     closed,
+    formingSkips,
     limitsForObjective,
     objectiveSpot,
     partyObjectiveForPlan,
