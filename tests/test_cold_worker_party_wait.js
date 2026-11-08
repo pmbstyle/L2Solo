@@ -39,8 +39,11 @@ const scenarios = {
     104: { plan: partyPlan, request, planned: null },
     105: { plan: soloPlan, request, planned: { spotId: other.id, npcId: 321 } },
     106: { plan: { ...soloPlan, inputPreparation: { recipeId: 447, target: { selfId: 148 } } },
-        request: null, planned: null }
+        request: null, planned: null },
+    // A waiter standing in town (on no catalogue spot) with no spot of its own.
+    107: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, town: true }
 };
+const townLoc = { locX: 10 * 6000 + 3000, locY: 20 * 6000 + 3000, locZ: -3000 };
 
 const probeSource = `
 const { workerData } = require('worker_threads');
@@ -93,7 +96,8 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
             state: {
                 characterId: Number(id), name: `Waiter${id}`, accountName: `bot_${id}`, level,
                 phase: 'cold', activity: scenario.resting ? 'resting' : 'hunting',
-                spotId: current.id, currentRegion: current.name, loc: { ...current.center },
+                spotId: scenario.town ? null : current.id, currentRegion: current.name,
+                loc: scenario.town ? { ...townLoc } : { ...current.center },
                 inventory: {}, adena: 1000,
                 vitals: scenario.resting
                     ? { hp: 300, maxHp: 2000, mp: 100, maxMp: 1000 }
@@ -123,16 +127,15 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         }
         const planned = (id) => proposals.get(id).nextState;
 
-        assert.strictEqual(planned(101).spotId, scenarios[101].planned.spotId,
-            'a required waiter takes the safe fallback of its plan');
-        // The step that chose the fallback also starts the trip there (the
-        // route is the worker's own): no step hunts the old ground under the
-        // new spot id.
+        // A required waiter takes the safe fallback of its plan as its trip's destination:
+        // the step that chose it starts the trip there, and its spotId stays where it
+        // stands until it arrives (as every trip's).
         assert.strictEqual(planned(101).activity, 'traveling', 'the waiter leaves for its fallback in the same step');
-        assert.strictEqual(planned(101).stats.travel?.spotId, other.id);
+        assert.strictEqual(planned(101).stats.travel?.spotId, scenarios[101].planned.spotId);
+        assert.strictEqual(planned(101).spotId, current.id, 'a travelling waiter stands where it set out');
         assert.strictEqual(planned(101).stats.partyRequest.priority, 'required');
 
-        assert.strictEqual(planned(102).spotId, scenarios[102].planned.spotId);
+        assert.strictEqual(planned(102).spotId, current.id, 'a resting waiter rests where it stands');
         assert.strictEqual(planned(102).activity, 'resting', 'D3: a found fallback does not skip the rest');
 
         assert.strictEqual(planned(103).spotId, current.id, 'a party-only plan without a request does not wait');
@@ -140,8 +143,12 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         assert.strictEqual(planned(104).spotId, current.id,
             'U2: without a planned fallback the worker keeps its fitting current spot, as the coordinator does');
 
-        assert.strictEqual(planned(105).spotId, scenarios[105].planned.spotId,
+        assert.strictEqual(planned(105).stats.travel?.spotId, scenarios[105].planned.spotId,
             'a required request waits even when the plan is solo-safe');
+        // A waiter in town travels to its fallback: it never hunts that spot from where it stands.
+        assert.strictEqual(planned(107).activity, 'traveling', 'a waiter in town leaves for its fallback');
+        assert.strictEqual(planned(107).stats.travel?.spotId, other.id);
+        assert.notStrictEqual(planned(107).spotId, other.id, 'no spot is declared before the waiter arrives there');
         assert.strictEqual(planned(106).stats.equipmentPlan.inputPreparation.recipeId, 447,
             'the worker must not replace the selected plan with a bare wish that drops the retained project');
     } finally {

@@ -2054,14 +2054,16 @@ function startKernel(config = {}) {
             const plannedStats = { ...(state.stats || {}), ...statsPacket, equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;
-            // A waiter that is resting finishes its rest first.
+            // A waiter that is resting finishes its rest first. Its fallback is the trip's
+            // destination (the route search picks it, BotRoute.choose), never its spotId:
+            // spotId stays where it stands until it arrives, so a waiter in town or on a road
+            // travels to its fallback instead of hunting it from where it stands.
             const plannedState = {
                 ...state,
                 activity: fallbackSpot
                     && !['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'resting'].includes(state.activity)
                     ? 'hunting'
                     : state.activity,
-                spotId: fallbackSpot ? fallbackSpot.id : state.spotId,
                 stats: plannedStats
             };
             const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
