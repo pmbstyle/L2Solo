@@ -181,20 +181,22 @@ function onWorker() {
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS - 1, 0), answer), false, 'too few kills to tell');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, true), answer), false, 'once a stay');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, false, 'poor'), answer), false, 'only on the answer\'s spot');
-        // The stay restarts with a new answer, a level up, a town trip; a party round counts into none.
+        // The stay lasts while the spot does (a new answer, a level up, a town trip keep it); another spot starts
+        // a new one; a party round counts into none.
         const round = { debug: { wins: 10, combatMs: 60000, fights: 10, spotId: 'rich' }, materialize: { adena: 100, items: [] },
             nextResolveAt: started + 60000, patch: {} };
-        const on = (state) => Hunt.recordRound(state, round, { spotId: 'rich', timestamp: started }).stay;
+        const on = (state, spotId = 'rich') => Hunt.recordRound(state, round, { spotId, timestamp: started }).stay;
         const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 }, visitEvery: [5, 2] } };
         const first = on(solo), second = on({ ...solo, stats: { ...solo.stats, stay: { ...first, judged: true } } });
         assert.equal(second.kills, 20, 'one stay counts its rounds');
         assert.equal(second.judged, true, 'and stays judged');
-        for (const [what, moved] of [['a new answer', { ...solo.stats, earning: { ...answer, at: 2 } }],
-            ['a town trip', { ...solo.stats, visitEvery: [6, 2] }]]) {
-            const fresh = on({ ...solo, stats: { ...moved, stay: { ...second } } });
-            assert.equal(fresh.kills, 10, `${what} starts a new stay`); assert.equal(fresh.judged, false);
+        for (const [what, moved] of [['a new answer', { ...solo, stats: { ...solo.stats, earning: { ...answer, at: 2 } } }],
+            ['a town trip', { ...solo, stats: { ...solo.stats, visitEvery: [6, 2] } }], ['a level up', { ...solo, level: solo.level + 1 }]]) {
+            const kept = on({ ...moved, stats: { ...moved.stats, stay: { ...second } } });
+            assert.equal(kept.kills, 30, `${what} keeps the stay on its spot`); assert.equal(kept.judged, true);
         }
-        assert.equal(on({ ...solo, level: solo.level + 1, stats: { ...solo.stats, stay: second } }).kills, 10, 'a level up starts a new stay');
+        const fresh = on({ ...solo, stats: { ...solo.stats, stay: second } }, 'poor');
+        assert.equal(fresh.kills, 10, 'another spot starts a new stay'); assert.equal(fresh.judged, false);
         assert.equal(on({ ...solo, party: { partyId: 'p3' }, stats: { ...solo.stats, stay: second } }), null, 'a party round counts into no solo stay');
         const heard = count(() => Economy.forState(raised(turned, 'spot_disappoints', { stop: Situations.REST }), deps(7)));
         assert.equal(heard.searches, 1, 'a disappointing stay wakes one search at the rest');
