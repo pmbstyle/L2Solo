@@ -177,25 +177,24 @@ async function run() {
     await AfkTrade.sellToShop(seller, AfkTrade.recordStore(buyAd.id), 1864, 20, { objectId: answer.objectId });
     await AfkTrade.publishBot(seller, ad('sell_ad', [await stemLine(seller, 10, 90)]));
     const leasedAd = await AfkTrade.publishBot(leased, { ...ad('sell_ad', [await stemLine(leased, 20, 100)]), kind: 'shop' });
-    // A far bot's step starts from its row; the player's deal moves the
-    // revision, so that step's commit is refused and the next step, from the
-    // dealt row, commits the hunt.
-    const stepRevision = LifeState.cachedState(leased).simulation.revision;
-    await AfkTrade.buyFromShop(player, AfkTrade.recordStore(leasedAd.id), 1864, 7);
+    // A far bot's step starts from its row; the player's deal leaves the
+    // price on the board without moving that row, so the step commits its hunt
+    // and merges the price in the same save: nothing lost, nothing twice.
     const leasedState = LifeState.cachedState(leased);
+    await AfkTrade.buyFromShop(player, AfkTrade.recordStore(leasedAd.id), 1864, 7);
+    await AfkTrade.settleOwners([leased]);
     const hunted = structuredClone(leasedState.inventory);
     hunted['57'].amount += 30;
-    const hunt = revision => Owner.commitBatch([{ revision,
-        nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted,
-            simulation: { ...leasedState.simulation, revision } },
+    const hunt = () => Owner.commitBatch([{ revision: leasedState.simulation.revision,
+        nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted },
         proposal: InventorySummary.bagChange(leasedState.inventory, hunted) }], { timestamp: Date.now() });
-    const [refused] = await hunt(stepRevision);
-    assert.strictEqual(refused.reason, 'stale_revision', 'the deal moved the revision under the step');
+    const [commit] = await hunt();
+    assert(commit.ok && commit.settled, 'the step started before the deal commits the hunt and the price');
+    const [replayed] = await hunt();
+    assert(!replayed.ok, 'a replay of the step is refused');
     // Small lots are no longer pruned by a fixed minimum (45a13735): the 13
     // remaining Stems stay listed and the owner's bag is untouched.
-    const [commit] = await hunt(leasedState.simulation.revision);
-    assert(commit.ok, 'the step from the dealt row commits');
-    await AfkTrade.settleOwners([leased]);
+    assert.strictEqual(LifeState.cachedState(leased).adena, 1000 + 30 + 700, 'the far row carries the hunt and the price once');
     const expiring = await AfkTrade.publishBot(leaver, ad('sell_ad', [await stemLine(leaver, 10, 300)]));
     await AfkTrade.publishBot(leaver, ad('buy_ad', [{ selfId: 1865, name: 'Varnish', count: 10, price: 400, stackable: true }]));
     const standing = AfkTrade.activeShops().length;

@@ -302,8 +302,6 @@ async function waitForShoppingMeeting(session, bot, pending, visit) {
         const receipt = await TradeMeetings.waitForResult(
             pending.token || pending.preparationId, bot.fetchId(), { signal: marker.controller.signal });
         if (!current() || marker.controller.signal.aborted) return { interrupted: true };
-        if (receipt?.meetingId) await AfkTradeService.settleOwners([bot.fetchId()]);
-        if (!current() || marker.controller.signal.aborted) return { interrupted: true };
         const state = LifeState.cachedState(bot.fetchId());
         if (state) {
             session.coldLifeState = state;

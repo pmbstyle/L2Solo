@@ -21,6 +21,9 @@ const fs = require('node:fs');
 const GIRAN = { locX: 83396, locY: 147904, locZ: -3400 };
 const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 const held = (items, id) => items.filter(item => Number(item.selfId) === id).reduce((sum, item) => sum + Number(item.amount), 0);
+// A far seller's price waits on the board for its own commit: its bag plus what waits there.
+const owned = async (id, selfId) => held(await Database.fetchItems(id), selfId) + Number((await Database.execute([
+    'SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = ?', [id, selfId]]))[0].amount);
 const cash = amount => ({ selfId: 57, name: 'Adena', amount });
 let serial = 0;
 async function seed(items, { classId = 0, level = 30, name = 'Fixture', town = 'Giran', loc = GIRAN } = {}) {
@@ -177,7 +180,7 @@ async function images(ids) {
         assert.equal(held(actual, 45), 0); assert.equal(held(actual, 1785), 0);
         assert.equal(Number(result.inventory[45]?.amount || 0), 0); assert.equal(Number(result.inventory[1785]?.amount || 0), 0);
         assert.equal(result.adena, 1000000 - 1000 - 21 * 550); assert.equal(held(actual, 57), result.adena);
-        assert.equal(held(await Database.fetchItems(supplier.characterId), 57), 1001000);
+        assert.equal(await owned(supplier.characterId, 57), 1001000);
         assert.equal(Number((await images([crafter.characterId]))[0].character.mp), 1000 - 7 * recipe.mpCost);
         console.log('PASS native funded demand, strict original quote refusal and physical four-step conservation');
 
@@ -215,7 +218,7 @@ async function images(ids) {
         assert.equal(learned.adena, 999999); assert.equal(held(await Database.fetchItems(recipeBuyer.characterId), 57), 999999);
         assert.equal(held(await Database.fetchItems(recipeBuyer.characterId), 1804), 0);
         assert.equal(held(await Database.fetchItems(supplier.characterId), 1804), 0);
-        assert.equal(held(await Database.fetchItems(supplier.characterId), 57), 1001001);
+        assert.equal(await owned(supplier.characterId, 57), 1001001);
         assert.equal(learned.stats.shotRecipeDemand, null);
         console.log('PASS finite recipe price refusal, physical paid delivery and scroll consumption');
 
@@ -404,7 +407,7 @@ async function images(ids) {
             { objectId: bootstrapProduct.id, lineId: paidOffer.lineId, expectedPrice: paidOffer.price,
                 expectedRevision: paidOffer.expectedRevision, coldState: bootstrap });
         assert(!bootstrapSale.pending);
-        assert.equal(held(await Database.fetchItems(paidBuyer.characterId), 1464), 952);
+        assert.equal(await owned(paidBuyer.characterId, 1464), 952);
         assert.equal(held(await Database.fetchItems(bootstrap.characterId), 57), 1000000 - 30000 - 121162 - 30 + 952 * 500);
         console.log('PASS native backed C bootstrap: recipe, shield purchase, 51 residual crystals, 952 shots and paid sale');
 
@@ -459,7 +462,7 @@ async function images(ids) {
                 expectedRevision: publicLot.expectedRevision,
                 coldState: Life.cachedState(aggregateBuyers[0].characterId) });
         assert.equal(held(await Database.fetchItems(aggregateBuyers[0].characterId), 1464), purchased);
-        assert.equal(held(await Database.fetchItems(aggregateCrafter.characterId), 57),
+        assert.equal(await owned(aggregateCrafter.characterId, 57),
             2000000 - 30000 - 121162 - aggregateLot.batches * 15 + purchased * aggregateLot.exit.price);
         console.log('PASS native aggregate C launch: unbacked ads, recipe, shield, production, publication and paid sale');
     } finally {

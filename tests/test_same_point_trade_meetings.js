@@ -49,7 +49,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.equal(await funds(ids[0]), balance, 'incompatible point, double stock and route forgery roll back');
         const delivered = await Database.arriveTradeMeeting(b);
         assert.equal(delivered.meeting.state, 'completed');
-        assert.deepEqual(delivered.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 4 }, 'pending physical delivery remains incoming until settled');
+        assert.deepEqual(delivered.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 2 }, 'the delivery is in the bag; only the earlier meeting\'s stays incoming');
         assert.deepEqual(JSON.parse(delivered.coldLifeRows[ids[0]].statsJson).tradeMeeting, [a, 1, 'Giran', point.locX, point.locY, point.locZ]);
         for (const actor of [ids[0], ids[2]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(b, actor); }
         assert.deepEqual((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming, { 1867: 2 });

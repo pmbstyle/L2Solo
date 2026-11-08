@@ -180,7 +180,8 @@ async function run() {
         AfkTrade.findOwnerProjection(ownerId).actor.fetchPrivateStore(), 1865, 1);
     assert.strictEqual(bought.amount, 1);
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
-    assert.strictEqual(LifeState.snapshot(ownerId).adena, 10000100);
+    assert.strictEqual(LifeState.snapshot(ownerId).adena, 10000000, 'the far owner\'s row waits for its own commit');
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [ownerId], 'its price waits on the board');
 
     const buyGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: cWeapon.selfId, itemName: cWeapon.template.name },

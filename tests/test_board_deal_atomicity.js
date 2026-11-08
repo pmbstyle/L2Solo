@@ -165,9 +165,9 @@ async function run() {
         assert.strictEqual(await holdings(ids, weapon.selfId), weapons, 'E18: no weapon is created or destroyed');
         if (result.purchased) {
             assert.strictEqual(await bagAmount(buyer.characterId, weapon.selfId), 1, 'E18: the buyer holds what it paid for');
-            await AfkTrade.settlePending?.();
-            assert.strictEqual(await bagAmount(seller.characterId, 57), 500 + Number(offer.price),
-                'E18: the seller gets the price once its bag can be written');
+            // A far seller's price waits on the board for its own commit.
+            assert.strictEqual(await holdings([seller.characterId], 57), 500 + Number(offer.price),
+                'E18: the price is the seller\'s');
         }
     });
 

@@ -167,7 +167,9 @@ async function run() {
     const listing = await invoke('GameServer/Bot/Economy/ColdMarketListingService').open(craftedState,
         { town: craftedState.currentRegion });
     const records = Afk.ownerRecords(crafter.characterId);
-    const delivered = held(await Database.fetchItems(buyer.characterId), 1463);
+    // A far buyer's goods wait on the board for its own commit.
+    const [owed] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 1463', [buyer.characterId]]);
+    const delivered = held(await Database.fetchItems(buyer.characterId), 1463) + Number(owed.amount);
     assert(listing.listed || delivered > 0 || records.some(record => record.lines.some(line => line.selfId === 1463)),
         `crafted surplus reaches its real board buyer or sell record: ${listing.reason}`);
     assert(delivered > 0 || records.some(record => record.lines.some(line => line.selfId === 1463)));

@@ -18,6 +18,8 @@ const POINT = { locX: 83000, locY: 148000, locZ: -3400 };
 const REQUESTS = [79, 1864, 1865, 1866, 1867, 1868, 1869, 1870].map((id, at) => [id, at ? 2 : 1, (at + 1) * 100]);
 const cost = rows => rows.reduce((sum, row) => sum + row[1] * row[2], 0);
 const wallet = async id => Native.amount(await DB.fetchItems(id), 57);
+// What a deal owes a far bot waits on the board until its own step commit.
+const owed = async (id, selfId) => Number((await DB.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = ?', [id, selfId]]))[0].amount);
 const records = id => Afk.ownerRecords(id);
 const shop = id => Afk.findOwnerProjection(id)?.shop;
 const apply = (id, rows = REQUESTS, priority = Afk.BUY) => Market.executePlan(Life.snapshot(id),
@@ -78,8 +80,7 @@ async function autonomousSale() {
     assert.equal(shop(9110).escrowAdena, 100, 'only the unfilled weapon request remains reserved');
     assert.equal(await wallet(9110) + await wallet(9111) + Market.buyOrderEscrow(9110), cashBefore,
         'a native sale transfers Adena without creating or deleting money');
-    await Afk.settleOwners([9110]);
-    assert.equal(Native.amount(await DB.fetchItems(9110), 1864), 5, 'the buyer receives the five purchased items');
+    assert.equal(await owed(9110, 1864), 5, 'the far buyer\'s five items wait on the board for its own commit');
     await Market.executePlan(Life.snapshot(9111), plan, { reviewGoal: false });
     assert.equal(await wallet(9111), 1500000, 'an old quote cannot pay the seller twice');
     await DB.flushJournals(); await DB.flushHistory();
@@ -118,8 +119,7 @@ async function run() {
     const sale = await Afk.sellToShop(9201, Afk.recordStore(shop(9101).id), 1864, 1, { objectId: source });
     assert.equal(sale.pending, undefined);
     assert.equal(await wallet(9201), 200);
-    await Afk.settleOwners([9101]);
-    assert.equal(Native.amount(await DB.fetchItems(9101), 1864), 1);
+    assert.equal(await owed(9101, 1864), 1, 'the far buyer\'s stem waits on the board for its own commit');
     assert.equal(shop(9101).lines.find(row => row.selfId === 1864).count, 1);
     const remaining = REQUESTS.map(row => row[0] === 1864 ? [1864, 1, row[2]] : row);
     await apply(9101, remaining);

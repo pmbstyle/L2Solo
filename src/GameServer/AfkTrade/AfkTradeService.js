@@ -46,8 +46,8 @@ function boardRows() {
     return rows;
 }
 // Records close by events only (user, 2026-10-05): no deadline. What a deal
-// left on the board for cold bots the worker does not lease is merged every
-// SETTLE_TICK_MS on the main thread, one run at a time.
+// left on the board for a bot that turned near before its step commit merged
+// it is merged every SETTLE_TICK_MS on the main thread, one run at a time.
 const SETTLE_TICK_MS = 5000;
 let settleTimer = null;
 let settling = false;
@@ -603,12 +603,13 @@ function committedTrade(trade, characterId) {
     return { committed: false, hot: false, state: null };
 }
 
-// What a deal left for bots on the board reaches them now: a main-thread
-// save of each (Database settleBoardOwner moves the revision, so a far bot's
-// step under way is refused and rebases on the settled row).
+// What a deal left for bots on the board reaches a bot main holds now; a far
+// bot's waits for its own step commit (Database settleBoardOwner), skipped
+// here on its cached row without a database round.
 async function settleOwners(ownerIds = []) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     for (const ownerId of new Set((ownerIds || []).map(Number).filter(Boolean))) {
+        if (LifeState.cachedState(ownerId)?.phase === 'cold') continue;
         let result;
         try {
             result = await Database.settleBoardOwner(ownerId);
@@ -617,9 +618,7 @@ async function settleOwners(ownerIds = []) {
             utils.infoWarn('AfkTrade', 'settlement for %d waits: %s', ownerId, error.message);
             continue;
         }
-        if (!result.settled) continue;
-        if (result.row) LifeState.acceptLifecycleRow(result.row);
-        syncOnlineInventory(ownerId, result.ownerInventory);
+        if (result.settled) syncOnlineInventory(ownerId, result.ownerInventory);
     }
 }
 
@@ -1171,8 +1170,8 @@ function stopTimers() {
     settleTimer = null;
 }
 
-// The owners with settlements still on the board (a lease ended without a
-// commit, a settle that failed) get them merged.
+// The owners with settlements still on the board that main holds now (a bot
+// turned near before its commit, a settle that failed) get them merged.
 function settlePending() {
     const owners = Database.boardSettlementOwners();
     return owners.length ? settleOwners(owners) : Promise.resolve();
