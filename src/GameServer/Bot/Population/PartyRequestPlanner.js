@@ -56,21 +56,45 @@ function seekObjective(state, previous, { spots, timestamp, search = null, econo
 // than solo there, its persona weighing it (PartyProgressComparison.compare: the same
 // comparison forming's verdict then asks of the real roster), asks for a party on that
 // ground (a C4 player's LFP), so it groups with the bots that hunt there and the askers
-// of its band in the region (meetingKey). Asked at the
-// build, as every request; the next build asks again (two table rows, cheaper than
-// keying it on its inputs). Null: no held answer with a spot, or solo is sooner.
-// economy: the build's (its earning answer when the build took it with the request,
-// else the held one).
+// of its band in the region (meetingKey). Asked at the build, as every request, but
+// decided only when what it stands on moves (progressAskKey) and held between, in the
+// bot's worker record (memo.progressAsk; no memo: decided every time). Counted as
+// party_ask:decided:<reason> and party_ask:held (developer diagnostics). Null: no held
+// answer with a spot, or solo is sooner. economy: the build's (its earning answer when
+// the build took it with the request, else the held one).
 const PARTY_PROGRESS = 'party_progress';
-function progressObjective(state, { spots, timestamp, economy = null }) {
+// What the ask stands on: the bot's class and level (its table rows, its partner, the
+// level it aims at), its held earning answer (its time and spot: the solo row, renewed
+// at its situations: a level, new gear, a death...), its persona (the party lean, the
+// death weight, the belief error) and its saving goal (the price it saves for, its
+// focus, its plan step and request: the piece's hours). Read when it decides, stale
+// until one of these moves: the exp inside a level, the wallet, prices, samples and
+// the crowd (as the held earning answer's own inputs).
+function progressAskKey(state, earning) {
+    const stats = state.stats || {}, traits = invoke('GameServer/Bot/AI/BotPersona').of(state)?.traits || {};
+    const goal = row => row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? row.kind ?? null, row.amount ?? null] : null;
+    return JSON.stringify([stats.classId ?? state.classId ?? null, Number(state.level) || 0, earning.at ?? null, earning.spotId,
+        traits.sociability ?? null, traits.caution ?? null, traits.resilience ?? null, traits.understanding ?? null,
+        stats.wishSections?.affordAt?.at ?? null, stats.wishSections?.affordAt?.kind ?? null, stats.wishFocus?.[0] ?? null,
+        goal(stats.equipmentPlan?.next), goal(stats.partyRequest)]);
+}
+function progressObjective(state, { spots, timestamp, economy = null, memo = null }) {
     const earning = economy?.statsPacket?.earning || state?.stats?.earning;
     const spotId = earning?.spotId;
     if (!spotId) return null;
     const asked = earning === state.stats.earning ? state : { ...state, stats: { ...state.stats, earning } };
-    const Progress = require('./PartyProgressComparison'); // lazy: its chain loads this planner
-    const partner = Progress.partnerFor(asked);
-    const verdict = partner && Progress.compare(asked, [partner], { spots, timestamp, objective: { spotId } });
-    if (!verdict?.accept) return null;
+    const key = progressAskKey(asked, earning);
+    let held = memo?.progressAsk;
+    if (held?.key === key && held.spots === spots) Diagnostics.count('party_ask', 'held', held.accept ? 'party' : 'solo');
+    else {
+        const Progress = require('./PartyProgressComparison'); // lazy: its chain loads this planner
+        const partner = Progress.partnerFor(asked);
+        const verdict = partner && Progress.compare(asked, [partner], { spots, timestamp, objective: { spotId } });
+        held = { key, spots, accept: !!verdict?.accept };
+        if (memo) memo.progressAsk = held;
+        Diagnostics.count('party_ask', 'decided', verdict?.reason || 'no_partner');
+    }
+    if (!held.accept) return null;
     return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: PARTY_PROGRESS,
         spotId, npcId: null, itemId: null, targetId: null };
 }
@@ -198,7 +222,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan)
         || Material.request(state, plan, { ...options, timestamp }) || sharedTarget
         || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search, economy: options.economy, plan })
-        || progressObjective(state, { spots: options.spots, timestamp, economy: options.economy });
+        || progressObjective(state, { spots: options.spots, timestamp, economy: options.economy, memo: options.memo });
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;
         const amount = Math.max(1, Math.floor(Number(objective.materialParty ? objective.amount : plan?.next?.amount || 1)));
