@@ -41,10 +41,6 @@ async function run() {
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = false;
     PopulationService.partyFormationPending = false;
-    assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [],
-        'player protection must defer the expensive background party projection');
-    assert.strictEqual(PopulationService.partyFormationPending, false,
-        'protection sets no retry: the presence change that ends it wakes the groups');
 
     PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
     const idleBudget = PopulationService.partyFormationBudgetMs();

@@ -192,8 +192,6 @@ class PartyAssemblyEvents {
 
     wakeHelp() { if (this.active) this.helpPending = true; }
 
-    wakeGroups() { for (const group of this.groups.values()) this.enqueue(group); }
-
     // The running formation ended: the groups it kept waiting run.
     wakeParked() {
         for (const group of this.parked) if (this.groups.get(group.key) === group) this.enqueue(group);

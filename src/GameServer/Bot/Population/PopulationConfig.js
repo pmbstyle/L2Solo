@@ -91,14 +91,6 @@ const DEFAULTS = {
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
-    // A protected player session may replenish only required parties. The
-    // worker finds candidates; the main loop performs one guarded atomic write.
-    protectedPartyFormationPollMs: 5000,
-    protectedPartyFormationIntervalMs: 30000,
-    protectedPartyFormationCandidateLimit: 12,
-    protectedPartyFormationLagAbortMs: 40,
-    protectedPartyFormationMainBudgetMs: 25,
-    protectedPartyFormationMaxBackoffMs: 120000,
     phasePolicyIntervalMs: 10000,
     // Start with every level-one hunting sector. Waves open every five levels
     // at x1-x10, or every ten levels at x50 and above. This is a cap for
@@ -243,12 +235,6 @@ const ENV_KEYS = {
     backgroundGovernorLagAbortMs: 'BOT_BACKGROUND_GOVERNOR_LAG_ABORT_MS',
     partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
     partyFormationPlayerBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_PLAYER_BUDGET_MS',
-    protectedPartyFormationPollMs: 'BOT_POPULATION_PROTECTED_PARTY_POLL_MS',
-    protectedPartyFormationIntervalMs: 'BOT_POPULATION_PROTECTED_PARTY_INTERVAL_MS',
-    protectedPartyFormationCandidateLimit: 'BOT_POPULATION_PROTECTED_PARTY_CANDIDATE_LIMIT',
-    protectedPartyFormationLagAbortMs: 'BOT_POPULATION_PROTECTED_PARTY_LAG_ABORT_MS',
-    protectedPartyFormationMainBudgetMs: 'BOT_POPULATION_PROTECTED_PARTY_MAIN_BUDGET_MS',
-    protectedPartyFormationMaxBackoffMs: 'BOT_POPULATION_PROTECTED_PARTY_MAX_BACKOFF_MS',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     marketTradeChatGlobalMinIntervalMs: 'BOT_MARKET_TRADE_CHAT_GLOBAL_MIN_INTERVAL_MS',

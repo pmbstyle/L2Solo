@@ -10,7 +10,6 @@ const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState'), Owner 
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile'), Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Roster = require('../src/GameServer/Clan/ClanRaidRoster');
-const Formation = require('../src/GameServer/Bot/Population/RequiredPartyFormation');
 const Requests = require('../src/GameServer/Bot/Population/PartyRequestPlanner');
 const Assembly = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
 const Lifecycle = require('../src/GameServer/Bot/Population/HotPartyLifecycle');
@@ -380,13 +379,14 @@ async function main() {
             spotId: spot.id, npcId: spot.raidBossTemplateId, sourceLevel: 50, minPartySize: 9, maxPartySize: 9, fullRoster: marker };
         let members = await refreshed();
         const ungrouped = members.map(member => ({ ...member, activity: 'party_wait', stats: { ...member.stats, clanPartyObjective: objective, partyRequest: objective } }));
-        assert.equal(Formation.proposalFromStates(ungrouped, { candidateLimit: 64 }).candidates.length, 9);
-        assert.equal(Formation.proposalFromStates(ungrouped.slice(0, 8), { candidateLimit: 64 }).candidates.length, 0);
+        const roster = rows => Roster.selectMembers(rows, objective, Requests.limitsForObjective(objective)).length;
+        assert.equal(roster(ungrouped), 9);
+        assert.equal(roster(ungrouped.slice(0, 8)), 0);
         const twoBuffers = structuredClone(ungrouped);
         twoBuffers[1].stats.coldCombat.skills.push(...Combat.skillSnapshotsFromRecords([{ selfId: 1015, level: 1 }]));
         twoBuffers[2].classId = twoBuffers[2].stats.classId = twoBuffers[2].stats.coldCombat.classId = 17;
         twoBuffers[2].stats.coldCombat.skills.push(...Combat.skillSnapshotsFromRecords([{ selfId: 1068, level: 1 }]));
-        assert.equal(Formation.proposalFromStates(twoBuffers, { candidateLimit: 64 }).candidates.length, 9, 'native two healing buffers accepted without generic healer formula');
+        assert.equal(roster(twoBuffers), 9, 'native two healing buffers accepted without generic healer formula');
         assert.equal(Requests.limitsForObjective(objective).minSize, 9);
         assert.deepEqual(Requests.partyObjectiveForPlan({ status: 'active', strategy: 'direct_drop', next: { spotId: spot.id, npcId: 10137 },
             clanGoal: { clanId: marker.clanId, goalKey: marker.goalKey, partyNeed: 'required', fullRoster: marker } }).fullRoster, marker);

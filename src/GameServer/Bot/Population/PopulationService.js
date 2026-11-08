@@ -64,7 +64,6 @@ const PartyGoalCalculation = invoke('GameServer/Bot/Population/PartyGoalCalculat
 const PartyGoalPolicy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
 const CraftMaterialParty = invoke('GameServer/Bot/Population/CraftMaterialParty');
 const PartyAgreement = invoke('GameServer/Bot/Population/PartyAgreement');
-const RequiredPartyFormation = invoke('GameServer/Bot/Population/RequiredPartyFormation');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const ACTIVATION_BUSY_FLAGS = ['supplyErrand'];
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
@@ -915,8 +914,6 @@ const PopulationService = {
     stateRetentionRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
-    nextProtectedPartyFormationAt: 0,
-    protectedPartyFormationFailures: 0,
     phasePolicyRunning: false,
     clanActionRunning: false,
     clanFounderRunning: false,
@@ -1066,8 +1063,6 @@ const PopulationService = {
         this.walResetEstimateRetryAt = 0;
         this.walTruncateEstimateMs = 0;
         PersistentStateRetention.reset();
-        this.nextProtectedPartyFormationAt = 0;
-        this.protectedPartyFormationFailures = 0;
         if (this.phasePolicyTimer) {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
@@ -1471,21 +1466,12 @@ const PopulationService = {
         const unsubscribeHelp = service.unsubscribeHelp;
         service.unsubscribeHelp = () => { unsubscribeHelp(); helpMoves(); helpParties(); };
         if (Help.hasDue()) service.wakeHelp();
-        // Presence changes can remove foreground protection. No actor sweep is
-        // needed: the callback wakes only the already indexed waiting groups.
-        const World = invoke('GameServer/World/World');
-        let protectedBefore = this.playerActivityProfile().protected;
-        service.unsubscribePresence = World.subscribeUserChanges(() => {
-            const protectedNow = this.playerActivityProfile().protected;
-            if (protectedNow !== protectedBefore) service.wakeGroups();
-            protectedBefore = protectedNow;
-        });
     },
 
     stopPartyAssemblyEvents() {
         const service = this.partyAssemblyEvents;
         this.partyAssemblyEvents = null;
-        service?.unsubscribeHelp?.(); service?.unsubscribePresence?.(); service?.unsubscribeRequirements?.(); service?.stop();
+        service?.unsubscribeHelp?.(); service?.unsubscribeRequirements?.(); service?.stop();
         const due = [...this.partyRequirementRefreshDue];
         this.partyRequirementRefreshDue.clear();
         for (const id of due) BackgroundPartyState.publish(id);
@@ -1575,20 +1561,16 @@ const PopulationService = {
         const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
             && !PartyRequestPlanner.closed(state));
         if (!eligible.length) return {};
-        const protectedActivity = this.playerActivityProfile(timestamp).protected;
-        if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
-        if (protectedActivity && !eligible.some(state => RequiredPartyFormation.objectiveFor(state))) return {};
-        const result = protectedActivity
-            ? await this.formProtectedRequiredParty(timestamp, eligible)
-            : await this.formBackgroundParties(eligible, { moved });
+        // One forming path whether a player is online or not: a player online only
+        // narrows its budget (partyFormationBudgetMs) and its batch to one party a pass.
+        const result = await this.formBackgroundParties(eligible, { moved });
         // Retried (PartyAssemblyEvents.retryMs) only what no event ends: main's lag, DB
         // queue or formation budget (partyFormationPending), a material group that formed
         // nothing (the next page offers other supports). A refused roster is not: its
         // requests are closed until their next build.
         return { deferred: this.partyFormationPending
                 || !result.length && eligible.some(state => CraftMaterialParty.isObjective(state.stats?.partyRequest)),
-            continuation: result.length > 0,
-            retryAt: protectedActivity ? this.nextProtectedPartyFormationAt : 0 };
+            continuation: result.length > 0 };
     },
 
     startLifecycleSafetySweep() {
@@ -1924,20 +1906,12 @@ const PopulationService = {
         this.partyAssemblyEvents?.wakeParked();
     },
 
-    protectedPartyFormationDelay(failed = false) {
-        const base = Math.max(1000, Number(Config.protectedPartyFormationIntervalMs) || 30000);
-        if (failed) this.protectedPartyFormationFailures = Math.min(8, Number(this.protectedPartyFormationFailures || 0) + 1);
-        else this.protectedPartyFormationFailures = 0;
-        const delay = failed ? base * (2 ** this.protectedPartyFormationFailures) : base;
-        return Math.min(Math.max(base, delay), Math.max(base, Number(Config.protectedPartyFormationMaxBackoffMs) || 120000));
-    },
-
     async helpClanParty(timestamp = Date.now()) {
         const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
         if (!Help.hasDue() || Config.enabled === false || Config.backgroundPartyEnabled === false) return null;
         if (this.partyFormationRunning || this.resolving) return BUSY_HELP;
         const cold = ColdSimulationCoordinator.snapshot();
-        if (Number(Metrics.currentEventLoopLag()) >= Number(Config.protectedPartyFormationLagAbortMs || 40)
+        if (Number(Metrics.currentEventLoopLag()) >= Number(Config.schedulerLagThrottleMs || 40)
             || Number(Database.pending() || 0) > 0 || Database.checkpointSnapshot()?.inFlight
             || !cold.ready || !cold.snapshotsLoaded || Number(cold.queue?.depth || 0) > 0
             || cold.queue?.flushing) return BUSY_HELP;
@@ -1947,125 +1921,13 @@ const PopulationService = {
         } finally { this.formationEnded(); }
     },
 
-    formProtectedRequiredParty(timestamp = Date.now(), candidates = null) {
-        if (Config.enabled === false || Config.backgroundPartyEnabled === false
-            || this.partyFormationRunning || this.resolving
-            || timestamp < Number(this.nextProtectedPartyFormationAt || 0)) {
-            return Promise.resolve([]);
-        }
-        const activity = this.playerActivityProfile(timestamp);
-        if (!activity.protected) return Promise.resolve([]);
-
-        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const lagLimit = Math.max(1, Number(Config.protectedPartyFormationLagAbortMs) || 40);
-        const cold = ColdSimulationCoordinator.snapshot();
-        if (lagMs >= lagLimit
-            || Number(Database.pending() || 0) > 0
-            || Database.checkpointSnapshot()?.inFlight
-            || !cold.ready
-            || !cold.snapshotsLoaded
-            || Number(cold.queue?.depth || 0) > 0
-            || cold.queue?.flushing) {
-            this.partyFormationPending = true;
-            Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
-            this.nextProtectedPartyFormationAt = timestamp + Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000);
-            return Promise.resolve([]);
-        }
-
-        this.partyFormationRunning = true;
-        this.partyFormationPending = false;
-        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
-        const mainBudgetMs = Math.max(1, Number(Config.protectedPartyFormationMainBudgetMs) || 25);
-        let failed = false;
-        let retrySoon = false;
-        const priorityClanIds = [...new Set(this.realPlayerSessions()
-            .filter(session => session.accountId && !String(session.accountId).startsWith('bot_')
-                && session.socket && session.actor?.fetchIsOnline?.() !== false)
-            .map(session => Number(session.actor?.fetchClanId?.() || 0)).filter(id => id > 0))];
-        const proposalOptions = {
-            timestamp,
-            priorityClanIds,
-            candidateLimit: Config.protectedPartyFormationCandidateLimit,
-            minSize: Config.partyMinSize,
-            maxSize: Config.partyMaxSize,
-            levelRange: PartyComposition.DEFAULT_LEVEL_RANGE
-        };
-        const proposalWork = candidates
-            ? Promise.resolve({ ok: true, ...RequiredPartyFormation.proposalFromStates(candidates, proposalOptions) })
-            : ColdSimulationCoordinator.requestRequiredPartyFormation(proposalOptions);
-        return proposalWork.then((proposal) => {
-            if (!proposal?.ok) {
-                failed = true;
-                return [];
-            }
-            const projections = proposal.candidates || [];
-            if (!projections.length) return [];
-            return hydratePartyCandidates(projections).then((states) => {
-                const required = states.filter((state) => {
-                    const objective = RequiredPartyFormation.objectiveFor(state);
-                    return objective && RequiredPartyFormation.spotFor(state, objective) === String(proposal.spotId || '')
-                        || proposal.materialParty && !!PartyComposition.supportRole(state, objective);
-                });
-                const select = proposal.materialParty ? CraftMaterialParty.selectMembers
-                    : (rows, options) => ClanRaidRoster.selectMembers(rows, { fullRoster: proposal.fullRoster }, options);
-                const selected = select(required, {
-                    minSize: proposal.minSize,
-                    maxSize: proposal.maxSize,
-                    levelRange: proposal.levelRange
-                });
-                if (selected.length < Number(proposal.minSize || Config.partyMinSize)) {
-                    failed = true;
-                    return [];
-                }
-                const currentLagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-                const currentCold = ColdSimulationCoordinator.snapshot();
-                if (currentLagMs >= lagLimit
-                    || Number(Database.pending() || 0) > 0
-                    || Database.checkpointSnapshot()?.inFlight
-                    || Number(currentCold.queue?.depth || 0) > 0
-                    || currentCold.queue?.flushing) {
-                    retrySoon = true;
-                    Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
-                    return [];
-                }
-                const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required') || selected[0];
-                const commitStartedAt = Date.now();
-                const commitTiming = { workerWaitMs: 0 };
-                return createAndCommitBackgroundParty(selected, partyObjectiveForState(objectiveMember), commitTiming).then((party) => {
-                    if (!party) failed = true;
-                    if (Date.now() - commitStartedAt - commitTiming.workerWaitMs > mainBudgetMs) failed = true;
-                    return party ? [party] : [];
-                });
-            });
-        }).catch((error) => {
-            failed = true;
-            utils.infoWarn('BotPopulation', 'protected party formation failed: %s', error?.message || error);
-            return [];
-        }).finally(() => {
-            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
-            this.nextProtectedPartyFormationAt = Date.now() + (retrySoon
-                ? Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000)
-                : this.protectedPartyFormationDelay(failed));
-            Config.developerDiagnostics && Metrics.recordPartyFormationDuration(durationMs);
-            this.formationEnded();
-        });
-    },
-
     formBackgroundParties(candidates = null, { moved = null } = {}) {
         // Formation rewrites party membership.  It must not overlap with the
         // scheduler after that scheduler has already selected solo candidates.
-        // Foreground protection chooses the bounded required-request path;
-        // ordinary groups resume on presence events.
         if (this.partyFormationRunning || Config.enabled === false || Config.backgroundPartyEnabled === false) {
             return Promise.resolve([]);
         }
         const activity = this.playerActivityProfile();
-        if (activity.protected) {
-            // Required requests use formProtectedRequiredParty. Presence events
-            // wake the ordinary indexed groups when protection ends.
-            Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
-            return Promise.resolve([]);
-        }
         if (this.resolving) {
             // Busy work preserves this group's retry deadline.
             this.partyFormationPending = true;
@@ -2117,13 +1979,11 @@ const PopulationService = {
                     || materialRequested && !!PartyComposition.supportRole(state, partyObjectiveForState(state))
                     || PersonaPartyPolicy.backgroundIntent(state).accept
                 ));
-                const recruit = activity.protected
-                    ? Promise.resolve(new Set())
-                    : this.recruitBackgroundMembers(willingStates, {
-                        deadlineAt,
-                        markBudgetStop: () => budgetReached(),
-                        objectiveOf
-                    });
+                const recruit = this.recruitBackgroundMembers(willingStates, {
+                    deadlineAt,
+                    markBudgetStop: () => budgetReached(),
+                    objectiveOf
+                });
                 return recruit.then((recruitedIds) => ({
                     states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
                     partyRequestBacklog,

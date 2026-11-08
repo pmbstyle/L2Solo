@@ -54,9 +54,10 @@ async function main() {
     console.log('PASS actual Life publication/replay carries current original state and previous reference');
 
     // The production consumer invokes the unchanged native membership commit.
-    // Only foreground/lag pressure is supplied: no server/Worker is started.
+    // Only foreground/lag pressure is supplied: no server/Worker is started. A player
+    // is online, as in real play: forming runs the one path it runs with none.
     const savedProfile = Population.playerActivityProfile;
-    Population.playerActivityProfile = () => ({ protected: false, realPlayers: 0 });
+    Population.playerActivityProfile = () => ({ protected: true, realPlayers: 1 });
     Population.started = true;
     const originalMin = Config.partyMinSize, originalMax = Config.partyMaxSize;
     Config.partyMinSize = 2; Config.partyMaxSize = 2;
@@ -182,6 +183,27 @@ async function main() {
             at: options.prepared.timestamp, soloSource: null, partySource: null });
     }
     console.log('PASS forming\'s no closes a refused roster\'s requests; a closed request asks no retry');
+    // An LFP is heard across its region and level band (C4 trade chat): a healer with no
+    // solo ground asking at one spot meets a damage dealer asking at another, a player online.
+    {
+        const Profiles = invoke('GameServer/Bot/Population/SpotProfiles'), savedCache = Profiles.cache;
+        Profiles.cache = [{ id: 'lfp-a', center: { locX: 10, locY: 0, locZ: 0 } }, { id: 'lfp-b', center: { locX: 9000, locY: 0, locZ: 0 } }];
+        Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
+            sources: GoalCalculation.sources(selected), joint: party.stats.forming
+            ? GoalPolicy.formingVerdict(selected, party.stats.forming.requested) : GoalPolicy.joint(party, selected) });
+        try {
+            const ask = (reason, spotId) => ({ status: 'open', priority: 'preferred', reason, spotId,
+                objectiveKey: `spot:${spotId}`, requestedAt: Date.now() });
+            const healer = await seed({ classId: 15, role: 'healer', partyRequest: ask('no_solo_ground', 'lfp-a') });
+            const dealer = await seed({ partyRequest: ask('party_progress', 'lfp-b') });
+            const lfp = [await Life.upsertState({ ...healer, spotId: 'lfp-a', activity: 'hunting' }, 'lfp_fixture'),
+                await Life.upsertState({ ...dealer, spotId: 'lfp-b', activity: 'hunting' }, 'lfp_fixture')];
+            const met = await Population.formBackgroundParties(lfp);
+            assert.equal(met.length, 1, 'the two askers of one region and band form a party');
+            assert.deepEqual(new Set(met[0].memberIds), new Set(lfp.map(state => state.characterId)));
+        } finally { Profiles.cache = savedCache; }
+    }
+    console.log('PASS a player online: a healer\'s LFP meets a damage dealer asking at another spot');
     Population.started = false; Population.playerActivityProfile = savedProfile;
     Coordinator.requestPartyGoals = originalPartyGoals;
     Income.compare = originalIncome;

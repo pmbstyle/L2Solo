@@ -122,7 +122,6 @@ const OccupationSources = require('./ColdOccupationSources');
 const EconomicTrip = require('../Economy/EconomicTrip');
 const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
-const RequiredPartyFormation = require('./RequiredPartyFormation');
 const SpotContest = require('./SpotContest');
 const EnemyMet = require('./EnemyMet');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
@@ -2382,13 +2381,6 @@ async function handle(message) {
     case 'command_ack':
         (payload.results || []).forEach(result => kernel?.completeCommand(result));
         break;
-    case 'party_formation_request': {
-        const states = kernel
-            ? [...kernel.states.values()].map((entry) => entry?.state).filter(Boolean)
-            : [];
-        send('party_formation_proposal', RequiredPartyFormation.proposalFromStates(states, payload), message.msgId);
-        break;
-    }
     case 'party_goal_request':
         if (payload.pageIndex !== undefined) admitPartyGoalPages(payload, message.msgId);
         else requestPartyGoals(payload, message.msgId);
