@@ -51,12 +51,7 @@ function hasClanErrand(state, clanId, selfId = null) {
 // or the refund's failure code.
 async function settle(clanId, characterId, clanPart, purchase, kind, bought = !!purchase?.bought) {
     const kept = !!(purchase?.traveling || purchase?.pending || purchase?.errandAt);
-    if (!bought && kept) {
-        // An errand left for the clan (not a meeting it waits on) is taken: traced, as its end is (returnUnspent).
-        if ((purchase.traveling || purchase.errandAt) && Trace.on()) traceErrand('taken', characterId, clanId,
-            purchase.plan?.selfId, purchase.traveling ? 'traveling' : 'waiting', purchase.errandAt);
-        return { code: 'kept', state: purchase?.state || null };
-    }
+    if (!bought && kept) return { code: 'kept', state: purchase?.state || null };
     const amount = !bought ? clanPart
         : kept ? 0 : Math.max(0, Number(clanPart || 0) - Math.max(0, Number(purchase?.spent) || 0));
     const back = await refund(clanId, characterId, amount, kind);
@@ -64,21 +59,39 @@ async function settle(clanId, characterId, clanPart, purchase, kind, bought = !!
     return { code, state: back.state || purchase?.state || null };
 }
 
-// A clan errand that ends (filled on arrival: outcome done; no plan left, its need gone,
-// its buyer out of the clan: failed, the reason) returns the credit it did not spend; a
-// remainder errand carries its own clanPart.
-async function returnUnspent(characterId, errand, spent, outcome = 'failed', reason = null) {
+// A clan errand that ends on arrival (filled, or no plan left) returns the
+// credit it did not spend; a remainder errand carries its own clanPart.
+async function returnUnspent(characterId, errand, spent) {
     const clanId = Number(errand?.tag?.clanId);
-    if (errand?.purpose === 'clan' && Trace.on()) traceErrand(outcome, characterId, clanId, errand.selfId, reason, errand.at);
     const left = Math.max(0, Number(errand?.tag?.clanPart || 0) - Math.max(0, Number(spent) || 0));
     if (errand?.purpose !== 'clan' || !(clanId > 0) || !(left > 0)) return null;
     return refund(clanId, characterId, left, 'clan_errand_refund');
 }
 
-// One record per clan errand event: errandKey names the clan, item what it buys.
-function traceErrand(phase, characterId, clanId, item, reason, at) {
-    Trace.record({ kind: 'errand', bot: Number(characterId), phase, errandKey: `clan:${Number(clanId) || 0}`,
-        item: Number(item) || undefined, errandAt: Number(at) || undefined, ...(reason ? { reason: String(reason) } : {}) });
+// A clan errand's lifecycle, traced at the commit that changes the bot's errands (every end, whoever wrote it: a
+// purchase, the need gone, a lapse, a drop): taken when it enters them; when it leaves them, done (the commit bought
+// its last units: lastErrand), lapsed (its time ran out) or failed (the commit's reason). One errand: its key.
+function clanErrands(state) {
+    const errands = new Map();
+    for (const errand of state?.stats?.marketErrands || [])
+        if (errand?.purpose === 'clan' && Number(errand.tag?.clanId) > 0) errands.set(CombinedErrands.key(errand), errand);
+    return errands;
+}
+function traceCommitted(previous, next) {
+    const before = clanErrands(previous), after = clanErrands(next);
+    if (!before.size && !after.size) return;
+    const record = (phase, errand, reason) => Trace.record({ kind: 'errand', bot: Number(next.characterId), phase,
+        errandKey: `clan:${Number(errand.tag.clanId)}`, item: Number(errand.selfId) || undefined, errandAt: Number(errand.at) || undefined,
+        ...(reason ? { reason: String(reason) } : {}) });
+    for (const [key, errand] of after) if (!before.has(key)) record('taken', errand);
+    const bought = next.stats?.lastErrand, fresh = bought && Number(bought.at) !== Number(previous.stats?.lastErrand?.at);
+    for (const [key, errand] of before) {
+        if (after.has(key)) continue;
+        if (fresh && bought.purpose === 'clan' && Number(bought.selfId) === Number(errand.selfId)
+            && Number(bought.units) >= Number(errand.amount)) record('done', errand);
+        else if (CombinedErrands.lapsed(errand.at, Number(next.updatedAt) || Date.now())) record('lapsed', errand);
+        else record('failed', errand, next.stats?.lastReason || 'dropped');
+    }
 }
 
-module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent };
+module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent, traceCommitted };

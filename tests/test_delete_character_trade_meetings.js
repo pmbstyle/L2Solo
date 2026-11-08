@@ -7,6 +7,9 @@ require('../src/Global');
 fixture.assertConfigured(options.default);
 process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
+const DecisionTrace = require('../src/GameServer/Bot/DecisionTrace');
+const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const Native = require('./helpers/nativeMarketFixture');
 const Intent = require('../src/GameServer/Bot/Economy/TradeIntent');
 const ids = [9411, 9412, 9413, 9414, 9415], deleted = ids[2];
@@ -49,7 +52,20 @@ invoke('GameServer/DataCache').init();
         // Leave both terminal deliveries unacknowledged, including a partial ack.
         await Database.acknowledgeTradeMeeting(completed.id, ids[1]);
         assert.equal((await Database.execute(['SELECT COUNT(*) n FROM board_trade_meetings WHERE actorA=? OR actorB=?', [deleted, deleted]]))[0].n, 4);
-        assert.equal((await Database.deleteCharacter(`BOT_DELETE_MEET_${deleted}`, `DELETEMEET${deleted}`)).affectedRows, 1);
+        const deletion = await Database.deleteCharacter(`BOT_DELETE_MEET_${deleted}`, `DELETEMEET${deleted}`);
+        assert.equal(deletion.affectedRows, 1);
+        // The meetings it closed reach main as every meeting end does (CharDelete hands them on): the survivors' rows,
+        // never the deleted character's, and one traced end each with its reason.
+        assert.deepEqual(deletion.meetings.filter(reply => Array.isArray(reply.closed)).map(reply => [reply.meeting.id, reply.meeting.reason])
+            .sort((a, b) => a[0] - b[0]), [[refundBuyer.id, 'character_deleted'], [refundSeller.id, 'character_deleted']]);
+        assert(deletion.meetings.every(reply => !reply.coldLifeRows[deleted]), 'the deleted character\'s row is not handed on');
+        const traced = [], before = Number(Life.cachedState(ids[0]).simulation?.revision || 0);
+        Config.decisionTrace = true;
+        DecisionTrace.connect(batch => { traced.push(...batch.records.map(row => JSON.parse(row))); DecisionTrace.ack(batch.id, batch.records.length); });
+        try { for (const reply of deletion.meetings) Meetings.acceptRows(reply); } finally { Config.decisionTrace = false; DecisionTrace.stop(); }
+        assert.deepEqual(traced.filter(row => row.kind === 'meeting').map(row => [row.recordId, row.phase, row.reason]).sort((a, b) => a[0] - b[0]),
+            [[refundBuyer.id, 'cancelled', 'character_deleted'], [refundSeller.id, 'cancelled', 'character_deleted']]);
+        assert(Number(Life.cachedState(ids[0]).simulation?.revision || 0) > before, 'the survivor\'s refunded row reaches main');
         assert.equal((await Database.deleteCharacter(`bot_delete_meet_${deleted}`, `DeleteMeet${deleted}`)).affectedRows, 0);
         assert.equal((await Database.execute(['SELECT COUNT(*) n FROM board_trade_meetings WHERE actorA=? OR actorB=?', [deleted, deleted]]))[0].n, 0);
         assert.equal((await Database.fetchTradeMeeting(unrelated.id)).state, 'accepted', 'other commitments remain accepted');

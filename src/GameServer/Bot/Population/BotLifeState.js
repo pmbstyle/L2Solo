@@ -63,6 +63,14 @@ cache.subscribePublications(({ characterId, state, previousState }) => {
         notifyClassMigrationPending();
     }
 });
+// The lifecycles a bot's own row carries (its party request, its clan errands), traced at the commit that changes
+// them: every committed state lands here (a step's commit, a main write, a native reply), a projection never does;
+// the boot's load (no state before) is no event.
+cache.subscribePublications(({ state, previousState }) => {
+    if (workerProjectorRole || !state || !previousState || !Trace.on()) return;
+    invoke('GameServer/Bot/Population/PartyRequestPlanner').traceCommitted(previousState, state);
+    invoke('GameServer/Clan/ClanPurchaseCredit').traceCommitted(previousState, state);
+});
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -1840,8 +1848,6 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         .then(() => Database.execute([sql, params, { read: true }]))
         .then((rows) => {
             publishDeferredPartyRequests(rows);
-            if (Trace.on()) for (const row of rows) Trace.record({ kind: 'party', bot: Number(row.characterId), phase: 'request',
-                outcome: 'closed', reason: String(reason || 'no_compatible_level_match') });
             if (rows.length) utils.infoWarn('BotLife', 'closed %d unformable party requests reason=%s', rows.length, String(reason || 'unknown'));
             return rows.length;
         });

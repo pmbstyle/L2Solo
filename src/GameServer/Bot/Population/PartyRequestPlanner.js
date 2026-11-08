@@ -208,16 +208,8 @@ function clanPartyObjectiveForState(state) {
 
 // options: spots, economy (the bot's own economy, built in the background
 // thread; required, no build here), memo (the bot's worker record) and search
-// (the worker's route search inputs, supportWithoutGround). A request opened (none
-// open before, or one for another objective) is traced once, as its close is
-// (forming's no: BotLifeState.deferUnformablePartyRequests; a leave: releaseMember).
+// (the worker's route search inputs, supportWithoutGround).
 function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) {
-    const request = requestForPlan(state, plan, timestamp, options), previous = state?.stats?.partyRequest;
-    if (Trace.on() && request?.status === 'open' && !(previous?.status === 'open' && previous.objectiveKey === request.objectiveKey))
-        Trace.record({ kind: 'party', bot: state?.characterId, phase: 'request', outcome: 'open', reason: String(request.reason || '') });
-    return request;
-}
-function requestForPlan(state, plan, timestamp, options) {
     const previous = state?.stats?.partyRequest;
     const supplyPause = Material.supplyPause(state, plan, { ...options, timestamp });
     if (supplyPause) return supplyPause;
@@ -299,6 +291,20 @@ function memberObjective(state) {
     return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanPartyObjectiveForState(state);
 }
 
+// A request's lifecycle, traced at the commit that changes it (every end, whoever wrote it: the build's own closes,
+// forming's no, a leave, a party joined, a death): one request is the open one asked at requestedAt for its
+// objective; it ends when the committed state no longer holds it open, and the next one opened is traced.
+const openKey = request => request?.status === 'open' ? `${request.objectiveKey || ''}@${Number(request.requestedAt) || 0}` : null;
+function traceCommitted(previous, next) {
+    const was = previous?.stats?.partyRequest, now = next?.stats?.partyRequest, from = openKey(was), to = openKey(now);
+    if (from === to) return;
+    const bot = Number(next.characterId);
+    if (from) Trace.record({ kind: 'party', bot, phase: 'request', outcome: 'closed', reason: to ? 'replaced'
+        : now?.suspendedFor ? 'supply_pause' : now?.status ? String(now.lastReason || now.status)
+            : next.party?.partyId || next.stats?.backgroundPartyId ? 'joined' : next.activity === 'dead' ? 'dead' : 'not_needed' });
+    if (to) Trace.record({ kind: 'party', bot, phase: 'request', outcome: 'open', reason: String(now.reason || '') });
+}
+
 module.exports = {
     NO_SOLO_GROUND,
     PARTY_PROGRESS,
@@ -314,5 +320,6 @@ module.exports = {
     clanPartyObjectiveForState,
     partyRequestForPlan,
     partyObjectiveForState,
-    memberObjective
+    memberObjective,
+    traceCommitted
 };

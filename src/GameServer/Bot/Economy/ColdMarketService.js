@@ -699,9 +699,8 @@ async function acquireMaterials(state, requirements) {
 
 // A clan errand that ends returns the clan's credit it did not spend, once its
 // end is saved. Its goal ends with it: the goal reads the pending errands.
-// outcome: done (filled) or failed, with its reason.
-function endErrand(characterId, errand, spent, saved, outcome, reason = null) {
-    return saved ? invoke('GameServer/Clan/ClanPurchaseCredit').returnUnspent(characterId, errand, spent, outcome, reason) : null;
+function endErrand(characterId, errand, spent, saved) {
+    return saved ? invoke('GameServer/Clan/ClanPurchaseCredit').returnUnspent(characterId, errand, spent) : null;
 }
 
 // A wealth craft's errand (an input, or the recipe it learns) that ended without its
@@ -728,7 +727,7 @@ async function buyErrand(state, options = {}) {
         // The buyer left the clan on its way: the treasury credit it carries is not spent;
         // the errand ends here like one with no plan left, and the credit goes back.
         const dropped = await LifeState.upsertState(CombinedErrands.complete(state, errand), 'market_errand_no_offer');
-        const refunded = await endErrand(state.characterId, errand, 0, dropped, 'failed', 'left_clan');
+        const refunded = await endErrand(state.characterId, errand, 0, dropped);
         return { state: refunded?.state || dropped || state, purchased: false, units: 0, reason: 'market_errand_no_offer' };
     }
     // A meeting settles after this lifecycle command has returned. Its
@@ -778,7 +777,7 @@ async function buyErrand(state, options = {}) {
         lastErrand: { purpose: errand.purpose, selfId: errand.selfId, units: bought.units, tag: errand.tag || null, at: Date.now() } } };
     const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
     const returned = rest === 0 || !plan || replan
-        ? await endErrand(state.characterId, errand, bought.spent, saved, rest === 0 ? 'done' : 'failed', rest === 0 ? null : !plan ? 'no_source' : 'price_refused') : null;
+        ? await endErrand(state.characterId, errand, bought.spent, saved) : null;
     // A refused purchase with no plan left: the held step failed where it acts.
     if (replan) invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed', { impossible: true });
     return { state: returned?.state || saved || cleared, purchased: bought.units > 0, units: bought.units,

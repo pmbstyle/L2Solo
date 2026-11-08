@@ -171,8 +171,9 @@ function acceptedParty(snapshot) {
     return snapshot;
 }
 // A committed party row against the one it replaces (acceptRow; the boot's reload is no event), traced once per
-// event: formed (a new row: revision 0), each member joined, its end (status left active/hot: the reason the
-// row names) and a raid's outcome (stats.raidEncounter defeated or failed).
+// event: formed (a new row: revision 0), each member joined, its end (status left active/hot: the reason every
+// ending write names on the row; under the leader it had, an ended row may hold no members) and a raid's outcome
+// (stats.raidEncounter defeated or failed).
 const LIVE = new Set(['active', 'hot']);
 function traceChange(current, next) {
     const party = next.partyId, bot = Number(next.leaderId), objective = next.stats?.objective;
@@ -182,7 +183,7 @@ function traceChange(current, next) {
         return;
     }
     if (!LIVE.has(next.status)) {
-        Trace.record({ kind: 'party', bot, party, phase: 'dissolved', outcome: next.status,
+        Trace.record({ kind: 'party', bot: Number(current.leaderId), party, phase: 'dissolved', outcome: next.status,
             reason: String(next.stats?.partyBreakReason || 'unnamed'), members: current.memberIds.length });
     } else {
         const before = new Set(current.memberIds.map(Number));
@@ -484,10 +485,10 @@ const BackgroundPartyState = {
     },
 
     // reason: why the party ends (stats.partyBreakReason, the row keeps it).
-    setStatus(partyId, status = 'inactive', reason = null) {
+    setStatus(partyId, status, reason) {
         const party = this.find(partyId);
         if (!party) return Promise.resolve(null);
-        return this.createOrUpdate({ ...party, status, ...(reason ? { stats: { ...party.stats, partyBreakReason: reason } } : {}) });
+        return this.createOrUpdate({ ...party, status, stats: { ...party.stats, partyBreakReason: reason } });
     },
 
     size() { return cache.size; },

@@ -7614,6 +7614,10 @@ const Database = {
         return inTransaction(() => {
             const character = one('SELECT id FROM characters WHERE username=? COLLATE NOCASE AND name=? COLLATE NOCASE', [username, name]);
             if (!character) return { affectedRows: 0 };
+            // meetings: each meeting's reply, which the caller hands to the meeting
+            // service as every meeting end's: the survivor's fenced row (the deleted
+            // character's row goes with it).
+            const meetings = [];
             for (const meeting of TradeMeetings.active(character.id, true)) {
                 const result = TradeMeetings.terminal(meeting.id, false, 'character_deleted');
                 const row = result.meeting;
@@ -7621,9 +7625,12 @@ const Database = {
                 // every reference, retaining the survivor's replay receipt.
                 TradeMeetings.acknowledge(row.id, row.actorA);
                 TradeMeetings.acknowledge(row.id, row.actorB);
+                const survivor = { ...result.coldLifeRows };
+                delete survivor[character.id];
+                meetings.push({ ...result, coldLifeRows: survivor });
             }
             write('DELETE FROM board_trade_participants WHERE characterId=?', [character.id]);
-            return write('DELETE FROM characters WHERE id=?', [character.id]);
+            return { ...write('DELETE FROM characters WHERE id=?', [character.id]), meetings };
         }, 'character:delete');
     },
     fetchSkills(characterId) {

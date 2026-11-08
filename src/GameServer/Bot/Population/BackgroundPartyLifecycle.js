@@ -1,7 +1,6 @@
 const { REASON: ASSEMBLY_TIMEOUT } = require('./PartyHuntingAssembly');
 const RaidSoloBoundary = require('./RaidSoloBoundary');
 const Situations = require('../Situations');
-const Trace = require('../DecisionTrace');
 
 function raidStarted(party) {
     const objective = party?.stats?.objective;
@@ -64,9 +63,6 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
             : state.timing,
         updatedAt: timestamp
     };
-    // A request its leave closes (an assembly that timed out, a material route gone) is traced as forming's close is.
-    if (stats.partyRequest && Trace.on()) Trace.record({ kind: 'party', bot: Number(state.characterId), phase: 'request',
-        outcome: 'closed', reason });
     if (state.phase === 'cold') Situations.raise(stats, 'party_left', null, Situations.place(next), Number(state.characterId));
     // A solo bot holds no stay (its stay is answered by the leave), nor a party's XP
     // share exclusion (stats.partyOutleveled: its next party raises its own flip).
