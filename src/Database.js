@@ -2422,6 +2422,17 @@ function saveClanActionScheduleUnsafe(state) {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [ClanActionScheduler.key, JSON.stringify(state)]);
 }
 
+// Disposable wake-ups from earlier saves did not carry queueReview. Their
+// generated keys distinguish them from player order revisions and durable
+// equipment-completion commands, which must retain their individual keys.
+const CLAN_ACTION_REVIEW_SQL = `(json_extract(payloadJson, '$.queueReview') = 1
+    OR actionKey GLOB 'clan:*:after:*:goal_plan:*'
+    OR actionKey GLOB 'clan:*:after:*:contribution:*'
+    OR actionKey GLOB 'clan:*:event:*:goal_plan'
+    OR actionKey GLOB 'clan:*:recovery:v*'
+    OR actionKey GLOB 'clan:*:bootstrap:*'
+    OR actionKey GLOB 'clan:*:queue-repair:*')`;
+
 // A new pending clan action. Its actionKey stays unique across live and
 // finished actions, as when both were one table: a key taken by a finished
 // action fails (or is ignored) like the UNIQUE constraint did.
@@ -2437,10 +2448,12 @@ function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100,
     // action retains its captured inputs and may have one pending successor.
     // Only disposable wake-ups opt in. Commands such as equipment completion
     // retain their own durable key even when another review is already queued.
-    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)
-        && one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId])) {
+    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)) {
+        payload = { ...payload, queueReview: true };
+        const autonomous = !!one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId]);
         const pending = one(`SELECT * FROM clan_actions
-            WHERE clanId = ? AND status = 'pending' AND actionType = ? ORDER BY id LIMIT 1`, [clanId, actionType]);
+            WHERE clanId = ? AND status = 'pending' AND actionType = ?
+              AND (? OR ${CLAN_ACTION_REVIEW_SQL}) ORDER BY id LIMIT 1`, [clanId, actionType, autonomous ? 1 : 0]);
         if (pending) {
             const previous = jsonObject(pending.payloadJson);
             const merged = { ...previous, ...payload };
@@ -9792,13 +9805,15 @@ const Database = {
         }, 'clan-action:enqueue');
     },
     // A paged upgrade of saved queues, using the same admission and settlement
-    // as live actions. Leased work and player orders are never rewritten.
+    // as live actions. Player-managed clans also retain old review chains;
+    // only their identifiable wake-ups are repaired, never player commands.
     repairClanProgressionQueue({ afterId = 0 } = {}) {
         return inTransaction(() => {
             const deadlineAt = performance.now() + 8;
             const rows = all(`SELECT a.* FROM clan_actions a
-                JOIN clan_simulation_clans s ON s.clanId = a.clanId AND s.mode = 'autonomous'
+                JOIN clan_simulation_clans s ON s.clanId = a.clanId
                 WHERE a.id > ? AND a.status = 'pending' AND a.actionType IN ('goal_plan', 'contribution')
+                  AND (s.mode = 'autonomous' OR ${CLAN_ACTION_REVIEW_SQL})
                 ORDER BY a.id LIMIT 64`, [Number(afterId)]);
             let cancelled = 0, scanned = 0, cursor = Number(afterId);
             for (const action of rows) {
@@ -9842,7 +9857,7 @@ const Database = {
             // Read only the active queue's scheduling columns, never payloads
             // or terminal history. The cursor commits with the exact lease,
             // surviving restarts and rolling back with a failed admission.
-            const selection = ClanActionScheduler.select(all(`SELECT id, actionType, status, priority, availableAt
+            const selection = ClanActionScheduler.select(all(`SELECT id, clanId, actionType, status, priority, availableAt
                 FROM clan_actions WHERE status IN ('pending', 'running')`), clanActionScheduleUnsafe(), timestamp);
             if (selection.actionId === null) {
                 return {

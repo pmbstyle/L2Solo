@@ -216,7 +216,7 @@ function validPartyIncomeReviews(joint, sources) {
         && ['fee', 'soloBuffPrice'].every(key => typeof row[key] === 'number' && Number.isFinite(row[key]) && row[key] >= 0)
         && (row.soloSpotId === null || typeof row.soloSpotId === 'string' && row.soloSpotId.length <= 128)
         && [null, 'solo_route', 'paid_buff', 'native_craft'].includes(row.soloSource)
-        && [null, 'own_party', 'table_party'].includes(row.partySource));
+        && [null, 'own_party', 'table_party', 'native_party_forecast'].includes(row.partySource));
 }
 
 // Main reconstructs the lifecycle input from its admitted native state and

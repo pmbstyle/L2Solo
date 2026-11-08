@@ -190,12 +190,15 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         return { ...row, kills: row.kills * Math.max(1, gain) };
     });
     const gross = Table.value(spot.id, 'dps', level, true) || Table.value(spot.id, 'mage', level, true);
-    const safe = Match.spotMatchup(spot, Match.stateProfiles(buffed[0],
-        { timestamp, capacityStates: buffed, mode: 'party', buffed: true }), { soloSafety: true }).eligible;
+    const profiles = Match.stateProfiles(buffed[0],
+        { timestamp, capacityStates: buffed, mode: 'party', buffed: true });
+    const safe = Match.spotMatchup(spot, profiles, { soloSafety: true }).eligible;
     const totalKills = values.reduce((sum, row) => sum + positive(row?.kills), 0);
     // The cold resolver opens at most one encounter per 12 seconds, shared
     // by all members. A large group cannot multiply that supply of monsters.
     const kills = Math.min(300, totalKills) * Math.min(1, positive(party?.cohesion || 0.65));
+    const melee = safe && !totalKills ? require('./MeleePartyForecast').forecast(buffed, profiles, spot,
+        { timestamp, cohesion: party?.cohesion || 0.65 }) : null;
     const rows = new Map();
     for (let index = 0; index < members.length; index++) {
         const member = members[index], row = values[index];
@@ -204,6 +207,13 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         const actual = Hunt.bestIncome(observed, Hunt.onSpotShare(member));
         if (actual) { rows.set(member.characterId, { income: actual.perHour, kills: observed[0].kills / observed[0].cycleMs * HOUR_MS,
             spotId, source: 'own_party', travelHours: 0 }); continue; }
+        if (melee) {
+            const expected = Rewards.value(spot, level, { spoilSkillLevel: 0 });
+            if (expected) rows.set(member.characterId, { income: melee.kills * (expected.adena + expected.drop) / members.length
+                * Hunt.onSpotShare(member), kills: melee.kills, spotId, source: 'native_party_forecast',
+                travelHours: WalkBack.tripHours(member.loc, spot, member, spots) });
+            continue;
+        }
         if (!safe || !gross?.kills || !row?.kills || !kills) continue;
         const costs = Hunt.consumablePrices(member);
         const share = row.kills / totalKills;
