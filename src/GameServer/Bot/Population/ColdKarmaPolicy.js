@@ -87,8 +87,8 @@ function decideEarning(state, stats, spots, timestamp) {
 // A karma step (the worker's planLifecycle, main's cold entry): it executes the
 // held answer (stats.earning). While the earning spot is woken the worker takes
 // the decision first (decideEarning); main rests until the answer comes. With no
-// spot, or one its marks exclude, it rests. A party member with karma leaves its
-// party (its stay, PartyStay): the wash is a solo hunt.
+// spot, or one its marks exclude, it rests. Only a solo bot takes a karma step: a
+// party member with karma stays and washes by its EXP share at its party's spot.
 function plan(state, spots, timestamp = Date.now()) {
     if (!active(state)) return null;
     const clean = washingState(state, timestamp);

@@ -35,7 +35,7 @@ const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
-const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const Karma = require('./GameServer/Karma');
 const PvpRules = require('./GameServer/PvpRules');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
@@ -2216,10 +2216,17 @@ function checkCapturedWriteAdmission(admission, characterId) {
 }
 
 function guardedNativeWrite(sql, params, operation, admission) {
+    return guardedNativeStatement(params[params.length - 1], () => [sql, params], operation, admission);
+}
+
+// A native write whose statement is built in its queue turn (build: [sql, params] or
+// null when nothing is to be written), for a statement that reads the row it writes.
+function guardedNativeStatement(characterId, build, operation, admission) {
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation})`);
-        checkCapturedWriteAdmission(admission, params[params.length - 1]);
-        return write(sql, params);
+        checkCapturedWriteAdmission(admission, characterId);
+        const statement = build();
+        return statement ? write(...statement) : { affectedRows: 0, insertId: 0 };
     }, { operation, read: false });
 }
 
@@ -3373,16 +3380,18 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
 // the UPDATE sets, changed or not (characters_clan_level_id holds the level),
 // so with the stored row at hand only the moved columns are set; without it
 // the IS NOT guard writes nothing when nothing moved (95 % of cold resolves).
-// washKarma: the EXP gained washes karma (Karma), read from the stored EXP so
-// a repeated write cannot wash twice. Null when nothing is to be written.
+// washKarma (with the stored row `before`): the EXP gained over the stored EXP
+// washes karma by the one rule (Karma.karmaWashForExperience), so a repeated
+// write cannot wash twice. Null when nothing is to be written.
 function characterProgressStatement(characterId, values, { washKarma = false, before = null } = {}) {
     const columns = Object.keys(values).filter((column) => !before || Number(before[column]) !== values[column]);
     if (!columns.length) return null;
     const assignments = columns.map((column) => `${escapeIdentifier(column)} = ?`);
     const params = columns.map((column) => values[column]);
-    if (washKarma && columns.includes('exp')) {
-        assignments.unshift('karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER))');
-        params.unshift(values.exp, KARMA_XP_DIVIDER);
+    const gained = washKarma && before && columns.includes('exp') ? Math.max(0, values.exp - Number(before.exp)) : 0;
+    if (gained > 0) {
+        assignments.unshift('karma = MAX(0, karma - ?)');
+        params.unshift(Karma.karmaWashForExperience(gained));
     }
     const guard = before ? '' : `(${columns.map((column) => `${escapeIdentifier(column)} IS NOT ?`).join(' OR ')}) AND `;
     return [`UPDATE characters SET ${assignments.join(', ')} WHERE ${guard}id = ?`,
@@ -11701,10 +11710,16 @@ const Database = {
         }, 'bot-life:generated-appearance'));
     },
     // A bot row's level, EXP, SP and vitals copied to `characters` in one
-    // guarded UPDATE; washKarma for a karma bot whose cold EXP washes it.
+    // guarded UPDATE; washKarma for a karma bot whose cold EXP washes it, read
+    // against the stored row in the write's turn (EXP it holds washes nothing again).
     updateCharacterProgress(id, { level, exp, sp, hp, maxHp, mp, maxMp }, washKarma = false, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        const [sql, params] = characterProgressStatement(id, { level, exp, sp, hp, maxHp, mp, maxMp }, { washKarma });
+        const values = { level, exp, sp, hp, maxHp, mp, maxMp };
+        if (washKarma) return withCharacterFlush(id, () => guardedNativeStatement(id, () => {
+            const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp FROM characters WHERE id = ?', [id]);
+            return before ? characterProgressStatement(id, values, { washKarma, before }) : null;
+        }, 'character:progress', admission));
+        const [sql, params] = characterProgressStatement(id, values);
         return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:progress', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {

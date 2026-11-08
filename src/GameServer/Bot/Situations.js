@@ -209,7 +209,7 @@ const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // arrival; held between (stats.rebuff, carried out once). No held key: none held reads none.
 // party_stay: whether a party member stays (Population/PartyStay: stay, leave, a trip),
 // taken by its party's step: its own death, a full bag, its weapon bridge funded,
-// karma, a new grade, the party outleveling it. Heard
+// a new grade, the party outleveling it (karma is no leave: its party EXP washes it). Heard
 // only while the bot is in a party (stats.backgroundPartyId): a solo bot's situations
 // wake no stay. No held key: a member that holds none stays.
 const DECISIONS = Object.freeze({
@@ -224,7 +224,7 @@ const DECISIONS = Object.freeze({
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
     own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
     rebuff: Object.freeze(['buffs_expired', 'arrived_town', 'arrived_town:own']),
-    party_stay: Object.freeze(['died', 'bag_full', 'goal_affordable:focus', 'karma_changed', 'grade_changed', 'party_outleveled'])
+    party_stay: Object.freeze(['died', 'bag_full', 'goal_affordable:focus', 'grade_changed', 'party_outleveled'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;

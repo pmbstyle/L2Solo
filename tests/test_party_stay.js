@@ -8,9 +8,10 @@ const Lifecycle = require('../src/GameServer/Bot/Population/BackgroundPartyLifec
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 
-// party_stay: a party member leaves when it must (C4: dead members are carried,
-// karma washes alone, a bought bridge, a party it no longer earns XP in, a full bag,
-// a better solo hunt), decided only on its own situations, never on a session clock.
+// party_stay: a party member leaves when it must (C4: dead members are carried, a
+// bought bridge, a party it no longer earns XP in, a full bag, a better solo hunt),
+// decided only on its own situations, never on a session clock. Karma is no leave:
+// C4 washes it by any EXP gained, a party share included (L2J Lisvus L2PcInstance.addExpAndSp).
 const at = 1800000000000;
 const member = (id, extra = {}) => ({ characterId: id, name: `Member${id}`, level: 40, phase: 'cold', activity: 'grouped',
     party: { partyId: 'stay', leaderId: 1, role: 'dps' }, loc: { locX: 0, locY: 0, locZ: 0 },
@@ -23,7 +24,8 @@ try {
     // The decision reads the member's facts now.
     assert.deepStrictEqual(Stay.decide(member(1)), { answer: 'stay', reason: 'stay' });
     assert.strictEqual(Stay.decide(member(1, { vitals: { hp: 0 }, stats: { karma: 10 } })).answer, 'stay', 'a dead member is carried');
-    assert.deepStrictEqual(Stay.decide(member(1, { stats: { karma: 10 } })), { answer: 'leave', reason: 'karma' });
+    assert.deepStrictEqual(Stay.decide(member(1, { stats: { karma: 10 } })), { answer: 'stay', reason: 'stay' }, 'karma is no leave');
+    assert(Stay.joins(member(1, { party: { partyId: null }, stats: { karma: 10 } })), 'forming takes a candidate with karma');
     assert.strictEqual(Stay.decide(member(1), { bridgeReason: () => 'weapon_bridge' }).reason, 'weapon_bridge');
     assert.strictEqual(Stay.decide(member(1), { outleveled: true }).reason, 'party_outleveled');
     assert.strictEqual(Stay.decide(member(1), { soloSooner: () => true }).reason, 'solo_sooner');
@@ -62,15 +64,16 @@ try {
     'a stay bit on a solo row wakes nothing');
 } finally { Disposition.inventoryCleanupNeed = cleanupNeed; }
 
-// One party step: { leader's party row, member states, batch }.
-async function step(members, extra = {}) {
+// One party step: { leader's party row, member states, batch }. round: each member's
+// round result (none: an empty one); project: the step's projection (none: as resolved).
+async function step(members, extra = {}, { round = () => ({}), project = state => ({ state }) } = {}) {
     const messages = [], party = { partyId: 'stay', leaderId: 1, memberIds: members.map(m => m.characterId), status: 'active',
         spotId: 'stay-spot', revision: 1, nextResolveAt: at, stats: {}, ...extra };
     const kernel = new ColdSimulationKernel({ now: () => at, partyMinSize: 2,
         resolveSolo: () => { throw Error('no solo round'); },
-        resolveParty: ({ members: roster }) => ({ memberResults: roster.map(state => ({ state, result: {} })), events: [],
+        resolveParty: ({ members: roster }) => ({ memberResults: roster.map(state => ({ state, result: round(state) })), events: [],
             nextResolveAt: at + 45000, partyPatch: {} }),
-        projectResolve: state => ({ state }),
+        projectResolve: project,
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const state of members) {
         kernel.upsert({ state });
@@ -84,26 +87,33 @@ async function step(members, extra = {}) {
 }
 
 (async () => {
-    const karma = { karma: 10 };
-    // Karma with no situation heard: no clock decides it.
-    const quiet = await step([member(1), member(2), member(3, { stats: karma })]);
-    assert.deepStrictEqual(quiet.party.memberIds, [1, 2, 3], 'a stay not woken is held');
-    // karma_changed heard: the member leaves, the party goes on.
-    const woken = Situations.raise({ ...member(3).stats, ...karma }, 'karma_changed');
-    const leave = await step([member(1), member(2), member(3, { stats: woken })]);
-    assert.deepStrictEqual(leave.party.memberIds, [1, 2]);
-    const leaver = leave.states.find(state => state.characterId === 3);
-    assert.strictEqual(leaver.party.partyId, null);
-    assert.strictEqual(leaver.stats.partyBreakReason, 'karma');
-    assert(!Situations.woken(leaver.stats, 'party_stay'), 'the decision is taken');
-    // Under the minimum the party ends.
-    const last = await step([member(1), member(3, { stats: woken })]);
-    assert.strictEqual(last.party.status, 'dissolved');
-    assert(last.states.every(state => !state.party.partyId));
+    // A member with karma stays in its party, its stay woken or not, and its share of
+    // the party's EXP washes its karma (the projection every member step takes).
+    invoke('GameServer/DataCache').init();
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const exp = Number(invoke('GameServer/DataCache').experience[39]);
+    const red = { exp, sp: 0, adena: 0, stats: { classProgressionLevel: 40, classProgressionClassId: 0, karma: 20 } };
+    const share = state => ({ patch: {}, events: [], materialize: { exp: state.characterId === 3 ? 2600 : 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: at + 45000, debug: { fights: 1, wins: 1 } });
+    const project = (state, result, timestamp) => Life.prepareResolve(state, result,
+        { timestamp, persist: false, projectClassProgression: true });
+    const heard = Situations.raise(Situations.raise({ ...member(3).stats, ...red.stats }, 'karma_changed'),
+        'grade_changed', null, Situations.OPEN);
+    const washing = await step([member(1), member(2), member(3, { ...red, stats: heard })], {}, { round: share, project });
+    assert.deepStrictEqual(washing.party.memberIds, [1, 2, 3], 'a member with karma stays');
+    const washed = washing.states.find(state => state.characterId === 3);
+    assert.strictEqual(washed.party.partyId, 'stay');
+    assert.strictEqual(washed.stats.karma, 20 - Math.floor(2600 / invoke('GameServer/Karma').XP_DIVIDER),
+        'its party EXP share washes its karma');
+    assert(!Situations.woken(washed.stats, 'party_stay'), 'the decision is taken');
     // The party's XP share comes to exclude a member far below it: party_outleveled, it leaves.
     const low = await step([member(1, { level: 60 }), member(2, { level: 60 }), member(3, { level: 20 })]);
     assert.deepStrictEqual(low.party.memberIds, [1, 2]);
     assert.strictEqual(low.states.find(state => state.characterId === 3).stats.partyBreakReason, 'party_outleveled');
+    // A leave under the minimum ends the party.
+    const last = await step([member(1, { level: 60 }), member(3, { level: 20 })]);
+    assert.strictEqual(last.party.status, 'dissolved');
+    assert(last.states.every(state => !state.party.partyId));
     // A member that stays keeps its decision taken and its flag.
     const stays = await step([member(1), member(2, { stats: Situations.raise({ ...member(2).stats }, 'grade_changed', null, Situations.OPEN) })]);
     assert.deepStrictEqual(stays.party.memberIds, [1, 2]);

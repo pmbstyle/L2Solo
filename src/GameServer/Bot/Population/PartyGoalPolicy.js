@@ -86,7 +86,7 @@ function formingMembers(members, requested, options = {}) {
 }
 
 function acceptedMembers(members, requested, options) {
-    // A candidate whose own stay would leave the party now (karma, its bag:
+    // A candidate whose own stay would leave the party now (its bag:
     // PartyStay.joins) is not taken: no party formed to dissolve.
     members = members.filter(member => PartyStay.joins(member, options.timestamp));
     const filter = roster => {

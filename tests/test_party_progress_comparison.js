@@ -145,12 +145,12 @@ try {
     const judged = [];
     Goals.formingMembers([state, unanswered], { spotId: 'peer' }, { onReview: member => judged.push(member.characterId) });
     assert.deepEqual(judged, [state.characterId], 'a candidate with no held earning answer skips the round, unjudged');
-    // A candidate whose own stay would leave at once (karma: its wash is a solo hunt)
-    // is not taken: forming builds no party to dissolve.
+    // A candidate with karma is judged as any other (C4 bars no PK from a party: its
+    // party EXP share washes its karma).
     const washing = { ...peer, characterId: 990134, stats: { ...peer.stats, karma: 120 } };
     const washReviews = [];
     Goals.formingMembers([state, washing], { spotId: 'peer' }, { onReview: member => washReviews.push(member.characterId) });
-    assert(!washReviews.includes(washing.characterId), 'a member that would leave at once is not judged into a roster');
+    assert(washReviews.includes(washing.characterId), 'a candidate with karma is judged into a roster');
     console.log(`PASS personal admission: no wish builds; warm p95=${durations[190].toFixed(3)}ms, max=${durations[199].toFixed(3)}ms`);
 
 

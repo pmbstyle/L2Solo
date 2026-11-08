@@ -2808,8 +2808,8 @@ const BotLifeState = {
         const stats = {
             ...patchedStats,
             // From the progressed state: a new death has already washed karma there.
-            karma: Math.max(0, Number(progressionState.stats?.karma ?? state.stats?.karma ?? 0) - Math.floor(
-                experienceAward.accepted / invoke('GameServer/Karma').XP_DIVIDER)),
+            karma: Math.max(0, Number(progressionState.stats?.karma ?? state.stats?.karma ?? 0)
+                - invoke('GameServer/Karma').karmaWashForExperience(experienceAward.accepted)),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
             fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
             deaths: Number(result.patch?.deathCount ?? state.stats?.deaths ?? 0),
