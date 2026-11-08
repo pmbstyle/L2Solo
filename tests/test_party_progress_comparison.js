@@ -28,6 +28,11 @@ assert.equal(Income.evaluate({ ...level, party: { exp: 80 }, lean: .7 }).accept,
 assert.equal(Income.evaluate({ ...level, cash: 50000, spendable: 0 }).reason, 'solo_sooner',
     'a bot saving for its piece adds the hours its income funds it in: the party\'s low income outweighs its exp');
 assert.equal(Income.evaluate({ ...level, solo: null }).reason, 'goal_requires_party');
+// A party that costs the bot money is refused, whatever it does for its level (C4: a player leaves a party that drains his adena).
+assert.equal(Income.evaluate({ ...level, party: { exp: 500, income: -10 } }).reason, 'party_at_loss');
+assert.equal(Income.evaluate({ ...level, solo: null, party: { exp: 500, income: -10 } }).accept, false,
+    'not even a bot with no solo ground runs at a loss');
+assert.equal(Income.evaluate({ ...level, party: { exp: 500, income: 0 } }).accept, true, 'a party that pays its consumables is enough');
 assert.equal(Income.evaluate({ ...level, party: null }).reason, 'progress_unknown');
 assert.equal(Income.evaluate({ ...level, fee: 100 }).reason, 'help_fee_unfunded');
 assert.equal(Income.evaluate({ ...level, remaining: 0 }).accept, false, 'no level ahead and nothing to save for: the solo hunt earns more');

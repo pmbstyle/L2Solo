@@ -41,7 +41,8 @@ function levelHours(route, remaining) {
 // (fundingDelay, the trip to the camp when it must earn first) or the drop, the
 // sooner. The party side adds its assembly. lean: the persona's weight on the party
 // side's hours (partyLean). Accepts when the weighted party side is sooner, or the
-// bot has no solo side at all (no solo ground, a piece only a party drops).
+// bot has no solo side at all (no solo ground, a piece only a party drops); never
+// a party whose income for the bot is below nothing (party_at_loss).
 function evaluate({ solo, party, remaining = 0, cash = null, spendable = 0, fee = 0, rewardFee = 0,
     soloItemHours = null, partyItemHours = null, deliveryHours = partyItemHours, assemblyHours = 0, lean = 1 } = {}) {
     const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
@@ -83,6 +84,9 @@ function evaluate({ solo, party, remaining = 0, cash = null, spendable = 0, fee 
     let reason = 'solo_sooner', accept = false;
     if (positive(fee) > positive(spendable)) reason = 'help_fee_unfunded';
     else if (!party || partyHours === null && soloHours === null) reason = 'progress_unknown';
+    // A party must not cost the bot money: its share of the loot at least pays its
+    // shots and potions (C4: a player leaves a party that drains his adena).
+    else if (partyIncome < 0) reason = 'party_at_loss';
     else if (soloHours === null && partyHours !== null) { accept = true; reason = 'goal_requires_party'; }
     else if (partyHours !== null && partyHours * lean < soloHours) { accept = true; reason = 'party_sooner'; }
     return { accept, reason, soloIncome: solo ? Number(solo.income) : null,
