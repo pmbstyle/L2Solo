@@ -1,6 +1,6 @@
+const FailureLog = require('../../../FailureLog');
 const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
-const Fnv1a = require('../Fnv1a');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const DataCache = invoke('GameServer/DataCache');
@@ -9,7 +9,6 @@ const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 function cleanupGoal(need) {
     return {
         type: 'sell_inventory',
-        priority: 96,
         target: {
             itemCount: need.slots,
             npcOnlySlots: need.npcOnlySlots,
@@ -20,38 +19,38 @@ function cleanupGoal(need) {
             expectedBenefit: 'market_sale_inventory',
             risk: 0,
             cleanupReason: need.reason
-        },
-        blockers: []
+        }
     };
 }
 
 // Survival is a hard native floor. Every voluntary activity is one leaf of
 // the same wish network; there is no weapon/material/sale priority ladder.
+// The needs come in their order: the survival floor (recover, unload), the
+// pending errand, else the held card's leaf. Main and the worker read the same.
 function evaluate(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const floor = SurvivalFloor.forState(state, timestamp);
-    if (floor?.action === 'revive') return [{ type: 'recover', priority: 100,
-        target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' }, blockers: [] }];
-    if (floor?.action === 'rest') return [{ type: 'recover', priority: 100,
+    if (floor?.action === 'revive') return [{ type: 'recover',
+        target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' } }];
+    if (floor?.action === 'rest') return [{ type: 'recover',
         target: { hpPct: floor.hpRatio, mpPct: floor.mpRatio },
-        plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }];
+        plan: { kind: 'rest', expectedBenefit: 'restore_vitals' } }];
     let context = options.economy;
     if (floor?.action === 'unload') {
         const supply = state.stats?.equipmentPlan?.clanGoal?.clanId ? require('../Economy/ClanCrystalSupply') : null;
         if (floor.reason === 'no_slot' && supply?.requirement(state)) {
             context ||= ColdEconomyDecision.economyFor(state, { ...options, timestamp });
-            if (!supply.freesSpace(state, context.network.activity)) return [{ ...cleanupGoal(floor), priority: 100 }];
-        } else return [{ ...cleanupGoal(floor), priority: 100 }];
+            if (!supply.freesSpace(state, context.network.activity)) return [cleanupGoal(floor)];
+        } else return [cleanupGoal(floor)];
     }
     const errand = Object.hasOwn(options, 'errand') ? options.errand
         : invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
     // On a visit, an errand of another town waits for the visit's end (its own trip then):
     // this town's stops come first, so no visit stands idle on another town's errand.
     const elsewhere = state.activity === 'shopping' && errand?.town && errand.town !== state.currentRegion;
-    if (errand?.town && errand.selfId > 0 && !elsewhere) return [{ type: 'market_errand', priority: 80,
+    if (errand?.town && errand.selfId > 0 && !elsewhere) return [{ type: 'market_errand',
         target: { itemId: errand.selfId, amount: errand.amount },
-        plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
-        blockers: [] }];
+        plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose } }];
     context ||= ColdEconomyDecision.economyFor(state, { ...options, timestamp });
     options.onEconomy?.(context);
     const leaf = context.network.activity;
@@ -66,8 +65,7 @@ function evaluate(state = {}, options = {}) {
         if (!amount) return [];
         if (amount < leaf.amount) estimatedCost = leaf.price / leaf.amount * amount;
     }
-    const common = { priority: 50, blockers: [], inputHash: context.inputHash ?? Fnv1a.fnv1a32(context.inputKey),
-        plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
+    const common = { plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
             recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost,
             targetId: leaf.targetId, economyActivity: leaf.activity } };
     if (leaf.activity === 'shopping' && itemId) {
@@ -105,4 +103,29 @@ function evaluate(state = {}, options = {}) {
     return [{ ...common, type: leaf.activity, target: { itemId, targetId: leaf.targetId },
         plan: { ...common.plan, expectedBenefit: leaf.activity } }];
 }
-module.exports = { evaluate, cleanupGoal };
+// A far bot's needs and its goal (the first need): computed where they are read,
+// from the held card, the floor and the errands; nothing keeps a copy, so a
+// purchase, an errand's end or a new card is the goal's change. Only a far
+// (cold) bot has one here: a body near a player acts on the decision it holds
+// (DecisionEvents.held).
+function needs(state, options = {}) {
+    return !state?.characterId || state.phase !== 'cold' ? null : evaluate(state, options);
+}
+function goal(state, options = {}) {
+    return needs(state, options)?.[0] || null;
+}
+// A far bot's goal as a player is shown it (its status window, its clan's chat): read over
+// the card it holds, current or not (ColdEconomyDecisions.inspect: a card outlives its row's
+// next publication, a loot or a level, until the next decision), never counted as a card
+// request. A failed read shows no goal: counted, never thrown into the player's window.
+function shownGoal(state, options = {}) {
+    if (!state?.characterId || state.phase !== 'cold') return null;
+    try {
+        const decisions = options.decisions || invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+        return goal(state, { ...options, economy: ColdEconomyDecision.view(state, decisions.inspect(state), options) });
+    } catch (error) {
+        FailureLog.note('needs.shown_goal', error);
+        return null;
+    }
+}
+module.exports = { evaluate, needs, goal, shownGoal, cleanupGoal };

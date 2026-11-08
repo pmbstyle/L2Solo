@@ -19,7 +19,7 @@ const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotAfkMarketService = invoke('GameServer/Bot/Economy/BotAfkMarketService');
@@ -2919,7 +2919,7 @@ const PopulationService = {
                 return { ok: false, reason: 'apply_failed', state };
             }
             if (workerRequest?.precomputedPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions
-                .hold(updatedState.characterId, workerRequest.precomputedPlan.economyDecision);
+                .hold(updatedState.characterId, workerRequest.precomputedPlan.economyDecision, updatedState);
             Config.developerDiagnostics && Metrics.recordBackgroundResolve();
             Config.developerDiagnostics && Metrics.recordCombat(result.debug);
             const recoveredForMarket = state.activity === 'resting' && canResumeWarehouseMarketSale(updatedState);
@@ -2930,8 +2930,8 @@ const PopulationService = {
             const marketHandoff = cleanupTrip
                 ? LifeState.upsertState(cleanupTrip, 'inventory_cleanup_market_travel').then((saved) => saved || updatedState)
                 : recoveredForMarket
-                ? GoalService.review(updatedState).then(async (goalSnapshot) => {
-                    const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current, Date.now());
+                ? Promise.resolve().then(async () => {
+                    const travelState = await marketTravelWithRefund(updatedState, NeedsEvaluator.goal(updatedState), Date.now());
                     return travelState
                         ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
                         : LifeState.cachedState(updatedState.characterId) || updatedState;
@@ -3075,7 +3075,7 @@ const PopulationService = {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('cold_apply_failed');
             return { ok: false, reason: 'apply_failed', state };
         }
-        if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.hold(updatedState.characterId, workerPlan.economyDecision);
+        if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.hold(updatedState.characterId, workerPlan.economyDecision, updatedState);
         // The step's writes below hold to the worker that planned it and to a far bot:
         // a replaced worker or a bot gone hot writes nothing.
         const sourceWorker = ColdSimulationCoordinator.worker, sourceEpoch = ColdSimulationCoordinator.workerEpoch;
@@ -3142,13 +3142,14 @@ const PopulationService = {
                     ? await BotWarehouse.depositCold(afterRelease) : { state: afterRelease };
                 return ColdMarketListingService.resolve(deposited.state || afterRelease);
             });
-        return preparation.then((marketLifecycle) => GoalService.currentForMarket(marketLifecycle.state, {
-                spot: SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId) || spot
-            })
-                .then((goalSnapshot) => (heldVisit(marketLifecycle.state)
-                    ? Promise.resolve({ state: marketLifecycle.state, purchased: false, reason: 'other_town_deferred' })
-                    : ColdMarketService.tryPurchase(marketLifecycle.state, goalSnapshot?.current))
-                    .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
+        // The goal on arrival: the held card's step over the bag as the visit found it.
+        return preparation.then((marketLifecycle) => {
+            const goal = NeedsEvaluator.goal(marketLifecycle.state);
+            return (heldVisit(marketLifecycle.state)
+                ? Promise.resolve({ state: marketLifecycle.state, purchased: false, reason: 'other_town_deferred' })
+                : ColdMarketService.tryPurchase(marketLifecycle.state, goal))
+                .then((marketResult) => ({ marketLifecycle, marketResult, goal }));
+        })
             .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle,
                 improved ? { ...marketResult, improved } : marketResult, goal))
             .then((finalState) => {
@@ -3258,18 +3259,22 @@ const PopulationService = {
         return marketStatePromise.then((persistedState) => persistedState || purchasedState)
             .then((marketState) => {
             if (TradeMeetingService.hasPreparation(marketState.characterId)) return marketState;
-            return GoalService.review(marketState, { spot }).catch((err) => {
-            utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
-            return null;
-        }).then(async (goalSnapshot) => {
-            const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
+            // The needs after the visit's purchases and sales: read once for the board
+            // reconcile and the trip below. A failed read is no goal (none): the
+            // reconcile does not evaluate them again.
+            return Promise.resolve().then(() => NeedsEvaluator.needs(marketState)).catch((err) => {
+            FailureLog.note('population.goal_read', err);
+            return [];
+        }).then(async (needs) => {
+            const goal = needs?.[0] || null;
+            const remote = await BotAfkMarketService.reconcile(marketState, goal, needs);
             const current = remote.state || marketState;
             // forState unloads only where the bag alone does (the mana floor comes first), so
             // the cheap bag floor answers the common no; one moment for both reads.
             const now = Date.now();
             const travelState = tripEdge || (SurvivalFloor.bagFor(current, now)?.action === 'unload'
                 && SurvivalFloor.forState(current, now)?.action === 'unload')
-                ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current, Date.now()) : null;
+                ? GoalExecutor.beginMarketTravel(current, goal, Date.now()) : null;
             return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
         });
         });

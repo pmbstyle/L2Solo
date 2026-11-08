@@ -10,7 +10,6 @@ const NativeChoice = require('./helpers/nativeMarketChoice');
 
 (async () => {
 const DataCache = invoke('GameServer/DataCache');
-const GoalPlanner = invoke('GameServer/Bot/Goals/GoalPlanner');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 DataCache.init();
 const NECKLACE = 910; // Necklace of Devotion, sold by NPCs
@@ -45,10 +44,8 @@ async function choice(state, label) {
     const result = await NativeChoice.capture(state, { nativeRoutes: true }, label);
     assert.strictEqual(result.goals.length, 1, 'one worker leaf, not simultaneous buy and sale alternatives');
     const goal = result.goals[0], leaf = result.read.activity;
-    assert.strictEqual(goal.priority, 50);
     assert.strictEqual(goal.plan.wishKey, leaf.rootKey);
     assert.strictEqual(goal.plan.economyActivity, leaf.activity);
-    assert.deepStrictEqual(goal.blockers, []);
     if (leaf.activity === 'shopping') {
         assert.strictEqual(goal.target.itemId, leaf.itemId);
         assert.strictEqual(goal.plan.estimatedCost, leaf.price);
@@ -64,7 +61,7 @@ async function choice(state, label) {
         assert.strictEqual(goal.type, 'sell_inventory');
         assert.deepStrictEqual(goal.target.itemIds, leaf.items || []);
     }
-    assert.strictEqual(GoalPlanner.plan(result.goals, Date.now()).type, goal.type);
+    assert.strictEqual(result.goals[0].type, goal.type, 'the goal is the first need');
     return result;
 }
 const wealthChoice = await choice(bot(wealth, npcJewellery), 'wealth_original_2m');

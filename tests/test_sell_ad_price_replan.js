@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
-const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -24,7 +23,7 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
     try {
         await Database.createAccount('bot_price_replan', 'fixture');
         await Database.execute(['UPDATE characters SET username=? WHERE id IN (?,?,?,?,?,?,?)', ['bot_price_replan', ...ids]]);
-        await Life.init(); await Goals.init();
+        await Life.init();
         for (const id of ids) {
             await Database.setItem(id, { selfId: 57, amount: 1000000, slot: 0 });
             if ([seller, remoteSeller, partialSeller].includes(id)) await Database.setItem(id, { selfId: itemId, amount: 10, slot: 0 });
@@ -49,9 +48,9 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
             lines: [{ payer: 0, adId: ad.id, adRevision: ad.revision, selfId: itemId, count: 1, price: 100 }] },
         { selfId: itemId, enchant: 0, units: 1, cost: 100 }, () => true, { fundingDominance: true });
 
-        await Goals.set(buyer, { type: 'upgrade_gear', status: 'active', target: { itemId, amount: 1, adena: 100 },
-            plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran', valueRate: .01 } });
-        const goal = Goals.snapshot(buyer).current, buyerState = Life.cachedState(buyer);
+        const goal = { type: 'upgrade_gear', target: { itemId, amount: 1, adena: 100 },
+            plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran', valueRate: .01 } };
+        const buyerState = Life.cachedState(buyer);
         const offer = Afk.offerOf(line());
         Opportunity.bestOffer = () => offer;
         Coordinator.economyDecisions.decided = () => null;
@@ -60,7 +59,6 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         remember(buyerState);
         const gear = await Market.tryPurchase(buyerState, goal);
         assert.equal(gear.purchased, false);
-        assert.equal(Goals.snapshot(buyer).current.status, 'active', 'a price refusal cannot complete an unbought upgrade');
         assert.equal(gear.state.stats.equipmentPlan?.target?.selfId, itemId, 'the equipment plan survives');
         assert(refreshed.includes(buyer), 'the buyer requests a new economic decision');
         assert.equal((await Database.fetchItems(buyer)).some(row => row.selfId === itemId), false);
@@ -68,13 +66,9 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         const gearAgain = await Market.tryPurchase(Life.cachedState(buyer), goal);
         assert.equal(gearAgain.reason, 'trade_meeting_purchase_price_changed',
             'the real offer search also skips the refused quote without completing the goal');
-        assert.equal(Goals.snapshot(buyer).current.status, 'active');
 
         const errand = { selfId: itemId, amount: 1, town: 'Giran', money: 1000000, maxPrice: 100,
             purpose: 'craft_input', tag: [-5], r: .01, at: Date.now() };
-        await Goals.set(errandBuyer, { type: 'upgrade_gear', status: 'active', target: { itemId: 9999, amount: 1 },
-            plan: { expectedBenefit: 'market_search_for_gear' } });
-        const unrelatedGoal = Goals.snapshot(errandBuyer).current;
         const arrived = await Life.upsertState(Errands.withPending(Life.cachedState(errandBuyer), [errand]), 'price_errand');
         remember(arrived);
         const local = Market.planPurchase(arrived, itemId, 1, { towns: ['Giran'], money: 1000000, npc: false, cost: () => 0 });
@@ -92,7 +86,6 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         const result = await Market.tryPurchase(arrived, { type: 'market_errand', status: 'active' });
         assert.equal(result.purchased, false);
         assert.equal(Errands.pending(result.state).length, 0, 'the obsolete town-bound errand returns to its originating job');
-        assert.deepEqual(Goals.snapshot(errandBuyer).current, unrelatedGoal, 'replanning cannot complete an unrelated goal');
         assert.equal((await Database.fetchItems(errandBuyer)).some(row => row.selfId === itemId), false);
         assert(refreshed.includes(errandBuyer), 'a refused errand also asks the worker to replan');
         const afterReplan = Market.planPurchase(result.state, itemId, 1,
@@ -103,12 +96,8 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
             currentRegion: 'Dion', loc: dion, activity: 'shopping' }, 'price_alternative_arrival');
         const purchased = await Market.tryPurchase(atAlternative, { type: 'market_errand', status: 'active' });
         assert.equal(purchased.units, 1, 'the replanned job can complete the actual backed purchase');
-        assert.deepEqual(Goals.snapshot(errandBuyer).current, unrelatedGoal, 'finishing the errand cannot complete an unrelated goal');
         assert.equal((await Database.fetchItems(errandBuyer)).find(row => row.selfId === itemId)?.amount, 1);
 
-        await Goals.set(raceBuyer, { type: 'market_errand', status: 'active', target: { itemId, amount: 1 },
-            plan: { purpose: 'craft_input', marketTown: 'Giran' } });
-        const staleGoal = Goals.snapshot(raceBuyer).current;
         const race = await Life.upsertState(Errands.withPending(Life.cachedState(raceBuyer), [errand]), 'price_errand_race');
         let injected = false;
         Afk.offerOf = function (row, ...args) {
@@ -119,13 +108,8 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         assert(injected, 'the refusal arrives after the errand plan was selected');
         assert.equal(raced.purchased, false);
         assert.equal(Errands.pending(raced.state).length, 0, 'a late refusal also releases the stale errand');
-        assert.equal(Goals.snapshot(raceBuyer).current.status, 'abandoned', 'the refused matching goal is not marked completed');
         assert(refreshed.includes(raceBuyer), 'the late refusal triggers a fresh decision');
 
-        await Goals.set(raceBuyer, { type: 'upgrade_gear', status: 'active', target: { itemId: 9999, amount: 1 } });
-        const newGoal = Goals.snapshot(raceBuyer).current;
-        assert.equal(await Goals.closeAccepted(raceBuyer, staleGoal, 'completed'), null);
-        assert.deepEqual(Goals.snapshot(raceBuyer).current, newGoal, 'a stale completion cannot replace a newer goal');
 
         // One backed line succeeds before the second line's late refusal.
         // Preserve the real delivery and any unrelated pending errand.

@@ -71,11 +71,11 @@ async function run() {
     assert.equal(Floor.forActor(actor).reason, 'no_mp');
     assert.equal(Floor.forState(mage).reason, 'no_mp');
     const mandatoryRest = Needs.evaluate(mage)[0];
-    assert.deepEqual({ type: mandatoryRest.type, priority: mandatoryRest.priority, kind: mandatoryRest.plan.kind },
-        { type: 'recover', priority: 100, kind: 'rest' }, 'the native no-MP floor selects mandatory rest');
+    assert.deepEqual({ type: mandatoryRest.type, kind: mandatoryRest.plan.kind },
+        { type: 'recover', kind: 'rest' }, 'the native no-MP floor selects mandatory rest');
     assert.equal(Background.resolveSolo({ state: mage, timestamp: Date.now(), elapsedMs: 1000 }).patch.activity, 'resting');
     const lowHp = { ...mage, vitals: { ...mage.vitals, hp: 1, mp: profile.maxMp } };
-    assert.equal(Needs.evaluate(lowHp).some(goal => goal.type === 'recover' && goal.priority === 100), false,
+    assert.equal(Needs.evaluate(lowHp).some(goal => goal.type === 'recover'), false,
         'alive low HP retains ordinary recovery rather than a mandatory death floor');
     console.log('PASS hot/cold actual skill and live HP floor');
 

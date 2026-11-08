@@ -368,8 +368,6 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     const Errands = require('../Bot/Population/CombinedErrandPolicy');
     const errand = record.storeType === 1 && Errands.pending(sourceState).find(row =>
         Number(row.selfId) === Number(itemId) && row.town === record.town);
-    const goal = record.storeType === 1 && invoke('GameServer/Bot/Goals/GoalState').snapshot(buyer)?.current;
-    const purchaseGoal = Number(goal?.target?.itemId) === Number(itemId) ? goal : null;
     const callerAuthority = options.economyCommand?.authority || (sourceState
         ? EconomyCommit.authority(sourceState) : null);
     if (callerAuthority) {
@@ -426,7 +424,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         // owner, so the need behind the ad changed. The refusal alone left the
         // ad on the board for every later seller (E198 (2)).
         if (error.message === 'trade_meeting_need_changed' && record.storeType === 3) await buyAdNeedChanged(record, line);
-        else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand, purchaseGoal);
+        else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand);
         else if (error.message === 'trade_meeting_purchase_price_changed'
             && life().cachedState(buyer)?.phase === 'cold') {
             rememberPriceRefusal(buyer, request, error.priceEvidence);
@@ -467,13 +465,14 @@ function rememberPriceRefusal(buyer, request, evidence) {
     if (current()) refusals.remember(state, board, request, purchase, current,
         { minimumFree: evidence.minimumFree, fundingDominance: evidence.fundingDominance === true });
 }
-async function purchaseNeedChanged(ownerId, errand, goal) {
+// The buyer no longer needs the line: its errand ends (its goal, read from the
+// errands and the card, ends with it) and the held step failed where it acts.
+async function purchaseNeedChanged(ownerId, errand) {
     try {
         await db().withMutationAdmission(() => {
             if (life().cachedState(ownerId)?.phase !== 'cold') throw Error('stale_market_review');
         }, async () => {
             const saved = errand && await life().retireMarketErrand(ownerId, errand);
-            await invoke('GameServer/Bot/Goals/GoalState').abandonAccepted(ownerId, goal);
             if (saved && errand.purpose === 'clan') await invoke('GameServer/Clan/ClanPurchaseCredit')
                 .returnUnspent(ownerId, errand, 0);
         });

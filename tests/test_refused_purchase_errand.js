@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
-const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
@@ -19,7 +18,7 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
         await Database.createAccount('bot_refused_errand', 'fixture');
         await Database.execute(['UPDATE characters SET username=? WHERE id IN (?,?)', ['bot_refused_errand', buyer, seller]]);
         const place = invoke('GameServer/Bot/Economy/MarketTownPolicy').marketTown('Giran').center;
-        await Life.init(); await Goals.init();
+        await Life.init();
         for (const id of [buyer, seller]) {
             await Database.setItem(id, { selfId: 57, amount: 1000000, slot: 0 });
             if (id === seller) await Database.setItem(id, { selfId: itemId, amount: 3, slot: 0 });
@@ -38,8 +37,6 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
         const install = async (amount, at) => {
             const errand = { selfId: itemId, amount, town: 'Giran', money: 1000000, maxPrice: 3500, purpose: 'recipe', at };
             await Life.upsertState(Errands.withPending(Life.cachedState(buyer), [errand]), 'fixture_errand');
-            await Goals.set(buyer, { type: 'market_errand', status: 'active', target: { itemId, amount },
-                plan: { marketTown: 'Giran', purpose: 'recipe' } });
             return errand;
         };
         const start = () => { rejects = []; return Meetings.prepareTrade(buyer, { shopId: ad.id }, itemId, 1); };
@@ -52,19 +49,17 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
         const wallet = await Database.fetchItems(buyer), stock = await Database.fetchItems(seller);
         await start(); await refuse();
         assert.equal(Errands.pending(Life.cachedState(buyer)).length, 0, 'a rejected purchase cannot retry its obsolete errand for thirty minutes');
-        assert.equal(Goals.snapshot(buyer).current.status, 'abandoned');
         assert.deepEqual(await Database.fetchItems(buyer), wallet);
         assert.deepEqual(await Database.fetchItems(seller), stock);
         await install(1, Date.now()); await start();
         const newer = await install(2, Date.now() + 1);
         await refuse();
         assert.equal(Errands.pending(Life.cachedState(buyer))[0].at, newer.at, 'late refusal preserves the replacement errand');
-        assert.equal(Goals.snapshot(buyer).current.target.amount, 2, 'late refusal preserves the replacement goal');
         let callerCurrent = true;
         await Database.withMutationAdmission(() => { if (!callerCurrent) throw Error('cold_postcommit_source_retired'); }, start);
         callerCurrent = false; await refuse();
         assert.equal(Errands.pending(Life.cachedState(buyer)).length, 0, 'the payer refusal has its own native admission after the initiating command ends');
-        console.log('PASS refused purchase clears only its accepted errand/goal, preserves replacements and physical assets');
+        console.log('PASS refused purchase clears only its accepted errand, preserves replacements and physical assets');
     } finally {
         Coordinator.requestMeetingPreparation = prepare; Events.raiseOn = refresh;
         await world.close();

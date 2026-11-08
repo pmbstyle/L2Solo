@@ -35,7 +35,6 @@ const state = { ...base, stats: { ...base.stats, equipmentPlan: plan } };
 const native = await NativeChoice.capture(state, {}, 'npc_original_300k');
 assert.strictEqual(native.read.activity.activity, 'hunting');
 assert.strictEqual(native.goals.length, 1);
-assert.strictEqual(native.goals[0].priority, 50);
 assert.strictEqual(native.goals.find(row => row.type === 'upgrade_gear'), undefined);
 assert.strictEqual(Funding.spendable(native.state, 0, { itemId: plan.target.selfId }), 0,
     'the authored NPC plan does not bypass the real money packet');

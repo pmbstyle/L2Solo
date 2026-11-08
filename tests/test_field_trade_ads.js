@@ -4,12 +4,10 @@ const { createWorld, Database, DataCache } = require('./helpers/c4QuestHarness')
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const Goals = invoke('GameServer/Bot/Goals/GoalService');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const id = 730062;
 (async () => {
     const world = await createWorld([{ id, classId: 0, level: 5 }], 'field-trade-ads');
-    const review = Goals.review;
     try {
         await Life.init();
         await Database.createAccount('bot_field_trade_ads', 'fixture');
@@ -29,7 +27,6 @@ const id = 730062;
             'the field trader is physically outside town and cannot open an AFK shop');
         assert(Disposition.saleCandidates(state, { unlimited: true }).some(item => item.selfId === 1786),
             'a young generated holder enters the shared sale evaluation');
-        Goals.review = async () => null; // This fixture executes an already selected, separately valued plan.
         const before = await Database.fetchItems(id);
         const execute = plan => Market.executePlan(state, { withdraw: [], travel: null, ...plan },
             { step: work => work() });
@@ -104,5 +101,5 @@ const id = 730062;
         assert.equal(Afk.ownerRecords(id).filter(row => row.kind === 'shop').length, 0);
         assert.equal((Life.cachedState(id) || state).activity, 'hunting');
         console.log('PASS low-level field WTS/WTB: no shop, town trip, custody, escrow or duplicate ad');
-    } finally { Goals.review = review; await world.close(); }
+    } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

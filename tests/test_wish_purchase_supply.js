@@ -266,6 +266,7 @@ const goalsModule = { exports: {} };
 new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join(root, '../Goals/NeedsEvaluator.js'), 'utf8'))(
     name => name.includes('ItemTemplateIndex') ? { find: () => null }
         : name.endsWith('Fnv1a') ? { fnv1a32: () => 1 }
+        : name.endsWith('FailureLog') ? require('../src/FailureLog')
         : name.endsWith('ColdEconomyDecision') ? ColdDecision : (() => { throw Error(name); })(),
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
         : name.endsWith('EconomyContext') ? { refillReserve: () => 0 }

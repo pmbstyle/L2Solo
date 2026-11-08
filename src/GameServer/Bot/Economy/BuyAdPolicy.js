@@ -140,7 +140,8 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
         preferProvidedWorth: goal.intent?.retainedProject === true,
         money: spendable, town,
-        rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
+        // The bid's roll: one per bot and item (a goal has no identity of its own).
+        rollKey: ['bid', Number(state.characterId || 0), selfId] });
     if (!chosen) return null;
     const price = Math.floor(chosen.price);
     const count = Math.min(requestedCount, chosen.count ?? requestedCount, Math.floor(spendable / price));

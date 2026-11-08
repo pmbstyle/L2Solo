@@ -1331,7 +1331,6 @@ async function verifyWorkerSelectedGoals() {
             const goals = NeedsEvaluator.evaluate(state, { now: 1000, decisions });
             assert.strictEqual(goals.length, leaf ? 1 : 0);
             if (leaf) {
-                assert.strictEqual(goals[0].priority, 50);
                 assert.strictEqual(goals[0].plan.wishKey, leaf.rootKey);
                 assert.strictEqual(goals[0].plan.economyActivity, leaf.activity);
                 if (leaf.activity === 'shopping') {

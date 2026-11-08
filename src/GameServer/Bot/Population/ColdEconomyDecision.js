@@ -95,6 +95,9 @@ class CompactDecision {
     set stale(value) { this.flags = value ? this.flags | 1 : this.flags & ~1; }
     get held() { return !!(this.flags & 2); }
     set held(value) { this.flags = value ? this.flags | 2 : this.flags & ~2; }
+    // Decided on a near body's post (its hot row), not on the far bot's row.
+    get near() { return !!(this.flags & 4); }
+    set near(value) { this.flags = value ? this.flags | 4 : this.flags & ~4; }
     get counts() { return new DataView(this.data).getUint32(0, true); }
     get inputHash() { return new DataView(this.data).getUint32(4, true); }
     get usefulness() { return new Float32Array(this.data, 28, (this.counts & 63) * 2); }
@@ -387,7 +390,7 @@ let basicsKeys = null;
 // The keys a view reads with no income search (EconomyContext.personal).
 const PERSONAL = new Set(['persona', 'price', 'timestamp']);
 // The view's basics (the hour-value foundation with its income route search)
-// are built on first read: GoalService.review through NeedsEvaluator reads
+// are built on first read: a goal read (NeedsEvaluator) reads
 // only the card's leaf. The build takes the view's timestamp and board, as
 // the eager build did. Without the money packet or before the first build the
 // view's own fields need them at once. An urgent bot's gap horizon reads them
@@ -482,7 +485,7 @@ function economyFor(state, deps = {}) {
 // there is no saved per-bot graph and no second decision map.
 // activity: the state the economy was built on, when the published state
 // already left it (a trip started after the build).
-function advisory(economy, state, activity = state.activity, deps = {}) {
+function advisory(economy, state, activity = state.activity) {
     const card = capture(economy, state);
     const eventProof = economy?.eventProof?.() || null;
     // lazy: cycle EconomyContext creates accepted cards after its full build.
@@ -503,10 +506,7 @@ function advisory(economy, state, activity = state.activity, deps = {}) {
     const accepted = { card, eventProof, characterId: Number(state.characterId), decisionSeq: packet ? Number(packet.decisionSeq || 0) : undefined,
         activityLeaf: packet ? Number(packet.activityLeaf || 0) : undefined,
         focus: packet ? packet.wishFocus?.[0] ?? null : undefined, baseline: packet?.wishSections,
-        activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp),
-        // The goal revision the build saw (main's context), the baseline of
-        // the goal refusal (refusal); not saved: a restored card refuses once.
-        ...(Number.isFinite(deps.goalRevision) ? { goalRevision: deps.goalRevision } : {}) };
+        activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp) };
     const restartProof = Economy.restartEventProof(eventProof, accepted);
     accepted.saved = restartProof ? RestartDecision.encode({ ...accepted, eventProof: restartProof },
         Sections.baselineIdentity(accepted.baseline)) : null;
@@ -572,9 +572,8 @@ function advisoryPublicationHolds(state, advice, previous = null) {
 // step 4 C6): its proof's identity (EconomyContext.proofIdentity: the owner, the
 // recompute generation, the decision echo, the leaf) and the field guards its
 // execution needs. Nothing else is judged: what ended its leaf is raised by the
-// executor (EconomyContext.leafOutcome), a moved goal by goal_moved (the goal
-// revision, until AI-5). refusal: the first failing check's name, '' when the card
-// holds; canReuse is its boolean.
+// executor (EconomyContext.leafOutcome). refusal: the first failing check's name,
+// '' when the card holds; canReuse is its boolean.
 function refusal(state, accepted, deps = {}, options = {}) {
     if (!accepted || !accepted.card) return 'no_card';
     if (accepted.characterId !== undefined && accepted.characterId !== Number(state.characterId)) return 'no_card';
@@ -601,11 +600,6 @@ function refusal(state, accepted, deps = {}, options = {}) {
     if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
-    // The goal revision the card was built under (until AI-5), where the bot hears a
-    // moved goal (its step raises goal_moved there): a card restored after a restart
-    // has none and is refused once.
-    if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
-        && Situations.hears('goal_moved', Situations.place(state))) return 'goal';
     return '';
 }
 function canReuse(state, accepted, deps = {}, options = {}) {
@@ -668,6 +662,15 @@ function stepLeaf(plan) {
     if (plan?.economy) return plan.economy.network?.activity ?? null;
     return plan?.economyDecision ? compact(plan.economyDecision).activity : null;
 }
+// A far bot's card that replaced one of another decision (its decisionSeq moved, the
+// echo's first field): the new answer is news for its clan (BotClanChat.onDecision). The
+// first card after a restart replaces none and tells nothing; so does the first after a
+// near body's card (the bot left a player's sight): that card was decided on another row,
+// its goal is no earlier goal of the far bot's. Main only.
+function told(state, card, previous) {
+    if (state?.phase !== 'cold' || !previous || previous.near || card.echo?.[0] === previous.echo?.[0]) return;
+    invoke('GameServer/Bot/AI/BotClanChat').onDecision(state, card, previous);
+}
 class ColdEconomyDecisions {
     constructor() {
         this.byId = new Map();
@@ -679,6 +682,7 @@ class ColdEconomyDecisions {
     // drops into the bag keeps the worker's updatedAt, but the decision was
     // made on the bag before them: keep its numbers, but defer its wishes.
     // Returns the compact card (a near body's view reads the same one).
+    // state: the far bot's row the card was decided on (its clan hears a moved decision).
     accept(characterId, decision, committed = null, state = null) {
         const id = Number(characterId);
         if (!id) return;
@@ -708,7 +712,9 @@ class ColdEconomyDecisions {
             // level) is not served: decided() misses and main reads the
             // basics view until the next decision point.
             card.stale = bagChanged || buildWoken(state);
+            const previous = this.byId.get(id);
             this.byId.set(id, card);
+            told(state, card, previous);
         }
         else if (this.byId.has(id)) this.byId.get(id).stale = true;
         return incoming;
@@ -736,17 +742,27 @@ class ColdEconomyDecisions {
     matches(state, decision) {
         return !!decision && (decision.held || current(state, decision));
     }
-    // Observer inspection shares admission rules without affecting hit counters.
+    // A near body's decision, taken on its post: held as a far one, marked as of the hot row.
+    acceptNear(characterId, decision) {
+        const card = this.accept(characterId, decision);
+        if (card) card.near = true;
+        return card;
+    }
+    // An observer's read (a status window, the clan's chat, the world observer): the card the
+    // bot holds, current or not (it outlives its row's next publication, a loot or a level,
+    // until the next decision), never counted as a request. Never a permission to act: decided() is.
     inspect(state) {
-        const decision = this.byId.get(Number(state?.characterId));
-        return this.matches(state, decision) ? decision : null;
+        return this.byId.get(Number(state?.characterId)) || null;
     }
     activity(state) { return this.decided(state)?.activity || null; }
-    hold(id, decision) {
+    // state: the far bot's row the command holds the card on (as accept's).
+    hold(id, decision, state = null) {
         if (!decision) return;
         const card = compact(decision);
         card.held = true;
+        const previous = this.byId.get(Number(id));
         this.byId.set(Number(id), card);
+        told(state, card, previous);
     }
     // A held card ends with its command: stale (served no more) unless the command left
     // the row it was decided on as it was (moved false: a plan that changed nothing).

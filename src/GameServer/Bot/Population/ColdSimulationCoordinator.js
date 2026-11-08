@@ -479,7 +479,7 @@ class ColdSimulationCoordinator {
         const entries = type === 'snapshot_page' ? payload.rows
             : ['commit_ack', 'command_ack'].includes(type) ? payload.results : [];
         // Table changes reach the worker before the states that read them
-        // (parties, memory, goals, recipes, the board's escrow).
+        // (parties, memory, recipes, the board's escrow).
         if (entries?.length) this.tableChannel.flush();
         const packed = StateWire.packPayload(type, payload);
         if (packed !== payload) { payload = packed; bytes = null; }
@@ -780,7 +780,7 @@ class ColdSimulationCoordinator {
                     const decision = payload.economyDecision;
                     if (!decision || decision.updatedAt !== Number(state.updatedAt || 0)
                         || !echoHolds(state, decision.echo)) break;
-                    this.economyDecisions.hold(id, decision);
+                    this.economyDecisions.hold(id, decision, state);
                     try {
                         const result = await AfkMarket.executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
                             .catch(error => { this.recordError(error); return null; });
@@ -804,7 +804,7 @@ class ColdSimulationCoordinator {
                 }
                 this.nearDecisions.accepted++;
                 // The held card is the one compact (accept) the body's view reads.
-                const decision = this.economyDecisions.accept(id, payload.economyDecision);
+                const decision = this.economyDecisions.acceptNear(id, payload.economyDecision);
                 DecisionEvents.receive(session, decision, payload.near);
                 // Its own lines' look (own_lines, taken on this post): applied on the hot row
                 // as it stands now (the look's lines carry their own revisions); a row moved

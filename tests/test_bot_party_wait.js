@@ -16,7 +16,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 
@@ -31,9 +31,9 @@ const originals = {
     resolveSolo: BackgroundResolver.resolveSolo,
     reconcileInventory: ColdMarketListingService.reconcileInventory,
     resolveListing: ColdMarketListingService.resolve,
-    currentGoal: GoalService.current,
+    goal: NeedsEvaluator.goal,
     tryPurchase: ColdMarketService.tryPurchase,
-    reviewGoal: GoalService.review,
+    needs: NeedsEvaluator.needs,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
     recordMany: LifeEvents.recordMany
 };
@@ -157,9 +157,9 @@ async function run() {
     LifeState.upsertState = (next) => Promise.resolve(next);
     ColdMarketListingService.reconcileInventory = (current) => Promise.resolve({ state: current, closed: false });
     ColdMarketListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || applied || state, closed: false });
-    GoalService.current = () => Promise.resolve({ current: null });
+    NeedsEvaluator.goal = () => null;
     ColdMarketService.tryPurchase = (current) => Promise.resolve({ state: current, purchased: false });
-    GoalService.review = () => Promise.resolve({ current: null });
+    NeedsEvaluator.needs = () => null;
     GoalExecutor.beginMarketTravel = () => null;
     LifeEvents.recordMany = () => Promise.resolve();
 
@@ -253,9 +253,9 @@ run().catch((err) => {
     BackgroundResolver.resolveSolo = originals.resolveSolo;
     ColdMarketListingService.reconcileInventory = originals.reconcileInventory;
     ColdMarketListingService.resolve = originals.resolveListing;
-    GoalService.current = originals.currentGoal;
+    NeedsEvaluator.goal = originals.goal;
     ColdMarketService.tryPurchase = originals.tryPurchase;
-    GoalService.review = originals.reviewGoal;
+    NeedsEvaluator.needs = originals.needs;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     LifeEvents.recordMany = originals.recordMany;
     fs.rmSync(isolated.directory, { recursive: true, force: true });

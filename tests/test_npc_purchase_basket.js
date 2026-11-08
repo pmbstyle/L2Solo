@@ -6,7 +6,7 @@ const fixture = require('./helpers/isolatedSocialDatabase')('npc-basket');
 require('../src/Global'); fixture.assertConfigured(options.default);
 process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 const DB = invoke('Database'), Data = invoke('GameServer/DataCache');
-const Life = invoke('GameServer/Bot/Population/BotLifeState'), Goals = invoke('GameServer/Bot/Goals/GoalState');
+const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Basket = require('../src/GameServer/Bot/Economy/NpcPurchaseBasket');
 const SavedStats = require('../src/GameServer/Bot/SavedStats');
@@ -37,11 +37,8 @@ async function run() {
     const at = Date.now(), first = { selfId: 2509, town: 'Dion', amount: 120, at, purpose: 'shots', money: 2160 };
     const unrelated = { selfId: 736, town: 'Giran', amount: 2, at, purpose: 'scrolls' };
     let state = await seed(9511, 5000, { marketErrands: [first, unrelated], marketErrand: first });
-    const goal = await Goals.set(9511, { type: 'buy_craft_material', status: 'active',
-        target: { itemId: 2509, amount: 120 }, plan: { purpose: 'shots' } });
     const chosen = lines.map(line => ({ ...line }));
     chosen[0].errands = [{ errand: first, units: 100, spent: 1800 }];
-    chosen[0].goal = { expectedGoal: goal.current, updatedAt: goal.updatedAt, units: 100 };
     const purchased = await Basket.purchase(state, { seller, lines: chosen });
     assert(purchased.ok && purchased.purchased);
     assert.equal(await amount(9511, 57), 2504);
@@ -50,21 +47,17 @@ async function run() {
     assert.equal(purchased.state.stats.marketErrands[0].amount, 20);
     assert.equal(purchased.state.stats.marketErrands[0].money, 360);
     assert.deepEqual(purchased.state.stats.marketErrands[1], unrelated);
-    assert.equal(Goals.snapshot(9511).current.target.amount, 20);
     assert(Buffer.byteLength(JSON.stringify(purchased.economyCommit)) <= 384);
     const replay = await Basket.purchase(purchased.state, { seller: { ...seller, sourceId: 1 }, lines: [], original: purchased.economyCommand });
     assert(replay.replayed); assert.equal(await amount(9511, 57), 2504);
-    assert.equal(replay.state.stats.marketErrands[0].amount, 20); assert.equal(Goals.snapshot(9511).current.target.amount, 20);
+    assert.equal(replay.state.stats.marketErrands[0].amount, 20);
     await DB.close(); await DB.init();
     const restarted = await Basket.purchase(replay.state, { seller, lines: [], original: purchased.economyCommand });
     assert(restarted.replayed); assert.equal(await amount(9511, 2509), 100);
 
     state = await seed(9512, 5000, { marketErrands: [first], marketErrand: first });
-    const rollbackGoal = await Goals.set(9512, { type: 'buy_craft_material', status: 'active',
-        target: { itemId: 2509, amount: 120 }, plan: { purpose: 'shots' } });
     const rollbackLines = lines.map(line => ({ ...line }));
     rollbackLines[0].errands = [{ errand: first, units: 100, spent: 1800 }];
-    rollbackLines[0].goal = { expectedGoal: rollbackGoal.current, updatedAt: rollbackGoal.updatedAt, units: 100 };
     const admission = await Commit.admit(state, Commit.KINDS.npcBuy);
     await DB.execute(["CREATE TEMP TRIGGER fail_basket BEFORE INSERT ON items WHEN NEW.characterId=9512 AND NEW.selfId=1060 BEGIN SELECT RAISE(ABORT,'basket rollback'); END"]);
     try { await assert.rejects(DB.purchaseNpcInventoryBasket(9512, { seller, lines: rollbackLines,
@@ -75,7 +68,6 @@ async function run() {
     const [intent] = await DB.execute(['SELECT tuple FROM bot_economy_intents WHERE characterId=9512']);
     assert.equal(JSON.parse(intent.tuple)[1], 0, 'the rolled-back purchase leaves its intent pending');
     assert.equal(JSON.parse(row.statsJson).marketErrands[0].amount, 120);
-    assert.equal(JSON.parse((await DB.execute(['SELECT goalJson FROM bot_goal_state WHERE characterId=9512']))[0].goalJson).target.amount, 120);
     await DB.execute(['DROP TRIGGER fail_basket']);
     assert((await DB.purchaseNpcInventoryBasket(9512, { seller, lines: rollbackLines, economyCommand: admission.command })).ok);
 
@@ -124,23 +116,8 @@ async function run() {
     assert.equal(await amount(9516, 57), 2504);
     const changedErrand = { ...first, amount: 40 };
     state = await seed(9517, 5000, { marketErrands: [changedErrand], marketErrand: changedErrand });
-    const oldGoal = await Goals.set(9517, { type: 'buy_craft_material', status: 'active', target: { itemId: 2509, amount: 120 } });
-    const newGoal = await Goals.set(9517, { type: 'progress_level', status: 'active', target: { level: 20 } });
-    const changedLines = [{ ...chosen[0], goal: { expectedGoal: oldGoal.current, updatedAt: oldGoal.updatedAt, units: 100 } }];
-    const unchanged = await Basket.purchase(state, { seller, lines: changedLines });
-    assert.deepEqual(unchanged.state.stats.marketErrands[0], changedErrand);
-    assert.deepEqual(Goals.snapshot(9517).current, newGoal.current);
-    const actualPurchase = DB.purchaseNpcInventoryBasket;
-    state = await seed(9518);
-    await Goals.set(9518, { type: 'buy_craft_material', status: 'active', target: { itemId: 2509, amount: 120 } });
-    DB.purchaseNpcInventoryBasket = async (...args) => {
-        const committed = await actualPurchase.apply(DB, args);
-        await Goals.set(9518, { type: 'progress_level', status: 'active', target: { level: 30 } });
-        return committed;
-    };
-    try { assert((await Basket.purchase(state, { seller, lines: [lines[0]] })).ok); }
-    finally { DB.purchaseNpcInventoryBasket = actualPurchase; }
-    assert.equal(Goals.snapshot(9518).current.type, 'progress_level', 'new goal published after native commit survives old result delivery');
+    const unchanged = await Basket.purchase(state, { seller, lines: [{ ...chosen[0] }] });
+    assert.deepEqual(unchanged.state.stats.marketErrands[0], changedErrand, 'a line for another errand leaves the changed one');
     const fundedPacket = [1000, .001, 0, 0, .1, 900, 2509, .05, 1440, 1060];
     const fundedLines = [{ selfId: 2509, amount: 50, unitPrice: 18, funding: { r: .1 } },
         { selfId: 1060, amount: 5, unitPrice: 108, funding: { r: .05 } }];

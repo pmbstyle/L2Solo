@@ -17,7 +17,6 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const originalReconcileClanGoals = Database.reconcileBotClanGoals;
 const World = invoke('GameServer/World/World');
-const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -26,17 +25,9 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 // On arrival a cold bot buys only what its held card orders (Task 4, question
-// 1 = A). These goals stand for that step: the genuine card is kept and its
-// leaf orders the goal's item; a bot without a card keeps the goal's amount.
+// 1 = A). These goals stand for that step (the goal read from the card).
 function purchaseOnCard(state, goal) {
-    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
-    const decided = decisions.decided;
-    decisions.decided = function (value) {
-        const real = decided.call(this, value);
-        return real && goal?.target?.itemId ? Object.create(real, { activity: { value: { activity: 'shopping',
-            itemId: Number(goal.target.itemId), amount: Math.max(1, Number(goal.target.amount) || 1) } } }) : real;
-    };
-    return ColdMarketService.tryPurchase(state, goal).finally(() => { delete decisions.decided; });
+    return ColdMarketService.tryPurchase(state, goal);
 }
 
 DataCache.init();
@@ -51,7 +42,6 @@ const originals = {
     syncInventorySummary: Database.syncInventorySummary,
     updateCharacterLocation: Database.updateCharacterLocation,
     updateCharacterProgress: Database.updateCharacterProgress,
-    clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
     npcOffers: MarketOpportunity.npcOffers,
@@ -171,10 +161,6 @@ async function run() {
             persistedSaleId: saleEvents[0].id, remainingShopRows: shopsAfter.length, remainingLineRows: linesAfter.length }));
         return { result, afterBuyer, afterSeller };
     }
-    GoalState.clear = (characterId, status) => {
-        calls.push({ type: 'goal', characterId, status });
-        return Promise.resolve(null);
-    };
     // Group F/E14: this configured non-shot private input is retired; the
     // separate declared public counterpart below is a genuine native deal.
     World.user = { sessions: [{
@@ -256,8 +242,6 @@ async function run() {
     assert.strictEqual(funded.purchased, false);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 57), 11000);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 2), 0);
-    assert(!calls.some(call => call.type === 'goal' && call.characterId === 777 && call.status === 'completed'),
-        'unfunded shopping does not report a completed purchase');
     await executePublicSword(oldFundedInput, 9001, 'RareSupplier', 1000, 'public_original_11000');
     const playerTransactions = MarketTelemetry.transactions();
     const purchaseTrade = playerTransactions.recentPeerTrades[0];
@@ -354,12 +338,6 @@ async function run() {
     MarketOpportunity.reserve = originals.reserve;
     BuyStoreService.open = originals.openBuyStore;
 
-    const completedGoal = await purchaseOnCard(state, {
-        ...goal,
-        status: 'completed',
-        plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
-    });
-    assert.strictEqual(completedGoal.reason, 'no_purchase_goal', 'a completed market goal must not buy its item again during a batch visit');
     // Town trips are paid (N2, user 2026-10-04): the bot shopping in Giran walks
     // to the Giran gatekeeper and pays the hop to the requested town.
     // ARCH-NOTE: preserve this legacy journey's original bot77 account marker.
@@ -762,7 +740,6 @@ run().catch((err) => {
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
     Database.updateCharacterProgress = originals.updateCharacterProgress;
-    GoalState.clear = originals.clearGoal;
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;

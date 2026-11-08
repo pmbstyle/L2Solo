@@ -40,7 +40,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
         const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-        const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 
         DataCache.init();
 
@@ -52,8 +51,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             reconcileBotClanGoals: Database.reconcileBotClanGoals,
             buyFromShop: AfkTrade.buyFromShop,
             bestOffer: MarketOpportunity.bestOffer,
-            reserve: MarketOpportunity.reserve,
-            clearGoal: GoalState.clear
+            reserve: MarketOpportunity.reserve
         };
 
         const bot = (characterId, extra = {}) => ({
@@ -81,8 +79,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             Database.updateCharacterProgress = async () => {};
             Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
             Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
-            const goalClears = [];
-            GoalState.clear = (characterId) => { goalClears.push(characterId); return Promise.resolve(null); };
             MarketOpportunity.bestOffer = () => ({ ...afkOffer });
             MarketOpportunity.reserve = () => true;
             // The trade finds the bot hot: the AFK sync returns no cold state (H1).
@@ -115,7 +111,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                 target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8, adena: 24090 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
             assert.strictEqual(blocked.reason, 'incompatible_loadout', 'fixture: the shield is blocked');
             assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
-            assert(!goalClears.includes(86), 'the hot bot\'s goal is left to the cold side, as its plan is');
             assert(!bought.wanted, 'no trade-chat wish for a hot bot');
 
             // A cold bot's failed purchase is written as before: it returns to its field.
@@ -143,7 +138,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             AfkTrade.buyFromShop = originals.buyFromShop;
             MarketOpportunity.bestOffer = originals.bestOffer;
             MarketOpportunity.reserve = originals.reserve;
-            GoalState.clear = originals.clearGoal;
             // The outer fixture closes the native connection before retaining this exit code.
         });
     } finally {

@@ -9,7 +9,7 @@ const Rules = invoke('GameServer/Items/NpcSellRules');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Errands = invoke('GameServer/Bot/Economy/ColdMarketService');
-const Goals = invoke('GameServer/Bot/Goals/GoalService');
+const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const ids = [731501, 731502];
 
@@ -53,19 +53,19 @@ const ids = [731501, 731502];
                 const before = await world.amount(id, 57);
                 const intent = Population.marketListingIntent(state);
                 assert(intent.cleanup, 'a completed visit with a prepared board plan still requires the native unload');
-                const saved = { errands: Errands.finishTownErrands, review: Goals.review, reconcile: Market.reconcile };
+                const saved = { errands: Errands.finishTownErrands, needs: Needs.needs, reconcile: Market.reconcile };
                 // Restocking and choosing the next economic goal are separate
                 // boundaries; the complete visit still uses real NPC mutation,
                 // persistence and return travel below.
                 Errands.finishTownErrands = async row => row;
-                Goals.review = async () => null;
+                Needs.needs = () => null;
                 Market.reconcile = async row => ({ state: row });
                 let result;
                 try {
                     result = { state: await Population.finishColdMarketStep(state, { economyPlan: {} }, null, true,
                         { state, closed: false }, { state, purchased: false }, null) };
                 } finally {
-                    Errands.finishTownErrands = saved.errands; Goals.review = saved.review; Market.reconcile = saved.reconcile;
+                    Errands.finishTownErrands = saved.errands; Needs.needs = saved.needs; Market.reconcile = saved.reconcile;
                 }
                 assert.equal(await world.amount(id, 21), 0, 'a current weight floor bypasses the sale retry without a departure marker');
                 assert.equal(await world.amount(id, 28), 0);

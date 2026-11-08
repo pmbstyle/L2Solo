@@ -50,8 +50,8 @@ assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })),
 
 // Genuine floor positives are separate from the unchanged ratio probes.
 const dead = bot(FIGHTER, ratios(0, 1), { activity: 'dead' });
-assert.deepStrictEqual(NeedsEvaluator.evaluate(dead, { now }), [{ type: 'recover', priority: 100,
-    target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' }, blockers: [] }]);
+assert.deepStrictEqual(NeedsEvaluator.evaluate(dead, { now }), [{ type: 'recover',
+    target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' } }]);
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Data = invoke('GameServer/DataCache');
 const wind = Data.skills.find(skill => Number(skill.selfId) === 1177);
@@ -63,9 +63,9 @@ caster.stats.coldCombat = Profile.legacySnapshot(caster, [{ selfId: 1177, level:
 assert.deepStrictEqual(caster.stats.coldCombat.skills.map(skill => [skill.selfId, skill.level, skill.mp]),
     [[1177, 1, rank.mp]], 'the owned capture preserves the authored cost');
 const cannotCast = { ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) - 1 } };
-assert.deepStrictEqual(NeedsEvaluator.evaluate(cannotCast, { now }), [{ type: 'recover', priority: 100,
+assert.deepStrictEqual(NeedsEvaluator.evaluate(cannotCast, { now }), [{ type: 'recover',
     target: { hpPct: undefined, mpPct: undefined },
-    plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }]);
+    plan: { kind: 'rest', expectedBenefit: 'restore_vitals' } }]);
 assert.strictEqual(recover({ ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) } }), false,
     'an affordable required cast removes the mandatory mana floor');
 assert.strictEqual(recover({ ...cannotCast, stats: { ...cannotCast.stats,
@@ -161,10 +161,9 @@ try {
     const fullBag = { ...emptyBag, inventory: { [book.selfId]: { selfId: book.selfId,
         name: book.template.name, kind: book.template.kind, amount: 81, stackable: false,
         instances: Array.from({ length: 81 }, (_, i) => ({ id: 9600000 + i, amount: 1, equipped: false })) } } };
-    assert.deepStrictEqual(NeedsEvaluator.evaluate(fullBag, { now }), [{ type: 'sell_inventory', priority: 100,
+    assert.deepStrictEqual(NeedsEvaluator.evaluate(fullBag, { now }), [{ type: 'sell_inventory',
         target: { itemCount: 81, npcOnlySlots: undefined, cleanupReason: 'no_slot' },
-        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' },
-        blockers: [] }], 'a real 81-instance bag imposes the mandatory unload');
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' } }], 'a real 81-instance bag imposes the mandatory unload');
 
     // Inventory cleanup: the clan-duty market break takes only a bag over 80.
     const clanParty = { partyId: 'clan-party', stats: { objective: { priority: 'required', clanGoalKey: 'clan:1' } } };
@@ -172,10 +171,9 @@ try {
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), true);
     const breakGoal = PartyMarketBreak.goal(clanParty, member, now);
     assert.deepStrictEqual(breakGoal, {
-        type: 'sell_inventory', status: 'active', priority: 96,
+        type: 'sell_inventory', status: 'active',
         target: { itemCount: 81, npcOnlySlots: 3, cleanupReason: 'inventory_capacity' },
-        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' },
-        blockers: []
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' }
     }, 'the clan break goal is the planner cleanup goal');
     const callsBefore = needCalls;
     const given = PartyMarketBreak.cleanupNeed(member, now);

@@ -37,7 +37,6 @@ const reviewedInventory = new Map();
 const pending = new Map();
 
 function desiredSide(goal) {
-    if (goal?.status && goal.status !== 'active') return 0;
     if (goal?.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory'
         && !goal.target?.cleanupReason && !goal.plan?.cleanupReason) return AfkTrade.SELL;
     if (goal?.type === 'upgrade_gear'
@@ -113,7 +112,7 @@ function hasShop(characterId) {
 // A buy order stands through a goal without a trade side, such as a rest,
 // while the needs evaluation still asks to buy one of its items: a sell shop
 // already persists the same way. `candidates` is that evaluation when the
-// caller has just made it (a goal review). Near death the evaluation only
+// caller has just read it (NeedsEvaluator.needs). Near death the evaluation only
 // asks to recover and judges nothing else, so the order waits like a rest.
 function standingBuyNeed(state, lines, candidates) {
     // Own buy-ad lines passed source admission when they opened (BuyAdPolicy);
@@ -1026,11 +1025,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         return { state: LifeState.cachedState(ownerId) || state };
     }) : null;
     if (published?.buyPending) return { state, buyPending: true };
-    if (!reviewGoal) return { state };
+    if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {
-        const snapshot = await invoke('GameServer/Bot/Goals/GoalService').review(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
-        const goal = snapshot?.current;
-        if (!plan.travel || goal?.plan?.wishKey !== plan.travel) return { state };
+        const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
+        if (goal?.plan?.wishKey !== plan.travel) return { state };
         const travel = invoke('GameServer/Bot/Goals/GoalExecutor').beginMarketTravel(state, goal);
         return { state: travel ? await LifeState.upsertState(travel, 'worker_economy_market_travel') : state };
     });

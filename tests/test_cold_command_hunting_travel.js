@@ -12,7 +12,7 @@ const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const originalWarehouseRelease = Warehouse.releaseCold;
 const originalFinishTownErrands = invoke('GameServer/Bot/Economy/ColdMarketService').finishTownErrands;
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -32,8 +32,8 @@ const originals = {
     upsertState: LifeState.upsertState,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
-    current: GoalService.current,
-    review: GoalService.review,
+    goal: NeedsEvaluator.goal,
+    needs: NeedsEvaluator.needs,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
 };
@@ -86,8 +86,8 @@ async function run() {
     LifeState.upsertState = (value) => Promise.resolve(value);
     ListingService.resolve = (value) => Promise.resolve({ state: value, closed: false });
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
-    GoalService.current = () => Promise.resolve(null);
-    GoalService.review = () => Promise.resolve(null);
+    NeedsEvaluator.goal = () => null;
+    NeedsEvaluator.needs = () => null;
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
 
@@ -209,7 +209,7 @@ run().catch((error) => {
     MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
-    Object.assign(GoalService, { current: originals.current, review: originals.review });
+    Object.assign(NeedsEvaluator, { goal: originals.goal, needs: originals.needs });
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;
 });

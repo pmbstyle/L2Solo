@@ -1,14 +1,13 @@
 'use strict';
 // Task 4 B5 (N7): the bot's lease or simulation revision changes between the
 // worker's card and the payment. The coordinator drops the old card (before
-// it starts, or inside the payment step): no order, no retry penalty, the goal
-// kept, and no refresh of its own (the commit that moved the authority brings
+// it starts, or inside the payment step): no order, no retry penalty and no
+// refresh of its own (the commit that moved the authority brings
 // the next card); a card on the new authority then buys once.
 const assert = require('node:assert/strict');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
-const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
@@ -26,8 +25,6 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         await Life.upsertState({ characterId: owner, phase: 'cold', activity: 'hunting', level: 30, adena: 100000,
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(owner)),
             loc: { locX: 0, locY: 0, locZ: 0 }, currentRegion: 'Giran', stats: {} }, 'fixture');
-        const goal = (await Goals.set(owner, { type: 'buy_craft_material', status: 'active',
-            target: { itemId: ORE, amount: 2, adena: 237 }, plan: { marketTown: 'Giran', purpose: 'supply' } })).current;
 
         const board = new BoardIndex();
         board.put({ id: 77, ownerId: 99, kind: 'sell_ad', custodyPolicy: 1, revision: 4, storeType: Afk.SELL ?? 1,
@@ -47,9 +44,6 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         const card = state => Protocol.envelope('ready', epoch, { phase: 'economy_plan_ready', characterId: owner,
             authority: Commit.authority(state), economyPlan: { take: [Afk.SELL ?? 1, ORE, 2, 77, 78, 4, 237] },
             economyDecision: { updatedAt: Number(state.updatedAt || 0), echo: Decision.stateEcho(state) } }, `b5-card-${++serial}`);
-        const kept = () => {
-            assert.deepEqual(Goals.snapshot(owner).current, goal, 'the goal is kept');
-        };
 
         // 1. The revision moved after the card was made: the card is dropped before it starts.
         const oldCard = card(Life.cachedState(owner));
@@ -60,7 +54,6 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         await coordinator.onMessage(oldCard, coordinator.worker, epoch);
         assert.equal(bought, 0, 'a card from an older revision pays nothing');
         assert.deepEqual(refreshes, [], 'no raise: the commit that moved the revision carries the next card');
-        kept();
 
         // 2. The revision moves while the payment is being prepared (after the
         //    coordinator admitted the card): the payment step refuses.
@@ -70,13 +63,11 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.equal(Life.cachedState(owner).simulation.revision, revision + 2, 'the revision moved mid-payment');
         assert.equal(bought, 0, 'a revision move before the payment pays nothing');
         assert.deepEqual(refreshes, [], 'a deferred trade raises nothing (only buyPending does)');
-        kept();
         restore.pop()();
 
         // 3. A card made on the new authority buys once.
         await coordinator.onMessage(card(Life.cachedState(owner)), coordinator.worker, epoch);
         assert.equal(bought, 1, 'the new card pays once');
-        kept();
-        console.log('PASS Task 4 B5 authority bump: old card pays nothing, no penalty, goal kept, new card pays once');
+        console.log('PASS Task 4 B5 authority bump: old card pays nothing, no penalty, new card pays once');
     } finally { for (const fn of restore.reverse()) fn(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

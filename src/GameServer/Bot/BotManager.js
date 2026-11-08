@@ -20,7 +20,6 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
@@ -231,16 +230,15 @@ const BotManager = {
         const ServerResponse = invoke('GameServer/Network/Response');
         const Html = invoke('GameServer/World/Generics/HtmlKit');
         const safe = (value) => Html.esc(value);
-        const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
+        // The goal over the card the bot holds, its floor and errands.
+        const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').shownGoal(state);
         const travel = state.stats?.travel;
         const lead = state.stats?.marketLead;
         const wanted = state.stats?.marketWanted;
         const history = Object.values(state.stats?.partyHistory || {});
         const persona = BotPersona.of(state);
         const traits = personaTraits(persona);
-        const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
-            ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
-            : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
+        const goalLabel = !goal ? 'none' : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
         const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
             ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
             ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
@@ -318,7 +316,6 @@ const BotManager = {
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotManager :: Initializing automated bots...");
         BotFriendship.init();
         PopulationService.init();
-        GoalService.init();
         
         // Adventurers now belong exclusively to the persistent population
         // seeder. Keeping the old static starters here doubled the fresh-world

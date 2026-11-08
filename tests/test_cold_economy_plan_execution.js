@@ -44,7 +44,6 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         coordinator.worker = { postMessage: message => messages.push(message) }; coordinator.workerEpoch = 'plan:test';
         coordinator.tableChannel.flush = () => {};
         coordinator.reviewCommittedEconomy = async value => value;
-        stub(invoke('GameServer/Bot/Goals/GoalService'), 'review', async () => null);
         stub(Life, 'enqueueEquipmentGoalAdvanceForState', () => {});
         stub(invoke('GameServer/Bot/Population/BotLifeEvents'), 'recordMany', async () => {});
         stub(invoke('GameServer/Bot/Population/BotGlobalChat'), 'maybeAnnounce', () => {});

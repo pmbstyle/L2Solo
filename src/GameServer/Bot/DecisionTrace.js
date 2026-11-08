@@ -14,8 +14,8 @@ const Config = require('./Population/PopulationConfig');
 const { isMainThread } = require('node:worker_threads');
 const LIMITS = Object.freeze({ recordBytes: 1024, batch: 64, batchBytes: 65536, mainRecords: 2048, workerRecords: 1024,
     perSecond: 256, detailShare: 0.25, sample: 64 });
-const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 'remaining', 'recordId', 'lineId',
-    'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'goalApplied', 'nativeId', 'sequence',
+const NUMBER_FIELDS = ['revision', 'item', 'need', 'actual', 'remaining', 'recordId', 'lineId',
+    'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'nativeId', 'sequence',
     'errandAt', 'receiptUnits', 'receiptSpent', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
     'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level'];

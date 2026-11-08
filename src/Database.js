@@ -100,8 +100,7 @@ function publishNativeDiagnostics(rolledBack = null) {
         try {
             Trace.detail(rolledBack ? { ...row, outcome: 'rolled_back',
                 reason: row.phase === 'native_refusal' ? row.reason : rolledBack,
-                planned: row.planned ?? row.actual, actual: 0, spent: 0,
-                ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
+                planned: row.planned ?? row.actual, actual: 0, spent: 0 } : { ...row, outcome: 'committed' });
         } catch (_) { /* Observations cannot change native results or errors. */ }
     }
 }
@@ -1537,12 +1536,8 @@ function applySchemaMigrations() {
             LEFT JOIN characters owner ON owner.id = events.ownerId
             LEFT JOIN characters counterparty ON counterparty.id = events.counterpartyId;
         `)],
+        // Its bot_goal_state index: dropped by migration 67; the table by drop-bot-goal-state.
         [33, () => connection.exec(`
-            CREATE INDEX IF NOT EXISTS bot_goal_state_review_queue ON bot_goal_state(
-                updatedAt,
-                COALESCE(CAST(json_extract(goalJson, '$.nextReviewAt') AS INTEGER), 0),
-                characterId
-            );
             CREATE INDEX IF NOT EXISTS bot_life_state_goal_review
                 ON bot_life_state(characterId, updatedAt)
                 WHERE phase = 'cold'
@@ -2103,6 +2098,11 @@ function applySchemaMigrations() {
             UPDATE bot_life_state SET mindJson = json_remove(mindJson, '$.partyMarketReturn')
             WHERE mindJson LIKE '%warOperationId%' AND json_valid(mindJson)
                 AND json_type(mindJson, '$.partyMarketReturn.warOperationId') IS NOT NULL;
+        `)],
+        // A bot's goal is read from its held card, its survival floor and its errands
+        // where it is used (NeedsEvaluator): no saved copy, its rows are not migrated.
+        ['drop-bot-goal-state', () => connection.exec(`
+            DROP TABLE IF EXISTS bot_goal_state;
         `)]
     ];
     const migrate = (apply, record) => {
@@ -8296,12 +8296,10 @@ const Database = {
         const captured = Array.isArray(details.lines) ? details.lines.map(line => ({ ...line,
             funding: { ...line.funding }, fundingParts: line.fundingParts?.map(part => ({ ...part, funding: { ...part.funding } })),
             errands: (line.errands || []).map(entry => ({ ...entry,
-                errand: JSON.parse(JSON.stringify(entry.errand)) })),
-            goal: line.goal ? JSON.parse(JSON.stringify(line.goal)) : null })) : [];
+                errand: JSON.parse(JSON.stringify(entry.errand)) })) })) : [];
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.npcBuy);
-            const goalRow = () => normalizeRow(one('SELECT * FROM bot_goal_state WHERE characterId=?', [characterId]));
-            if (step?.replay) return { ...step.replay, ok: step.replay.success, goalRow: goalRow() };
+            if (step?.replay) return { ...step.replay, ok: step.replay.success };
             if (!captured.length || captured.length > 12) throw Error('invalid npc basket');
             const Shop = invoke('GameServer/World/Generics/NpcShopBuyLists');
             const Index = require('./GameServer/Item/ItemTemplateIndex');
@@ -8319,8 +8317,7 @@ const Database = {
                 const itemId = Number(line.selfId), count = Number(line.amount), price = Number(line.unitPrice);
                 if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_requested',
                     { lineId: lines.length, item: itemId, requested: count, planned: count, unitPrice: price,
-                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town,
-                        goalRevision: Number(line.goal?.updatedAt) });
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
                 if (!Number.isSafeInteger(itemId) || itemId <= 0)
                     throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_item', 'selfId', line.selfId, details);
                 if (seen.has(itemId))
@@ -8461,25 +8458,11 @@ const Database = {
                 }
                 Object.assign(patch, { marketErrands: errands, marketErrand: errands[0] || null });
             }
-            const Goals = invoke('GameServer/Bot/Goals/GoalState');
-            for (const line of lines) if (line.goal) {
-                const { expectedGoal, updatedAt } = line.goal;
-                const count = Number(line.goal.units ?? line.amount);
-                if (!Number.isSafeInteger(count) || count <= 0 || count > line.amount
-                    || Number(expectedGoal?.target?.itemId) !== line.selfId) throw Error('invalid npc goal attribution');
-                const timestamp = now(), next = Goals.purchasePatch(expectedGoal, count, timestamp);
-                const applied = next ? write('UPDATE bot_goal_state SET goalJson=?,updatedAt=? WHERE characterId=? AND updatedAt=? AND goalJson=?',
-                    [JSON.stringify(next), timestamp, characterId, updatedAt, JSON.stringify(expectedGoal)]) : null;
-                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_goal', applied?.affectedRows ? 'applied' : 'unchanged',
-                    { item: line.selfId, goalRevision: Number(updatedAt), goalApplied: Number(applied?.affectedRows || 0),
-                        requested: Number(expectedGoal?.target?.amount), planned: count, actual: applied?.affectedRows ? count : 0,
-                        remaining: applied?.affectedRows ? Number(next.target?.amount) : undefined });
-            }
             const receipt = { units, spent: total, nativeId: Number(seller?.sourceId || lines[0].selfId) };
             const row = step ? completeEconomyStepUnsafe(characterId, step, receipt, [...changed], null, null, patch)
                 : syncEconomySnapshotUnsafe(characterId, coldState, [...changed]);
             return { ok: true, committed: true, ...receipt, amount: units, lines,
-                goalRow: goalRow(), ...(row ? { coldLifeRow: row, economyCommit: jsonObject(row.statsJson).economyCommit } : {}) };
+                ...(row ? { coldLifeRow: row, economyCommit: jsonObject(row.statsJson).economyCommit } : {}) };
         }, 'bot:npc-purchase'));
     },
 

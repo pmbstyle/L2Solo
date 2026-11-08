@@ -995,10 +995,6 @@ function nearArrival(id, previous, row) {
         Situations.raise(row.stats ||= {}, 'contest_lost', { spotId: String(to), reason: 'contest_lost' }, Situations.bodyPlace(row), id);
     } else Situations.note('spot:contest:hot_skipped');
 }
-// A bot's goal revision (GoalState.revision on main, 0 = no goal) from the
-// 'goals' table; undefined while the table loads (the decision skips the compare).
-const goalRevision = characterId => tables.ready('goals')
-    ? (tables.rows('goals').get(Number(characterId))?.revision ?? 0) : undefined;
 tables.watch('board', {
     reset: () => { escrowByRecord.clear(); escrowByOwner.clear(); publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear(); },
     put: (key, row) => {
@@ -1767,7 +1763,7 @@ function startKernel(config = {}) {
                 ? { ...base, statsPacket: lifecyclePlan.statsPacket, statsPacketBeforeResolve: true }
                 : { ...base,
                     economyDepsFor: async projected => ({ spots: planningSpots, routeRows: await occupationFor(projected, timestamp, { caller: 'member' }, 'wish'),
-                        board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), caller: 'member' }),
+                        board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), caller: 'member' }),
                     economyFor: async (projected, deps) => {
                         observedDeps = deps;
                         // The workshop decision first when woken (the far step's order). The build
@@ -1794,7 +1790,7 @@ function startKernel(config = {}) {
                         economy = built; seenEcho = ColdEconomyDecision.stateEcho(seen);
                         // The build's route facts moved (a party member, a karma step).
                         if (!refreshed && built?.routeMoved === true) dropRoute(state.characterId, 'sections');
-                        const advice = refreshed?.advisory || ColdEconomyDecision.advisory(built, seen, undefined, observedDeps);
+                        const advice = refreshed?.advisory || ColdEconomyDecision.advisory(built, seen);
                         rememberWishAdvisory(owner, advice, refreshed ? null : seen, observedDeps);
                     }
                 });
@@ -1901,7 +1897,7 @@ function startKernel(config = {}) {
             const routeRows = state.activity === 'shopping' ? await occupationFor(state, timestamp, { caller: 'step' }, 'wish') : undefined;
             const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
             const deps = { spots, timestamp, board: boardReady(), caller: 'step',
-                buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), routeRows };
+                buyOrderEscrow: escrowFor(state.characterId), routeRows };
             const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
                 && previousPlan.next == null && previousPlan.reason === 'wish_focus';
             // A bot outside a party serves its held card unless woken. A party request
@@ -1915,8 +1911,7 @@ function startKernel(config = {}) {
             // The step's own situations, raised on the state it plans (worker-local; the
             // step's commit carries them, its build clears what it decides): the held
             // leaf's execution outcome (EconomyContext.leafOutcome: its goal done or
-            // failed, a visit's step ended), a goal main moved (the goal revision, until
-            // AI-5), a craft project's or clan market's review due.
+            // failed, a visit's step ended), a craft project's or clan market's review due.
             const raise = (name, payload = null) => {
                 const stats = Situations.raise({ ...state.stats }, name, payload, where, state.characterId);
                 if (stats.situationSeq !== state.stats?.situationSeq) state = { ...state, stats };
@@ -1935,8 +1930,6 @@ function startKernel(config = {}) {
             const visitStop = (outcome === 'goal_done:visit' || outcome === 'goal_failed:visit')
                 && Economy.visitStopsLeft(state, deps) ? outcome : '';
             if (outcome && !visitStop) raise(outcome);
-            if (card && Number.isFinite(deps.goalRevision) && deps.goalRevision !== card.goalRevision
-                && Situations.hears('goal_moved', where)) raise('goal_moved');
             // The workshop decision before the build (its order: earning spot, workshop,
             // build), held on the state the step plans and commits.
             const workshopKeys = decideWorkshop(state, 'lifecycle');
@@ -2067,7 +2060,7 @@ function startKernel(config = {}) {
             const heldDecision = nullReuse ? ColdEconomyDecision.compact({ data: refreshed.decision.data.slice(0),
                 updatedAt: Number(seen.updatedAt || 0), echo: ColdEconomyDecision.stateEcho(seen), flags: 0 }) : null;
             const advice = nullReuse ? { ...refreshed.advisory, card: heldDecision }
-                : ColdEconomyDecision.advisory(economy, seen, preparationState.activity, deps);
+                : ColdEconomyDecision.advisory(economy, seen, preparationState.activity);
             rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
             const stepPlan = {

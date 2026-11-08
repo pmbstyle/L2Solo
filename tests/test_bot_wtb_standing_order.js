@@ -183,21 +183,11 @@ try {
     assert.deepStrictEqual(stops, [7], 'an NPC-shop plan holds no WTB through a rest');
     stops.length = 0;
 
-    // A goal review returns the needs it evaluated, for the reconcile after it.
-    const GoalService = invoke('GameServer/Bot/Goals/GoalService');
-    const GoalState = invoke('GameServer/Bot/Goals/GoalState');
-    const savedGoalState = { snapshot: GoalState.snapshot, set: GoalState.set };
-    try {
-        GoalState.snapshot = () => ({ characterId: 7, current: { ...recover, nextReviewAt: Date.now() + 60000 } });
-        GoalState.set = (characterId, goal) => Promise.resolve({ characterId, current: goal });
-        const reviewNative = await nativeChoice.capture(resting(PIECE_BONE_GAITERS), {}, 'goal_review_native_input');
-        const snapshot = await GoalService.review(reviewNative.state);
-        assert(Array.isArray(snapshot?.candidates) && snapshot.candidates.length > 0, 'the review hands back its needs');
-        assert(snapshot.current?.type, 'and the chosen goal');
-    } finally {
-        GoalState.snapshot = savedGoalState.snapshot;
-        GoalState.set = savedGoalState.set;
-    }
+    // The needs read once serve the reconcile after a visit: the goal is their first.
+    const reviewNative = await nativeChoice.capture(resting(PIECE_BONE_GAITERS), {}, 'goal_review_native_input');
+    const needs = NeedsEvaluator.needs(reviewNative.state);
+    assert(Array.isArray(needs) && needs.length > 0, 'the needs are read on the bot');
+    assert.equal(NeedsEvaluator.goal(reviewNative.state)?.type, needs[0].type, 'and its goal is the first of them');
 } finally {
     LifeState.snapshot = original.snapshot;
     AfkTrade.findOwnerProjection = original.findOwnerProjection;

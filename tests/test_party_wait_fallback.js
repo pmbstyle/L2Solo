@@ -14,7 +14,7 @@ const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -36,8 +36,8 @@ const originals = {
     reconcileInventory: ListingService.reconcileInventory,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
-    current: GoalService.current,
-    review: GoalService.review,
+    goal: NeedsEvaluator.goal,
+    needs: NeedsEvaluator.needs,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
 };
@@ -176,13 +176,8 @@ async function commandChecks() {
     ListingService.reconcileInventory = (value) => Promise.resolve({ state: value, closed: false });
     ListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || lifecycle, closed: false });
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
-    GoalService.current = () => Promise.resolve(null);
-    // The goal review after the fight receives the spot main settled on.
-    const reviewed = [];
-    GoalService.review = (state, options) => {
-        reviewed.push(options?.spot?.id || null);
-        return Promise.resolve(null);
-    };
+    NeedsEvaluator.goal = () => null;
+    NeedsEvaluator.needs = () => null;
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
     // The worker's plan is used as it is, its drop source included (main
@@ -192,7 +187,6 @@ async function commandChecks() {
     const command = (state, plan, route) => {
         applied.length = 0;
         upserted.length = 0;
-        reviewed.length = 0;
         return PopulationService.resolveColdState(state, {
             precomputedPlan: { previousPlan: null, acquisitionPlan: plan, replanFailure: null,
                 partyRequest: invoke('GameServer/Bot/Population/PartyRequestPlanner')
@@ -229,12 +223,9 @@ async function commandChecks() {
     assert.strictEqual(applied.length, 1, 'U3: the worker fight on known ground is kept');
     assert.strictEqual(applied[0].spotId, currentSpot.id);
     assert.deepStrictEqual(applied[0].stats.equipmentPlan, soloPlan, 'main applies the worker\'s drop plan as is');
-    assert(reviewed.length && reviewed.every((id) => id === currentSpot.id),
-        'the goal review sees the ground the worker fought on');
     // A trip the worker's step started (its request's route) names its destination.
     result = await command(routeState(17, {}), soloPlan, { needed: true, spotId: levelSpot.id });
     assert.strictEqual(applied.length, 1);
-    assert(reviewed.length && reviewed.every((id) => id === levelSpot.id), 'the goal review sees the trip\'s destination');
     // Without any spot in the worker's route the rest stays.
     result = await command(routeState(16, {}), soloPlan, { needed: false, spotId: null });
     assert.strictEqual(result.reason, 'missing_spot_recovery', 'no spot anywhere: the bot rests and retries');
@@ -287,7 +278,7 @@ run().catch((error) => {
         upsertState: originals.upsertState });
     Object.assign(ListingService, { reconcileInventory: originals.reconcileInventory, resolve: originals.resolveListing });
     MarketService.tryPurchase = originals.tryPurchase;
-    Object.assign(GoalService, { current: originals.current, review: originals.review });
+    Object.assign(NeedsEvaluator, { goal: originals.goal, needs: originals.needs });
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;
 });

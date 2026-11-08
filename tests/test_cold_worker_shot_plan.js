@@ -192,21 +192,17 @@ parentPort.on('message', message => {
         const coordinator = new ColdSimulationCoordinator();
         coordinator.fenceBot = () => { throw Error('economic_fence_forbidden'); };
         const Market = require('../src/GameServer/Bot/Economy/BotAfkMarketService');
-        const Goals = invoke('GameServer/Bot/Goals/GoalService'), originalReview = Goals.review;
-        Goals.review = async () => null;
         const wallet = state.adena;
-        try {
-            const execution = await Market.executePlan(state, { shot: result.plan.shot, sell: [], withdraw: [], buyAds: [], travel: null },
-                { beforeWrite: () => {}, step: work => coordinator.step('economyPlan', id, work) });
-            assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === recipe.recipeId),
-                'main executes the worker recipe target from a genuine physical scroll');
-            assert.equal(execution.state.adena, wallet - 1, 'the quoted recipe price is paid once');
-            assert.equal((await Database.fetchItems(sellerId)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0);
-            assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0,
-                'learning consumes the delivered physical scroll');
-            assert.equal(coordinator.counters.fences, 0);
-            assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
-        } finally { Goals.review = originalReview; }
+        const execution = await Market.executePlan(state, { shot: result.plan.shot, sell: [], withdraw: [], buyAds: [], travel: null },
+            { beforeWrite: () => {}, step: work => coordinator.step('economyPlan', id, work) });
+        assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === recipe.recipeId),
+            'main executes the worker recipe target from a genuine physical scroll');
+        assert.equal(execution.state.adena, wallet - 1, 'the quoted recipe price is paid once');
+        assert.equal((await Database.fetchItems(sellerId)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0);
+        assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0,
+            'learning consumes the delivered physical scroll');
+        assert.equal(coordinator.counters.fences, 0);
+        assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
         // An owned book without a supported profitable exit is held. Neither
         // ownership nor an old recipe-target packet invents a craft opportunity.
         const ownedRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(317);

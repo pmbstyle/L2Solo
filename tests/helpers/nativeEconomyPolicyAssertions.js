@@ -75,11 +75,8 @@ async function captureAndRead(state, { timestamp, context = {}, needsOptions = {
         const goals = Needs.evaluate(accepted, options);
         assert.equal(goals.length, 1, 'the accepted native choice maps to one voluntary goal');
         const goal = goals[0];
-        assert.equal(goal.priority, 50, 'voluntary goals share the current network priority');
-        assert.deepEqual(goal.blockers, []);
         assert.equal(goal.plan.wishKey, leaf.rootKey);
         assert.equal(goal.plan.economyActivity, leaf.activity);
-        assert.equal(goal.inputHash, read.inputHash);
         if (leaf.activity === 'shopping') {
             const item = invoke('GameServer/DataCache').items.find(row => Number(row.selfId) === leaf.itemId);
             assert(item, 'a native shopping item has an authored template');

@@ -52,10 +52,10 @@ const boardIndex = new BoardIndex();
 // The index keeps its own record per row; the mirror keeps only the version.
 tables.watch('board', boardIndex.follower(), { retain: false });
 // The channel sends every table to every worker; this one reads none of the
-// cold worker's tables (memory ~one row per bot, parties, goals,
+// cold worker's tables (memory ~one row per bot, parties,
 // raids, meetings, player anchors, clan halls, recipes),
 // so it keeps no rows of them.
-for (const name of ['memory', 'parties', 'goals', 'raids', 'meetings', 'player_anchors', 'clan_halls', 'recipes']) {
+for (const name of ['memory', 'parties', 'raids', 'meetings', 'player_anchors', 'clan_halls', 'recipes']) {
     tables.watch(name, { reset() {}, put() {}, remove() {} }, { retain: false });
 }
 const originalInvoke = global.invoke;

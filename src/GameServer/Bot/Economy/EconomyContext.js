@@ -1117,9 +1117,9 @@ function buildForState(state, deps) {
     const keptBase = held && held.pieces?.foundation === pieces.foundation && !decideEarning ? held.plan : null;
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround).
     const keptGround = held?.pieces?.ground === pieces.ground ? held.sourceGround || null : null;
-    // A build the gear plan did not wake weighs only the gear the bot follows
-    // (decision 11-02): a goal main moved is a real review.
-    const heldGear = !deps.fullReview && held?.gearFollowed && deps.goalRevision === held.goalRevision
+    // A build the gear plan did not wake weighs only the gear the bot follows:
+    // every candidate is weighed only in the gear plan's own review (deps.fullReview).
+    const heldGear = !deps.fullReview && held?.gearFollowed
         && held.pieces?.gear === pieces.gear ? followedGear(state, held) : null;
     if (heldGear) quietGearBuilds++;
     passed(deps, 0);
@@ -1381,7 +1381,7 @@ function buildForState(state, deps) {
             craftReservations: leaf?.activity === 'crafting' ? CraftInputReservations.heldCraftRows(state, plan.network.craftNeeds) : undefined,
             readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat, links,
             // A quiet build sees only the followed gear: a list it shortened is no review.
-            gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection), goalRevision: deps.goalRevision,
+            gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection),
             activity: state.activity, pieces,
             sourceGround: retainedGround, keptFacts: retainedFacts, keptGear: retainedGear, mp: Number(state.vitals?.mp),
             projection: (isMainThread || Sections.partyIdOf(state)) ? projection : null }, RETAIN_LIMIT);

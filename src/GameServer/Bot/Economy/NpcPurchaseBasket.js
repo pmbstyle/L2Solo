@@ -60,13 +60,10 @@ function observe(lines, state, replayed) {
     }
 }
 
-function acceptResult(state, result, previousGoal, observation = null) {
-    const Goals = invoke('GameServer/Bot/Goals/GoalState');
+function acceptResult(state, result, observation = null) {
     let current = state;
     try {
         if (result.coldLifeRow) current = Commit.acceptRow(result.coldLifeRow);
-        if (result.goalRow && Goals.snapshot(state.characterId) === previousGoal) Goals.prime(state.characterId,
-            result.goalRow.goalJson, result.goalRow.updatedAt);
         if (observation && Diagnostics.active()) diagnostic(current, observation.command, 'npc_delivery', 'state_accepted', resultFields(result, observation.seller));
     } catch (error) {
         const row = result.coldLifeRow;
@@ -83,7 +80,6 @@ async function purchase(state, options = {}) {
     if (!options.seller || !Array.isArray(options.lines) || options.lines.length > MAX_LINES
         || !options.lines.length && !options.original) throw Error('invalid npc basket');
     const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const Goals = invoke('GameServer/Bot/Goals/GoalState'), previousGoal = Goals.snapshot(state.characterId);
     const started = Diagnostics.active() ? performance.now() : 0;
     let admitted, result, requestSeller;
     try {
@@ -114,7 +110,7 @@ async function purchase(state, options = {}) {
     }
     // A committed physical transaction cannot become a retryable unpaid action
     // because a cache, telemetry or actor delivery failed afterwards.
-    const current = acceptResult(admitted.state, result, previousGoal, Diagnostics.active()
+    const current = acceptResult(admitted.state, result, Diagnostics.active()
         ? { command: admitted.command, seller: requestSeller } : null);
     const lines = result.lines || [];
     observe(lines, current, result.replayed);

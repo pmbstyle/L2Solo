@@ -89,14 +89,10 @@ module.exports.stepProbe = async (id) => {
     } finally { Economy.forState = original; }
 };
 // Quiet steps (no loot) leave the step decision held: the next decision
-// point reuses it while the goal revision holds and rebuilds once it moves.
-// The first quiet round records the hunt cycle (an income event), so the
-// second step is the warm one.
-module.exports.goalProbe = async (id) => {
+// point reuses it while no situation wakes the build. The first quiet round
+// records the hunt cycle (an income event), so the second step is the warm one.
+module.exports.heldProbe = async (id) => {
     const timestamp = Date.now();
-    // The goal revision is the worker's 'goals' table row, as main publishes it.
-    const goal = revision => ({ characterId: id, nextReviewAt: 0, revision });
-    tables.apply([{ name: 'goals', from: null, to: 0, full: true, rows: [[id, goal(1)]], removed: [], last: true }]);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), original = Economy.forState;
     const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
     let builds = 0;
@@ -118,18 +114,16 @@ module.exports.goalProbe = async (id) => {
         let same;
         try { same = await step(timestamp + 2000); } finally { occupationFor = rowsAsk; }
         const ask = () => ColdEconomyDecision.refusal(kernel.states.get(id).state, kernel.states.get(id).wishAdvisory,
-            { goalRevision: goalRevision(id), timestamp: timestamp + 3000 });
+            { timestamp: timestamp + 3000 });
         const held = ask();
         // The body goes near and far again with no decision of its own between: its far card serves.
         const far = kernel.states.get(id);
         kernel.states.set(id, { ...far, state: { ...far.state, phase: 'hot' } });
         kernel.states.set(id, { ...kernel.states.get(id), state: far.state });
         const handoff = ask();
-        tables.apply([{ name: 'goals', from: 0, to: 1, full: false, rows: [[id, goal(2)]], removed: [], last: true }]);
-        const refusal = ask();
-        const moved = await step(timestamp + 3000);
+        const later = await step(timestamp + 3000);
         const unwoken = Object.keys(invoke('GameServer/Bot/Situations').counts().unwoken).filter(key => key.startsWith('build:'));
-        return { same, wishAsks, held, handoff, refusal, moved, unwoken };
+        return { same, wishAsks, held, handoff, later, unwoken };
     } finally { Economy.forState = original; }
 };
 // A deferred plan's next page: main's write while pages wait asks it, once per
@@ -220,7 +214,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -289,17 +283,16 @@ parentPort.on('message', message => {
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');
-        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'goal'), goalProbe: id });
-        const goalResponse = await wait(message => message.probeId === 'goal'); if (goalResponse.error) throw Error(goalResponse.error);
-        const goal = goalResponse.value;
-        console.log(JSON.stringify(goal));
-        assert.equal(goal.same, 0, 'a quiet step reuses the held decision while the goal revision holds');
-        assert.deepEqual(goal.wishAsks, [], 'and asks no town route rows in the field');
-        assert.equal(goal.held, '', 'the held decision holds on the warm state at the same goal revision');
-        assert.equal(goal.handoff, '', 'a near body back far serves its far card: no build for the handoff');
-        assert.equal(goal.refusal, 'goal', 'a moved goal revision refuses the held decision');
-        assert.equal(goal.moved, 1, 'the next decision point after a goal change builds once');
-        assert.deepEqual(goal.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'held'), heldProbe: id });
+        const heldResponse = await wait(message => message.probeId === 'held'); if (heldResponse.error) throw Error(heldResponse.error);
+        const held = heldResponse.value;
+        console.log(JSON.stringify(held));
+        assert.equal(held.same, 0, 'a quiet step reuses the held decision');
+        assert.deepEqual(held.wishAsks, [], 'and asks no town route rows in the field');
+        assert.equal(held.held, '', 'the held decision holds on the warm state');
+        assert.equal(held.handoff, '', 'a near body back far serves its far card: no build for the handoff');
+        assert.equal(held.later, 0, 'with no situation the next decision point builds nothing');
+        assert.deepEqual(held.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;

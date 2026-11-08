@@ -346,16 +346,14 @@ Config.staticShotsDisabled = false;
 await (async () => {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    const GoalState = invoke('GameServer/Bot/Goals/GoalState');
     const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
     const Database = invoke('Database');
     const kept = { upsertState: LifeState.upsertState, refreshInventory: LifeState.refreshInventory,
-        clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
+        buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
     const buys = [];
     try {
         Database.init();
         LifeState.upsertState = async (state) => state;
-        GoalState.clear = async () => null;
         AfkTrade.buyFromShop = async (_id, _store, selfId, amount, options) => {
             buys.push(['line', amount, options.expectedPrice]);
             return kept.buyFromShop.call(AfkTrade, _id, _store, selfId, amount, options);
@@ -398,7 +396,6 @@ await (async () => {
     } finally {
         Object.assign(LifeState, { upsertState: kept.upsertState, refreshInventory: kept.refreshInventory });
         Database.purchaseNpcInventoryItem = kept.npc;
-        GoalState.clear = kept.clear;
         AfkTrade.buyFromShop = kept.buyFromShop;
         AfkTrade._resetForTests();
         await Database.close();

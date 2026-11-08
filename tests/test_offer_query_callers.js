@@ -152,7 +152,6 @@ function picked(offer) {
     const native = await NativeChoice.capture(state, {}, 'C14_original_3lots');
     assert.strictEqual(native.read.activity.activity, 'hunting');
     assert.strictEqual(native.goals.length, 1);
-    assert.strictEqual(native.goals[0].priority, 50);
     assert.strictEqual(native.goals.find(candidate => candidate.type === 'buy_craft_material'
         && candidate.target.itemId === STEM), undefined);
     assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(native.state, 0, { itemId: STEM }), 0);

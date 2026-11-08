@@ -28,8 +28,7 @@ function observePlan(state, current, selfId, amount, count, available, offer, at
         phase: 'npc_plan', reason, caller: 'NpcRestockPlan', item: Number(selfId),
         requested: amount, planned: count, available, budget: available, wallet: Number(current.adena),
         unitPrice: price, npcId: Number(offer.sourceId), town: offer.town,
-        source: attribution.errand?.purpose || attribution.goal?.expectedGoal?.type || 'stock',
-        goalRevision: Number(attribution.goal?.updatedAt), errandAt: Number(attribution.errand?.at),
+        source: attribution.errand?.purpose || attribution.source || 'stock', errandAt: Number(attribution.errand?.at),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
 }
@@ -108,7 +107,6 @@ function collect(state, options = {}) {
         line.amount += count;
         line.fundingParts.push({ amount: count, funding, order: order++ });
         if (attribution.errand) line.errands.push({ errand: attribution.errand, units: count, spent: count * price });
-        if (attribution.goal) line.goal = { ...attribution.goal, units: count };
         // The virtual purchase is a new state and bag (readers key on their identity).
         const adena = Math.max(0, Number(current.adena || 0) - count * price), inventory = { ...current.inventory };
         inventory[selfId] = { ...inventory[selfId], selfId: Number(selfId), amount: Number(inventory[selfId]?.amount || 0) + count };

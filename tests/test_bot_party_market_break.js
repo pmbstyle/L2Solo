@@ -23,7 +23,6 @@ async function departureChecks() {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
     const Population = invoke('GameServer/Bot/Population/PopulationService');
-    const GoalService = invoke('GameServer/Bot/Goals/GoalService');
     const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     assert.strictEqual(await LifeState.init(), true);
@@ -70,10 +69,9 @@ async function departureChecks() {
         assert.strictEqual((await durable(leaver)).partyId, null);
     }
 
-    const originals = [[GoalService, 'snapshot'], [GoalExecutor, 'beginMarketTravel'], [Disposition, 'inventoryCleanupNeed']]
+    const originals = [[GoalExecutor, 'beginMarketTravel'], [Disposition, 'inventoryCleanupNeed']]
         .map(([owner, name]) => [owner, name, owner[name]]);
     let leaving = 0;
-    GoalService.snapshot = () => null;
     GoalExecutor.beginMarketTravel = (member, goal) => goal?.type === 'sell_inventory' ? { ...member, activity: 'traveling',
         stats: { ...member.stats, travel: { reason: 'market_sale_inventory', arrivalActivity: 'shopping',
             arrivalAt: Date.now() + 60000, to: { ...loc } } } } : null;

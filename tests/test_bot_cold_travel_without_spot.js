@@ -11,7 +11,7 @@ const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -30,8 +30,8 @@ const originals = {
     upsertState: LifeState.upsertState,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
-    current: GoalService.current,
-    review: GoalService.review,
+    goal: NeedsEvaluator.goal,
+    needs: NeedsEvaluator.needs,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
     finishMarketVisit: GoalExecutor.finishMarketVisit,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
@@ -72,10 +72,10 @@ async function run() {
     LifeState.refreshInventory = (value) => Promise.resolve(value);
     LifeState.upsertState = (value) => Promise.resolve(value);
     ListingService.resolve = (value) => Promise.resolve({ state: value, closed: false });
-    GoalService.current = () => Promise.resolve(null);
+    NeedsEvaluator.goal = () => null;
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
     GoalExecutor.finishMarketVisit = () => null;
-    GoalService.review = () => Promise.resolve(null);
+    NeedsEvaluator.needs = () => null;
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
 
@@ -158,16 +158,11 @@ async function run() {
     });
     LifeState.cachedState = () => null;
     LifeState.applyResolve = () => Promise.resolve(recoveredMarketState);
-    GoalService.review = (value) => {
+    NeedsEvaluator.goal = (value) => {
         recoveryGoalReviews += 1;
         assert.strictEqual(value.activity, 'hunting', 'market handoff must happen only after recovery completed');
-        return Promise.resolve({
-            current: {
-                type: 'upgrade_gear',
-                target: { itemId: 127 },
-                plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
-            }
-        });
+        return { type: 'upgrade_gear', target: { itemId: 127 },
+            plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } };
     };
     GoalExecutor.beginMarketTravel = (value, goal) => {
         recoveryMarketTravel += 1;
@@ -205,9 +200,9 @@ async function run() {
         stats: { ...warehouseSeller.stats, restUntil: null }
     });
     MarketOpportunity.bestBuyOffer = () => ({ selfId: 5220, count: 5, town: 'Giran' });
-    GoalService.review = () => {
+    NeedsEvaluator.goal = () => {
         recoveryGoalReviews += 1;
-        return Promise.resolve({ current: { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } } });
+        return { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } };
     };
     GoalExecutor.beginMarketTravel = (value, goal) => {
         recoveryMarketTravel += 1;
@@ -248,8 +243,8 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     LifeState.upsertState = originals.upsertState;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
-    GoalService.current = originals.current;
-    GoalService.review = originals.review;
+    NeedsEvaluator.goal = originals.goal;
+    NeedsEvaluator.needs = originals.needs;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     GoalExecutor.finishMarketVisit = originals.finishMarketVisit;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;

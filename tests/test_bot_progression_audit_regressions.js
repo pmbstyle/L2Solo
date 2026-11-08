@@ -172,7 +172,6 @@ async function checkMissingSpotRecovery() {
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Events = invoke('GameServer/Bot/Population/BotLifeEvents');
-    const Goals = invoke('GameServer/Bot/Goals/GoalService');
     invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => Spots.ensure());
     const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
     const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -200,7 +199,6 @@ async function checkMissingSpotRecovery() {
         const goals = Needs.evaluate(buyer, { now: at, decisions });
         assert.strictEqual(goals.length, 1, 'one accepted native shopping leaf produces one voluntary goal');
         selectedGoal = goals[0];
-        assert.strictEqual(selectedGoal.priority, 50);
         assert.strictEqual(selectedGoal.plan.wishKey, leaf.rootKey);
         assert.strictEqual(selectedGoal.plan.economyActivity, leaf.activity);
         assert.strictEqual(selectedGoal.target.itemId, leaf.itemId);
@@ -227,7 +225,7 @@ async function checkMissingSpotRecovery() {
     let savedReason;
     let saves = 0;
     const originalEvents = Events.recordMany;
-    const originalReview = Goals.review;
+    const originalGoal = Needs.goal;
     try {
         Spots.ensure = () => [];
         Spots.findForState = () => null;
@@ -257,7 +255,7 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);
         // The funded buyer's trip is its build's card (the worker's town leaf): main's
         // lifecycle command reviews no goal and starts no market trip of its own.
-        Goals.review = async () => { throw new Error('a lifecycle command reviewed the goal'); };
+        Needs.goal = () => { throw new Error('a lifecycle command read the goal'); };
         savedReason = null;
         const command = await Population.executeWorkerLifecycleCommand(buyer, {
             precomputedResult: { patch: { activity: 'resting' }, materialize: { exp: 100 } }
@@ -269,7 +267,7 @@ async function checkMissingSpotRecovery() {
         Spots.findForState = originals.find; Life.upsertState = originals.save;
         Life.cachedState = originals.cachedState;
         Events.recordMany = originalEvents;
-        Goals.review = originalReview;
+        Needs.goal = originalGoal;
     }
 }
 checkWorkerSafety().then(checkMissingSpotRecovery).then(() => console.log('Bot progression audit regressions passed'))

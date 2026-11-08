@@ -109,8 +109,6 @@ const SITUATIONS = Object.freeze({
     // the step it came for.
     arrived_town: link(0),
     'arrived_town:own': link(0),
-    // Main moved the bot's goal (its goal revision, until goals read the card).
-    goal_moved: link(0),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
     // queue held for it, DecisionSections.moneyCrossings, F3).
     out_of_money: link(0),
@@ -189,7 +187,7 @@ function woke(name, where) {
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
 // which names the spot a body walks to), goal_done:visit / goal_failed:visit (a visit
-// whose held plan has no stop left: the next leaf) and goal_moved (until goals read the card). A death wakes
+// whose held plan has no stop left: the next leaf). A death wakes
 // the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
 // gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
@@ -223,7 +221,7 @@ const DECISIONS = Object.freeze({
     build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
-        'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'offer_posted']),
+        'clan_changed', 'spot_empty', 'player_command', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
     own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),

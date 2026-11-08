@@ -203,11 +203,11 @@ assert.strictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan(stagedArmor, {
         ? { sourceType: 'npc', selfId: 432, price: 10000, town: 'Gludio' } : null
 }), null, 'the NPC bridge must not buy an already staged armor piece again');
 
-const goal = NeedsEvaluator.evaluate(state, { now, spot: { id: 'cruma', name: 'Cruma Tower' } })
+const goal = NeedsEvaluator.evaluate(state, { now })
     .find((candidate) => candidate.type === 'sell_inventory' && candidate.target.cleanupReason === 'no_slot');
 assert(goal, 'inventory pressure must create a sell_inventory goal');
-// The exact 81 occupied native C4 slots reach the mandatory unload floor.
-assert.strictEqual(goal.priority, 100);
+// The exact 81 occupied native C4 slots reach the mandatory unload floor: it comes first.
+assert.strictEqual(NeedsEvaluator.evaluate(state, { now })[0].target.cleanupReason, 'no_slot');
 assert.strictEqual(goal.target.itemCount, 81);
 assert.strictEqual(invoke('GameServer/Bot/Population/SurvivalFloor').inventoryLimit(0), 80);
 

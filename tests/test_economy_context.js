@@ -132,15 +132,15 @@ async function run() {
     warrior.stats.persona = { ...warrior.stats.persona, understanding: .5 };
     const kitDeps = { knowledgeEnabled: true };
     const warriorContext = Economy.forState(warrior, kitDeps);
-    // Decision 11-02 (situations F1): a build the gear plan did not wake weighs only the
-    // gear the bot follows and keeps what it follows; a full review (gear_plan woken),
-    // a move of the kit or of the goal weighs everything.
+    // A build the gear plan did not wake weighs only the gear the bot follows and
+    // keeps what it follows; a full review (gear_plan woken) or a move of the kit
+    // weighs everything.
     {
         const rich = { ...base, characterId: 1301, level: 46, adena: 3000000, inventory: {}, phase: 'cold', activity: 'hunting',
             stats: { ...base.stats, classId: 2, exp: Data.experience[45] + 1 } };
-        const atWork = (state, goalRevision, fullReview = false) => Economy.forState(state, { ...kitDeps, goalRevision, caller: 'step', fullReview });
-        const full = atWork(rich, 1, true);
-        const quiet = atWork(rich, 1);
+        const atWork = (state, fullReview = false) => Economy.forState(state, { ...kitDeps, caller: 'step', fullReview });
+        const full = atWork(rich, true);
+        const quiet = atWork(rich);
         const weighed = context => context.projection.admission.candidates;
         assert(weighed(quiet) < weighed(full), `a quiet build weighs fewer candidates: ${weighed(quiet)} of ${weighed(full)}`);
         assert.deepEqual(quiet.projection.roots, full.projection.roots, 'and keeps every root the bot follows');
@@ -148,11 +148,10 @@ async function run() {
         assert(rare > 0 && quiet.projection.admission.rare === rare, 'the rare piece stays followed');
         assert(quiet.projection.roots.some(key => invoke('GameServer/Bot/Economy/WishNetwork').rootItem(key) === rare), 'and keeps its root');
         assert.deepEqual(quiet.network.focus, full.network.focus, 'and its goal');
-        assert.equal(weighed(atWork({ ...rich, level: 47, stats: { ...rich.stats, exp: Data.experience[46] + 1 } }, 1)), weighed(full),
+        assert.equal(weighed(atWork({ ...rich, level: 47, stats: { ...rich.stats, exp: Data.experience[46] + 1 } })), weighed(full),
             'a kit move is a real review');
-        assert.equal(weighed(atWork(rich, 2)), weighed(full), 'a goal main moved too');
-        atWork({ ...rich, adena: 0 }, 2);
-        assert.deepEqual(atWork(rich, 2).projection.roots, full.projection.roots,
+        atWork({ ...rich, adena: 0 });
+        assert.deepEqual(atWork(rich).projection.roots, full.projection.roots,
             'a poor quiet build drops nothing the bot follows');
         Economy.forget(rich.characterId);
     }
@@ -986,9 +985,9 @@ async function run() {
     decisions.accept(base.characterId, Decisions.capture(context, decidedBase, base));
     const requests = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(decidedBase, { decisions, errand: null });
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].inputHash, require('../src/GameServer/Bot/Fnv1a').fnv1a32(context.inputKey));
+    assert.equal(requests[0].plan.wishKey, context.network.activity?.rootKey, 'the goal is the card\'s leaf');
     const dead = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate({ ...base, activity: 'dead' });
-    assert.equal(dead[0].type, 'recover'); assert.equal(dead[0].priority, 100);
+    assert.equal(dead[0].type, 'recover');
     const beforeProfile = Profile.profileFor(base);
     assert(beforeProfile.pAtk > 0);
     const Life = invoke('GameServer/Bot/Population/BotLifeState');

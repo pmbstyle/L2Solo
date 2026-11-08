@@ -45,7 +45,6 @@ async function run() {
         { selfId: 3031, amount: 7, town: 'Dion', purpose: 'craft_input', r: 1, at }
     ];
     let state = await seed(9611, 50000, { marketErrands: errands, marketErrand: errands[0] });
-    await invoke('GameServer/Bot/Goals/GoalState').set(9611, Market.errandGoal(errands[0]));
     state = await Market.finishTownErrands(state);
     const cold = captured.filter(row => row.id === 9611);
     assert.equal(cold.length, 1, 'actual finishTownErrands uses one real-seller transaction');
@@ -53,8 +52,6 @@ async function run() {
     assert(cold[0].lines.some(row => row.selfId === 3031 && row.amount === 7));
     assert.equal(await amount(9611, 1785), 6); assert.equal(await amount(9611, 3031), 7);
     assert.equal(state.stats.marketErrands.length, 0, 'native settlement closes exactly filled errands');
-    assert.equal(invoke('GameServer/Bot/Goals/GoalState').snapshot(9611).current.status, 'completed',
-        'the matching selected market errand goal progresses in the same native settlement');
     const before = await amount(9611, 57);
     await Market.finishTownErrands(state);
     assert.equal(await amount(9611, 1785), 6); assert.equal(await amount(9611, 3031), 7);
@@ -110,18 +107,35 @@ async function run() {
     assert(!separateSellers.some(row => row.lines.some(line => line.selfId === 24)
         && row.lines.some(line => line.selfId === 1785)), 'weapon shop and grocer never become one seller');
 
+    // The bot's own errand at a real NPC buys its kit in the same deal; a clan errand buys the
+    // clan's order alone (the treasury credit pays for the order, not for the member's kit).
+    const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+    async function errandDeal(id, errand, extra = {}) {
+        let current = await seed(id, 50000, { marketErrands: [errand], marketErrand: errand, ...extra });
+        const rated = require('./helpers/ratedKit')(current);
+        current = await Life.upsertState({ ...rated, stats: { ...rated.stats, money: [100000, .00001, 0, 0],
+            kitRates: Packet.kitRates({ ...Packet.ratesOf(rated.stats.kitRates), scrollHours: 1 }) } }, 'consumer_kit');
+        const bought = await Market.tryPurchase(current, { type: 'market_errand' });
+        assert.equal(await amount(id, 1785), 2, `errand ${errand.purpose} fills its order`);
+        assert.equal(bought.state.stats.marketErrands.length, 0);
+        return captured.filter(row => row.id === id).flatMap(row => row.lines.map(line => line.selfId));
+    }
+    const ownDeal = await errandDeal(9628, { selfId: 1785, amount: 2, town: 'Dion', purpose: 'craft_input', r: 1, at });
+    assert(ownDeal.some(id => id !== 1785), 'the own errand restocks the kit in the same deal');
+    const clanDeal = await errandDeal(9629, { selfId: 1785, amount: 2, town: 'Dion', purpose: 'clan',
+        tag: { clanId: 42, clanPart: 2 * first.price }, at }, { clanId: 42 });
+    assert.deepEqual(clanDeal, [1785], "a clan errand's deal buys the clan's order alone");
+
     state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 10 }]);
     // Its healing potions at the stock's own target, whatever use the table gives them: the goal alone pays.
     const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
     await DB.setItem(9619, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target });
     state = await Life.upsertState({ ...state, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(9619)) }, 'consumer_potions');
-    const Goals = invoke('GameServer/Bot/Goals/GoalState');
-    const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6, adena: first.price },
-        plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
+    const goal = { type: 'buy_craft_material', target: { itemId: 1785, amount: 6, adena: first.price },
+        plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Dion', purpose: 'craft_input', r: 1 } };
     const activated = await Market.tryPurchase(state, goal);
     assert.equal(activated.hot, true, 'cold caller propagates activation after the committed NPC await');
     assert.equal(activated.state.phase, 'hot'); assert.equal(await amount(9619, 1785), 6);
-    assert.equal(Goals.snapshot(9619).current.status, 'completed');
     assert.equal((await Market.tryPurchase(activated.state, goal)).reason, 'not_shopping');
     assert.equal(captured.filter(row => row.id === 9619).length, 1, 'hot handoff cannot buy the old goal twice');
     assert.equal(await amount(9619, 57), 50000 - 6 * first.price);
@@ -146,11 +160,9 @@ async function run() {
         assert(configured && !Npc.quoteFor(1463, 'Dion'), 'configured-only current D-shot quote');
         const errand = { selfId: 1463, amount: 250, town: 'Dion', purpose: 'craft_input', r: 1, at };
         state = await seed(9623, 3000000, { marketErrands: [errand], marketErrand: errand });
-        await Goals.set(9623, Market.errandGoal(errand));
         state = await Market.finishTownErrands(state);
         assert.equal(await amount(9623, 1463), 250, 'town visit reaches configured singleton');
         assert.equal(state.stats.marketErrands.length, 0);
-        assert.equal(Goals.snapshot(9623).current.status, 'completed');
         const receipt = captured.find(row => row.id === 9623 && row.lines.some(line => line.selfId === 1463));
         assert(receipt && !receipt.seller, 'configured store is not presented as a real NPC');
         assert.equal(receipt.lines.length, 1);
@@ -161,30 +173,14 @@ async function run() {
         assert.equal(await amount(9623, 57), wallet, 'unchanged configured errand never pays twice');
 
         state = await seed(9624, 3000000);
-        const selected = (await Goals.set(9624, { type: 'buy_craft_material', status: 'active',
+        const selected = { type: 'buy_craft_material',
             target: { itemId: 1463, amount: 125, adena: configured.price }, plan: { expectedBenefit: 'market_buy_craft_material',
-                marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
+                marketTown: 'Dion', purpose: 'craft_input', r: 1 } };
         const configuredGoal = await Market.tryPurchase(state, selected);
         assert.equal(configuredGoal.units, 125);
         assert.equal(await amount(9624, 1463), 125);
         assert.equal(await amount(9624, 57), 3000000 - 125 * configured.price);
-        assert.equal(Goals.snapshot(9624).current.status, 'completed', 'singleton owns goal progress atomically');
 
-        state = await seed(9626, 3000000);
-        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125, adena: configured.price } })).current;
-        const primeGoal = Goals.prime;
-        let paid;
-        try {
-            Goals.prime = () => { throw Error('fixture_goal_delivery_failed'); };
-            paid = await Market.tryPurchase(state, deferred);
-        } finally { Goals.prime = primeGoal; }
-        assert.equal(paid.purchased, true, 'post-commit goal delivery failure never rejects a paid purchase');
-        assert.equal(paid.units, 125);
-        assert.equal(await amount(9626, 57), 3000000 - 125 * configured.price);
-        assert.equal(await amount(9626, 1463), 125);
-        const authoritativeGoal = (await DB.execute(['SELECT goalJson,updatedAt FROM bot_goal_state WHERE characterId=?', [9626]]))[0];
-        assert.equal(JSON.parse(authoritativeGoal.goalJson).status, 'completed');
-        Goals.prime(9626, authoritativeGoal.goalJson, authoritativeGoal.updatedAt);
     } finally { Policy.shotsDisabled = wasDisabled; }
 
     // Reusing one visit context must not preserve missing survival units

@@ -11,7 +11,7 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
@@ -31,8 +31,8 @@ const originals = {
     reconcileInventory: ListingService.reconcileInventory,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
-    current: GoalService.current,
-    review: GoalService.review,
+    goal: NeedsEvaluator.goal,
+    needs: NeedsEvaluator.needs,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
 };
@@ -132,7 +132,7 @@ run().catch((error) => {
         upsertState: originals.upsertState });
     Object.assign(ListingService, { reconcileInventory: originals.reconcileInventory, resolve: originals.resolveListing });
     MarketService.tryPurchase = originals.tryPurchase;
-    Object.assign(GoalService, { current: originals.current, review: originals.review });
+    Object.assign(NeedsEvaluator, { goal: originals.goal, needs: originals.needs });
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;
 });
