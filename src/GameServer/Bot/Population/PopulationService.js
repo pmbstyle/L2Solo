@@ -1561,8 +1561,9 @@ const PopulationService = {
         const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
             && !PartyRequestPlanner.closed(state));
         if (!eligible.length) return {};
-        // One forming path whether a player is online or not: a player online only
-        // narrows its budget (partyFormationBudgetMs) and its batch to one party a pass.
+        // One forming path whether a player is online or not: a player online narrows its
+        // budget (partyFormationBudgetMs) and its batch to one party a pass, and the pass
+        // waits out main's writes (membershipWritesWait).
         const result = await this.formBackgroundParties(eligible, { moved });
         // Retried (PartyAssemblyEvents.retryMs) only what no event ends: main's lag, DB
         // queue or formation budget (partyFormationPending), a material group that formed
@@ -1920,16 +1921,22 @@ const PopulationService = {
     async helpClanParty(timestamp = Date.now()) {
         const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
         if (!Help.hasDue() || Config.enabled === false || Config.backgroundPartyEnabled === false) return null;
-        if (this.partyFormationRunning || this.resolving) return BUSY_HELP;
-        const cold = ColdSimulationCoordinator.snapshot();
-        if (Number(Metrics.currentEventLoopLag()) >= Number(Config.schedulerLagThrottleMs || 40)
-            || Number(Database.pending() || 0) > 0 || Database.checkpointSnapshot()?.inFlight
-            || !cold.ready || !cold.snapshotsLoaded || Number(cold.queue?.depth || 0) > 0
-            || cold.queue?.flushing) return BUSY_HELP;
+        if (this.partyFormationRunning || this.resolving || this.membershipWritesWait()) return BUSY_HELP;
         this.partyFormationRunning = true;
         try {
             return await Help.processOne({ commit: commitPartyMembership, create: createAndCommitBackgroundParty, release: releaseForClanHelp }, timestamp);
         } finally { this.formationEnded(); }
+    },
+
+    // Main is busy with writes a membership write would queue behind or stall: event-loop
+    // lag, the DB queue or a checkpoint in flight, the cold worker not ready or its commit
+    // queue draining. No event ends it: the caller's group is retried (PartyAssemblyEvents.retryMs).
+    membershipWritesWait() {
+        const cold = ColdSimulationCoordinator.snapshot();
+        return Number(Metrics.currentEventLoopLag()) >= Number(Config.schedulerLagThrottleMs || 40)
+            || Number(Database.pending() || 0) > 0 || !!Database.checkpointSnapshot()?.inFlight
+            || !cold.ready || !cold.snapshotsLoaded || Number(cold.queue?.depth || 0) > 0
+            || !!cold.queue?.flushing;
     },
 
     formBackgroundParties(candidates = null, { moved = null } = {}) {
@@ -1945,8 +1952,10 @@ const PopulationService = {
             return Promise.resolve([]);
         }
 
+        // A player online shares main with the pass: it waits out main's writes and keeps
+        // the small player budget (partyFormationBudgetMs), one party a pass.
         const formationBudgetMs = this.partyFormationBudgetMs(activity);
-        if (formationBudgetMs <= 0) {
+        if (formationBudgetMs <= 0 || activity.protected && this.membershipWritesWait()) {
             this.partyFormationPending = true;
             Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
             return Promise.resolve([]);
@@ -1957,10 +1966,12 @@ const PopulationService = {
         const startedAt = Date.now();
         const deadlineAt = startedAt + formationBudgetMs;
         let budgetStopRecorded = false;
+        // A pass its budget stopped left work undone: its group is retried (partyFormationPending).
         const budgetReached = () => {
             if (Date.now() < deadlineAt) return false;
             if (!budgetStopRecorded) {
                 budgetStopRecorded = true;
+                this.partyFormationPending = true;
                 Config.developerDiagnostics && Metrics.recordPartyFormationBudgetStop();
             }
             return true;
