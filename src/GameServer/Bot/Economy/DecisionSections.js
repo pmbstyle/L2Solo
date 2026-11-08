@@ -345,24 +345,28 @@ function ownMove(state, where) {
     const travel = state.stats?.travel;
     return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);
 }
-// The town trip or visit the held leaf ordered: a market trip (GoalExecutor's, arriving as
-// arrived_town) to the town the leaf's step names, or the visit it opened there, that no
-// other errand owns (a bag cleanup, a party's market break) and the world did not force.
-// One rule for "did the leaf order this trip": the round's check (occupationPlanned), the
-// arrival it raises (Situations.detect: arrived_town:own) and the card a visit serves
-// (ColdEconomyDecision.refusal). A crafting station, the warehouse craft return, Mammon or a
-// meeting is no market trip.
+// A far bot's town trip or visit the held leaf ordered (leafTrip): a market trip
+// (GoalExecutor's, arriving as arrived_town) or the visit it opened, forced when another
+// errand owns it (a bag cleanup, a party's market break) or the world forced it (a caused
+// trip, FORCED_TRIPS). Read by the round's check (occupationPlanned), the far arrival
+// (Situations.detect: arrived_town:own) and the card a visit serves (ColdEconomyDecision.refusal).
+// A crafting station, the warehouse craft return, Mammon or a meeting is no market trip.
 function leafVisit(state, leaf) {
-    if (leaf?.town == null || leaf.activity === 'hunting') return false;
     const stats = state.stats || {};
-    if (stats.forcedMarketCleanup || stats.partyMarketReturn) return false;
+    const errand = !!(stats.forcedMarketCleanup || stats.partyMarketReturn);
     if (state.activity === 'traveling') {
         const travel = stats.travel;
-        return !!travel && travel.arrivalEvent === 'arrived_town' && !travel.cause && !FORCED_TRIPS.has(travel.reason)
-            && String(travel.townName) === String(leaf.town);
+        return travel?.arrivalEvent === 'arrived_town'
+            && leafTrip(leaf, travel.townName, errand || !!travel.cause || FORCED_TRIPS.has(travel.reason));
     }
     return state.activity === 'shopping' && !!stats.marketReturn && !!stats.townVisit
-        && String(state.currentRegion) === String(leaf.town);
+        && leafTrip(leaf, state.currentRegion, errand);
+}
+// One rule for "did the held leaf order this town trip", far (leafVisit) and near (a body's
+// arrival, ShoppingState.arrive): a trip to the town the leaf's step names that no other
+// errand owns and the world did not force (forced). A hunting leaf orders no town trip.
+function leafTrip(leaf, town, forced) {
+    return leaf?.town != null && leaf.activity !== 'hunting' && !forced && String(town) === String(leaf.town);
 }
 function ownSpot(spotId, leaf) {
     return spotId != null && String(spotId) === String(leaf.spotId);
@@ -381,4 +385,4 @@ function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
 module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
-    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, decisionRefusal };
+    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, leafTrip, hash, decisionRefusal };

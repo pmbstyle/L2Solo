@@ -151,7 +151,8 @@ function interruptEscape(session, bot) {
     if (!session.townEscape) return false;
     session.townEscape = undefined;
     session.meetingTravel = undefined;
-    session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now() };
+    session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now(),
+        forced: session.townTripForced === true };
     session.plan = 'hunting';
     bot.state.setCasts(false);
     restoreSupplyHot(session, bot, 'supply_errand_interrupted');
@@ -217,10 +218,13 @@ function karmaTown() {
     return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
 }
 
+// options.forced: a trip the held leaf did not order (a bag cleanup, a flight from unsafe
+// ground, a player's ask), kept through a deferral; its arrival wakes the build (ShoppingState.arrive).
 function request(session, bot, BotAI, reason, options = {}) {
     if (session.partyCompanion === true && session.followPlayerSession && options.allowCompanion !== true) return 'companion';
     const pending = session.pendingTownTrip || {};
-    session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
+    const forced = options.forced === true || pending.forced === true;
+    session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now(), forced };
     if (Number(session.townTravelRetryAt || 0) > Date.now()) return 'deferred';
     if (inCombat(session, bot)) return 'deferred';
     // A physical teleport already submitted must settle first. Otherwise a
@@ -251,6 +255,7 @@ function request(session, bot, BotAI, reason, options = {}) {
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
+    session.townTripForced = forced;
     session.shoppingRestock = undefined;
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
     if (options.announce !== false) {

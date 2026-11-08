@@ -77,6 +77,22 @@ let failed = true;
         trip.actor = bot; trip.heldEconomy = { network: { activity: { activity: 'shopping', town: 'Giran' } } };
         Shopping.tick(trip, bot, null, ai);
         assert.deepEqual(raised.splice(0), ['arrived_town:own'], 'the trip its held leaf ordered to this town is the leaf\'s own');
+        // A trip the leaf did not order (the bag's cleanup, a flight from unsafe ground, a
+        // player's ask) to that same town wakes the build, as the far rule (Sections.leafVisit)
+        // does, also when a fight first deferred it.
+        const Travel = invoke('GameServer/Bot/AI/BotTownTravel');
+        const walker = { ...bot, state: { fetchHits: () => false, fetchCasts: () => false }, moveTo() {}, fetchKarma: () => 0 };
+        const giran = { getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3400 }) };
+        const cleanup = { actor: walker, plan: 'hunting', shoppingDoneAnnounced: true, heldEconomy: trip.heldEconomy, currentTargetId: 7 };
+        assert.equal(Travel.request(cleanup, walker, giran, 'Inventory full.', { forced: true, announce: false }), 'deferred');
+        cleanup.currentTargetId = undefined;
+        assert.equal(Travel.request(cleanup, walker, giran, cleanup.pendingTownTrip.reason, { announce: false }), 'walk');
+        Shopping.tick(cleanup, walker, null, ai);
+        assert.deepEqual(raised.splice(0), ['arrived_town'], 'a forced trip to the leaf\'s town is not the leaf\'s own');
+        const ordered = { ...cleanup, townArrival: undefined, shopTimer: undefined, pendingTownTrip: undefined };
+        Travel.request(ordered, walker, giran, 'Heading to town for my next planned purchase.', { announce: false });
+        Shopping.tick(ordered, walker, null, ai);
+        assert.deepEqual(raised.splice(0), ['arrived_town:own'], 'the leaf\'s own trip after it is again its own');
         console.log('Hot restock: refusal, delayed retry, success and bounded deferral; one town arrival a visit passed');
     } finally { saved.reverse().forEach(restore => restore()); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
