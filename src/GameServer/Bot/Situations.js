@@ -180,7 +180,10 @@ const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // (situations.md §10, §14).
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
-// which names the spot a body walks to), goal_done:visit / goal_failed:visit (a visit
+// which names the spot a body walks to), spot_unreachable (the spot a body could not
+// walk to is its hunting leaf's, which the build chose: a material hunt's source spot
+// as well as the earning spot; the earning answer alone would retire the mark and send
+// the body back to the same leaf spot), goal_done:visit / goal_failed:visit (a visit
 // whose held plan has no stop left: the next leaf). A death wakes
 // the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
@@ -215,7 +218,7 @@ const DECISIONS = Object.freeze({
     build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
-        'clan_changed', 'spot_empty', 'player_command', 'offer_posted']),
+        'clan_changed', 'spot_empty', 'player_command', 'spot_unreachable', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
     own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
@@ -325,6 +328,9 @@ function took(stats, bits, caller, subject = 0, was = null) {
 function delta(name, payload = null, where = OPEN, stats = null) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
+    // A spot already marked under the held answer is no news: the decisions its first
+    // mark woke answer it (a body that fails the same walk again while it waits).
+    if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
     // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
@@ -346,6 +352,11 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 const GearMarks = require('./AI/GearMarks');
+function marked(stats, name, payload) {
+    if (!stats || payload?.spotId == null || !MARKS.has(name)) return false;
+    Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    return Risk.isMarked(stats, payload.spotId);
+}
 function raisedFacts(stats, name, payload, dropped = null) {
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
@@ -510,18 +521,21 @@ function factNames(previousFact, current, planned = false) {
 // BotLifeState.prepareResolve): a rebuffable effect in force at the state's time
 // (BotBuffs.buffedAt). Its value is kept on the row (stats.buffed) and compared there,
 // not against the step's state before: a rest or a write between rounds would hide the
-// flip. Out of the field, dead or in a party the row holds none (null): a town visit, a
-// death and a party's buffs are no hunt's. A solo field step that finds the bot
-// unbuffed raises buffs_expired once when the row held it buffed (its last buff ended)
-// or held none (a new row, back from town, a death's restart, a party left): a hunter
-// who sees no buffs on him renews them at his next stop. next: the stats written;
+// flip. Dead or in a party the row holds none (null): a death and a party's buffs are no
+// hunt's. Out of the field (a town visit) the fact is not read and stands as it was: a
+// trip ends no buff, and a rebuff in town that answered none leaves an unbuffed hunter
+// unbuffed, no news on its way back. A solo field step that finds the bot unbuffed
+// raises buffs_expired once when the row held it buffed (its last buff ended, in the
+// field or on the trip) or held none (a new row, a death's restart, a party left): a
+// hunter who sees no buffs on him renews them at his next stop. next: the stats written;
 // field: the step's activity is a field one (FIELD_ACTIVITIES); returns the situation
 // name or null.
 function buffFact(next, effects, at, { field = true, dead = false, grouped = false } = {}) {
-    if (!field || dead || grouped) {
+    if (dead || grouped) {
         if (next.buffed != null) next.buffed = null;
         return null;
     }
+    if (!field) return null;
     const buffed = Number((Buffs ||= invoke('GameServer/Bot/AI/BotBuffs')).buffedAt(effects, at)), was = next.buffed;
     if (was !== buffed) next.buffed = buffed;
     return was !== 0 && !buffed ? 'buffs_expired' : null;
@@ -549,10 +563,13 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const builtAt = state => Number(state.stats?.wishSections?.at) || 0;
     const represented = builtAt(after) > builtAt(before) ? after.stats.wishSections : null;
     const previous = represented || before.stats?.wishSections || {};
+    // The earning spot taken alone after the build kept its own situations' facts (withOwnFacts).
+    const earning = after.stats?.earning ?? before.stats?.earning;
+    const own = earning?.facts && Number(earning.at) > (Number(previous.at) || 0) ? earning.facts : null;
     let original;
     // Only a fact the baseline lacks reads the state before; outleveled is read against
     // the build's own answer only: a baseline without it reads 0 (its flip once).
-    const previousFact = key => Object.hasOwn(previous, key) ? previous[key]
+    const previousFact = key => own && Object.hasOwn(own, key) ? own[key] : Object.hasOwn(previous, key) ? previous[key]
         : key === 'outleveled' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which
     // reads them. A party left is raised at the leave (party_left), not read here.
@@ -574,6 +591,19 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
         names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
+}
+// The facts whose situations wake the earning spot alone for a solo bot (died, spot_outleveled,
+// moved_by_world, spot_dangerous, recovered, karma_changed): the earning answer taken alone
+// (EconomyContext.decideEarning, ColdKarmaPolicy's) keeps them as they stand, with its spot's
+// outleveled, as its baseline beside the build's (detect reads them while the answer is the
+// newer): else each fact the build's baseline lacks raises again after every answer until a
+// build. ~70 B on the answer. earning: the new answer; returned with its facts.
+const EARNING_FACTS = Object.freeze(['dead', 'outleveled', 'occupation', 'riskDeaths', 'recovery', 'karma']);
+function withOwnFacts(state, earning) {
+    const now = readers().semanticFacts({ ...state, stats: { ...state.stats, earning } });
+    const facts = {};
+    for (const key of EARNING_FACTS) facts[key] = now[key];
+    return { ...earning, facts };
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
 // now: the step's view of after (stateView); was: a body's previous post's facts, else
@@ -672,5 +702,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears,
-    DECISIONS, ALL, FIRST, raise, delta, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, FIRST, raise, delta, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

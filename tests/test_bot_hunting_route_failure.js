@@ -75,6 +75,13 @@ try {
     const failedStats = failed.session.decisionStats;
     assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'walk_route_unavailable', answer: null }]);
     assert(Situations.woken(failedStats, 'earning_spot'), 'spot_unreachable wakes the earning spot');
+    // and the build: the spot walked to is the hunting leaf's (a material hunt's source spot too), which the build chose.
+    assert(Situations.woken(failedStats, 'build'), 'spot_unreachable wakes the build that named the spot');
+    // The same spot failed again before the answer is no news: the decisions its mark woke answer it.
+    const seq = failedStats.situationSeq;
+    const again = { spotId: spot.id, reason: failedStats.spotMarks[0].reason };
+    Situations.raise(failedStats, 'spot_unreachable', again, Situations.OPEN);
+    assert.strictEqual(failedStats.situationSeq, seq, 'a spot already marked under the held answer raises nothing new');
     assert(scans > 0, 'local target search must resume in the same tick after a failed retry');
     const status = failed.session.botStatus;
     assert.strictEqual(Decision.suggest(status, failed.session).reason, 'planned_route_unavailable');
@@ -83,7 +90,7 @@ try {
     assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings keep the mark');
     Situations.raise(failedStats, 'grade_changed', null, Situations.OPEN);
     assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake does not drop the mark');
-    // The earning decision taken (its answer received) clears it.
+    // The build taken (its answer received) clears it; a new card naming the spot again sends the body there.
     failedStats.earning = { spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 5 };
     failedStats.spotMarks = null;
     assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'and the held spot is walked to again');

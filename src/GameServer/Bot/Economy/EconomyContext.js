@@ -746,7 +746,7 @@ function decideEarning(state, deps = {}) {
     deps = resolved(state, deps, false);
     const { price, timestamp } = personal(state, deps);
     const found = IncomeRoute.search(state, { ...deps, timestamp, required: true, price });
-    const earning = IncomeRoute.answerOf(found.route, timestamp, found.error, state);
+    const earning = Situations.withOwnFacts(state, IncomeRoute.answerOf(found.route, timestamp, found.error, state));
     return { earning, spotMarks: null, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
         subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
 }

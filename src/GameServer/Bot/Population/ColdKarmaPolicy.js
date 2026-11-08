@@ -77,7 +77,7 @@ function washSpot(state, spots, timestamp = Date.now(), accept = null) {
 function decideEarning(state, stats, spots, timestamp) {
     const IncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute'); // lazy: cycle its search reads this module
     const found = IncomeRoute.search(state, { spots, timestamp, required: true });
-    const earning = IncomeRoute.answerOf(found.route, timestamp, found.error);
+    const earning = Situations.withOwnFacts(state, IncomeRoute.answerOf(found.route, timestamp, found.error));
     stats.woken = Situations.decided(stats, 'earning_spot', { caller: 'karma_step', subject: state.characterId,
         answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' });
     stats.earning = earning; stats.spotMarks = null;

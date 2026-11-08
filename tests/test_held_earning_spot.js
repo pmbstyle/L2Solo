@@ -143,6 +143,17 @@ function onWorker() {
         assert.equal(Situations.woken(after.stats, 'earning_spot'), false, 'its bit cleared');
         assert.equal(Situations.woken(after.stats, 'build'), false, 'and no build woken');
         assert.equal(count(() => Economy.decideEarning(after, deps(8))).result, null, 'nothing left to take');
+        // A fact of its own situations moved since the build (a death on its spot: spot_dangerous) is answered by
+        // the decision taken alone: the next step does not raise it again until a build.
+        const died = { ...turned, stats: { ...turned.stats, spotRisk: { ...turned.stats.spotRisk, windowDeaths: 1 } } };
+        assert(Situations.detect(turned, died).includes('spot_dangerous'), 'fixture: the death is the earning spot\'s situation');
+        const woken = raised(died, 'spot_dangerous');
+        assert.equal(Situations.woken(woken.stats, 'build'), false, 'fixture: the build sleeps');
+        const answered = { ...woken, stats: { ...woken.stats, ...Economy.decideEarning(woken, deps(9)) } };
+        assert.equal(Situations.detect(answered, answered).includes('spot_dangerous'), false,
+            'the answer taken alone keeps its facts: the death is not raised again');
+        const again = { ...answered, stats: { ...answered.stats, spotRisk: { ...answered.stats.spotRisk, windowDeaths: 2 } } };
+        assert(Situations.detect(answered, again).includes('spot_dangerous'), 'a new death after it still is');
     }
     // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
     // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line

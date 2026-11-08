@@ -596,6 +596,10 @@ const occupationPlanner = new ColdOccupationPlanner({
             // in preparation only; the native writer owns physical funding.
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
             input.stock = input.economy.stock('shots');
+            // A near build taken is also the card the bot carries back far (ColdEconomyDecision.advisory:
+            // its restart prefix rides the packet): its record holds it unserved while it is near, and its
+            // first far step serves it while its echo holds, as a far build's (hand-over keeps the answer).
+            if (decide) input.nearAdvice = ColdEconomyDecision.advisory(input.economy, input.state);
             yield 'candidate';
             if (input.mode === 'near') { input.workshopTaken = workshop.taken; return null; }
         }
@@ -723,13 +727,14 @@ const occupationPlanner = new ColdOccupationPlanner({
             for (const held of occupationPlanner.entriesOf(id)) if (held.input.state === owner.state) occupationPlanner.valuesOf(held);
             Object.assign(owner.state.stats ||= {}, workshop.statsPacket);
             stateDigests.delete(owner.state);
+            if (workshop.advice) rememberWishAdvisory(owner, workshop.advice, owner.state);
             owner.nearRoute = { key: input.routeKey, rows: workshop.routeRows };
             send('ready', { phase: 'economy_decided', characterId: id, economyDecision: workshop.decision,
                 near: { statsPacket: workshop.statsPacket, personalCraft: workshop.personalCraft,
                     nearSeq: Number(input.state.nearSeq || 0), raiseSeq: Number(input.raiseSeq || 0),
                     ...(workshop.shots ? { shots: workshop.shots } : {}), ...(workshop.market ? { market: workshop.market } : {}) } });
             // Sent once: the slot keeps the workshop.
-            workshop.decision = null; workshop.statsPacket = null; workshop.personalCraft = null; workshop.routeRows = null; workshop.shots = null; workshop.market = null;
+            workshop.decision = null; workshop.statsPacket = null; workshop.personalCraft = null; workshop.routeRows = null; workshop.shots = null; workshop.market = null; workshop.advice = null;
         }
     }
 });
@@ -793,7 +798,7 @@ function* nearDecision(input, iterator) {
     // The workshop's keys under the build's packet: a build taken after it keeps its bits.
     const statsPacket = { ...input.workshopTaken, ...fields.statsPacket, ...input.nearMind };
     const lines = ownLines({ ...input.state, stats: { ...input.state.stats, ...statsPacket } }, input.timestamp, input.economy, 'economy_near');
-    return { decision: ColdEconomyDecision.capture(input.economy, input.state),
+    return { decision: input.nearAdvice?.card || ColdEconomyDecision.capture(input.economy, input.state), advice: input.nearAdvice || null,
         ...fields, statsPacket: lines ? { ...statsPacket, woken: lines.woken } : statsPacket, routeRows: input.routeRows,
         ...(lines?.market ? { market: lines.market } : {}) };
 }

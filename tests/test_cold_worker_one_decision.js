@@ -122,8 +122,20 @@ module.exports.heldProbe = async (id) => {
         kernel.states.set(id, { ...kernel.states.get(id), state: far.state });
         const handoff = ask();
         const later = await step(timestamp + 3000);
+        // A build it takes while near (a situation on its post) is the card it carries back far.
+        const posted = kernel.states.get(id), builtAt = state => state.stats?.wishSections?.at, farBuilt = builtAt(posted.state);
+        const nearRow = { ...posted.state, phase: 'hot', updatedAt: Number(posted.state.updatedAt || 0) + 1, stats: { ...posted.state.stats },
+            raise: { seq: 1, names: [{ name: 'goal_failed', payload: null, seq: 1 }] } };
+        kernel.states.set(id, { ...posted, state: nearRow });
+        for (const deadline = Date.now() + 30000; builtAt(kernel.states.get(id).state) === farBuilt && Date.now() < deadline;)
+            await new Promise(resolve => setTimeout(resolve, 10));
+        const near = kernel.states.get(id).state, nearBuilt = builtAt(near) !== farBuilt;
+        kernel.states.set(id, { ...kernel.states.get(id), state: { ...near, phase: 'cold', raise: undefined,
+            updatedAt: Number(near.updatedAt || 0) + 1, stats: { ...near.stats } } });
+        const nearHandoff = ask();
         const unwoken = Object.keys(invoke('GameServer/Bot/Situations').counts().unwoken).filter(key => key.startsWith('build:'));
-        return { same, wishAsks, held, handoff, later, unwoken };
+        const nearLater = await step(timestamp + 4000);
+        return { same, wishAsks, held, handoff, later, unwoken, nearBuilt, nearHandoff, nearLater };
     } finally { Economy.forState = original; }
 };
 // A step whose commit has not landed: main sends the row of the decision the step's build
@@ -339,6 +351,9 @@ parentPort.on('message', message => {
         assert.equal(held.handoff, '', 'a near body back far serves its far card: no build for the handoff');
         assert.equal(held.later, 0, 'with no situation the next decision point builds nothing');
         assert.deepEqual(held.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
+        assert.equal(held.nearBuilt, true, 'fixture: the body builds on a situation while near');
+        assert.equal(held.nearHandoff, '', 'back far it serves the card of its near build');
+        assert.equal(held.nearLater, 0, 'with no situation its first far step builds nothing');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'pending'), pendingProbe: id });
         const pendingResponse = await wait(message => message.probeId === 'pending'); if (pendingResponse.error) throw Error(pendingResponse.error);
         const pending = pendingResponse.value;
