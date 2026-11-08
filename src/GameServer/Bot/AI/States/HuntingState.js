@@ -1040,7 +1040,7 @@ module.exports = {
                     DecisionEvents.raiseDecision(session, 'spot_dangerous',
                         { payload: { spotId: String(currentGround.id), reason: groundSafety.reason } });
                 }
-                const heldId = DecisionEvents.heldSpotId(session, DecisionEvents.held(session)?.network.activity);
+                const heldId = DecisionEvents.heldSpotId(session);
                 const held = heldId && heldId !== String(currentGround.id) ? SpotService.findById(heldId) : null;
                 const destination = held && LevelingRoutes.groundVerdict(held, { level: bot.fetchLevel() },
                     { mode: 'solo', equipment: equippedItems(bot) }).allowed ? held : null;

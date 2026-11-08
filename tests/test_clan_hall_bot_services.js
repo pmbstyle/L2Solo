@@ -64,8 +64,10 @@ Navigation.move = () => {
     return { status: 'moving' };
 };
 Runtime.applyRows([hallRow]);
-// The held earning answer the hall's departure reads (main never chooses a spot): the field it hunts.
+// The held earning answer, and the spot the worker's route publishes on it, which the hall's
+// departure reads (main never chooses a spot): the field it hunts.
 const heldReturn = { spotId: 'hall-return-test', shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at };
+const heldHunt = { spotId: 'hall-return-test', plan: null, earning: 'hall-return-test' };
 function stateFor(id, classId = 88) {
     return {
         characterId: id,
@@ -89,7 +91,8 @@ function stateFor(id, classId = 88) {
             classProgressionLevel: 60,
             classProgressionClassId: classId,
             coldCombat: { effects: [], skills: [], skillSource: 'hot' },
-            earning: heldReturn
+            earning: heldReturn,
+            huntSpot: heldHunt
         },
         simulation: { revision: 0 }
     };
@@ -171,7 +174,7 @@ async function main() {
         const session = {
             actor: physical,
             plan: 'hunting',
-            decisionStats: { earning: heldReturn },
+            decisionStats: { earning: heldReturn, huntSpot: heldHunt },
             dataSendToMe() {},
             dataSendToOthers() {},
             dataSendToMeAndOthers(packet, caster) { broadcasts.push({ packet, caster }); }
@@ -338,31 +341,24 @@ async function main() {
             spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1)), null, 'never to one it died at');
         assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1)), null,
             'with no held answer no teleport: main never chooses a spot');
-        // The far bot's other held decisions name the spot before its earning answer,
-        // in the worker's route order: the card's hunting leaf, then the gear plan's source
-        // the route takes (the worker's verdict held with the plan, routedSpotId).
+        // The far bot's departure is the spot the worker's route publishes for it (huntSpot),
+        // served while what it was chosen on stands: a gear plan's source the route takes, the
+        // card's hunting leaf, as published.
         {
             const leafSpot = { ...returnSpot, id: 'hall-leaf-test' }, sourceSpot = { ...returnSpot, id: 'hall-source-test' };
             const byId = { [returnSpot.id]: returnSpot, [leafSpot.id]: leafSpot, [sourceSpot.id]: sourceSpot };
             Spots.findById = id => byId[id] || originalFindById.call(Spots, id);
-            const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: sourceSpot.id }, routedSpotId: sourceSpot.id };
-            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan } };
+            const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: sourceSpot.id } };
+            const toSource = { spotId: sourceSpot.id, plan: sourceSpot.id, earning: returnSpot.id };
+            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan, huntSpot: toSource } };
             assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, sourceSpot.id,
-                'a collector leaves the hall for its gear plan\'s source');
-            const unrouted = { ...plan }; delete unrouted.routedSpotId;
-            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, equipmentPlan: unrouted } }, Runtime.owned(1))?.spot.id,
-                returnSpot.id, 'a source the route refuses is no departure: the held earning answer');
-            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, equipmentPlan: { ...plan, next: { spotId: leafSpot.id } } } },
-                Runtime.owned(1))?.spot.id, returnSpot.id, 'a verdict on another source is none');
-            assert.equal(Departure.plan({ ...collecting, stats: { ...collecting.stats, partyRequest: { status: 'open', priority: 'required' } } },
-                Runtime.owned(1))?.spot.id, returnSpot.id, 'a bot waiting for the party its plan needs is not sent to the source alone');
-            const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
-            const activity = decisions.activity;
-            try {
-                decisions.activity = () => ({ activity: 'hunting', spotId: leafSpot.id });
-                assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, leafSpot.id,
-                    'the held card\'s hunting leaf names the hall\'s departure spot');
-            } finally { decisions.activity = activity; }
+                'a collector leaves the hall for the source its route takes');
+            assert.equal(Departure.plan({ ...collecting, stats: { ...collecting.stats, equipmentPlan: { ...plan, next: { spotId: leafSpot.id } } } },
+                Runtime.owned(1)), null, 'a spot chosen on another source is not served: no teleport');
+            assert.equal(Departure.plan({ ...collecting, party: { partyId: 'bgp-hall' } }, Runtime.owned(1)), null,
+                'a party member\'s hunt is its party\'s');
+            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: { ...heldHunt, spotId: leafSpot.id } } },
+                Runtime.owned(1))?.spot.id, leafSpot.id, 'the published leaf spot names the hall\'s departure spot');
             Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
         }
         // Karma closes the hall's teleport: any karma above 0 blocks it; none,

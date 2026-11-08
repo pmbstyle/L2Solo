@@ -160,7 +160,7 @@ const BotDecisionService = {
                 // forever to ground that admits none of its fights: the same
                 // look as a hunt's (groundLook: spot_empty once a stay, or it
                 // gets ready), and once the ground is empty for it, it walks to
-                // its held earning answer when that names another spot.
+                // the spot it goes to when sent to hunt when that is another spot.
                 if (session.deferredOccupation === occupationKey(leaf) && session.huntingTargetScan) {
                     const ground = SpotService.findCurrentSpot(physicalLocation(status, session));
                     const look = groundLook(session, ground);

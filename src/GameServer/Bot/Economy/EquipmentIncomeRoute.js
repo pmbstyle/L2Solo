@@ -291,4 +291,4 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, isCommanded, answerSpotId, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };
+    answerOf, commanded, isCommanded, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };

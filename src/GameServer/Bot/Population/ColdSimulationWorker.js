@@ -795,7 +795,8 @@ function* nearDecision(input, iterator) {
     yield* iterator;
     const fields = DecisionEvents.nearFields(input.economy, input.state);
     // The workshop's keys under the build's packet: a build taken after it keeps its bits.
-    const statsPacket = { ...input.workshopTaken, ...fields.statsPacket, ...input.nearMind };
+    const statsPacket = { ...input.workshopTaken, ...fields.statsPacket, ...input.nearMind,
+        ...huntSpotKeys(input.state, input.economy.network?.activity, input.timestamp) };
     const lines = ownLines({ ...input.state, stats: { ...input.state.stats, ...statsPacket } }, input.timestamp, input.economy, 'economy_near');
     return { decision: input.nearAdvice?.card || ColdEconomyDecision.capture(input.economy, input.state), advice: input.nearAdvice || null,
         ...fields, statsPacket: lines ? { ...statsPacket, woken: lines.woken } : statsPacket, routeRows: input.routeRows,
@@ -1343,6 +1344,13 @@ function kernelHunters(spot, state) {
 function routeSearch(state, timestamp) {
     return { owner: kernel.states.get(Number(state.characterId)), timestamp,
         hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]), spotHunters: kernelHunters };
+}
+// The spot the bot goes to when sent to hunt (BotRoute.huntSpotHeld on its kernel record):
+// the mind key a far step's or a near decision's packet carries when it changed. leaf: the
+// decision's hunting leaf.
+function huntSpotKeys(state, leaf, timestamp) {
+    return BotRoute.huntSpotHeld(kernel.states.get(Number(state.characterId)), state, leaf,
+        { spots: planningSpots, timestamp, spotHunters: kernelHunters });
 }
 function dropRoute(characterId, why) {
     BotRoute.drop(kernel.states.get(Number(characterId)), why);
@@ -2001,7 +2009,8 @@ function startKernel(config = {}) {
                 // projection after the round reads it (never posted).
                 // The workshop taken on this step rides the step's packet, as in a build: a
                 // step main executes (a town visit) reads the packet, not this state.
-                return { ...boardWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...rebuffKeys, ...earningKeys }, economy: refreshed.economy,
+                return { ...boardWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...rebuffKeys, ...earningKeys,
+                    ...huntSpotKeys(state, leaf, timestamp) }, economy: refreshed.economy,
                     ...(occupation?.economyPlan ? { economyPlan: occupation.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
@@ -2055,6 +2064,9 @@ function startKernel(config = {}) {
             // BotRoute.choose): the trip sets its activity and its spot on arrival; with no trip
             // it stays as it stands (a rest goes on, a clan wait holds).
             const plannedState = { ...state, stats: plannedStats };
+            // The spot it goes to when sent to hunt, chosen on the planned state.
+            const huntKeys = huntSpotKeys(plannedState, economy.network?.activity, timestamp);
+            if (huntKeys) statsPacket = { ...statsPacket, ...huntKeys };
             const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
             // A town visit plans its listings, bids and craft (showcase); a build taken in the
             // field posts the bids of the wants it registers once and starts its leaf (action);

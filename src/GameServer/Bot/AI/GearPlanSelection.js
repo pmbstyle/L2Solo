@@ -229,12 +229,13 @@ function selectAcquisitionPlan(state, previousPlan, options = {}) {
 }
 
 // The route's verdict on an active plan's source, judged with the plan and held with it
-// until its next review: routedSpotId names the source spot when the solo route takes it
-// (the route's own source test, GearAcquisitionPlanner.isPlanSourceViableForState over the
-// catalogue: an eligible source, the voluntary hunt band, the solo source reader), absent
-// when it refuses it. Main reads it where it sends a bot to hunt without searching
-// (DecisionEvents.heldSpotOf), never judges it again; room and the bot's exclusions are
-// met at the trip. A verdict names its spot: one carried onto another source is none.
+// until its next review: routedSpotId names the source spot when the solo route's source
+// test takes it (GearAcquisitionPlanner.isPlanSourceViableForState over the catalogue: an
+// eligible source, the voluntary hunt band, the solo source reader), absent when it
+// refuses it. It is the outgrown fact's input (DecisionSections.routedSourceOf, how far
+// the bot has outgrown the source: source_stalled), not where the bot goes: that is the
+// route's own choice (BotRoute.huntSpot). A verdict names its spot: one carried onto
+// another source is none.
 function withRoutedSource(state, plan, spots, timestamp) {
     const spotId = plan?.status === 'active' && plan.next?.spotId != null
         && GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots, timestamp }) ? String(plan.next.spotId) : undefined;

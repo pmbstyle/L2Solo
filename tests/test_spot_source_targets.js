@@ -79,9 +79,8 @@ try {
     const retargeted = Planner.retargetPlanSource(hunting, plan, nativeSource);
     assert.equal(retargeted.next.npcId, 1099, 'native plan retargeting updates the combat target with the spot');
     assert.equal(Planner.isPlanSourceViableForState(hunting, retargeted, { spots: routeSpots, timestamp }), true);
-    // The plan's review publishes the route's verdict with it (routedSpotId), the one main
-    // reads where it sends a bot to hunt without searching: none for the refused source,
-    // the spot of the one the route takes.
+    // The plan's review holds the route's verdict on its source with it (routedSpotId, the
+    // outgrown fact's input): none for the refused source, the spot of the one it takes.
     const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
     const refused = Selection.withRoutedSource(hunting, { ...plan, routedSpotId: unsafe.id }, routeSpots, timestamp);
     assert.equal(refused.routedSpotId, undefined, 'a source the route refuses is published as none');
@@ -111,14 +110,52 @@ try {
         const Goals = invoke('GameServer/Bot/Goals/GoalExecutor');
         assert.equal(Goals.finishMarketVisit(shopping, timestamp).stats.travel.spotId,
             mixed.id, 'the return goes to the spot it hunted; the worker\'s trip start retargets it (above)');
-        // A visit's end reads the route's verdict on the plan's source, never the bare
-        // source: a refused one sends the bot back where it hunted, the routed one to it.
+        // A visit's end reads the spot the worker's route publishes (huntSpot), never the
+        // bare source: with none published it goes back where it hunted.
         const fromHome = { ...shopping, stats: { ...shopping.stats,
             marketReturn: { spotId: home.id, loc: home.center, regionName: home.name } } };
         assert.equal(Goals.finishMarketVisit(fromHome, timestamp).stats.travel.spotId, home.id,
-            'a source the route refuses is no destination: the spot it hunted');
-        assert.equal(Goals.finishMarketVisit({ ...fromHome, stats: { ...fromHome.stats, equipmentPlan: routed } }, timestamp)
-            .stats.travel.spotId, alternative.id, 'the source the route takes is the return\'s destination');
+            'none published: the spot it hunted');
+        const Route = invoke('GameServer/Bot/Population/BotRoute');
+        // The mind key as the worker writes it: the spot and what it was chosen on.
+        const published = (row, spotId) => ({ ...row, stats: { ...row.stats, huntSpot: { spotId,
+            plan: String(row.stats.equipmentPlan.next.spotId), earning: null } } });
+        const routedRow = { ...fromHome, stats: { ...fromHome.stats, equipmentPlan: routed } };
+        assert.equal(Goals.finishMarketVisit(published(routedRow, alternative.id), timestamp).stats.travel.spotId,
+            alternative.id, 'the published source is the return\'s destination');
+        assert.equal(Goals.finishMarketVisit({ ...published(routedRow, alternative.id), stats: {
+            ...published(routedRow, alternative.id).stats, equipmentPlan: plan } }, timestamp).stats.travel.spotId, home.id,
+        'a spot chosen on another plan source is not served: the spot it hunted');
+        // One chooser: with two sources of one species the route takes the first in its
+        // order (BotRoute.trip), not the plan's own source although that one is viable; a
+        // visit's end with no saved return sends the bot where the trip would.
+        const species = { selfId: 1099, level: 25, count: 5, pulls: [[1, 1]] };
+        const first = field('source-first', [species]), second = field('source-second', [species]);
+        const twoSpots = [unsafe, mixed, first, second, home];
+        Spots.cache = twoSpots; Service.spots = twoSpots;
+        const onSecond = { ...plan, next: { ...plan.next, spotId: second.id, npcId: 1099 } };
+        const collector = { ...hunting, spotId: home.id, stats: { ...hunting.stats,
+            equipmentPlan: Selection.withRoutedSource(hunting, onSecond, twoSpots, timestamp) } };
+        assert.equal(collector.stats.equipmentPlan.routedSpotId, second.id, 'fixture: the plan\'s own source is viable');
+        const tripSpot = Route.trip({}, collector, null, { spots: twoSpots, timestamp })?.spotId;
+        assert.equal(tripSpot, first.id, 'fixture: the trip takes the first source');
+        const lost = { ...collector, activity: 'shopping', currentRegion: 'Gludin', loc: shopping.loc,
+            stats: { ...collector.stats, townVisit: { completed: true }, marketReturn: null } };
+        assert.equal(Goals.finishMarketVisit(published(lost, tripSpot), timestamp, { recoverMissingReturn: true })
+            .stats.travel.spotId, first.id, 'the visit\'s end goes where the trip goes');
+        assert.equal(Route.huntSpot(collector, null, { spots: twoSpots, timestamp }), tripSpot,
+            'the published spot is the trip\'s own choice');
+        assert.equal(Route.huntSpot({ ...collector, party: { partyId: 'bgp-source' } }, null, { spots: twoSpots, timestamp }), null,
+            'a party member\'s hunt is its party\'s');
+        // The worker's step publishes it in the mind with its basis, writes it again on a
+        // row that lacks it (a refused commit), and nothing on a row that holds it.
+        const record = {}, options = { spots: twoSpots, timestamp };
+        const keys = Route.huntSpotHeld(record, collector, null, options);
+        assert.deepEqual(keys, { huntSpot: { spotId: first.id, plan: second.id, earning: null } });
+        assert.equal(Route.huntSpotHeld(record, { ...collector, stats: { ...collector.stats, ...keys } }, null, options), null);
+        assert.deepEqual(Route.huntSpotHeld(record, collector, null, options), keys);
+        assert.equal(Goals.finishMarketVisit({ ...lost, stats: { ...lost.stats, ...keys } }, timestamp, { recoverMissingReturn: true })
+            .stats.travel.spotId, first.id, 'main serves what the worker published');
     } finally { Service.spots = savedService; Errands.pending = pending; }
 } finally { Spots.cache = original; }
 console.log('test_spot_source_targets: ok');

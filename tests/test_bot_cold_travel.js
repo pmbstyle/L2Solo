@@ -172,6 +172,8 @@ try {
             deaths: 3,
             fightsResolved: 8,
             earning: holding,
+            // The spot the worker's route publishes on that answer.
+            huntSpot: { spotId: availableSpot.id, plan: null, earning: availableSpot.id },
             spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 1, fightsAtEntry: 0 },
             marketReturn: {
                 spotId: legacyMineSpot.id,

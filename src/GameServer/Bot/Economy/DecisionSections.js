@@ -243,9 +243,10 @@ const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
 const lineAt = (lines, kind) => kind === 'shots' ? Math.floor(lines / 3) : lines % 3;
 // lazy: the market break reads the disposition rules, which read this module.
 let MarketBreak = null;
-// The spot of the gear plan's source while the route takes it for a solo bot: the plan is
-// active and its held route verdict (routedSpotId: GearPlanSelection.withRoutedSource)
-// names the plan's own source spot; a party member's hunt is its party's (null).
+// The spot of the gear plan's source while the route's verdict takes it for a solo bot:
+// the plan is active and its held verdict (routedSpotId: GearPlanSelection.withRoutedSource)
+// names the plan's own source spot; a party member's hunt is its party's (null). Read
+// by the outgrown fact (outgrownOf), never as where the bot goes (BotRoute.huntSpot).
 function routedSourceOf(state) {
     const plan = state.stats?.equipmentPlan;
     return plan?.status === 'active' && plan.routedSpotId != null && plan.routedSpotId === String(plan.next?.spotId)

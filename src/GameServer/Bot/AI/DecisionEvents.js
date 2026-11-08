@@ -376,43 +376,26 @@ function held(session) {
     view.statsPacket = statsFor(session);
     return session.heldEconomy = view;
 }
-// The spot a bot's held decisions name for its hunt, the one reader of every place
-// that sends a bot to hunt without searching (a town or hall visit's end, a body that
-// must leave its ground): its card's hunting leaf (leaf: the caller's read of it),
-// else its gear plan's source while it collects there and the route takes it (the
-// worker's verdict held with the plan, DecisionSections.routedSourceOf; a solo bot's
-// only: a party member's hunt is its party's, as the route's party run; not while it waits for a party the plan needs, PartyWaitFallback.waiting: the route
-// sends a waiter to its fallback; not in the leveling recovery the plan holds: a fresh
-// one is the worker's search's to judge), else its held earning answer
-// (EquipmentIncomeRoute.answerSpotId: a party member's hunt is its party's), in the
-// order the worker's route takes them (BotRoute.trip). A spot its exclusions rule out
-// (spot marks, death marks, death pressure at the spot it stands on: SpotRiskPolicy)
-// is skipped; null when none is left. Room is met at arrival by the worker's next trip.
+// The spot a bot goes to when it is sent to hunt without a search (a town or hall
+// visit's end, a body that must leave its ground): the worker's route choice published
+// in its mind (stats.huntSpot, BotRoute.huntSpotHeld), read, never judged here. Served
+// while what it was chosen on stands on the row (its gear plan's source and its earning
+// answer's spot, BotRoute.huntBasis) and the bot is solo (a party member's hunt is its
+// party's); a spot its exclusions rule out (spot marks, death marks, death pressure at
+// the spot it stands on: SpotRiskPolicy) is none. null: none served, the caller's
+// fallback runs; the worker's next step publishes it anew. Room is met at arrival.
 // state: a far row, or a body's view in the same fields (heldSpotId).
-function heldSpotOf(state = {}, leaf = null) {
-    const stats = state.stats || {};
-    const excluded = Risk.excludedSpotIdsForStates([state]);
-    const plan = stats.equipmentPlan;
-    const routed = Sections.routedSourceOf(state);
-    // lazy: GearAcquisitionPlanner and PartyWaitFallback load the economy modules that load this one.
-    const source = routed != null
-        && !invoke('GameServer/Bot/Population/PartyWaitFallback').waiting(state, plan, stats.partyRequest)
-        && !(plan.levelingRecovery && invoke('GameServer/Bot/AI/GearAcquisitionPlanner').levelingRecoveryFor(state, plan))
-        ? routed : null;
-    const earning = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerSpotId(state);
-    for (const id of [leaf?.activity === 'hunting' ? leaf.spotId : null, source, earning]) {
-        if (id != null && !excluded.has(String(id))) return String(id);
-    }
-    return null;
+function heldSpotOf(state = {}) {
+    const stats = state.stats || {}, held = stats.huntSpot;
+    if (held?.spotId == null || Sections.partyIdOf(state)) return null;
+    // lazy: BotRoute loads the spot modules that load this one.
+    const basis = invoke('GameServer/Bot/Population/BotRoute').huntBasis(stats);
+    if (held.plan !== basis.plan || held.earning !== basis.earning) return null;
+    return Risk.excludedSpotIdsForStates([state]).has(String(held.spotId)) ? null : String(held.spotId);
 }
-// The same for a far row on main: its held card's leaf as the coordinator holds it.
-// lazy: cycle the coordinator loads PopulationService, which loads this module.
-const farHeldSpot = state => heldSpotOf(state,
-    invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state) || null);
-// The same for a near body: its row with its own place, party, stats and level
-// (Economy.bodyPlace, the shape stateForActor gives it; a leveling recovery reads the level).
-const heldSpotId = (session, leaf = null) => heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session),
-    stats: statsFor(session), level: session.actor?.fetchLevel?.(), exp: session.actor?.fetchExp?.() }, leaf);
+// The same for a near body: its row with its own place and party (Economy.bodyPlace,
+// the shape stateForActor gives it) and its stats.
+const heldSpotId = session => heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session), stats: statsFor(session) });
 // A body that needs a spot (BotDecisionService, HuntingState) while its held answer
 // names none it may take asks again once per answer (Situations.spotAsk over the
 // session: spot_empty raised on 'ask'); 'none' when the answer to its ask names none
@@ -438,5 +421,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, farHeldSpot, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

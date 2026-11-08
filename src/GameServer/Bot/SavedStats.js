@@ -33,10 +33,11 @@ function compact(stats = {}) {
 // spot's held answer (EquipmentIncomeRoute.answerOf); spotMarks: the spots its situations ruled out until
 // the next held answer (SpotRiskPolicy.withSpotMark, written by Situations' raise); cleanupDue: the bag's
 // town trip a build decided, held until it starts (PartyMarketBreak.cleanupDecision); rebuff: the rebuff
-// decision's held answer (Bot/AI/Rebuff).
+// decision's held answer (Bot/AI/Rebuff); huntSpot: the spot the bot goes to when sent to hunt, the
+// route's choice with what it was chosen on ({ spotId, plan, earning }, BotRoute.huntSpotHeld).
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections',
     'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
-    'spotMarks', 'gearMarks', 'cleanupDue', 'rebuff']);
+    'spotMarks', 'gearMarks', 'cleanupDue', 'rebuff', 'huntSpot']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
 // Keys no owner keeps any more, dropped as an old row saves again: wishDirty (the build's

@@ -389,7 +389,9 @@ async function run() {
         assert.strictEqual(recovery.activity, 'resting', 'a missing return route must leave shopping and schedule a retry');
         assert.strictEqual(recovery.timing.nextResolveAt, 92000);
         SpotService.arrivalPointForState = () => ({ locX: 100, locY: 100, locZ: 0 });
-        const held = { ...stranded, stats: { ...stranded.stats, earning: holding } };
+        // The held answer and the spot the worker's route publishes on it (huntSpot).
+        const held = { ...stranded, stats: { ...stranded.stats, earning: holding,
+            huntSpot: { spotId: 'recovery', plan: null, earning: 'recovery' } } };
         const routed = GoalExecutor.finishMarketVisit(held, 62000, { recoverMissingReturn: true });
         assert.strictEqual(routed.activity, 'traveling');
         assert.strictEqual(routed.stats.travel.spotId, 'recovery');

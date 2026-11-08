@@ -88,22 +88,21 @@ async function run() {
     // A bot that levels past the band of the source its route took (Death Knight, level 50:
     // a hunter goes at most seven levels below itself) is not sent there again: the step that
     // outgrows it raises source_stalled, which wakes the gear plan, and that review drops the
-    // route; the held spot is no longer the source. Inside one grade nothing else wakes the plan.
+    // route's verdict on it. Inside one grade nothing else wakes the plan.
     {
-        const Events = invoke('GameServer/Bot/AI/DecisionEvents');
         const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
         const drop = { status: 'active', strategy: 'direct_drop', target: { selfId: 2566, slot: 14 },
             next: { spotId: 'death-knight', npcId: 136, itemId: 2566 }, routedSpotId: 'death-knight' };
         const at = level => ({ ...state, level, activity: 'hunting', stats: { ...state.stats, equipmentPlan: drop } });
-        assert.strictEqual(Events.heldSpotOf(at(57)), 'death-knight', 'fixture: the route takes the source in its band');
+        assert.strictEqual(Sections.routedSourceOf(at(57)), 'death-knight', 'fixture: the route takes the source in its band');
         assert(!Situations.detect(at(56), at(57)).includes('source_stalled'), 'a level inside the band raises nothing');
         const outgrown = Situations.detect(at(57), at(58));
         assert(outgrown.includes('source_stalled'), 'the level that outgrows the routed source raises source_stalled');
         const raised = Situations.raise({ ...state.stats, woken: 0 }, 'source_stalled');
         assert(Situations.woken(raised, 'gear_plan'), 'which wakes the gear plan');
         const reviewed = Selection.withRoutedSource(at(58), drop, [], now);
-        assert.notStrictEqual(Events.heldSpotOf({ ...at(58), stats: { ...state.stats, equipmentPlan: reviewed } }), 'death-knight',
-            'after the review the held spot is not the outgrown source');
+        assert.strictEqual(Sections.routedSourceOf({ ...at(58), stats: { ...state.stats, equipmentPlan: reviewed } }), null,
+            'after the review the route no longer takes the outgrown source');
         assert(!Situations.detect(at(58), { ...at(59), stats: { ...state.stats, equipmentPlan: reviewed } }).includes('source_stalled'),
             'a source the route already refuses raises nothing more');
         // The fact counts the voluntary hunt floors the source lies below (seven levels for a

@@ -39,6 +39,7 @@ const CraftMaterialParty = require('./CraftMaterialParty');
 const CraftMaterialPartyRoute = require('./CraftMaterialPartyRoute');
 const ColdTrip = require('./ColdTrip');
 const PartyRequestPlanner = require('./PartyRequestPlanner');
+const PartyRequirementRefresh = require('./PartyRequirementRefresh');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 
 // The gates: a bot that may be routed now. Checked by choose and again by
@@ -458,6 +459,55 @@ function heldChoice(state, spots, frame) {
     return { spotId: spot.id };
 }
 
+// The spot this bot goes to when it is sent to hunt from wherever it stands (a town
+// or hall visit's end, a body that must leave its ground): the solo trip's own choice
+// (trip) for the bot as if it hunted now, in its order: the spot its leaf names when
+// it fits (leafChoice), else its held earning answer (heldChoice), else the search
+// (choose), each under the bot's exclusions as the trip applies them. Room is the one
+// difference: met at arrival (no room filter here). The worker publishes it in the
+// mind (huntSpotHeld); main reads it (DecisionEvents.heldSpotOf), never chooses one.
+// A spot id, null (none found, none it may take, or a party member: its hunt is its
+// party's), or undefined: the route may not take the bot now (a clan party wait, a
+// crystal exchange ready), asked again at its next step. Worker-only: the catalogue
+// (spots) and the hunters count (spotHunters) are the trip's.
+function huntSpot(state, leaf, { spots, timestamp, spotHunters = null }) {
+    if (!state || state.party?.partyId || state.partyId) return null;
+    const hunter = { ...state, phase: 'cold', activity: 'hunting', stats: { ...state.stats, travel: null } };
+    if (!routable(hunter, null, [])) return undefined;
+    const frame = frameFor(hunter, null, [], timestamp, null, spotHunters);
+    const held = leafChoice(hunter, leaf, { spots, timestamp, frame }) || heldChoice(hunter, spots, frame);
+    const chosen = held !== undefined ? held : choose(hunter, null, null, [], { spots, timestamp, frame });
+    return chosen?.spotId != null ? String(chosen.spotId) : null;
+}
+// What a published hunt spot was chosen on, as main's row holds it too: the gear plan's
+// source spot while the plan is active, and the earning answer's spot (null for none).
+function huntBasis(stats = {}) {
+    const plan = stats.equipmentPlan;
+    return { plan: plan?.status === 'active' && plan.next?.spotId != null ? String(plan.next.spotId) : null,
+        earning: stats.earning?.spotId != null ? String(stats.earning.spotId) : null };
+}
+// The mind key a worker step or near decision publishes (null: unchanged): stats.huntSpot
+// = { spotId: huntSpot's answer (null: none), plan, earning: its basis (huntBasis) }, ~40 bytes
+// per row. Chosen again only when what the choice reads on the bot moves (its key on the
+// bot's kernel record, owner.huntSpot: the leaf, the gear plan's requirement, the earning
+// spot, the level, the party and its request, the exclusions); the catalogue's crowd is
+// read when it chooses and wakes nothing. Written whenever the row's value differs from
+// the one chosen (a refused commit, a restart: written again at the next step).
+function huntSpotHeld(owner, state, leaf, { spots, timestamp, spotHunters = null }) {
+    const stats = state.stats || {};
+    const key = `${leaf?.activity || ''}|${leaf?.spotId ?? ''}|${PartyRequirementRefresh.acquisitionRequirementKey(stats.equipmentPlan)}`
+        + `|${stats.earning?.spotId ?? ''}|${Number(state.level) || 0}|${state.party?.partyId || state.partyId || ''}`
+        + `|${stats.partyRequest?.status || ''}|${SpotRiskPolicy.exclusionVersion(state).revision}`;
+    let held = owner?.huntSpot;
+    if (held?.key !== key) {
+        const spotId = huntSpot(state, leaf, { spots, timestamp, spotHunters });
+        held = { key: spotId === undefined ? null : key, value: { spotId: spotId ?? null, ...huntBasis(stats) } };
+        if (owner) owner.huntSpot = held;
+    }
+    const was = stats.huntSpot, value = held.value;
+    return was?.spotId === value.spotId && was.plan === value.plan && was.earning === value.earning ? null : { huntSpot: value };
+}
+
 // The kept route goes; the next trip start searches again. Counted as
 // route:drop:<why> when one was kept.
 function drop(owner, why) {
@@ -481,4 +531,4 @@ function dropReason(routeMoved, before = {}, after = {}) {
     return planKey(before.plan, before.request) !== planKey(after.plan, after.request) ? 'plan' : '';
 }
 
-module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, drop, dropReason };
+module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, huntSpot, huntBasis, huntSpotHeld, drop, dropReason };

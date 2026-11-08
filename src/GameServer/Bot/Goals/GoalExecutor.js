@@ -129,16 +129,16 @@ function finishVisit(state, timestamp, options) {
         if (leader?.loc) destination = { loc: leader.loc, spotId: returningParty.spotId, regionName: leader.currentRegion };
     }
     if (!destination?.loc && options.recoverMissingReturn) {
-        // No saved return: the spot its held decisions name (main never chooses
-        // one, DecisionEvents.farHeldSpot). A party member's is its party's
-        // (temporary: until the party holds its spot as a decision; the party's
-        // objective spot, else the spot it hunts), when its marks allow it. With
-        // none it rests in town: its earning spot reads woken while it holds no
-        // answer (Situations.woken), so its next step decides it and the worker
-        // routes it (BotRoute).
+        // No saved return: the spot it goes to when sent to hunt (the worker's
+        // choice, DecisionEvents.heldSpotOf; main never chooses one). A party
+        // member's is its party's (temporary: until the party holds its spot as a
+        // decision; the party's objective spot, else the spot it hunts), when its
+        // marks allow it. With none it rests in town: its next step publishes the
+        // choice (no earning answer yet: woken, Situations.woken, decided there)
+        // and the worker routes it (BotRoute).
         const party = state.party?.partyId ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.party.partyId) : null;
         const partySpot = party?.stats?.objective?.spotId ?? party?.spotId ?? null;
-        const heldId = !state.party?.partyId ? DecisionEvents.farHeldSpot(state)
+        const heldId = !state.party?.partyId ? DecisionEvents.heldSpotOf(state)
             : partySpot != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(partySpot)) ? partySpot : null;
         const fallback = heldId != null ? SpotProfiles.findById(heldId) : null;
         const loc = fallback && SpotService.arrivalPointForState(state, fallback);
@@ -168,16 +168,16 @@ function finishVisit(state, timestamp, options) {
     const spotBackoff = returnState && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
-    // Where the bot hunts next is the worker's decision, read here: the spot its
-    // held decisions name (DecisionEvents.farHeldSpot: the card's hunting leaf, its
-    // gear plan's source, its held earning answer, none its exclusions rule out),
+    // Where the bot hunts next is the worker's decision, read here: the spot it goes
+    // to when sent to hunt (DecisionEvents.heldSpotOf: the worker's route choice, none
+    // its exclusions rule out),
     // else only then the spot it hunted before the trip, unless it died there
     // (spotBackoff). Main never searches. A full spot is met at arrival
     // (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the worker's next
     // trip start: one trip there before the worker moves it.
     let selectedSpot = clanReturn ? savedSpot : null;
     if (returnState && !clanReturn) {
-        const heldId = DecisionEvents.farHeldSpot(returnState);
+        const heldId = DecisionEvents.heldSpotOf(returnState);
         selectedSpot = (heldId != null ? SpotProfiles.findById(heldId) : null) || (spotBackoff ? null : savedSpot);
     }
     // Remaining in town is safer than silently returning to a spot that is

@@ -2,10 +2,10 @@ const Services = require('./Services');
 const Karma = require('../Karma');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
-// The hall's departure teleports the bot to the spot its held decisions name (main
-// never chooses one): spotId, a hot body's (DecisionEvents.heldSpotId), else a far
-// bot's (DecisionEvents.farHeldSpot: its row and its held card's leaf). None
-// (none held, or all its exclusions rule out: died, was full, unreachable): no
+// The hall's departure teleports the bot to the spot it goes to when sent to hunt (the
+// worker's choice; main never chooses one): spotId, a hot body's
+// (DecisionEvents.heldSpotId), else a far bot's (DecisionEvents.heldSpotOf: its row).
+// None (none served, or its exclusions rule it out: died, was full, unreachable): no
 // teleport, it leaves the hall as it came.
 function plan(state, hall, options = {}) {
     if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Karma.closesTowns(state.stats?.karma))
@@ -17,7 +17,7 @@ function plan(state, hall, options = {}) {
     };
     if (!require('./Runtime').Policy.inside(hall, point) && !Services.near(point, Services.manager(hall)))
         return null;
-    const spotId = options.spotId !== undefined ? options.spotId : invoke('GameServer/Bot/AI/DecisionEvents').farHeldSpot(state);
+    const spotId = options.spotId !== undefined ? options.spotId : invoke('GameServer/Bot/AI/DecisionEvents').heldSpotOf(state);
     if (spotId == null) return null;
     const spot = SpotService.findById(spotId);
     if (!spot) return null;
@@ -38,8 +38,7 @@ function hot(session, actor, hall) {
         vitals: { hp: actor.fetchHp() },
         stats: { ...session.coldLifeState?.stats, classId: actor.fetchClassId(), karma: actor.fetchKarma?.() || 0 }
     };
-    const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-    const departure = plan(state, hall, { spotId: Events.heldSpotId(session, Events.held(session)?.network.activity) });
+    const departure = plan(state, hall, { spotId: invoke('GameServer/Bot/AI/DecisionEvents').heldSpotId(session) });
     return !!departure && invoke('GameServer/Bot/AI/BotSpotTravel').startFromClanHall(
         session, actor, departure.spot, departure.destination
     );

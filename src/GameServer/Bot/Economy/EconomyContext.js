@@ -744,8 +744,8 @@ function earningDue(state, deps = {}) {
 // (a contest lost, the recovery lifted, a spot outleveled): the search a build runs
 // (foundation's incomeRouteFor), at the bot's own prices, no wish network. Its answer
 // wakes no dependant (where the bot hunts changes no purchase or trip its build holds):
-// the held build serves on, and its hunting leaf reads the held answer's spot
-// (heldSpotOf). Far steps and near posts alike. Returns the mind keys it writes (the
+// the held build serves on, its hunting leaf reads the held answer's spot and so
+// does the spot it goes to when sent to hunt (BotRoute.huntSpotHeld). Far steps and near posts alike. Returns the mind keys it writes (the
 // answer, its read marks cleared, the bits left), or null when it is not due here (main, a party member, an incoming projection waiting).
 function decideEarning(state, deps = {}) {
     if (!earningDue(state, deps) || state.incomingPending) return null;

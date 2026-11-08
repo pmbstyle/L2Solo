@@ -47,6 +47,10 @@ const shopper = { ...state, activity: 'shopping', currentRegion: 'Dwarven Villag
         // Its held earning answer is where it hunts (the worker decided it; main reads it, never searches).
         earning: { spotId: source.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 } } };
 const holding = spot => ({ spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 2 });
+// The row as the worker's step leaves it: the spot its route goes to when sent to hunt
+// published in the mind (huntSpot, BotRoute.huntSpotHeld), which main's visit end reads.
+const published = (row, leaf = null) => ({ ...row, stats: { ...row.stats,
+    ...BotRoute.huntSpotHeld(null, row, leaf, { spots, timestamp }) } });
 const saved = { spots: Spots.cache, service: Service.spots, pending: Errands.pending };
 try {
     Spots.cache = Service.spots = spots;
@@ -66,34 +70,29 @@ try {
             next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
     // A gear plan's source the route takes comes before the held answer, as on the route
     // (BotRoute: an active plan's source is the search's own rule).
-    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, money.id,
+    assert.equal(Executor.finishMarketVisit(published(changed), timestamp).stats.travel.spotId, money.id,
         'an active plan\'s viable source is the return, as the route takes it');
     // The held answer comes before the spot it hunted before the trip (B12).
     const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
-    assert.equal(Executor.finishMarketVisit(heldElsewhere, timestamp).stats.travel.spotId, money.id,
+    assert.equal(Executor.finishMarketVisit(published(heldElsewhere), timestamp).stats.travel.spotId, money.id,
         'the held earning answer goes first, the saved spot only without one');
     const away = { ...changed, stats: { ...changed.stats, spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(away, timestamp).stats.travel.spotId, money.id,
+    assert.equal(Executor.finishMarketVisit(published(away), timestamp).stats.travel.spotId, money.id,
         'with that spot excluded, the viable plan source');
 
     const excluded = { ...shopper, stats: { ...shopper.stats, earning: holding(money),
         spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
+    assert.equal(Executor.finishMarketVisit(published(excluded), timestamp).stats.travel.spotId, money.id,
         'an excluded (marked full) source is not chosen: the held earning answer is');
     // A spot that filled during the visit, with no mark yet, is met by the
     // worker (the room at arrival), one trip after the return.
     for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,
         characterName: 'SourceHunter', level: 24, phase: 'cold', activity: 'hunting', spotId: source.id,
         statsJson: '{}', inventorySummary: '{}' });
-    assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, source.id,
+    assert.equal(Executor.finishMarketVisit(published(shopper), timestamp).stats.travel.spotId, source.id,
         'a source that filled during the visit: the return goes home, the room is read at arrival');
-    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
-    const activity = decisions.activity;
-    try {
-        decisions.activity = () => ({ activity: 'hunting', spotId: money.id });
-        assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, money.id,
-            'the worker\'s hunting leaf names the return spot');
-    } finally { decisions.activity = activity; }
+    assert.equal(Executor.finishMarketVisit(published(shopper, { activity: 'hunting', spotId: money.id }), timestamp)
+        .stats.travel.spotId, money.id, 'the worker\'s hunting leaf names the return spot');
 } finally {
     Spots.cache = saved.spots; Service.spots = saved.service;
     Errands.pending = saved.pending;

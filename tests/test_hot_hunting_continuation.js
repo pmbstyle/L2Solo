@@ -47,8 +47,10 @@ stub(SpotTravel, 'start', (session, _bot, spot) => {
     session.spotRelocation = { spotId: spot.id, method: 'soe_gatekeeper' };
     session.trips.push(spot.id); return true;
 });
-// The held earning answer naming a spot (EquipmentIncomeRoute.answerOf's layout), its decision not woken.
-const holds = spot => ({ woken: 0, earning: { spotId: spot.id, shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at: 1 } });
+// The held earning answer naming a spot (EquipmentIncomeRoute.answerOf's layout), its decision not woken,
+// and the spot the worker's route publishes for it (huntSpot: the spot and what it was chosen on).
+const holds = spot => ({ woken: 0, earning: { spotId: spot.id, shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at: 1 },
+    huntSpot: { spotId: spot.id, plan: null, earning: spot.id } });
 function fixture(location, chosen = leaf, stats = {}) {
     const loc = { ...location }, id = ++nextId;
     const bot = { fetchId: () => id, fetchName: () => `HuntContinuation${id}`,
@@ -170,16 +172,18 @@ test('a first worker answer is awaited separately from an accepted empty occupat
     assert.equal(searchCalls.length, 0);
 });
 
-test('a visit\'s end sends a collector to its gear plan\'s source, as the worker\'s route does', () => {
+test('a visit\'s end sends a collector where the worker\'s route publishes, while its basis stands', () => {
     const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id } };
-    const f = fixture(town, null, { ...holds(primary), equipmentPlan: { ...plan, routedSpotId: alternative.id } });
+    const toSource = { spotId: alternative.id, plan: alternative.id, earning: primary.id };
+    const f = fixture(town, null, { ...holds(primary), equipmentPlan: plan, huntSpot: toSource });
     f.session.pendingFarmDepartureAnnouncement = true;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id,
-        'the source the route takes before the held earning answer');
-    const refused = fixture(town, null, { ...holds(primary), equipmentPlan: plan });
-    refused.session.pendingFarmDepartureAnnouncement = true;
-    assert.equal(Decision.suggest(refused.session.botStatus, refused.session).spot?.id, primary.id,
-        'a source the route refuses: the held earning answer');
+        'the published spot: the source the route takes');
+    // The plan moved on since (another source): the spot chosen on the old one is not served.
+    const moved = fixture(town, null, { ...holds(primary), equipmentPlan: { ...plan, next: { spotId: primary.id } }, huntSpot: toSource });
+    moved.session.pendingFarmDepartureAnnouncement = true;
+    assert.equal(Decision.suggest(moved.session.botStatus, moved.session).action, 'search_locally',
+        'a spot chosen on another plan source waits for the next answer');
     assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 
@@ -197,8 +201,9 @@ test('a body\'s visit end reads its place and party as a far row\'s does', () =>
     assert.equal(Decision.suggest(member.session.botStatus, member.session).action, 'search_locally',
         'a party member is not sent to its solo answer');
     // Nor to its own gear plan's source the route took for it alone.
-    const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id }, routedSpotId: alternative.id };
-    const collector = fixture(town, null, { ...holds(primary), equipmentPlan: plan });
+    const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id } };
+    const collector = fixture(town, null, { ...holds(primary), equipmentPlan: plan,
+        huntSpot: { spotId: alternative.id, plan: alternative.id, earning: primary.id } });
     collector.session.pendingFarmDepartureAnnouncement = true;
     collector.session.hotBackgroundPartyId = 'hunt-continuation-party';
     assert.equal(Events.heldSpotId(collector.session), null, 'a party member\'s hunt is its party\'s, not its plan\'s source');
@@ -386,8 +391,9 @@ test('a deferred errand whose held answer is its own empty ground raises once an
 
 test('unsafe ground raises spot_dangerous once and walks to the held spot, else stands off', () => {
     const unsafe = { ...alternative, id: 'unsafe-ground', name: 'Party ground', tags: ['party_required'], tagsAuthoritative: true };
+    // The worker publishes the leaf's spot when it may hunt there (BotRoute.huntSpot).
     const onUnsafe = chosen => {
-        const f = fixture(town, chosen);
+        const f = fixture(town, chosen, chosen.spotId === primary.id ? { huntSpot: { spotId: primary.id, plan: null, earning: null } } : {});
         f.session.currentSpot = unsafe;
         return f;
     };
