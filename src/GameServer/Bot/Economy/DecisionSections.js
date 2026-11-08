@@ -295,16 +295,14 @@ function stateView(state, recipes = null) {
 // What the bot's clan asks of it and holds for it: the clan's material demand, the clan
 // supply, whether the clan has a warehouse, the clan goal's crystals. The personal
 // warehouse is the bot's own doing: no fact.
-// owner: { characterId, clanId, stats } (a state is one); into: the array written (the
-// near reader's, updated in place).
-function storesOf(owner, into = new Array(3)) {
-    // A far member hears what its clan asks for, not how much is left.
-    const demand = owner.stats?.clanMaterialDemand ?? null, request = Situations.reactive(owner);
-    into[0] = request && demand ? Object.keys(demand) : demand;
-    into[1] = request ? ClanSupply.requestIdentity(owner) : ClanSupply.contentIdentity(owner); into[2] = ClanSupply.hasWarehouse(owner);
+// A member hears what its clan asks for, not how much is left, near a player and far
+// alike: one reading, so a baseline taken in one place compares with a state in another.
+// owner: { characterId, clanId, stats } (a state is one).
+function storesOf(owner) {
+    const demand = owner.stats?.clanMaterialDemand ?? null;
+    const into = [demand && Object.keys(demand), ClanSupply.requestIdentity(owner), ClanSupply.hasWarehouse(owner)];
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
-    if (crystals) into[3] = crystals;
-    else into.length = 3;
+    if (crystals) into.push(crystals);
     return into;
 }
 // memory: the bot's interaction memory (the caller's deps.memory), null when

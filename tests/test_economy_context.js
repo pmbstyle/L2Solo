@@ -254,12 +254,14 @@ async function run() {
         };
         for (const [name, state] of Object.entries(moved)) assert.equal(read(state), held.plan, `a ${name} move is read, not judged`);
         assert.notEqual(Economy.forState(moved.clan, { timestamp: T, caller: 'step' }).plan, held.plan, 'the woken build decides anew');
-        // A far member hears its clan's request open or close, not each count (clan_call).
+        // A member hears its clan's request open or close, not each count (clan_call), near a
+        // player and far alike: cooling, activation or a town arrival raises no clan_call.
         const Moments = invoke('GameServer/Bot/Economy/DecisionSections');
-        const heard = (demand = { 1864: 10 }) => Moments.semanticFacts({ ...published, phase: 'cold', party: null, partyId: null,
+        const heard = (demand = { 1864: 10 }, phase = 'cold') => Moments.semanticFacts({ ...published, phase, party: null, partyId: null,
             stats: { ...published.stats, clanMaterialDemand: demand } }).stores;
         clanRow = Supply.prepareRow([9, 1, [[1864, 3]], 3]);
         const gatedRequest = heard();
+        assert.equal(heard(undefined, 'hot'), gatedRequest, 'near a player the same request is heard as far');
         clanRow = Supply.prepareRow([9, 1, [[1864, 5]], 4]);
         assert.equal(heard({ 1864: 4 }), gatedRequest, 'a member hears no count');
         clanRow = Supply.prepareRow([9, 1, [[1864, 5], [1865, 2]], 5]);
