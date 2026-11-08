@@ -573,23 +573,27 @@ const unlanded = (state, accepted) => !!accepted?.decided && Number(state?.stats
 // Such a card is still the answer to that row only while the commit it rides is in flight
 // (carried): main's rows sent before it lands (a write of the visit) or its command
 // answered that it waits (a trade preparation); or, once, after its commit was refused
-// because another writer moved the row (carried 'stale', the kernel's staleRide), which
-// the gate judges (movedUnder). A commit refused otherwise or dropped ends it: the card
+// because another writer moved the row (carried 'stale', the kernel's staleRide), whose
+// moved facts the step raises first (movedUnder). A commit refused otherwise or dropped ends it: the card
 // goes and the bot builds, as for any card its row refuses. A restored card (no build
 // fields) or any other echo is refused.
 function pendingCommit(state, accepted, carried) {
     return (carried === true || carried === 'stale') && unlanded(state, accepted);
 }
-// A card held through a commit another writer refused is the answer to a row that writer
-// moved after the card's build (a board settlement paid money, took goods). The card
-// holds only while that row, judged against the card's own baseline (its facts and money
-// thresholds: Situations.detect, as the step after it would), raises nothing its build
-// hears: the moved inputs are read where the build would read them, not served past.
-function movedUnder(state, accepted, deps) {
+// A card held through a commit another writer refused (carried 'stale') is the answer to
+// a row that writer moved after the card's build (a board settlement paid money, took
+// goods). The situations that row raises against the card's own baseline (its facts and
+// money thresholds: Situations.detect, as the step after it would) and its build hears
+// here: the step raises them before its gate, so the moved inputs wake the build (counted
+// card:stale_drop:inputs_moved) and are not served past. [] for any other card.
+function movedUnder(state, accepted, carried, deps) {
+    if (carried !== 'stale' || !unlanded(state, accepted)) return [];
     const names = Situations.detect(state, { ...state, stats: { ...state.stats, wishSections: accepted.baseline } },
         { escrow: deps.buyOrderEscrow || 0, leaf: accepted.card.activity });
-    const where = Situations.place(state, state);
-    return names.some(name => Situations.delta(name, null, where, state.stats).woken & Situations.BITS.build);
+    const where = Situations.place(state);
+    const moved = names.filter(name => Situations.delta(name, null, where, state.stats).woken & Situations.BITS.build);
+    if (moved.length && Diagnostics.active()) Diagnostics.count('card', 'stale_drop', 'inputs_moved');
+    return moved;
 }
 // A publication dropped a card whose commit had not landed (counted: its commit was refused or dropped).
 function noteDropped(state, accepted) {
@@ -624,10 +628,6 @@ function refusal(state, accepted, deps = {}, options = {}) {
     }
     const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
     if (identity && !(identity === 'decision_seq' && pendingCommit(state, accepted, options.carried))) return identity;
-    if (options.carried === 'stale' && unlanded(state, accepted) && movedUnder(state, accepted, deps)) {
-        if (Diagnostics.active()) Diagnostics.count('card', 'stale_drop', 'inputs_moved');
-        return 'inputs_moved';
-    }
     if (state.incomingPending) return 'incoming';
     // A card serves wherever the bot stands (the field, a town visit, a stall, a craft,
     // death): its situations wake the build (an arrival its leaf did not order raises
@@ -822,5 +822,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, noteDropped, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, noteDropped, movedUnder, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
     MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

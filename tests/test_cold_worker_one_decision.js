@@ -180,17 +180,21 @@ module.exports.pendingProbe = async id => {
         // reads it as the build would and builds.
         const threshold = card.baseline.affordAt?.at > 0 ? card.baseline.affordAt.at : 0;
         const paid = { ...behind, adena: threshold };
-        let movedBuilds = null;
+        let movedBuilds = null, movedUnwoken = null;
         if (threshold) {
             publish(answered('stale_command'));
             kernel.states.set(id, { ...kernel.states.get(id), state: paid });
             builds = 0;
+            const unwoken = () => Object.entries(invoke('GameServer/Bot/Situations').counts().unwoken)
+                .filter(([key]) => key.startsWith('build:')).reduce((sum, [, n]) => sum + n, 0);
+            const before = unwoken();
             await kernel.planLifecycle({ state: paid, timestamp: Date.now() + 20000 });
             movedBuilds = builds;
+            movedUnwoken = unwoken() - before;
         }
         return { echo: [behind.stats.decisionSeq, card.decisionSeq], inFlight, refused, waiting, rejected, restarted, stale, builds: builtServing,
             proposed: Number(plan.statsPacket?.decisionSeq || 0), held: ride?.held === true, again, droppedAgain,
-            afterDrop, threshold, movedBuilds };
+            afterDrop, threshold, movedBuilds, movedUnwoken };
     } finally { Economy.forState = original; kernel.states.set(id, { ...kernel.states.get(id), state: row }); }
 };
 // A deferred plan's next page: main's write while pages wait asks it, once per
@@ -378,6 +382,7 @@ parentPort.on('message', message => {
         assert.equal(pending.afterDrop, 1, 'and is not served again: the bot builds');
         assert(pending.threshold > 0, 'the probe\'s card waits for money');
         assert.equal(pending.movedBuilds, 1, 'a row moved past the card\'s money threshold builds');
+        assert.equal(pending.movedUnwoken, 0, 'woken by the money it crossed (goal_affordable), not unwoken');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;

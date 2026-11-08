@@ -1781,7 +1781,13 @@ function startKernel(config = {}) {
                         const withWorkshop = workshop ? { ...projected, stats: { ...projected.stats, ...workshop } } : projected;
                         // Then the rebuff (a party member's answers none: its buffs are its party's).
                         const rebuff = decideRebuff(withWorkshop, caller, timestamp);
-                        const planned = rebuff ? { ...withWorkshop, stats: { ...withWorkshop.stats, ...rebuff } } : withWorkshop;
+                        const rebuffed = rebuff ? { ...withWorkshop, stats: { ...withWorkshop.stats, ...rebuff } } : withWorkshop;
+                        // A card held past a stale refusal: the moved row's situations wake the build
+                        // (ColdEconomyDecision.movedUnder).
+                        const carried = kernel.cardInFlight(rebuffed.characterId, owner?.wishAdvisory);
+                        const moved = ColdEconomyDecision.movedUnder(rebuffed, owner?.wishAdvisory, carried, deps);
+                        const planned = moved.length ? { ...rebuffed, stats: moved.reduce((stats, name) =>
+                            Situations.raise(stats, name, null, Situations.place(rebuffed), rebuffed.characterId), { ...rebuffed.stats }) } : rebuffed;
                         // The step's one gate, a party member's and
                         // a karma step's alike: the build runs only when a situation woke it
                         // (or the earning spot where the build decides it: not a party
@@ -1789,7 +1795,7 @@ function startKernel(config = {}) {
                         // else the card serves.
                         const woken = Situations.woken(planned.stats, 'build') || EconomyContext.earningDue(planned, deps);
                         refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(planned, owner?.wishAdvisory, deps,
-                            { afterResult: true, carried: kernel.cardInFlight(planned.characterId, owner?.wishAdvisory) }) : null;
+                            { afterResult: true, carried }) : null;
                         if (refreshed && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result');
                         return { economy: refreshed ? refreshed.economy : EconomyContext.forState(planned, { ...deps, decide: true }),
                             stats: workshop || rebuff ? { ...workshop, ...rebuff } : workshop };
@@ -1945,6 +1951,10 @@ function startKernel(config = {}) {
             // The rebuff decision next, held on the state the same way.
             const rebuffKeys = decideRebuff(state, 'lifecycle', timestamp);
             if (rebuffKeys) state = { ...state, stats: { ...state.stats, ...rebuffKeys } };
+            // A card held past a stale refusal: what the moved row raises against its baseline
+            // wakes the build here (ColdEconomyDecision.movedUnder).
+            const carried = kernel.cardInFlight(state.characterId, card);
+            for (const name of ColdEconomyDecision.movedUnder(state, card, carried, deps)) raise(name);
             // The one gate (situations step 4 C6): the build runs only when a situation woke
             // it or the earning spot (its search runs in the build), or the bot holds no
             // card naming its decision; else the card serves, judging nothing more. The
@@ -1961,8 +1971,7 @@ function startKernel(config = {}) {
             // or advisory:skip:<why>).
             const advisory = economyDiagnostics.active() ? (outcome, reason) => economyDiagnostics.count('advisory', outcome, reason) : null;
             const why = [];
-            let refreshed = solo && !woken ? ColdEconomyDecision.refreshAdvisory(state, card, deps,
-                { why, carried: kernel.cardInFlight(state.characterId, card) }) : null;
+            let refreshed = solo && !woken ? ColdEconomyDecision.refreshAdvisory(state, card, deps, { why, carried }) : null;
             if (advisory && !refreshed) {
                 if (!solo) advisory('skip', 'party');
                 else if (woken) advisory('skip', 'woken');
