@@ -2250,7 +2250,6 @@ function worldStatus() {
         coldCompetition: cold ? cold.worker?.competition || null : null,
         coldCompetitionActions: cold ? cold.competitionActions || null : null,
         hotCompetitionActions: diagnostics ? HotResourceCompetition.report : null,
-        partyReviews: cold ? cold.partyReviews || null : null,
         clanSocial: diagnostics ? ClanSocialRuntime.summary() : null,
         runtime: memory ? {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
@@ -2414,7 +2413,6 @@ async function snapshot() {
         population: PopulationStatus.counts(),
         coldCompetition: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null : null,
         coldCompetitionActions: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null : null,
-        partyReviews: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null : null,
         runtime: memory ? {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),

@@ -100,8 +100,8 @@ const heldEarningSpot = state => invoke('GameServer/Bot/Economy/EquipmentIncomeR
 
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
-    if (!state.stats?.partyMarketReturn?.warOperationId && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
-        || (state.stats?.townVisit && state.stats.townVisit.completed !== true))) return null;
+    if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
+        || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;
     // An errand its job decided during the visit for another town (ColdMarketService.acquire:
     // a bot in a visit leaves at its end) is the visit's next trip, before the way back: a C4
     // player done in one town goes on to the next for what he still has to buy there.

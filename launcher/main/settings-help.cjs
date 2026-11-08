@@ -73,7 +73,6 @@ const help = {
         backgroundPartyEnabled: 'Allows distant bots to assemble and simulate parties, including coordinated hunting and raid preparation.',
         opportunisticRaidsEnabled: 'Allows compatible free bots to form a party and attempt a suitable live raid boss without a scheduled clan campaign.',
         opportunisticRaidAliveFraction: 'Minimum fraction of bots in each ten-level band left outside an opportunistic raid. Enter 0 to 1; 0.5 keeps at least half available for the rest of the world.',
-        opportunisticRaidSearchIntervalMs: 'Interval between searches for suitable opportunistic raid opportunities, in milliseconds.',
         opportunisticRaidIntervalMs: 'Minimum spacing between opportunistic raid admissions, in milliseconds.',
         opportunisticRaidMemberCooldownMs: 'Wait before a bot can join another opportunistic raid after participation, in milliseconds.',
         opportunisticRaidMaxParties: 'Maximum number of opportunistic raid parties allowed at the same time.',

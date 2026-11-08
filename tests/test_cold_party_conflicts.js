@@ -52,7 +52,7 @@ async function run() {
         await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,
             nextResolveAt,lastResolvedAt,updatedAt,statsJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?)`,
         [id, `bot_conflict_${id}`, `Conflict${id}`, at + 60000, at - 30000, at, JSON.stringify(id <= 4 ? { ...stats, coldCompetition: { key: 'old-pvp', at: at - 700000,
-            outcome: 'pvp_fighting', endedAt: at - 600000, avoid: { spotId: 'elsewhere', untilStep: 10 } } } : stats)]]);
+            outcome: 'pvp_fighting', endedAt: at - 600000 } } : stats)]]);
     }
     await Life.init();
     await Party.init();
@@ -65,7 +65,6 @@ async function run() {
     assert(first.ok, JSON.stringify(first));
     assert.strictEqual(state(1).stats.coldCompetition.outcome, first.outcome);
     assert.strictEqual(state(1).stats.coldCompetition.endedAt, undefined);
-    assert.strictEqual(state(1).stats.coldCompetition.avoid.spotId, 'elsewhere');
     assert.strictEqual(first.matchup, 'party_vs_solo');
     // No conflict window after it: the pair meets again only at a later arrival (enemy_met).
     assert.strictEqual(Party.find('party-1').stats.coldCompetition.conflictUntil, undefined);

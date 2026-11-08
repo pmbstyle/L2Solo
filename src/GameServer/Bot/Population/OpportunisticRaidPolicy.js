@@ -142,7 +142,9 @@ function* levelShortlist(ranked, limit) {
 
 // Checkpoint after each equipment/shot inspection, power calculation and
 // shortlist entry. Roles and scores never outlive this pass.
-function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage = null, deferred = []) {
+// drainOnly: a search carried on past its allowance proposes only its deferred rosters
+// (fresh ones wait for the next search a situation wakes).
+function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage = null, deferred = [], drainOnly = false) {
     const pool = [], tanks = [], byId = new Map();
     for (const s of candidates) {
         if ((cooldowns.get(id(s)) || 0) <= timestamp && candidateReady(s, timestamp)) {
@@ -155,7 +157,7 @@ function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage 
     const anchors = [...tanks.slice(offset), ...tanks.slice(0, offset)].slice(0, 8);
     // Alternate a fresh, promising roster with the ordinary coverage queue.
     // It replaces one of the eight slots; neither lane can starve the other.
-    const priorityPass = coverage && coverage.passes++ % 2 === 0;
+    const priorityPass = !drainOnly && coverage && coverage.passes++ % 2 === 0;
     let priorityTank;
     if (priorityPass && tanks.length) {
         const scores = new Map();
@@ -237,7 +239,7 @@ function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage 
         // Drain surviving combinations before filling spare slots with more
         // ordinary ones. This also leaves room for both priority cohorts on
         // the next alternating pass, rather than dropping an untested tail.
-        const draining = proposals.length > freshCount;
+        const draining = drainOnly || proposals.length > freshCount;
         let examined = 0;
         for (const tank of anchors) {
             if (proposals.length === 8 || draining) break;

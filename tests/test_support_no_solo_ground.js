@@ -4,9 +4,10 @@ const assert = require('assert');
 require('../src/Global');
 
 // No solo ground -> a party (decision 10-30, T106): a healer or buffer whose
-// solo gate admits no spot near its level seeks a party, groups with the bots
+// held earning answer names no spot or grey ground seeks a party, groups with the bots
 // of the spot a party search finds for it, and joins a party of its level
 // wherever that party hunts; a support with solo ground plays as before.
+// A bot whose party share beats its solo hunt seeks a party on its earning ground.
 
 invoke('GameServer/DataCache').init();
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -26,7 +27,7 @@ const reserved = { primaryDrive: 'wealth', archetype: 'pragmatic_earner',
 const bot = (characterId, classId, level, spotId, role, extra = {}) => ({ characterId, name: `Bot${characterId}`,
     accountName: `bot_${characterId}`, phase: 'cold', activity: 'hunting', level, spotId, persona: reserved,
     loc: { ...spots.find(row => row.id === spotId).center }, inventory: {},
-    vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {}, stats: { classId, role }, ...extra });
+    vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {}, stats: { classId, role, earning: { spotId, income: 1000 } }, ...extra });
 const at = Date.now();
 
 async function run() {
@@ -52,6 +53,16 @@ async function run() {
     assert.strictEqual(Request.supportWithoutGround(bot(9002, 43, 76, 'grey65', 'healer'), spots), true);
     assert.strictEqual(Request.supportWithoutGround(bot(9003, 2, 76, 'grey65', 'dps'), spots), false,
         'only a healer or buffer seeks by this rule');
+    // A support with a real solo hunt has ground: its gear plan's source, or grey ground
+    // it farms for gain (an economic hunt within 15 levels below).
+    assert.strictEqual(Request.supportWithoutGround({ ...prophet, stats: { ...prophet.stats,
+        equipmentPlan: { status: 'active', next: { spotId: 'grey65' } } } }, spots), false, 'a gear plan source is its solo hunt');
+    const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression'), adventurer = Progression.adventurer;
+    Progression.adventurer = () => true;
+    try {
+        assert.strictEqual(Request.supportWithoutGround({ ...prophet, stats: { ...prophet.stats, wishFocus: ['resale:57'] } }, spots), false,
+            'grey ground farmed for gain is solo ground');
+    } finally { Progression.adventurer = adventurer; }
 
     // Rule 2: recruitment across spots: a party of its level that hunts
     // another spot (not the seeker's ground nor its request spot) takes it.
@@ -99,33 +110,39 @@ async function run() {
     assert.deepStrictEqual(groups.map(group => group.map(state => state.characterId).sort()), [[3, 4, 9001]],
         'the seeker groups with the hunters of its request spot');
 
-    // Rule 4 (T126): the routed spot decides, not the old one. A Prophet 76 on
-    // grey ground whose search (the route kept on its worker record) moves it
-    // to ground of its level has solo ground; one whose search finds none has not.
+    // Rule 4: its held earning answer decides (the solo spot it hunts), not the spot it
+    // stands on: an answer on ground of its level is solo ground; none or grey ground is not.
     const levelled = bot(9006, 17, 76, 'grey65', 'buffer');
-    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: 'ground76' } }, timestamp: at }), false,
-        'the search moves it to fitting ground: no party request');
-    assert.strictEqual(Request.partyRequestForPlan(levelled, null, at,
-        { spots, search: { owner: { route: { spotId: 'ground76' } }, timestamp: at } }), null, 'no request opens');
-    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: null } }, timestamp: at }), true,
-        'a search that finds no spot leaves it without ground');
-    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: 'grey65' } }, timestamp: at }), true,
-        'a search that keeps it on grey ground leaves it without ground');
-    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: {}, timestamp: at }), false,
-        'a record without a route: its own search moves it to fitting ground');
-    // A support on a resting step is not searched for (choose: not asked): that
-    // is no verdict, so no request opens until it hunts again.
-    const resting = { ...levelled, activity: 'resting' };
-    assert.strictEqual(Request.supportWithoutGround(resting, spots, { owner: {}, timestamp: at }), false,
-        'a rest asks no search: it says nothing about the ground');
-    assert.strictEqual(Request.partyRequestForPlan(resting, null, at, { spots, search: { owner: {}, timestamp: at } }), null,
-        'no request opens on a rest');
+    const answering = spotId => ({ ...levelled, stats: { ...levelled.stats, earning: { spotId, income: 1000 } } });
+    assert.strictEqual(Request.supportWithoutGround(answering('ground76'), spots), false, 'its answer moves it to fitting ground');
+    assert.strictEqual(Request.partyRequestForPlan(answering('ground76'), null, at, { spots }), null, 'no request opens');
+    assert.strictEqual(Request.supportWithoutGround(answering(null), spots), true, 'an answer with no spot: no ground');
+    assert.strictEqual(Request.supportWithoutGround(answering('grey65'), spots), true, 'an answer on grey ground: no ground');
+    assert.strictEqual(Request.supportWithoutGround({ ...levelled, stats: { classId: 17, role: 'buffer' } }, spots), false,
+        'no answer held yet says nothing about its ground');
+    // Its solo hunt there counts as none wherever a party is weighed against it.
+    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison'), compare = Income.compare;
+    assert.strictEqual(Income.heldSoloRoute(answering('grey65'), spots, at), null, 'grey ground is no solo side for forming or its stay');
 
     // Rule 3: a Prophet 46 with ground of its level plays as today.
     const young = bot(9005, 17, 46, 'ground46', 'buffer');
     assert.strictEqual(Request.supportWithoutGround(young, spots), false);
     assert.strictEqual(Request.partyRequestForPlan(young, null, at, { spots }), null, 'no request for a support with solo ground');
     assert.strictEqual(Persona.backgroundIntent(young).reason, 'prefers_solo', 'its persona decides as before');
+
+    // Party income -> a party: a bot whose share in a party of its kind at its earning
+    // spot beats its held solo answer asks for a party there, whatever its persona.
+    const earner = { ...young, stats: { ...young.stats, earning: { spotId: 'ground46', income: 1000 } } };
+    try {
+        Income.compare = (state, peers, options) => ({ accept: options.objective.spotId === 'ground46' && !peers.length });
+        const asked = Request.partyRequestForPlan(earner, null, at, { spots });
+        assert.deepStrictEqual({ status: asked.status, priority: asked.priority, reason: asked.reason, spotId: asked.spotId,
+            objectiveKey: asked.objectiveKey }, { status: 'open', priority: 'preferred', reason: 'party_income', spotId: 'ground46',
+            objectiveKey: 'spot:ground46' }, 'it asks for a party on its earning ground');
+        assert.strictEqual(Persona.backgroundIntent({ ...earner, stats: { ...earner.stats, partyRequest: asked } }).reason, 'party_income');
+        Income.compare = () => ({ accept: false });
+        assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots }), null, 'solo pays more: no request');
+    } finally { Income.compare = compare; }
 
     Config.developerDiagnostics = previousDiagnostics;
     console.log('Support without solo ground checks passed');

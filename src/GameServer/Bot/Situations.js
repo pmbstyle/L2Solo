@@ -75,7 +75,8 @@ const SITUATIONS = Object.freeze({
     // Its clan joined, left or changed (detect's clan fact): heard at its next stop. Its
     // friends and enemies wake nothing (Q13): they are read when it decides.
     clan_changed: link(WORK | VISIT, STOP),
-    party_joined: link(0),
+    // Its party left (BackgroundPartyLifecycle.releaseMember, the one leave rule: raised
+    // where the leave is written; a hot body's by its lifecycle).
     party_left: link(0),
     // A contest lost at its arrival on a spot (SpotContest: it avoids the units standing
     // there; payload { spotId, reason: 'contest_lost' }: its spot mark, raisedFacts).
@@ -164,7 +165,14 @@ const SITUATIONS = Object.freeze({
     // buffFact; a body's last such effect expired, EffectTicker): heard at its next stop,
     // as a player who sees his buffs gone renews them when he sits down or reaches town.
     // A death clears buffs and raises none (its restart's field step reads the fact anew).
-    buffs_expired: link(0, STOP)
+    buffs_expired: link(0, STOP),
+    // A party's roster moved (the party step's diff against its held spot's roster):
+    // a member came or went, the leader's own leave too (subject: the party).
+    member_joined: link(0),
+    member_left: link(0),
+    // The party's XP share came to exclude this member (PartyRewardMath: its level fell
+    // too far below the party's), raised by the party step on the member (its flip).
+    party_outleveled: link(0)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
@@ -203,6 +211,11 @@ function woke(name, where) {
 // rebuff: how the bot renews its hunting buffs now (Bot/AI/Rebuff: none, the Newbie
 // Guide, its clan hall, a buffer), taken when its last buff ended and at a town
 // arrival; held between (stats.rebuff, carried out once). No held key: none held reads none.
+// party_stay: whether a party member stays (Population/PartyStay: stay, leave, a trip),
+// taken by its party's step: its own death, a full bag, its weapon bridge funded,
+// karma, a new grade, the party outleveling it. Heard
+// only while the bot is in a party (stats.backgroundPartyId): a solo bot's situations
+// wake no stay. No held key: a member that holds none stays.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
@@ -214,7 +227,8 @@ const DECISIONS = Object.freeze({
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
     own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
-    rebuff: Object.freeze(['buffs_expired', 'arrived_town', 'arrived_town:own'])
+    rebuff: Object.freeze(['buffs_expired', 'arrived_town', 'arrived_town:own']),
+    party_stay: Object.freeze(['died', 'bag_full', 'goal_affordable:focus', 'karma_changed', 'grade_changed', 'party_outleveled'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -237,8 +251,14 @@ const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections' });
 const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
 // The bits raised and not yet decided (a row saved before the store kept no bits: every
 // decision, once); the ones a decision with no held answer adds are read, never stored.
-const storedBits = stats => stats?.woken === undefined ? ALL : Number(stats.woken) || 0;
-const wokenBits = stats => storedBits(stats) | unheld(stats);
+// A row with no bits yet holds every decision woken once but a member's stay, which
+// only its own situations wake (a solo row would carry it forever: no step decides it).
+const FIRST = ALL & ~BITS.party_stay;
+const storedBits = stats => stats?.woken === undefined ? FIRST : Number(stats.woken) || 0;
+// A member's stay is heard only while the bot is in a background party: a bit a row
+// keeps past a leave that dropped the party by another path (a player's takeover, an
+// orphan repair) reads unwoken on a solo row, whichever path left it there.
+const wokenBits = stats => (storedBits(stats) | unheld(stats)) & (stats?.backgroundPartyId ? ALL : ~BITS.party_stay);
 // The health line's counts (counts()), always on: what was raised where, which
 // situation woke which decision, the decisions taken or served, and those taken with
 // no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
@@ -318,11 +338,12 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
     // A gear errand failed on its item (its mark) is its gear source failing: it wakes
     // what a stalled source wakes too (source_stalled: the gear plan).
-    const wakes = facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name];
+    // A member's stay hears its situations only while it is in a party.
+    const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & (stats?.backgroundPartyId ? ALL : ~BITS.party_stay);
     return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
         leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
 }
-// The facts a raise writes beside its bits (situations.md B6), each owned by its
+// The facts a raise writes beside its bits, each owned by its
 // reader: player_command's spot becomes the held earning answer (the player decided:
 // EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken); the spot
 // of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
@@ -426,6 +447,18 @@ function decided(stats, decisions, { caller = 'other', served = false, subject =
     return bits;
 }
 
+// A member's stay answered by its leave (BackgroundPartyLifecycle.releaseMember): a
+// solo bot holds no stay, so its bit is decided (as caller) and cleared on every
+// waiting plane, or a solo's stop would wake it. Written on stats.
+function leftParty(stats, subject = 0, caller = 'party_left') {
+    const bits = planes(BITS.party_stay), held = storedBits(stats) & BITS.party_stay;
+    if (!held && !(Number(stats.waiting) & bits)) return stats;
+    // Decided as the member it was (stats already carry the leave: no party).
+    if (held) stats.woken = decided({ ...stats, backgroundPartyId: true }, 'party_stay', { caller, subject, answer: 'left' });
+    stats.waiting = (Number(stats.waiting) || 0) & ~bits;
+    return stats;
+}
+
 // The fact readers (DecisionSections: the views and facts its builds keep as their
 // baseline). lazy: cycle DecisionSections reads this catalogue at its top.
 let Readers = null;
@@ -447,8 +480,6 @@ function factNames(previousFact, current, planned = false) {
     // The clan (its id; a baseline kept before the fact was its own has none to compare).
     const clan = previousFact('clan');
     if (clan !== undefined && clan !== current.clan) add('clan_changed');
-    // A new party or a new role in it reads as joining it.
-    if (previousFact('party') !== current.party) add(current.party === readers().NO_PARTY ? 'party_left' : 'party_joined');
     // Resting reads as hunting at its spot: a rest where the bot hunted is
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) add('moved_by_world');
@@ -532,9 +563,9 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const previousFact = key => Object.hasOwn(previous, key) ? previous[key]
         : key === 'outleveled' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which
-    // reads them; the party with them.
+    // reads them. A party left is raised at the leave (party_left), not read here.
     const view = Sections.stateView(after);
-    const current = { ...Sections.factsOf(view), relations: previousFact('relations'), party: previousFact('party') };
+    const current = { ...Sections.factsOf(view), relations: previousFact('relations') };
     // The wallet now against the decision's armed money thresholds (goal_affordable:<kind>,
     // out_of_money), while the wallet stands past them (moneyCrossings).
     const money = Sections.moneyCrossings(invoke('GameServer/Bot/Economy/PurchaseFunding').budget(after, escrow),
@@ -563,7 +594,91 @@ function needsOpened(before, names, now, was = null) {
     }
     return opened;
 }
+// The party's decisions (subject: the party, decided on the worker at its step, hot
+// parties at their first cold step): one bit each in party.stats.woken, heard at the
+// party step (its round end is its stop). party_spot: where the party hunts, held in
+// party.stats.partySpot { spotId, at, objective, roster, deaths, outleveled } (the
+// answer and the facts it was taken on), taken at its situations: a member joined or
+// left, a contest lost at the party's arrival, its own deaths on the spot, a round the
+// spot admitted no fight of it, the spot outleveled by its leader. A member's own
+// situations wake the member (party_stay), never the party.
+const PARTY_DECISIONS = Object.freeze({
+    party_spot: Object.freeze(['member_joined', 'member_left', 'contest_lost', 'spot_dangerous', 'spot_empty', 'spot_outleveled'])
+});
+const PARTY_BITS = Object.freeze(Object.fromEntries(Object.keys(PARTY_DECISIONS).map((name, at) => [name, 1 << at])));
+const PARTY_WAKES = Object.freeze(Object.fromEntries(Object.values(PARTY_DECISIONS).flat().map(name => [name,
+    Object.entries(PARTY_DECISIONS).reduce((bits, [decision, names]) => names.includes(name) ? bits | PARTY_BITS[decision] : bits, 0)])));
+// The objective a party's spot answer was taken for (its kind, target and ground): a
+// new objective is a new question, its old answer none.
+function partyObjectiveKey(objective) {
+    const o = objective || {};
+    return readers().hash([o.spotId, o.npcId, o.clanGoalKey, o.sourceKind, o.raidBoss, o.opportunisticRaid, o.reason, o.kind]
+        .map(value => value ?? null));
+}
+const rosterOf = party => [...new Set((party?.memberIds || []).map(Number))].sort((a, b) => a - b);
+// The party's held spot answer, when it answers the party as it stands: taken for its
+// objective and naming the ground it holds (a party moved by another hand, a hot
+// party on main, holds none). None: the decision reads woken.
+function partyHeld(party) {
+    const held = party?.stats?.partySpot;
+    if (!held || held.objective !== partyObjectiveKey(party.stats.objective)) return null;
+    return String(held.spotId ?? '') === String(party.spotId ?? '') ? held : null;
+}
+const partyWoken = (party, decision = 'party_spot') => !partyHeld(party) || !!(Number(party.stats?.woken) & PARTY_BITS[decision]);
+// The one writer of a party's bits: its situations raised at its step (the party
+// step's diff, detectParty). One that adds no bit is no news: not counted.
+// stats: a copy the caller owns, written and returned. subject: the party's leader.
+function raiseParty(stats, names, partyId, subject = 0) {
+    for (const name of names) {
+        const bits = PARTY_WAKES[name] || 0, stored = Number(stats.woken) || 0;
+        if (!bits || (stored | bits) === stored) continue;
+        stats.woken = stored | bits;
+        count(raisedCounts, `${name}@party`);
+        count(wokeCounts, `party_spot<${name}`);
+        if (Trace.on()) Trace.record({ kind: 'raise', bot: subject, party: String(partyId), name, place: 'party', woke: 'party_spot' });
+    }
+    return stats;
+}
+// A party decision taken: its bit cleared (decided's counts: taken, unwoken by caller).
+// Returns the bits left.
+function partyDecided(party, decision, { caller = 'party_step', subject = 0, answer = null, was = null } = {}) {
+    const unwoken = !partyWoken(party, decision);
+    count(decidedCounts, decision, 0);
+    if (unwoken) count(unwokenCounts, `${decision}:${caller}`);
+    if (Trace.on()) Trace.record({ kind: 'decided', bot: subject, party: String(party.partyId), decision, caller, how: unwoken ? 'unwoken' : 'taken',
+        ...(answer == null ? {} : { answer: String(answer) }), ...(was == null ? {} : { was: String(was) }) });
+    return (Number(party.stats?.woken) || 0) & ~PARTY_BITS[decision];
+}
+// The party spot's held answer and the facts it stands on: the roster, the party's
+// own deaths on the spot and whether the leader outlevels it (detectParty diffs them).
+function partySpotAnswer(party, answer, at, { deaths = 0, leaderLevel = 1 } = {}) {
+    return { spotId: answer?.spotId ?? null, at, objective: partyObjectiveKey(party.stats?.objective), roster: rosterOf(party),
+        deaths, outleveled: answer?.spotId == null ? 0 : outleveledSpot(answer.spotId, leaderLevel) };
+}
+let SpotTable = null;
+const outleveledSpot = (spotId, level) => (SpotTable ||= invoke('GameServer/Bot/AI/SpotValueTable')).outleveled(spotId, level) ? 1 : 0;
+// The party step's situations against its held answer (one function, the worker's
+// step for every far party): a member joined or left (the roster), its own deaths on
+// the spot rose (spot_dangerous), the leader outlevels the spot past the deep-blue gap
+// (spot_outleveled, its 0 -> 1 flip), and the marks its writers left on the held spot
+// (contest_lost at its arrival, spot_empty from a round that admitted no fight:
+// marks: the party's marks that hold, PartySpotRiskPolicy.marks). None held: none
+// (the decision reads woken).
+function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = {}) {
+    if (!held) return [];
+    const names = [], roster = rosterOf(party), was = new Set(held.roster || []);
+    if (roster.some(id => !was.has(id))) names.push('member_joined');
+    if ((held.roster || []).some(id => !roster.includes(id))) names.push('member_left');
+    if (deaths > Number(held.deaths || 0)) names.push('spot_dangerous');
+    if (!held.outleveled && held.spotId != null && outleveledSpot(held.spotId, leaderLevel)) names.push('spot_outleveled');
+    for (const mark of marks) {
+        if (String(mark.spotId) === String(held.spotId) && PARTY_WAKES[mark.reason] && !names.includes(mark.reason)) names.push(mark.reason);
+    }
+    return names;
+}
+
 module.exports = {
+    PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
-    DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, FIRST, raise, delta, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

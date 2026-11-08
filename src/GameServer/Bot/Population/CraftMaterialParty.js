@@ -1,7 +1,7 @@
 'use strict';
 
 const MAX_SOURCE_CHECKS = 32, MAX_CAMPS = 4, MAX_CORE = 3, MAX_MEMBERS = 5;
-const REVIEW_MS = 5 * 60000, SOURCE_CACHE_SIZE = 256;
+const SOURCE_CACHE_SIZE = 256;
 const sources = new WeakMap();
 const positive = value => Math.max(0, Number(value) || 0);
 const { fnv1a32 } = require('../Fnv1a');
@@ -279,4 +279,4 @@ function canHunt(members, spot, profiles = null, npcIds = null) {
 }
 
 module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, canHunt, agreement, departureRequest, joint, target, campsFor, partySpoiler,
-    MAX_SOURCE_CHECKS, MAX_CAMPS, MAX_CORE, MAX_MEMBERS, REVIEW_MS };
+    MAX_SOURCE_CHECKS, MAX_CAMPS, MAX_CORE, MAX_MEMBERS };

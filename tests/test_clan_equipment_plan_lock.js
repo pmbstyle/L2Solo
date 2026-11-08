@@ -90,8 +90,7 @@ async function main() {
             memberIds: [1, 2, 3, 4, 5, 6, 7],
             stats: {
                 objective: { clanId: 77, sourceKind: 'raid', raidBoss: true, spotId: 'raid:10029', minPartySize: 7 },
-                raidEncounter: { status: 'active' },
-                sessionReview: { at: 0, nextAt: 1 }
+                raidEncounter: { status: 'active' }
             }
         };
         PartyState.active = () => [raidParty];
@@ -148,14 +147,15 @@ async function main() {
         PartyState.active = () => [abandonedLegacyRaid];
         assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
             'a retreated legacy raid must not keep the clan equipment planner locked');
-        const abandonedReview = BackgroundPartyLifecycle.review(abandonedLegacyRaid,
-            abandonedLegacyRaid.memberIds.map((characterId) => ({
-                characterId,
-                level: 50,
-                activity: 'grouped',
-                party: { partyId: abandonedLegacyRaid.partyId },
-                stats: { clanPartyObjective: abandonedLegacyRaid.stats.objective }
-            })), Date.now());
+        const abandonedMembers = abandonedLegacyRaid.memberIds.map((characterId) => ({
+            characterId,
+            level: 50,
+            activity: 'grouped',
+            party: { partyId: abandonedLegacyRaid.partyId },
+            stats: { clanPartyObjective: abandonedLegacyRaid.stats.objective }
+        }));
+        const abandonedReview = BackgroundPartyLifecycle.release(abandonedLegacyRaid, abandonedMembers,
+            BackgroundPartyLifecycle.objectiveEnds(abandonedLegacyRaid, abandonedMembers, Date.now()).leaving, Date.now());
         assert.strictEqual(abandonedReview.party.status, 'dissolved',
             'the stale retreated raid roster must dissolve immediately when reviewed');
         assert([...abandonedReview.leaving.values()].every((reason) => reason === 'raid_failed'),

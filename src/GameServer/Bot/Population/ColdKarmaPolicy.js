@@ -87,10 +87,8 @@ function decideEarning(state, stats, spots, timestamp) {
 // A karma step (the worker's planLifecycle, main's cold entry): it executes the
 // held answer (stats.earning). While the earning spot is woken the worker takes
 // the decision first (decideEarning); main rests until the answer comes. With no
-// spot, or one its marks exclude, it rests. A party member
-// decides no earning spot (EconomyContext.earningDue): its step takes the wash's
-// choice itself, as before situations step 1 (temporary until the party
-// aggregate, step 8; debt.md).
+// spot, or one its marks exclude, it rests. A party member with karma leaves its
+// party (its stay, PartyStay): the wash is a solo hunt.
 function plan(state, spots, timestamp = Date.now()) {
     if (!active(state)) return null;
     const clean = washingState(state, timestamp);
@@ -100,16 +98,15 @@ function plan(state, spots, timestamp = Date.now()) {
         && !excludedSpotIds.has(travel.spotId)) {
         return { targetNpcId: 0, plannedState: clean, spot: SpotIndex.spotById(spots, travel.spotId) };
     }
-    const member = !!(state.party?.partyId || state.partyId);
     let earning = state.stats?.earning;
-    if (!member && Situations.woken(state.stats, 'earning_spot')) {
+    if (Situations.woken(state.stats, 'earning_spot')) {
         // Woken (karma just appeared, no answer yet, another situation): a karma step is the
         // bot's decision point (its build only runs after the round), so on the worker the
         // earning decision is taken here by its one search (the karma wash's choice there),
         // published on the planned state as a build publishes it; main never decides: it rests.
         earning = isMainThread ? null : decideEarning(state, clean.stats, spots, timestamp);
     }
-    const held = member ? washSpot(state, spots, timestamp) : SpotIndex.spotById(spots, earning?.spotId);
+    const held = SpotIndex.spotById(spots, earning?.spotId);
     const spot = held && !excludedSpotIds.has(String(held.id)) ? held : null;
     clean.stats.travel = null;
     if (state.activity === 'dead') return { targetNpcId: 0, plannedState: clean, spot };

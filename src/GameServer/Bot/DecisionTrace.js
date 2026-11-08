@@ -21,7 +21,7 @@ const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 're
     'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level'];
 const TEXT_FIELDS = ['kind', 'name', 'place', 'woke', 'waits', 'decision', 'how', 'answer', 'was', 'killer', 'spot', 'worker', 'site',
     'trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId',
-    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social'];
+    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party'];
 const LONG_TEXT = new Set(['wishKey', 'errandKey', 'site']);
 
 function create({ config = Config, thread = isMainThread ? 'main' : 'worker', now = Date.now } = {}) {

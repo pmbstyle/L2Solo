@@ -70,10 +70,7 @@ function collect(state, options = {}) {
     };
     const baskets = new Map();
     let order = 0;
-    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak'); // lazy: optional, war trips only
     const add = (selfId, amount, offer, terms = {}, attribution = {}) => {
-        // A war supply trip buys its supply alone: the writer refuses the whole basket otherwise.
-        if (PartyBreak.warSupplyPurchaseBlocker(state, selfId)) return;
         if (order >= LIMIT || !offer || offer.town !== town || !(amount > 0)
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);

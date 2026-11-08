@@ -118,9 +118,8 @@ let coordinator = null;
         `INSERT INTO bot_background_parties (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
             cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
-        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}',
-            json_object('sessionReview', json_object('at', ?, 'nextAt', ?)), ?)`,
-        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt - 120000, dueAt - 1, dueAt]
+        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}', '{}', ?)`,
+        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt]
     ]);
     assert.strictEqual(await PartyState.init(), true);
     assert.strictEqual(await LifeState.init(), true);
@@ -132,19 +131,13 @@ let coordinator = null;
 
     coordinator = new ColdSimulationCoordinator();
     let mainCommands = 0;
-    let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
     const combatActionsBefore = Number(Metrics.counters.combatActions || 0);
     LifeState.enqueueEquipmentGoalAdvanceForState = async () => {
         throw new Error('synthetic equipment goal wakeup failure');
     };
     await coordinator.start({
-        executeWorkerLifecycleCommand() { mainCommands += 1; },
-        reconcileWorkerPartyGoals(party) {
-            partyGoalReconciles += 1;
-            assert.strictEqual(party.partyId, 'worker-party');
-            return Promise.resolve({ party, reviewed: 0, departed: null });
-        }
+        executeWorkerLifecycleCommand() { mainCommands += 1; }
     });
 
     const deadline = Date.now() + 25000;
@@ -192,8 +185,6 @@ let coordinator = null;
     assert(Number(snapshot.worker.resolved || 0) >= 2, 'worker must resolve every claimed party member');
     assert(Number(snapshot.queue.committed || 0) >= 2, 'main DB gateway must commit every party member');
     assert(Number(snapshot.worker.proposalCompactions || 0) >= 2, 'the real worker must compact a party exceeding one IPC message');
-    assert.strictEqual(snapshot.partyReviews.committed, 1, 'review telemetry counts the committed review once, not once per member');
-    assert.strictEqual(snapshot.partyReviews.departed, 0);
     const preserved = await Database.execute([`SELECT statsJson FROM bot_life_state WHERE partyId = 'worker-party'`, []]);
     assert(preserved.every(row => JSON.parse(row.statsJson).transportFixture.length === 140000),
         'sparse transport must preserve unchanged durable state for every party member');
@@ -213,8 +204,6 @@ let coordinator = null;
         'worker party commit must feed the public party resolve metric');
     assert(Number(Metrics.counters.combatActions || 0) > combatActionsBefore,
         'actual worker transport and commit must preserve the shared party combat counters');
-    assert.strictEqual(partyGoalReconciles, 1,
-        'one committed worker party combat result must reconcile party goals exactly once through the leader');
 
     await coordinator.stop();
     const cachedState = LifeState.cachedState;

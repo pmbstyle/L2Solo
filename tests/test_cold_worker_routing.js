@@ -122,9 +122,9 @@ try {
     assert.strictEqual(BotRoute.leafChoice(leafHunter, { activity: 'hunting', spotId: 'raid:1' },
         { spots: [currentSpot, { ...targetSpot, id: 'raid:1', raidBoss: true }], timestamp: leafAt }), null,
         'a raid profile is never a solo leaf trip');
-    const avoiding = { ...leafHunter, stats: { coldCompetition: { avoid: { spotId: targetSpot.id, untilStep: 10 } } } };
+    const avoiding = { ...leafHunter, stats: { spotMarks: [{ spotId: targetSpot.id, reason: 'contest_lost', answer: null }] } };
     assert.strictEqual(BotRoute.leafChoice(avoiding, { activity: 'hunting', spotId: targetSpot.id },
-        { spots: [currentSpot, targetSpot], timestamp: leafAt }), null, 'an avoided spot is not a leaf trip');
+        { spots: [currentSpot, targetSpot], timestamp: leafAt }), null, 'a spot its contest lost is not a leaf trip');
     assert.strictEqual(BotRoute.leafChoice(leafHunter, { activity: 'resting' },
         { spots: [currentSpot, targetSpot], timestamp: leafAt }), null);
 
@@ -266,7 +266,7 @@ try {
     const retreatAt = Date.now();
     const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
         spotId: currentSpot.id, loc: { locX: 1, locY: 2, locZ: 3 },
-        stats: { coldCompetition: { avoid: { spotId: currentSpot.id, untilStep: 10 } } } };
+        stats: { spotMarks: [{ spotId: currentSpot.id, reason: 'contest_lost', answer: null }] } };
     SpotProfiles.findForState = (state, options) => {
         assert(options.excludedSpotIds.has(currentSpot.id), 'voluntary avoidance reaches the real route selector');
         assert.strictEqual(options.timestamp, retreatAt);
@@ -424,6 +424,25 @@ try {
     assert.strictEqual(partyRoute.mode, 'party');
     assert.strictEqual(Object.keys(partyRoute.destinations).length, 2);
     assert.deepStrictEqual(partyRoute.destinations['3'], destinationFor(members[1]));
+    // No spot elsewhere has room for the whole party: it stays on its own ground while
+    // that ground fits it; a ground it outgrew is none (the party breaks up).
+    SpotProfiles.findForState = () => null;
+    SpotService.findCurrentSpot = () => targetSpot;
+    const crowded = { ...party, spotId: targetSpot.id };
+    const crowdedMembers = level => members.map(m => ({ ...m, level, spotId: targetSpot.id }));
+    const crowdedChoice = level => BotRoute.choose(crowdedMembers(level)[0], targetSpot, crowded, crowdedMembers(level),
+        { spots: [currentSpot, targetSpot], timestamp: Date.now() })?.spotId;
+    assert.strictEqual(crowdedChoice(19), targetSpot.id, 'no room elsewhere keeps the party on its ground');
+    assert.strictEqual(crowdedChoice(60), null, 'a ground the party outgrew is no answer');
+    // A spot the party only met at (party income) holds while it stands for the party;
+    // outgrown, the objective ends and the party routes as any other (here: no ground).
+    const meeting = level => BotRoute.choose(crowdedMembers(level)[0], targetSpot,
+        { ...crowded, stats: { objective: { reason: 'party_income', spotId: targetSpot.id } } }, crowdedMembers(level),
+        { spots: [currentSpot, targetSpot], timestamp: Date.now() });
+    assert.deepStrictEqual(meeting(19), { spotId: targetSpot.id }, 'a fitting meeting spot holds the party');
+    assert.deepStrictEqual(meeting(60), { spotId: null, objectiveEnded: true }, 'an outgrown meeting spot ends the objective');
+    SpotService.findCurrentSpot = () => currentSpot;
+    SpotProfiles.findForState = routeTargetForState;
 
     const dungeonPoint = { locX: 145224, locY: 120001, locZ: -4500 };
     const lair = { ...targetSpot, id: '24_20:antharas_lair', center: dungeonPoint, name: "Antharas' Lair" };

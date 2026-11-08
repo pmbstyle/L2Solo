@@ -275,6 +275,16 @@ function productionResolverCases(members) {
     const ownerGone = run(members, null);
     assert.equal(ownerGone.partyPatch.status, 'dissolved'); assert.equal(ownerGone.debug.reason, 'raid_roster_owner_changed');
     assert(ownerGone.memberResults.every(row => row.result.materialize.exp === 0 && row.result.materialize.items.length === 0));
+    // An owner snapshot behind a member (its level read before its last commit) waits for
+    // the next snapshot, which the step's own commit publishes; refused again on it, the
+    // roster is judged as any assembly.
+    const lagging = { ...currentOwner, members: currentOwner.members.map((row, index) => index ? row : [row[0], row[1], row[2], row[3] + 1, row[4]]) };
+    const behind = run(members, lagging);
+    assert.equal(behind.debug.reason, 'raid_roster_member_changed');
+    assert.notEqual(behind.partyPatch.status, 'dissolved', 'a roster refused on a snapshot behind it does not break up');
+    assert.equal(behind.partyPatch.stats.rosterRecheck, 'raid_roster_member_changed');
+    const again = run(members, lagging, { ...party, stats: { ...party.stats, rosterRecheck: 'raid_roster_member_changed' } });
+    assert.equal(again.partyPatch.stats.rosterRecheck, undefined, 'refused again on the next snapshot: no second wait');
     const resting = members.map(state => ({ ...state, activity: 'resting',
         vitals: { ...state.vitals, mp: 0 }, stats: { ...state.stats, restUntil: at - 1 } }));
     const restingParty = { ...party, stats: { ...party.stats, restUntil: at - 1,

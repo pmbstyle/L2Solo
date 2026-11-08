@@ -11,7 +11,7 @@ const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Party = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const { ColdCompetitionActions, WAIT_MS } = require('../src/GameServer/Bot/Population/ColdCompetitionActions');
-const { PARTY_AVOID_ROUNDS } = require('../src/GameServer/Bot/Population/ColdCompetitionRetreat');
+const Catalogue = require('../src/GameServer/Bot/Situations');
 const PartyRisk = require('../src/GameServer/Bot/Population/PartySpotRiskPolicy');
 const Risk = require('../src/GameServer/Bot/Population/SpotRiskPolicy');
 const Wait = require('../src/GameServer/Bot/Population/ColdCompetitionWait');
@@ -97,9 +97,12 @@ async function run() {
             assert(party.spotId === 'test' && !party.stats.travel, 'the party\'s next run routes it');
             assert.strictEqual(party.nextResolveAt, at, 'the party runs now');
             assert(PartyRisk.excludedSpotIds(party).has('test'), 'the party avoids the spot');
-            const later = { ...party, stats: { ...party.stats, partySpotRisk: { ...party.stats.partySpotRisk,
-                partyId: party.partyId, rounds: PartyRisk.rounds(party) + PARTY_AVOID_ROUNDS } } };
-            assert(!PartyRisk.excludedSpotIds(later).has('test'), 'the party forgets it after ten of its rounds');
+            // The mark is the party's contest_lost on its held spot (its next step hears it).
+            const held = { ...party, stats: { ...party.stats, partySpot: Catalogue.partySpotAnswer(party, { spotId: 'test' }, 0) } };
+            const marked = PartyRisk.withMark(held, 'test', 'contest_lost');
+            assert.deepStrictEqual(Catalogue.detectParty(marked, Catalogue.partyHeld(marked), { marks: PartyRisk.marks(marked) }), ['contest_lost']);
+            const decided = { ...marked, stats: { ...marked.stats, partySpot: { ...marked.stats.partySpot, at: at + 1 } } };
+            assert(!PartyRisk.excludedSpotIds(decided).has('test'), 'the party\'s next spot answer retires it');
         }
         assert.strictEqual((await actions.apply(forecast)).ok, false, 'delivery cannot replay a departure');
     }
@@ -161,8 +164,8 @@ async function run() {
     const saved = JSON.parse(persisted[0].mindJson);
     assert(saved.spotMarks.some(mark => mark.spotId === 'test' && mark.reason === 'contest_lost'), 'the mark persists in the mind');
     const parties = await Database.execute(['SELECT spotId, statsJson FROM bot_background_parties WHERE partyId=?', ['p9']]);
-    assert.strictEqual(JSON.parse(parties[0].statsJson).coldCompetition.avoid.spotId, 'test',
-        'the party\'s avoid and its members persist together');
+    assert(JSON.parse(parties[0].statsJson).spotMarks.some(mark => mark.spotId === 'test' && mark.reason === 'contest_lost'),
+        'the party\'s mark and its members persist together');
     assert.strictEqual((await invoke('GameServer/Social/InteractionMemoryRepository').load(9)).relations.length, 0);
     console.log('Cold voluntary retreat: all matchups, avoid raised for the worker route, party yield, CAS races, no blame and SQLite reopen passed');
 }

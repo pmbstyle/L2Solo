@@ -125,7 +125,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     if (!spots.length || state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return none;
     // While the bot has karma the decision takes the karma wash's choice (situations.md B6, ColdKarmaPolicy's
     // rule), whatever else it is (a crafter at its station too: karma closes its town): weaker experience-bearing
-    // mobs, on foot; woken again by karma_changed. A party member's wash is its karma step's (ColdKarmaPolicy.plan).
+    // mobs, on foot; woken again by karma_changed. A party member with karma leaves its party first (PartyStay).
     const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
     // A broke bot skips the spots that need survival drinks of it (A5), the karma wash's too.
     const broke = cannotDrink(state, price);

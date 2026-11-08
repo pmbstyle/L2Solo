@@ -137,10 +137,17 @@ async function main() {
             'formation keeps every chosen member; the spot room is not a formation gate');
         assert(Life.cachedState(limited[2].characterId).party?.partyId);
     } finally { Profiles.cache = savedCache; }
-    // A refused roster the assembly asks again on the same members is answered by
-    // its held refusal, with no second request; a member that changed is asked
-    // again. A cooling member wakes its group at its own end: it asks no retry.
+    // Forming's no closes the refused roster's requests (their next build reopens them, a
+    // move of its group); a closed request asks no retry.
     {
+        // A busy worker gives no verdict: no request closes (the roster is asked again on its members' rows).
+        Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
+        Config.partyMaxSize = 2;
+        const busyAsk = { ...request, objectiveKey: 'event-fixture:busy', requestedAt: Date.now() };
+        const busyPair = [await seed({ partyRequest: busyAsk }), await seed({ partyRequest: busyAsk })];
+        assert.deepEqual(await Population.formBackgroundParties(busyPair), []);
+        assert(busyPair.every(state => Life.cachedState(state.characterId).stats.partyRequest.status === 'open'),
+            'a busy worker closes no request');
         let asks = 0;
         Coordinator.requestPartyGoals = async (party, selected) => { asks++; return { ok: true,
             sources: GoalCalculation.sources(selected), joint: GoalPolicy.formingVerdict(selected, party.stats.forming.requested) }; };
@@ -151,19 +158,30 @@ async function main() {
         const pair = [await seed({ partyRequest: refused }), await seed({ partyRequest: refused })];
         assert.deepEqual(await Population.formBackgroundParties(pair), []);
         assert.equal(asks, 1);
-        assert.deepEqual(await Population.formBackgroundParties(pair), []);
-        assert.equal(asks, 1, 'the held refusal answers the retry');
-        const leveled = await Life.upsertState({ ...pair[0], level: 11 }, 'refused_member_fixture');
-        assert.deepEqual(await Population.formBackgroundParties([leveled, pair[1]]), []);
-        assert.equal(asks, 2, 'a member that changed is asked again');
+        assert(pair.every(state => Life.cachedState(state.characterId).stats.partyRequest.status === 'closed'
+            && Life.cachedState(state.characterId).stats.partyRequest.lastReason === 'forming_refused'), 'forming\'s no closes both requests');
+        const answer = await Population.runPartyAssemblyEvent(pair.map(state => Life.cachedState(state.characterId)), Date.now());
+        assert.equal(asks, 1, 'a closed roster is not judged again on a move');
+        assert(!answer.deferred, 'a refused roster asks no retry');
+        // Their next builds reopen the requests.
+        const fresh = [];
+        for (const state of pair) {
+            const current = Life.cachedState(state.characterId);
+            fresh.push(await Life.upsertState({ ...current, stats: { ...current.stats,
+                partyRequest: { ...current.stats.partyRequest, status: 'open' } } }, 'reopened_fixture'));
+        }
+        await Population.formBackgroundParties(fresh, { moved: new Set([999999]) });
+        assert.equal(asks, 1, 'a roster none of whose members moved is not judged again');
+        await Population.formBackgroundParties(fresh, { moved: new Set([Number(pair[0].characterId)]) });
+        assert.equal(asks, 2, 'a roster with a moved member is judged');
         const closed = await Life.upsertState({ ...pair[1], stats: { ...pair[1].stats, partyRequest: { ...refused,
             status: 'closed', lastReason: 'party_assembly_timeout' } } }, 'closed_member_fixture');
-        assert.equal((await Population.runPartyAssemblyEvent([closed], Date.now())).deferred, false,
+        assert(!(await Population.runPartyAssemblyEvent([closed], Date.now())).deferred,
             'a closed request asks no retry: its next build wakes the group');
         Income.compare = (_state, _peers, options) => ({ ...Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }),
             at: options.prepared.timestamp, soloSource: null, partySource: null });
     }
-    console.log('PASS a refused roster is asked once per member change; a closed request asks no retry');
+    console.log('PASS forming\'s no closes a refused roster\'s requests; a closed request asks no retry');
     Population.started = false; Population.playerActivityProfile = savedProfile;
     Coordinator.requestPartyGoals = originalPartyGoals;
     Income.compare = originalIncome;
@@ -255,12 +273,47 @@ async function main() {
         partyRequest: { status: 'open', priority: 'required', spotId: 'A', requestedAt: stampTick.now } } });
     await flush();
     assert.equal(stampService.metrics.events, startEvents + 1); assert.deepEqual([...stampService.dirty], ['spot:A']);
-    assert.equal(stampService.records.get(4001).stamp.length, 8);
     stampService.dirty.clear();
     stampPartyListener({ partyId: 'dissolved-A', status: 'dissolved', spotId: 'A', memberIds: [] },
         { status: 'active', spotId: 'A', memberIds: [] });
     assert.deepEqual([...stampService.dirty], ['spot:A'], 'dissolve wakes only its hunting spot');
-    stampService.stop(); console.log('PASS eight-field stamp, 100 loot publications, request edge and one-spot dissolve');
+    stampService.dirty.clear();
+    // Only a bot that seeks a party (an open request) is a candidate at its moves: a willing
+    // bot arriving wakes nothing; the seeker's level does; any member leaving a group that
+    // holds a seeker wakes it; a roster refused at its commit wakes at its member's next row.
+    stampCache.set(4003, { characterId: 4003, phase: 'cold', level: 30, activity: 'hunting', spotId: 'A', inventory: {}, adena: 0, stats: { classId: 0 } });
+    await flush();
+    assert.equal(stampService.dirty.size, 0, 'a willing bot\'s arrival wakes nothing');
+    stampCache.set(4001, { ...stampCache.get(4001), level: 31 });
+    await flush();
+    assert.deepEqual([...stampService.dirty], ['spot:A'], 'the seeker\'s level moves its roster\'s range');
+    stampService.dirty.clear();
+    stampCache.set(4003, { ...stampCache.get(4003), activity: 'traveling' });
+    await flush();
+    assert.deepEqual([...stampService.dirty], ['spot:A'], 'a member leaving a seeker\'s group wakes it');
+    assert(stampService.groups.get('spot:A').moved.has(4001), 'its seeker\'s rosters are judged');
+    stampService.dirty.clear();
+    stampCache.set(4002, { ...stampCache.get(4002), adena: 5 });
+    await flush();
+    assert.equal(stampService.dirty.size, 0, 'a willing bot\'s loot wakes nothing');
+    stampService.rewakeOn([stampCache.get(4002)]);
+    assert.equal(stampService.dirty.size, 0, 'a refused roster on unmoved rows waits for their next publication');
+    stampCache.set(4002, { ...stampCache.get(4002), adena: 6 });
+    await flush();
+    assert.deepEqual([...stampService.dirty], ['spot:B'], 'a refused commit wakes at its member\'s next published row');
+    stampService.dirty.clear();
+    const judged = stampCache.get(4002);
+    stampCache.set(4002, { ...judged, adena: 7 });
+    await flush();
+    assert.equal(stampService.dirty.size, 0);
+    stampService.rewakeOn([judged]);
+    assert.deepEqual([...stampService.dirty], ['spot:B'], 'a roster refused on a row that has moved since runs at once');
+    stampService.dirty.clear();
+    stampService.waitSlot([stampCache.get(4002)]);
+    stampPartyListener({ partyId: 'dissolved-C', status: 'dissolved', spotId: 'C', memberIds: [] },
+        { status: 'active', spotId: 'C', memberIds: [] });
+    assert.deepEqual([...stampService.dirty], ['spot:B'], 'a roster refused for want of a slot runs when any party ends');
+    stampService.stop(); console.log('PASS waking stamp, 100 loot publications, request edge and one-spot dissolve');
 
     // Actual cache and common registry, controlled decision callback. Safety
     // uses pages of retained rows; no population iterator/planner is needed.
@@ -279,7 +332,7 @@ async function main() {
     let partyListener, defer = false;
     const service = new PartyAssemblyEvents({ registry: queue, life, parties: { subscribeChanges(fn) { partyListener = fn; return () => { partyListener = null; }; } },
         now: () => tick.now, retryMs: 100,
-        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, stamp: [state.level, null, null, state.stats.request, state.stats.status || null, null, null, null] }),
+        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, seeks: true, stamp: [state.level, null, null, state.stats.request, state.stats.status || null, null, null, null] }),
         run(rows, timestamp, help) { attempts.push({ rows, help }); return { deferred: defer }; },
         onRepair: () => repairs.push(1), onError: error => errors.push(error) });
     disposers.push(() => service.stop()); service.start(); await flush();
@@ -302,7 +355,21 @@ async function main() {
     tick.now += 99; queue.tick(tick.now); await flush(); assert.equal(attempts.length, pending);
     defer = false; tick.now++; queue.tick(tick.now); await flush(); assert.equal(attempts.length, pending + 1);
     assert.equal(repairs.length, 0, 'normal busy/retry is not a missed event');
-    service.observe({ characterId: 1, state: previous }); assert.equal(service.records.get(1).state, changed);
+    // A group the running formation kept waiting (busy) sets no clock: it runs when that formation ends.
+    let busy = true;
+    const runBusy = service.run;
+    service.run = (rows, timestamp, help) => { attempts.push({ rows, help }); return busy ? { busy: true } : {}; };
+    for (const group of service.groups.values()) group.handled = group.revision;
+    service.dirty.clear();
+    cache.set(1, { ...cache.get(1), stats: { ...cache.get(1).stats, status: 'closed' } }); queue.tick(tick.now); await flush();
+    const parked = attempts.length;
+    assert(!service.deadlines.has(service.groups.get('pair')), 'a busy group arms no retry');
+    tick.now += 1000; queue.tick(tick.now); await flush(); assert.equal(attempts.length, parked);
+    busy = false; service.wakeParked(); queue.tick(tick.now); await flush();
+    assert.equal(attempts.length, parked + 1, 'the formation\'s end runs the waiting group');
+    service.run = runBusy;
+    const latest = cache.get(1);
+    service.observe({ characterId: 1, state: previous }); assert.equal(service.records.get(1).state, latest);
     partyListener({ partyId: 'real-membership-event', memberIds: [1], status: 'active' }, { memberIds: [], status: 'active' });
     service.wakeHelp(); queue.tick(tick.now); await flush(); assert.equal(attempts.at(-1).help, true);
     console.log('PASS bounded event/coalescing/current-ref, real retry deadline, membership/help and unchanged pulse controls');

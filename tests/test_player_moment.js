@@ -24,7 +24,7 @@ for (const name of ['arrived_town', 'goal_failed', 'goal_done:goal', 'bag_full',
 // gear; low potions are bought, the spot holds; a party left keeps the gear plan.
 assert(Situations.woken(raiseAt('died', 'hunting'), 'earning_spot') && !Situations.woken(raiseAt('died', 'hunting'), 'gear_plan'));
 assert(!Situations.woken(raiseAt('stock_low:potions', 'hunting'), 'earning_spot') && !Situations.woken(raiseAt('party_left', 'hunting'), 'gear_plan'));
-for (const name of ['bag', 'party_joined', 'moved_by_world'])
+for (const name of ['bag', 'moved_by_world'])
     assert(!Situations.woken(raiseAt(name, 'shopping'), 'build'), `${name} wakes no build`);
 assert(!Situations.woken(raiseAt('grade_changed', 'hunting'), 'build') && Situations.woken(raiseAt('grade_changed', 'resting'), 'build'), 'a new grade waits for the rest');
 assert(Situations.woken(raiseAt('grade_changed', 'resting'), 'gear_plan') && !Situations.woken(raiseAt('goal_affordable:focus', 'hunting'), 'gear_plan'),
@@ -92,7 +92,7 @@ assert(Situations.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', 
 assert(hearsAll(cold('hunting', { stats: { tradeMeeting: [1] } }), 'clan_changed'), 'nor on the way to a meeting');
 assert(waitsFor(cold('grouped', { partyId: 'p' }), 'grade_changed'), 'a party fight waits as a hunt');
 assert(hearsAll(cold('resting', { partyId: 'p' }), 'grade_changed', 'clan_changed'), 'and a party reads at its rest');
-assert(hearsAll(cold('grouped', { partyId: 'p' }), 'party_joined', 'party_left', 'died', 'moved_by_world'), 'a join, a role, a death do not wait');
+assert(hearsAll(cold('grouped', { partyId: 'p' }), 'party_left', 'died', 'moved_by_world'), 'a leave, a death do not wait');
 assert(hearsAll(cold('hunting'), 'goal_failed', 'goal_done:goal', 'goal_failed:visit'), 'what its execution proved goes at once');
 assert.equal(Situations.placeName(Situations.place(cold('traveling'))), 'work', 'a hunt or the road is work');
 // Own trips: the bot's way out and back is no event far from a player; the world's push is.

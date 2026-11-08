@@ -14,8 +14,6 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Policy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
 const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
 const Formation = require('../src/GameServer/Bot/Population/RequiredPartyFormation');
-const Goal = invoke('GameServer/Bot/Goals/GoalService');
-const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const restore = [];
 function stub(target, name, value) {
     const old = target[name]; restore.push(() => { target[name] = old; }); target[name] = value;
@@ -94,55 +92,6 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     assert.equal(busyFormed[0].stats.memberGoals.length, 2);
     assert.equal(announcements, 2);
 
-    const active = { ...formed[0], status: 'active', updatedAt: timestamp,
-        startedAt: timestamp - 600000, stats: { ...formed[0].stats, fightsWon: 10, lastProgressAt: timestamp,
-            sessionReview: { at: timestamp - 600000, nextAt: timestamp - 1, wins: 9 } } };
-    const grouped = members.map(member => ({ ...member, activity: 'grouped', party: { partyId: active.partyId, leaderId: active.leaderId },
-        stats: { ...member.stats, partyRequest: null } }));
-    stub(Life, 'statesForParty', async () => grouped); stub(Life, 'cachedState', id => grouped.find(member => member.characterId === Number(id)));
-    stub(Parties, 'find', () => active);
-    Coordinator.requestPartyGoals = async (party, selected) => { queries++;
-        return { ok: true, sources: Calculation.sources(selected), joint: Policy.joint(party, selected) }; };
-    stub(Goal, 'snapshot', () => ({ current: { nextReviewAt: timestamp + 3600000 } }));
-    stub(Market, 'reconcile', async () => null);
-    stub(Parties, 'commitGoals', async (party, selected, joint) => { writes++; assert.equal(joint.memberGoals.length, 2); return party; });
-    await Population.reconcileWorkerPartyGoals(active, timestamp);
-    Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
-        sources: Calculation.sources(selected).map(source => ({ ...source, revision: source.revision + 1 })), joint: { memberGoals: [] } });
-    const beforeStale = writes;
-    await Population.reconcileWorkerPartyGoals(active, timestamp);
-    assert.equal(writes, beforeStale, 'wrong source result cannot write party goals');
-    const incomeParty = { ...active, memberIds: [901, 902, 903], leaderId: 901,
-        stats: { objective: { spotId: spot.id }, agreement: { memberIds: [901, 902, 903] } } };
-    const incomeMembers = [...grouped, { ...grouped[1], characterId: 903 }];
-    Life.cachedState = id => incomeMembers.find(member => member.characterId === Number(id));
-    Parties.find = () => incomeParty;
-    let incomeSource = 'table_party', incomeFee = 0, incomeDepartures = 0, retainedParty;
-    Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
-        sources: Calculation.sources(selected), joint: { memberGoals: selected.map(Policy.declaration),
-            lastIncomeReviewAt: timestamp, incomeReviews: [{ characterId: 901, accept: false,
-                reason: 'solo_preferred', partySource: incomeSource, soloIncome: 1000, partyIncome: 200, fee: incomeFee }] } });
-    Parties.commitGoals = async party => party;
-    stub(Life, 'leaveParty', async (member, reason, options) => {
-        assert.equal(reason, 'better_solo_income'); assert.equal(options.ownerHandoff, true);
-        incomeDepartures++; return { ...member, party: { partyId: null } };
-    });
-    Parties.createOrUpdate = async party => { retainedParty = party; return party; };
-    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
-    assert.equal(incomeDepartures, 0, 'a table forecast alone cannot eject an existing member');
-    incomeSource = 'own_party'; incomeFee = 100;
-    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
-    assert.equal(incomeDepartures, 0, 'an unsettled helper fee prevents an income departure');
-    incomeFee = 0; incomeParty.stats.pveEncounter = { status: 'active' };
-    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
-    assert.equal(incomeDepartures, 0, 'income review cannot interrupt combat');
-    delete incomeParty.stats.pveEncounter;
-    const soloExit = await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
-    assert.equal(incomeDepartures, 1, 'a measured personal loss detaches one member at a safe boundary');
-    assert.equal(soloExit.departed.characterId, 901);
-    assert.deepEqual(retainedParty.memberIds, [902, 903]);
-    assert.deepEqual(retainedParty.stats.agreement.memberIds, [902, 903]);
-    assert(retainedParty.memberIds.includes(retainedParty.leaderId), 'the retained party has an attached leader');
     const materialMembers = members.map((member, index) => ({ ...member, level: 65,
         stats: { ...member.stats, equipmentPlan: { target: { selfId: 5726 + index } },
             partyRequest: { ...member.stats.partyRequest, materialParty: true, reason: 'craft_material',

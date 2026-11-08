@@ -5,7 +5,7 @@ const hiddenFields = {
     BotPopulation: new Set([
         'enabled', 'developerDiagnostics', 'coldWorkerHeapSnapshot', 'decisionTrace',
         'backgroundResolverEnabled', 'backgroundPartyEnabled', 'opportunisticRaidsEnabled', 'opportunisticRaidAliveFraction',
-        'opportunisticRaidSearchIntervalMs', 'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
+        'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
         'opportunisticRaidMaxParties', 'opportunisticRaidMaxFightSeconds', 'opportunisticRaidShotReserve', 'opportunisticRaidExpeditionMs',
         'phasePolicyEnabled', 'backgroundGovernorEnabled', 'backgroundJobTickMs', 'backgroundGovernorWindowMs',
         'backgroundGovernorIdleBudgetMs', 'backgroundGovernorPlayerBudgetMs', 'backgroundGovernorIdleDbQueueMax',

@@ -714,15 +714,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
     assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
     assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
-    const baselineReview = refreshProposal.partyResolution.party.stats.sessionReview;
-    assert(Number.isSafeInteger(baselineReview?.key) && baselineReview.decisions.length === 0,
-        'a new party\'s first resolve records its review evidence, with no review step');
-    const baselineParty = refreshProposal.partyResolution.party, baselineStats = baselineParty.stats;
-    assert(!require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle').sessionExpired(
-        { ...baselineParty, stats: { ...baselineStats, fightsResolved: Number(baselineStats.fightsResolved || 0) + 50,
-            fightsWon: Number(baselineStats.fightsWon || 0) + 50, lastProgressAt: now + 3600000 - 1000 } },
-        now + 3600000, refreshKernel.partyReviewOptions({ party: refreshParty }), refreshMembers),
-    'a winning party with unchanged inputs is not reviewed on the clock');
 
     // A member whose own step moved its kit opens the re-plan with
     // no due mark from main; members already passed wait for the next step.
@@ -818,91 +809,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             && proposal.nextState.activity === 'hunting'), 'native completion releases every physical state');
     }
 
-    const expiredPartyMessages = [];
-    const expiredPartyMembers = [
-        state(22, {
-            activity: 'grouped',
-            party: { partyId: 'expired-party', leaderId: 22 },
-            stats: { partyRequest: { status: 'open', priority: 'required' } }
-        }),
-        state(23, {
-            activity: 'traveling',
-            party: { partyId: 'expired-party', leaderId: 22 },
-            stats: {
-                partyRequest: { status: 'open', priority: 'required' },
-                travel: { reason: 'party_spot_replan', spotId: 'old-party-spot' }
-            }
-        })
-    ];
-    const expiredParty = {
-        partyId: 'expired-party',
-        leaderId: 22,
-        memberIds: [22, 23],
-        spotId: 'old-party-spot',
-        startedAt: now - 120000,
-        // The review's clock (a concern's grace) ran out.
-        stats: { sessionReview: { at: now - 300000, nextAt: now - 1 } }
-    };
-    const expiredPartyKernel = recordingKernel({
-        resolveSolo: resolver,
-        resolveParty: () => { throw new Error('expired party must not enter combat'); },
-        emit: (type, payload) => expiredPartyMessages.push({ type, payload }),
-        now: () => now
-    });
-    expiredPartyKernel.upsert(standOn(expiredPartyKernel, { state: expiredPartyMembers[0] }, { id: 'old-party-spot' }));
-    expiredPartyKernel.upsert({ state: expiredPartyMembers[1] });
-    expiredPartyKernel.partyPut(expiredParty.partyId, expiredParty);
-    expiredPartyKernel.tick();
-    assert.deepStrictEqual(lastSteps(expiredPartyKernel), [22, 23]);
-    await expiredPartyKernel.resolveChain;
-    const expiryProposal = expiredPartyMessages.find((entry) => entry.type === 'proposal_batch');
-    assert.strictEqual(expiryProposal.payload.proposals.length, 2, 'expired party release must include every member');
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.atomicGroup?.memberIds.join(',') === '22,23'));
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.party.partyId === 'expired-party'));
-    assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 22)
-        .partyResolution.party.status, 'active');
-    assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 23)
-        .nextState.activity, expiredPartyMembers[1].activity, 'a review alone preserves current travel/activity');
-    const reviewed = expiryProposal.payload.proposals.find(p => p.partyResolution).partyResolution.party.stats.sessionReview;
-    assert(Number.isSafeInteger(reviewed.key) && !(reviewed.nextAt > 0 && reviewed.nextAt <= now),
-        'review records its inputs rather than spin on a spent deadline');
-
-    const expiryScheduleMessages = [];
-    let expiryScheduleNow = now;
-    const expiryScheduleMembers = [
-        state(25, {
-            timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: expiryScheduleNow + 60000 },
-            party: { partyId: 'scheduled-expiry-party', leaderId: 25 }
-        }),
-        state(26, {
-            timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: expiryScheduleNow + 60000 },
-            party: { partyId: 'scheduled-expiry-party', leaderId: 25 }
-        })
-    ];
-    const expiryScheduleParty = {
-        partyId: 'scheduled-expiry-party',
-        leaderId: 25,
-        memberIds: [25, 26],
-        nextResolveAt: expiryScheduleNow + 60000,
-        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 5000 } }
-    };
-    const expiryScheduleKernel = recordingKernel({
-        resolveSolo: resolver,
-        resolveParty: resolver,
-        emit: (type, payload) => expiryScheduleMessages.push({ type, payload }),
-        now: () => expiryScheduleNow
-    });
-    expiryScheduleKernel.upsert(standOn(expiryScheduleKernel, { state: expiryScheduleMembers[0] }, { id: 'scheduled-expiry-spot' }));
-    expiryScheduleKernel.upsert({ state: expiryScheduleMembers[1] });
-    expiryScheduleKernel.partyPut(expiryScheduleParty.partyId, expiryScheduleParty);
-    expiryScheduleKernel.tick();
-    assert.strictEqual(expiryScheduleMessages.length, 0,
-        'a valid party must remain scheduled until its earliest resolve or expiry');
-    expiryScheduleNow += 5001;
-    expiryScheduleKernel.tick();
-    assert.deepStrictEqual(lastSteps(expiryScheduleKernel), [25, 26],
-        'a valid party must step at session expiry even when nextResolveAt is later');
-
+    const expiryScheduleNow = now;
     const partyDue = expiryScheduleNow + 3000;
     const partyDueLeader = state(27, {
         timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
@@ -917,15 +824,15 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 27,
         memberIds: [27, 28],
         nextResolveAt: partyDue,
-        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 60000 } }
+        stats: {}
     };
     const partyDueFacts = leading(partyDueParty, [partyDueLeader, partyDueMember]);
-    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, {}, false, partyDueFacts), partyDue,
+    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, {}, partyDueFacts), partyDue,
         'a newly assigned leader with no personal due time must use the durable party schedule');
     assert.strictEqual(nextDueAt({
         ...partyDueLeader,
         timing: { ...partyDueLeader.timing, nextResolveAt: expiryScheduleNow + 1000 }
-    }, expiryScheduleNow, {}, false, partyDueFacts), partyDue,
+    }, expiryScheduleNow, {}, partyDueFacts), partyDue,
         'a stale leader schedule must not outrun the authoritative party row');
 
     const priorityParty = {
@@ -953,7 +860,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 24,
         memberIds: [24],
         nextResolveAt: singletonNow + 60000,
-        stats: { sessionReview: { at: singletonNow - 1000, nextAt: singletonNow + 5000 } }
+        stats: {}
     };
     const singletonKernel = recordingKernel({
         resolveSolo: resolver,
@@ -1017,7 +924,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     const partyRouteKernel = recordingKernel({
         resolveSolo: resolver,
         resolveParty: () => { throw new Error('party combat must not run during route travel'); },
-        partyRoute: () => partyRoute,
+        partyRoute: () => ({ route: partyRoute }),
         emit: (type, payload) => partyRouteMessages.push({ type, payload }),
         now: () => now
     });
@@ -1041,7 +948,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     // A party's wanted trip waits for its engaged fight, which ends with no new one.
     {
         let fight = null;
-        const held = recordingKernel({ resolveSolo: resolver, partyRoute: () => partyRoute, emit: () => {}, now: () => now,
+        const held = recordingKernel({ resolveSolo: resolver, partyRoute: () => ({ route: partyRoute }), emit: () => {}, now: () => now,
             resolveParty: (options) => { fight = options; return { memberResults: options.members.map(member => ({ state: member, result: {} })),
                 events: [], partyPatch: {}, nextResolveAt: options.timestamp + 60000 }; } });
         held.upsert(standOn(held, { state: partyRouteMembers[0] }, { id: 'starter-field' }));
@@ -1637,7 +1544,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         ['empty-party', 4, emptyNow + 60000, undefined], 'the row change is fenced on the run\'s revision');
     const emptyLeaderCommit = emptyCommits.find(proposal => proposal.partyResolution);
     assert.strictEqual(emptyLeaderCommit.characterId, 250);
-    assert.strictEqual(emptyLeaderCommit.partyResolution.reviewGoals, true, 'main reviews the party\'s goals');
     assert(emptyKernel.busy(250) && emptyKernel.busy(251), 'every member stays in flight until the commit ACK');
     emptyKernel.partyPut(emptyParty.partyId, { ...emptyParty, nextResolveAt: emptyNow + 60000, revision: 5 });
     commitAck(emptyKernel, { results: emptyCommits.map(proposal => ({ ok: true, characterId: proposal.characterId,

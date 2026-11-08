@@ -296,7 +296,6 @@ function onWorker() {
             const onUnsafe = { ...leveling, spotId: 'unsafe', loc: unsafe.center,
                 stats: { ...leveling.stats, earning: { ...leveling.stats.earning, spotId: 'unsafe' } } };
             const evacuating = {};
-            BotRoute.soloGroundMissing(onUnsafe, [...spots, unsafe], { owner: evacuating, timestamp: time(13) });
             const fled = BotRoute.trip(evacuating, onUnsafe, null, { spots: [...spots, unsafe], currentSpot: unsafe, timestamp: time(13) });
             assert(fled?.spotId && fled.spotId !== 'unsafe', 'unsafe held ground: the route evacuates');
             assert.equal(evacuating.route, undefined, 'no held route is kept on the record');

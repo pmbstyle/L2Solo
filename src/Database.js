@@ -2092,6 +2092,17 @@ function applySchemaMigrations() {
             WHERE mindJson LIKE '%stockTargets%' AND json_valid(mindJson);
             UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.stockTargets')
             WHERE statsJson LIKE '%stockTargets%' AND json_valid(statsJson);
+        `)],
+        // A war party's supply trip (a return ticket naming its war operation) has no
+        // writer left: a member's stay lets no war member go. A saved one would read as a
+        // clan duty ticket; it is dropped and the bot returns as any shopper.
+        ['drop-war-supply-tickets', () => connection.exec(`
+            UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.partyMarketReturn')
+            WHERE statsJson LIKE '%warOperationId%' AND json_valid(statsJson)
+                AND json_type(statsJson, '$.partyMarketReturn.warOperationId') IS NOT NULL;
+            UPDATE bot_life_state SET mindJson = json_remove(mindJson, '$.partyMarketReturn')
+            WHERE mindJson LIKE '%warOperationId%' AND json_valid(mindJson)
+                AND json_type(mindJson, '$.partyMarketReturn.warOperationId') IS NOT NULL;
         `)]
     ];
     const migrate = (apply, record) => {
@@ -2737,15 +2748,6 @@ function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip, heldItemI
         else if (Object.hasOwn(stats, key)) patch[key] = null;
     }
     return { ids: [...ids], patch };
-}
-
-function checkWarSupplyPurchaseUnsafe(characterId, itemId, source = null) {
-    const row = source || one('SELECT statsJson,mindJson FROM bot_life_state WHERE characterId=?', [characterId]);
-    if (!row) return;
-    const reason = require('./GameServer/Bot/Population/PartyMarketBreak').warSupplyPurchaseBlocker({
-        stats: SavedStats.merge(row.statsJson, row.mindJson)
-    }, itemId, now());
-    if (reason) throw Error(reason);
 }
 
 function checkArrowPurchaseUnsafe(characterId, itemId, count, source = null, pending = [], excludeMeeting = 0) {
@@ -5863,7 +5865,6 @@ const Database = {
             if (!line || Number(line.count) < quantity) throw new Error('afk_trade_stock_changed');
             if (details.expectedPrice !== undefined && Number(details.expectedPrice) !== Number(line.price)) throw new Error('afk_trade_price_changed');
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
-            checkWarSupplyPurchaseUnsafe(buyerId, line.selfId, step?.row);
             checkArrowPurchaseUnsafe(buyerId, line.selfId, quantity, step?.row);
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
@@ -6119,18 +6120,11 @@ const Database = {
         return enqueue(() => ids.map(id => require('./GameServer/Social/InteractionMemoryRows').load({ one, all }, id)), { operation: 'social-memory:load', read: true });
     },
 
-    saveBackgroundParty(row, { preserveWarOperation = false } = {}) {
+    saveBackgroundParty(row) {
         return inTransaction(() => {
             const previous = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [row.partyId]);
             const proof = jsonObject(row.statsJson).raidAdmission;
             const previousStats = jsonObject(previous?.statsJson), nextStats = jsonObject(row.statsJson);
-            // A supply departure may await its member handoff while the
-            // director repairs or closes the order. That owner wins here.
-            if (preserveWarOperation && previous) {
-                if (Object.hasOwn(previousStats, 'warOperation')) nextStats.warOperation = previousStats.warOperation;
-                else delete nextStats.warOperation;
-                row = { ...row, statsJson: JSON.stringify(nextStats) };
-            }
             if ((proof || previousStats.raidAdmission) && (JSON.stringify(proof) !== JSON.stringify(previousStats.raidAdmission)
                 || !require('./GameServer/Clan/ClanRaidRoster').same(previousStats.objective?.fullRoster, nextStats.objective?.fullRoster)))
                 return { affectedRows: 0, reason: 'raid_admission' };
@@ -7032,15 +7026,10 @@ const Database = {
 
             delete partyStats.playerTakeover;
             partyStats.partyBreakReason = 'player_party_released';
-            // Time spent under a player leader is not autonomous party-session
-            // age. The bots' next resolve records a fresh review baseline.
+            // Back from a player's lead the party decides its spot afresh (no held answer).
             partyStats.formedAt = timestamp;
-            partyStats.sessionReview = null;
-            partyStats.lastProgressAt = timestamp;
+            partyStats.partySpot = null;
             partyStats.partySpotRisk = null;
-            // The takeover ends the party's competition episode: its avoid
-            // counts the party rounds just reset with partySpotRisk.
-            if (partyStats.coldCompetition?.avoid) partyStats.coldCompetition = { ...partyStats.coldCompetition, avoid: null };
             partyStats.hotLifecycle = phase === 'hot'
                 ? { startedAt: timestamp, reason: 'player_party_released' }
                 : null;
@@ -8349,7 +8338,6 @@ const Database = {
                     if (!quote || Number(quote.price) !== price
                         || !require('./GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId)) throw Error('npc_quote_changed');
                 }
-                checkWarSupplyPurchaseUnsafe(characterId, itemId, step?.row);
                 const stackable = line.stackable === undefined ? !!template?.etc?.stackable : !!line.stackable;
                 const slot = line.slot === undefined ? Number(template?.etc?.slot || 0) : Number(line.slot);
                 // Stack quantities come from the funded missing need. They use
@@ -11798,10 +11786,7 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (!Number.isSafeInteger(bag + pending + count)) throw Error('trade_meeting_integer');
         return creditRecordOwnerUnsafe(owner, item, count, at);
     }, funding: checkEconomyFundingUnsafe,
-    canReceive: (id, life, itemId, count, pending) => {
-        checkWarSupplyPurchaseUnsafe(id, itemId, life);
-        checkArrowPurchaseUnsafe(id, itemId, count, life, pending);
-    },
+    canReceive: (id, life, itemId, count, pending) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending),
     canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),
     position: tradeMeetingPositionUnsafe,

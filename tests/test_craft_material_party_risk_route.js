@@ -65,7 +65,7 @@ async function proposalsFor(currentParty, roster, route, timestamp) {
         resolveSolo: () => { throw Error('no solo combat during evacuation'); },
         resolveParty: () => { throw Error('no party combat during travel'); },
         // The party run's route (the worker's BotRoute.route).
-        partyRoute: () => route,
+        partyRoute: () => ({ route }),
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const state of roster) {
         kernel.upsert({ state });

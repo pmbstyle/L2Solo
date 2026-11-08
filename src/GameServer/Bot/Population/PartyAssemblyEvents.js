@@ -6,6 +6,18 @@ const SAFETY_INTERVAL_MS = 30 * 60000;
 
 // An input index holds original published states. Combat/coordinate updates
 // refresh the reference without restarting an unchanged assembly decision.
+// A group (one forming objective's candidates) runs when a member that seeks a party
+// (classify: seeks, an open request) moves: in, or a field of its waking stamp; and when
+// any member leaves it while it holds seekers (a leaver can unblock a roster). A bot
+// merely willing to party is roster fill and wakes nothing. Only the rosters with a
+// moved member are judged (a run with none recorded: its seekers'): one of unmoved
+// members holds its answer. Its outcome holds until the next move: forming's no closes
+// the refused roster's requests (their next build reopens them, a move), none is asked
+// again on a clock; one refused past its verdict, or given none, is woken on its
+// members' rows (rewakeOn); one with no party slot when a party ends (waitSlot). A group the
+// running formation kept waiting (busy) runs when that formation ends (wakeParked);
+// only a deferral no event ends (main's lag, the DB queue, the formation budget, a
+// replaced state) is retried after retryMs.
 class PartyAssemblyEvents {
     constructor({ registry, life, parties, classify, run, now = Date.now,
         retryMs = 30000, onRepair = () => {}, onError = () => {} }) {
@@ -16,6 +28,9 @@ class PartyAssemblyEvents {
         this.supports = new Map();
         this.dirty = new Set();
         this.deadlines = new Set();
+        this.parked = new Set();
+        this.rewake = new Set();
+        this.slotWaiters = new Set();
         this.running = false;
         this.active = false;
         this.generation = 0;
@@ -43,9 +58,12 @@ class PartyAssemblyEvents {
             for (const id of new Set([...(party.memberIds || []), ...(previous?.memberIds || [])])) {
                 this.observe({ characterId: id, state: this.life.cachedState(id) });
             }
-            // Freed capacity wakes already indexed waiting groups.
+            // Freed capacity wakes already indexed waiting groups, and the rosters refused for want of a slot.
             if (previous && party.status === 'dissolved') {
                 this.enqueue(this.groups.get(`spot:${party.spotId || previous.spotId}`));
+                const waiting = [...this.slotWaiters];
+                this.slotWaiters.clear();
+                for (const id of waiting) this.wakeNow(id);
             }
         });
         this.unsubscribeTick = this.registry.subscribeTicks(timestamp => this.pulse(timestamp));
@@ -57,7 +75,8 @@ class PartyAssemblyEvents {
         this.active = false; this.generation++;
         this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.unsubscribeTick?.();
         for (const key of this.deadlines) this.registry.cancelDeadline(key);
-        this.deadlines.clear(); this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear();
+        this.deadlines.clear(); this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear(); this.parked.clear();
+        this.rewake.clear(); this.slotWaiters.clear();
         this.cycle = null; this.helpPending = false;
     }
 
@@ -73,7 +92,8 @@ class PartyAssemblyEvents {
         if (!this.active) return false;
         if (packet.kind === 'reset') {
             for (const group of this.groups.values()) this.cancel(group);
-            this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear();
+            this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear(); this.rewake.clear();
+            this.slotWaiters.clear();
             return false;
         }
         const id = Number(packet.characterId), state = this.life.cachedState(id);
@@ -88,14 +108,15 @@ class PartyAssemblyEvents {
         }
         const moved = previous?.key !== input?.key;
         const changed = moved || !previous || !input || previous.stamp.some((field, index) => field !== input.stamp[index]);
-        const wake = moved || !previous || !input || previous.stamp[4] !== input.stamp[4];
+        const wake = !!input && (this.rewake.delete(id) || changed && input.seeks);
         if (previous && (!input || moved)) {
-            const group = this.groups.get(previous.key);
-            group?.members.delete(id);
-            if (group) { group.revision++; this.enqueue(group); }
+            const left = this.groups.get(previous.key);
+            left?.members.delete(id); left?.seekers.delete(id);
             this.records.delete(id);
+            if (left?.seekers.size) { left.revision++; for (const seeker of left.seekers) left.moved.add(seeker); this.enqueue(left); }
         }
         if (!input) {
+            this.rewake.delete(id); this.slotWaiters.delete(id);
             if (previous && repair) { DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair(); }
             return !!previous;
         }
@@ -107,12 +128,14 @@ class PartyAssemblyEvents {
             if (!this.supports.has(input.supportKey)) this.supports.set(input.supportKey, new Map());
             this.supports.get(input.supportKey).set(id, record);
         }
-        if (!this.groups.has(input.key)) this.groups.set(input.key, { key: input.key, members: new Map(), revision: 0, handled: 0 });
+        if (!this.groups.has(input.key)) this.groups.set(input.key, { key: input.key, members: new Map(), revision: 0, handled: 0,
+            moved: new Set(), seekers: new Set() });
         const group = this.groups.get(input.key);
         group.members.set(id, record);
+        if (input.seeks) group.seekers.add(id); else group.seekers.delete(id);
         this.records.set(id, record);
         if (wake) {
-            group.revision++; this.enqueue(group); DiagnosticConfig.developerDiagnostics && (this.metrics.events++);
+            group.revision++; group.moved.add(id); this.enqueue(group); DiagnosticConfig.developerDiagnostics && (this.metrics.events++);
             if (repair) { DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair(); }
         }
         if (repair && group.handled < group.revision && !this.dirty.has(group.key)
@@ -122,9 +145,37 @@ class PartyAssemblyEvents {
         return changed || !previous;
     }
 
+    // A roster refused past its verdict or given none (states: the rows it was judged
+    // on): a member whose row has moved since is already published, its group runs now;
+    // the others' next published rows wake their groups (observe).
+    rewakeOn(states) {
+        if (!this.active) return;
+        for (const state of states) {
+            const id = Number(state.characterId);
+            if (this.life.cachedState(id) !== state) this.wakeNow(id); else this.rewake.add(id);
+        }
+    }
+
+    // A roster refused for want of a party slot: its groups run when a party ends.
+    waitSlot(states) { if (this.active) for (const state of states) this.slotWaiters.add(Number(state.characterId)); }
+
+    // The member's group runs now, its rosters judged.
+    wakeNow(id) {
+        this.rewake.delete(id);
+        const group = this.groups.get(this.records.get(id)?.key);
+        if (!group) return;
+        group.revision++; group.moved.add(id); this.enqueue(group);
+    }
+
     wakeHelp() { if (this.active) this.helpPending = true; }
 
     wakeGroups() { for (const group of this.groups.values()) this.enqueue(group); }
+
+    // The running formation ended: the groups it kept waiting run.
+    wakeParked() {
+        for (const group of this.parked) if (this.groups.get(group.key) === group) this.enqueue(group);
+        this.parked.clear();
+    }
 
     scheduleSafety(timestamp) {
         this.arm(this.safetyKey, timestamp + SAFETY_INTERVAL_MS, startedAt => {
@@ -192,6 +243,8 @@ class PartyAssemblyEvents {
         const group = key === null ? null : this.groups.get(key);
         this.helpPending = false; this.dirty.delete(key);
         if (key !== null && (!group || !group.members.size)) { this.groups.delete(key); return; }
+        // No move recorded and no seeker (a repair, freed capacity): nothing to judge.
+        if (group && !group.moved.size && !group.seekers.size) { group.handled = group.revision; group.remaining = 0; return; }
         const candidates = [];
         if (group) {
             // Rotate a bounded page, including invalid/busy inspections.
@@ -216,11 +269,18 @@ class PartyAssemblyEvents {
             }
         }
         const generation = this.generation, revision = group?.revision;
+        // The members that moved since the group's last run: only a roster with one of
+        // them is judged (none recorded, a repair or freed capacity: its seekers').
+        const moved = group ? (group.moved.size ? group.moved : new Set(group.seekers)) : null;
+        if (group) group.moved = new Set();
+        const keep = () => { for (const id of moved || []) group.moved.add(id); };
         this.running = true; DiagnosticConfig.developerDiagnostics && (this.metrics.attempts++);
         Promise.resolve().then(() => this.active && generation === this.generation
-            ? this.run(candidates, timestamp, key === null) : null).then(result => {
+            ? this.run(candidates, timestamp, key === null, moved) : null).then(result => {
             if (!this.active || generation !== this.generation) return;
-            if (result?.deferred || result?.continuation) {
+            if (result?.busy || result?.deferred) keep();
+            if (result?.busy && group) this.parked.add(group);
+            else if (result?.deferred || result?.continuation) {
                 const retryKey = group || this.helpKey;
                 this.arm(retryKey, Math.max(timestamp + this.retryMs, Number(result.retryAt || 0)), () => {
                     if (group) this.enqueue(group); else this.wakeHelp();

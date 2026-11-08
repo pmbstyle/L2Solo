@@ -32,6 +32,10 @@ function backgroundIntent(state = {}) {
     if (PartyRequestPlanner.seeksParty(state)) {
         return { accept: true, reason: 'no_solo_ground', score: Math.round(baseScore(persona)), persona };
     }
+    // A bot that asked for a party because its share there beats its solo hunt.
+    if (PartyRequestPlanner.seeksIncome(state)) {
+        return { accept: true, reason: PartyRequestPlanner.PARTY_INCOME, score: Math.round(baseScore(persona)), persona };
+    }
 
     const establishedBond = Object.values(state.stats?.partyHistory || {})
         .some((entry) => Number(entry?.runs || 0) >= 3);

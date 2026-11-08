@@ -61,8 +61,10 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
 // The solo side's earning route: the bot's held earning answer (situations step 1,
 // stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute: one row
 // evaluation, no search); null when it holds no answer (forming skips it,
-// PartyGoalPolicy.formingMembers) or none with a spot.
+// PartyGoalPolicy.formingMembers), none with a spot, or a support's grey ground
+// (PartyRequestPlanner.supportWithoutGround: no solo ground, its solo hunt is none).
 function heldSoloRoute(state, spots, timestamp) {
+    if (require('./PartyRequestPlanner').supportWithoutGround(state, spots)) return null; // lazy: the planner's chain loads this module
     return invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldRoute(soloState(state), { spots, timestamp });
 }
 

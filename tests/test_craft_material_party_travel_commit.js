@@ -41,7 +41,7 @@ async function proposals(party, route, at) {
     const kernel = new Kernel.ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw Error('no solo combat in a trip'); },
         resolveParty: () => { throw Error('no party combat in a trip'); },
-        partyRoute: () => route,
+        partyRoute: () => ({ route }),
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const member of members) {
         const current = Life.cachedState(member.characterId);

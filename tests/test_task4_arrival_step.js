@@ -13,10 +13,9 @@ const dependencies = {
     'GameServer/Bot/Population/PartyMarketBreak': require(root + '/src/GameServer/Bot/Population/PartyMarketBreak'),
     'GameServer/Inventory/ShotStock': { SHOT_IDS: [1463] },
     'GameServer/Bot/Population/BotLifeState': {
-        // The purchase gate keeps its war-ticket rule (the gear rules are out of this scene).
+        // The gear rules of the purchase gate are out of this scene.
         cachedState: () => current, hotRow: () => null, planWants: () => false,
-        marketPurchaseBlocker: (state, offer) => require(root + '/src/GameServer/Bot/Population/PartyMarketBreak')
-            .warSupplyPurchaseBlocker(state, offer.selfId),
+        marketPurchaseBlocker: () => null,
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},
         upsertState: async next => (current = next)
     },
@@ -122,20 +121,5 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
         assert.deepEqual(offered, [], 'no gear lookup without the card ordering it');
         assert.equal(gearGone.reason, 'arrival_step_gone');
     }
-    const ticket = { partyId: 'war-party', warOperationId: 'war-operation', supplyItemId: 1463, until: Date.now() + 900000 };
-    const supply = bot({ stats: { partyMarketReturn: ticket } });
-    offered = []; quoted = []; const paid = funded.length;
-    const blocked = await Market.tryPurchase(supply, gear(75));
-    assert.equal(blocked.reason, 'war_supply_only');
-    assert.equal(offered.length + quoted.length, 0, 'a changed gear goal cannot even start a new quote during military supply');
-    for (const selfId of [48, 1865, 1464]) {
-        const result = await Market.buyOffer(supply, { ...offer, selfId }, { economyCommand: { key: 'prepared' } });
-        assert.equal(result.reason, 'war_supply_only', 'prepared purchases cannot bypass the supply ticket');
-    }
-    assert.equal(funded.length, paid, 'no forbidden purchase reaches the native writer');
-    const restocked = await Market.buyOffer(supply, { ...offer, selfId: 1463 });
-    assert.equal(restocked.pending, true, 'the reserved combat consumable still reaches the normal purchase owner');
-    const expired = await Market.buyOffer(bot({ stats: { partyMarketReturn: { ...ticket, until: Date.now() - 1 } } }), { ...offer, selfId: 1463 });
-    assert.equal(expired.reason, 'war_supply_expired');
-    console.log('PASS arrival step: plan price cap, remaining amount, worker refresh, goal funding and military supply purchase fences');
+    console.log('PASS arrival step: plan price cap, remaining amount, worker refresh, goal funding');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

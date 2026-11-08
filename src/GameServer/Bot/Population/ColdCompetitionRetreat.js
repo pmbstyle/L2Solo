@@ -7,19 +7,11 @@ const Situations = require('../Situations');
 // An avoid is a contest lost: each member raises contest_lost with the spot as its
 // mark (it wakes the earning spot at once; the mark holds until that decision is
 // taken, SpotRiskPolicy.spotMarks): the worker's next step routes it off the spot,
-// as any trip (BotRoute); main searches no spot. A party's avoid is the party's own
-// competition avoid for PARTY_AVOID_ROUNDS of its rounds (temporary until the party
-// aggregate, step 8: a party holds no earning answer its marks could hang on).
-const PARTY_AVOID_ROUNDS = 10;
+// as any trip (BotRoute); main searches no spot. A party's avoid is a mark on the
+// party (PartySpotRiskPolicy.withMark): its next step hears contest_lost on its held
+// spot (Situations.detectParty) and its spot decision moves it.
 const lost = (state, spotId) => Situations.raise({ ...state.stats }, 'contest_lost', { spotId, reason: 'contest_lost' },
     Situations.OPEN, state.characterId);
-// A party row whose next spot search excludes spotId (its rounds' counter); event: the
-// contest's (its key and peer).
-function partyAvoid(party, spotId, event, at) {
-    return { ...party, stats: { ...party.stats, coldCompetition: Episode.begin(party.stats?.coldCompetition, {
-        outcome: 'avoid', key: event.key, at, action: 'avoid', peerId: event.peer?.id,
-        avoid: { spotId: String(spotId), untilStep: PartyRisk.rounds(party) + PARTY_AVOID_ROUNDS } }) } };
-}
 
 async function apply({ event, life, owner, memory, parties, participantAllowed, contestContextAllowed,
     onState, now, waitMs }) {
@@ -49,11 +41,11 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     const actorDue = due => avoiding ? at : Math.max(at, Number(due || 0)) + waitMs;
     const preparedParties = sides.map((side, i) => {
         if (!side.party) return null;
-        const row = i === 0 && avoiding ? partyAvoid(side.party, event.spotId, { key: event.key, peer: { id: sides[1].principal.characterId } }, at)
-            : { ...side.party, stats: { ...side.party.stats, coldCompetition: Episode.begin(side.party.stats?.coldCompetition, {
-                outcome: event.action, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
-                ...(i === 0 ? { wait: { start: at, until: at + waitMs } } : {})
-            }) } };
+        const marked = i === 0 && avoiding ? PartyRisk.withMark(side.party, event.spotId, 'contest_lost') : side.party;
+        const row = { ...marked, stats: { ...marked.stats, coldCompetition: Episode.begin(side.party.stats?.coldCompetition, {
+            outcome: event.action, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
+            ...(i === 0 && !avoiding ? { wait: { start: at, until: at + waitMs } } : {})
+        }) } };
         const prepared = parties.prepareCommit({ ...row,
             nextResolveAt: i === 0 ? actorDue(side.party.nextResolveAt) : side.party.nextResolveAt });
         prepared.row.updatedAt = Math.max(prepared.row.updatedAt, side.party.updatedAt + 1);
@@ -85,4 +77,4 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
         matchup: sides.map(s => s.party ? 'party' : 'solo').join('_vs_'),
         ...(avoiding ? { contestLost: event.spotId } : { waitUntil: at + waitMs }) };
 }
-module.exports = { apply, partyAvoid, PARTY_AVOID_ROUNDS };
+module.exports = { apply };

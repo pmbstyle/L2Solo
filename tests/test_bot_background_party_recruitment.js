@@ -143,17 +143,21 @@ async function run() {
     PopulationService.partyFormationRunning = false;
     await PopulationService.formBackgroundParties();
     assert.strictEqual(projectionCalls, 1, 'party formation must discover the complete lightweight candidate projection once');
-    // Forming's no to a required request with too few takers closes it (its bot asks
-    // again at its next build): with no clock an open one would wait forever.
+    // Forming's no to a request with too few takers closes it (its bot asks again at its
+    // next build): with no clock an open one would wait forever, or be judged on every move.
     const closedRequests = [], deferUnformable = LifeState.deferUnformablePartyRequests;
     LifeState.deferUnformablePartyRequests = (ids, reason) => { closedRequests.push(...ids.map(id => [id, reason])); return Promise.resolve(ids.length); };
     LifeState.coldPartyCandidateProjections = () => Promise.resolve([{ characterId: 77, name: 'Lonely', level: 20, phase: 'cold',
         activity: 'hunting', spotId: NATIVE_SPOT, party: {}, stats: { partyRequest: { status: 'open', priority: 'required',
-            clanOperation: 'equipment', clanId: 9, objectiveKey: 'clan:9:equipment' } } }]);
+            clanOperation: 'equipment', clanId: 9, objectiveKey: 'clan:9:equipment' } } },
+    // A preferred request is closed the same way.
+    { characterId: 78, name: 'Seeker', level: 20, phase: 'cold', activity: 'hunting', spotId: NATIVE_SPOT, party: {},
+        stats: { partyRequest: { status: 'open', priority: 'preferred', reason: 'party_income', spotId: NATIVE_SPOT,
+            objectiveKey: 'spot:elsewhere' } } }]);
     PopulationService.partyFormationRunning = false;
     await PopulationService.formBackgroundParties();
     LifeState.deferUnformablePartyRequests = deferUnformable;
-    assert.deepStrictEqual(closedRequests, [[77, 'too_few_members']]);
+    assert.deepStrictEqual(closedRequests.sort((a, b) => a[0] - b[0]), [[77, 'too_few_members'], [78, 'too_few_members']]);
 
     PartyState.active = originals.active;
     PartyState.counts = originals.counts;

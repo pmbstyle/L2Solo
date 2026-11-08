@@ -87,8 +87,9 @@ context only, not the PvE target.
 The arriving unit's own outcome rides its arrival step: `avoid` raises `contest_lost`
 with the spot as its mark (it wakes the earning spot; the mark holds until that decision
 is taken), `yield` pauses it 15 s (`coldCompetition.wait`, the resolver deducts the
-pause), `coexist` changes nothing. A party's avoid is its own `coldCompetition.avoid` for
-ten of its rounds.
+pause), `coexist` changes nothing. A party's avoid is a mark on the party
+(`PartySpotRiskPolicy.withMark`): its next step hears `contest_lost` on its held spot and
+its spot decision (`party_spot`) moves it.
 
 `EnemyMet` (pure, both threads) meets the arriving bots with the standing ones, both
 ways, where the holder remembers the peer or their clans are in a mutual war; the shared
@@ -136,16 +137,15 @@ deducts the idle interval once from subsequent farming time and clears the wait.
 Party selection excludes pending waits. CAS validation rejects duplicate delivery
 even after restart, and a stale participant aborts both writes.
 
-An avoid decision excludes the current spot for ten steps of each holder (a
-member's far steps, the party's rounds), raises the occupation of the actor's
-unit and makes it due now; main searches no spot. The worker's next step (a
-solo member's trip start, the party's run) routes the unit off the excluded spot
-with the ordinary suitable-spot selector and capacity check, and starts normal
-travel with its arrival time and zero farming rewards during transit; with no
-other suitable spot the unit stays. All party members and the party's schedule
-commit together; the other unit keeps hunting. The bounded
-`coldCompetition.avoid` entry survives restart and later encounters, expires
-without escalating PvE death backoff, and does not create resentment.
+An avoid decision marks the current spot on each holder (a member's
+`contest_lost`, the party's mark), makes the actor's unit due now; main searches
+no spot. The unit's next decision (a solo bot's earning spot, the party's spot)
+searches with the spot excluded and its trip moves it off, with the ordinary
+suitable-spot selector and capacity check and normal travel with its arrival time
+and zero farming rewards during transit; with no other suitable spot the unit
+stays. All party members and the party's schedule commit together; the other unit
+keeps hunting. The mark survives restart, the next answer retires it, it does not
+escalate PvE death backoff or create resentment.
 `coldCompetitionActions.avoids` counts committed avoids; recent results include
 the affected members.
 
@@ -251,10 +251,8 @@ from experience, including recruitment that would exclude an existing member.
 Large worker results use sparse JSON transport against the leased input state
 when ordinary compaction exceeds the IPC limit. Main checks the lease identity
 before reconstruction; the complete party retains its existing atomic CAS commit.
-Observer `partyReviews` reports committed worker reviews, departures (including
-minimum-size releases), dissolutions and decision reasons since process start,
-with the last twelve reviews retained. These counters do not depend on eviction
-from the per-bot life-event history.
+A member's leave is its own decision (`party_stay`), counted with the other
+decisions on the worker's situations line and traced with its answer.
 
 Only departing members leave. An attached leader remains, otherwise a replacement
 is elected; fewer than two remaining members dissolves the group. The main runtime

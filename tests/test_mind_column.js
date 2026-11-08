@@ -153,8 +153,11 @@ async function bodyMoney(id) {
         assert.equal(await Life.raiseOnRow(await create('hot'), [{ name: 'goal_failed' }]), null, 'a row that is not far takes no row raise');
         // A raise that adds no bit writes nothing: the revision stays, no worker step is refused.
         const quietRevision = (await row(raisedId)).simulationRevision;
-        assert(await Life.raiseOnRow(raisedId, [{ name: 'party_joined' }]), 'a raise that adds nothing still lands');
+        assert(await Life.raiseOnRow(raisedId, [{ name: 'bag' }]), 'a raise that adds nothing still lands');
         assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision');
+        // A raise whose only effect is a member's stay writes nothing on a solo row either.
+        assert(await Life.raiseOnRow(raisedId, [{ name: 'party_outleveled' }]), 'a stay-only raise on a solo row lands');
+        assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision on a solo row');
         // The facts a raise carries land in the mind with its bits (situations.md B6): a spot the body could not
         // reach is marked, and a player's command is the held earning answer, decided as its caller: the bit its
         // move woke and one waiting for a stop both cleared.

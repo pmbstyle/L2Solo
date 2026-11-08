@@ -183,8 +183,6 @@ function marksInSteps(stats, now = Date.now(), counter = stepCount({ stats })) {
             stats[key] = stats[key].map(entry => markInSteps(entry, counter, now)).filter(Boolean);
         }
     }
-    const avoid = stats.coldCompetition?.avoid;
-    if (clockMark(avoid)) stats.coldCompetition = { ...stats.coldCompetition, avoid: markInSteps(avoid, counter, now) };
     return stats;
 }
 
@@ -222,8 +220,8 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
 }
 
 // The spots one holder's marks exclude, added to `excluded`: its active
-// death marks, a party's competition avoid (ColdCompetitionRetreat.partyAvoid, temporary
-// until step 8), its death pressure and its situations' spot marks (spotMarks).
+// death marks, its death pressure and its situations' spot marks (spotMarks; a
+// party's on its held spot answer, PartySpotRiskPolicy).
 // Returns the holder's step at which the first
 // of those marks ends (Infinity: none ends by itself; death pressure ends only by
 // a resolve, a spot mark only by a new earning answer).
@@ -231,8 +229,6 @@ function addExclusions(state, excluded) {
     let untilStep = Infinity;
     const mark = (spotId, entry) => { excluded.add(spotId); untilStep = Math.min(untilStep, Number(entry.untilStep)); };
     activeBackoffs(state).forEach((entry) => mark(entry.spotId, entry));
-    const avoid = state.stats?.coldCompetition?.avoid;
-    if (normalizedSpotId(avoid?.spotId) && markActive(avoid, state)) mark(normalizedSpotId(avoid.spotId), avoid);
     const pressure = deathPressure(state);
     if (pressure) excluded.add(pressure.spotId);
     for (const entry of spotMarks(state.stats)) excluded.add(entry.spotId);

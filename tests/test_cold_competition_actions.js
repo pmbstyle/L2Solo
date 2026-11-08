@@ -26,7 +26,7 @@ async function run() {
         ? { id: 'test', avgLevel: 20, npcEntries: [{ selfId: 10, level: 20, count: 10 }] } : null;
     const stats = ordinaryHunt ? {} : { equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { npcId: 10, spotId: 'test' } } };
     const oldEpisode = { key: 'old-fight', at: now - 700000, outcome: 'pvp_fighting', role: 'support', endedAt: now - 600000,
-        conflictUntil: now + 60000, avoid: { spotId: 'elsewhere', untilStep: 10 } };
+        conflictUntil: now + 60000 };
     for (const id of Array.from({ length: 18 }, (_, index) => index + 1)) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_actions_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
@@ -63,7 +63,6 @@ async function run() {
     assert.strictEqual(freshYield.role, undefined);
     assert.strictEqual(freshYield.endedAt, undefined);
     assert.strictEqual(freshYield.conflictUntil, undefined, 'no conflict window carries into a new episode (a pair meets again at an arrival)');
-    assert.deepStrictEqual(freshYield.avoid, oldEpisode.avoid);
     assert.strictEqual(Life.cachedState(1).timing.nextResolveAt, before.timing.nextResolveAt + WAIT_MS);
     assert.strictEqual((await actions.apply(yieldEvent)).ok, false, 'duplicate delivery cannot apply another pause');
     const paused = Life.cachedState(1);
@@ -232,7 +231,6 @@ async function run() {
     assert.strictEqual(freshContest.outcome, 'contest');
     assert.strictEqual(freshContest.endedAt, undefined);
     assert.strictEqual(freshContest.role, undefined);
-    assert.deepStrictEqual(freshContest.avoid, oldEpisode.avoid);
     assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.wait.until, contested.waitUntil);
     assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.conflictUntil, undefined,
         'no conflict window after a dispute: the pair meets again only at an arrival');

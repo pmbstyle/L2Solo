@@ -217,8 +217,6 @@ function factsOf(view, memory = null) {
         lines: linesOf(view.supply), stores: hash(view.stores),
         bag: hash([view.bagNeed]), bagNeed: view.bagNeed, kills: view.kills, stall: view.stall };
 }
-// The party fact of a bot in none (factsOf).
-const NO_PARTY = hash([null, null]);
 // The supply fact: per kind [kind, itemId, where the count stands against
 // its line] (LINE_ABOVE, LINE_BELOW: under one hour of use, LINE_OUT: none
 // left of a kind the bot uses), the line the kit rates' (StatsPacket.lineOf).
@@ -397,4 +395,4 @@ function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
 module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
-    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, isEmptyWishPlan, decisionRefusal };
+    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, isEmptyWishPlan, decisionRefusal };

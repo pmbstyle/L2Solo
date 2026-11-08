@@ -1,5 +1,6 @@
 const FailureLog = require('../../../FailureLog');
 const PartyMarketBreak = require('./PartyMarketBreak');
+const Situations = require('../Situations');
 const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, priority: admissionPriority } = require('./PartyAdmission');
@@ -176,36 +177,6 @@ function groupBySpot(states, options = {}) {
         .map((group) => group.states);
 }
 
-// The forming party's spot: its objective's, else the leader's party search,
-// which skips a spot with no room for all its members (main's world index).
-// Room only: the members' fight profiles are not passed, so the pick keeps
-// the leader-only matchup it had.
-function partySpotForLeader(leader, objectiveSpotId = null, members = [leader]) {
-    if (objectiveSpotId) {
-        const objectiveSpot = SpotProfiles.findById(objectiveSpotId);
-        if (objectiveSpot) return objectiveSpot;
-    }
-    const preserveStarterSpot = SpotProfiles.isProtectedStarterCohort(leader);
-    return SpotProfiles.findForState({
-        ...leader,
-        spotId: preserveStarterSpot ? leader.spotId : null,
-        party: {
-            ...(leader.party || {}),
-            partyId: 'forming',
-            role: PartyComposition.roleForState(leader)
-        },
-        stats: {
-            ...(leader.stats || {}),
-            routeMode: 'party'
-        }
-    }, {
-        mode: 'party',
-        role: PartyComposition.roleForState(leader),
-        hasRoom: SpotProfiles.defaultRoomFilter(leader, SpotProfiles.ensure(), members)
-    })
-        || SpotProfiles.findById(leader.spotId);
-}
-
 function leaderIdForMembers(party, members = []) {
     const memberIds = new Set((members || [])
         .map((member) => Number(member?.characterId))
@@ -325,19 +296,6 @@ function canResumeWarehouseMarketSale(state) {
     ));
 }
 
-// cleanupNeed: the member's bag need when the caller already has it.
-function canTakePartyMarketBreak(party, members, member, timestamp = Date.now(), cleanupNeed = undefined, goal = null) {
-    if (!PartyMarketBreak.allowed(party, member, timestamp, cleanupNeed, goal)) return false;
-    if (PartyMarketBreak.warDuty(party)) return members.length > Math.max(1, Config.partyMinSize)
-        && !party.stats?.travel && !party.stats?.pveEncounter && !member.stats?.pvpEncounter && !member.stats?.travel
-        && !members.some(state => state.stats?.pvpEncounter || state.stats?.travel);
-    if (PartyMarketBreak.clanDuty(party)) return members.length > 1;
-    if (!PartyMarketBreak.sessionReady(party, member, goal, timestamp, Config)) return false;
-    const role = PartyComposition.roleForState(member);
-    const coverage = PartyComposition.roleCoverage(members);
-    return !(['tank', 'healer'].includes(role) && Number(coverage[role] || 0) <= 1);
-}
-
 function dissolveBackgroundParty(party, reason, memberCount = 0) {
     return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
         .then(() => LifeState.releaseDissolvedPartyMembers(party.partyId, reason))
@@ -386,143 +344,76 @@ async function jointPartyGoals(party, members, timestamp, options = {}) {
     return result.ok && PartyGoalCalculation.matches(members, result.sources) ? result.joint : null;
 }
 
-async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
-    if (!party?.partyId || party.status === 'dissolved') {
-        return { party, reviewed: 0, departed: null };
-    }
-
-    party = BackgroundPartyState.find(party.partyId) || party;
-    if (party.status !== 'active') return { party, reviewed: 0, departed: null };
-    const members = (party.memberIds || [])
-        .map((characterId) => LifeState.cachedState(characterId))
-        .filter((member) => member && DecisionSections.partyIdOf(member) === String(party.partyId));
-    if (!members.length) return { party, reviewed: 0, departed: null };
-
-    const spot = SpotProfiles.findById(party.spotId) || null;
-    let reviewed = 0;
-    let departed = null;
-    for (const member of members) {
-        const cachedGoal = GoalService.snapshot(member.characterId);
-        const cleanupNeeded = PartyMarketBreak.cleanupNeed(member, timestamp);
-        const due = !cachedGoal?.current
-            || Number(cachedGoal.current.nextReviewAt || 0) <= timestamp;
-        const goalSnapshot = due || cleanupNeeded
-            ? await GoalService.review(member, { spot, now: timestamp })
-            : cachedGoal;
-        if (due || cleanupNeeded) reviewed += 1;
-        await BotAfkMarketService.reconcile(member, goalSnapshot?.current, goalSnapshot?.candidates);
-        // Goal/market review yields to campaign maintenance. Its current order
-        // decides whether this is a supply break or ordinary shopping now.
+// The trips the worker's party_stay answered for members of a clan duty party
+// (ColdSimulationKernel.partyStay): main starts each with the party's return ticket
+// (PartyMarketBreak.departure) and the member leaves until it comes back
+// (resumePartyMarketBreak). One the duty does not let go now stays on duty, counted:
+// behind another member's absence (party:stay_trip:held), its bag is heard again when
+// that absence ends (absenceEnded); a bag no longer at its floor or a trip that
+// cannot start (party:stay_trip:refused) waits for its next situation. The worker
+// decided; main executes.
+async function applyPartyStayTrips(party, trips = [], timestamp = Date.now()) {
+    party = BackgroundPartyState.find(party?.partyId) || party;
+    const departed = [];
+    for (const { characterId } of trips) {
+        if (party?.status !== 'active') break;
+        const member = LifeState.cachedState(characterId);
+        if (!member || member.phase !== 'cold' || DecisionSections.partyIdOf(member) !== String(party.partyId)) continue;
+        if (PartyMarketBreak.pending(party, timestamp).length) { Situations.note('party:stay_trip:held'); continue; }
+        const need = PartyMarketBreak.cleanupNeed(member, timestamp);
+        const goal = PartyMarketBreak.allowed(party, member, timestamp, need) ? PartyMarketBreak.goal(party, member, timestamp, need) : null;
+        const travel = goal && GoalExecutor.beginMarketTravel(member, goal, timestamp);
+        const departure = travel && PartyMarketBreak.departure(party, member, travel, timestamp, need);
+        if (!departure) { Situations.note('party:stay_trip:refused'); continue; }
+        const left = await LifeState.leaveParty(departure, 'market_break', { ownerHandoff: true });
+        if (!left) continue;
+        departed.push(left);
         party = BackgroundPartyState.find(party.partyId) || party;
-        if (party.status !== 'active') return { party, reviewed, departed };
-        // A complete personal warehouse stage gets an ordinary, fenced party
-        // absence and rejoin ticket. Never interrupt a raid, clan duty or fight.
-        if (!departed && !party.stats?.pveEncounter && !party.stats?.travel
-            && !members.some(row => row.stats?.pvpEncounter || row.stats?.travel)
-            && PartyMarketBreak.sessionReady(party, member, null, timestamp, Config)) {
-            const current = LifeState.cachedState(member.characterId) || member;
-            if (DecisionSections.partyIdOf(current) === String(party.partyId)
-                && current.phase === 'cold' && Number(current.vitals?.hp) > 0
-                && ['hunting', 'grouped', 'resting', 'party_wait'].includes(current.activity)) {
-                const travel = BotWarehouse.beginCraftReturn({ ...current, activity: 'hunting' }, timestamp, { allowParty: true });
-                const ticket = travel && PartyMarketBreak.warehouseDeparture(party, current, travel, timestamp);
-                if (ticket) departed = await LifeState.leaveParty(ticket, 'craft_warehouse', { ownerHandoff: true });
-            }
+        const retained = retainedMembers(party, left.characterId);
+        // A return token keeps no party below the minimum: the row refuses that roster
+        // (prepareCommit). A returning bot finds its party gone and waits (resumePartyMarketBreak).
+        if (retained.length < Config.partyMinSize) {
+            const dissolved = await dissolveBackgroundParty(party, 'market_break', retained.length);
+            return { party: dissolved.party || party, departed, dissolved: true };
         }
-        if (departed || !canTakePartyMarketBreak(party, members, member, timestamp, cleanupNeeded, goalSnapshot?.current)) continue;
-
-        // Goal review can overlap the next worker claim. Re-read the reflected
-        // ownership revision immediately before the atomic transition so the
-        // handoff fences that live token instead of an older cached snapshot.
-        const currentMember = LifeState.cachedState(member.characterId) || member;
-        if (DecisionSections.partyIdOf(currentMember) !== String(party.partyId)) continue;
-        const need = currentMember === member ? cleanupNeeded : PartyMarketBreak.memberNeed(party, currentMember, timestamp);
-        if (!canTakePartyMarketBreak(party, members, currentMember, timestamp, need, goalSnapshot?.current)) continue;
-        const travel = GoalExecutor.beginMarketTravel(currentMember,
-            PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp, need), timestamp);
-        if (!travel) continue;
-        const departure = PartyMarketBreak.departure(party, currentMember, travel, timestamp, need, goalSnapshot?.current);
-        if (!departure) continue;
-        const detached = await LifeState.leaveParty(departure,
-            'market_break', { ownerHandoff: true });
-        if (detached) departed = detached;
+        const nextParty = partyWithRoster(party, retained, PartyMarketBreak.stats(party, left));
+        await syncPartyLeader(retained, nextParty, nextParty.leaderId);
+        party = await BackgroundPartyState.createOrUpdate(nextParty) || party;
     }
-
-    if (!departed) {
-        party = BackgroundPartyState.find(party.partyId) || party;
-        // An economic preference cannot replace a live military assignment.
-        if (PartyMarketBreak.warDuty(party)) return { party, reviewed, departed: null };
-        const currentMembers = members.map(member => LifeState.cachedState(member.characterId) || member);
-        const joint = await jointPartyGoals(party, currentMembers, timestamp);
-        if (!joint) return { party, reviewed, departed: null };
-        const incomeDeparture = (joint.incomeReviews || []).find(review => review.accept === false
-            && review.partySource === 'own_party' && review.soloIncome > 0
-            && review.reason === 'solo_preferred' && Number(review.fee || 0) === 0);
-        if (incomeDeparture && !PartyMarketBreak.pending(party).length && !party.stats?.pveEncounter
-            && !currentMembers.some(member => member.stats?.tradeMeeting || member.activity === 'traveling' || member.activity === 'dead')) {
-            const member = LifeState.cachedState(incomeDeparture.characterId);
-            if (member && DecisionSections.partyIdOf(member) === String(party.partyId)) {
-                const detached = await LifeState.leaveParty(member, 'better_solo_income', { ownerHandoff: true });
-                if (detached) {
-                    const retained = retainedMembers(party, detached.characterId);
-                    if (retained.length < Config.partyMinSize) {
-                        const dissolved = await dissolveBackgroundParty(party, 'better_solo_income', retained.length);
-                        return { party: dissolved.party || party, reviewed, departed: detached, dissolved: true };
-                    }
-                    const nextParty = partyWithRoster(party, retained, { ...joint,
-                        memberGoals: retained.map(PartyGoalPolicy.declaration),
-                        agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null });
-                    await syncPartyLeader(retained, nextParty, nextParty.leaderId);
-                    const updated = await BackgroundPartyState.createOrUpdate(nextParty);
-                    return { party: updated || party, reviewed, departed: detached };
-                }
-            }
-        }
-        if (JSON.stringify(party.stats?.memberGoals) !== JSON.stringify(joint.memberGoals)
-            || JSON.stringify(party.stats?.objective) !== JSON.stringify(joint.objective)
-            || joint.lastIncomeReviewAt) {
-            const saved = await BackgroundPartyState.commitGoals(party, currentMembers, joint);
-            party = saved || party;
-        }
-        return { party, reviewed, departed: null };
-    }
-    party = BackgroundPartyState.find(party.partyId) || party;
-    if (party.status !== 'active') return { party, reviewed, departed, dissolved: party.status === 'dissolved' };
-    const activeMembers = retainedMembers(party, departed.characterId);
-    // A return token keeps no party below the minimum: the row refuses that
-    // roster (prepareCommit), which left the rest attached to a stale row. A
-    // returning bot finds its party gone and waits (resumePartyMarketBreak).
-    if (activeMembers.length < Config.partyMinSize) {
-        const dissolved = await dissolveBackgroundParty(party, 'market_break', activeMembers.length);
-        return { party: dissolved.party || party, reviewed, departed, dissolved: true };
-    }
-
-    const nextParty = partyWithRoster(party, activeMembers,
-        { lastMarketBreakAt: timestamp, ...PartyMarketBreak.stats(party, departed) });
-    await syncPartyLeader(activeMembers, nextParty, nextParty.leaderId);
-    const updatedParty = await BackgroundPartyState.createOrUpdate(nextParty,
-        { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
-    return { party: updatedParty || party, reviewed, departed, dissolved: false };
+    return { party, departed, dissolved: false };
 }
+
+// A clan duty lets one member go at a time: a member whose trip it held behind that
+// absence (applyPartyStayTrips) hears its bag again when the absence ends, however it
+// ends (the absent member back, its ticket dropped or expired, its trip given up):
+// each member still in that party at its bag floor raises bag_full (its stay decides
+// again). Read on every published row of a far bot (absenceEnded); a row that carried
+// no live ticket costs one field read.
+function absenceEnded({ state, previousState }) {
+    const token = previousState?.stats?.partyMarketReturn;
+    if (!token?.partyId || !(Number(token.until) > Number(previousState.updatedAt || 0))) return;
+    const ticket = state?.stats?.partyMarketReturn;
+    if (ticket?.partyId === token.partyId && Number(ticket.until) > Number(state.updatedAt || 0)) return;
+    const party = BackgroundPartyState.find(token.partyId);
+    if (party?.status !== 'active') return;
+    for (const id of party.memberIds || []) {
+        const member = Number(id) !== Number(token.characterId) && LifeState.cachedState(id);
+        if (member?.phase === 'cold' && DecisionSections.partyIdOf(member) === String(party.partyId)
+            && PartyMarketBreak.bagFact(member) === 2) DecisionEvents.raiseOn(id, 'bag_full');
+    }
+}
+LifeState.subscribePublications(absenceEnded);
 
 async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
-    const war = !!token.warOperationId;
     const warehouse = token.cleanupReason === 'craft_warehouse';
-    const matching = war ? party?.stats?.warOperation?.id === token.warOperationId
-        : warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
-        : party?.stats?.objective?.clanGoalKey === token.objective.clanGoalKey;
-    if (war && (!matching || !['active', 'hot'].includes(party?.status))) {
-        const saved = await LifeState.upsertState({ ...state, activity: 'hunting', stats: { ...state.stats,
-            partyMarketReturn: null, clanPartyObjective: null, partyRequest: null } }, 'war_supply_operation_ended');
-        return { ok: !!saved, state: saved || state, reason: 'war_supply_operation_ended' };
-    }
+    const matching = warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
+        : party?.stats?.objective?.clanGoalKey === token.objective?.clanGoalKey;
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
-        partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : war ? null : token.objective,
-        partyRequest: warehouse ? state.stats.partyRequest : war ? null : token.objective } };
-    const maxSize = war ? require('../../Clan/ClanWarConfig').maxMembers : partyLimitsForObjective(party?.stats?.objective).maxSize;
-    if (party?.status === 'active' && matching && party.memberIds.length < maxSize) {
+        partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : token.objective,
+        partyRequest: warehouse ? state.stats.partyRequest : token.objective } };
+    if (party?.status === 'active' && matching && party.memberIds.length < partyLimitsForObjective(party?.stats?.objective).maxSize) {
         const members = await LifeState.statesForParty(party.partyId);
         if (members.length !== party.memberIds.length) return { ok: false, state, reason: 'party_return_retry' };
         const absences = { ...party.stats?.marketAbsences };
@@ -531,12 +422,10 @@ async function resumePartyMarketBreak(state, timestamp) {
         const result = await commitPartyMembership({ ...party,
             memberIds: roster.map(member => member.characterId),
             roleCoverage: PartyComposition.roleCoverage(roster),
-            nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences } }, roster, null,
-            war ? { expectedPartyRevision: party.revision } : {});
+            nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences } }, roster, null);
         return { ok: !!result.party, state: LifeState.cachedState(state.characterId) || state,
             reason: result.party ? 'returned_to_clan_party' : 'party_return_retry' };
     }
-    if (war) return { ok: false, state, reason: 'party_return_retry' };
     if (warehouse) {
         // An ordinary party may fill or dissolve while its member shops. It
         // has no clan request to wait on, so resume the personal route.
@@ -822,26 +711,31 @@ async function releaseForClanHelp(state) {
     return LifeState.cachedState(state.characterId) || released;
 }
 
+// options (forming's): every roster dropped here says why, none silently: onRefused
+// (forming's no: the roster cannot stand, its requests close), onDeferred (the verdict
+// not given: its members' next rows ask again), onNoSlot (no party slot: a party's end
+// asks again), onCommitRefused (a member's row moved or the commit failed).
 async function createAndCommitBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const objective = objectiveOverride || members.map(partyObjectiveForState).find(ClanPartyCapacity.required);
+    const refused = async () => { await options.onRefused?.(); return null; };
     if (objective?.fullRoster) {
         members = ClanRaidRoster.selectMembers(members, objective, partyLimitsForObjective(objective));
-        if (members.length !== 9) return null;
+        if (members.length !== 9) return refused();
     }
     if (ClanEquipmentPartyPolicy.applies(objective)) {
         members = members.filter(member => ClanEquipmentPartyPolicy.allowed(member, objective));
-        if (members.length < partyLimitsForObjective(objective).minSize) return null;
+        if (members.length < partyLimitsForObjective(objective).minSize) return refused();
     }
     let release = partyAdmission.reserve(BackgroundPartyState.admitted(), Config);
     if (!release && ClanPartyCapacity.required(objective) && partyAdmission.canReclaim(BackgroundPartyState.admitted(), Config)) {
         const limits = partyLimitsForObjective(objective);
-        if (ClanRaidRoster.selectMembers(members, objective, limits).length < limits.minSize) return null;
+        if (ClanRaidRoster.selectMembers(members, objective, limits).length < limits.minSize) return refused();
         const reclaimed = await ClanPartyCapacity.reclaim(objective, {
             parties: BackgroundPartyState, life: LifeState, database: Database, metrics: Metrics
         });
         if (reclaimed) release = partyAdmission.reserve(BackgroundPartyState.admitted(), Config);
     }
-    if (!release) return null;
+    if (!release) { options.onNoSlot?.(); return null; }
     try { return await createBackgroundParty(members, objectiveOverride, options); }
     finally { release(); }
 }
@@ -850,35 +744,38 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
 // asked like its goals (jointPartyGoals: main for an all-near roster, the worker otherwise). A busy
 // or failed worker defers the roster to the next assembly: no main thought and no build for a far
 // roster. The roster's id is its member set, so a refusal repeated per attempt logs once (logPartyFailure).
-// An answer is held while every member's source identity (PartyGoalCalculation.source: its
-// revision, update stamp, phase and party) and the requested objective stand: a refused roster
-// the assembly asks again (its retry) is not sent again until one of its members changes.
+// Asked once per group event: a refused roster's requests close until their bots' next build.
 async function formingVerdict(members, requested, options) {
     const memberIds = members.map(member => Number(member.characterId));
-    const asked = askedVerdicts.inputs(members, requested, { spots: SpotProfiles.ensure() });
-    const timestamp = Date.now(), held = askedVerdicts.read(asked, timestamp);
-    if (held) return held;
+    const timestamp = Date.now();
+    if (Config.developerDiagnostics) Diagnostics.count('party_forming', 'judged', requested ? 'requested' : 'open');
     const verdict = await jointPartyGoals({ partyId: `forming_${[...memberIds].sort((a, b) => a - b).join('_')}`,
         leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, timestamp, options);
-    return Array.isArray(verdict?.formingAccepted) ? askedVerdicts.write(asked, verdict) : null;
+    return Array.isArray(verdict?.formingAccepted) ? verdict : null;
 }
-const askedVerdicts = PartyGoalPolicy.formingHold(member => JSON.stringify(PartyGoalCalculation.source(member)), 'ask');
 
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
     if (members.length < Config.partyMinSize) return null;
     let review = null;
     if (!PartyGoalPolicy.verdictFree(requested)) {
-        const verdict = await formingVerdict(members, requested, options);
+        // Judged where the party will hunt: its required objective, else the spot its members'
+        // objective names (a preferred request's), never where its first member stands now.
+        const ground = requested ? null : members.map(partyObjectiveForState).find(objective => objective?.spotId);
+        const verdict = await formingVerdict(members, requested || (ground ? { spotId: ground.spotId } : null), options);
         const accepted = new Set(verdict?.formingAccepted || []);
         members = members.filter(member => accepted.has(Number(member.characterId)));
-        if (members.length < Config.partyMinSize) return null;
+        // Forming's no (a verdict) closes the roster's requests; a busy or failed worker's none asks again.
+        if (members.length < Config.partyMinSize) {
+            if (verdict) await options.onRefused?.(); else options.onDeferred?.();
+            return null;
+        }
         // A material roster keeps the reviews of its admission (CraftMaterialParty: economic accepts only).
         if (verdict.incomeReviews) review = { lastIncomeReviewAt: verdict.lastIncomeReviewAt,
             incomeReviews: verdict.incomeReviews.filter(row => accepted.has(row.characterId)) };
     }
     const leader = PartyComposition.chooseLeader(members);
-    if (!leader) return Promise.resolve(null);
+    if (!leader) { await options.onRefused?.(); return null; }
     const objectiveMember = members.find((member) => (
         member.stats?.partyRequest?.status === 'open'
         && member.stats?.partyRequest?.priority === 'required'
@@ -886,7 +783,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
     const objective = objectiveOverride || partyObjectiveForState(objectiveMember);
     if (objective?.preparationId) members = members.map(s => s.stats?.raidSupplyPreparation?.id === objective.preparationId
         ? { ...s, stats: { ...s.stats, raidSupplyPreparation: null } } : s);
-    const partySpot = partySpotForLeader(leader, objective?.spotId || null, members);
     const timestamp = Date.now();
     const partyId = `bgp_${timestamp.toString(36)}_${leader.characterId}`;
     const coverage = PartyComposition.roleCoverage(members);
@@ -894,7 +790,9 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         partyId,
         leaderId: leader.characterId,
         memberIds: members.map((state) => state.characterId),
-        spotId: partySpot?.id || leader.spotId,
+        // Its objective's ground, else where its leader stands: the party's first step
+        // decides its spot (no answer held: party_spot reads woken).
+        spotId: objective?.spotId || leader.spotId,
         startedAt: timestamp,
         nextResolveAt: timestamp + 45000 + Math.round(Math.random() * 90000),
         cohesion: 0.55 + Math.random() * 0.25,
@@ -902,7 +800,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         roleCoverage: coverage,
         stats: {
             formedAt: timestamp,
-            route: partySpot?.route || null,
             objective: objective || null,
             clanHelp: objective?.reason === 'clan_help' || objective?.rescue
                 ? { until: timestamp + 10 * 60000, memberIds: members.map(member => member.characterId) } : null,
@@ -914,7 +811,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
     if (CraftMaterialParty.isObjective(objective)) party.stats.agreement = PartyAgreement
         .propose(leader, members, objective, { persona: BotPersona.of(leader) });
     const joint = await jointPartyGoals(party, members, timestamp, options);
-    if (!joint) return null;
+    if (!joint) { options.onDeferred?.(); return null; }
     party.stats = { ...party.stats, ...joint, ...review,
         agreement: PartyAgreement.propose(leader, members, objective,
             { persona: BotPersona.of(leader), rng: invoke('GameServer/Bot/AI/TendencyRoll').seeded(`agreement:${partyId}`) }) };
@@ -925,8 +822,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         meta: {
             partyId,
             spotId: party.spotId,
-            memberIds: party.memberIds,
-            route: party.stats.route
+            memberIds: party.memberIds
         },
         weight: 2,
         createdAt: timestamp
@@ -935,6 +831,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
     // The formation event commits in the same transaction as the party.
     return commitPartyMembership(party, members, partyEvent).then(({ party: savedParty, assigned, failed }) => {
         if (!savedParty || failed.length || assigned.length !== members.length) {
+            options.onCommitRefused?.();
             return savedParty
                 ? dissolveBackgroundParty(savedParty, 'party_assignment_failed', assigned.length).then(() => null)
                 : null;
@@ -988,7 +885,6 @@ function distance2d(a, b) {
 
 const PopulationService = {
     groupBySpot,
-    partySpotForLeader,
     initialized: false,
     started: false,
     lifeReadyPromise: null,
@@ -1470,6 +1366,9 @@ const PopulationService = {
         const service = new (require('./OpportunisticRaidDirector').OpportunisticRaidDirector)({
             config: Config, life: LifeState, database: Database, parties: BackgroundPartyState, memory: Memory,
             catalog: Catalog, assembly: require('./PartyHuntingAssembly'), bossFor, bossFree, assess,
+            // boss_spawned: a raid boss entered the index (its spawn), looked up alive at the next pulse.
+            onBossChanged: listener => Index.onBossChanged(listener),
+            bossAlive: id => !!bossFor(id) && !bossFor(id).isDead?.(),
             raidEntities: boss => Index.entitiesForRaid(World,
                 { bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId() }),
             hot: invoke('GameServer/Bot/Population/HotPartyLifecycle'),
@@ -1502,7 +1401,7 @@ const PopulationService = {
                 if (!this.started || this.partyFormationRunning || this.resolving) return null;
                 this.partyFormationRunning = true;
                 try { return await createAndCommitBackgroundParty(current, { ...objective, assessment: checked }); }
-                finally { this.partyFormationRunning = false; }
+                finally { this.formationEnded(); }
             }
         });
         service.preparations = new (require('./RaidSupplyPreparation').RaidSupplyPreparation)({
@@ -1544,7 +1443,7 @@ const PopulationService = {
         const service = new PartyAssemblyEvents({
             registry: this.backgroundJobRegistry, life: LifeState, parties: BackgroundPartyState,
             classify: state => this.partyAssemblyInput(state),
-            run: (candidates, timestamp, help) => this.runPartyAssemblyEvent(candidates, timestamp, help),
+            run: (candidates, timestamp, help, moved) => this.runPartyAssemblyEvent(candidates, timestamp, help, moved),
             onRepair: () => Config.developerDiagnostics && Metrics.recordPartySafetyRepair(),
             onError: error => utils.infoWarn('BotPopulation', 'party event failed: %s', error?.message || error)
         });
@@ -1623,43 +1522,53 @@ const PopulationService = {
         if (!spotId || state.stats?.equipmentPlan?.strategy === 'market'
             || invoke('GameServer/Bot/AI/BotServiceIdentity').isStaticService(state)) return null;
         const request = state.stats?.partyRequest;
-        // Ownership/HP/coordinates pulse regularly. Refresh their original
-        // reference without restarting an unchanged recruitment decision.
+        // A bot looking for a party says so (a C4 player's LFP): an open party request or
+        // its clan's open call. Only its moves wake its group; a bot merely willing to
+        // party is roster fill, judged with a seeker, never at its own moves.
+        const seeks = objective?.status === 'open'
+            && (request?.status === 'open' || state.stats?.clanPartyObjective?.status === 'open');
+        // What wakes the group (a refused roster is judged again only then): its
+        // request opened or closed, the objective it seeks, its clan, its gear plan's
+        // source, its level and class (the roster's level range and roles) and its held
+        // solo answer (re-decided at its grade, gear, death, party_left: the solo side of
+        // the verdict). HP, loot and coordinates refresh the reference only.
         const supportRole = PartyComposition.supportRole(state, objective);
-        return { key: `spot:${spotId}`,
+        return { key: `spot:${spotId}`, seeks,
             supportKey: supportRole ? `${state.level}:${supportRole}` : null,
-            stamp: [state.level ?? null, state.stats?.classId ?? null, state.clanId ?? state.stats?.clanId ?? null,
-                objective?.spotId ?? null, request?.status ?? null, request?.priority ?? null,
-                state.stats?.equipmentPlan?.strategy ?? null, state.stats?.equipmentPlan?.target?.selfId ?? null] };
+            stamp: [state.clanId ?? state.stats?.clanId ?? null, objective?.spotId ?? null, request?.status ?? null,
+                request?.priority ?? null, state.stats?.equipmentPlan?.strategy ?? null,
+                state.stats?.equipmentPlan?.target?.selfId ?? null, state.stats?.earning?.at ?? null,
+                Number(state.level) || 0, state.classId ?? state.stats?.classId ?? null] };
     },
 
-    async runPartyAssemblyEvent(candidates, timestamp, help) {
+    // moved: the ids whose move woke the group (null: every roster is judged).
+    async runPartyAssemblyEvent(candidates, timestamp, help, moved = null) {
         if (!this.started || Config.backgroundPartyEnabled === false) return {};
         if (help) {
             const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
             await this.helpClanParty(timestamp);
             return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
         }
-        if (this.partyFormationRunning || this.resolving) return { deferred: true };
+        // Busy: the group runs again when the running formation ends (wakeParked).
+        if (this.partyFormationRunning || this.resolving) return { busy: true };
         // A member whose request is closed (PartyRequestPlanner.closed) waits for its
         // next build, whose request moves its record and wakes its group; it asks no
-        // retry. A state replaced since the page was read does.
-        const current = candidates.filter(state => LifeState.cachedState(state.characterId) === state);
-        const stale = current.length < candidates.length;
-        const eligible = current.filter(state => !PartyRequestPlanner.closed(state));
-        if (!eligible.length) return { deferred: stale };
+        // retry, nor does a state replaced since the page was read (its newer
+        // publication refreshes its record, a waking move wakes the group).
+        const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
+            && !PartyRequestPlanner.closed(state));
+        if (!eligible.length) return {};
         const protectedActivity = this.playerActivityProfile(timestamp).protected;
         if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
         if (protectedActivity && !eligible.some(state => RequiredPartyFormation.objectiveFor(state))) return {};
         const result = protectedActivity
             ? await this.formProtectedRequiredParty(timestamp, eligible)
-            : await this.formBackgroundParties(eligible);
-        // Retried (PartyAssemblyEvents.retryMs): a busy formation, or a refused roster
-        // (partyFormationPending; the group index wakes on no member's level, kit or
-        // wallet, so the retry asks again and the held refusal answers while its
-        // members stand: formingVerdict), a replaced state, a material group that
-        // formed nothing (the next page offers other supports).
-        return { deferred: this.partyFormationPending || stale
+            : await this.formBackgroundParties(eligible, { moved });
+        // Retried (PartyAssemblyEvents.retryMs) only what no event ends: main's lag, DB
+        // queue or formation budget (partyFormationPending), a material group that formed
+        // nothing (the next page offers other supports). A refused roster is not: its
+        // requests are closed until their next build.
+        return { deferred: this.partyFormationPending
                 || !result.length && eligible.some(state => CraftMaterialParty.isObjective(state.stats?.partyRequest)),
             continuation: result.length > 0,
             retryAt: protectedActivity ? this.nextProtectedPartyFormationAt : 0 };
@@ -1982,6 +1891,12 @@ const PopulationService = {
         ), Promise.resolve([]));
     },
 
+    // A formation pass ended: the groups it kept waiting run (PartyAssemblyEvents busy).
+    formationEnded() {
+        this.partyFormationRunning = false;
+        this.partyAssemblyEvents?.wakeParked();
+    },
+
     protectedPartyFormationDelay(failed = false) {
         const base = Math.max(1000, Number(Config.protectedPartyFormationIntervalMs) || 30000);
         if (failed) this.protectedPartyFormationFailures = Math.min(8, Number(this.protectedPartyFormationFailures || 0) + 1);
@@ -2002,7 +1917,7 @@ const PopulationService = {
         this.partyFormationRunning = true;
         try {
             return await Help.processOne({ commit: commitPartyMembership, create: createAndCommitBackgroundParty, release: releaseForClanHelp }, timestamp);
-        } finally { this.partyFormationRunning = false; }
+        } finally { this.formationEnded(); }
     },
 
     formProtectedRequiredParty(timestamp = Date.now(), candidates = null) {
@@ -2105,11 +2020,11 @@ const PopulationService = {
                 ? Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000)
                 : this.protectedPartyFormationDelay(failed));
             Config.developerDiagnostics && Metrics.recordPartyFormationDuration(durationMs);
-            this.partyFormationRunning = false;
+            this.formationEnded();
         });
     },
 
-    formBackgroundParties(candidates = null) {
+    formBackgroundParties(candidates = null, { moved = null } = {}) {
         // Formation rewrites party membership.  It must not overlap with the
         // scheduler after that scheduler has already selected solo candidates.
         // Foreground protection chooses the bounded required-request path;
@@ -2121,7 +2036,6 @@ const PopulationService = {
         if (activity.protected) {
             // Required requests use formProtectedRequiredParty. Presence events
             // wake the ordinary indexed groups when protection ends.
-            this.partyFormationPending = true;
             Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
             return Promise.resolve([]);
         }
@@ -2193,7 +2107,10 @@ const PopulationService = {
                 const activeParties = occupiedPartySlots();
                 const slots = Math.max(0, partyCapacityLimit() - activeParties);
                 const clanDemand = states.some(state => ClanPartyCapacity.required(objectiveOf(state)));
-                if (slots <= 0 && !clanDemand) return [];
+                if (slots <= 0 && !clanDemand) {
+                    this.partyAssemblyEvents?.waitSlot(states.filter(state => objectiveOf(state)?.status === 'open'));
+                    return [];
+                }
                 // A live player keeps a small formation reserve, but that
                 // reserve must not turn into a burst of simultaneous party
                 // writes while the foreground session is active.
@@ -2215,31 +2132,51 @@ const PopulationService = {
                         .find((objective) => objective?.priority === 'required')
                         || objectiveOf(group[0]);
                     const partyLimits = partyLimitsForObjective(requestedObjective);
-                    // Forming's no: the group's open required requests close (attempts +1) and
+                    // Forming's no: the open requests (required or preferred) close (attempts +1) and
                     // wait for their bots' next build, which asks again; none held open on no clock.
-                    const unformable = reason => LifeState.deferUnformablePartyRequests(group
-                        .filter((state) => state.stats?.partyRequest?.status === 'open'
-                            && state.stats?.partyRequest?.priority === 'required')
+                    const close = (states, reason) => LifeState.deferUnformablePartyRequests(states
+                        .filter((state) => state.stats?.partyRequest?.status === 'open')
                         .map((state) => state.characterId), reason)
                         .catch((error) => { FailureLog.note('party.unformable_close', error); return 0; });
+                    const unformable = reason => close(group, reason);
                     if (group.length < partyLimits.minSize) return unformable('too_few_members');
 
                     const select = CraftMaterialParty.isObjective(requestedObjective)
                         ? CraftMaterialParty.selectMembers
                         : (rows, options) => ClanRaidRoster.selectMembers(rows, requestedObjective, options);
-                    const selectedMembers = select(group, {
-                        minSize: partyLimits.minSize,
-                        maxSize: partyLimits.maxSize,
-                        levelRange: partyLimits.levelRange
-                    });
+                    // The bots that asked for a party group among themselves first; the willing
+                    // fill a roster built around one of them only when too few asked (a material
+                    // roster picks its own supports).
+                    const asked = group.filter(state => objectiveOf(state)?.status === 'open');
+                    const limits = { minSize: partyLimits.minSize, maxSize: partyLimits.maxSize, levelRange: partyLimits.levelRange,
+                        anchorIds: new Set(asked.map(state => Number(state.characterId))) };
+                    // Too wide a level spread among the askers alone: a roster around each asker with the willing as fill.
+                    let selectedMembers = asked.length >= partyLimits.minSize && !CraftMaterialParty.isObjective(requestedObjective)
+                        ? select(asked, limits) : [];
+                    if (selectedMembers.length < partyLimits.minSize) selectedMembers = select(group, limits);
                     if (selectedMembers.length < partyLimits.minSize) return unformable('no_compatible_level_match');
+                    // A roster of members none of which moved holds its last answer: not judged again.
+                    if (moved && !selectedMembers.some(state => moved.has(Number(state.characterId)))) return null;
+                    // A roster refused past its verdict (a member's row moved since the page was
+                    // read, a refused commit: a revision race, the DB) or with no verdict (a busy
+                    // worker) is judged again on its members' rows (PartyAssemblyEvents.rewakeOn:
+                    // at once for a row already moved, else at its next publication); one with
+                    // no party slot when a party ends (waitSlot). Each counted.
+                    const rewake = why => () => {
+                        Situations.note(`party:form:${why}`);
+                        this.partyAssemblyEvents?.rewakeOn(selectedMembers);
+                        return null;
+                    };
                     return timedStage('candidate_hydration', () => hydratePartyCandidates(selectedMembers)).then((members) => {
-                        if (members.length !== selectedMembers.length) { this.partyFormationPending = true; return null; }
-                        return timedStage('party_commit', () => createAndCommitBackgroundParty(members)).then((savedParty) => {
-                            if (savedParty) created.push(savedParty);
-                            else this.partyFormationPending = true;
-                            return savedParty;
-                        });
+                        if (members.length !== selectedMembers.length) return rewake('commit_refused')();
+                        return timedStage('party_commit', () => createAndCommitBackgroundParty(members, null, {
+                            onCommitRefused: rewake('commit_refused'), onDeferred: rewake('verdict_deferred'),
+                            onNoSlot: () => { Situations.note('party:form:no_slot'); this.partyAssemblyEvents?.waitSlot(selectedMembers); },
+                            onRefused: () => close(selectedMembers, 'forming_refused') }))
+                            .then((savedParty) => {
+                                if (savedParty) created.push(savedParty);
+                                return savedParty;
+                            });
                     });
                 }), Promise.resolve()).then(() => created);
             });
@@ -2251,7 +2188,7 @@ const PopulationService = {
             })
             .finally(() => {
                 Config.developerDiagnostics && Metrics.recordPartyFormationDuration(Date.now() - startedAt);
-                this.partyFormationRunning = false;
+                this.formationEnded();
             });
     },
 
@@ -3179,9 +3116,7 @@ const PopulationService = {
             return { ok: true, state: updatedState, debug: result.debug };
         }
         const tripEdge = CombinedErrands.edge(state, updatedState, result);
-        const preparation = updatedState.stats?.partyMarketReturn?.warOperationId
-            ? Promise.resolve({ state: updatedState })
-            : ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
+        const preparation = ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
             .then(async (shotEconomy) => {
                 const current = shotEconomy.state || updatedState;
                 const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
@@ -3229,10 +3164,6 @@ const PopulationService = {
         // 500 ms at most): its row is the actor's now; nothing cold is written over it.
         const hotRow = LifeState.hotRow(purchasedState.characterId);
         if (hotRow) return hotRow;
-        if (purchasedState.stats?.partyMarketReturn?.warOperationId) {
-            const returning = GoalExecutor.finishMarketVisit(purchasedState, Date.now(), { recoverMissingReturn: true });
-            return returning ? LifeState.upsertState(returning, 'war_supply_return').then(saved => saved || returning) : purchasedState;
-        }
         // marketResult.improved: the step carried out its held improvement (applyColdResolve).
         if (marketResult.purchased || marketResult.improved) {
             exchangeWaits.delete(Number(purchasedState.characterId));
@@ -3423,7 +3354,7 @@ const PopulationService = {
             this.lastClanWarFormation = { at: timestamp, clanId: operation.clanId, reason: result.party ? 'formed' : result.reason || 'membership_refused' };
             return result.party || null;
         } finally {
-            this.partyFormationRunning = false; release();
+            this.formationEnded(); release();
             ids.map(id => LifeState.cachedState(id)).filter(Boolean).forEach(s => ColdSimulationCoordinator.notifyState(s));
         }
     },
@@ -3449,8 +3380,8 @@ const PopulationService = {
         });
     },
 
-    reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
-        return reconcileWorkerPartyGoals(party, timestamp);
+    applyPartyStayTrips(party, trips, timestamp = Date.now()) {
+        return applyPartyStayTrips(party, trips, timestamp);
     },
 
     coldWorkerSnapshot() {

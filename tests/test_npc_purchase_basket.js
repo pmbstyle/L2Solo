@@ -34,12 +34,6 @@ async function native(state, settings) {
 }
 async function run() {
     await DB.init();
-    let military = await seed(9599, 5000, { partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 } });
-    await assert.rejects(native(military), /war_supply_only/, 'a military supply basket cannot sneak unrelated items into a shot refill');
-    assert.equal(await amount(9599, 57), 5000); assert.equal(await amount(9599, 2509), 0, 'the whole mixed basket rolls back');
-    military = Life.cachedState(9599) || military;
-    await native(military, { lines: [lines[0]] });
-    assert.equal(await amount(9599, 2509), 100, 'the reserved shot refill still commits through the native writer');
     const at = Date.now(), first = { selfId: 2509, town: 'Dion', amount: 120, at, purpose: 'shots', money: 2160 };
     const unrelated = { selfId: 736, town: 'Giran', amount: 2, at, purpose: 'scrolls' };
     let state = await seed(9511, 5000, { marketErrands: [first, unrelated], marketErrand: first });
@@ -332,11 +326,6 @@ async function run() {
         marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
     const left = await Market.finishTownErrands({ ...state, level: 30 });
     assert.equal(left.stats.townVisit.completed, true, 'a refused basket ends the visit, the bot leaves town');
-    // A war supply trip plans its supply alone; any other line would refuse the whole basket.
-    state = await seed(9545, 1000000, { classId: 1, partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 },
-        marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
-    assert.equal(Restock.collect({ ...state, level: 30 }, { town: 'Dion', shots: false }).flatMap(row => row.lines)
-        .filter(line => line.selfId !== 2509).length, 0, 'no scroll or potion joins a war supply basket');
     state = await seed(9529, 10000000);
     const fullStack = await Basket.purchase(state, { seller, lines: [
         { selfId: 2509, amount: 16481, unitPrice: 18 }, { selfId: 1785, amount: 10001, unitPrice: 300 }] });

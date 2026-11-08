@@ -68,6 +68,10 @@ async function main() {
     assert.equal(await Life.deferUnformablePartyRequests([incompatible.characterId]), 1);
     await checkDeferred(incompatible, 'no_compatible_level_match');
     assert.equal(await Life.deferUnformablePartyRequests([incompatible.characterId]), 0, 'one rejection increments attempts exactly once');
+    // Forming's no closes a preferred request too: it is not judged again on every move.
+    const preferred = await seed(0, { priority: 'preferred' });
+    assert.equal(await Life.deferUnformablePartyRequests([preferred.characterId], 'forming_refused'), 1);
+    await checkDeferred(preferred, 'forming_refused');
 
     // Native data can change after the preliminary pending-write lookup. Only
     // RETURNING may supply the cache/worker publication, never that old SELECT.

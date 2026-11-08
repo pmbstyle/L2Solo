@@ -209,8 +209,6 @@ async function run() {
 
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
-    assert.strictEqual(PopulationService.partyFormationPending, true,
-        'a resolving pass must leave a bounded party formation retry pending');
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = true;
 }

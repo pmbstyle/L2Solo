@@ -548,12 +548,10 @@ function inventoryAdena(inventory) {
 }
 
 // The bot's purchase gate on main. A worker command (`commanded`) already passed
-// the gear rules in its plan; the war ticket and the arrow stock still hold,
-// as the bag may have changed since the plan.
+// the gear rules in its plan; the arrow stock still holds, as the bag may have
+// changed since the plan.
 function marketPurchaseBlocker(state = {}, offer = {}, qty = 1, { commanded = false } = {}) {
     const selfId = Number(offer?.selfId || 0);
-    const warBlocker = require('./PartyMarketBreak').warSupplyPurchaseBlocker(state, selfId);
-    if (warBlocker) return warBlocker;
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
@@ -1113,14 +1111,18 @@ function save(row, options = {}) {
 // caller compares again on its next pass (a party marks its re-plan due).
 function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
     const id = Number(member.characterId);
-    const statsEntries = Object.entries(stats), columnEntries = Object.entries(columns);
+    // The mind's keys (a leave's party_left bits) go to the mind column, the rest to the body.
+    const { body, mind } = SavedStats.split({ ...stats });
+    const statsEntries = Object.entries(body), mindEntries = Object.entries(mind), columnEntries = Object.entries(columns);
     const assignments = [
         ...(statsEntries.length ? [`statsJson = json_set(COALESCE(statsJson, '{}'), ${statsEntries.map(() => '?, json(?)').join(', ')})`] : []),
+        ...(mindEntries.length ? [`mindJson = json_set(COALESCE(NULLIF(mindJson, ''), '{}'), ${mindEntries.map(() => '?, json(?)').join(', ')})`] : []),
         ...columnEntries.map(([name]) => `${name} = ?`),
         'simulationRevision = simulationRevision + 1', 'updatedAt = ?'
     ];
     const params = [
         ...statsEntries.flatMap(([key, value]) => [`$.${key}`, JSON.stringify(value ?? null)]),
+        ...mindEntries.flatMap(([key, value]) => [`$.${key}`, JSON.stringify(value ?? null)]),
         ...columnEntries.map(([, value]) => value),
         now(), id, Number(member.simulation?.revision || 0)
     ];
@@ -1153,12 +1155,15 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
 // body's raises ride its bag while it is hot; these land here only on its edge).
 // raises: [{ name, payload }] (DecisionEvents.raiseFar's). A decision a fact took
 // (player_command) is decided as its caller once the row raise landed (Situations.took).
+// A member's stay is woken only on a row in a party: the SQL reads the row's own party
+// field (the cached copy may be a leave or a join behind).
 function raiseOnRow(characterId, raises, reason = 'situation') {
     const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
     const bits = { woken: 0, waiting: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
-    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks, gearMarks: cached?.stats?.gearMarks }, written = {};
+    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks, gearMarks: cached?.stats?.gearMarks,
+        backgroundPartyId: true }, written = {};
     // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
-    let seen = Number(cached?.stats?.woken ?? Situations.ALL);
+    let seen = Number(cached?.stats?.woken ?? Situations.FIRST);
     for (const { name, payload = null } of raises) {
         const one = Situations.delta(name, payload, where, facts);
         const before = facts.earning?.spotId ?? null;
@@ -1181,17 +1186,23 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
         return Promise.resolve(cached?.phase === 'cold' ? cached : null);
     }
     const mind = "COALESCE(NULLIF(mindJson, ''), '{}')", at = path => `json_extract(${mind}, '$.${path}')`;
+    const solo = mask => `CASE WHEN json_extract(statsJson, '$.backgroundPartyId') IS NULL THEN ${mask} ELSE -1 END`;
+    const stay = Situations.BITS.party_stay;
+    // A raise whose only effect is a member's stay writes nothing on a solo row (the
+    // masked result ORs nothing): no revision move, no notify, nothing counted.
+    const stayOnly = !bits.cleared && !bits.waitCleared && !(bits.woken & ~stay) && !(bits.waiting & ~Situations.planes(stay));
     return module.exports.serializeClanLevelUp(id, () => Database.execute([`UPDATE ${TABLE} SET
         mindJson = json_set(${mind},
-            '$.woken', (COALESCE(${at('woken')}, ?) & ~?) | ?, '$.waiting', (COALESCE(${at('waiting')}, 0) & ~?) | ?,
+            '$.woken', (COALESCE(${at('woken')}, ?) & ~?) | (? & ${solo(~stay)}),
+            '$.waiting', (COALESCE(${at('waiting')}, 0) & ~?) | (? & ${solo(~Situations.planes(stay))}),
             '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
             ${bits.leaf ? ", '$.activityLeaf', 0" : ''}${factKeys.map(key => `, '$.${key}', json(?)`).join('')}),
         simulationRevision = simulationRevision + 1, updatedAt = ?
-        WHERE characterId = ? AND phase = 'cold'
-        RETURNING *`, [Situations.ALL, bits.cleared, bits.woken, bits.waitCleared, bits.waiting,
+        WHERE characterId = ? AND phase = 'cold'${stayOnly ? " AND json_extract(statsJson, '$.backgroundPartyId') IS NOT NULL" : ''}
+        RETURNING *`, [Situations.FIRST, bits.cleared, bits.woken, bits.waitCleared, bits.waiting,
         ...factKeys.map(key => JSON.stringify(written[key])), now(), id], { read: true }]))
         .then(([row] = []) => {
-            if (!row) return null;
+            if (!row) return stayOnly && cache.get(id)?.phase === 'cold' ? cache.get(id) : null;
             for (const { name, payload, one, seen: bitsThen, before } of each) {
                 Situations.counted(name, where, 0, one.woken, id, one.waiting, payload);
                 if (one.taken) Situations.took({ woken: bitsThen }, one, name, id, before);
@@ -1749,9 +1760,9 @@ function publishDeferredPartyRequests(rows) {
     }
 }
 
-// Forming found no group for these open required requests (PartyAssemblyEvents'
-// answer): each is closed (PartyRequestPlanner.closed) and held until the bot's next
-// build, which asks again; no clock reopens it.
+// Forming found no party for these open requests, required or preferred (no group, no
+// level match, its verdict's no): each is closed (PartyRequestPlanner.closed) and held
+// until the bot's next build, which asks again; no clock reopens it.
 function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
     const ids = [...new Set((characterIds || []).map((id) => Number(id)).filter(Boolean))].slice(0, 500);
     if (!ids.length) return Promise.resolve(0);
@@ -1763,7 +1774,7 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
         AND partyRequestStatus = 'open'
-        AND partyRequestPriority = 'required'`;
+        AND partyRequestPriority IN ('required', 'preferred')`;
     const selectCurrent = () => Database.execute([
         `SELECT characterId FROM ${TABLE} WHERE ${selection}`,
         ids
@@ -3452,31 +3463,14 @@ const BotLifeState = {
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
         const read = state;
-        if (invoke('GameServer/Bot/Population/RaidSoloBoundary').stale(state)) state = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);
         const timestamp = now();
         const cached = cache.get(Number(state.characterId));
-        const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
-        // `grouped` and party-route travel are not valid solo lifecycle
-        // states. Every detachment reason must return them to an actionable
-        // route, including capacity reclamation and friend priority.
-        const needsSoloResume = state.activity === 'grouped' || partyTravel;
-        const nextActivity = needsSoloResume ? 'hunting' : state.activity;
-        const nextState = {
-            ...state,
-            activity: nextActivity,
-            party: { ...(state.party || {}), partyId: null, leaderId: null },
-            stats: {
-                ...(state.stats || {}),
-                ...(partyTravel ? { travel: null } : {}),
-                backgroundPartyId: null,
-                partyBreakReason: reason,
-                partyRequest: null
-            },
-            timing: needsSoloResume
-                ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
-                : state.timing,
-            updatedAt: timestamp
-        };
+        // The one leave rule (BackgroundPartyLifecycle.releaseMember): the solo state,
+        // party_left raised on a far member's stats; each write below carries it on the
+        // revision it was built on.
+        const nextState = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle').releaseMember(state, timestamp, reason);
+        const needsSoloResume = nextState.activity !== state.activity;
+        const nextActivity = nextState.activity;
         // A party's release of a far member (applyWorkerPartyRequirements):
         // only what the departure changes is written, held on the revision of
         // the copy passed; false when a member write beat it. Its travel is
@@ -3487,7 +3481,9 @@ const BotLifeState = {
                 columns: {
                     partyId: null,
                     ...(nextState.spotId !== read.spotId ? { spotId: nextState.spotId || null } : {}),
-                    ...(needsSoloResume ? { activity: nextActivity, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 } : {})
+                    ...(needsSoloResume ? { activity: nextActivity } : {}),
+                    ...(nextState.timing !== state.timing ? { activityStartedAt: nextState.timing.activityStartedAt,
+                        nextResolveAt: nextState.timing.nextResolveAt } : {})
                 }
             }, `party_left_${reason}`);
         }

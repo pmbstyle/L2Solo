@@ -811,10 +811,6 @@ const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
         const errand = pendingErrand(state);
-        const warBlocker = state.stats?.partyMarketReturn?.warOperationId
-            && invoke('GameServer/Bot/Population/PartyMarketBreak').warSupplyPurchaseBlocker(state,
-            errand?.selfId || goal?.target?.itemId);
-        if (warBlocker) return Promise.resolve({ state, purchased: false, reason: warBlocker });
         if (errand?.town === state.currentRegion) return buyErrand(state);
         if (goal?.type === 'market_errand' && errand) {
             // The errand's town is another one: the bot goes on there.

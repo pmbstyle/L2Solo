@@ -1,5 +1,6 @@
-const AssemblyRecovery = require('./PartyAssemblyRecovery');
+const { REASON: ASSEMBLY_TIMEOUT } = require('./PartyHuntingAssembly');
 const RaidSoloBoundary = require('./RaidSoloBoundary');
+const Situations = require('../Situations');
 
 function raidStarted(party) {
     const objective = party?.stats?.objective;
@@ -10,111 +11,99 @@ function raidStarted(party) {
             || party?.stats?.raidEncounter?.status === 'active');
 }
 
-// members: the party's current states (the review's input key reads them);
-// options: the review's (PartySessionReview: relationFlags). A party with
-// no review yet records its evidence on its next resolve (baseline).
-function sessionExpired(party, timestamp = Date.now(), options = {}, members = null) {
-    if (party.stats?.warOperation) return false;
-    if (AssemblyRecovery.expired(party) && !party?.stats?.travel
-        && Number(party?.stats?.restUntil || 0) <= timestamp
-        && !require('./PartyMarketBreak').pending(party, timestamp).length) return true;
-    if (raidStarted(party)) return false;
-    if (!party?.stats?.sessionReview) return false;
-    return require('./PartySessionReview').due(party, members, timestamp, options);
+// The party's clan objective ends a step reads (temporary: until the clan raises its own
+// situations): a raid the party walked away from, or a member its clan or raid objective
+// no longer admits, leaves. { leaving: Map(id -> reason) }.
+function objectiveEnds(party, members) {
+    const leaving = new Map(), objective = party.stats?.objective;
+    const Clan = require('./ClanEquipmentPartyPolicy');
+    if (Clan.needsReview(party, members)) {
+        const abandoned = Clan.abandonedRaid(party);
+        for (const member of members) {
+            if (abandoned) leaving.set(Number(member.characterId), 'raid_failed');
+            else if (!Clan.allowed(member, objective)) leaving.set(Number(member.characterId), 'clan_party_unsafe');
+        }
+    }
+    return { leaving };
 }
 
-// A new party's first review record, carried by its first resolve's party row
-// (no review step, no departure): the evidence and clocks from which later
-// reviews count, its inputs' key. A departure or a recovered assembly the
-// evidence already shows is due at the next step, as a review.
-function baseline(party, members, timestamp, options = {}) {
-    const Review = require('./PartySessionReview');
-    const result = Review.assess(party, members, timestamp, options);
-    const now = result.decisions.some(decision => decision.leave) || result.assemblyRecovered || result.objectiveDone;
-    return { ...result.review, decisions: [], key: Review.inputKey(party, members, options, timestamp),
-        nextAt: now ? timestamp : result.review.nextAt };
-}
-
+// The one leave rule (every path a member leaves its party by: a worker step, main's
+// leaveParty, a hot lifecycle): the member's solo state. A grouped member, or one on
+// the party's road, resumes its own hunt (grouped and the party's trip are no solo
+// states); a weapon or armour bridge sends it hunting at once to buy it. A far member
+// (a cold row) hears party_left here, on the stats its leave writes: its earning spot
+// and build wake (a hot body hears it through its own raise, HotPartyLifecycle).
 function releaseMember(state, timestamp = Date.now(), reason = 'party_session_rotation', objective = null) {
     if (!state?.characterId) return state;
 
     const raidRelease = RaidSoloBoundary.stale(state, objective);
     if (raidRelease) state = RaidSoloBoundary.clear(state);
     const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
-    const releasedFromObjective = raidRelease || [
-        AssemblyRecovery.REASON, 'party_session_rotation', 'clan_priority',
-        'party_min_size', 'clan_party_unsafe', 'craft_materials_collected', 'party_material_route_unavailable',
-        'invalid_party_size',
-        'party_membership_mismatch',
-        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience',
-        'party_review_min_size', 'weapon_bridge', 'class_armor_bridge', 'raid_failed', 'raid_defeated', 'raid_unavailable'
-    ].includes(reason);
     const equipmentBridge = ['weapon_bridge', 'class_armor_bridge'].includes(reason);
-    const nextActivity = equipmentBridge
-        ? 'hunting'
-        : releasedFromObjective && (state.activity === 'grouped' || partyTravel)
-            ? 'hunting'
-            : state.activity;
-
-    return {
+    const resumes = equipmentBridge || state.activity === 'grouped' || partyTravel;
+    const stats = {
+        ...(state.stats || {}),
+        ...(partyTravel ? { travel: null } : {}),
+        backgroundPartyId: null,
+        partyBreakReason: reason,
+        ...(reason === 'clan_party_unsafe' ? { clanPartyObjective: null } : {}),
+        partyRequest: !raidRelease && (reason === ASSEMBLY_TIMEOUT
+            || reason === 'party_material_route_unavailable' && objective)
+            ? { ...(objective || {}), status: 'closed', lastReason: reason, requestedAt: timestamp }
+            : null
+    };
+    const next = {
         ...state,
-        activity: nextActivity,
+        activity: resumes ? 'hunting' : state.activity,
         party: { ...(state.party || {}), partyId: null, leaderId: null },
-        stats: {
-            ...(state.stats || {}),
-            ...(partyTravel ? { travel: null } : {}),
-            backgroundPartyId: null,
-            partyBreakReason: reason,
-            ...(reason === 'clan_party_unsafe' ? { clanPartyObjective: null } : {}),
-            partyRequest: !raidRelease && (reason === AssemblyRecovery.REASON
-                || reason === 'party_material_route_unavailable' && objective)
-                ? { ...(objective || {}), status: 'closed', lastReason: reason, requestedAt: timestamp }
-                : null
-        },
-        timing: releasedFromObjective && nextActivity === 'hunting'
+        stats,
+        timing: resumes
             ? { ...(state.timing || {}), activityStartedAt: timestamp,
                 nextResolveAt: timestamp + (equipmentBridge ? 1000 : 30000) }
             : state.timing,
         updatedAt: timestamp
     };
+    if (state.phase === 'cold') Situations.raise(stats, 'party_left', null, Situations.place(next), Number(state.characterId));
+    // A solo bot holds no stay (its stay is answered by the leave), nor a party's XP
+    // share exclusion (stats.partyOutleveled: its next party raises its own flip).
+    Situations.leftParty(stats, Number(state.characterId));
+    if (stats.partyOutleveled) stats.partyOutleveled = 0;
+    return next;
 }
 
-function review(party, members, timestamp, options = {}) {
-    const result = require('./PartySessionReview').assess(party, members, timestamp, options);
-    const leaving = new Map(result.decisions.filter(d => d.leave).map(d => [d.characterId, d.reason]));
-    let retained = members.filter(s => !leaving.has(s.characterId));
+// The party's roster after its members' leaves (leaving: Map(id -> reason), the party
+// step's: their stays, its objective's ends): each leaver released by the one leave
+// rule, the rest re-led; under the party's minimum it dissolves and all leave
+// (party_min_size). options: { partyMinSize, chooseLeader(states), roleCoverage(states) }.
+// Returns { party, states, leaving }.
+function release(party, members, leaving, timestamp, options = {}) {
+    leaving = new Map(leaving);
+    let retained = members.filter(s => !leaving.has(Number(s.characterId)));
     const dissolved = retained.length < Math.max(2, Number(options.partyMinSize) || 2);
     if (dissolved) {
-        members.forEach(s => { if (!leaving.has(s.characterId)) leaving.set(s.characterId, 'party_review_min_size'); });
+        members.forEach(s => { if (!leaving.has(Number(s.characterId))) leaving.set(Number(s.characterId), 'party_min_size'); });
         retained = [];
     }
     const leaderId = retained.find(s => s.characterId === party.leaderId)?.characterId
         || (options.chooseLeader?.(retained) || retained[0])?.characterId || party.leaderId;
     const nextResolveAt = Math.max(timestamp + 1000, Number(party.nextResolveAt || 0));
     const Material = require('./CraftMaterialParty');
-    const states = members.map(s => leaving.has(s.characterId)
-        ? releaseMember(s, timestamp, leaving.get(s.characterId), Material.isObjective(party.stats?.objective)
-            && leaving.get(s.characterId) === AssemblyRecovery.REASON
+    const states = members.map(s => leaving.has(Number(s.characterId))
+        ? releaseMember(s, timestamp, leaving.get(Number(s.characterId)), Material.isObjective(party.stats?.objective)
+            && leaving.get(Number(s.characterId)) === ASSEMBLY_TIMEOUT
             ? Material.departureRequest(party, s) : party.stats?.objective)
         : { ...s, party: { ...s.party, leaderId }, stats: { ...s.stats, leaderId },
             timing: { ...s.timing, nextResolveAt } });
     const nextParty = { ...party, status: dissolved ? 'dissolved' : party.status || 'active',
         memberIds: retained.map(s => s.characterId), leaderId, nextResolveAt: dissolved ? null : nextResolveAt,
         roleCoverage: options.roleCoverage?.(retained) || party.roleCoverage,
-        stats: { ...party.stats, ...(result.assemblyRecovered ? { assemblyWait: null } : {}),
-            ...(result.objectiveDone ? { objective: null } : {}),
-            sessionReview: result.review,
-            ...(dissolved ? { partyBreakReason: 'party_review_min_size' } : {}) } };
-    // The inputs this review stands on: the roster that stays, as it stays.
-    if (!dissolved) nextParty.stats.sessionReview = { ...result.review, key: require('./PartySessionReview')
-        .inputKey(nextParty, states.filter(s => !leaving.has(s.characterId)), options, timestamp) };
-    return { party: nextParty, states, leaving, decisions: result.decisions };
+        stats: { ...party.stats, ...(dissolved ? { partyBreakReason: 'party_min_size' } : {}) } };
+    return { party: nextParty, states, leaving };
 }
 
 module.exports = {
     raidStarted,
-    sessionExpired,
-    baseline,
-    review,
+    objectiveEnds,
+    release,
     releaseMember
 };

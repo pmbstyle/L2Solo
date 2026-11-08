@@ -103,12 +103,6 @@ try {
     const held = { ...returned, stats: { ...returned.stats, spotBackoffs: [], woken: 0, earning: { spotId: field.id } } };
     assert.strictEqual(Policy.plan({ ...held, loc: alternate.center, spotId: alternate.id }, [field, alternate], 7000)
         .plannedState.stats.travel.spotId, field.id, 'a karma step executes the held answer');
-    // A party member decides no earning spot: its karma step still takes the wash's spot itself
-    // (temporary until the party aggregate, situations step 8).
-    const member = { ...held, loc: alternate.center, spotId: alternate.id, party: { partyId: 'p1' },
-        stats: { ...held.stats, woken: undefined, earning: undefined } };
-    assert.strictEqual(Policy.plan(member, [field, alternate], 7000).spot?.id, Policy.washSpot(member, [field, alternate], 7000)?.id,
-        'a party member with karma washes on the wash\'s spot');
     const pending = { ...held, stats: { ...held.stats, woken: undefined, earning: undefined } };
     assert.strictEqual(Policy.plan(pending, [field, alternate], 7000).plannedState.activity, 'resting',
         'a karma step with its earning spot woken waits for the answer');

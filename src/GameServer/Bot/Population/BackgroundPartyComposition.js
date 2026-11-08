@@ -167,8 +167,10 @@ function selectMembers(candidates = [], options = {}) {
         .map((state) => [Number(state.characterId), state])).values());
     if (unique.length < minSize) return [];
     const memoryPreference = PartyMemoryPreference.create(options);
+    // anchorIds: the bots the roster is built around (forming: the ones that asked for a party).
+    const anchors = options.anchorIds?.size ? unique.filter(state => options.anchorIds.has(Number(state.characterId))) : unique;
 
-    const best = unique.reduce((current, anchor) => {
+    const best = anchors.reduce((current, anchor) => {
         const candidate = buildAround(anchor, unique, maxSize, levelRange, memoryPreference);
         if (candidate.members.length < minSize) return current;
         if (!current || candidate.score > current.score) return candidate;

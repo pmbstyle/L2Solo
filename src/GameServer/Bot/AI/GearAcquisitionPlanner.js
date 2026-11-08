@@ -59,10 +59,6 @@ const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT = 2;
-// A party route set aside waits on who could join it, which has no event (the
-// recruit pool, bots near the bot's level coming online): its entry also ends
-// after this window (limits.md "Party route set aside").
-const PARTY_ROUTE_RETRY_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 
@@ -1579,8 +1575,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
             failedAt: timestamp,
             // ARCH-NOTE: dormantWishes does not exclude a gear target yet;
             // keep its numeric wake inputs in the planner's recovery list (max4).
-            wake,
-            ...(failure.reason === 'party_route_unavailable' ? { until: timestamp + PARTY_ROUTE_RETRY_MS } : {})
+            // Held until its wake moves (level, weapon grade, a party: the gear plan's
+            // situations), however long: a party route set aside has no clock.
+            wake
         };
         const index = recoveryTargets.findIndex((entry) => Number(entry.targetId) === failure.targetId);
         if (index >= 0) recoveryTargets[index] = recovery;

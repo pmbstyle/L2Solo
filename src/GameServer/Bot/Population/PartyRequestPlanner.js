@@ -3,16 +3,22 @@ const Material = require('./CraftMaterialParty');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 
-// No solo ground -> a party (decision 10-30, T106): a healer or buffer
-// (BotRoles) whose solo gate admits no spot near its level
-// (BotRoute.soloGroundMissing) seeks a party instead of farming grey ground
-// alone. Read by the request below, which only a build a situation woke plans
-// (its held card carries the request between builds). search: the worker's
-// route search inputs (BotRoute.soloGroundMissing: the routed spot decides).
+// No solo ground -> a party (decision 10-30, T106): a healer or buffer (BotRoles)
+// with no gear plan source to hunt (an active plan's next spot is its solo hunt) whose
+// held earning answer (the solo spot it hunts, EquipmentIncomeRoute) names no spot, or
+// ground its level does not fit (BotRoute.soloLevelFits at its solo target level: grey
+// ground, unless it hunts for gain there), has no solo ground: it seeks a party instead
+// of farming grey ground alone, and its solo side counts as none wherever a party is
+// weighed against its solo hunt (PartyIncomeComparison.heldSoloRoute: forming's verdict,
+// its stay). earning, plan: the ones to read (the build's when it took them); no
+// answer held yet: not known.
 const NO_SOLO_GROUND = 'no_solo_ground';
-function supportWithoutGround(state, spots, search = null) {
-    return (Roles.isHealer(state) || Roles.canBuff(state))
-        && invoke('GameServer/Bot/Population/BotRoute').soloGroundMissing(state, spots, search); // lazy: cycle BotRoute's chain loads this planner
+function supportWithoutGround(state, spots, earning = state?.stats?.earning, plan = state?.stats?.equipmentPlan) {
+    if (!earning || !(Roles.isHealer(state) || Roles.canBuff(state))) return false;
+    if (plan?.status === 'active' && plan.next?.spotId) return false;
+    const spot = earning.spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, earning.spotId) : null;
+    return !spot || !invoke('GameServer/Bot/Population/BotRoute').soloLevelFits(state, spot, // lazy: BotRoute's chain loads this planner
+        invoke('GameServer/Bot/AI/LevelingRoutes').targetLevelForState(state, { mode: 'solo' }));
 }
 
 // A bot whose open request is that seeking (main's party assembly reads it:
@@ -28,8 +34,8 @@ function seeksParty(state) {
 // (objectiveKey = their spot key) and joins parties that hunt there. The
 // spot holds while the request is open; a reopened request searches again.
 // Null: no such seeker, or no spot.
-function seekObjective(state, previous, { spots, timestamp, search = null }) {
-    if (!supportWithoutGround(state, spots, search)) return null;
+function seekObjective(state, previous, { spots, timestamp, search = null, economy = null, plan }) {
+    if (state?.party?.partyId || !supportWithoutGround(state, spots, economy?.statsPacket?.earning || state?.stats?.earning, plan)) return null;
     const held = previous?.reason === NO_SOLO_GROUND && previous.status === 'open' ? previous.spotId : null;
     // lazy: cycle SpotProfiles' chain loads this planner
     const searched = held ? null : invoke('GameServer/Bot/Population/SpotProfiles').findForState({ ...state, spotId: null,
@@ -42,6 +48,36 @@ function seekObjective(state, previous, { spots, timestamp, search = null }) {
     return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: NO_SOLO_GROUND,
         spotId, npcId: null, itemId: null, targetId: null };
 }
+
+// Party income -> a party: a bot whose share in a party of its kind at its earning spot
+// beats its held solo answer there (PartyIncomeComparison.compare with no peers: the
+// table's party row at its level and role, the kills split as among equals; the same
+// comparison forming's verdict then asks of the real roster) asks for a party on that
+// ground (a C4 player's LFP where a group out-earns him), so it groups with the bots
+// that hunt there. Asked at the build, as every request; the next build asks again
+// (one table comparison, ~0.12 ms on the worker per build of a bot that holds no
+// other objective: cheaper than keying it on its inputs).
+// Null: no held answer with a spot, or solo pays more. economy: the build's (its earning
+// answer when the build took it with the request, else the held one).
+const PARTY_INCOME = 'party_income';
+function incomeObjective(state, { spots, timestamp, economy = null }) {
+    const earning = economy?.statsPacket?.earning || state?.stats?.earning;
+    const spotId = earning?.spotId;
+    if (!spotId) return null;
+    const asked = earning === state.stats.earning ? state : { ...state, stats: { ...state.stats, earning } };
+    const verdict = require('./PartyIncomeComparison').compare(asked, [], { spots, timestamp, objective: { spotId } }); // lazy: its chain loads this planner
+    if (!verdict?.accept) return null;
+    return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: PARTY_INCOME,
+        spotId, npcId: null, itemId: null, targetId: null };
+}
+const seeksIncome = state => state?.stats?.partyRequest?.status === 'open' && state.stats.partyRequest.reason === PARTY_INCOME;
+
+// An objective that only names a spot to meet at (no target, no clan duty): a shared
+// target (a competition's offer_party), no solo ground, party income. Its party hunts
+// there only while that spot stands for it as any party ground (BotRoute.choose),
+// else the objective ends and the party routes as any other.
+const MEETING_REASONS = new Set(['shared_target', NO_SOLO_GROUND, PARTY_INCOME]);
+const meetsAtSpot = objective => MEETING_REASONS.has(objective?.reason) || objective?.kind === 'shared_target';
 
 // A party request is held with no clock (C4 has no LFG timeout: a player asks
 // and hunts on): open while forming may answer it; closed (lastReason) when
@@ -139,7 +175,8 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
         ? { ...previous, status: 'open' } : null;
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan)
         || Material.request(state, plan, { ...options, timestamp }) || sharedTarget
-        || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search });
+        || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search, economy: options.economy, plan })
+        || incomeObjective(state, { spots: options.spots, timestamp, economy: options.economy });
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;
         const amount = Math.max(1, Math.floor(Number(objective.materialParty ? objective.amount : plan?.next?.amount || 1)));
@@ -199,8 +236,11 @@ function partyObjectiveForState(state) {
 
 module.exports = {
     NO_SOLO_GROUND,
+    PARTY_INCOME,
     supportWithoutGround,
     seeksParty,
+    seeksIncome,
+    meetsAtSpot,
     closed,
     limitsForObjective,
     objectiveSpot,

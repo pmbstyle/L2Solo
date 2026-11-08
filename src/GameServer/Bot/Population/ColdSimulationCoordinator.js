@@ -143,7 +143,6 @@ class ColdSimulationCoordinator {
         this.workerDiagnostics = null;
         this.workerDiagnosticsSeq = 0;
         this.diagnosticsResyncAt = 0;
-        this.partyReviews = { committed: 0, departed: 0, dissolved: 0, reasons: {}, recent: [] };
         // Always on (PopulationStatus.nearText): the near decisions the bodies
         // took, refused as older than the held one, or dropped (the bot cooled
         // or has no body before its decision arrived).
@@ -1744,19 +1743,6 @@ class ColdSimulationCoordinator {
                         .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
                             party.partyId, error?.message || error));
                 }
-                if (entry.proposal.result?.debug?.activity === 'party_session_review') {
-                    const review = party.stats?.sessionReview || {};
-                    const decisions = review.decisions || [];
-                    const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
-                    this.partyReviews.committed += 1;
-                    this.partyReviews.departed += departed;
-                    this.partyReviews.dissolved += Number(party.status === 'dissolved');
-                    for (const decision of decisions) {
-                        this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
-                    }
-                    this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
-                    this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
-                }
                 if (party.status === 'dissolved') {
                     await LifeState.clearParty(
                         party.partyId,
@@ -1765,21 +1751,19 @@ class ColdSimulationCoordinator {
                     Metrics.recordPartyDissolution();
                 } else {
                     Metrics.recordPartyResolve();
-                    // ARCH-NOTE: the goal review and the member plans run after the flush
+                    // ARCH-NOTE: the duty trips and the member plans run after the flush
                     // but before the leader's commit_ack. Until that ack the kernel holds
                     // every member inFlight (ColdSimulationKernel claim check), so no party
-                    // commit can land the party row while main reviews it: the worker's
+                    // commit can land the party row while main writes it: the worker's
                     // hunt commit writes that row through createOrUpdate ->
                     // saveBackgroundParty, a blind statsJson upsert. The ack then carries
-                    // the reviewed leader state after the table changes (handleCommitResults),
-                    // so the leader is never acked first and reviewed later.
-                    if (entry.proposal.partyResolution.reviewGoals
-                        && this.population?.reconcileWorkerPartyGoals) {
-                        const enqueuedAt = Number(entry.proposal.enqueuedAt || Date.now());
-                        later('partyGoals', () => this.population.reconcileWorkerPartyGoals(party, enqueuedAt)
-                            .catch((error) => {
-                                utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
-                            }));
+                    // the leader state after the table changes (handleCommitResults).
+                    // The worker's party_stay answered trip for a member of a clan or war duty
+                    // party: main starts it with its return ticket (PopulationService).
+                    const trips = entry.proposal.partyResolution.stayTrips;
+                    if (trips?.length && this.population?.applyPartyStayTrips) {
+                        later('partyStay', () => this.population.applyPartyStayTrips(party, trips)
+                            .catch((error) => FailureLog.note('party.stay_trip', error)));
                     }
                 }
             }
@@ -2454,7 +2438,6 @@ class ColdSimulationCoordinator {
             nearDecisions: { ...this.nearDecisions },
             competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,
             economyDecisions: Config.developerDiagnostics ? { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size } : null,
-            partyReviews: Config.developerDiagnostics ? this.partyReviews : null,
             queue: this.queue.snapshot(),
             snapshots: {
                 ...this.snapshotQueue.snapshot(),

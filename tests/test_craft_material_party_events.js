@@ -10,7 +10,7 @@ const registry = { armDeadline: (key, at, fn) => deadlines.set(key, { at, fn }),
     cancelDeadline: key => deadlines.delete(key), subscribeTicks: () => () => {} };
 const parties = { subscribeChanges: () => () => {} };
 const classify = state => state.activity === 'hunting' ? {
-    key: `spot:${state.stats?.partyRequest?.spotId || state.spotId}`,
+    key: `spot:${state.stats?.partyRequest?.spotId || state.spotId}`, seeks: state.stats?.partyRequest?.status === 'open',
     supportKey: state.stats?.role === 'healer' ? `${state.level}:healer` : null,
     stamp: [state.level, state.stats?.role, state.spotId, state.stats?.partyRequest?.status] } : null;
 const service = new PartyAssemblyEvents({ registry, life, parties, classify, now: () => 1000,

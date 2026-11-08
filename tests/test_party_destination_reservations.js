@@ -62,12 +62,13 @@ const at = Date.now(), ids = [];
         equipmentPlan: { status: 'active', strategy: 'craft', target: { selfId: i === 1 ? 148 : 78 } } } }));
     const blocked = { ...party, stats: { ...party.stats,
         objective: { ...objective, helpDeal: { payerId: ids[0], itemId: 4104, fee: 1000 } },
-        assemblyWait: { attempts: 6, waitedMs: 300000 },
         agreement: { materialNeeds: [
             { ...objective, characterId: ids[0], quota: 12, collected: 2 },
             { ...objective, characterId: ids[1], itemId: 4108, targetId: 148, quota: 12, collected: 0 }
         ] } } };
-    const reviewed = Lifecycle.review(blocked, owners, at + 300000);
+    // An assembly nothing more comes to: its members leave (BackgroundPartyResolver's assemblyAbsent).
+    const absent = new Map(owners.map(state => [Number(state.characterId), require('../src/GameServer/Bot/Population/PartyHuntingAssembly').REASON]));
+    const reviewed = Lifecycle.release(blocked, owners, absent, at + 300000);
     assert.equal(reviewed.party.status, 'dissolved');
     const released = reviewed.states.find(state => state.characterId === ids[1]);
     assert.equal(released.stats.partyRequest.itemId, 4108, 'the Valhalla owner keeps its blade need, not the leader Great Sword need');

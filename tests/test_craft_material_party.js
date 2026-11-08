@@ -204,11 +204,11 @@ try {
     const pendingContract = Agreement.propose(pendingOwner, [pendingOwner], pending);
     assert.equal(pendingContract.materialNeeds[0].quota, 9, 'accepted incoming limits the physical collection quota');
 
-    const Recovery = require('../src/GameServer/Bot/Population/PartyAssemblyRecovery');
+    const Recovery = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
     const Lifecycle = require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle');
     const rotationIndex = index;
     index = new Map([[4097, entries]]);
-    let retryState = state, retryAt = timestamp + 2 * Material.REVIEW_MS;
+    let retryState = state, retryAt = timestamp + 600000;
     const visited = [];
     for (let attempt = 0; attempt <= Material.MAX_CAMPS; attempt++) {
         const current = Request.partyRequestForPlan(retryState, plan, retryAt, { spots, economy });
@@ -220,7 +220,7 @@ try {
         const departure = Material.departureRequest(failedParty, owner);
         retryState = Lifecycle.releaseMember({ ...owner, activity: 'grouped' }, retryAt, Recovery.REASON, departure);
         assert.equal(retryState.stats.partyRequest.status, 'closed', 'a failed assembly closes the request until the next build');
-        retryAt += Material.REVIEW_MS + 1;
+        retryAt += 300001;
     }
     assert.deepEqual(visited, ['camp:0', 'camp:1', 'camp:2', 'camp:3', 'camp:0'],
         'successive failed assemblies visit every retained camp before repeating');

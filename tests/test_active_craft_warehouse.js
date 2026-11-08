@@ -64,17 +64,9 @@ try {
     assert.equal(trip?.stats.travel.reason, 'craft_warehouse');
     const grouped = { ...state, partyId: 'test-party', activity: 'grouped' };
     assert.equal(Warehouse.beginCraftReturn(grouped, 1800000000000), null, 'the solo path never moves a party member');
-    const groupTrip = Warehouse.beginCraftReturn({ ...grouped, activity: 'hunting' }, 1800000000000, { allowParty: true });
-    assert.equal(groupTrip?.stats.travel.reason, 'craft_warehouse');
     const material = invoke('GameServer/Bot/Population/CraftMaterialParty');
     assert.equal(material.remaining(grouped, { targetId: 300, itemId: 1864, requiredTotal: 6 }), 0,
         'material party completion counts the owner’s reserved warehouse stock');
-    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
-    const party = { partyId: 'test-party', stats: { objective: { objectiveKey: 'test-hunt' } } };
-    const ticket = PartyBreak.warehouseDeparture(party, grouped, groupTrip, 1800000000000);
-    assert.equal(ticket.stats.partyMarketReturn.cleanupReason, 'craft_warehouse');
-    assert.equal(PartyBreak.warehouseDeparture({ ...party, stats: { ...party.stats, warOperation: { id: 'war' } } },
-        grouped, groupTrip, 1800000000000), null, 'a warehouse break cannot interrupt war');
     const oldProject = { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 455,
         target: { selfId: 284, slot: 14 }, heldInputs: { 1864: 1 } };
     const currentPlan = { ...state.stats.equipmentPlan, inputPreparation: oldProject };

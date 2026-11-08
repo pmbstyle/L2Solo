@@ -113,6 +113,41 @@ function completedRaidResult(party, members, completed, timestamp) {
     };
 }
 
+// An assembling party (not all on its ground): it steps at its members' latest known
+// end, a trip's arrival; with none on its way the members off its ground leave it
+// (assemblyAbsent: the party step releases them, party_assembly_timeout). A roster that
+// cannot start whoever arrives (short of its objective's minimum, a raid roster missing a
+// role) and a raid roster missing anyone break up whole. No poll and no clock: a C4 party
+// waits for the members on their way and goes on without the one nothing brings.
+// Counted: party:assembly:wait (a step that waits), :end_moved (the end it waited for
+// passed and a later one stands), :failed (members released), :done (gathered after a wait),
+// :stuck (all on the ground, none on the way, yet not gathered: the party breaks up whole).
+let Situations = null;
+function assembling(party, members, spot, timestamp, reason, short = false) {
+    Situations ||= require('../Situations');
+    const wait = short ? { at: null, absent: [] } : Assembly.wait(members, spot, timestamp);
+    const absent = wait.at ? [] : !short && wait.absent.length ? wait.absent : members.map(member => Number(member.characterId));
+    // A raid roster starts only whole: one member missing ends it (dissolved: every member released).
+    const whole = absent.length && (absent.length === members.length || spot.raidBoss === true);
+    const before = Number(party.stats?.assemblyAt) || 0;
+    if (wait.at) {
+        Situations.note('party:assembly:wait');
+        if (before && before <= timestamp) Situations.note('party:assembly:end_moved');
+    } else Situations.note(short || wait.absent.length ? 'party:assembly:failed' : 'party:assembly:stuck');
+    const nextResolveAt = wait.at || (whole ? null : timestamp + 1000);
+    return {
+        memberResults: members.map(state => ({ state, result: {
+            patch: {}, events: [], memoryEvents: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: nextResolveAt || timestamp + 1000
+        } })),
+        events: [], nextResolveAt,
+        ...(absent.length && !whole ? { assemblyAbsent: absent } : {}),
+        partyPatch: { ...(whole ? { status: 'dissolved', nextResolveAt: null } : {}),
+            stats: { lastResolveAt: timestamp, assemblyAt: wait.at, ...(whole ? { partyBreakReason: Assembly.REASON } : {}) } },
+        debug: { reason, fights: 0, wins: 0, spotId: spot.id }
+    };
+}
+
 const BackgroundPartyResolver = {
     resolveMeetingLifecycle({ party, members, timestamp = Date.now(), episodeId = null, assessRelationship = null }) {
         if (!party || !members?.length || !Assembly.meetingPending(members)) return null;
@@ -185,12 +220,26 @@ const BackgroundPartyResolver = {
             && members.some(member => member.activity === 'resting') && !party.stats?.raidEncounter?.encounter;
         if (marked && (!admission.ok && !recoveringAssembly || !admission.held && party.stats?.raidEncounter?.status === 'defeated')) {
             const reason = admission.reason || 'raid_roster_not_opened';
-            const cancelled = Roster.CANCEL_REASONS.includes(reason);
-            const nextResolveAt = cancelled ? null : timestamp + 30000;
+            // The owner's snapshot (raidOwner) is read when the party row is published: a
+            // roster the members moved past since (a level, a class, a reservation, the
+            // composition) is refused on a snapshot behind them. It waits for the next one,
+            // which this step's commit publishes (party:assembly:recheck): due at once, its
+            // step runs on that row (its publication moves the leader's due, partyPut);
+            // refused again on it, or gathering, or short of a member, it waits as any assembly.
+            if (!Roster.CANCEL_REASONS.includes(reason) && !['party_assembling', 'raid_roster_incomplete'].includes(reason)
+                && party.stats?.rosterRecheck !== reason && !Assembly.wait(members, spot, timestamp).at) {
+                (Situations ||= require('../Situations')).note('party:assembly:recheck');
+                return { atomic: true, memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp } })), events: [],
+                nextResolveAt: timestamp, partyPatch: { stats: { lastResolveAt: timestamp, rosterRecheck: reason } },
+                debug: { reason, fights: 0, wins: 0, spotId: spot.id } };
+            }
+            // A roster its clan no longer stands behind ends; one not yet gathered or
+            // admitted waits as any assembly.
+            if (!Roster.CANCEL_REASONS.includes(reason)) return { atomic: true, ...assembling(party, members, spot, timestamp, reason) };
             return { atomic: true, memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
-                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt } })), events: [], nextResolveAt,
-            partyPatch: { ...(cancelled ? { status: 'dissolved' } : {}), stats: { assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp),
-                lastResolveAt: timestamp, ...(cancelled ? { partyBreakReason: reason } : {}) } }, debug: { reason, fights: 0, wins: 0 } };
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: null } })), events: [], nextResolveAt: null,
+            partyPatch: { status: 'dissolved', stats: { lastResolveAt: timestamp, partyBreakReason: reason } }, debug: { reason, fights: 0, wins: 0 } };
         }
         const raidCombatActive = raidObjective
             && party.stats?.raidEncounter?.status === 'active'
@@ -326,27 +375,12 @@ const BackgroundPartyResolver = {
         const assemblyMembers = raidCombatActive || admission?.held
             ? members.filter(member => !admission?.held || Number(member.vitals?.hp) > 0).map((member) => ({ ...member, activity: 'grouped' }))
             : members;
+        // Never remote combat, nor a member's physical spot rewritten: the party gathers first.
         if (understaffed || raidRosterIncomplete || !Assembly.ready(party, assemblyMembers, spot)) {
-            // No route may mean admission is temporarily unavailable. Do not
-            // turn that into remote combat or rewrite a member's physical spot.
-            const nextResolveAt = timestamp + 30000;
-            return {
-                memberResults: members.map(state => ({ state, result: {
-                    patch: {}, events: [], memoryEvents: [],
-                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt
-                } })),
-                events: [], nextResolveAt,
-                partyPatch: { stats: { lastResolveAt: timestamp,
-                    assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp) } },
-                debug: {
-                    reason: understaffed ? 'clan_party_understaffed'
-                        : raidRosterIncomplete ? raidComposition.reason : 'party_assembling',
-                    fights: 0,
-                    wins: 0,
-                    spotId: spot.id
-                }
-            };
+            return assembling(party, members, spot, timestamp, understaffed ? 'clan_party_understaffed'
+                : raidRosterIncomplete ? raidComposition.reason : 'party_assembling', understaffed || raidRosterIncomplete);
         }
+        if (party.stats?.assemblyAt) (Situations ||= require('../Situations')).note('party:assembly:done');
 
         if (party.stats?.objective?.opportunisticRaid) {
             // Travel/rest are simulated; this roster opens its encounter only
@@ -359,7 +393,7 @@ const BackgroundPartyResolver = {
             return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt,
                 eventWait: 'raid_wait_native_activation' } })),
-                atomic: true, events: [], partyPatch: {}, nextResolveAt,
+                atomic: true, events: [], partyPatch: { stats: { assemblyAt: null, rosterRecheck: null } }, nextResolveAt,
                 debug: { reason: 'raid_wait_native_activation', fights: 0, wins: 0 } };
         }
         if (raid && !raidCombatActive) {
@@ -389,7 +423,8 @@ const BackgroundPartyResolver = {
                             remainingMusic: preparation.remainingMusic
                         },
                         raidEncounter: raidSnapshot,
-                        assemblyWait: null,
+                        assemblyAt: null,
+                        rosterRecheck: null,
                         restUntil: preparation.restUntil,
                         lastResolveAt: timestamp
                     } },
@@ -772,6 +807,9 @@ const BackgroundPartyResolver = {
 
         return {
             ...(materialHunt ? { atomic: true } : {}),
+            // A round whose spot admitted none of the party's fights (no mob its members
+            // may take): the spot's emptiness, marked on the party by its step (spot_empty).
+            ...(!raid && !attemptedFights && avoidedReason ? { unhuntable: true } : {}),
             memberResults: distributedMemberResults,
             events,
             partyPatch: {
@@ -785,10 +823,10 @@ const BackgroundPartyResolver = {
                     recommendationHunt: huntActivity,
                     ...(raid ? { raidEncounter: raidSnapshot } : {}),
                     ...(marked && attemptedFights > 0 ? { raidAdmission: admission.proof } : {}),
-                    assemblyWait: null,
+                    assemblyAt: null,
+                    rosterRecheck: null,
                     fightsResolved: Number(party.stats?.fightsResolved || 0) + fights,
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
-                    lastProgressAt: wins > 0 ? timestamp : Number(party.stats?.lastProgressAt || 0),
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
                     restUntil: partyRestUntil,

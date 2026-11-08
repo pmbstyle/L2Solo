@@ -48,7 +48,6 @@ function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) 
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Response = invoke('GameServer/Network/Response');
-const Review = require('../src/GameServer/Bot/Population/PartySessionReview');
 const originals = [];
 function stub(object, key, value) { const old = object[key]; originals.push(() => { object[key] = old; }); object[key] = value; }
 const bot = (id, extra = {}) => ({ characterId: id, name: `Bot${id}`, phase: 'cold', activity: 'hunting',
@@ -169,9 +168,6 @@ async function run() {
     await assert.rejects(Population.helpClanParty(now), /commit probe/);
     assert.strictEqual(Population.partyFormationRunning, false, 'failed help releases scheduler lock');
 
-    const members = [bot(1, { stats: { equipmentPlan: { status: 'active', next: { spotId: 'other' } } } }), bot(2)];
-    const reviewed = Review.assess({ spotId: 'safe', stats: { clanHelp: { until: now + 60000, memberIds: [1, 2] } } }, members, now);
-    assert.strictEqual(reviewed.review.concerns[1], undefined, 'accepted help temporarily supersedes solo gear goal');
     console.log('Clan party help: delivered plea, recruitment, mini-party, truthful replies, eligibility, safety and bounded retries passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {

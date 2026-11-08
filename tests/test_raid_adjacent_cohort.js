@@ -47,7 +47,7 @@ async function run() {
     const forecasts = [];
     const targets = [boss, catalog.findById('raid:10418'), catalog.findById('raid:10044')];
     const service = new OpportunisticRaidDirector({
-        config: { opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidIntervalMs: 900000,
+        config: { opportunisticRaidIntervalMs: 900000,
             opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidAliveFraction: .5,
             opportunisticRaidMaxParties: 2, opportunisticRaidExpeditionMs: 2700000 },
         database: { execute: async () => [] },
@@ -74,6 +74,7 @@ async function run() {
         assert.equal(reserved, null, 'a tank short of the same required HP is still refused');
         assert.equal(forecasts.length, 1, 'the same CPU budget prevents a second forecast this pass');
         service.rosterCursor = 1;
+        service.wake('raid_opportunity'); // the next search's situation
         await service.pulse(at + 60000);
         assert.deepEqual(forecasts, [fixture.original, fixture.adjacent].map(ids => ({ ids, boss: fixture.bossId })),
             'the unforecasted adjacent roster survives CPU deferral and is checked first on the next coverage pass');

@@ -5,7 +5,7 @@ const SavedStats = require('../SavedStats');
 const FIELDS = ['travel', 'pvpEncounter', 'coldCompetition', 'partyRequest',
     'backgroundPartyId', 'leaderId', 'marketStore', 'supplyErrand', 'mammonReturn', 'restUntil'];
 const CLOCKS = new Set(['at', 'startedAt', 'startAt', 'endAt', 'arrivalAt', 'until',
-    'expiresAt', 'nextResolveAt', 'lastProgressAt', 'formedAt', 'restUntil']);
+    'expiresAt', 'nextResolveAt', 'formedAt', 'restUntil']);
 function shift(value, elapsed) {
     if (Array.isArray(value)) return value.map(item => shift(item, elapsed));
     if (!value || typeof value !== 'object') return value;

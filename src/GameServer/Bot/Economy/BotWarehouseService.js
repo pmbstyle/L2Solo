@@ -434,10 +434,11 @@ function returnStage(state, stock, identity, bagIdentity, timestamp) {
 // after it becomes the active objective again. Only that recorded deposit
 // can trigger a trip, once per warehouse contents, after the current fight.
 // decided: the step took the build (F6), whose waking situation asks a failed
-// visit again; a party member's break goes once per contents and bag.
-function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false, decided = false } = {}) {
+// visit again; else it goes once per contents and bag. A party member makes no
+// warehouse trip mid-hunt.
+function beginCraftReturn(state, timestamp = Date.now(), { decided = false } = {}) {
     const plan = ItemDisposition.equipmentInputPlan(state);
-    if (state?.phase !== 'cold' || state.activity !== 'hunting' || !allowParty && (state.party?.partyId || state.partyId)
+    if (state?.phase !== 'cold' || state.activity !== 'hunting' || state.party?.partyId || state.partyId
         || state.stats?.marketReturn || state.stats?.tradeMeeting || plan?.clanGoal
         || state.stats?.equipmentPlan?.status === 'deferred'
         || !['craft', 'luxury_exchange'].includes(plan?.strategy) || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;

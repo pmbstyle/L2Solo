@@ -4,16 +4,33 @@ function rosterKey(party) {
     return [...new Set((party?.memberIds || []).map(Number))].sort((a, b) => a - b).join(',');
 }
 // The party's spot memory as a holder state: its rounds are its step counter
-// (stats.stepCount), the clock of its marks. The risk window and the marks
-// reset with a roster change; the rounds stay with the party id, because the
-// party's competition avoid (stats.coldCompetition) is not reset with them.
+// (stats.stepCount), the clock of its marks. The risk window and the backoffs
+// reset with a roster change; the rounds stay with the party id. Its spot marks
+// (stats.spotMarks: a contest lost at its arrival, a round its spot admitted no
+// fight) hang on its held spot answer (stats.partySpot, its time as the answer key,
+// as a bot's on its earning answer): the search that answer's situation wakes
+// excludes them, the next answer retires them.
 function state(party) {
     const memory = party?.stats?.partySpotRisk;
     const same = memory?.partyId === party?.partyId;
     const current = same && memory?.rosterKey === rosterKey(party) ? memory : {};
     return { spotId: party?.spotId, stats: { spotRisk: current.spotRisk, spotBackoffs: current.spotBackoffs,
-        stepCount: same ? Math.max(0, Number(memory.rounds) || 0) : 0,
-        coldCompetition: party?.stats?.coldCompetition } };
+        stepCount: same ? Math.max(0, Number(memory.rounds) || 0) : 0, ...markStats(party) } };
+}
+function markStats(party) {
+    const held = party?.stats?.partySpot;
+    return { spotMarks: party?.stats?.spotMarks, ...(held ? { earning: { at: held.at } } : {}) };
+}
+// The party's marks that hold (on its held answer).
+const marks = party => Risk.spotMarks(markStats(party));
+// The party row with spotId marked for reason (a party situation's name: contest_lost,
+// spot_empty), read by the party step's diff (Situations.detectParty). One past the
+// cap drops the oldest, counted (spot_mark:dropped).
+let Situations = null;
+function withMark(party, spotId, reason) {
+    const spotMarks = Risk.withSpotMark(markStats(party), spotId, reason,
+        () => (Situations ||= require('../Situations')).note('spot_mark:dropped'));
+    return { ...party, stats: { ...party.stats, spotMarks } };
 }
 function memory(party, stats) {
     return { partyId: party.partyId, rosterKey: rosterKey(party),
@@ -62,4 +79,4 @@ function record(party, result, timestamp) {
     return { ...result, partyPatch: { ...result.partyPatch, stats: { ...result.partyPatch?.stats,
         partySpotRisk: memory(party, { ...previous, spotRisk, stepCount }) } } };
 }
-module.exports = { rosterKey, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, record };
+module.exports = { rosterKey, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, record, marks, withMark };

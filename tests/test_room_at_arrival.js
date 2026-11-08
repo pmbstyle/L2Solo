@@ -94,9 +94,8 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
         const queued = outbox.pending.has(party.leaderId);
         outbox.pending.delete(party.leaderId);
         if (!out) return { out: null, seen, outbox: queued };
-        const afterRounds = { ...out.party, stats: { ...out.party.stats, partySpotRisk: { partyId: party.partyId,
-            rosterKey: PartyRisk.rosterKey(party), rounds: PartyRisk.rounds(party) + 10 } } };
-        return { excluded: [...PartyRisk.excludedSpotIds(out.party)], lapsed: [...PartyRisk.excludedSpotIds(afterRounds)],
+        const answered = { ...out.party, stats: { ...out.party.stats, partySpot: { spotId: null, at: 1 } } };
+        return { excluded: [...PartyRisk.excludedSpotIds(out.party)], lapsed: [...PartyRisk.excludedSpotIds(answered)],
             wait: out.party.stats.coldCompetition?.wait || null, leaderMarks: marksOf(out.members[0].stats),
             memberMarks: marksOf(out.members[1].stats), seen };
     }
@@ -324,7 +323,7 @@ invoke('GameServer/DataCache').init();
         assert.equal(avoided.seen.arriving, 'room-party', 'a party is met as a whole');
         assert.equal(avoided.seen.pressure, 1.5);
         assert(avoided.excluded.includes(room.id), 'the party\'s next spot search skips the spot it lost');
-        assert(!avoided.lapsed.includes(room.id), 'the party forgets it after its avoid rounds (until the party aggregate)');
+        assert(!avoided.lapsed.includes(room.id), 'the party\'s next spot answer retires the mark');
         assert.deepEqual(avoided.leaderMarks, [`${room.id}:contest_lost`], 'the leader lost the contest');
         assert.deepEqual(avoided.memberMarks, [], 'a member\'s own arrival is not met');
         const waiting = await probe({ kind: 'party', spotId: room.id, party, outcome: 'yield' });

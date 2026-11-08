@@ -26,11 +26,9 @@ const members = [1, 2, 3].map(characterId => ({ characterId, name: `WarMember${c
     vitals: { hp: 1000, maxHp: 1000, mp: 500, maxMp: 500 }, timing: { nextResolveAt: at },
     inventory: {}, stats: { clanId: 10, role: characterId === 3 ? 'healer' : 'dps' } }));
 try {
-    const Lifecycle = require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle');
     const afterDeadline = op.expiresAt + 1;
-    assert(!Lifecycle.sessionExpired(party, afterDeadline), 'ordinary rotation must wait for the military return to finish');
     const dueParty = { ...party, nextResolveAt: afterDeadline + 1000 };
-    assert.equal(nextDueAt(members[0], afterDeadline, {}, false, {
+    assert.equal(nextDueAt(members[0], afterDeadline, {}, {
         leaderParty: () => dueParty, partyMembers: () => members
     }), dueParty.nextResolveAt, 'an expired operation must not trap the worker on a past session deadline');
     const Admission = require('../src/GameServer/Bot/Population/PartyAdmission').PartyAdmission;
@@ -151,15 +149,15 @@ try {
 
 async function workerReturn() {
     const now = op.expiresAt + 1, messages = [];
-    const expired = { ...party, stats: { ...party.stats, sessionReview: { at: at - 300000, nextAt: at - 1 } } }; // its review clock ran out
+    const expired = party;
     const there = members.map(s => ({ ...s, loc: { ...target } }));
     const kernel = new ColdSimulationKernel({ now: () => now,
         equipmentBridgeReason: () => { throw Error('equipment review must wait for military return'); },
         resolveSolo: () => { throw Error('war party cannot split into solo hunters'); },
         resolveParty: () => { throw Error('expired order must return before farming'); },
-        partyRoute: () => ({ needed: true, mode: 'party', spotId: spot.id, to: home,
+        partyRoute: () => ({ route: { needed: true, mode: 'party', spotId: spot.id, to: home,
             destinations: Object.fromEntries(members.map(s => [s.characterId, home])), travelMs: 25000,
-            cause: 'clan_war_return' }),
+            cause: 'clan_war_return' } }),
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const state of there) {
         kernel.upsert({ state });

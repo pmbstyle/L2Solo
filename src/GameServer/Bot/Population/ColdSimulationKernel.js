@@ -62,7 +62,6 @@ const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
-const ClanEquipment = require('./ClanEquipmentPartyPolicy');
 
 class DueHeap {
     constructor() {
@@ -221,14 +220,6 @@ function deterministicRandom(state = {}) {
 const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [],
     hallNeeded: () => false, playerWaiting: () => false });
 
-// party: the party row this bot leads, or null. The fixed clock its next
-// review waits on (a concern's grace, clan help's end), 0 for none: its
-// other clocks run with its fights and its inputs move with its steps.
-function partySessionExpiryAt(party = null) {
-    if (!party?.partyId || party.stats?.warOperation) return 0;
-    return Number(party.stats?.sessionReview?.nextAt || 0);
-}
-
 // party: the party row this bot leads, or null; members: its member states.
 function partyIntegrityInvalid(party, members, partySession = {}) {
     if (!party) return false;
@@ -244,7 +235,7 @@ function partyIntegrityInvalid(party, members, partySession = {}) {
     return attachedCount < minSize || attachedCount !== declaredMemberIds.length;
 }
 
-function nextDueAt(state = {}, timestamp = Date.now(), partySession = {}, meetingPending = false, facts = NO_FACTS) {
+function nextDueAt(state = {}, timestamp = Date.now(), partySession = {}, facts = NO_FACTS) {
     const stateDue = Number(state.timing?.nextResolveAt || 0);
     // Shared hunt/review snapshots may have advanced the personal timer.
     // An accepted obligation keeps its own physical transition deadline,
@@ -261,8 +252,6 @@ function nextDueAt(state = {}, timestamp = Date.now(), partySession = {}, meetin
     const partyDue = party ? Number(party.nextResolveAt || 0) : 0;
     const due = partyDue > 0 ? partyDue : stateDue;
     if (party && partyIntegrityInvalid(party, facts.partyMembers(party), partySession)) return timestamp;
-    const sessionExpiry = meetingPending ? 0 : partySessionExpiryAt(party);
-    if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
     return due > 0 ? due : Math.max(0, Number(state.updatedAt || timestamp));
 }
 
@@ -652,9 +641,6 @@ class ColdSimulationKernel {
         // Numeric member ids only, bounded by active party rosters (<=9 each); dropped at completion, release or dissolve.
         this.partyRequirementProgress = new Map();
         this.planLifecycle = typeof options.planLifecycle === 'function' ? options.planLifecycle : null;
-        this.requiresWeaponBridge = typeof options.requiresWeaponBridge === 'function'
-            ? options.requiresWeaponBridge
-            : null;
         this.equipmentBridgeReason = typeof options.equipmentBridgeReason === 'function'
             ? options.equipmentBridgeReason : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
@@ -671,8 +657,11 @@ class ColdSimulationKernel {
         // { party, members } with its outcome, or null.
         this.partyArrival = typeof options.partyArrival === 'function' ? options.partyArrival : null;
         // The party's route (the worker's BotRoute.route on the leader's state):
-        // { leader, party, members, spot, timestamp } -> trip record or null.
+        // { leader, party, members, spot, timestamp, held } -> { route, answer } or null.
         this.partyRoute = typeof options.partyRoute === 'function' ? options.partyRoute : null;
+        // A member's held solo answer against its party share (the worker's
+        // PartyIncomeComparison): { member, party, members, timestamp } -> boolean.
+        this.soloBeatsShare = typeof options.soloBeatsShare === 'function' ? options.soloBeatsShare : null;
         this.now = options.now || Date.now;
         this.emit = options.emit || (() => {});
         this.maxBatch = Math.max(1, Math.min(64, Number(options.maxBatch) || 64));
@@ -684,10 +673,6 @@ class ColdSimulationKernel {
         this.flushTargetMs = Math.max(100, Number(options.flushTargetMs) || 2000);
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
         this.partySession = options.partySession || {};
-        // partyId -> { key, flags }: the relation flags of a party's session
-        // review (partyReviewOptions), one entry per party in the table,
-        // dropped with its row (partyRemove, partyReset).
-        this.partyRelationFlags = new Map();
         this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
         this.maxAtomicPartySize = Math.max(
             this.partyMinSize,
@@ -787,38 +772,6 @@ class ColdSimulationKernel {
         };
     }
 
-    // A party run's session review options (BackgroundPartyLifecycle review,
-    // sessionExpired, baseline): this thread's relations and personas, and the
-    // relation flags the review reads (PartySessionReview.relationFlags), held
-    // per party while the members' memory, clan war and clan social revisions
-    // hold (a re-read moves the review's key only when a flag flips).
-    partyReviewOptions(run) {
-        const memory = this.interactionMemory, social = memory.clanSocial;
-        const assessRelationship = memory.assess.bind(memory), partyId = String(run.party?.partyId || '');
-        return {
-            ...this.partySession,
-            assessRelationship,
-            relationFlags: (members, timestamp) => {
-                const key = JSON.stringify([memory.clanWars?.revision ?? 0, social?.membershipVersion ?? 0,
-                    members.map(member => {
-                        const id = Number(member.characterId);
-                        return [id, memory.revision(id) ?? 0, social?.clans?.get(social.identity({ id }).clanId)?.revision ?? 0];
-                    })]);
-                const held = this.partyRelationFlags.get(partyId);
-                if (held?.key === key) return held.flags;
-                const flags = require('./PartySessionReview').relationFlags(members, { assessRelationship }, timestamp);
-                this.partyRelationFlags.set(partyId, { key, flags });
-                return flags;
-            },
-            chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
-            roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
-            personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').of(state) : state.persona,
-            requiresWeaponBridge: this.requiresWeaponBridge,
-            equipmentBridgeReason: this.equipmentBridgeReason,
-            spot: run.spot
-        };
-    }
-
     dueAt(state, timestamp = this.now()) {
         // Compact catalog members carry no stats. Read the current roster
         // locally; no additional snapshot fields or population scan.
@@ -835,12 +788,12 @@ class ColdSimulationKernel {
                 const member = Number(id) === Number(state.characterId) ? state : this.states.get(Number(id))?.state;
                 if (!member || !(member.stats?.tradeMeeting || ['resting', 'dead'].includes(member.activity))) continue;
                 if (!['traveling', 'resting', 'dead', 'fighting'].includes(member.activity)) continue;
-                const due = nextDueAt(member, timestamp, this.partySession, true);
+                const due = nextDueAt(member, timestamp, this.partySession);
                 if (due > 0) transitionDue = Math.min(transitionDue, due);
             }
             if (Number.isFinite(transitionDue)) return transitionDue;
         }
-        return nextDueAt(state, timestamp, this.partySession, meetingPending, this);
+        return nextDueAt(state, timestamp, this.partySession, this);
     }
 
     // The 'parties' table (ColdSimulationWorker watch): the rows by party id
@@ -858,7 +811,6 @@ class ColdSimulationKernel {
 
     partyRemove(partyId) {
         this.clearFault(`party:${partyId}`);
-        this.partyRelationFlags.delete(String(partyId));
         const previous = this.partyUnindex(partyId);
         if (previous) this.refreshLeaderSchedule(previous.leaderId);
         return previous;
@@ -870,7 +822,6 @@ class ColdSimulationKernel {
         const leaders = [...this.parties.values()].map(party => party.leaderId);
         this.parties.clear();
         this.partyByMember.clear();
-        this.partyRelationFlags.clear();
         for (const id of leaders) this.refreshLeaderSchedule(id);
         return leaders;
     }
@@ -949,8 +900,8 @@ class ColdSimulationKernel {
             || !(party.memberIds || []).some(id => Number(id) === characterId)) return;
         if (previous && current.state.activity === previous.state.activity
             && !!current.state.stats?.tradeMeeting === !!previous.state.stats?.tradeMeeting
-            && nextDueAt(current.state, this.now(), this.partySession, true)
-                === nextDueAt(previous.state, this.now(), this.partySession, true)) return;
+            && nextDueAt(current.state, this.now(), this.partySession)
+                === nextDueAt(previous.state, this.now(), this.partySession)) return;
         this.refreshLeaderSchedule(leaderId);
     }
 
@@ -1782,6 +1733,69 @@ class ColdSimulationKernel {
         return run ? { run, sources: run.members.map(member => this.captureResolverSource(member.characterId)) } : null;
     }
 
+    // A party step's member stays (party_stay, a member's own decision): the XP share's
+    // exclusion of each member raised on its flip (party_outleveled, stats.partyOutleveled
+    // its last value), then each member whose stay is woken decides (PartyStay.decide):
+    // a leave (its reason), a trip (a leave in an ordinary party; in a clan duty party
+    // main starts it with a return ticket: trips). Not while the party meets a
+    // player, carries a dead member, fights a war or a started raid, or evacuates: the
+    // bits wait. Returns { members (new copies where anything moved), leaving: Map(id ->
+    // reason), trips: [{ characterId, reason }] }.
+    partyStay(run, timestamp, { meetingPending = false, rescuing = false } = {}) {
+        Situations ||= require('../Situations');
+        const Stay = require('./PartyStay'), party = run.party;
+        const eligible = new Set(require('../../Actor/PartyRewardMath').validMemberIndexes(run.members.map(member => Number(member.level || 1))));
+        const decides = !meetingPending && !rescuing && !party.stats?.warOperation && !BackgroundPartyLifecycle.raidStarted(party)
+            && !CraftMaterialPartyRoute.evacuating(party);
+        const duty = PartyMarketBreak.clanDuty(party);
+        // shares: the party's income split, worked out once a step for every member whose stay reads it.
+        const leaving = new Map(), trips = [], shares = {};
+        const members = run.members.map((member, index) => {
+            const id = Number(member.characterId), outleveled = eligible.has(index) ? 0 : 1;
+            let stats = member.stats || {};
+            if (outleveled !== (Number(stats.partyOutleveled) || 0)) {
+                stats = { ...stats, partyOutleveled: outleveled };
+                if (outleveled) Situations.raise(stats, 'party_outleveled', null, Situations.place(member), id);
+            }
+            if (decides && Situations.woken(stats, 'party_stay')) {
+                const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
+                    bridgeReason: this.equipmentBridgeReason,
+                    soloBeatsShare: () => !!this.soloBeatsShare?.({ member, party, members: run.members, timestamp, shares }) });
+                stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
+                if (answer === 'leave' || answer === 'trip' && !duty) leaving.set(id, reason);
+                else if (answer === 'trip') trips.push({ characterId: id, reason });
+            }
+            return stats === member.stats ? member : { ...member, stats };
+        });
+        return { members, leaving, trips };
+    }
+
+    // A party step's spot decision (Situations' party subject): the party's facts against
+    // its held answer (detectParty: roster, its deaths, the leader outleveling the spot,
+    // the marks its arrival or rounds left) raised on the party's bits; woken (or none
+    // held for its objective) the one search runs and its answer is held with the facts
+    // it was taken on. Returns { party (a new row copy when anything moved), route (the
+    // trip, or null), none (the decision found no ground) }.
+    partySpot(run, timestamp) {
+        Situations ||= require('../Situations');
+        const party = run.party, leaderId = Number(party.leaderId || 0);
+        const leader = run.members.find(member => Number(member.characterId) === leaderId) || run.members[0];
+        const held = Situations.partyHeld(party);
+        const facts = { deaths: Number(party.stats?.deaths) || 0, leaderLevel: Number(leader?.level) || 1 };
+        const names = Situations.detectParty(party, held, { ...facts, marks: PartySpotRiskPolicy.marks(party) });
+        let current = names.length ? { ...party, stats: Situations.raiseParty({ ...party.stats }, names, party.partyId, leaderId) } : party;
+        const decide = Situations.partyWoken(current);
+        const routed = this.partyRoute({ leader, party: current, members: run.members, spot: run.spot, timestamp, held: decide ? null : held });
+        const answer = routed?.answer;
+        // A spot the party only met at that no longer stands for it ends its objective
+        // (BotRoute.choose): the answer is held for the party as it now routes.
+        if (answer?.objectiveEnded) current = { ...current, stats: { ...current.stats, objective: null } };
+        if (answer) current = { ...current, stats: { ...current.stats,
+            woken: Situations.partyDecided(current, 'party_spot', { subject: leaderId, answer: answer.spotId ?? 'none', was: held?.spotId }),
+            partySpot: Situations.partySpotAnswer(current, answer, timestamp, facts) } };
+        return { party: current, route: routed?.route || null, none: !!answer && answer.spotId == null };
+    }
+
     async resolvePartyStep(partyId, captured = this.capturePartyResolverSource(partyId)) {
         if (!captured || this.stopping) return;
         const { run, sources } = captured;
@@ -1795,70 +1809,71 @@ class ColdSimulationKernel {
         const startedAt = Math.ceil(Math.max(resolveStartedAt, run.dueAt || 0));
         let raidStepId = null;
         let published = false, handled = false;
+        // The members' duty trips the stay answered (partyStay: trips): they ride the
+        // leader's commit on whichever exit the step takes (publish), main starts them
+        // (stayTrips); a dissolved party starts none, its members leave.
+        let trips = [];
+        const publish = proposals => {
+            const leader = trips.length ? proposals.find(proposal => proposal.partyResolution) : null;
+            if (leader && leader.partyResolution.party?.status !== 'dissolved') leader.partyResolution.stayTrips = trips;
+            published = handled = true;
+            proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
+            this.flush(null, true);
+        };
         try {
+            // The party ends here: every member leaves (the one leave rule), the row dissolves.
+            const dissolve = (reason, type, summary) => {
+                const releasedMembers = run.members.map(state => BackgroundPartyLifecycle.releaseMember(state, startedAt, reason));
+                const dissolvedParty = { ...run.party, status: 'dissolved', nextResolveAt: null,
+                    stats: { ...(run.party.stats || {}), partyBreakReason: reason, travel: null } };
+                const proposals = partyTransitionProposals(run, releasedMembers, dissolvedParty, startedAt, this.now(),
+                    { type, summary, weight: 1, meta: { partyId: run.party.partyId, reason, memberCount: run.members.length } }, type);
+                publish(proposals);
+            };
             if (run.invalidReason) {
-                const releasedMembers = run.members.map((state) => (
-                    BackgroundPartyLifecycle.releaseMember(state, startedAt, run.invalidReason)
-                ));
-                const dissolvedParty = {
-                    ...run.party,
-                    status: 'dissolved',
-                    nextResolveAt: null,
-                    stats: {
-                        ...(run.party.stats || {}),
-                        partyBreakReason: run.invalidReason,
-                        travel: null
-                    }
-                };
-                const proposals = partyTransitionProposals(
-                    run,
-                    releasedMembers,
-                    dissolvedParty,
-                    startedAt,
-                    this.now(),
-                    {
-                        type: 'party_invalid_size',
-                        summary: `Party ${run.party.partyId} dissolved because it has fewer than ${this.partyMinSize} members`,
-                        weight: 1,
-                        meta: {
-                            partyId: run.party.partyId,
-                            reason: run.invalidReason,
-                            memberCount: run.members.length
-                        }
-                    },
-                    'party_invalid_size'
-                );
-                published = handled = true;
-                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-                this.flush(null, true);
+                dissolve(run.invalidReason, 'party_invalid_size',
+                    `Party ${run.party.partyId} dissolved because it has fewer than ${this.partyMinSize} members`);
                 return;
             }
 
             const meetingPending = require('./PartyHuntingAssembly').meetingPending(run.members);
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
-            const equipmentBridgeReview = !run.party.stats?.warOperation && !meetingPending && !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
-                && run.members.some(member => this.equipmentBridgeReason?.(member) || this.requiresWeaponBridge?.(member));
-            const reviewOptions = this.partyReviewOptions(run);
-            if (!meetingPending && !rescuing && !run.party.stats?.warOperation && !CraftMaterialPartyRoute.evacuating(run.party)
-                && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, reviewOptions, run.members)
-                || ClanEquipment.needsReview(run.party, run.members)
-                || equipmentBridgeReview)) {
-                const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, reviewOptions);
-                const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, this.now(), {
-                    type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,
-                    meta: { partyId: run.party.partyId, departed: [...review.leaving.keys()], decisions: review.decisions }
-                }, 'party_session_review');
-                published = handled = true;
-                proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-                this.flush(null, true);
+            // Its members' stays (party_stay, each on its own situations) and the party's
+            // objective ends; a member leaving releases it here, the rest go on. The run's
+            // member copies are replaced by the ones carrying their decisions.
+            // A member on the party's road whose trip has ended arrives here, whether
+            // or not the party's own trip still stands (a recruit's later arrival).
+            run.members = run.members.map(state => finishPartyRouteTravelState(state, startedAt) || state);
+            const stay = this.partyStay(run, startedAt, { meetingPending, rescuing });
+            run.members = stay.members;
+            trips = stay.trips;
+            const ends = !meetingPending && !rescuing && !run.party.stats?.warOperation && !CraftMaterialPartyRoute.evacuating(run.party)
+                ? BackgroundPartyLifecycle.objectiveEnds(run.party, run.members) : null;
+            for (const [id, reason] of ends?.leaving || []) stay.leaving.set(id, reason);
+            // The members that leave (leaving: Map(id -> reason)) through the one leave
+            // rule; the rest go on, under the minimum the party dissolves.
+            const releaseLeavers = leaving => {
+                const release = BackgroundPartyLifecycle.release(run.party, run.members, leaving, startedAt, {
+                    partyMinSize: this.partyMinSize,
+                    chooseLeader: states => invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states),
+                    roleCoverage: states => invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) });
+                const proposals = partyTransitionProposals(run, release.states, release.party, startedAt, this.now(), {
+                    type: 'party_stay', summary: `Party ${run.party.partyId}: ${release.leaving.size} member(s) left`, weight: 1,
+                    meta: { partyId: run.party.partyId, departed: Object.fromEntries(release.leaving) }
+                }, 'party_stay');
+                publish(proposals);
+            };
+            if (stay.leaving.size) {
+                releaseLeavers(stay.leaving);
                 return;
             }
 
             const partyTravel = run.party.stats?.travel;
             if (!meetingPending && partyTravel?.reason === 'party_spot_replan') {
-                const arrivalAt = Number(partyTravel.arrivalAt || 0);
+                // The trip ends when its last member arrives.
+                const arrivalAt = Math.max(Number(partyTravel.arrivalAt || 0), ...run.members.map(state =>
+                    state.stats?.travel?.reason === 'party_spot_replan' ? Number(state.stats.travel.arrivalAt) || 0 : 0));
                 if (arrivalAt > startedAt) {
                     const waitingMembers = run.members.map((state) => ({
                         ...state,
@@ -1874,10 +1889,7 @@ class ColdSimulationKernel {
                         null,
                         'party_travel_wait'
                     );
-                    published = handled = true;
-                    proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                    DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-                    this.flush(null, true);
+                    publish(proposals);
                     return;
                 }
 
@@ -1894,10 +1906,7 @@ class ColdSimulationKernel {
                     stats: {
                         ...(run.party.stats || {}),
                         lastResolveAt: startedAt,
-                        travel: null,
-                        // A trip is no idleness: the no-fight clock counts from its arrival.
-                        ...(run.party.stats?.sessionReview
-                            ? { sessionReview: { ...run.party.stats.sessionReview, idleSince: startedAt } } : {})
+                        travel: null
                     }
                 };
                 const materialArrival = CraftMaterialPartyRoute.arrived(run.party, arrivedMembers, startedAt);
@@ -1928,18 +1937,22 @@ class ColdSimulationKernel {
                     },
                     'party_arrival'
                 );
-                published = handled = true;
-                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-                this.flush(null, true);
+                publish(proposals);
                 return;
             }
 
-            // One search per party run, not kept: the party's objective spot and
-            // risk marks (on the party record) have no event to the leader.
-            const route = !meetingPending && !rescuing && this.partyRoute ? this.partyRoute({
-                leader: run.members.find(member => Number(member.characterId) === Number(run.party?.leaderId)) || run.members[0],
-                party: run.party, members: run.members, spot: run.spot, timestamp: startedAt }) : null;
+            // The party's spot (party_spot): held on the party, searched only at its
+            // situations or with no answer for its objective (partySpot). The run's party
+            // copy is replaced by the one carrying the decision.
+            const spotStep = !meetingPending && !rescuing && this.partyRoute ? this.partySpot(run, startedAt) : null;
+            if (spotStep) run.party = spotStep.party;
+            if (spotStep?.none) {
+                // No ground the party may hunt: it breaks up, each member to its own.
+                (Situations ||= require('../Situations')).note('party_no_spot');
+                dissolve('party_no_spot', 'party_no_spot', `Party ${run.party.partyId} found no hunting ground and broke up`);
+                return;
+            }
+            const route = spotStep?.route || null;
             const fightHoldsTrip = PveEncounter.holdsTrip(run.party, route, startedAt);
             if (route?.needed && !fightHoldsTrip) {
                 const arrivalAt = startedAt + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
@@ -1979,10 +1992,7 @@ class ColdSimulationKernel {
                     null,
                     'party_travel'
                 );
-                published = handled = true;
-                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-                this.flush(null, true);
+                publish(proposals);
                 return;
             }
 
@@ -2013,17 +2023,20 @@ class ColdSimulationKernel {
             }
             const resolution = staged ? staged.result : await this.resolveParty(resolveOptions);
             if (!current()) return;
+            // An assembly nothing more comes to: its absent members leave.
+            if (resolution.assemblyAbsent?.length) {
+                releaseLeavers(new Map(resolution.assemblyAbsent.map(id => [Number(id), require('./PartyHuntingAssembly').REASON])));
+                return;
+            }
             const proposals = [];
-            const resolvedParty = {
+            let resolvedParty = {
                 ...run.party,
                 ...resolution.partyPatch,
                 stats: { ...(run.party.stats || {}), ...(resolution.partyPatch?.stats || {}) },
                 nextResolveAt: resolution.nextResolveAt
             };
-            // A new party's first review evidence rides this resolve's row.
-            if (!run.party.stats?.sessionReview && !meetingPending && !rescuing && resolvedParty.status !== 'dissolved'
-                && !run.party.stats?.warOperation && !BackgroundPartyLifecycle.raidStarted(run.party))
-                resolvedParty.stats.sessionReview = BackgroundPartyLifecycle.baseline(run.party, run.members, startedAt, reviewOptions);
+            // A round its spot admitted no fight of: the spot marked empty, heard at its next step.
+            if (resolution.unhuntable && run.spot?.id != null) resolvedParty = PartySpotRiskPolicy.withMark(resolvedParty, run.spot.id, 'spot_empty');
             // The pending join main recorded (recruitBackgroundMembers): the
             // recruit check runs here on this thread's copies of the recruits;
             // the answer rides the leader's proposal (main commits a join). A
@@ -2090,10 +2103,9 @@ class ColdSimulationKernel {
             if (run.requirementRefresh) openRequirements('event');
             const memberPlans = [];
             // What the leader's commit carries: main writes the party row from
-            // it (the row's next due) and reviews the party's goals.
+            // it (the row's next due) and starts its members' duty trips (stayTrips).
             const leaderResolution = {
                 partyId: run.party.partyId,
-                reviewGoals: !meetingPending && !nativeExpedition,
                 party: resolvedParty,
                 ...(recruitCheck ? { recruitCheck } : {})
             };
@@ -2186,10 +2198,7 @@ class ColdSimulationKernel {
                     ...leaderResolution, party: { ...resolvedParty, updatedAt: group[0].atomicGroup.partyChanges[0].updatedAt } };
                 proposals.push(...group);
             }
-            published = handled = true;
-            proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
-            this.flush(null, true);
+            publish(proposals);
         } catch (error) {
             if (raidStepId) require('./ColdRaidEncounter').abort(raidStepId);
             if (!current()) return;

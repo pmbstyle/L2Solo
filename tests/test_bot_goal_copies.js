@@ -170,7 +170,7 @@ try {
     const clanParty = { partyId: 'clan-party', stats: { objective: { priority: 'required', clanGoalKey: 'clan:1' } } };
     const member = bot(FIGHTER, ratios(1, 1), { characterId: 42 });
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), true);
-    const breakGoal = PartyMarketBreak.goal(clanParty, member, { type: 'progress_level' }, now);
+    const breakGoal = PartyMarketBreak.goal(clanParty, member, now);
     assert.deepStrictEqual(breakGoal, {
         type: 'sell_inventory', status: 'active', priority: 96,
         target: { itemCount: 81, npcOnlySlots: 3, cleanupReason: 'inventory_capacity' },
@@ -178,26 +178,21 @@ try {
         blockers: []
     }, 'the clan break goal is the planner cleanup goal');
     const callsBefore = needCalls;
-    const given = PartyMarketBreak.memberNeed(clanParty, member, now);
+    const given = PartyMarketBreak.cleanupNeed(member, now);
     assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now, given), true);
-    assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, null, now, given), breakGoal);
+    assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, now, given), breakGoal);
     PartyMarketBreak.departure(clanParty, member, { stats: {} }, now, given);
     assert.strictEqual(needCalls, callsBefore + 1, 'a passed need walks the bag once');
-    assert.strictEqual(PartyMarketBreak.memberNeed({ partyId: 'free', stats: {} }, member, now), null);
-    assert.strictEqual(needCalls, callsBefore + 1, 'an ordinary party does not walk the bag');
     const departure = PartyMarketBreak.departure(clanParty, member, { activity: 'traveling', stats: {} }, now);
     assert.deepStrictEqual(departure.stats.partyMarketReturn, {
         partyId: 'clan-party', characterId: 42, until: now + 15 * 60 * 1000,
         objective: { priority: 'required', clanGoalKey: 'clan:1' }, startedAt: now,
         cleanupReason: 'inventory_capacity', slots: 81, limit: 80
     });
-    const freeParty = { partyId: 'free', stats: {} };
-    const current = { type: 'sell_inventory' };
-    assert.strictEqual(PartyMarketBreak.goal(freeParty, member, current, now), current,
-        'an ordinary party keeps the member goal');
+    assert.strictEqual(PartyMarketBreak.allowed({ partyId: 'free', stats: {} }, member, now), false,
+        'an ordinary party starts no duty trip (its member leaves instead)');
     ItemDisposition.inventoryCleanupNeed = () => ({ reason: 'npc_only_inventory', slots: 10, limit: 80 });
-    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), false);
-    assert.strictEqual(PartyMarketBreak.goal(clanParty, member, current, now), null,
+    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), false,
         'NPC junk does not break a clan duty');
 } finally {
     ItemDisposition.inventoryCleanupNeed = originalNeed;

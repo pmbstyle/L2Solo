@@ -127,7 +127,6 @@ const SpotContest = require('./SpotContest');
 const EnemyMet = require('./EnemyMet');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 const ColdCompetitionEpisode = require('./ColdCompetitionEpisode');
-const ColdCompetitionRetreat = require('./ColdCompetitionRetreat');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const { SpotContestOutbox } = require('./SpotContestOutbox');
@@ -1461,13 +1460,13 @@ function soloArrival(state, result, timestamp) {
 }
 
 // A party trip ends (the kernel's party round, finishPartyRouteTravelState): the
-// party arrives as one unit, its contest decided through its leader (temporary until
-// the party aggregate, step 8). The party's own objective spot (a clan goal, a
-// material party) admits it: no contest, so a full roster does not bounce between its
-// objective and a fallback spot. avoid: the party's competition avoid of the spot
-// (ColdCompetitionRetreat.partyAvoid, read by its next spot search) and contest_lost on
-// the leader; yield: the party waits; one touching a standing unit: the outbox, keyed
-// on the leader. proposalOf(id): a member's proposal in this round. Returns { party,
+// party arrives as one unit, its contest decided through its leader. The party's own
+// objective spot (a clan goal, a material party) admits it: no contest, so a full
+// roster does not bounce between its objective and a fallback spot. avoid: the spot
+// marked on the party (PartySpotRiskPolicy.withMark: its next step hears contest_lost,
+// Situations.detectParty, and its spot decision moves it) and contest_lost on the
+// leader; yield: the party waits; one touching a standing unit: the outbox, keyed on
+// the leader. proposalOf(id): a member's proposal in this round. Returns { party,
 // members } changed, or null.
 function partyArrival({ party, members, spotId, timestamp = Date.now(), proposalOf = () => null }) {
     if (!spotId || !(party?.memberIds || []).length || !members.length) return null;
@@ -1483,7 +1482,7 @@ function partyArrival({ party, members, spotId, timestamp = Date.now(), proposal
     const verdict = arrivalContest({ spotId, members, principal: leader, party, step: PartySpotRiskPolicy.rounds(party), at: timestamp });
     if (!verdict || verdict.action === 'coexist') return null;
     if (verdict.action === 'avoid') {
-        return { party: ColdCompetitionRetreat.partyAvoid(party, spotId, verdict.event, timestamp),
+        return { party: PartySpotRiskPolicy.withMark(party, spotId, 'contest_lost'),
             members: members.map(member => Number(member.characterId) !== leaderId ? member
                 : { ...member, stats: contestOutcome(verdict, { ...(member.stats || {}) }, member, timestamp) }) };
     }
@@ -1716,15 +1715,31 @@ function startKernel(config = {}) {
             buyOrderEscrow: escrowFor(state.characterId)
         }),
         partyArrival,
-        // The party's spot search skips a spot with no room for the whole
-        // party (its own members not counted against it).
-        partyRoute: ({ leader, party, members, spot, timestamp }) => {
+        // A party member's stay (PartyStay): its held solo answer at the inputs now
+        // against its share of its party's hunt (both one table row, no search; the
+        // split worked out once per party step, shares).
+        soloBeatsShare: ({ member, party, members, timestamp, shares = {} }) => {
+            const Income = require('./PartyIncomeComparison');
+            const solo = Income.soloRoute(member, planningSpots, timestamp);
+            if (!solo) return false;
+            shares.rows ||= Income.prepare(members, { party, objective: party.stats?.objective, spots: planningSpots, timestamp }).rows;
+            const share = shares.rows.get(member.characterId);
+            return !!share && Number(solo.income) > Number(share.income);
+        },
+        // The party's trip: its held spot answer, else its spot decision's one search
+        // (held null), which skips a spot with no room for the whole party (its own
+        // members not counted against it). { route, answer (the decision taken) }.
+        // A clan war party follows its war's movement each step (temporary: until the
+        // clan planners' pass moves war movement onto the war's events).
+        partyRoute: ({ leader, party, members, spot, timestamp, held }) => {
             if (party.stats?.warOperation && !tables.ready('clan_wars')) return null;
             const war = require('./ClanWarMovement').route({ leader, party, members, spot, timestamp,
                 spots: planningSpots, wars: kernel.interactionMemory.clanWars });
-            return war.active ? war.route : BotRoute.route(leader, spot, party, members,
-                { spots: planningSpots, timestamp, spotHunters: kernelHunters,
-                    hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
+            if (war.active) return { route: war.route };
+            const out = {};
+            const route = BotRoute.route(leader, spot, party, members, { spots: planningSpots, timestamp, held, out,
+                spotHunters: kernelHunters, hasRoom: held ? null : SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
+            return { route, answer: out.answer };
         },
         // writtenAt: the row's write stamp, the real now (timestamp is the
         // round's time, the bot's due for a step started its lead early).

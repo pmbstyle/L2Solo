@@ -6,7 +6,6 @@ const path = require('path');
 require('../src/Global');
 
 const Database = invoke('Database');
-const PartyRisk = invoke('GameServer/Bot/Population/PartySpotRiskPolicy');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-party-takeover-'));
 options.default.Database.path = path.join(tempDir, 'test.sqlite');
 
@@ -118,22 +117,13 @@ async function run() {
     assert.equal(JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=101']))[0].statsJson)
         .playerPartyTakeover.playerId, 9001);
     await Database.execute(["UPDATE bot_life_state SET phase='cold' WHERE characterId IN (101,102)", []]);
-    // The party avoided a spot 5 rounds before its 30th round ends it.
-    const [takenRow] = await Database.execute(['SELECT statsJson FROM bot_background_parties WHERE partyId=?', [partyId]]);
-    const takenStats = { ...JSON.parse(takenRow.statsJson),
-        partySpotRisk: { partyId, rosterKey: '101,102', rounds: 30, spotBackoffs: [] },
-        coldCompetition: { avoid: { spotId: 'avoided_spot', untilStep: 35 } } };
-    assert(PartyRisk.excludedSpotIds({ partyId, memberIds: [101, 102], stats: takenStats }).has('avoided_spot'));
-    await Database.execute(['UPDATE bot_background_parties SET statsJson=? WHERE partyId=?', [JSON.stringify(takenStats), partyId]]);
     const restoredCold = await Database.restoreTakenOverBackgroundParty({ partyId, playerId: 9001 });
     assert(restoredCold.ok, JSON.stringify(restoredCold));
-    assert(!PartyRisk.excludedSpotIds({ partyId, memberIds: [101, 102], stats: JSON.parse(restoredCold.party.statsJson) })
-        .has('avoided_spot'), 'the release resets the party rounds, so it also ends the avoid they counted');
     assert.strictEqual(restoredCold.party.status, 'active');
     assert(Number(restoredCold.party.nextResolveAt) > 0);
     assert(Number(JSON.parse(restoredCold.party.statsJson).formedAt) >= timestamp,
         'restoration must start a fresh autonomous party-session window');
-    assert.strictEqual(JSON.parse(restoredCold.party.statsJson).sessionReview, null);
+    assert.strictEqual(JSON.parse(restoredCold.party.statsJson).partySpot, null, 'back from a player the party decides its spot afresh');
     assert(restoredCold.rows.every((row) => row.phase === 'cold' && row.partyId === partyId));
     await Database.close();
 }
