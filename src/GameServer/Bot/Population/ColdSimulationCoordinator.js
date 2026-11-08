@@ -211,9 +211,6 @@ class ColdSimulationCoordinator {
         // party work (overdueReason reads the age; stop() waits for the acks).
         this.heldAcks = new Map();
         this.fencedBots = new Set();
-        // Cold rows held off the worker's heap because a player sees them (prepareProposal):
-        // the activation takes them, or the player leaves (releaseNearHolds).
-        this.nearHolds = new Set();
         this.pauseReasons = new Set();
         this.snapshotQueue = new ColdSnapshotQueue({
             pageSize: Config.coldWorkerSnapshotPageSize || 48,
@@ -267,9 +264,7 @@ class ColdSimulationCoordinator {
         // lands under a step or leaves the cached copy behind the row.
         // commandDbErrors: commands that failed on the database or a pending
         // write, not on the bot (sharedCommandFailure); the first is logged.
-        // nearHeld/nearReleased: rows held because a player sees them, and the
-        // ones of those that stepped again because no player saw them any more.
-        this.refusals = { commitRefused: {}, staleCommand: 0, commandDbErrors: 0, nearHeld: 0, nearReleased: 0 };
+        this.refusals = { commitRefused: {}, staleCommand: 0, commandDbErrors: 0 };
         // Worker faults main sees itself, counted always (cheap): protocol/size faults (no bot or party
         // in the message) and the last fault of any kind. A bot's own faults are counted in the worker
         // (ColdSimulationKernel.fault: backoff, quarantine) and merged in snapshot().
@@ -1446,21 +1441,6 @@ class ColdSimulationCoordinator {
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
 
-    // A held row (nearHolds) the scan no longer takes (a player left, it was refused) goes back to the worker,
-    // which schedules it; a row that left the cold phase (activated) or is
-    // fenced is the handoff's. Run after each near-player scan (the phase
-    // policy's), the one place that follows where players stand.
-    releaseNearHolds() {
-        for (const id of this.nearHolds) {
-            const state = LifeState.cachedState(id);
-            if (state?.phase === 'cold' && !this.fencedBots.has(id) && this.heldNear(state)) continue;
-            this.nearHolds.delete(id);
-            if (state?.phase !== 'cold' || this.fencedBots.has(id)) continue;
-            this.refusals.nearReleased += 1;
-            this.markDirty(state, { critical: true, reason: 'near_player_left' });
-        }
-    }
-
     // A trade preparation ended (TradeMeetingService.discard: every end, the accept's too):
     // its far actors' rows go back to the worker. A bot whose command answered that it
     // waits on it is held unscheduled there; the row schedules it again (a bot that
@@ -1509,13 +1489,6 @@ class ColdSimulationCoordinator {
         } finally {
             clearTimeout(timer);
         }
-    }
-
-    // Will the near-player scan turn this cold row hot? The scan's own answer
-    // (PopulationService.nearActivationTakes: a row it left only for its budget); any
-    // other row near a player steps on. The near hold's one answer.
-    heldNear(state) {
-        return this.population?.nearActivationTakes?.(state.characterId) === true;
     }
 
     // Within the activation's radius of a player, on its floor: the safety repair keeps
@@ -1601,25 +1574,11 @@ class ColdSimulationCoordinator {
         }
         // No base state travels with a proposal: a bot main does not hold is
         // refused (prepare_rejected) and the worker requeues it.
-        delete proposal.prepareRefusal;
         const state = LifeState.cachedState(proposal.characterId);
         if (!state) return null;
         if (Number(state.stats?.clanId) > 0) proposal[CLAN_BEFORE] = { level: state.level, sp: state.sp, inventory: state.inventory };
         const partyId = String(state.party?.partyId || state.partyId || '');
         if (partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)) return null;
-        // The near-player scan will activate this row (it waits for the scan's
-        // budget): the step waits for that, held off the worker's heap
-        // (prepareRefusal near_player) until the activation fences it or the scan
-        // no longer takes it (releaseNearHolds republishes the row). Any other row steps on.
-        if (this.heldNear(state)) {
-            proposal.prepareRefusal = 'near_player';
-            const id = Number(proposal.characterId);
-            if (!this.nearHolds.has(id)) {
-                this.nearHolds.add(id);
-                this.refusals.nearHeld += 1;
-            }
-            return null;
-        }
         if (proposal.nextStateDelta) {
             // Never rebase a sparse result over a newer revision.
             if (Number(state.simulation?.revision) !== proposal.revision) return null;
@@ -2436,8 +2395,6 @@ class ColdSimulationCoordinator {
         if (!this.worker || !this.ready) return 'worker_not_ready';
         if (this.commandInflight.has(characterId)) return 'command_inflight';
         if (this.fencedBots.has(characterId)) return 'hot_handoff_fenced';
-        // Held unscheduled for the near-player scan's activation (heldNear).
-        if (this.nearHolds.has(characterId)) return 'near_held';
         const beat = this.lastWorkerSnapshot || {};
         const occupied = Number(beat.inFlight || 0) + Number(beat.commanding || 0);
         const max = Number(this.workerMaxInFlight || 0);
@@ -2471,7 +2428,6 @@ class ColdSimulationCoordinator {
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
                 staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors,
-                nearHeld: this.refusals.nearHeld, nearReleased: this.refusals.nearReleased, nearHolding: this.nearHolds.size,
                 planBidRefused: AfkMarket.planBidRefused() },
             failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },

@@ -84,6 +84,17 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     assert.equal(busyFormed[0].stats.objective.spotId, 'goal-spot', 'formation keeps its own objective');
     assert.equal(busyFormed[0].stats.memberGoals.length, 2);
     assert.equal(announcements, 2);
+    // A player online: recruiting may use up the pass's small budget; the pass still tries
+    // its one group, so forming is not starved while a player plays.
+    const recruit = Population.recruitBackgroundMembers;
+    Population.recruitBackgroundMembers = async (states, options) => { clock = options.deadlineAt; return new Set(); };
+    try {
+        const starvedFormed = await Population.formBackgroundParties(members);
+        assert.equal(starvedFormed.length, 1, 'a pass whose recruiting used its budget still forms its one party');
+    } finally {
+        Population.recruitBackgroundMembers = recruit;
+    }
+    assert.equal(announcements, 3);
 
     const materialMembers = members.map((member, index) => ({ ...member, level: 65,
         stats: { ...member.stats, equipmentPlan: { target: { selfId: 5726 + index } },

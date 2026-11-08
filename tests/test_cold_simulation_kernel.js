@@ -591,28 +591,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(sentKernel.inFlight.size, 0);
     assert.strictEqual(sentKernel.states.get(8).state.simulation.revision, 4, 'the slow commit\'s state lands');
 
-    // A step main refused because a player sees the bot (near_player) holds it
-    // for its activation: no retry while held, however long; main's next row of
-    // it (the player left) steps it again.
-    {
-        let nearNow = now;
-        const nearKernel = recordingKernel({ resolveSolo: resolver, emit: () => {}, now: () => nearNow });
-        nearKernel.upsert(standOn(nearKernel, { state: state(9) }, { id: 'spot' }));
-        nearKernel.tick();
-        await nearKernel.resolveChain;
-        nearKernel.flush(null, true);
-        commitAck(nearKernel, { results: [{ ok: false, characterId: 9, reason: 'prepare_rejected', detail: 'near_player',
-            state: state(9) }] });
-        assert.strictEqual(nearKernel.busy(9), false);
-        const stepsBefore = startedSteps.get(nearKernel).length;
-        nearNow += 10 * 60 * 1000;
-        nearKernel.tick();
-        assert.strictEqual(startedSteps.get(nearKernel).length, stepsBefore, 'a bot a player sees takes no step while held');
-        nearKernel.upsert({ state: state(9) });
-        nearKernel.tick();
-        assert.deepStrictEqual(lastSteps(nearKernel), [9], 'main\'s row of the held bot steps it again');
-    }
-
     // A stalled party step (its proposal never sent) frees every member and
     // requeues the party by its leader.
     let partyStallNow = now;

@@ -3984,9 +3984,7 @@ const BotLifeState = {
         return counts;
     },
 
-    // held: the rows main holds unstepped for the near-player activation
-    // (ColdSimulationCoordinator.nearHolds): waiting for it, not queued.
-    coldDueSummary(timestamp = now(), held = null) {
+    coldDueSummary(timestamp = now()) {
         // overdue: due longer than a step takes from its time to its commit
         // on main; a bot inside that span is being stepped, not queued.
         const summary = {
@@ -4006,7 +4004,7 @@ const BotLifeState = {
                 dueAt, lastResolvedAt: Number(state.timing?.lastResolvedAt || 0) };
         };
         cache.forEach((state) => {
-            if (state.phase !== 'cold' || held?.has(state.characterId)
+            if (state.phase !== 'cold'
                 || state.activity === 'pk_hunting'
                 || state.party?.partyId
                 || (state.activity === 'crafting' && state.stats?.craftShop)) {

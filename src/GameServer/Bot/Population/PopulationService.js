@@ -1221,11 +1221,7 @@ const PopulationService = {
 
         this.phasePolicyRunning = true;
         return this.activateNearPlayers()
-            .then((activated) => {
-                // After this scan's activations: a held cold row no player sees any more steps again.
-                ColdSimulationCoordinator.releaseNearHolds();
-                return this.cooldownEligibleHot().then((cooled) => ({ activated, cooled }));
-            })
+            .then((activated) => this.cooldownEligibleHot().then((cooled) => ({ activated, cooled })))
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'phase policy failed: %s', err.message);
                 return { activated: [], cooled: [] };
@@ -1731,15 +1727,6 @@ const PopulationService = {
         return state.activity !== 'merchant';
     },
 
-    // Will the near-player scan turn this cold row hot? The last scan reached it (a
-    // candidate on the player's floor among the nearest it reads) and left it only for
-    // its per-scan budget, so the next scan tries it first. A row it activated is hot; a
-    // row it refused, on another floor or past its read is not taken and steps on. The
-    // cold commit's near hold reads this answer (ColdSimulationCoordinator.heldNear).
-    nearActivationTakes(characterId) {
-        return this.nearTaking?.has(Number(characterId)) === true;
-    },
-
     activateNearPlayers() {
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
@@ -1747,8 +1734,6 @@ const PopulationService = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         const ambientActivated = [];
-        // The rows this scan left for its budget (members of a party too): the near hold's answer.
-        const taking = new Set();
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
@@ -1801,8 +1786,8 @@ const PopulationService = {
                             playerLoc: loc,
                             reason: 'near_player'
                         }).accepted;
-                        // Rows past the budget are only noted (no activation request): the
-                        // next scan takes them first.
+                        // A row past the budget is not tried: it steps on cold (a cold row is
+                        // invisible to the player) and the next scan takes it first.
                         const tryRows = async () => {
                             for (const state of floorAware) {
                                 const craft = state.activity === 'crafting' && state.stats?.craftShop;
@@ -1810,10 +1795,7 @@ const PopulationService = {
                                 const size = memberIds?.length || 1;
                                 // One full party may exceed the solo per-scan budget
                                 // (9 versus 6), but may not be split or starve forever.
-                                if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) {
-                                    for (const id of memberIds || [state.characterId]) taking.add(Number(id));
-                                    continue;
-                                }
+                                if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) continue;
                                 const result = await this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
@@ -1831,10 +1813,7 @@ const PopulationService = {
             });
         });
 
-        return chain.then(() => {
-            this.nearTaking = taking;
-            return activated;
-        });
+        return chain.then(() => activated);
     },
 
     // Walkers near a player appear within the same activation budget
@@ -2038,9 +2017,13 @@ const PopulationService = {
                 const clanRequired = new Map(groups.map(group => [group, group.some(state => ClanPartyCapacity.required(objectiveOf(state)))]));
                 groups.sort((a, b) => Number(clanRequired.get(b)) - Number(clanRequired.get(a)));
                 const created = [];
+                // The budget is judged after a group was tried: recruiting may use up a player's
+                // small budget, and a pass that tried no group would starve forming for good.
+                let tried = false;
 
                 return groups.reduce((chain, group) => chain.then(() => {
-                    if (created.length >= maxNewParties || budgetReached()) return null;
+                    if (created.length >= maxNewParties || tried && budgetReached()) return null;
+                    tried = true;
                     const requestedObjective = group
                         .map(objectiveOf)
                         .find((objective) => objective?.priority === 'required')
@@ -2112,8 +2095,8 @@ const PopulationService = {
 
     partyFormationBudgetMs(activity = this.playerActivityProfile()) {
         const baseBudget = activity?.protected
-            ? Number(Config.partyFormationPlayerBudgetMs) || 600
-            : Number(Config.partyFormationIdleBudgetMs) || 500;
+            ? Number(Config.partyFormationPlayerBudgetMs)
+            : Number(Config.partyFormationIdleBudgetMs);
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
@@ -3304,7 +3287,7 @@ const PopulationService = {
     logSummary(reason = 'summary') {
         // Without diagnostics only the cheap cold-queue scan runs, for the line below.
         const summary = Config.developerDiagnostics ? this.summary() : { enabled: false,
-            coldQueue: LifeState.coldDueSummary(Date.now(), ColdSimulationCoordinator.nearHolds) };
+            coldQueue: LifeState.coldDueSummary(Date.now()) };
         const coordinator = summary.line ? null : ColdSimulationCoordinator.snapshot();
         if (summary.line) console.info('BotPopulation :: %s %s', reason, summary.line);
         else console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));

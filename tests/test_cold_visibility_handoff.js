@@ -22,12 +22,12 @@ function playerAt(locX, locY, locZ) {
     const coordinator = new ColdSimulationCoordinator();
     // The index answers by the asked radius, as World's does.
     const player = playerAt(1000, 2000, -4976);
-    // The rows the near-player scan takes (left for its budget): its answer.
-    let taking = new Set();
-    coordinator.population = {
-        nearActivationTakes: id => taking.has(Number(id)),
+    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+    // The coordinator asks the population service for the players near a row.
+    coordinator.population = Object.assign(Object.create(PopulationService), {
         realPlayerSessionsNear: (loc, radius) => player && Math.hypot(loc.locX - 1000, loc.locY - 2000) <= radius ? [player] : []
-    };
+    });
     const visible = {
         characterId: 7001,
         activity: 'grouped',
@@ -39,27 +39,29 @@ function playerAt(locX, locY, locZ) {
     await LifeState.upsertState(visible, 'visibility_fixture');
     assert.strictEqual(coordinator.visibleToRealPlayer(visible), true,
         'a cold actor on the player-visible floor must be protected from background resolution');
-    // A row near a player that the scan does not take (it refused it, it is on another
-    // floor or past what the scan reads) steps on.
-    const free = { characterId: visible.characterId, nextState: { ...visible, activity: 'hunting' }, revision: 1 };
-    assert.notStrictEqual(await coordinator.prepareProposal(free), null, 'a visible row the scan does not take steps on');
-    assert.strictEqual(free.prepareRefusal, undefined, 'a visible row the scan does not take is not held');
-    // A row the scan takes waits for its activation: the refusal holds it (near_player).
-    await LifeState.upsertState(visible, 'visibility_fixture');
-    taking = new Set([visible.characterId]);
-    const held = { characterId: visible.characterId, nextState: { ...visible, activity: 'hunting' }, revision: 1 };
-    assert.strictEqual(await coordinator.prepareProposal(held), null, 'a row the scan takes must wait for hot activation');
-    assert.strictEqual(held.prepareRefusal, 'near_player', 'the refusal names the hold for the worker');
-    // Held while the scan takes it: once it no longer does, the scan's pass sends the row back to the worker, once.
-    const marked = [];
-    coordinator.markDirty = (state, options) => marked.push([state.characterId, options.reason]);
-    coordinator.releaseNearHolds();
-    assert.deepStrictEqual(marked, [], 'a held bot the scan still takes stays held');
-    taking = new Set();
-    coordinator.releaseNearHolds();
-    coordinator.releaseNearHolds();
-    assert.deepStrictEqual(marked, [[visible.characterId, 'near_player_left']], 'the scan no longer takes it: the row goes back to the worker once');
-    delete coordinator.markDirty;
+    // The near-player scan shows one row (its budget) and leaves the next one cold. The row it
+    // left steps on until a later scan shows it: a cold row is invisible to the player, and the
+    // activation fences the row before it reads it.
+    const saved = { budget: Config.maxActivationsPerScan, sessions: PopulationService.realPlayerSessions,
+        request: PopulationService.requestActivation, walkers: PopulationService.showWalkersNear, coldNear: LifeState.coldNear };
+    const shown = [];
+    Config.maxActivationsPerScan = 1;
+    PopulationService.realPlayerSessions = () => [player];
+    PopulationService.requestActivation = async state => { shown.push(state.characterId); return { ok: true, state }; };
+    PopulationService.showWalkersNear = async (loc, activated) => activated;
+    LifeState.coldNear = async () => [{ ...visible, characterId: 7002 }, visible];
+    try {
+        await PopulationService.activateNearPlayers();
+    } finally {
+        Config.maxActivationsPerScan = saved.budget;
+        PopulationService.realPlayerSessions = saved.sessions;
+        PopulationService.requestActivation = saved.request;
+        PopulationService.showWalkersNear = saved.walkers;
+        LifeState.coldNear = saved.coldNear;
+    }
+    assert.deepStrictEqual(shown, [7002], 'the scan shows the nearest row within its budget');
+    const left = { characterId: visible.characterId, nextState: { ...visible, activity: 'hunting' }, revision: 1 };
+    assert.notStrictEqual(await coordinator.prepareProposal(left), null, 'a visible row the scan left for its budget steps on');
 
     assert.strictEqual(coordinator.visibleToRealPlayer({
         ...visible,

@@ -508,10 +508,6 @@ try {
         }, 'summary_probe').then(() => {
             const summary = BotLifeState.coldDueSummary(1000);
             assert(summary.due >= 1, 'cold due telemetry must include stale hunting plans before their persisted deadline');
-            // A row held for the near-player activation waits for it: not a queued bot.
-            const probe = BotLifeState.cachedState(summary.oldest?.characterId);
-            assert.strictEqual(BotLifeState.coldDueSummary(1000, new Set([probe.characterId])).due, summary.due - 1,
-                'a row held for its activation is not due in the cold queue');
         })).then(() => BotLifeState.upsertState({
             characterId: 72,
             name: 'LevelLessHistogramProbe',
