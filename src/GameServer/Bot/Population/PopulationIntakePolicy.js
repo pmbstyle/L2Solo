@@ -60,20 +60,15 @@ function deficit(count, target) {
 
 // The existing wave chooses the starter region (its share: raceShares). Within that
 // region choose a class first, by its share of the region's classMix weight and its
-// current deficit, then a persona type its class may take, by type share, deficit
-// and circle (a type whose circle holds the class weighs 1, another 0.1); only the
-// existing dwarf/wealth constraints are hard.
+// current deficit, then a persona type its class may take (BotPersonaTypes.chooseType:
+// type share, deficit and circle); only the existing dwarf/wealth constraints are hard.
 function choose(pool, seed, { typeCounts = {}, classCounts = {}, total = 1, classTotal = total, weights = classWeights() } = {}) {
     if (!pool?.length) throw new Error('empty_intake_class_pool');
     const poolWeight = pool.reduce((sum, profile) => sum + (weights.get(profile.classId) || 0), 0);
     const shareOf = profile => poolWeight > 0 ? (weights.get(profile.classId) || 0) / poolWeight : 1 / pool.length;
     const profile = pick(pool, pool.map((entry) => shareOf(entry)
         * deficit(classCounts[entry.classId], shareOf(entry) * classTotal)), seed, 'intake-class');
-    const typeIds = Types.candidates(profile.classId);
-    const typeId = pick(typeIds, typeIds.map((id) => Types.TYPES[id].share
-        * deficit(typeCounts[id], Types.TYPES[id].share * total)
-        * (Types.inCircle(id, profile.classId) ? 1 : 0.1)), seed, 'intake-type');
-    return { ...profile, archetype: typeId };
+    return { ...profile, archetype: Types.chooseType(profile.classId, seed, typeCounts, total, { salt: 'intake-type' }) };
 }
 
 function classCounts(states, progression) {
