@@ -327,10 +327,10 @@ function requiresClanEquipmentParty(state) {
         && Number(objective?.clanId || 0) > 0;
 }
 
-// A funded weapon or armour bridge a near bot would leave a party to buy (PartyStay.joins,
-// the worker's bridgeReason on main's NPC offers and escrow).
-const bridgeReason = state => GearAcquisitionPlanner.equipmentBridgeReason(state,
-    { buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId) });
+// A funded weapon or armour bridge a near bot would leave a party to buy (PartyStay.joins):
+// the worker's read, on the worker's NPC offers and board (npcPlanningLookup) and main's escrow.
+const bridgeReason = state => GearAcquisitionPlanner.equipmentBridgeReason(state, {
+    ...ColdSimulationCoordinator.npcPlanningLookup().plannerOptions, buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId) });
 
 async function jointPartyGoals(party, members, timestamp, options = {}) {
     const Policy = invoke('GameServer/Bot/Population/PartyGoalPolicy');

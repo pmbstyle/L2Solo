@@ -98,6 +98,18 @@ function npcPlanningCatalogRows() {
     }), ...BotMarketPricing.npcPriceRows()]);
 }
 
+// Main's copy of the worker's planning lookup: the same catalogue rows (static game
+// data, read once) over main's board, the table the worker's mirrors. A read main
+// takes for a near bot (a party's funded-bridge read, PartyStay.joins) prices from the
+// offers the worker's does for a far one.
+let npcLookup = null;
+function npcPlanningLookup() {
+    return npcLookup ||= ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows(), () => {
+        const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+        return AfkTrade.isBoardReady() ? AfkTrade.boardIndex() : null;
+    });
+}
+
 const HEAP_SNAPSHOT_DIR = path.join(__dirname, '..', '..', '..', '..', 'tmp', 'heap');
 
 // Diagnostics (coldWorkerHeapSnapshot): Node writes one snapshot of the worker's heap as it nears
@@ -2491,3 +2503,4 @@ class ColdSimulationCoordinator {
 module.exports = new ColdSimulationCoordinator();
 module.exports.ColdSimulationCoordinator = ColdSimulationCoordinator;
 module.exports.npcPlanningCatalogRows = npcPlanningCatalogRows;
+module.exports.npcPlanningLookup = npcPlanningLookup;
