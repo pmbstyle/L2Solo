@@ -10,13 +10,12 @@ const Trace = require('./DecisionTrace');
 const Stall = require('./AI/GearStall');
 const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
 
-// Places, as bits of a link's waits. OPEN hears everything: a body near a player, a
-// far bot the step it arrives in town. A far bot: WORK on a hunt, the road or in a
+// Places a bot stands at (place), as bits. OPEN hears everything: a body near a
+// player, a far bot the step it arrives in town. A far bot: WORK on a hunt, the road or in a
 // party's fight, REST, VISIT a town visit past its first look, STAND anywhere else (a
 // stall, a craft, a meeting).
-// BODY: a body near a player in the field (bodyPlace): it hears its build's
-// sections at once as OPEN (no row waits on it), its decisions as a far bot at
-// work; its stop is its rest's end (DecisionEvents.stop).
+// BODY: a body near a player in the field (bodyPlace): it hears its decisions as a
+// far bot at work; its stop is its rest's end (DecisionEvents.stop).
 const OPEN = 0, WORK = 1, REST = 2, VISIT = 4, STAND = 8, BODY = 16;
 const FIELD = WORK | REST, GATED = FIELD | VISIT | STAND;
 const NAMES = new Map([[OPEN, 'open'], [WORK, 'work'], [REST, 'rest'], [VISIT, 'visit'], [STAND, 'stand'], [BODY, 'body']]);
@@ -51,12 +50,11 @@ function readsFacts(before, after) {
 // The planes a far bot hears a situation on (a row's heard): NOW anywhere, STOP at
 // its next stop (a rest or the town), TOWN in town only (situations.md §10).
 const NOW = 0, STOP = 1, TOWN = 2;
-const link = (waits, heard = NOW) => Object.freeze({ waits, heard });
+const link = heard => Object.freeze({ heard });
 
-// Every situation a bot can hear: the places a far bot does not hear it at (waits:
-// read by hears(): the soft point and the plan's own moves, until step 4 C7) and the
-// plane a far bot hears it on (heard: NOW, at its next STOP, in TOWN). The decisions
-// each wakes are declared below (DECISIONS).
+// Every situation a bot can hear and the plane a far bot hears it on (heard: NOW, at
+// its next STOP, in TOWN; where it stands decides which planes it hears: planesAt).
+// The decisions each wakes are declared below (DECISIONS).
 const SITUATIONS = Object.freeze({
     // Its own state (detect). A level alone is none (training reads it in its round):
     // what a level opens is. The C4 expertise grade its level allows moved, either way
@@ -64,121 +62,116 @@ const SITUATIONS = Object.freeze({
     // past the deep-blue gap below it (SpotValueTable.outleveled: the search's own cut).
     // The gear a fight turns on (the worn weapon, the body armour's grade, the armour
     // sets worn whole: not a ring, an enchant, hennas, skills, the craft or karma).
-    grade_changed: link(WORK | VISIT, STOP),
-    spot_outleveled: link(WORK | VISIT, STOP),
-    gear_changed: link(WORK | VISIT, TOWN),
-    recipe_learned: link(WORK | VISIT, STOP),
-    died: link(0),
-    // A hot body's respawn in town (BotAI): wakes nothing, its town arrival follows as
-    // its own (a death wakes the earning spot; a PvE death costs no gear).
-    revived: link(0),
+    grade_changed: link(STOP),
+    spot_outleveled: link(STOP),
+    gear_changed: link(TOWN),
+    recipe_learned: link(STOP),
+    died: link(NOW),
     // Its clan joined, left or changed (detect's clan fact): heard at its next stop. Its
     // friends and enemies wake nothing (Q13): they are read when it decides.
-    clan_changed: link(WORK | VISIT, STOP),
+    clan_changed: link(STOP),
     // Its party left (BackgroundPartyLifecycle.releaseMember, the one leave rule: raised
     // where the leave is written; a hot body's by its lifecycle).
-    party_left: link(0),
+    party_left: link(NOW),
     // A contest lost at its arrival on a spot (SpotContest: it avoids the units standing
     // there; payload { spotId, reason: 'contest_lost' }: its spot mark, raisedFacts).
-    contest_lost: link(0),
+    contest_lost: link(NOW),
     // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
     // arrival (SpotContest), a grievance pair met there (step 2 S4).
-    spot_contested: link(0),
-    enemy_met: link(0),
+    spot_contested: link(NOW),
+    enemy_met: link(NOW),
     // What main refused at the act or a body that failed its step five times: the plan
     // cannot stand.
-    goal_failed: link(0),
+    goal_failed: link(NOW),
     // The gear plan's craft route collected nothing for its stall's kills (the far
     // kill count crossed equipmentPlan.stall, GearAcquisitionPlanner.stallCrossed), or
     // the bot outgrew the source the route took (DecisionSections outgrown).
-    source_stalled: link(0),
+    source_stalled: link(NOW),
     // What an executor proved of the held plan where it acts: its goal reached (a
     // purchase landed, a material hunt's count, a paid piece waits for its exchange);
     // a town visit's last stop done or refused (the visit's own check, a review main
     // could not run; a body's visit stage, ShoppingState): the build takes the next leaf.
     // A far stop with a stop after it in the held plan raises nothing: the plan moves on
     // (EconomyContext visitStop).
-    'goal_done:goal': link(0),
-    'goal_done:visit': link(0),
-    'goal_failed:visit': link(0),
+    'goal_done:goal': link(NOW),
+    'goal_done:visit': link(NOW),
+    'goal_failed:visit': link(NOW),
     // A spot whose spawns admit none of the bot's fights alone (a kit or level it
     // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
     // stand.
-    spot_empty: link(0),
+    spot_empty: link(NOW),
     // A far bot's arrival in town (detect: the step that leaves the field for a town
     // visit) or a body's (ShoppingState.arrive: its first tick in town), once a visit; on
     // the trip its held leaf ordered to the town it names (:own), which the build does not
     // hear: the visit carries out the step it came for.
-    arrived_town: link(0),
-    'arrived_town:own': link(0),
+    arrived_town: link(NOW),
+    'arrived_town:own': link(NOW),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
     // queue held for it, DecisionSections.moneyCrossings, F3).
-    out_of_money: link(0),
+    out_of_money: link(NOW),
     // A move the bot did not order (a flight, a pull, a push out, a party's call).
-    moved_by_world: link(0),
+    moved_by_world: link(NOW),
     // Deaths at its spot, or the death recovery's level penalty raised (a death, the
     // spot's pressure): the ground the bot may fight on moved.
-    spot_dangerous: link(0),
+    spot_dangerous: link(NOW),
     // The recovery's penalty lifted by clean wins.
-    recovered: link(0, STOP),
+    recovered: link(STOP),
     // The earning spot's own inputs (situations.md B6): karma that appeared or cleared
     // (detect; the decision takes the karma wash's choice while it lasts), a spot the
     // body's relocation could not reach (payload { spotId, reason }: its spot mark)
     // and a player's command naming a spot (payload { spotId, at }: the held answer
     // itself, no search). raisedFacts writes what they carry (spot_dangerous's too).
-    karma_changed: link(0),
-    spot_unreachable: link(0),
-    player_command: link(0),
+    karma_changed: link(NOW),
+    spot_unreachable: link(NOW),
+    player_command: link(NOW),
     // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
     // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only.
-    spot_disappoints: link(0, STOP),
-    bag: link(FIELD | VISIT),
+    spot_disappoints: link(STOP),
     // What its clan asks of it moved (the stores fact: its material demand, the clan
     // supply, the crystals): heard at its next stop (situations.md §3 clan_call; the
     // clan raises it itself in step 9).
-    clan_call: link(WORK | VISIT, STOP),
+    clan_call: link(STOP),
     // A condition, not a change: a need that opened. The shots a fight loads or the
     // survival potions fell under their line (one hour of use, the kit rates'), the
     // shots ran out (the supply fact's flips, factNames); the bag must go to town.
-    shots_out: link(0),
-    'stock_low:shots': link(0),
-    'stock_low:potions': link(0),
-    bag_full: link(0),
+    shots_out: link(NOW),
+    'stock_low:shots': link(NOW),
+    'stock_low:potions': link(NOW),
+    bag_full: link(NOW),
     // The wallet reached the build's threshold (baseline.affordAt): a broke bot's survival
     // potions, else an unarmed bot's weapon bridge, its focus or its gear plan's market
     // piece (all wake the build only: one name).
-    'goal_affordable:potions': link(0),
-    'goal_affordable:focus': link(0),
+    'goal_affordable:potions': link(NOW),
+    'goal_affordable:focus': link(NOW),
     // A board offer its held build wants (MarketBuyerWaiters: a new SELL line, or a cheaper
     // one, within the want's budget), raised at the bot's next step (payload { itemId,
     // price }): it answers the trade it hears, as a C4 player answers a WTS shout.
-    offer_posted: link(0),
+    offer_posted: link(NOW),
     // Its own board lines (the worker's board diff): a SELL line of the same item posted
     // or repriced below its own in its town (an unplaced ad counts in every town), as a
     // C4 seller sees a cheaper store or WTS shout; one of its own lines filled (a sale, a
     // bid answered). Heard at its next stop: a hunting player looks at his store when he
     // sits down or reaches town.
-    line_undercut: link(0, STOP),
-    'goal_done:line': link(0, STOP),
+    line_undercut: link(STOP),
+    'goal_done:line': link(STOP),
     // Its last hunting buff ended (BotBuffs.rebuffable: a guide's, a hall's or a buffer's;
     // a far bot's buffed fact fell, or it is first read unbuffed on a solo field step,
     // buffFact; a body's last such effect expired, EffectTicker): heard at its next stop,
     // as a player who sees his buffs gone renews them when he sits down or reaches town.
     // A death clears buffs and raises none (its restart's field step reads the fact anew).
-    buffs_expired: link(0, STOP),
+    buffs_expired: link(STOP),
     // A party's roster moved (the party step's diff against its held spot's roster):
     // a member came or went, the leader's own leave too (subject: the party).
-    member_joined: link(0),
-    member_left: link(0),
+    member_joined: link(NOW),
+    member_left: link(NOW),
     // The party's XP share came to exclude this member (PartyRewardMath: its level fell
     // too far below the party's), raised by the party step on the member (its flip).
-    party_outleveled: link(0),
+    party_outleveled: link(NOW),
     // Its gear plan, re-planned by its party's step, came to need no party where it did
     // (the drop it grouped for came, its target moved): raised on the member's row once
     // that plan is written (LifeState.writePartyRequirementPlan, with its partyNeedEnded fact).
-    party_need_ended: link(0)
+    party_need_ended: link(NOW)
 });
-const hears = (name, where) => !(SITUATIONS[name].waits & where);
 
 // The decisions a bot holds: one bit each in stats.woken, the same bits per plane
 // in stats.waiting (STOP plane the low byte, TOWN the next). Each declares here, once,
@@ -438,6 +431,9 @@ function stop(stats, where, subject = 0) {
     return stats;
 }
 const woken = (stats, decision) => !!(wokenBits(stats) & BITS[decision]);
+// A decision raised and not yet taken: woken, or waiting for a stop on any plane (a
+// raise of its situation now adds nothing).
+const raised = (stats, decision) => woken(stats, decision) || !!((Number(stats?.waiting) || 0) & planes(BITS[decision]));
 const anyWoken = stats => wokenBits(stats) !== 0;
 // A decision taken clears its bit; its held answer served (served) is counted and
 // clears nothing; a taken one with no bit woken is counted by its caller.
@@ -529,7 +525,6 @@ function factNames(previousFact, current, planned = false) {
         if (S.lineAt(lines, 'shots') < S.LINE_OUT && S.lineAt(current.lines, 'shots') === S.LINE_OUT) add('shots_out');
         if (below('potions')) add('stock_low:potions');
     }
-    if (previousFact('bag') !== current.bag) add('bag');
     if (previousFact('stores') !== current.stores) add('clan_call');
     return names;
 }
@@ -606,7 +601,8 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity))
         names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
-    return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
+    return body || gated(place(after, before))
+        ? names.concat(needsOpened(before, previousFact('bag') !== current.bag, view, facts)) : names;
 }
 // The facts whose situations wake the earning spot alone for a solo bot (died, spot_outleveled,
 // moved_by_world, spot_dangerous, recovered, karma_changed, shots_out: the lines fact): the earning answer taken alone
@@ -622,11 +618,12 @@ function withOwnFacts(state, earning) {
     return { ...earning, facts };
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
-// now: the step's view of after (stateView); was: a body's previous post's facts, else
-// the state before's view. The supply lines are facts (factNames).
-function needsOpened(before, names, now, was = null) {
+// bagMoved: the bag fact moved since the decision's baseline (a bag that did not move
+// opened no need); now: the step's view of after (stateView); was: a body's previous
+// post's facts, else the state before's view. The supply lines are facts (factNames).
+function needsOpened(before, bagMoved, now, was = null) {
     const opened = [];
-    if (names.includes('bag')) {
+    if (bagMoved) {
         was ||= readers().stateView(before);
         if (now.bagNeed > (Number(was.bagNeed) || 0)) opened.push('bag_full');
     }
@@ -717,6 +714,6 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
-    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears,
-    DECISIONS, ALL, FIRST, raise, delta, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts,
+    DECISIONS, ALL, FIRST, raise, delta, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

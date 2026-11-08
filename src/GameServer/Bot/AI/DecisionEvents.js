@@ -10,8 +10,8 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const WishProviders = invoke('GameServer/Bot/Economy/WishProviders');
 const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // The situations a body raises by name (raiseDecision): its arrival in town (on the
-// trip its held leaf ordered to that town: :own), a town visit's end (done, or failed), its
-// respawn, a step proved impossible, leaving a party, a spot empty of prey or
+// trip its held leaf ordered to that town: :own), a town visit's end (done, or failed),
+// a step proved impossible, leaving a party, a spot empty of prey or
 // unsafe ground for it, a spot it could not reach, a player's command naming a
 // spot, its wallet, its last hunting buff ended (HotTownRebuff.buffEnded); and what main's executors raise on a far row that went near
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag, an own lines'
@@ -19,7 +19,7 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // party need ended by its party's re-plan. Every name main raises on a far row is
 // here: a row that went hot before the raise landed takes it in its body's bag.
 // Its own facts it detects on its post (detectNear).
-const reasons = new Set(['arrived_town', 'arrived_town:own', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
+const reasons = new Set(['arrived_town', 'arrived_town:own', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
     'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_done:visit', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired',
     'recipe_learned', 'party_need_ended']);
 const ARRIVALS = new Set(['arrived_town', 'arrived_town:own']);
@@ -172,6 +172,8 @@ function raiseBag(stats, raise, impossible, where, subject, applied = 0) {
     if (impossible) Situations.raise(stats, raise.impossibleName || 'goal_failed', { impossible: true }, where, subject);
     if (raise?.stop) Situations.stop(stats, raise.stop === 'town' ? Situations.OPEN : Situations.REST, subject);
 }
+// A situation that waits in a body's bag for the worker's answer (raised, not yet answered).
+const inBag = (session, name) => !!session?.nearRaise?.names?.some(entry => entry.name === name);
 // A body's failed gear errand waits for the worker's answer to it: its goal_failed
 // raise of kind gear_errand is still in its bag. A town route that failed waits for it
 // (HuntingState: no trip on that route until the answer); the errand itself is held by
@@ -437,5 +439,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, farHeldSpot, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, farHeldSpot, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

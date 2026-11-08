@@ -151,11 +151,9 @@ async function bodyMoney(id) {
         assert.equal(raisedMind.activityLeaf, 0, 'and its impossible mark dropped the held step');
         assert.equal(raisedMind.situationSeq, 1, 'one raise');
         assert.equal(await Life.raiseOnRow(await create('hot'), [{ name: 'goal_failed' }]), null, 'a row that is not far takes no row raise');
-        // A raise that adds no bit writes nothing: the revision stays, no worker step is refused.
+        // A raise whose only effect is a member's stay writes nothing on a solo row: the
+        // revision stays, no worker step is refused.
         const quietRevision = (await row(raisedId)).simulationRevision;
-        assert(await Life.raiseOnRow(raisedId, [{ name: 'bag' }]), 'a raise that adds nothing still lands');
-        assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision');
-        // A raise whose only effect is a member's stay writes nothing on a solo row either.
         assert(await Life.raiseOnRow(raisedId, [{ name: 'party_outleveled' }]), 'a stay-only raise on a solo row lands');
         assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision on a solo row');
         // The facts a raise carries land in the mind with its bits (situations.md B6): a spot the body could not
@@ -166,6 +164,13 @@ async function bodyMoney(id) {
         assert.deepEqual(factMind.spotMarks.map(mark => [mark.spotId, mark.reason]), [['far', 'walk_timeout']],
             'the unreachable spot is marked on the row');
         assert(factMind.woken & 1, 'and it woke the earning spot');
+        // A raise that adds no bit writes nothing (the same walk failed again on a spot
+        // already marked): the revision stays.
+        const markedRevision = (await row(raisedId)).simulationRevision;
+        const sameWalk = { spotId: 'far', reason: 'walk_timeout' };
+        const again = await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: sameWalk }]);
+        assert(again, 'a raise that adds nothing still lands');
+        assert.equal((await row(raisedId)).simulationRevision, markedRevision, 'and moves no revision');
         const Situations = invoke('GameServer/Bot/Situations');
         const takenBefore = Situations.counts().decided.earning_spot?.[0] || 0;
         await Life.raiseOnRow(raisedId, [{ name: 'grade_changed' }, { name: 'moved_by_world' },
