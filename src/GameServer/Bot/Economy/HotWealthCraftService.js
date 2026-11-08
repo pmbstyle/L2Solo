@@ -54,11 +54,13 @@ function review(session, context) {
         };
         // A craft refused at the act is not picked again until the next town look
         // (WealthCraftDecision.refusedMark), as a far bot's; short of MP is no fault
-        // of the craft. The mark is a body key: the next near post carries it.
+        // of the craft. Only a refusal of the decision the body still holds marks it: a
+        // newer decision was built on newer facts. The mark is a body key: the near post
+        // the rejection raised runs after this turn and carries it.
         const reject = state => {
-            if (refusal.reason !== 'mp_changed') DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session),
+            if (DecisionEvents.rejectSession(session, accepted, `wealth:${refusal.reason || 'source'}`)
+                && refusal.reason !== 'mp_changed') DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session),
                 wealthRefused: require('./WealthCraftDecision').refusedMark(state, recipe.recipeId) });
-            DecisionEvents.rejectSession(session, accepted, `wealth:${refusal.reason || 'source'}`);
         };
         const packet = context.statsPacket || DecisionEvents.statsFor(session);
         const accepted = { characterId: Number(actor.fetchId()), stats: { decisionSeq: packet.decisionSeq, activityLeaf: packet.activityLeaf,

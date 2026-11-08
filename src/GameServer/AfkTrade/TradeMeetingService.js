@@ -6,6 +6,7 @@ const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
 const Trace = require('../Bot/DecisionTrace');
+const FailureLog = require('../../FailureLog');
 const staged = new Map();
 const preparedActors = new Map(); // actor -> staged token; one preparation per actor.
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
@@ -180,7 +181,7 @@ async function meetingRecords(row) {
         } catch (error) {
             // Publication must not strand already committed custody before
             // wake can start the paid route or acknowledge a terminal receipt.
-            require('../../FailureLog').note('trade_meeting.records', error);
+            FailureLog.note('trade_meeting.records', error);
         }
     }
     return records;
@@ -417,7 +418,7 @@ async function trimSellerAds(request) {
     const sellers = new Set(request.lines.map(line => [request.actorA, request.actorB][1 - line.payer]));
     for (const id of sellers) {
         try { for (const ad of await db().reconcileConditionalSellAds(id)) afk().refreshRecord(ad); }
-        catch (error) { require('../../FailureLog').note('trade_meeting.seller_ad_trim', error); }
+        catch (error) { FailureLog.note('trade_meeting.seller_ad_trim', error); }
     }
 }
 // records: the actors' board records read after the commit (meetingRecords), applied in
@@ -588,6 +589,9 @@ async function buyAdRefused(record, line) {
     if (refusedAds.get(key) === record.revision) return;
     refusedAds.delete(key); refusedAds.set(key, record.revision);
     if (refusedAds.size > 1024) refusedAds.delete(refusedAds.keys().next().value);
+    // A withdrawal, raise or request that did not land (no far row and no body; the
+    // worker not ready yet) is tried again on the next refusal of this quote.
+    const forget = () => { if (refusedAds.get(key) === record.revision) refusedAds.delete(key); };
     try {
         // This is the payer's later refusal, not a continuation of the
         // initiating seller's command. Its async admission may have expired.
@@ -600,12 +604,12 @@ async function buyAdRefused(record, line) {
         }, () => afk().repriceBotLines(record.ownerId, [], { withdrawals: [{ recordId: record.id,
             lineId: line.id, expectedRevision: record.revision, previousPricing: line.pricing || null }] }));
     } catch (error) {
-        utils.infoWarn('AfkTrade', 'refused buy quote %d refresh: %s', record.id, error.message);
+        forget();
+        // A changed quote or a write the SQL checks refused is an outcome; anything else failed.
+        if (FailureLog.refusal(error)) utils.infoWarn('AfkTrade', 'refused buy quote %d refresh: %s', record.id, error.message);
+        else FailureLog.note('trade_meeting.buy_ad_withdraw', error);
     }
     const phase = life().cachedState(record.ownerId)?.phase;
-    // A raise or request that did not land (no far row and no body; the worker not ready
-    // yet) is asked again on the next refusal of this quote.
-    const forget = () => { if (refusedAds.get(key) === record.revision) refusedAds.delete(key); };
     // The owner refused its own ad: it decides anew, its step dropped as other
     // executors' refusals (a far row's raise, after any command of the owner's in flight;
     // not awaited: this refusal may run inside it). null: not on a far row, its body took

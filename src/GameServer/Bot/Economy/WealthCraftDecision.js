@@ -82,8 +82,8 @@ function freeUnits(state, item, reserved, equippedCount, starterMobLootAmount) {
             count(item.protectedAmount), count(starterMobLootAmount), count(item.reservedAmount)));
 }
 // A craft refused at the act is not picked again until the bot reads the market
-// anew: its next town look ends the mark, no clock. A visit counts its look as it
-// ends (GoalExecutor), so a refusal on a visit outlives that visit.
+// anew: its next town look ends the mark, no clock. A visit, far or near, counts its
+// look as it ends (GoalExecutor.townLooked), so a refusal on a visit outlives that visit.
 const lookOf = state => Number(state.stats?.townLook?.n || 0);
 const refusals = state => {
     const mark = state.stats?.wealthRefused;

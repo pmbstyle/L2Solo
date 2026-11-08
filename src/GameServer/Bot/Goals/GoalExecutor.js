@@ -85,14 +85,15 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     return local && local.name !== town.name ? trip(local) : null;
 }
 
-// A finished visit is the bot's look at the market: the board reviews its
-// buy ads on it through the shared hot/cold BoardLook. `n` counts visits;
-// the existing bounded look owner consumes each new observation once.
+// A finished visit, far or near, is the bot's look at the market: the board reviews
+// its buy ads on it through the shared hot/cold BoardLook. `n` counts visits; the
+// existing bounded look owner consumes each new observation once.
+function townLooked(stats, timestamp = Date.now()) {
+    return { ...(stats || {}), townLook: { at: timestamp, n: Number(stats?.townLook?.n || 0) + 1 } };
+}
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
     const next = finishVisit(state, timestamp, options);
-    if (!next) return next;
-    return { ...next, stats: { ...(next.stats || {}),
-        townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
+    return next && { ...next, stats: townLooked(next.stats, timestamp) };
 }
 
 // The held card's purchase when its town is another one, else null.
@@ -207,4 +208,4 @@ function finishVisit(state, timestamp, options) {
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
-module.exports = { beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
+module.exports = { beginMarketTravel, finishMarketVisit, townLooked, marketTownForSale: MarketTownPolicy.targetTownForSale };

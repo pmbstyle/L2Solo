@@ -383,7 +383,7 @@ function leafCheck(state, leaf, deps, input) {
 const DONE = new Set(['check:filled', 'check:material_done']);
 const FIELD_CHECKED = new Set(['hunting', 'improving', 'crafting', 'pvp', 'helping']);
 // A sale step is spent once a visit ended after the build took it (the sale's own visit,
-// or the visit it was taken on: GoalExecutor.finishMarketVisit stamps townLook.at) and
+// or the visit it was taken on, far or near: GoalExecutor.townLooked stamps townLook.at) and
 // the bot heads back to its ground (not on a trip to a town, as a craft warehouse
 // return): done when its items left the bag; refused when the kinds that stayed are on
 // the sale retry the visit's sale wrote (stats.marketSellSeen: what it could not place),
