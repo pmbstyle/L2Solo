@@ -1,4 +1,5 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const Intake = require('./PopulationIntakePolicy');
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -13,13 +14,17 @@ const STARTER_REGIONS = [
     { id: 'dwarf', center: { locX: 108000, locY: -175000 }, radius: 30000 }
 ];
 
-function regionalTargetCounts(targetPopulation) {
-    const base = Math.floor(Math.max(0, number(targetPopulation)) / STARTER_REGIONS.length);
-    const remainder = Math.max(0, number(targetPopulation)) % STARTER_REGIONS.length;
-    return STARTER_REGIONS.reduce((counts, region, index) => ({
-        ...counts,
-        [region.id]: base + (index < remainder ? 1 : 0)
-    }), {});
+// Each starter region's bots of a population: its race's share of the class mix
+// (PopulationIntakePolicy.raceShares, STARTER_REGIONS in race order), whole bots by
+// the largest remainder.
+function regionalTargetCounts(targetPopulation, shares = Intake.raceShares()) {
+    const total = Math.max(0, Math.floor(number(targetPopulation)));
+    const exact = STARTER_REGIONS.map((region, index) => total * shares[index]);
+    const counts = exact.map(Math.floor);
+    let left = total - counts.reduce((sum, count) => sum + count, 0);
+    const order = exact.map((value, index) => index).sort((a, b) => (exact[b] - counts[b]) - (exact[a] - counts[a]) || a - b);
+    for (const index of order) { if (left <= 0) break; counts[index]++; left--; }
+    return Object.fromEntries(STARTER_REGIONS.map((region, index) => [region.id, counts[index]]));
 }
 
 function distanceSquared(left = {}, right = {}) {
@@ -102,13 +107,16 @@ function eligibleSpots(profiles = [], maxMobLevel = 1) {
             || String(left.id).localeCompare(String(right.id)));
 }
 
+// A wave's starter slots: STARTER_REGIONS.length x botsPerRace bots a wave, each
+// region its share (regionalTargetCounts), interleaved region by region.
 function starterSlots(spots = [], botsPerRace = 30, waves = 1) {
     spots = spots.filter((spot) => spot.raidBoss !== true);
     const starters = spots.filter((spot) => number(spot.minLevel, 0) === 1);
-    const slotsPerRace = Math.max(0, number(botsPerRace, 30)) * Math.max(1, number(waves, 1));
+    const perRegion = regionalTargetCounts(STARTER_REGIONS.length * Math.max(0, number(botsPerRace, 30)) * Math.max(1, number(waves, 1)));
+    const slotsPerRace = Math.max(0, ...Object.values(perRegion));
     const fallback = starters.length ? starters : spots;
 
-    return Array.from({ length: slotsPerRace }).flatMap((_, slot) => STARTER_REGIONS.flatMap((region) => {
+    return Array.from({ length: slotsPerRace }).flatMap((_, slot) => STARTER_REGIONS.filter((region) => slot < perRegion[region.id]).flatMap((region) => {
         const candidates = fallback
             .map((spot) => ({ spot, distance: distanceSquared(spot.center, region.center) }))
             .filter((candidate) => candidate.distance <= region.radius * region.radius)

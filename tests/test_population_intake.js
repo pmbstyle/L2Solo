@@ -8,13 +8,12 @@ const Progression = require('../src/GameServer/ClassProgression');
 const pool = [{ race: 0, classId: 0, role: 'dps' }, { race: 0, classId: 10, role: 'mage' }];
 const saturated = Object.fromEntries(Types.TYPE_IDS.map((id) => [id, 1000]));
 saturated.steadfast_helper = 0;
-let helpers = 0;
-let helperMages = 0;
+let helpers = 0, helperMages = 0, mages = 0;
 for (let seed = 0; seed < 1000; seed++) {
+    // A human region with 30 fighters and no mystic: the mix gives mystics 4 of its 22.
     const options = { typeCounts: saturated, total: 150, classTotal: 30, classCounts: { 0: 30, 10: 0 } };
     const chosen = Intake.choose(pool, seed, options);
-    const reverse = Intake.choose(pool, seed, { ...options, classCounts: { 0: 0, 10: 30 } });
-    assert.strictEqual(chosen.archetype, reverse.archetype, 'class deficits must not choose the type retroactively');
+    if (chosen.classId === 10) mages++;
     if (chosen.archetype === 'steadfast_helper') {
         helpers++;
         if (chosen.classId === 10) helperMages++;
@@ -23,8 +22,37 @@ for (let seed = 0; seed < 1000; seed++) {
     assert.strictEqual(Types.TYPES[dwarf.archetype].drive, 'wealth');
     assert.notStrictEqual(chosen.archetype, 'patient_crafter');
 }
-assert(helpers > 750, 'newcomers must strongly address the missing type');
-assert(helperMages / helpers > 0.98, 'the available support circle and regional class deficit should favor mages');
+assert(mages > 800, 'newcomers fill the missing class of the region\'s mix first');
+assert(helpers > 600, 'then the missing type its class may take');
+assert(helperMages / helpers > 0.9, 'the support type lands on the support class');
+
+// A generated cohort follows the class mix (fresh world, 1500 bots): the regions by
+// their races' weights, the classes by their weights, the professions split evenly.
+{
+    require('../src/Global');
+    const Prog = invoke('GameServer/Bot/BotClassProgression');
+    const race = { 0: 0, 10: 0, 18: 1, 25: 1, 31: 2, 38: 2, 44: 3, 49: 3, 53: 4 };
+    const starts = Object.keys(race).map(Number);
+    const regions = ['human', 'elf', 'dark_elf', 'orc', 'dwarf'];
+    const shares = Intake.raceShares();
+    const totals = regions.map((region, index) => Math.round(1500 * shares[index]));
+    const typeCounts = {}, classCounts = {}, kinds = { dd: 0, healer: 0, buffer: 0, dwarf: 0 };
+    let index = 0;
+    regions.forEach((region, at) => {
+        const regionPool = starts.filter((classId) => race[classId] === at).map((classId) => ({ race: at, classId }));
+        for (let n = 0; n < totals[at]; n++, index++) {
+            const chosen = Intake.choose(regionPool, index, { typeCounts, classCounts, total: 1500, classTotal: totals[at] });
+            typeCounts[chosen.archetype] = (typeCounts[chosen.archetype] || 0) + 1;
+            classCounts[chosen.classId] = (classCounts[chosen.classId] || 0) + 1;
+            const seed = 3000000 + index, first = Prog.nextClass(chosen.classId, 20, seed) ?? chosen.classId;
+            const second = Prog.nextClass(first, 40, seed) ?? first;
+            kinds[at === 4 ? 'dwarf' : [16, 30, 43].includes(second) ? 'healer' : [17, 51, 52].includes(second) ? 'buffer' : 'dd']++;
+        }
+    });
+    const share = (kind) => 100 * kinds[kind] / index;
+    for (const [kind, target] of Object.entries({ dd: 75, healer: 7, buffer: 6, dwarf: 12 }))
+        assert(Math.abs(share(kind) - target) <= 2, `${kind} ${share(kind).toFixed(1)} % of a new cohort, the mix says ~${target} %`);
+}
 assert.deepStrictEqual(Intake.classCounts([
     { accountName: 'bot_pop_a', stats: { classId: 98 } },
     { accountName: 'bot_pop_b', stats: { classId: 7 } },
@@ -64,8 +92,9 @@ async function main() {
         const plan = Planner.plan(profiles, [], 1700, 30);
         assert.strictEqual(plan.missing.length, 150);
         assert.strictEqual(plan.wave, 1);
-        assert.deepStrictEqual(plan.regionalTargets, { human: 30, elf: 30, dark_elf: 30, orc: 30, dwarf: 30 });
-        console.log('Population intake: type-first deficits, class circles/regional deficits, canonical persona, old wave cap and race constraints passed');
+        assert.deepStrictEqual(plan.regionalTargets, { human: 33, elf: 33, dark_elf: 35, orc: 31, dwarf: 18 },
+            'a wave splits across the regions by their races\' share of the class mix');
+        console.log('Population intake: class mix, class-first deficits, type circles, canonical persona, wave cap and race constraints passed');
     } finally {
         Database.execute = execute;
         Persona.reset();
