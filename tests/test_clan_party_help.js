@@ -51,7 +51,7 @@ const Response = invoke('GameServer/Network/Response');
 const originals = [];
 function stub(object, key, value) { const old = object[key]; originals.push(() => { object[key] = old; }); object[key] = value; }
 const bot = (id, extra = {}) => ({ characterId: id, name: `Bot${id}`, phase: 'cold', activity: 'hunting',
-    level: 20, spotId: 'safe', vitals: { hp: 500 }, stats: {}, ...extra });
+    level: 20, spotId: 'safe', vitals: { hp: 500 }, stats: { clanId: 11 }, ...extra });
 let now = 1000000, rows, parties, clanIds, reads, commits, creates, packets;
 // Declared native listener, distinct from the original cold member IDs 1/2/3.
 const player = presenceSession(8000009, 'human', packet => packets.push(packet), 11);
@@ -74,6 +74,7 @@ async function run() {
         reads++; assert(options.excludeReserved);
         return rows.filter(row => ids.includes(row.characterId));
     });
+    stub(Life, 'cachedState', id => rows.find(row => row.characterId === Number(id)) || null);
     stub(Life, 'statesForParty', async id => rows.filter(row => row.party?.partyId === id));
     stub(Parties, 'active', () => parties);
     // The leader read goes through the party index; here it filters the stubbed active().
@@ -89,7 +90,7 @@ async function run() {
     assert(!Help.request(1, 11, now)); await Help.processOne(callbacks, now); assert.strictEqual(reads, 0);
     reset();
     for (let i = 0; i < 3; i++) Chat.onDeath(rows[0], `d${i}`, now);
-    assert(Help.hasPending(), 'delivered solo plea creates actual help demand');
+    assert(Help.hasDue(), 'delivered solo plea creates actual help demand');
     assert.strictEqual(packets.length, 1);
     const mini = await Help.processOne(callbacks, now);
     assert.deepStrictEqual(mini.memberIds, [2, 1]); assert.strictEqual(creates, 1);
@@ -97,7 +98,7 @@ async function run() {
     assert.strictEqual(packets.length, 1, 'reply waits behind the plea');
     now += 15000; Chat.flush(now);
     assert.strictEqual(packets.length, 2); assert(packets[1].text.includes('Bot1'));
-    assert(!Help.hasPending());
+    assert(!Help.hasDue());
 
     reset();
     parties = [{ partyId: 'existing', status: 'active', leaderId: 2, memberIds: [2, 3], spotId: 'safe', stats: {} }];
@@ -116,7 +117,61 @@ async function run() {
     reset(); Help.request(1, 11, now);
     await Help.processOne({ ...callbacks, create: async () => null }, now);
     assert.strictEqual(packets.length, 0, 'failed admission/commit stays silent');
-    assert(Help.hasPending()); await Help.processOne(callbacks, now + 1000); assert.strictEqual(reads, 1, 'bounded retry');
+    // Tried once; asked again only when its answer can change, never on a clock.
+    assert(!Help.hasDue()); await Help.processOne(callbacks, now + Help.TTL_MS - 1); assert.strictEqual(reads, 1, 'no timed retry');
+    assert(!Help.observe(2, rows[1], now), 'a member already free when tried wakes nothing');
+    assert(!Help.observe(1, rows[0], now), 'the requester re-published unchanged wakes nothing');
+
+    // A clanmate turning free answers the plea: one try per turn.
+    reset(); rows[1].activity = rows[2].activity = 'shopping'; Help.request(1, 11, now);
+    assert.strictEqual(await Help.processOne(callbacks, now), null); assert.strictEqual(reads, 1);
+    assert(!Help.observe(2, { ...rows[1], level: 21 }, now), 'a busy member\'s other moves wake nothing');
+    assert(!Help.observe(9, { ...bot(9), stats: { clanId: 12 } }, now), 'another clan\'s member wakes nothing');
+    rows[1] = { ...rows[1], activity: 'hunting', stats: { clanId: 11 } };
+    assert(Help.observe(2, rows[1], now), 'a clan member turning free makes the plea due');
+    const answered = await Help.processOne(callbacks, now + 1000);
+    assert.deepStrictEqual(answered.memberIds, [2, 1]); assert.strictEqual(reads, 2);
+    // The requester busy when tried: its own readiness returning makes the plea due.
+    reset(); rows[0].activity = 'shopping'; Help.request(1, 11, now);
+    assert.strictEqual(await Help.processOne(callbacks, now), null);
+    rows[0] = { ...rows[0], activity: 'hunting' };
+    assert(Help.observe(1, rows[0], now), 'the requester ready again makes the plea due');
+    assert(await Help.processOne(callbacks, now), 'and is answered');
+    // A clanmate turning free while the requester is busy wakes nothing; the
+    // requester turning ready then does.
+    reset(); rows[0].activity = rows[1].activity = rows[2].activity = 'shopping'; Help.request(1, 11, now);
+    assert.strictEqual(await Help.processOne(callbacks, now), null);
+    rows[1] = { ...rows[1], activity: 'hunting' };
+    assert(!Help.observe(2, rows[1], now), 'a member turning free while the requester is busy wakes nothing');
+    rows[0] = { ...rows[0], activity: 'hunting' };
+    assert(Help.observe(1, rows[0], now), 'the requester ready then makes it due');
+    assert(await Help.processOne(callbacks, now), 'and the free member answers');
+    // A member leaving the cache is no longer free: back in it free, it can answer again.
+    reset(); Help.request(1, 11, now);
+    await Help.processOne({ ...callbacks, create: async () => null }, now);
+    assert(!Help.observe(2, null, now), 'leaving the cache wakes nothing');
+    assert(Help.observe(2, rows[1], now), 'a member back in the cache and free makes the plea due');
+    // A clan help party full when tried takes the requester when a member leaves it.
+    reset(); rows.push(bot(4), bot(5), bot(6)); clanIds = [1, 2, 3, 4, 5, 6];
+    parties = [{ partyId: 'existing', status: 'active', leaderId: 2, memberIds: [2, 3, 4, 5, 6], spotId: 'safe', stats: {} }];
+    rows.slice(1).forEach(row => { row.party = { partyId: 'existing' }; row.activity = 'grouped'; });
+    Help.request(1, 11, now);
+    assert.strictEqual(await Help.processOne(callbacks, now), null, 'a full help party takes no one');
+    rows[5] = { ...rows[5], party: null, activity: 'shopping' };
+    parties = [{ ...parties[0], memberIds: [2, 3, 4, 5] }];
+    assert(Help.observeParty(parties[0], now), 'a member leaving a help party makes the plea due');
+    const roomy = await Help.processOne(callbacks, now);
+    assert.deepStrictEqual(roomy.memberIds, [2, 3, 4, 5, 1], 'the requester joins the party with room');
+    // Tries per plea are bounded and the drop is counted.
+    reset(); Help.request(1, 11, now);
+    const failing = { ...callbacks, create: async () => null };
+    const dropped = () => Number(invoke('FailureLog').snapshot()?.['clan.help_tries'] || 0);
+    const droppedBefore = dropped();
+    for (let n = 0; n < Help.MAX_TRIES; n++) {
+        await Help.processOne(failing, now); Help.observe(2, null, now); Help.observe(2, rows[1], now);
+    }
+    assert.strictEqual(reads, Help.MAX_TRIES); assert(!Help.hasDue(), 'a plea is tried at most MAX_TRIES times');
+    assert.strictEqual(dropped(), droppedBefore + 1, 'the dropped plea is counted');
 
     reset();
     rows[0].stats.equipmentPlan = { status: 'active', requiresParty: true, partyNeed: 'required',
@@ -138,11 +193,11 @@ async function run() {
     reset(); rows[0].stats.badSpot = 'safe'; Help.request(1, 11, now);
     assert(await Help.processOne(callbacks, now), 'a new party does not inherit a solo death-pressure ban');
     reset(); Help.request(1, 11, now); clanIds = [2, 3]; await Help.processOne(callbacks, now);
-    assert.strictEqual(reads, 0); assert(!Help.hasPending());
+    assert.strictEqual(reads, 0); assert(!Help.hasDue());
     reset(); Help.request(1, 11, now); clearPublishedSessions(); await Help.processOne(callbacks, now);
-    assert.strictEqual(reads, 0); assert(!Help.hasPending());
+    assert.strictEqual(reads, 0); assert(!Help.hasDue());
     reset(); Help.request(1, 11, now); await Help.processOne(callbacks, now + Help.TTL_MS);
-    assert.strictEqual(reads, 0); assert(!Help.hasPending());
+    assert.strictEqual(reads, 0); assert(!Help.hasDue());
 
     reset(); for (let i = 0; i < 3; i++) Chat.onDeath(rows[0], `d${i}`, now);
     await Help.processOne(callbacks, now); parties[0].memberIds = [2];
@@ -160,6 +215,7 @@ async function run() {
     stub(Metrics, 'currentEventLoopLag', () => 0);
     Help.request(1, 11, now); await Population.helpClanParty(now);
     assert.strictEqual(reads, 0, 'player protection defers lookup while DB is busy');
+    assert(Help.hasDue(), 'a busy main tried nothing: the plea stays due');
     Database.pending = () => 0;
     stub(Help, 'processOne', async () => {
         assert(Population.partyFormationRunning, 'membership lock held throughout help transaction');
@@ -168,7 +224,7 @@ async function run() {
     await assert.rejects(Population.helpClanParty(now), /commit probe/);
     assert.strictEqual(Population.partyFormationRunning, false, 'failed help releases scheduler lock');
 
-    console.log('Clan party help: delivered plea, recruitment, mini-party, truthful replies, eligibility, safety and bounded retries passed.');
+    console.log('Clan party help: delivered plea, recruitment, mini-party, truthful replies, eligibility, safety and retries on members moves passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     clearPublishedSessions();

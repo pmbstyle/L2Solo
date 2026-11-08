@@ -6,8 +6,13 @@ const SavedSkills = require('../Bot/SavedSkills');
 // Addressed planning inputs, never clan/member snapshots. Native rows stay in
 // the lifecycle and warehouse; this queue only remembers which clan to visit.
 const dirty = new Map();
-const items = new Map();
 const clanItems = new Map();
+// Autonomous level 2 clans: they wait on the board for their C4 level proof
+// (Proof of Blood), which they buy when an offer they can fund is posted (the goal
+// plan reads the offer when it decides). A board change of that item wakes them
+// ('offer_posted'); no other board change wakes a clan.
+const proofWaiters = new Set();
+const PROOF_ID = ClanRules.LEVEL_REQUIREMENTS[2].itemId;
 const clanLeaders = new Map();
 const leaders = new Map();
 const listeners = new Set();
@@ -37,9 +42,7 @@ function untrack(clanId) {
     const id = Number(clanId);
     unwatchRecruitment(id);
     forgetLeader(id);
-    for (const itemId of clanItems.get(id) || []) {
-        const group = items.get(itemId); group?.delete(id); if (!group?.size) items.delete(itemId);
-    }
+    proofWaiters.delete(id);
     clanItems.delete(id);
     dirty.delete(id);
 }
@@ -89,7 +92,6 @@ function track(clan) {
         clanLeaders.set(id, leaderId);
         leaders.set(leaderId, { clanId: id, requiredSp: ClanRules.LEVEL_REQUIREMENTS[Number(clan.level)].sp });
     }
-    const previous = clanItems.get(id) || new Set();
     const wanted = new Set();
     for (const goal of [clan.state?.goal, clan.state?.productionGoal]) {
         if (goal?.status === 'completed') continue;
@@ -106,22 +108,16 @@ function track(clan) {
         }
         for (const item of plan?.materials || []) if (Number(item.selfId) > 0) wanted.add(Number(item.selfId));
     }
-    if (Number(clan.level) === 2) wanted.add(ClanRules.LEVEL_REQUIREMENTS[2].itemId);
-    for (const itemId of previous) {
-        if (wanted.has(itemId)) continue;
-        const group = items.get(itemId); group?.delete(id); if (!group?.size) items.delete(itemId);
-    }
-    for (const itemId of wanted) {
-        const group = items.get(itemId) || new Set(); group.add(id); items.set(itemId, group);
-    }
+    if (Number(clan.level) === 2) wanted.add(PROOF_ID);
+    if (Number(clan.level) === 2 && String(clan.state?.mode || '') === 'autonomous') proofWaiters.add(id);
+    else proofWaiters.delete(id);
     clanItems.set(id, wanted);
 }
 
 function boardChanged(change) {
-    if (change.reset || change.ready === true && !change.selfIds) {
-        for (const id of clanItems.keys()) changed(id, 'board');
-    } else {
-        for (const itemId of change.selfIds || []) for (const id of items.get(Number(itemId)) || []) changed(id, 'board');
+    if (proofWaiters.size && (change.reset || change.ready === true && !change.selfIds
+        || (change.selfIds || []).some(selfId => Number(selfId) === PROOF_ID))) {
+        for (const id of proofWaiters) changed(id, 'offer_posted');
     }
 }
 
@@ -313,6 +309,8 @@ async function drain(_database, limit = 64) {
     result.forEach(event => dirty.delete(event.clanId));
     return result;
 }
+// Offers and prices are read when a clan decides; the board wakes only the clans
+// waiting for their level proof (proofWaiters). The tracked items serve member_item.
 async function start(_life, board, onWake) {
     wake = onWake;
     if (unsubscribeBoard) return;
@@ -325,7 +323,7 @@ async function start(_life, board, onWake) {
 
 function stop() {
     generation++; unsubscribeBoard?.(); unsubscribeBoard = null; wake = null;
-    dirty.clear(); items.clear(); clanItems.clear(); clanLeaders.clear(); leaders.clear();
+    dirty.clear(); proofWaiters.clear(); clanItems.clear(); clanLeaders.clear(); leaders.clear();
     recruitment.clear(); recruitmentClasses.clear(); committedCandidates = null;
 }
 

@@ -122,7 +122,7 @@ function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed' && !ReviewEvents.cashLevelGoal(clan, goal)) return null;
     if (goal.controlledBy === 'player') return OrderService.actionTypeForGoal(goal);
     // Equipment executes through member lifecycles. Its next review comes
-    // from a changed member/warehouse/offer, rather than a polling plan.
+    // from a changed member or warehouse, rather than a polling plan.
     if (goal.plan?.kind === 'alliance_trial' && number(clan.level) === 3
         && String(clan.state?.mode || '') === 'autonomous') return ACTION_TYPES.CONTRIBUTION;
     if (goal.type === 'equipment' || goal.type === 'strategy') return ACTION_TYPES.PLAN;

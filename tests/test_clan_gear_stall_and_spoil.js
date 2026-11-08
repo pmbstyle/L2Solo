@@ -181,20 +181,21 @@ async function main() {
             'planning completed after an input change cannot reinstall its old cache');
         const events = require('../src/GameServer/Clan/ClanReviewEvents');
         events.stop();
-        let boardChanged;
         Simulation.autonomousClanProjection = async () => [];
+        let boardChanged;
         await events.start({ subscribePublications: () => () => {} }, {
-            subscribeBoardChanges(listener) { boardChanged = listener; return () => {}; }
-        });
-        events.track({ ...clan, members: [{ ...clan.members[0], stats: { equipmentPlan: {
-            target: { selfId: 99101 }, next: { itemId: 1880 }, materials: [{ selfId: 1864, amount: 5 }]
-        } } }] });
-        const noMembershipQuery = { execute() { throw new Error('board-only input must not query members'); } };
-        boardChanged({ selfIds: [1864], ready: true });
-        assert.deepStrictEqual((await events.drain(noMembershipQuery)).map(event => event.clanId), [clan.id],
-            'the beneficiary material offer addresses its clan, not only the final goal item');
-        events.track({ ...clan, members: clan.members });
+            subscribeBoardChanges(listener) { boardChanged = listener; return () => {}; } });
+        const beneficiary = { ...clan.members[0], stats: { clanId: clan.id, equipmentPlan: {
+            target: { selfId: 99101 }, next: { itemId: 1880 }, materials: [{ selfId: 1864, amount: 5 }] } } };
+        events.track({ ...clan, members: [beneficiary] });
+        const noMembershipQuery = { execute() { throw new Error('member input must not query members'); } };
+        events.committedMember({ ...beneficiary, inventory: {} }, { ...beneficiary, inventory: { 1864: { amount: 5 } } });
+        assert.deepStrictEqual((await events.drain(noMembershipQuery)).map(event => event.causes), [['member_item']],
+            'the beneficiary gaining a planned material addresses its clan, not only the final goal item');
         boardChanged({ selfIds: [1864, 1880], ready: true });
+        assert.deepStrictEqual(await events.drain(noMembershipQuery), [], 'an offer of a planned material wakes no clan');
+        events.track({ ...clan, members: clan.members });
+        events.committedMember({ ...beneficiary, inventory: {} }, { ...beneficiary, inventory: { 1864: { amount: 5 } } });
         assert.deepStrictEqual(await events.drain(noMembershipQuery), [], 'replacing a plan detaches its old material interests');
         events.stop();
         console.log('Clan gear stall and spoil checks passed');

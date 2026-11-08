@@ -88,6 +88,8 @@ const partyFailureLogAt = new Map();
 const exchangeWaits = new Map();
 // Returned by a resolveColdState branch method that did not take its branch.
 const COLD_RESOLVE_NEXT = Symbol('cold_resolve_next');
+// helpClanParty: a busy main tried no clan plea (no event ends that: a timed retry).
+const BUSY_HELP = Symbol('busy_help');
 
 // A party step's refusal (step: 'activation', 'goal' for the worker's party
 // goal query), one line per party, step and reason in 30 s: the live read
@@ -801,8 +803,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         stats: {
             formedAt: timestamp,
             objective: objective || null,
-            clanHelp: objective?.reason === 'clan_help' || objective?.rescue
-                ? { until: timestamp + 10 * 60000, memberIds: members.map(member => member.characterId) } : null,
             acquisitionGoal: objective?.reason !== 'clan_help' && objectiveMember.stats?.equipmentPlan?.status === 'active'
                 ? objectiveMember.stats.equipmentPlan
                 : null
@@ -1460,7 +1460,16 @@ const PopulationService = {
         });
         service.start();
         service.unsubscribeHelp = Help.subscribePending(() => service.wakeHelp());
-        if (Help.hasPending()) service.wakeHelp();
+        // A clan plea is tried again only when a clan member (its row or its help
+        // party) turns free or its requester's readiness moves (ClanPartyHelp.observe;
+        // nothing pending: a size check).
+        const helpMoves = LifeState.subscribePublications(packet => {
+            if (packet.kind !== 'reset') Help.observe(packet.characterId, packet.state);
+        });
+        const helpParties = BackgroundPartyState.subscribeChanges(party => Help.observeParty(party));
+        const unsubscribeHelp = service.unsubscribeHelp;
+        service.unsubscribeHelp = () => { unsubscribeHelp(); helpMoves(); helpParties(); };
+        if (Help.hasDue()) service.wakeHelp();
         // Presence changes can remove foreground protection. No actor sweep is
         // needed: the callback wakes only the already indexed waiting groups.
         const World = invoke('GameServer/World/World');
@@ -1546,8 +1555,13 @@ const PopulationService = {
         if (!this.started || Config.backgroundPartyEnabled === false) return {};
         if (help) {
             const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
-            await this.helpClanParty(timestamp);
-            return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
+            const tried = await this.helpClanParty(timestamp);
+            // A busy main (lag, DB, cold queue, a formation running) tried nothing: that
+            // has no event, so PartyAssemblyEvents retries it (retryMs). A try holds until
+            // the plea is due again; another due plea runs next.
+            if (tried === BUSY_HELP) return { deferred: Help.hasDue() };
+            if (Help.hasDue()) this.partyAssemblyEvents?.wakeHelp();
+            return {};
         }
         // Busy: the group runs again when the running formation ends (wakeParked).
         if (this.partyFormationRunning || this.resolving) return { busy: true };
@@ -1907,13 +1921,13 @@ const PopulationService = {
 
     async helpClanParty(timestamp = Date.now()) {
         const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
-        if (!Help.hasPending() || Config.enabled === false || Config.backgroundPartyEnabled === false
-            || this.partyFormationRunning || this.resolving) return null;
+        if (!Help.hasDue() || Config.enabled === false || Config.backgroundPartyEnabled === false) return null;
+        if (this.partyFormationRunning || this.resolving) return BUSY_HELP;
         const cold = ColdSimulationCoordinator.snapshot();
         if (Number(Metrics.currentEventLoopLag()) >= Number(Config.protectedPartyFormationLagAbortMs || 40)
             || Number(Database.pending() || 0) > 0 || Database.checkpointSnapshot()?.inFlight
             || !cold.ready || !cold.snapshotsLoaded || Number(cold.queue?.depth || 0) > 0
-            || cold.queue?.flushing) return null;
+            || cold.queue?.flushing) return BUSY_HELP;
         this.partyFormationRunning = true;
         try {
             return await Help.processOne({ commit: commitPartyMembership, create: createAndCommitBackgroundParty, release: releaseForClanHelp }, timestamp);

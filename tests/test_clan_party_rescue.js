@@ -38,6 +38,10 @@ async function run() {
     assert.strictEqual(held.patch.activity, 'party_wait'); assert.strictEqual(held.debug.fights, 0);
     assert.strictEqual(held.materialize.exp, 0);
     assert.strictEqual(lifecycleKind({ ...requester, activity: 'party_wait' }), 'resolver');
+    const waiter = { ...requester, activity: 'party_wait', stats: { ...requester.stats, eventWait: 'clan_party_assembly', partyRequest: objective } };
+    assert.strictEqual(lifecycleKind(waiter), 'event_driven');
+    assert.strictEqual(lifecycleKind({ ...waiter, stats: { ...waiter.stats, karma: 120 } }), 'event_driven',
+        'a held waiter with karma takes no step: its hold has no due to loop on');
     const req = Planner.partyRequestForPlan(requester, { status: 'active', requiresParty: true, next: { spotId: 'personal' } }, input.now);
     assert.strictEqual(req.clanGoalKey, objective.clanGoalKey, 'personal goal cannot mask clan duty');
     await Rescue.rescue(input);

@@ -106,12 +106,23 @@ console.log('Party assembly on known ends: wait at the arrival, the absent membe
     const clearedStats = { ...waiting.stats };
     delete clearedStats.clanPartyObjective;
     const cleared = { ...waiting, stats: clearedStats, simulation: { revision: 3 } };
-    assert(cleared.timing.nextResolveAt > at + 10000, 'the hold keeps a retry for a command that holds the bot first');
     now = at + 10000;
     kernel.upsert({ state: cleared });
     kernel.dueCandidates(now, 4);
     assert(kernel.busy(31), 'the objective\'s end wakes it at once (its command starts), not at the hold\'s retry');
     assert.strictEqual(stepElapsedMs(cleared, at + 10 * minute), 1000, 'ten minutes waiting are not hunted');
+    // The hold has no due of its own: a command holding the waiter (its clan hall
+    // visit) runs at once, and the write that ends it leaves the bot held, no step.
+    const behind = { ...waiting, stats: { ...waiting.stats, clanHallVisit: { hallId: 1 } }, simulation: { revision: 5 } };
+    assert.strictEqual(lifecycleKind(behind), 'command');
+    const commanded = new ColdSimulationKernel({ now: () => at, resolveSolo: () => null });
+    commanded.upsert({ state: behind });
+    commanded.dueCandidates(at, 4);
+    assert(commanded.busy(31), 'a command holding the waiter runs at once, not at a retry');
+    const resumed = new ColdSimulationKernel({ now: () => at + 10 * minute, resolveSolo: () => null });
+    resumed.upsert({ state: { ...behind, stats: waiting.stats, simulation: { revision: 6 } } });
+    resumed.dueCandidates(at + 10 * minute, 4);
+    assert(!resumed.busy(31), 'the command\'s end leaves it held: no timed step');
     const assigned = { ...waiting, party: { partyId: 'clan-party', leaderId: 32 }, simulation: { revision: 4 } };
     assert.strictEqual(lifecycleKind(assigned), 'party_member', 'its party takes it over');
     console.log('Clan party wait: event-driven hold, wake on the objective\'s end, lived wait checks passed');

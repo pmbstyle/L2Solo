@@ -358,6 +358,9 @@ function mainVisit(state, facts) {
     return !!state.stats?.clanHallVisit || !!(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')
         || facts.hallNeeded(state);
 }
+// A held clan waiter (ClanPartyDuty.held) takes no step where the solo resolver
+// would plan it: the resolver only holds it again. A command still runs first.
+const resolverOrHeld = state => (ClanPartyDuty ||= require('./ClanPartyDuty')).held(state) ? 'event_driven' : 'resolver';
 function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
     const leads = facts.leaderParty(state.characterId, state) !== null;
@@ -366,12 +369,12 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (state.stats?.tradeMeeting) return ['traveling', 'dead', 'resting', 'fighting'].includes(state.activity) ? 'resolver' : 'event_driven';
     // A solo bot washing karma (ColdKarmaPolicy.active) is planned by the
     // resolver. The test is repeated here: ColdKarmaPolicy loads spot modules.
-    if (Number(state.stats?.karma || 0) > 0) return 'resolver';
+    if (Number(state.stats?.karma || 0) > 0) return resolverOrHeld(state);
     if (leads) return 'party';
     if (state.activity === 'crafting' && state.stats?.craftShop) return 'event_driven';
     const stats = state.stats || {};
     if (require('./RaidSupplyPolicy').held(state)) {
-        return ['shopping', 'merchant'].includes(state.activity) ? 'command' : 'resolver';
+        return ['shopping', 'merchant'].includes(state.activity) ? 'command' : resolverOrHeld(state);
     }
     const plan = stats.equipmentPlan || {};
     if (mainVisit(state, facts)) return 'command';
@@ -391,7 +394,7 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (plan.clanGoal?.clanId && (ClanCrystalSupply ||= require('../Economy/ClanCrystalSupply')).requirement(state)) return 'command';
     if ((BotCrystallization ||= require('../Economy/BotCrystallization')).ready(state)) return 'command';
     // A published clan wait steps again on its row's next change (ClanPartyDuty.held).
-    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return ClanPartyDuty.held(state) ? 'event_driven' : 'resolver';
+    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return resolverOrHeld(state);
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.

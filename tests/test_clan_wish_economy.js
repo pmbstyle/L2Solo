@@ -121,13 +121,13 @@ async function main() {
     assert(resolved.goal.economy); assert.equal(projection.members[0].persona.traits.ambition, 0.8);
     done('actual registered C4 proof offer becomes a funded level goal before farm preparation');
     await Events.drain(Database);
-    // Native metadata publication on the same shop still carries its indexed
-    // item keys; the real board subscriber addresses only interested clans.
+    // A level 2 clan waits on the board for its proof: a change of that item's
+    // offers wakes it (the plan reads the offer), no other board change does.
     Afk.refreshRecord(sale.shop);
     const offerEvents = await Events.drain(Database);
     assert.deepEqual(offerEvents.map(event => event.clanId), [77]);
-    assert(offerEvents[0].causes.includes('board'));
-    done('native board refresh wakes the clan waiting for that original item');
+    assert(offerEvents[0].causes.includes('offer_posted'));
+    done('a board change of the level proof wakes the level 2 clan');
 
     const current = await Goals.clanProjectionById(77);
     const protectedPay = await Database.payClanMember({ clanId: 77, characterId: 100, amount: 1, kind: 'member_gear' });

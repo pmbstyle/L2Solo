@@ -11,16 +11,24 @@ function relation(outgoing, incoming) {
         revision: Math.max(outgoing?.revision || 0, incoming?.revision || 0),
         status: sent && received ? 'mutual' : sent ? 'outgoing' : received ? 'incoming' : 'neutral' };
 }
+// Why a clan may not wage war on its own side (C4: level 3, a full roster, not
+// dissolving); a player command needs no full roster. The one owner of these checks:
+// a declaration asks it for both clans, the war review for its own.
+function refusal(clan, members, manual = false) {
+    if (clan.dissolvingExpiryTime > 0) return 'clan_dissolving';
+    if (Number(clan.level) < MIN_LEVEL) return 'clan_level';
+    if (!manual && members < MIN_MEMBERS) return 'clan_members';
+    return null;
+}
+// `members` on both clans is the roster count. A bot answering an existing
+// declaration still needs its own roster, but may answer a small player clan.
 function declaration(clan, target, outgoingCount = 0, { manual = false, replying = false } = {}) {
     if (!clan || !target) return 'clan_not_found';
     if (clan.id === target.id) return 'own_clan';
-    if (clan.dissolvingExpiryTime > 0 || target.dissolvingExpiryTime > 0) return 'clan_dissolving';
     if (clan.allyId > 0 && clan.allyId === target.allyId) return 'same_alliance';
-    if (clan.level < MIN_LEVEL || target.level < MIN_LEVEL) return 'clan_level';
-    // Player commands do not need a full roster. A bot answering an existing
-    // declaration still needs its own roster, but may answer a small player clan.
-    if (!manual && (clan.members < MIN_MEMBERS || !replying && target.members < MIN_MEMBERS)) return 'clan_members';
-    if (outgoingCount >= MAX_DECLARATIONS) return 'war_limit';
-    return null;
+    return refusal(clan, clan.members, manual) || refusal(target, target.members, manual || replying)
+        || (outgoingCount >= MAX_DECLARATIONS ? 'war_limit' : null);
 }
-module.exports = { MIN_LEVEL, MIN_MEMBERS, MAX_DECLARATIONS, CLAN_WAR_PRIVILEGE, id, key, pairKey, relation, declaration };
+// A clan C4 lets wage war on its own (declare, or answer a declaration as a bot).
+const canWage = (clan, members) => !!clan && !refusal(clan, members);
+module.exports = { MIN_LEVEL, MIN_MEMBERS, MAX_DECLARATIONS, CLAN_WAR_PRIVILEGE, id, key, pairKey, relation, declaration, canWage };
