@@ -287,16 +287,16 @@ try {
     const joint = await Calculation.calculate(party, members, async () => { prepared++; throw Error('wish rebuild'); }, timestamp);
     assert.equal(prepared, 0, 'the native party-goal calculation builds no personal or group wish graph');
     assert.equal(joint.memberGoals.length, 3);
-    // The income review runs when its inputs move (PartyGoalPolicy.incomeReviewKey), never on the clock.
-    assert(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviews.length === 3,
+    // The income review runs when its inputs move (PartyGoalPolicy.progressReviewKey), never on the clock.
+    assert(Number.isSafeInteger(joint.progressReviewKey) && joint.progressReviews.length === 3,
         'a material party with no reviewed inputs reviews at once');
-    const reviewedParty = { ...party, stats: { ...party.stats, lastIncomeReviewAt: timestamp,
-        incomeReviewKey: joint.incomeReviewKey, incomeReviews: joint.incomeReviews } };
-    assert.equal(Material.joint(reviewedParty, members, { timestamp: timestamp + 24 * 3600000, spots }).incomeReviews, undefined,
+    const reviewedParty = { ...party, stats: { ...party.stats, lastProgressReviewAt: timestamp,
+        progressReviewKey: joint.progressReviewKey, progressReviews: joint.progressReviews } };
+    assert.equal(Material.joint(reviewedParty, members, { timestamp: timestamp + 24 * 3600000, spots }).progressReviews, undefined,
         'unchanged inputs are not reviewed again, however long');
     const collected = { ...reviewedParty, stats: { ...reviewedParty.stats, agreement: { ...contract,
         materialNeeds: contract.materialNeeds.map((row, at) => at ? row : { ...row, collected: 1 }) } } };
-    assert.equal(Material.joint(collected, members, { timestamp: timestamp + 1, spots }).incomeReviews?.length, 3,
+    assert.equal(Material.joint(collected, members, { timestamp: timestamp + 1, spots }).progressReviews?.length, 3,
         'a collected material reviews at once');
 
     const samePartB = { ...coreB, inventory: { 4097: { selfId: 4097, amount: 11 } },

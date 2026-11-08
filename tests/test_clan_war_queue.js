@@ -10,7 +10,7 @@ async function fixture(count = 2, membersPerClan = 3) {
     const admission = new PartyAdmission(), view = new View(), states = new Map(), clans = new Map(), parties = [];
     const counters = { writes: 0, reads: 0, forms: 0, reviews: 0 };
     const f = { admission, view, states, clans, parties, counters, allowed: false, failFormation: false, now: AT, membership: 1,
-        config: { maxBackgroundParties: 2 } };
+        config: { maxPlayingPopulation: 8 } };
     for (let n = 0; n < count; n++) {
         const id = 10 + n, enemy = 10 + (n ^ 1), members = [];
         for (let m = 0; m < membersPerClan; m++) {
@@ -187,7 +187,7 @@ async function run() {
     assert.deepEqual(order, [10, 11, 12, 13, 14, 15, 16, 17], 'no clan is skipped or reviewed twice when the list changes');
     turn.director.stop();
 
-    const a = new PartyAdmission(), cap = { maxBackgroundParties: 1 };
+    const a = new PartyAdmission(), cap = { maxPlayingPopulation: 4 };
     a.syncWarRequests([10]); const inFlight = a.reserveWar([], cap, 10, AT);
     assert(inFlight); a.syncWarRequests([11]);
     assert.equal(a.reserveWar([], cap, 11, AT + 1), null, 'persistent priority still counts in-flight native commits');

@@ -223,15 +223,15 @@ function departureRequest(party, state) {
 
 function joint(party, members, { timestamp = Date.now(), spots } = {}) {
     const goals = needs(members, party.stats.objective, party.stats.agreement);
-    const Income = require('./PartyIncomeComparison');
+    const Progress = require('./PartyProgressComparison');
     let review = {};
-    // The income review runs when its inputs moved since the last one.
+    // The progress review runs when its inputs moved since the last one.
     // lazy: the joint policy loads this module
-    const key = require('./PartyGoalPolicy').incomeReviewKey(party, members, party.stats.objective);
-    if (key !== party.stats.incomeReviewKey) {
-        const prepared = Income.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
-        review = { lastIncomeReviewAt: timestamp, incomeReviewKey: key, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
-            ...Income.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };
+    const key = require('./PartyGoalPolicy').progressReviewKey(party, members, party.stats.objective);
+    if (key !== party.stats.progressReviewKey) {
+        const prepared = Progress.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
+        review = { lastProgressReviewAt: timestamp, progressReviewKey: key, progressReviews: members.map(member => ({ characterId: Number(member.characterId),
+            ...Progress.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };
     }
     return { objective: { ...party.stats.objective, status: goals.length ? 'open' : 'completed' },
         memberGoals: members.map(member => ({ characterId: Number(member.characterId),

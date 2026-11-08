@@ -5,7 +5,7 @@ const Availability = invoke('GameServer/Bot/AI/BotAvailability');
 const Social = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Clans = invoke('GameServer/Clan/ClanService');
-const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
 const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
 const originals = { get: Social.getSnapshot, peek: Social.peekSnapshot, assess: Memory.assess,
     clan: Clans.findById, income: Income.compare, roll: Tendency.roll };

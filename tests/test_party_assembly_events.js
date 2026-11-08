@@ -68,7 +68,7 @@ async function main() {
     const originalPartyGoals = Coordinator.requestPartyGoals;
     // This event fixture has no world/spot atlas. Supply a reachable party
     // goal with no solo route; the economic policy has its own native tests.
-    const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = require('../src/GameServer/Bot/Population/PartyProgressComparison');
     const originalIncome = Income.compare;
     Income.compare = (_state, _peers, options) => ({ ...Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }),
         at: options.prepared.timestamp, soloSource: null, partySource: null });

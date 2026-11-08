@@ -52,7 +52,7 @@ const originals = {
     requestPartyGoals: ColdSimulationCoordinator.requestPartyGoals,
     partyMinSize: Config.partyMinSize,
     partyMaxSize: Config.partyMaxSize,
-    maxBackgroundParties: Config.maxBackgroundParties,
+    maxPlayingPopulation: Config.maxPlayingPopulation,
     partyFormationBatchSize: Config.partyFormationBatchSize
 };
 const originalFormationState = {
@@ -152,7 +152,7 @@ async function run() {
             clanOperation: 'equipment', clanId: 9, objectiveKey: 'clan:9:equipment' } } },
     // A preferred request is closed the same way.
     { characterId: 78, name: 'Seeker', level: 20, phase: 'cold', activity: 'hunting', spotId: NATIVE_SPOT, party: {},
-        stats: { partyRequest: { status: 'open', priority: 'preferred', reason: 'party_income', spotId: NATIVE_SPOT,
+        stats: { partyRequest: { status: 'open', priority: 'preferred', reason: 'party_progress', spotId: NATIVE_SPOT,
             objectiveKey: 'spot:elsewhere' } } }]);
     PopulationService.partyFormationRunning = false;
     await PopulationService.formBackgroundParties();
@@ -194,7 +194,7 @@ async function run() {
         return Promise.resolve(null);
     };
 
-    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
     const prepared = Income.prepare(nativeRows, { party });
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const unbuffedGroup = Match.spotMatchup(nativeSpot, Match.stateProfiles(nativeRows[0],
@@ -365,7 +365,7 @@ async function run() {
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
     const socialParty = { ...electiveParty, partyId: 'bgp_social', stats: { capacityPool: 'social' } };
     PartyState.active = () => [electiveParty, requiredParty, socialParty];
-    Config.maxBackgroundParties = 2;
+    Config.maxPlayingPopulation = 8; // the party bound: a quarter of it, 2
     Config.partyFormationBatchSize = 2;
     assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'without a backlog the base party capacity must remain unchanged');
     assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'all requests share one capacity ceiling');
@@ -675,7 +675,7 @@ run().catch((err) => {
     ColdSimulationCoordinator.requestPartyGoals = originals.requestPartyGoals;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;
-    Config.maxBackgroundParties = originals.maxBackgroundParties;
+    Config.maxPlayingPopulation = originals.maxPlayingPopulation;
     Config.partyFormationBatchSize = originals.partyFormationBatchSize;
     Object.assign(PopulationService, originalFormationState);
     await world.close();

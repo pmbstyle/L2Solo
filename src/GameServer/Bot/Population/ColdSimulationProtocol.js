@@ -159,7 +159,7 @@ function byteLength(value) {
     }
 }
 
-const INCOME_REVIEW_KEYS = new Set(['characterId', 'accept', 'reason', 'soloIncome', 'partyIncome',
+const PROGRESS_REVIEW_KEYS = new Set(['characterId', 'accept', 'reason', 'soloIncome', 'partyIncome',
     'soloHours', 'partyHours', 'fee', 'soloSpotId', 'soloBuffPrice', 'at', 'soloSource', 'partySource']);
 function validRaidAssessment(joint, sources) {
     const a = joint.raidAssessment;
@@ -205,24 +205,23 @@ function validRaidAssessment(joint, sources) {
 // sources, a material roster's reviews; no goals.
 function validFormingVerdict(joint, sources) {
     const ids = sources.map(source => source?.characterId), accepted = joint.formingAccepted;
-    return Object.keys(joint).every(key => ['formingAccepted', 'lastIncomeReviewAt', 'incomeReviews'].includes(key))
+    return Object.keys(joint).every(key => ['formingAccepted', 'lastProgressReviewAt', 'progressReviews'].includes(key))
         && accepted.length <= ids.length && new Set(accepted).size === accepted.length
         && accepted.every(id => Number.isSafeInteger(id) && ids.includes(id));
 }
 
-// incomeReviewKey: the hash of the review's inputs (PartyGoalPolicy.incomeReviewKey), with a review only.
-function validPartyIncomeReviews(joint, sources) {
-    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return joint.incomeReviewKey === undefined;
-    if (joint.incomeReviewKey !== undefined && !(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviewKey >= 0)) return false;
-    if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
-        || !Array.isArray(joint.incomeReviews) || joint.incomeReviews.length !== sources.length) return false;
+// progressReviewKey: the hash of the review's inputs (PartyGoalPolicy.progressReviewKey), with a review only.
+function validPartyProgressReviews(joint, sources) {
+    if (joint.lastProgressReviewAt === undefined && joint.progressReviews === undefined) return joint.progressReviewKey === undefined;
+    if (joint.progressReviewKey !== undefined && !(Number.isSafeInteger(joint.progressReviewKey) && joint.progressReviewKey >= 0)) return false;
+    if (!Number.isSafeInteger(joint.lastProgressReviewAt) || joint.lastProgressReviewAt <= 0
+        || !Array.isArray(joint.progressReviews) || joint.progressReviews.length !== sources.length) return false;
     const nullableNumber = value => value === null || typeof value === 'number' && Number.isFinite(value);
-    return joint.incomeReviews.every((row, index) => row && typeof row === 'object' && !Array.isArray(row)
-        && Object.keys(row).every(key => INCOME_REVIEW_KEYS.has(key))
+    return joint.progressReviews.every((row, index) => row && typeof row === 'object' && !Array.isArray(row)
+        && Object.keys(row).every(key => PROGRESS_REVIEW_KEYS.has(key))
         && row.characterId === sources[index]?.characterId && typeof row.accept === 'boolean'
-        && ['solo_preferred', 'help_fee_unfunded', 'higher_personal_income', 'income_unknown',
-            'goal_requires_party', 'equipment_sooner'].includes(row.reason)
-        && row.at === joint.lastIncomeReviewAt
+        && ['solo_sooner', 'help_fee_unfunded', 'progress_unknown', 'goal_requires_party', 'party_sooner'].includes(row.reason)
+        && row.at === joint.lastProgressReviewAt
         && ['soloIncome', 'partyIncome', 'soloHours', 'partyHours'].every(key => nullableNumber(row[key]))
         && ['soloHours', 'partyHours'].every(key => row[key] === null || row[key] >= 0)
         && ['fee', 'soloBuffPrice'].every(key => typeof row[key] === 'number' && Number.isFinite(row[key]) && row[key] >= 0)
@@ -335,9 +334,9 @@ function validateEnvelope(message, direction, options = {}) {
                 || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
                     : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
                     || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
-                        'lastIncomeReviewAt', 'incomeReviewKey', 'incomeReviews', 'raidAssessment'].includes(key))
+                        'lastProgressReviewAt', 'progressReviewKey', 'progressReviews', 'raidAssessment'].includes(key))
                     || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
-                || !validPartyIncomeReviews(payload.joint, payload.sources)
+                || !validPartyProgressReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
     }
     if (message.type === 'spot_command' && (!Array.isArray(message.payload.commands) || !message.payload.commands.length

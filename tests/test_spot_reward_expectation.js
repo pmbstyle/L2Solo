@@ -75,7 +75,7 @@ try {
         assert.equal(forecasts, firstForecasts,
             'a price-only ranking reuses unpriced spot forecasts rather than rebuilding rewards');
     } finally { Rewards.value = nativeValue; }
-    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const savedMatch = Match.spotMatchup, savedCosts = Hunt.consumablePrices;
     try {

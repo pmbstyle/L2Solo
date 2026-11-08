@@ -1720,15 +1720,14 @@ function startKernel(config = {}) {
         }),
         partyArrival,
         // A party member's stay (PartyStay): its held solo answer at the inputs now
-        // against its share of its party's hunt (both one table row, no search; the
-        // split worked out once per party step, shares).
-        soloBeatsShare: ({ member, party, members, timestamp, shares = {} }) => {
-            const Income = require('./PartyIncomeComparison');
-            const solo = Income.soloRoute(member, planningSpots, timestamp);
-            if (!solo) return false;
-            shares.rows ||= Income.prepare(members, { party, objective: party.stats?.objective, spots: planningSpots, timestamp }).rows;
-            const share = shares.rows.get(member.characterId);
-            return !!share && Number(solo.income) > Number(share.income);
+        // against its share of its party's hunt in hours to its next level (both one
+        // table row, no search; the roster's forecast worked out once per party step, shares).
+        soloSooner: ({ member, party, members, timestamp, shares = {} }) => {
+            const Progress = require('./PartyProgressComparison');
+            const objective = party.stats?.objective;
+            shares.prepared ||= Progress.prepare(members, { party, objective, spots: planningSpots, timestamp });
+            return Progress.compare(member, members.filter(peer => peer !== member),
+                { prepared: shares.prepared, party, objective })?.reason === 'solo_sooner';
         },
         // The party's trip: its held spot answer, else its spot decision's one search
         // (held null), which skips a spot with no room for the whole party (its own

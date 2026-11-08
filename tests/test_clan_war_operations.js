@@ -32,7 +32,7 @@ try {
         leaderParty: () => dueParty, partyMembers: () => members
     }), dueParty.nextResolveAt, 'an expired operation must not trap the worker on a past session deadline');
     const Admission = require('../src/GameServer/Bot/Population/PartyAdmission').PartyAdmission;
-    const admission = new Admission(), budget = { maxBackgroundParties: 2 };
+    const admission = new Admission(), budget = { maxPlayingPopulation: 8 };
     assert.equal(admission.reserveWar([{}, {}], budget, 10, at), null, 'war cannot exceed the shared party cap');
     assert.equal(admission.reserve([{}], budget, { now: at + 1 }), null, 'ordinary formation cannot consume the next slot promised to a ready war party');
     const release = admission.reserveWar([{}], budget, 10, at + 1);

@@ -669,9 +669,9 @@ class ColdSimulationKernel {
         // The party's route (the worker's BotRoute.route on the leader's state):
         // { leader, party, members, spot, timestamp, held } -> { route, answer } or null.
         this.partyRoute = typeof options.partyRoute === 'function' ? options.partyRoute : null;
-        // A member's held solo answer against its party share (the worker's
-        // PartyIncomeComparison): { member, party, members, timestamp } -> boolean.
-        this.soloBeatsShare = typeof options.soloBeatsShare === 'function' ? options.soloBeatsShare : null;
+        // A member's held solo answer against its party share in hours to its next level
+        // (the worker's PartyProgressComparison): { member, party, members, timestamp } -> boolean.
+        this.soloSooner = typeof options.soloSooner === 'function' ? options.soloSooner : null;
         this.now = options.now || Date.now;
         this.emit = options.emit || (() => {});
         this.maxBatch = Math.max(1, Math.min(64, Number(options.maxBatch) || 64));
@@ -1815,7 +1815,7 @@ class ColdSimulationKernel {
             if (decides && Situations.woken(stats, 'party_stay')) {
                 const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
                     bridgeReason: this.equipmentBridgeReason,
-                    soloBeatsShare: () => !!this.soloBeatsShare?.({ member, party, members: run.members, timestamp, shares }) });
+                    soloSooner: () => !!this.soloSooner?.({ member, party, members: run.members, timestamp, shares }) });
                 stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
                 if (answer === 'leave' || answer === 'trip' && !duty) leaving.set(id, reason);
                 else if (answer === 'trip') trips.push({ characterId: id, reason });

@@ -93,7 +93,7 @@ async function run() {
         members[0] = { ...members[0], phase: 'hot' };
         const assigned = [];
         LifeState.assignParty = (state, partyId) => { assigned.push([state.characterId, partyId]); return Promise.resolve(state); };
-        Calculation.recruitCheck = () => ({ memberGoals: [], lastIncomeReviewAt: at, incomeReviews: [] });
+        Calculation.recruitCheck = () => ({ memberGoals: [], lastProgressReviewAt: at, progressReviews: [] });
         const joined = await PopulationService.recruitBackgroundMembers([seeker]);
         assert.deepStrictEqual([...joined], [9001]);
         assert.deepStrictEqual(assigned.filter(([id]) => id === 9001), [[9001, 'bgp_far']], 'the seeker joins the far party');
@@ -121,7 +121,7 @@ async function run() {
     assert.strictEqual(Request.supportWithoutGround({ ...levelled, stats: { classId: 17, role: 'buffer' } }, spots), false,
         'no answer held yet says nothing about its ground');
     // Its solo hunt there counts as none wherever a party is weighed against it.
-    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison'), compare = Income.compare;
+    const Income = invoke('GameServer/Bot/Population/PartyProgressComparison'), compare = Income.compare;
     assert.strictEqual(Income.heldSoloRoute(answering('grey65'), spots, at), null, 'grey ground is no solo side for forming or its stay');
 
     // Rule 3: a Prophet 46 with ground of its level plays as today.
@@ -130,18 +130,18 @@ async function run() {
     assert.strictEqual(Request.partyRequestForPlan(young, null, at, { spots }), null, 'no request for a support with solo ground');
     assert.strictEqual(Persona.backgroundIntent(young).reason, 'prefers_solo', 'its persona decides as before');
 
-    // Party income -> a party: a bot whose share in a party of its kind at its earning
-    // spot beats its held solo answer asks for a party there, whatever its persona.
+    // Party progress -> a party: a bot that levels sooner in a party of two (itself and a
+    // partner of its level) at its earning spot asks for a party there.
     const earner = { ...young, stats: { ...young.stats, earning: { spotId: 'ground46', income: 1000 } } };
     try {
-        Income.compare = (state, peers, options) => ({ accept: options.objective.spotId === 'ground46' && !peers.length });
+        Income.compare = (state, peers, options) => ({ accept: options.objective.spotId === 'ground46' && peers.length === 1 });
         const asked = Request.partyRequestForPlan(earner, null, at, { spots });
         assert.deepStrictEqual({ status: asked.status, priority: asked.priority, reason: asked.reason, spotId: asked.spotId,
-            objectiveKey: asked.objectiveKey }, { status: 'open', priority: 'preferred', reason: 'party_income', spotId: 'ground46',
+            objectiveKey: asked.objectiveKey }, { status: 'open', priority: 'preferred', reason: 'party_progress', spotId: 'ground46',
             objectiveKey: 'spot:ground46' }, 'it asks for a party on its earning ground');
-        assert.strictEqual(Persona.backgroundIntent({ ...earner, stats: { ...earner.stats, partyRequest: asked } }).reason, 'party_income');
+        assert.strictEqual(Persona.backgroundIntent({ ...earner, stats: { ...earner.stats, partyRequest: asked } }).reason, 'party_progress');
         Income.compare = () => ({ accept: false });
-        assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots }), null, 'solo pays more: no request');
+        assert.strictEqual(Request.partyRequestForPlan(earner, null, at, { spots }), null, 'solo is sooner: no request');
     } finally { Income.compare = compare; }
 
     Config.developerDiagnostics = previousDiagnostics;

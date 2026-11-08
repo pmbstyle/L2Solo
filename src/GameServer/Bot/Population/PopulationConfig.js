@@ -105,6 +105,8 @@ const DEFAULTS = {
     // generated adventurers only; shop services are not part of it.
     maxPlayingPopulation: 1700,
     starterBotsPerRace: 30,
+    // New bots' starting classes by weight (PopulationIntakePolicy.classWeights).
+    classMix: 'humanFighter:18,humanMystic:4,elfFighter:16,elfMystic:6,darkFighter:17,darkMystic:6,orcFighter:16,orcMystic:5,dwarf:12',
     generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
     // Append-only diagnostics and AI memory have explicit lifecycles. Run a
@@ -139,9 +141,6 @@ const DEFAULTS = {
     pvpAggression: 0.5,
     partyMinSize: 2,
     partyMaxSize: 5,
-    // Shared safety ceiling for every background party. Admission never
-    // depends on social/clan origin or opens extra slots for a backlog.
-    maxBackgroundParties: 72,
     // Dissolved party rows are operational history, not durable state. Keep
     // a short diagnostic window without allowing every rotation to grow the
     // population database forever.

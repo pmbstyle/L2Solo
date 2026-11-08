@@ -9,7 +9,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 // ground its level does not fit (BotRoute.soloLevelFits at its solo target level: grey
 // ground, unless it hunts for gain there), has no solo ground: it seeks a party instead
 // of farming grey ground alone, and its solo side counts as none wherever a party is
-// weighed against its solo hunt (PartyIncomeComparison.heldSoloRoute: forming's verdict,
+// weighed against its solo hunt (PartyProgressComparison.heldSoloRoute: forming's verdict,
 // its stay). earning, plan: the ones to read (the build's when it took them); no
 // answer held yet: not known.
 const NO_SOLO_GROUND = 'no_solo_ground';
@@ -49,34 +49,36 @@ function seekObjective(state, previous, { spots, timestamp, search = null, econo
         spotId, npcId: null, itemId: null, targetId: null };
 }
 
-// Party income -> a party: a bot whose share in a party of its kind at its earning spot
-// beats its held solo answer there (PartyIncomeComparison.compare with no peers: the
-// table's party row at its level and role, the kills split as among equals; the same
-// comparison forming's verdict then asks of the real roster) asks for a party on that
-// ground (a C4 player's LFP where a group out-earns him), so it groups with the bots
-// that hunt there. Asked at the build, as every request; the next build asks again
-// (one table comparison, ~0.12 ms on the worker per build of a bot that holds no
-// other objective: cheaper than keying it on its inputs).
-// Null: no held answer with a spot, or solo pays more. economy: the build's (its earning
-// answer when the build took it with the request, else the held one).
-const PARTY_INCOME = 'party_income';
-function incomeObjective(state, { spots, timestamp, economy = null }) {
+// Party progress -> a party: a bot that would reach its next level (and the piece its
+// path saves for) sooner in a party of two at its earning spot, itself and a partner of
+// its level (PartyProgressComparison.partnerFor: a healer, a damage dealer for a healer),
+// than solo there, its persona weighing it (PartyProgressComparison.compare: the same
+// comparison forming's verdict then asks of the real roster), asks for a party on that
+// ground (a C4 player's LFP), so it groups with the bots that hunt there. Asked at the
+// build, as every request; the next build asks again (two table rows, cheaper than
+// keying it on its inputs). Null: no held answer with a spot, or solo is sooner.
+// economy: the build's (its earning answer when the build took it with the request,
+// else the held one).
+const PARTY_PROGRESS = 'party_progress';
+function progressObjective(state, { spots, timestamp, economy = null }) {
     const earning = economy?.statsPacket?.earning || state?.stats?.earning;
     const spotId = earning?.spotId;
     if (!spotId) return null;
     const asked = earning === state.stats.earning ? state : { ...state, stats: { ...state.stats, earning } };
-    const verdict = require('./PartyIncomeComparison').compare(asked, [], { spots, timestamp, objective: { spotId } }); // lazy: its chain loads this planner
+    const Progress = require('./PartyProgressComparison'); // lazy: its chain loads this planner
+    const partner = Progress.partnerFor(asked);
+    const verdict = partner && Progress.compare(asked, [partner], { spots, timestamp, objective: { spotId } });
     if (!verdict?.accept) return null;
-    return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: PARTY_INCOME,
+    return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: PARTY_PROGRESS,
         spotId, npcId: null, itemId: null, targetId: null };
 }
-const seeksIncome = state => state?.stats?.partyRequest?.status === 'open' && state.stats.partyRequest.reason === PARTY_INCOME;
+const seeksProgress = state => state?.stats?.partyRequest?.status === 'open' && state.stats.partyRequest.reason === PARTY_PROGRESS;
 
 // An objective that only names a spot to meet at (no target, no clan duty): a shared
-// target (a competition's offer_party), no solo ground, party income. Its party hunts
+// target (a competition's offer_party), no solo ground, party progress. Its party hunts
 // there only while that spot stands for it as any party ground (BotRoute.choose),
 // else the objective ends and the party routes as any other.
-const MEETING_REASONS = new Set(['shared_target', NO_SOLO_GROUND, PARTY_INCOME]);
+const MEETING_REASONS = new Set(['shared_target', NO_SOLO_GROUND, PARTY_PROGRESS]);
 const meetsAtSpot = objective => MEETING_REASONS.has(objective?.reason) || objective?.kind === 'shared_target';
 
 // A party request is held with no clock (C4 has no LFG timeout: a player asks
@@ -176,7 +178,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan)
         || Material.request(state, plan, { ...options, timestamp }) || sharedTarget
         || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search, economy: options.economy, plan })
-        || incomeObjective(state, { spots: options.spots, timestamp, economy: options.economy });
+        || progressObjective(state, { spots: options.spots, timestamp, economy: options.economy });
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;
         const amount = Math.max(1, Math.floor(Number(objective.materialParty ? objective.amount : plan?.next?.amount || 1)));
@@ -236,10 +238,10 @@ function partyObjectiveForState(state) {
 
 module.exports = {
     NO_SOLO_GROUND,
-    PARTY_INCOME,
+    PARTY_PROGRESS,
     supportWithoutGround,
     seeksParty,
-    seeksIncome,
+    seeksProgress,
     meetsAtSpot,
     closed,
     limitsForObjective,

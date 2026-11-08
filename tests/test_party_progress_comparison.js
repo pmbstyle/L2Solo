@@ -4,7 +4,7 @@ const { performance } = require('node:perf_hooks');
 require('./helpers/databaseIsolation');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache'); Data.init();
-const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
 const Goals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
@@ -15,24 +15,36 @@ const Profiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const at = 1791648945955;
-const base = { cash: 5000, spendable: 0, solo: { income: 1000 }, party: { income: 200 } };
-assert.equal(Income.evaluate(base).accept, false, 'fast group XP cannot compensate for a lower personal margin');
-assert.equal(Income.evaluate({ ...base, party: { income: 3000 }, fee: 100, spendable: 100, assemblyHours: .1 }).accept, true);
+// Hours to the next level decide (remaining exp over exp per hour); income only for a saver.
+const level = { remaining: 1000, solo: { exp: 100, income: 1000 }, party: { exp: 150, income: 200 } };
+assert.equal(Income.evaluate(level).accept, true, 'a party that levels sooner wins although it earns less');
+assert.equal(Income.evaluate(level).reason, 'party_sooner');
+assert.equal(Income.evaluate({ ...level, party: { exp: 80, income: 5000 } }).reason, 'solo_sooner',
+    'a party that earns more but levels slower does not, for a bot saving for nothing');
+assert.equal(Income.evaluate({ ...level, party: { exp: 80, income: 200 }, solo: { exp: 100, deaths: 2, deathHours: .5, income: 1000 } }).accept, true,
+    'deaths add time: the exp a death takes and the way back');
+assert.equal(Income.evaluate({ ...level, party: { exp: 120 }, lean: 1.4 }).accept, false, 'a loner needs a party clearly sooner');
+assert.equal(Income.evaluate({ ...level, party: { exp: 80 }, lean: .7 }).accept, true, 'a social bot takes a somewhat slower party');
+assert.equal(Income.evaluate({ ...level, cash: 50000, spendable: 0 }).reason, 'solo_sooner',
+    'a bot saving for its piece adds the hours its income funds it in: the party\'s low income outweighs its exp');
+assert.equal(Income.evaluate({ ...level, solo: null }).reason, 'goal_requires_party');
+assert.equal(Income.evaluate({ ...level, party: null }).reason, 'progress_unknown');
+assert.equal(Income.evaluate({ ...level, fee: 100 }).reason, 'help_fee_unfunded');
+assert.equal(Income.evaluate({ ...level, remaining: 0 }).accept, false, 'no level ahead and nothing to save for: solo');
+assert.equal(Income.levelHours({ exp: 100, deaths: 1, deathHours: .25 }, 1000), 12.5);
+const base = { cash: 5000, spendable: 0, solo: { exp: 100, income: 1000 }, party: { exp: 100, income: 200 }, remaining: 1000 };
+assert.equal(Income.evaluate(base).accept, false, 'a saver at equal exp: the lower personal margin funds the piece later');
+assert.equal(Income.evaluate({ ...base, party: { exp: 100, income: 3000 }, fee: 100, spendable: 100, assemblyHours: .1 }).accept, true);
 assert.equal(Income.evaluate({ ...base, solo: null }).reason, 'goal_requires_party');
-assert.equal(Income.evaluate({ ...base, party: { income: 0 }, partyItemHours: .1 }).accept, false);
-assert.equal(Income.evaluate({ ...base, party: null }).reason, 'income_unknown');
-assert.equal(Income.evaluate({ ...base, spendable: 5000,
-    solo: { income: 1000, travelHours: .1 } }).accept, false,
-    'already funded gear does not require a trip to the alternative earning camp');
-assert.equal(Income.evaluate({ ...base, spendable: 5000, solo: null }).accept, false,
-    'already funded gear can be bought without an earning hunt');
-assert.equal(Income.evaluate({ ...base, fee: 100, party: { income: 3000 } }).reason, 'help_fee_unfunded');
-assert.equal(Income.evaluate({ ...base, partyItemHours: .1 }).reason, 'equipment_sooner',
+assert.equal(Income.evaluate({ ...base, party: { exp: 100, income: 0 }, partyItemHours: .1 }).accept, true,
+    'the piece dropping in the party at once counts though the party earns nothing');
+assert.equal(Income.evaluate({ ...base, fee: 100, party: { exp: 100, income: 3000 } }).reason, 'help_fee_unfunded');
+assert.equal(Income.evaluate({ ...base, partyItemHours: .1 }).reason, 'party_sooner',
     'receiving the actual gear sooner can beat saving cash despite a smaller cash margin');
-assert.equal(Income.evaluate({ ...base, party: { income: 1000 }, rewardFee: 4000, deliveryHours: 2 }).partyHours, 2,
+assert.equal(Income.evaluate({ ...base, party: { exp: 100, income: 1000 }, rewardFee: 4000, deliveryHours: 2 }).partyHours, 12,
     'a helper payment becomes purchase cash after delivery, never at invitation time');
 for (const multiplier of [1, 10, 50]) assert.equal(Income.evaluate({ ...base,
-    solo: { income: 1000 * multiplier }, party: { income: 200 * multiplier } }).accept, false);
+    solo: { exp: 100, income: 1000 * multiplier }, party: { exp: 100, income: 200 * multiplier } }).accept, false);
 
 const original = { value: Table.value, ranked: Table.rankedIncome, rankedIds: Table.rankedSpotIds, hunt: Hunt.huntIncome,
     samples: Hunt.sampledRows, costs: Hunt.consumablePrices, ensure: Profiles.ensure, gate: Routes.isSpotAllowedForState, reader: Routes.spotAllowedReaderFor,
@@ -51,7 +63,7 @@ const row = (adena, shots = 0) => ({ kills: 100, exp: 100, adena, loot: 0, shots
 let gates = 0, builds = 0;
 const state = { characterId: 990130, level: 20, adena: 0, spotId: 'peer', phase: 'cold', activity: 'hunting',
     loc: { locX: 0, locY: 0 }, inventory: {}, vitals: { hp: 100, mp: 100, maxMp: 100 },
-    stats: { classId: 0, role: 'dps', wishFocus: ['power:1:7', 0, 5000], money: [1000, .001, 0, 5000],
+    stats: { classId: 0, role: 'dps', wishFocus: ['power:1:7', 0, 5000], wishSections: { affordAt: { at: 5000, kind: 'focus' } }, money: [1000, .001, 0, 5000],
         partyRequest: { priority: 'required', spotId: 'peer', reason: 'gear_acquisition' } } };
 const peer = { ...state, characterId: 990131 };
 try {
@@ -92,32 +104,33 @@ try {
         assert.deepEqual(Goals.formingMembers([member, memberPeer], { clanGoalKey: 'clan-kit' }), [member, memberPeer]);
         const review = Goals.joint({ startedAt: at - 5 * 60000, spotId: 'peer', stats: {} },
             [member, memberPeer], { timestamp: at, spots });
-        assert.equal(review.incomeReviews?.length, 2,
+        assert.equal(review.progressReviews?.length, 2,
             'ordinary party income review also runs for members of a clan with a warehouse');
     }
-    // The review runs when its inputs move (PartyGoalPolicy.incomeReviewKey), never on the clock.
+    // The review runs when its inputs move (PartyGoalPolicy.progressReviewKey), never on the clock.
     const reviewed = Goals.joint({ startedAt: at, spotId: 'peer', memberIds: [state.characterId, peer.characterId], stats: {} },
         [state, peer], { timestamp: at, spots });
-    assert(Number.isSafeInteger(reviewed.incomeReviewKey) && reviewed.incomeReviews.length === 2,
+    assert(Number.isSafeInteger(reviewed.progressReviewKey) && reviewed.progressReviews.length === 2,
         'a party with no reviewed inputs reviews at once, without waiting for the clock');
-    const held = { startedAt: at, spotId: 'peer', stats: { lastIncomeReviewAt: at, incomeReviewKey: reviewed.incomeReviewKey,
-        incomeReviews: reviewed.incomeReviews } };
+    const held = { startedAt: at, spotId: 'peer', stats: { lastProgressReviewAt: at, progressReviewKey: reviewed.progressReviewKey,
+        progressReviews: reviewed.progressReviews } };
     const later = Goals.joint(held, [state, peer], { timestamp: at + 24 * 3600000, spots });
-    assert.equal(later.incomeReviews, undefined, 'unchanged inputs are not reviewed again, however long');
-    assert.equal(later.lastIncomeReviewAt, undefined);
+    assert.equal(later.progressReviews, undefined, 'unchanged inputs are not reviewed again, however long');
+    assert.equal(later.lastProgressReviewAt, undefined);
     const moved = { level: { ...peer, level: 21 }, kit: { ...peer, stats: { ...peer.stats, wishSections: { build: 7 } } },
         observed: { ...peer, stats: { ...peer.stats, wishSections: { sample: 's1:AAAA' } } },
         solo: { ...peer, stats: { ...peer.stats, money: [1500, .001, 0, 5000] } },
-        goal: { ...peer, stats: { ...peer.stats, wishFocus: ['power:2:7', 0, 9000] } } };
+        goal: { ...peer, stats: { ...peer.stats, wishFocus: ['power:2:7', 0, 9000] } },
+        saving: { ...peer, stats: { ...peer.stats, wishSections: { affordAt: { at: 9000, kind: 'focus' } } } } };
     for (const [input, changed] of Object.entries(moved)) {
         const review = Goals.joint(held, [state, changed], { timestamp: at + 1, spots });
-        assert.equal(review.incomeReviews?.length, 2, `a moved ${input} reviews at once`);
-        assert.notEqual(review.incomeReviewKey, reviewed.incomeReviewKey);
+        assert.equal(review.progressReviews?.length, 2, `a moved ${input} reviews at once`);
+        assert.notEqual(review.progressReviewKey, reviewed.progressReviewKey);
     }
-    assert.equal(Goals.joint({ ...held, spotId: 'lower' }, [state, peer], { timestamp: at + 1, spots }).incomeReviews?.length, 2,
+    assert.equal(Goals.joint({ ...held, spotId: 'lower' }, [state, peer], { timestamp: at + 1, spots }).progressReviews?.length, 2,
         'a party moved to another ground (the spot its forecast reads) reviews at once');
     const third = { ...peer, characterId: 990132 };
-    assert.equal(Goals.joint(held, [state, peer, third], { timestamp: at + 1, spots }).incomeReviews?.length, 3,
+    assert.equal(Goals.joint(held, [state, peer, third], { timestamp: at + 1, spots }).progressReviews?.length, 3,
         'a roster change reviews at once');
     assert.equal(builds, 0);
     const provider = { ...peer, level: 20, adena: 100000, spotId: 'lower',
@@ -186,14 +199,15 @@ try {
             'growing a static composition refreshes the same positive-weight rule');
     } finally { Data.npcs = nativeNpcs; Data.npcRewards = nativeRewards; }
     const itemSpots = [spot, spots[1]];
-    const itemState = { ...state, stats: { ...state.stats, partyRequest: goal,
+    // At its level's end (no exp left to the next level): the piece's hours alone.
+    const itemState = { ...state, exp: Data.experience[20], stats: { ...state.stats, partyRequest: goal,
         equipmentPlan: { next: { ...goal, amount: 1 } } } };
     const itemPrepared = Income.prepare([itemState, peer], { spots: itemSpots, timestamp: at });
     assert.equal(Income.soloRoute(itemState, itemSpots, at).spotId, 'lower');
     assert(Income.soloItemRouteHours(itemState, itemSpots, goal, at) > 0);
     const direct = Income.compare(itemState, [peer], { prepared: itemPrepared });
     assert(direct.soloHours < 5000 / 600, 'a safe direct solo drop at a different camp is considered');
-    const component = { ...itemState, stats: { ...itemState.stats, wishFocus: ['power:2:7', 0, 5000] } };
+    const component = { ...itemState, stats: { ...itemState.stats, wishFocus: ['power:2:7', 0, 5000], wishSections: { affordAt: { at: 5000, kind: 'focus' } } } };
     const ingredient = Income.compare(component, [peer], { prepared: itemPrepared });
     assert.equal(ingredient.soloHours, 5000 / ingredient.soloIncome, 'a component is not the final gear completion time');
     assert.equal(ingredient.accept, false);
@@ -205,6 +219,37 @@ try {
     Data.npcs = original.npcs; Data.npcRewards = original.rewards;
     Rewards.value = original.rewardValue;
     BuffPolicy.priceFor = originalBuffPrice;
+}
+
+// A party's hour (prepare): each kill's exp at the party's top level times the C4 party
+// bonus, split by squared level (L2J Lisvus L2Party); a healer removes the others'
+// rest and deaths.
+{
+    const saved = { value: Table.value, cycle: Table.cycle, samples: Hunt.sampledRows, costs: Hunt.consumablePrices,
+        rewards: Rewards.value, ensure: Profiles.ensure };
+    try {
+        Rewards.value = () => null; Hunt.sampledRows = () => []; Hunt.consumablePrices = () => ({ shots: 1, potions: 10 });
+        Profiles.ensure = () => spots;
+        Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1 });
+        Table.cycle = () => ({ kph: 100, rest: 12, cap: 1000 }); // a kill: 36 s, 12 of them the rest
+        const fighter = { characterId: 990140, level: 20, spotId: 'peer', activity: 'hunting', loc: { locX: 0, locY: 0 },
+            inventory: {}, vitals: { hp: 100, mp: 100, maxMp: 100 }, stats: { classId: 0 } };
+        const other = { ...fighter, characterId: 990141 }, cleric = { ...fighter, characterId: 990142, stats: { classId: 15 } };
+        const objective = { spotId: 'peer' };
+        const pair = Income.prepare([fighter, other], { spots, timestamp: at, objective }).rows.get(990140);
+        // 200 kills x 0.65 cohesion x 10 exp a kill x 1.3 (two members), half each.
+        assert.equal(pair.exp, 845);
+        assert(Math.abs(pair.deaths - .65) < 1e-9, 'its deaths per kill over its share of the party\'s kills');
+        const healed = Income.prepare([fighter, cleric], { spots, timestamp: at, objective }).rows.get(990140);
+        // The fighter's 100 kills without their rest: 150; with the cleric's 100: 250 x 0.65 x 10 x 1.3 / 2.
+        assert.equal(healed.exp, 1056, 'a healer\'s party levels its fighter sooner');
+        assert.equal(healed.deaths, 0, 'a healed fighter does not die of what it takes');
+        const lower = Income.prepare([fighter, { ...other, level: 10 }], { spots, timestamp: at, objective }).rows;
+        assert(lower.get(990140).exp > 4 * lower.get(990141).exp, 'the exp splits by squared level');
+    } finally {
+        Table.value = saved.value; Table.cycle = saved.cycle; Hunt.sampledRows = saved.samples;
+        Hunt.consumablePrices = saved.costs; Rewards.value = saved.rewards; Profiles.ensure = saved.ensure;
+    }
 }
 
 let sampled = state;

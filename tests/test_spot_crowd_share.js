@@ -91,7 +91,7 @@ try {
     assert(index.spotVersion(spotId) > removed, 'a revision never comes back to an earlier count\'s');
     index.update(on(3, 'elsewhere'));
     index.update(on(2, spotId));
-    // A caller that passes no count (EquipmentIncomeRoute, PartyIncomeComparison)
+    // A caller that passes no count (EquipmentIncomeRoute, PartyProgressComparison)
     // reads the thread's occupancy: a cold worker's kernel index once registered.
     index.update(on(4, spotId)); index.update(on(5, spotId));
     SpotProfiles.useOccupancy(() => index);

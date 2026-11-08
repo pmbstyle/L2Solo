@@ -34,7 +34,7 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Date, 'now', () => clock);
     stub(Config, 'enabled', true); stub(Config, 'backgroundPartyEnabled', true);
     stub(Config, 'partyMinSize', 2); stub(Config, 'partyMaxSize', 5);
-    stub(Config, 'maxBackgroundParties', 10); stub(Config, 'protectedPartyFormationMainBudgetMs', 50);
+    stub(Config, 'maxPlayingPopulation', 40); stub(Config, 'protectedPartyFormationMainBudgetMs', 50);
     stub(Population, 'playerActivityProfile', () => ({ protected: true }));
     stub(Population, 'realPlayerSessions', () => []);
     stub(Database, 'isReady', () => false); stub(Database, 'stats', () => ({ pending: 0 }));
@@ -55,7 +55,7 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Economy, 'forState', () => { throw Error('cold main economic calculation forbidden'); });
     // This fixture supplies a final admitted roster without a real atlas.
     // Keep economic admission separate from worker waits and lifecycle CAS.
-    const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = require('../src/GameServer/Bot/Population/PartyProgressComparison');
     stub(Income, 'compare', () => Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }));
     // The worker's forming verdict (asked before the party is built): this fixture's roster joins.
     const joins = (party, selected) => party.stats?.forming && { ok: true, sources: Calculation.sources(selected),
@@ -102,8 +102,8 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Income, 'prepare', () => { throw Error('main must never forecast a cold material roster'); });
     Coordinator.requestPartyGoals = async (party, selected) => {
         return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
-            memberGoals: selected.map(Policy.declaration), lastIncomeReviewAt: timestamp,
-            incomeReviews: selected.map(member => ({ characterId: member.characterId, accept: true })) } };
+            memberGoals: selected.map(Policy.declaration), lastProgressReviewAt: timestamp,
+            progressReviews: selected.map(member => ({ characterId: member.characterId, accept: true })) } };
     };
     Population.nextProtectedPartyFormationAt = 0;
     const materialFormed = await Population.formProtectedRequiredParty(Date.now(), materialMembers);

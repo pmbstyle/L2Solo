@@ -1,5 +1,10 @@
 'use strict';
-
+// Party value by progress: does a party bring this bot to its next level (and the
+// piece its gear path saves for) sooner than its solo hunt? One pure comparison of
+// table rows (SpotValueTable: the spot's hour of kills, exp and deaths), read by the
+// party request (PartyRequestPlanner: a C4 player's LFP), forming's verdict and the
+// recruit check (PartyGoalPolicy), the party's review and a member's stay
+// (PartyStay, the worker's party step). Worker and main read the same functions.
 const BuffPolicy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
 const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 const Rewards = require('../Economy/SpotRewardExpectation');
@@ -8,6 +13,8 @@ const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
 const WalkBack = require('../Economy/WalkBack');
+const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
+const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const HOUR_MS = 3600000;
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
@@ -15,11 +22,28 @@ const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').
 const soloState = state => ({ ...state, activity: 'hunting', partyId: null,
     party: { ...state.party, partyId: null }, stats: { ...state.stats, backgroundPartyId: null, routeMode: 'solo' } });
 
-// Pure comparison in the same units as fundingDelay. No XP reward enters
-// admission. Random/turn loot uses the member's expectation, never group cash.
-function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee = 0,
-    soloItemHours = null, partyItemHours = null, deliveryHours = partyItemHours, assemblyHours = 0 } = {}) {
+// Hours to the next level on a route: the exp still missing over its exp per hour,
+// each hour's deaths adding their price (route.deathHours: the exp a death takes and
+// the way back, EconomicValuation.deathHours). 0 with no level ahead (at the cap);
+// null when the route gives no exp.
+function levelHours(route, remaining) {
+    if (!(remaining > 0)) return 0;
+    if (!(route?.exp > 0)) return null;
+    return remaining / route.exp * (1 + positive(route.deaths) * positive(route.deathHours));
+}
+
+// Pure comparison of the two sides in hours. A side's hours are its hours to the
+// next level (levelHours) plus, only for a bot saving for its path's piece (cash:
+// the price its held gear plan names and it cannot pay yet; item hours: the piece's
+// own drop), the hours until it holds that piece: its income funding the price
+// (fundingDelay, the trip to the camp when it must earn first) or the drop, the
+// sooner. The party side adds its assembly. lean: the persona's weight on the party
+// side's hours (partyLean). Accepts when the weighted party side is sooner, or the
+// bot has no solo side at all (no solo ground, a piece only a party drops).
+function evaluate({ solo, party, remaining = 0, cash = null, spendable = 0, fee = 0, rewardFee = 0,
+    soloItemHours = null, partyItemHours = null, deliveryHours = partyItemHours, assemblyHours = 0, lean = 1 } = {}) {
     const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+    const saving = cash !== null || soloItemHours !== null || partyItemHours !== null;
     const ready = (route, cashNow, direct) => {
         const funding = cash === null ? null : Valuation.fundingDelay({
             requiredCash: cash, spendableCash: cashNow, incomePerHour: route?.income || 0 });
@@ -27,37 +51,78 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
             .filter(hours => hours !== null && Number.isFinite(hours) && hours >= 0);
         return choices.length ? Math.min(...choices) : null;
     };
-    const soloHours = ready(solo, Math.max(0, spendable - positive(solo?.buffPrice)), soloItemHours);
-    let partyHours = ready(party, Math.max(0, spendable - positive(fee)), partyItemHours);
-    if (party?.income > 0 && cash !== null && deliveryHours !== null && Number.isFinite(deliveryHours)
+    const soloPiece = saving ? ready(solo, Math.max(0, spendable - positive(solo?.buffPrice)), soloItemHours) : 0;
+    let partyPiece = saving ? ready(party, Math.max(0, spendable - positive(fee)), partyItemHours) : 0;
+    if (saving && party?.income > 0 && cash !== null && deliveryHours !== null && Number.isFinite(deliveryHours)
         && rewardFee > 0) {
+        // A promised helper payment is purchase cash after delivery, never at invitation time.
         const afterFee = Valuation.fundingDelay({ requiredCash: cash,
             spendableCash: spendable + rewardFee, incomePerHour: party.income });
         const paidReady = Math.max(deliveryHours, afterFee) + positive(party.travelHours);
-        partyHours = partyHours === null ? paidReady : Math.min(partyHours, paidReady);
+        partyPiece = partyPiece === null ? paidReady : Math.min(partyPiece, paidReady);
     }
-    const groupHours = partyHours === null ? null : partyHours + positive(assemblyHours);
-    // A promised helper payment is received after delivery, not liquid cash
-    // for an immediate purchase. Amortize it only over a known delivery time.
+    const side = (route, piece) => {
+        const level = route ? levelHours(route, remaining) : null;
+        return level === null || piece === null ? null : level + piece;
+    };
+    const soloHours = side(solo, soloPiece);
+    const partyRoute = party ? side(party, partyPiece) : null;
+    const partyHours = partyRoute === null ? null : partyRoute + positive(assemblyHours);
     const partyIncome = party ? Number(party.income) + (deliveryHours > 0
         ? positive(rewardFee) / (deliveryHours + positive(assemblyHours)) : 0) : null;
-    let reason = 'solo_preferred', accept = false;
+    let reason = 'solo_sooner', accept = false;
     if (positive(fee) > positive(spendable)) reason = 'help_fee_unfunded';
-    else if (cash === null && soloItemHours === null && partyItemHours === null && party
-        && partyIncome > positive(solo?.income) * 1.1) {
-        accept = true; reason = 'higher_personal_income';
-    } else if (!party || groupHours === null && soloHours === null) reason = 'income_unknown';
-    else if (partyIncome > 0 && soloHours === null && groupHours !== null) {
-        accept = true; reason = 'goal_requires_party';
-    } else if (partyIncome > 0 && soloHours !== null && groupHours !== null
-        && groupHours < soloHours * 0.9) {
-        accept = true; reason = 'equipment_sooner';
-    }
+    else if (!party || partyHours === null && soloHours === null) reason = 'progress_unknown';
+    else if (soloHours === null && partyHours !== null) { accept = true; reason = 'goal_requires_party'; }
+    else if (partyHours !== null && partyHours * lean < soloHours) { accept = true; reason = 'party_sooner'; }
     return { accept, reason, soloIncome: solo ? Number(solo.income) : null,
-        partyIncome, soloHours, partyHours: groupHours, fee: positive(fee),
+        partyIncome, soloHours, partyHours, fee: positive(fee),
         soloSpotId: solo?.spotId || null, soloBuffPrice: positive(solo?.buffPrice) };
 }
 
+// The persona's weight on a party's hours: 1.5 - sociability (BotPersona traits,
+// 0.18 for a lone wolf .. 0.82 for a party regular): a social bot takes a party up
+// to ~1.5x slower than its solo hunt, a loner only one ~1.3x faster. Our choice.
+function partyLean(state) {
+    const sociability = Number(invoke('GameServer/Bot/AI/BotPersona').of(state)?.traits?.sociability);
+    return 1.5 - (Number.isFinite(sociability) ? sociability : 0.5);
+}
+
+// The exp still missing to the next level (DataCache.experience: the total exp at
+// each level's end), 0 at the level cap.
+function remainingExp(state) {
+    const level = Math.floor(Number(state.level) || 1);
+    if (level >= invoke('GameServer/Progression/ProgressionCap').effectiveLevelCap()) return 0;
+    const table = invoke('GameServer/DataCache').experience;
+    return Math.max(0, Number(table?.[level]) - positive(state.stats?.exp ?? state.exp)) || 0;
+}
+
+// A route's death price on the bot (EconomicValuation.deathHours): the exp a death
+// takes at the route's exp per hour and the way back to its spot.
+function withDeathHours(state, route, spots) {
+    if (!route) return route;
+    const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+    return { ...route, deathHours: Valuation.deathHours(state, { expPerHour: route.exp,
+        walkBackHours: WalkBack.hours(route.spotId, state, spots) }) };
+}
+
+// The party a bot asks for (its LFP, PartyRequestPlanner.progressObjective): itself
+// and one partner of its level, a healer for any other bot (a C4 "LF healer"), a
+// damage dealer for a healer: the table's reference bot of that line (HuntCycle:
+// the author's kit and skill tree). Game data, kept per class and level (at most
+// two lines x the levels: ~160 states).
+const partners = new Map();
+function partnerFor(state) {
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const level = Math.max(1, Math.min(80, Math.floor(Number(state.level) || 1)));
+    const classId = Number(Table.roleClass(Roles.isHealer(state) ? 'dps' : 'healer', level));
+    if (!Number.isInteger(classId)) return null;
+    const key = classId * 100 + level;
+    let partner = partners.get(key);
+    // One object per key: the combat profile readers keep their answer for it.
+    if (!partner) partners.set(key, partner = Object.freeze(invoke('GameServer/Bot/AI/HuntCycle').referenceState(classId, level)));
+    return partner;
+}
 // The solo side's earning route: the bot's held earning answer (situations step 1,
 // stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute: one row
 // evaluation, no search); null when it holds no answer (forming skips it,
@@ -73,8 +138,9 @@ function soloRoute(state, spots, timestamp, peers = [], choice = heldSoloRoute(s
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const standalone = soloState(state);
     if (!choice) return null;
-    const row = choice.row;
-    let best = { ...row, income: choice.earning * Hunt.onSpotShare(state), spotId: choice.spot.id,
+    const row = choice.row, share = Hunt.onSpotShare(state);
+    // exp and deaths: the held row's hour (its own samples, its crowd), at the bot's time on the spot.
+    let best = { ...row, income: choice.earning * share, exp: positive(row.exp) * share, spotId: choice.spot.id,
         travelHours: WalkBack.tripHours(state.loc, choice.spot, state, spots), source: 'solo_route', buffPrice: 0 };
     // At most one physically available provider: compare buying its native
     // useful effects at the existing price with the unbuffed earning route.
@@ -93,8 +159,9 @@ function soloRoute(state, spots, timestamp, peers = [], choice = heldSoloRoute(s
         if (!Match.spotMatchup(choice.spot, profiles, { soloSafety: true }).eligible) continue;
         const baseDamage = Match.damageRate(Match.stateProfiles(standalone, { timestamp, buffed: true }));
         const gain = baseDamage > 0 ? Match.damageRate(profiles) / baseDamage : 1;
-        const income = (row.income * Math.min(gain, 300 / Math.max(1, row.kills)) - price / duration) * Hunt.onSpotShare(state);
-        if (income > best.income) best = { ...best, income, buffPrice: price, source: 'paid_buff' };
+        const boost = Math.min(gain, 300 / Math.max(1, row.kills));
+        const income = (row.income * boost - price / duration) * share;
+        if (income > best.income) best = { ...best, income, exp: positive(row.exp) * boost * share, buffPrice: price, source: 'paid_buff' };
         break;
     }
     return best;
@@ -142,6 +209,21 @@ function prepare(members, { objective, party, spots, timestamp = Date.now() } = 
         // member's ownership share. Recovery gains wait for real samples.
         return { ...row, kills: row.kills * Math.max(1, gain) };
     });
+    // A party's healer heals what the others take (a C4 party takes one for it): a
+    // member that does not rest for mana fights on without its rest (a kill takes
+    // the reference's kill time less its rest, SpotValueTable.cycle, at most the
+    // spot's cap) and does not die of the damage. Our choice: no heal model beyond.
+    const healed = members.map((member, index) => !Roles.shouldRestForMana(member)
+        && members.some((peer, other) => other !== index && Roles.isHealer(peer)));
+    for (let index = 0; index < members.length; index++) {
+        const row = values[index];
+        if (!healed[index] || !row) continue;
+        const cycle = Table.cycle(spot.id, Table.roleFor(members[index]), members[index].level, true);
+        const kill = cycle?.kph > 0 ? 3600 / cycle.kph : 0;
+        if (!(kill > positive(cycle?.rest)) || !(cycle.rest > 0)) continue;
+        const kills = row.kills * kill / (kill - cycle.rest);
+        values[index] = { ...row, kills: cycle.cap > 0 ? Math.min(cycle.cap, kills) : kills };
+    }
     const gross = Table.value(spot.id, 'dps', level, true) || Table.value(spot.id, 'mage', level, true);
     const safe = Match.spotMatchup(spot, Match.stateProfiles(buffed[0],
         { timestamp, capacityStates: buffed, mode: 'party', buffed: true }), { soloSafety: true }).eligible;
@@ -149,27 +231,35 @@ function prepare(members, { objective, party, spots, timestamp = Date.now() } = 
     // The cold resolver opens at most one encounter per 12 seconds, shared
     // by all members. A large group cannot multiply that supply of monsters.
     const kills = Math.min(300, totalKills) * Math.min(1, positive(party?.cohesion || 0.65));
+    // The party's exp (C4, L2J Lisvus L2Party.distributeXpAndSp: each kill's exp at
+    // the party's top level, times the party bonus by members, split by squared
+    // level, low members cut off: PartyRewardMath, the cold party's own split).
+    const expShares = gross?.kills > 0 && kills > 0 ? PartyRewardMath.sharesForLevels(members.map(member => positive(member.level) || 1),
+        kills * positive(gross.exp) / gross.kills, 0) : [];
+    const expOf = new Map(expShares.map(share => [share.index, share.exp]));
     const rows = new Map();
     for (let index = 0; index < members.length; index++) {
-        const member = members[index], row = values[index];
+        const member = members[index], row = values[index], onSpot = Hunt.onSpotShare(member);
+        // Its own row's deaths per kill over its share of the party's kills; none healed.
+        const raw = row && Table.value(spot.id, Table.roleFor(member), member.level, true,
+            { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
+        const share = row?.kills > 0 && totalKills > 0 ? row.kills / totalKills : 0;
+        const deaths = healed[index] || !(raw?.kills > 0) ? 0 : positive(raw.deaths) / raw.kills * kills * share * onSpot;
         const observed = Hunt.sampledRows(member, timestamp, 'party')
             .filter(sample => sample.spotId === spot.id && sample.partyRoster === key);
-        const actual = Hunt.bestIncome(observed, Hunt.onSpotShare(member));
-        if (actual) { rows.set(member.characterId, { income: actual.perHour, kills: observed[0].kills / observed[0].cycleMs * HOUR_MS,
-            spotId, source: 'own_party', travelHours: 0 }); continue; }
+        const actual = Hunt.bestIncome(observed, onSpot);
+        if (actual) { rows.set(member.characterId, { income: actual.perHour, exp: actual.expPerHour, deaths,
+            kills: observed[0].kills / observed[0].cycleMs * HOUR_MS, spotId, source: 'own_party', travelHours: 0 }); continue; }
         if (!safe || !gross?.kills || !row?.kills || !kills) continue;
         const costs = Hunt.consumablePrices(member);
-        const share = row.kills / totalKills;
         const expected = Rewards.value(spot, level, { spoilSkillLevel: index === spoilerIndex ? Rewards.spoilSkillLevel(member) : 0,
             spoilerLevel: member.level });
         const drop = expected ? expected.drop : (gross.dropLoot ?? gross.loot) / gross.kills;
         // Spoil stays with its spoiler under the native party agreement.
-        const raw = Table.value(spot.id, Table.roleFor(member), member.level, true,
-            { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         const spoil = expected?.spoil || 0;
         const income = kills * ((expected?.adena ?? gross.adena / gross.kills) / members.length + drop / members.length + spoil
             - share * (raw.shots * costs.shots + raw.potions * costs.potions) / raw.kills);
-        rows.set(member.characterId, { income: income * Hunt.onSpotShare(member), kills, spotId,
+        rows.set(member.characterId, { income: income * onSpot, exp: positive(expOf.get(index)) * onSpot, deaths, kills, spotId,
             source: 'table_party', travelHours: WalkBack.tripHours(member.loc, spot, member, spots) });
     }
     return { rows, spots, timestamp, spot, roster: key };
@@ -278,15 +368,19 @@ function compare(state, peers, options = {}) {
     const prepared = options.prepared || prepare(members, options);
     const id = Number(state.characterId);
     const held = options.solo?.has(id) ? options.solo.get(id) : heldSoloRoute(state, prepared.spots, prepared.timestamp);
-    const solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, held);
-    const party = prepared.rows.get(state.characterId) || null;
-    const focus = state.stats?.wishFocus;
+    const solo = withDeathHours(state, soloRoute(state, prepared.spots, prepared.timestamp, peers, held), prepared.spots);
+    const party = withDeathHours(state, prepared.rows.get(state.characterId) || null, prepared.spots);
     const materialParty = Material.isObjective(options.objective);
     const agreement = materialParty ? options.party?.stats?.agreement || Material.agreement(members, options.objective)
         : options.party?.stats?.agreement;
     const aim = goalOf(state, members, options.objective, agreement), { materialGoal, goal } = aim;
-    const cash = materialParty ? materialGoal?.materialCash ?? null : positive(focus?.[2]) || null;
     const spendable = Math.max(0, positive(state.adena) - positive(Packet.refillReserve(state.stats?.money)));
+    // Saving for its path's piece: the price its build armed as the next it cannot
+    // pay (DecisionSections.affordAtOf, kind focus: the weapon bridge or the nearer
+    // of the focus and the gear plan's market piece); a material need's own cash.
+    const afford = state.stats?.wishSections?.affordAt;
+    const cash = materialGoal ? materialGoal.materialCash ?? null
+        : afford?.kind === 'focus' && positive(afford.at) > spendable ? positive(afford.at) : null;
     const help = options.party?.stats?.agreement?.help || options.objective?.helpDeal;
     const payer = Number(help?.payerId) === Number(state.characterId);
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;
@@ -303,10 +397,10 @@ function compare(state, peers, options = {}) {
     // Joining an existing hunt does not add a recipient to its funded escrow.
     const rewardFee = !payer && (!helpers || helpers.some(id => Number(id) === Number(state.characterId)))
         ? positive(helpers ? help.remaining ?? help.fee : help?.fee) / Math.max(1, helpers?.length ?? peers.length) : 0;
-    const answer = evaluate({ solo, party, cash, spendable, fee, soloItemHours, partyItemHours, deliveryHours,
-        rewardFee,
+    const answer = evaluate({ solo, party, remaining: remainingExp(state), cash, spendable, fee, soloItemHours, partyItemHours,
+        deliveryHours, rewardFee, lean: partyLean(state),
         assemblyHours: options.party ? 0 : positive(party?.travelHours) + 45000 / HOUR_MS });
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { compare, prepare, evaluate, heldSoloRoute, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, soloState };
+module.exports = { compare, prepare, evaluate, levelHours, partyLean, partnerFor, heldSoloRoute, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, soloState };

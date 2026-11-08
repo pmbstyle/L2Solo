@@ -1,7 +1,7 @@
 'use strict';
 
 const TendencyRoll = require('../AI/TendencyRoll');
-const PartyIncomeComparison = require('./PartyIncomeComparison');
+const PartyProgressComparison = require('./PartyProgressComparison');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const Packet = require('../Economy/StatsPacket');
@@ -27,7 +27,7 @@ function groupContext(party, members, deps = {}) {
 }
 
 function decide(state, peers, options = {}) {
-    const economic = PartyIncomeComparison.compare(state, peers, options);
+    const economic = PartyProgressComparison.compare(state, peers, options);
     if (economic) return { ...economic, probability: economic.accept ? 1 : 0,
         roll: options.roll ?? 0.5, goal: declaration(state) };
     return participation(state, peers, { ...options,
@@ -47,23 +47,23 @@ function pending(party, members) {
     return { objective: party.stats?.objective, memberGoals: members.map(declaration) };
 }
 
-// The inputs of a party's income review (PartyIncomeComparison.prepare and
+// The inputs of a party's progress review (PartyProgressComparison.prepare and
 // compare), each moved by an event, hashed: the roster and the objective with
 // its help deal and material needs (party writes), and per member its level,
-// class, learned Spoil level, kit (the decision's kit fact), observed income
+// class, learned Spoil level, kit (the decision's kit fact), observed hunt
 // (the decision's observation baseline: the observation event renews it when
-// the income the member measures drifts beyond its own error, at its rest),
+// what the member measures drifts beyond its own error, at its rest),
 // solo income (its packet's hour: its held earning spot's, renewed when that is
-// searched again) and goal (its wish focus with the cash
-// it names, its party request and plan step), and the spot the forecast reads
-// (PartyIncomeComparison.prepare's: the objective's, else the party's, else
+// searched again) and goal (its wish focus, the price it saves for (affordAt),
+// its party request and plan step), and the spot the forecast reads
+// (PartyProgressComparison.prepare's: the objective's, else the party's, else
 // the first member's). The review runs when this moves, never on the clock.
-// Not in it: the party's cohesion, which drifts every fight and scales only
-// the table forecast, which departs nobody
-// (PopulationService departs on an own_party review); the wallet, heard in
+// Not in it: the exp inside a level (its hours to the level go stale until the
+// level or another input moves); the party's cohesion, which drifts every fight
+// and scales only the table forecast, which departs nobody; the wallet, heard in
 // town by the member's own decision; the solo route of a member whose
-// decision holds no earning spot (PartyIncomeComparison.soloRoute's own memo).
-function incomeReviewKey(party, members, objective) {
+// decision holds no earning spot (PartyProgressComparison.soloRoute's own memo).
+function progressReviewKey(party, members, objective) {
     const goal = row => row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? row.kind ?? null,
         row.amount ?? null] : null;
     const help = party.stats?.agreement?.help || objective?.helpDeal;
@@ -75,7 +75,7 @@ function incomeReviewKey(party, members, objective) {
             const stats = member.stats || {};
             return [Number(member.characterId), Number(member.level || 0), stats.classId ?? member.classId ?? null,
                 Rewards.spoilSkillLevel(member), stats.wishSections?.build ?? null, stats.wishSections?.sample ?? null,
-                Number(Packet.hourAdena(stats.money)) || 0, stats.wishFocus?.[0] ?? null, stats.wishFocus?.[2] ?? null,
+                Number(Packet.hourAdena(stats.money)) || 0, stats.wishFocus?.[0] ?? null, stats.wishSections?.affordAt?.at ?? null,
                 goal(stats.partyRequest), goal(stats.equipmentPlan?.next)];
         })]));
 }
@@ -98,10 +98,10 @@ function joint(party, members, { context = null, spots, timestamp = context?.tim
     if (!previous?.clanGoalKey && previous?.sourceKind !== 'raid' && !previous?.helpDeal
         && members.every(member => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member))
         && members.some(member => member.spotId)
-        && (key = incomeReviewKey(party, members, previous)) !== party.stats?.incomeReviewKey) {
-        const prepared = PartyIncomeComparison.prepare(members, { party, objective: previous, timestamp, spots });
-        review = { lastIncomeReviewAt: timestamp, incomeReviewKey: key, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
-            ...PartyIncomeComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
+        && (key = progressReviewKey(party, members, previous)) !== party.stats?.progressReviewKey) {
+        const prepared = PartyProgressComparison.prepare(members, { party, objective: previous, timestamp, spots });
+        review = { lastProgressReviewAt: timestamp, progressReviewKey: key, progressReviews: members.map(member => ({ characterId: Number(member.characterId),
+            ...PartyProgressComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
     }
     return { objective, memberGoals: goals, ...(context?.statsPacket || {}), ...review };
 }
@@ -126,13 +126,13 @@ function formingMembers(members, requested, options = {}) {
     // PartyStay.joins) is not taken: no party formed to dissolve.
     members = members.filter(member => PartyStay.joins(member, options.timestamp));
     const filter = roster => {
-        const prepared = PartyIncomeComparison.prepare(roster, { objective: requested, ...options });
+        const prepared = PartyProgressComparison.prepare(roster, { objective: requested, ...options });
         return roster.filter(member => {
             const adventurer = invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member);
             if (!adventurer && member.stats?.partyRequest?.priority === 'required') return true;
             // A candidate with no held earning answer has no solo side to compare: it skips this round (its earning
             // spot is woken and decides at its next step): party_solo:none (developerDiagnostics).
-            // (Only where the comparison runs: an adventurer with a spot and a class, PartyIncomeComparison.compare.)
+            // (Only where the comparison runs: an adventurer with a spot and a class, PartyProgressComparison.compare.)
             if (adventurer && member.spotId && Number.isFinite(Number(member.stats?.classId ?? member.classId))
                 && member.stats?.earning === undefined) {
                 invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo', 'none');
@@ -170,32 +170,32 @@ function judgeForming(members, requested, { spots, timestamp, solo }) {
     const formed = new Set(formingMembers(members, requested, { spots, timestamp, solo,
         onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
         .map(member => Number(member.characterId)));
-    const incomeReviews = members.map(member => {
+    const progressReviews = members.map(member => {
         // The wire packet carries only the validated economic fields of the comparison.
         const characterId = Number(member.characterId), checked = decisions.get(characterId);
         const reviewed = checked?.at === timestamp;
         const row = { characterId, ...(reviewed ? checked
-            : { ...PartyIncomeComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }),
+            : { ...PartyProgressComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }),
         accept: reviewed && formed.has(characterId) };
         delete row.probability; delete row.roll; delete row.goal;
         return row;
     });
-    return { formingAccepted: incomeReviews.filter(row => row.accept).map(row => row.characterId),
-        lastIncomeReviewAt: timestamp, incomeReviews };
+    return { formingAccepted: progressReviews.filter(row => row.accept).map(row => row.characterId),
+        lastProgressReviewAt: timestamp, progressReviews };
 }
 
-// A prospective roster needs one bounded income/safety forecast, not new
+// A prospective roster needs one bounded progress/safety forecast, not new
 // personal or group wishes. Main commits only if every required voter agrees.
 function recruitment(party, members, { spots, timestamp = Date.now() } = {}) {
     const objective = party.stats?.objective;
-    const prepared = PartyIncomeComparison.prepare(members, { party, objective, spots, timestamp });
+    const prepared = PartyProgressComparison.prepare(members, { party, objective, spots, timestamp });
     const goals = CraftMaterialParty.isObjective(objective) ? CraftMaterialParty.needs(members, objective, party.stats.agreement) : null;
     return { objective, memberGoals: members.map(member => goals
         ? { characterId: Number(member.characterId), ...goals.find(goal => goal.characterId === Number(member.characterId)) }
-        : declaration(member)), lastIncomeReviewAt: timestamp,
-    incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
-        ...(PartyIncomeComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective })
-            || { ...PartyIncomeComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }) })) };
+        : declaration(member)), lastProgressReviewAt: timestamp,
+    progressReviews: members.map(member => ({ characterId: Number(member.characterId),
+        ...(PartyProgressComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective })
+            || { ...PartyProgressComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }) })) };
 }
 
 // One look per member per share-out: every item of a drop asked a full decision
@@ -211,5 +211,5 @@ function itemNeed(state, item, projected) {
     return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, pending, joint, incomeReviewKey, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
+module.exports = { declaration, pending, joint, progressReviewKey, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
     recruitment, itemNeed };
