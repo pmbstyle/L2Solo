@@ -59,7 +59,7 @@ const PopulationStatus = {
         }
         const active = Math.max(0, hot - merchants);
         const lifeCounts = LifeState.counts();
-        const coldQueue = LifeState.coldDueSummary();
+        const coldQueue = LifeState.coldDueSummary(Date.now(), invoke('GameServer/Bot/Population/ColdSimulationCoordinator').nearHolds);
         const partyCounts = PartyState.counts();
         const targetCombat = LifeState.targetCombatSummary();
         const partyRequests = LifeState.partyRequestSummary();

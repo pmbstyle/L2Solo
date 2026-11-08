@@ -207,23 +207,46 @@ async function run() {
     assert.strictEqual(activated[0], 'Group0',
         'a visible party must be activated before standalone cold simulation can consume the scan budget');
 
-    // A row the scan cannot place (its own state refuses it) takes no place in the
-    // scan's budget: the next nearest rows are tried and shown, and the refused row
-    // is no longer one the scan will turn hot (the near hold lets it step).
-    Parties.find = originalFindParty;
+    // A row the scan cannot show (refused for any reason) takes no place in the scan's
+    // budget: the next nearest rows are tried and shown. The scan takes (the near hold
+    // keeps unstepped) only the rows it left for its budget, every member of a party it
+    // left; a refused row steps on, so does a row it no longer reads.
+    Parties.find = id => id === 'cut-party' ? { status: 'active', memberIds: [401, 402, 403] } : null;
     Config.maxActivationsPerScan = 2;
-    LifeState.coldNear = async () => [301, 302, 303, 304, 305].map(id => ({ characterId: id, name: `Row${id}`, level: 45, activity: 'hunting' }));
+    const cutParty = { characterId: 401, name: 'CutLeader', level: 45, activity: 'grouped', party: { partyId: 'cut-party' } };
+    LifeState.coldNear = async () => [cutParty, ...[301, 302, 303, 304, 305]
+        .map(id => ({ characterId: id, name: `Row${id}`, level: 45, activity: 'hunting' }))];
     activated.length = 0;
+    const requested = [];
     PopulationService.requestActivation = async state => {
-        if (state.characterId <= 302) return { ok: false, reason: 'no_safe_activation_placement', state, byState: true };
+        requested.push(state.name);
+        if (state.characterId === 401) return { ok: false, reason: 'activation_pending', state };
+        if (state.characterId === 301) return { ok: false, reason: 'no_safe_activation_placement', state };
+        if (state.characterId === 302) return { ok: false, reason: 'missing_account', state };
         activated.push(state.name);
         return { ok: true, state };
     };
     await PopulationService.activateNearPlayers();
     assert.deepStrictEqual(activated, ['Row303', 'Row304'],
-        'rows that cannot be placed do not use up the scan: the next nearest are shown, within the budget');
-    assert.strictEqual(PopulationService.nearActivationRefused(301), true, 'the scan refused the row it cannot place');
-    assert.strictEqual(PopulationService.nearActivationRefused(305), false, 'a row left for budget is still to be shown');
+        'rows that cannot be shown do not use up the scan: the next nearest are shown, within the budget');
+    assert.deepStrictEqual(requested, ['CutLeader', 'Row301', 'Row302', 'Row303', 'Row304'], 'a row past the budget is not tried');
+    assert.deepStrictEqual([301, 302, 303, 305, 401].map(id => PopulationService.nearActivationTakes(id)),
+        [false, false, false, true, false], 'the scan takes only the row it left for its budget');
+    // Two parties and a solo row, budget 4: the first party shows 3, the second (3) is
+    // left for the budget with every member, the solo row still fits.
+    Parties.find = id => ({ 'party-a': { status: 'active', memberIds: [501, 502, 503] },
+        'party-b': { status: 'active', memberIds: [601, 602, 603] } })[id] || null;
+    LifeState.coldNear = async () => [{ characterId: 501, name: 'A1', level: 45, activity: 'grouped', party: { partyId: 'party-a' } },
+        { characterId: 602, name: 'B2', level: 45, activity: 'grouped', party: { partyId: 'party-b' } },
+        { characterId: 306, name: 'Row306', level: 45, activity: 'hunting' }];
+    activated.length = 0;
+    PopulationService.requestActivation = async state => { activated.push(state.name); return { ok: true, state, count: state.party ? 3 : 1 }; };
+    Config.maxActivationsPerScan = 4;
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['A1', 'Row306']);
+    assert.deepStrictEqual([601, 602, 603, 501, 306, 305].map(id => PopulationService.nearActivationTakes(id)),
+        [true, true, true, false, false, false], 'a party left for the budget is taken whole; a row no longer read is not');
+    Parties.find = originalFindParty;
 
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');

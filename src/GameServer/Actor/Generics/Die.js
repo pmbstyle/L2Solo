@@ -30,15 +30,16 @@ function die(session, actor, context = {}) {
     }
 
     const victimSession = actor.session || session;
+    const killer = context.killer ?? context.source;
+    const killerPlayable = !!killer && killer !== actor && !killer.fetchKind;
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
     if (!ArenaDuelService.duelForActor?.(actor)) require('./PkDeathDrop').drop(victimSession, actor);
     if (typeof actor.fetchExp === 'function' && typeof actor.setExpSp === 'function' && !actor.fetchKind) {
-        const killer = context.killer ?? context.source;
         invoke('GameServer/Progression/DeathExperience').applyDeathPenalty(victimSession, actor, {
             timestamp: context.timestamp,
             arena: victimSession?.arenaEphemeral === true || !!victimSession?.arenaDuelId
                 || !!ArenaDuelService.duelForActor?.(actor),
-            killerPlayable: !!killer && killer !== actor && !killer.fetchKind,
+            killerPlayable,
             clanWar: context.clanWar === true || !!killer && Number(actor.fetchClanId?.()) > 0
                 && (Number(killer.fetchClanId?.()) > 0 || Number(killer.fetchOwnerId?.()) > 0)
                 && invoke('GameServer/Clan/ClanWarRuntime').between(killer, actor).outgoing,
@@ -86,13 +87,12 @@ function die(session, actor, context = {}) {
             });
             // Its death is a far round's (deaths, the spot's risk, recovery): the died situation
             // re-decides its spot on the row that carries it.
-            const recorded = Life.recordNearFight(victimSession, prior, { died: true, timestamp });
+            const recorded = Life.recordNearFight(victimSession, prior, { died: true, timestamp, pvp: killerPlayable });
             victimSession.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...progress } };
         }
         Life.notifyNearFacts(victimSession, 'death');
         const Trace = invoke('GameServer/Bot/DecisionTrace');
         if (Trace.on()) {
-            const killer = context.killer ?? context.source;
             // Where and how the body died: the spot it hunts (the row's may be the one it left), what it was
             // doing, the mobs still on it and its time since it went hot (near and far deaths compared).
             const hotAt = Number(victimSession.populationHotAt) || 0;
