@@ -5,8 +5,9 @@
 // both taken on the background thread (ColdSimulationWorker rebuffTaken). Its answer,
 // stats.rebuff { via: 'none'|'guide'|'hall'|'buffer', providerId, at, done }, is held
 // and carried out once by its executor, which marks it done: a far bot's guide visit
-// (ColdGuideVisit) and hall visit (ClanHall/ColdVisit) on main, its buffer's sale on
-// the background thread (the step's buffOffer, ColdBuffOffer.offer); a body's guide
+// (ColdGuideVisit, its step's round) and buffer's sale (the step's buffOffer,
+// ColdBuffOffer.offer) on the background thread, its hall visit (ClanHall/ColdVisit)
+// on main; a body's guide
 // trip (HuntingState), hall visit (ClanHall/BotVisit) and purchase (BuffService). A
 // trip that fails holds its answer done: nothing more until the next situation.
 const NONE = 'none';

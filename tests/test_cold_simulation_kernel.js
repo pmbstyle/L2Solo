@@ -393,6 +393,50 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.equal(combats, Number(!expired), 'an ongoing fight keeps ownership; an expired record cannot block the occupation');
     }
 
+    // A far newbie's held guide answer is its worker step's round: the guide's three
+    // buffs, no HP/MP, the walk there and back spent resting, the answer done. The step's
+    // packet (merged after the round, as the projection does) holds it done too, so the
+    // committed state carries the visit out once. In town (a command step) the same
+    // round rides the command, with no walk.
+    {
+        const Buffs = invoke('GameServer/Bot/AI/BotBuffs');
+        const guide = Buffs.GUIDES[0], at = 5000;
+        const answer = { via: 'guide', providerId: null, at: 4000 };
+        const newbie = (id, activity) => state(id, { level: 12, activity,
+            loc: { locX: guide.locX + 3000, locY: guide.locY, locZ: guide.locZ },
+            vitals: { hp: 10, maxHp: 200, mp: 5, maxMp: 100 },
+            stats: { karma: 0, coldCombat: { effects: [] }, rebuff: answer } });
+        assert.strictEqual(lifecycleKind(newbie(90010, 'hunting')), 'resolver', 'a field newbie steps on the worker');
+        let combats = 0, projected = null;
+        const guided = recordingKernel({ now: () => at,
+            resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: ({ state: current }) => ({ plannedState: current, statsPacket: { rebuff: answer } }),
+            projectResolve: (current, result, stamp, plan) => (projected = { state: { ...current, activity: result.patch.activity,
+                vitals: { ...current.vitals, ...result.patch.vitals }, stats: { ...current.stats, ...result.patch.stats, ...plan.statsPacket } } }),
+            emit: () => {} });
+        guided.upsert(standOn(guided, { state: newbie(90010, 'hunting') }, { id: 'newbie-field' }));
+        guided.tick(); await guided.resolveChain; guided.flush(null, true);
+        const proposal = sentProposals.get(guided).get(90010);
+        assert(proposal && projected, 'the visit is the worker step\'s proposal, not a command');
+        assert.equal(combats, 0, 'no fight on the guide\'s round');
+        const committed = proposal.nextState;
+        assert.deepStrictEqual(committed.stats.coldCombat.effects.map(effect => effect.key).sort(),
+            Buffs.newbieEffects(at).map(effect => effect.key).sort());
+        assert.equal(committed.vitals.hp, 10, 'the guide restores no HP');
+        assert.equal(committed.activity, 'resting', 'the walk there and back');
+        assert.equal(committed.stats.rebuff.done, true, 'carried out once: the packet holds it done');
+        assert.equal(proposal.result.events[0].type, 'newbie_guide');
+        const town = recordingKernel({ now: () => at, resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: ({ state: current }) => ({ plannedState: current, statsPacket: { rebuff: answer } }), emit: () => {} });
+        town.upsert(standOn(town, { state: newbie(90011, 'shopping') }, { id: 'newbie-town' }));
+        town.tick(); await town.resolveChain;
+        const request = sentCommands.get(town).get(90011);
+        assert.equal(request.precomputedResult.debug.activity, 'newbie_guide');
+        assert.equal(request.precomputedResult.patch.activity, undefined, 'in town no walk');
+        assert.equal(request.precomputedPlan.statsPacket.rebuff.done, true);
+        assert.equal(combats, 0);
+    }
+
     assert.strictEqual(lifecycleKind(state(2, { activity: 'crafting' })), 'command');
     const clanDuty = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear' };
     for (const activity of ['shopping', 'crafting', 'merchant']) {

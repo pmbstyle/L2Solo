@@ -46,12 +46,6 @@ function tripGuide(session, actor, BotAI) {
     return Number(session?.newbieGuideRetryAt || 0) > Date.now() ? null : nearGuide(actor, BotAI);
 }
 
-// The guide a low-HP/MP bot may recover at: the trip rule, for levels the
-// guide still serves.
-function recoveryGuide(session, bot, BotAI) {
-    return bot.fetchLevel() <= BotBuffs.NEWBIE_GUIDE_MAX_LEVEL ? tripGuide(session, bot, BotAI) : null;
-}
-
 function currentVisit(actor, BotAI) {
     if (!BotBuffs.isNewbieEligible(actor)) return null;
     const point = pointOf(actor);
@@ -126,7 +120,6 @@ module.exports = {
     markCompleted,
     nearGuide,
     needsVisit,
-    recoveryGuide,
     syncVisit,
     tripGuide
 };

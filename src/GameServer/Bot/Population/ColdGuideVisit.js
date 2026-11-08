@@ -1,14 +1,16 @@
 'use strict';
 
 // A far bot's Newbie Guide visit: the executor of its rebuff answered the guide
-// (Bot/AI/Rebuff), main's command step (PopulationService's entry branch, routed by
-// the kernel). The guide in reach gives its blessing (BotBuffs.newbieEffects: its
-// three 20-minute buffs) and full HP/MP, as it does a body (applyFullNewbieBlessing).
-// A bot in the field walks to the guide and back: that time it rests (no fights) at
-// the walking pace a far bot's town walk uses (ColdVisit). Done once, buffed or not
-// (its level or karma moved since the answer, the guide is out of reach, or the bot
-// died in the round: a dead bot walks to no guide, and its restart's field step
-// reads its buffs anew, Situations.buffFact); a refusal is counted rebuff:guide:<why>.
+// (Bot/AI/Rebuff), the round of its worker step (ColdSimulationKernel guideRound;
+// pure, on the background thread). The guide in reach gives its blessing
+// (BotBuffs.newbieEffects: its three 20-minute buffs) and no HP/MP, as it does a
+// body (applyFullNewbieBlessing; C4: L2J Lisvus's newbie helper casts its buffs and
+// restores nothing). A bot in the field walks to the guide and back: that time it
+// rests (no fights) at the walking pace a far bot's town walk uses (ColdVisit). Done
+// once, buffed or not (its level or karma moved since the answer, the guide is out
+// of reach, or the bot died in the round: a dead bot walks to no guide, and its
+// restart's field step reads its buffs anew, Situations.buffFact); a refusal is
+// counted rebuff:guide:<why>.
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const Rebuff = invoke('GameServer/Bot/AI/Rebuff');
 const WALK_UNITS_PER_SECOND = 120;
@@ -18,7 +20,7 @@ function pending(state) {
     return Rebuff.pending(state?.stats, 'guide');
 }
 
-// The step's resolve result (BotLifeState.applyResolve).
+// The step's round (its result, as resolveSolo's: BotLifeState.prepareResolve).
 function plan(state, timestamp) {
     const answer = pending(state), stats = state.stats || {};
     const guide = BotBuffs.closestGuide(state.loc);
@@ -35,8 +37,6 @@ function plan(state, timestamp) {
     if (serves) {
         patch.stats.coldCombat = { ...stats.coldCombat,
             effects: [...(stats.coldCombat?.effects || []).filter(effect => !keys.has(effect.key)), ...blessing] };
-        patch.vitals = { ...state.vitals, hp: Number(state.vitals?.maxHp || 0) || state.vitals?.hp,
-            mp: Number(state.vitals?.maxMp || 0) || state.vitals?.mp };
     }
     if (walkMs > 0) {
         patch.activity = 'resting';
@@ -48,11 +48,4 @@ function plan(state, timestamp) {
     debug: { activity: serves ? 'newbie_guide' : `newbie_guide_${refused}`, fights: 0, wins: 0 } };
 }
 
-async function resolve(state, timestamp = Date.now(), options = {}) {
-    const next = plan(state, timestamp);
-    const saved = await invoke('GameServer/Bot/Population/BotLifeState').applyResolve(state, next, options);
-    if (saved && next.events.length) await invoke('GameServer/Bot/Population/BotLifeEvents').recordMany(state.characterId, next.events);
-    return { ok: !!saved, state: saved || state, debug: next.debug };
-}
-
-module.exports = { pending, plan, resolve };
+module.exports = { pending, plan };

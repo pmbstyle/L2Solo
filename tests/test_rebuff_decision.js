@@ -92,7 +92,7 @@ const ends = blessing[0].expiresAt;
     assert.equal(Buffs.newbieEligible(10, 5), false, 'no blessing with karma');
 }
 
-// A far newbie's guide visit: the blessing and full HP/MP, the walk spent resting; done once.
+// A far newbie's guide visit: the blessing and no HP/MP (C4: the guide only buffs), the walk spent resting; done once.
 {
     const guide = Buffs.GUIDES[0];
     const newbie = { characterId: 1, name: 'Newbie', level: 12, activity: 'hunting', phase: 'cold',
@@ -101,7 +101,7 @@ const ends = blessing[0].expiresAt;
         stats: { karma: 0, coldCombat: { effects: [] }, rebuff: { via: 'guide', providerId: null, at } } };
     const visit = Guide.plan(newbie, at);
     assert.deepEqual(visit.patch.stats.coldCombat.effects.map(effect => effect.key).sort(), blessing.map(effect => effect.key).sort());
-    assert.equal(visit.patch.vitals.hp, 200);
+    assert.equal(visit.patch.vitals?.hp ?? newbie.vitals.hp, 10, 'the guide restores no HP');
     assert.equal(visit.patch.activity, 'resting', 'the walk to the guide and back is no hunt');
     assert.equal(visit.patch.stats.restUntil, at + 50000, '6000 units there and back at 120 a second');
     assert.equal(visit.patch.stats.rebuff.done, true);
