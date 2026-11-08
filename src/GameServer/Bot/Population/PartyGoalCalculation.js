@@ -96,7 +96,7 @@ function recruitCheck(party, members, { spots, timestamp }) {
     // A recruit whose own stay would leave at once is no join (PartyStay.joins).
     const current = new Set((party.memberIds || []).map(Number));
     const refused = members.some(member => (material ? Progression.adventurer(member) : Progression.personal(member))
-        && !joint.incomeReviews.find(row => row.characterId === Number(member.characterId))?.accept)
+        && !joint.progressReviews.find(row => row.characterId === Number(member.characterId))?.accept)
         || members.some(member => !current.has(Number(member.characterId)) && !require('./PartyStay').joins(member, timestamp));
     return refused ? null : { ...joint, agreement: agreement || null };
 }

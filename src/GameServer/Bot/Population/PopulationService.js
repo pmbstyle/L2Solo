@@ -581,7 +581,7 @@ function hydratePartyCandidates(candidates = []) {
 }
 
 // Writes recruits into a party: the leader elected over the whole roster, the
-// recruit check's answer (joint: member goals, income reviews; null for a clan
+// recruit check's answer (joint: member goals, progress reviews; null for a clan
 // or raid objective, which joins without one), the pending join cleared, one
 // fenced transaction with every member (commitPartyMembership). The updated
 // party, or null when the fence refused it.
@@ -595,7 +595,7 @@ function joinPartyRecruits(party, members, recruits, joint) {
             : party.stats?.agreement;
     const stats = {
         ...(party.stats || {}),
-        ...(joint ? { lastIncomeReviewAt: joint.lastIncomeReviewAt, incomeReviews: joint.incomeReviews } : {}),
+        ...(joint ? { lastProgressReviewAt: joint.lastProgressReviewAt, progressReviews: joint.progressReviews } : {}),
         memberGoals: joint?.memberGoals || allMembers.map(PartyGoalPolicy.declaration),
         agreement: agreement ? { ...agreement, memberIds: allMembers.map(member => member.characterId) } : null
     };
@@ -773,8 +773,8 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
             return null;
         }
         // A material roster keeps the reviews of its admission (CraftMaterialParty: economic accepts only).
-        if (verdict.incomeReviews) review = { lastIncomeReviewAt: verdict.lastIncomeReviewAt,
-            incomeReviews: verdict.incomeReviews.filter(row => accepted.has(row.characterId)) };
+        if (verdict.progressReviews) review = { lastProgressReviewAt: verdict.lastProgressReviewAt,
+            progressReviews: verdict.progressReviews.filter(row => accepted.has(row.characterId)) };
     }
     const leader = PartyComposition.chooseLeader(members);
     if (!leader) { await options.onRefused?.(); return null; }

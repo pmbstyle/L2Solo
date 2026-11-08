@@ -146,7 +146,7 @@ const tests = [
     'tests/test_bot_crystallization_fallback.js',
     'tests/test_bot_henna_snapshot.js',
     'tests/test_cold_combat_seed_henna.js',
-    'tests/test_party_income_comparison.js',
+    'tests/test_party_progress_comparison.js',
     'tests/test_craft_material_party.js',
     'tests/test_craft_material_party_risk_route.js',
     'tests/test_craft_material_party_travel_commit.js',

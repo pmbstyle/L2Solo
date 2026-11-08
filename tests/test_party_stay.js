@@ -26,7 +26,7 @@ try {
     assert.deepStrictEqual(Stay.decide(member(1, { stats: { karma: 10 } })), { answer: 'leave', reason: 'karma' });
     assert.strictEqual(Stay.decide(member(1), { bridgeReason: () => 'weapon_bridge' }).reason, 'weapon_bridge');
     assert.strictEqual(Stay.decide(member(1), { outleveled: true }).reason, 'party_outleveled');
-    assert.strictEqual(Stay.decide(member(1), { soloBeatsShare: () => true }).reason, 'solo_income');
+    assert.strictEqual(Stay.decide(member(1), { soloSooner: () => true }).reason, 'solo_sooner');
     Disposition.inventoryCleanupNeed = () => ({ reason: 'npc_only_inventory', slots: 10, limit: 80 });
     assert.deepStrictEqual(Stay.decide(member(1)), { answer: 'trip', reason: 'bag_full' }, 'a bag to sell goes to town');
     assert.strictEqual(Stay.decide(member(1), { clanDuty: true }).answer, 'stay', 'clan duty unloads only a bag at its floor');

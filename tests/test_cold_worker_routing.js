@@ -437,7 +437,7 @@ try {
     // A spot the party only met at (party income) holds while it stands for the party;
     // outgrown, the objective ends and the party routes as any other (here: no ground).
     const meeting = level => BotRoute.choose(crowdedMembers(level)[0], targetSpot,
-        { ...crowded, stats: { objective: { reason: 'party_income', spotId: targetSpot.id } } }, crowdedMembers(level),
+        { ...crowded, stats: { objective: { reason: 'party_progress', spotId: targetSpot.id } } }, crowdedMembers(level),
         { spots: [currentSpot, targetSpot], timestamp: Date.now() });
     assert.deepStrictEqual(meeting(19), { spotId: targetSpot.id }, 'a fitting meeting spot holds the party');
     assert.deepStrictEqual(meeting(60), { spotId: null, objectiveEnded: true }, 'an outgrown meeting spot ends the objective');

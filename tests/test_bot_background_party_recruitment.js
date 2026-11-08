@@ -152,7 +152,7 @@ async function run() {
             clanOperation: 'equipment', clanId: 9, objectiveKey: 'clan:9:equipment' } } },
     // A preferred request is closed the same way.
     { characterId: 78, name: 'Seeker', level: 20, phase: 'cold', activity: 'hunting', spotId: NATIVE_SPOT, party: {},
-        stats: { partyRequest: { status: 'open', priority: 'preferred', reason: 'party_income', spotId: NATIVE_SPOT,
+        stats: { partyRequest: { status: 'open', priority: 'preferred', reason: 'party_progress', spotId: NATIVE_SPOT,
             objectiveKey: 'spot:elsewhere' } } }]);
     PopulationService.partyFormationRunning = false;
     await PopulationService.formBackgroundParties();
@@ -194,7 +194,7 @@ async function run() {
         return Promise.resolve(null);
     };
 
-    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
     const prepared = Income.prepare(nativeRows, { party });
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const unbuffedGroup = Match.spotMatchup(nativeSpot, Match.stateProfiles(nativeRows[0],

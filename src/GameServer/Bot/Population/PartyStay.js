@@ -18,8 +18,9 @@ const Karma = require('./ColdKarmaPolicy');
 const STAY = Object.freeze({ answer: 'stay', reason: 'stay' });
 // member: its state; reads: { bridgeReason(member) (a funded weapon or armour bridge
 // the member goes to buy, GearAcquisitionPlanner.equipmentBridgeReason), outleveled
-// (the party's XP share excludes it, PartyRewardMath), soloBeatsShare() (its held solo
-// answer earns more than its party share, PartyIncomeComparison), clanDuty, now }.
+// (the party's XP share excludes it, PartyRewardMath), soloSooner() (its held solo
+// answer brings it to its next level sooner than its party share, its persona weighing
+// it, PartyProgressComparison), clanDuty, now }.
 function decide(member, reads = {}) {
     // Dead: the party's rescue rule holds it (a party revives or carries its dead).
     if (Number(member.vitals?.hp) <= 0 || member.activity === 'dead') return STAY;
@@ -32,7 +33,7 @@ function decide(member, reads = {}) {
     const bag = MarketBreak.cleanupNeed(member, reads.now);
     if (bag && (!reads.clanDuty || FLOOR.has(bag.reason))) return { answer: 'trip', reason: 'bag_full' };
     // A new grade (or any other wake): the held solo answer against its party share.
-    if (reads.soloBeatsShare?.()) return { answer: 'leave', reason: 'solo_income' };
+    if (reads.soloSooner?.()) return { answer: 'leave', reason: 'solo_sooner' };
     return STAY;
 }
 
