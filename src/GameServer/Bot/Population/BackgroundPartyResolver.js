@@ -80,12 +80,13 @@ function partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp })
         shareMobs: share === null ? Infinity : share * members.length + carry };
 }
 
-function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
+// kills: the mobs the round killed, every mob of a won pull one.
+function distributeRewards({ members, spot, kills: killCount, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
     const rates = ProgressionRates.profile();
     const levels = members.map((state) => Number(state.level || 1));
     const profiles = members.map((state) => ColdCombatProfile.fightProfile(state, timestamp));
     const spoilerIndex = members.findIndex((state) => BotRoles.isSpoiler(state));
-    const kills = Array.from({ length: wins }, (_, index) => ({
+    const kills = Array.from({ length: killCount }, (_, index) => ({
         npcSelfId: defeatedNpcIds[index],
         overhitContext: overhitContexts[index]
     }));
@@ -598,9 +599,13 @@ const BackgroundPartyResolver = {
             }));
             if (encounter.won) {
                 wins += 1;
-                mobsKilled += 1;
-                if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
-                overhitContexts.push(encounter.debug?.overhitContext || null);
+                // Every mob of the pull is a kill the share pays, as solo's; the last hit decides the overhit.
+                const paid = Math.max(1, Number(encounter.debug?.killsPaid) || 1);
+                mobsKilled += paid;
+                for (let kill = 1; kill <= paid; kill++) {
+                    if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
+                    overhitContexts.push(kill === paid ? encounter.debug?.overhitContext || null : null);
+                }
             }
             else if (!pending) losses += 1;
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
@@ -613,7 +618,7 @@ const BackgroundPartyResolver = {
             losses += 1;
         }
 
-        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, rng, timestamp });
+        const rewards = distributeRewards({ members, spot, kills: mobsKilled, defeatedNpcIds, overhitContexts, rng, timestamp });
         const memberResults = [];
         const events = [];
         let deaths = 0;

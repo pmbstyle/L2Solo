@@ -144,6 +144,23 @@ assert.strictEqual(Cold.npcForSpot(mixed, () => 0.99, { pull: true }).pull, 3, '
     assert.deepStrictEqual([lone.selfId, lone.pull, lone.aggressiveInterruption], [527, 1, true],
         'a wolf group it takes engages it first, a lone wolf');
 }
+// A party meets the whole pull as a solo hunter does (one rule, F20: the target's helpers and
+// aggressive neighbours come whoever hits it): two hunters on a field of gremlin pairs fight
+// both, and the round pays the spot share and the rewards for each mob.
+{
+    const PartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+    const pair = [hunter(), { ...hunter(), characterId: 73 }];
+    const fight = Resolver.resolvePartyFight({ members: pair, spot: gremlins(2), rng: () => 0, timestamp: 1e12 });
+    assert.deepStrictEqual([fight.won, fight.debug.killsPaid], [true, 2], 'a party fight on a field of pairs kills the pair');
+    const round = pull => PartyResolver.resolve({ party: { partyId: `pull_${pull}`, cohesion: 0.65, risk: 0, stats: {} },
+        members: pair, spot: gremlins(pull), elapsedMs: 60000, rng: () => 0, timestamp: 1e12 });
+    const singles = round(0), pairs = round(2);
+    assert(singles.debug.wins > 0 && pairs.debug.wins > 0);
+    assert.strictEqual(singles.debug.defeatedNpcIds.length, singles.debug.wins);
+    assert.strictEqual(pairs.debug.defeatedNpcIds.length, 2 * pairs.debug.wins, 'each won fight kills both gremlins');
+    const expPerWin = result => result.memberResults.reduce((sum, entry) => sum + entry.result.materialize.exp, 0) / result.debug.wins;
+    assert(Math.abs(expPerWin(pairs) / expPerWin(singles) - 2) < 0.1, 'each mob of the pull gives its exp');
+}
 // User 10-29: a round counts only the spawns the bot may fight. One lone gremlin group
 // (production 6 a hour) beside 45 trio spawns it cannot survive feeds one kill in ten
 // minutes and one fight a round, not the trios' respawns.

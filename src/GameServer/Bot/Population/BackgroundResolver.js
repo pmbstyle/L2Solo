@@ -1700,6 +1700,21 @@ function countHitRule(rule) {
     if (Diagnostics.active()) Diagnostics.count('cold_fight', 'rule', rule);
 }
 
+// The mob a fight meets, one rule for a solo fight and a party's (resolveFight,
+// resolvePartyFight): the whole pull its pick rolled (F20: ColdCombatProfile.npcForSpot
+// with pull; the target, its helpers and the aggressive mobs near it come
+// together, in C4 as in the hot world) as one view (BotPullEstimate.pullView),
+// its mobs standing together by the share of the hunters' damage by area
+// skills: the share given (a solo readiness read at the bot's vitals), else
+// the hunters' survival read of that pull (TargetMatchup.soloSurvival).
+function pulledMob(picked, profiles, areaShare = null) {
+    const pull = Number(picked.pull) || 1;
+    if (!(pull > 1)) return picked;
+    const share = areaShare ?? (profiles?.length
+        ? Number(TargetMatchup.soloSurvival(profiles, BotPullEstimate.pullView(picked, pull)).areaShare) || 0 : 0);
+    return BotPullEstimate.pullView(picked, pull, share);
+}
+
 // roundProfiles: the solo round's matchup profiles (resolveSolo), so its
 // fights read one set of species verdicts (they are kept per profile array);
 // without them the fight builds its own. round: the solo round's carry
@@ -1797,10 +1812,7 @@ function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(
     let time = 0;
     // A pull is counted once, when its fight starts; a continued fight keeps its saved view.
     // A won fight reports the kills it paid (`killsPaid`) for the spot share.
-    if (!pending && picked.aggressiveInterruption && Number(picked.pull) > 1) {
-        areaShare = Number(TargetMatchup.soloSurvival(matchupProfiles, BotPullEstimate.pullView(picked, picked.pull)).areaShare) || 0;
-    }
-    const mob = pending ? picked : BotPullEstimate.pullView(picked, picked.pull, areaShare);
+    const mob = pending ? picked : pulledMob(picked, matchupProfiles, picked.aggressiveInterruption ? null : areaShare);
     // The bot that pulls a melee monster strikes while it closes in; one that
     // came at the bot first (an aggressive interruption) strikes at once. A
     // pet takes the mob where it stands: the mob walks only when it first
@@ -2151,15 +2163,18 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     const persistedRaid = sharedEncounter
         ? coldRaidEncounterProfile(pending, spot, targetNpcId)
         : { mob: pending?.mob || null, hp: Number(pending?.hp), upgraded: false };
-    // The saved mob is copied as the solo fight's (resolveFight).
-    const mob = (persistedRaid.mob && { ...persistedRaid.mob }) || ColdCombatProfile.npcForSpot(spot, rng, {
-        preferredNpcId: targetNpcId, matchupProfiles, soloSafety: !!partyProfiles, allowRaid: sharedEncounter
+    // The saved mob is copied as the solo fight's (resolveFight); a new one is
+    // the whole pull of its spawn group, as a solo fight meets it (pulledMob;
+    // the party's verdict admitted that pull size: npcForSpot's allowed).
+    const picked = (persistedRaid.mob && { ...persistedRaid.mob }) || ColdCombatProfile.npcForSpot(spot, rng, {
+        preferredNpcId: targetNpcId, matchupProfiles, soloSafety: !!partyProfiles, allowRaid: sharedEncounter, pull: true
     }) || {
         level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
         accur: 1, evasion: 0, critical: 0, atkSpd: 253
     };
-    if (mob.avoided) return { avoided: true, reason: mob.reason, members: fighters, won: false };
+    if (picked.avoided) return { avoided: true, reason: picked.reason, members: fighters, won: false };
+    const mob = persistedRaid.mob ? picked : pulledMob(picked, matchupProfiles);
     const mobFight = coldMobFight(mob, pending?.mobFight);
     let mobHp = persistedRaid.mob
         ? (persistedRaid.hp ?? mob.maxHp)
@@ -2236,13 +2251,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (!hit || hit === WAITED) continue;
             next.hate = addHate(next.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
-            mobHp -= Math.max(0, hit.damage);
+            // Each mob of a pull an area skill strikes takes the full hit (F20), as solo's.
+            mobHp -= Math.max(0, hit.damage) * hit.struck;
             if (mobHp <= 0) {
                 overhitContext = invoke('GameServer/Progression/OverhitReward').contextForHit({
                     attacker: { characterId: next.state.characterId },
                     skill: hit.skill,
                     targetHpBeforeHit,
-                    targetMaxHp: mob.maxHp,
+                    targetMaxHp: mob.maxHp / Number(mob.pull || 1),
                     finalDamage: hit.damage,
                     encounterId: mob.selfId || targetNpcId,
                     timestamp: timestamp + time
@@ -2336,6 +2352,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
             potionsUsed: fighters.reduce((sum, fighter) => sum + Number(fighter.potionsUsed || 0), 0),
             mobSelfId: mob.selfId || null,
+            // Every mob of the pull is a kill (resolveFight's killsPaid).
+            ...(mobHp <= 0 ? { killsPaid: Number(mob.pull || 1) } : {}),
             remainingHp: Math.max(0, mobHp),
             raidControlCapacity,
             raidProfileUpgraded: persistedRaid.upgraded,
