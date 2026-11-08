@@ -65,9 +65,11 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
     };
     if (state.phase === 'cold') Situations.raise(stats, 'party_left', null, Situations.place(next), Number(state.characterId));
     // A solo bot holds no stay (its stay is answered by the leave), nor a party's XP
-    // share exclusion (stats.partyOutleveled: its next party raises its own flip).
+    // share exclusion (stats.partyOutleveled: its next party raises its own flip), nor
+    // the end of its need of the party it left (stats.partyNeedEnded: that party's id).
     Situations.leftParty(stats, Number(state.characterId));
     if (stats.partyOutleveled) stats.partyOutleveled = 0;
+    delete stats.partyNeedEnded;
     return next;
 }
 
