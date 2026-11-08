@@ -3,6 +3,18 @@ const DiagnosticConfig = require('./PopulationConfig');
 const Material = require('./CraftMaterialParty');
 
 const SAFETY_INTERVAL_MS = 30 * 60000;
+// The askers of a region and band a seeker's page takes at most (meetingCut counts a page that left some).
+const MEETING_PAGE = 8;
+
+function joinPool(pools, key, id, record) {
+    if (!pools.has(key)) pools.set(key, new Map());
+    pools.get(key).set(id, record);
+}
+function leavePool(pools, key, id) {
+    const pool = pools.get(key);
+    pool?.delete(id);
+    if (!pool?.size) pools.delete(key);
+}
 
 // An input index holds original published states. Combat/coordinate updates
 // refresh the reference without restarting an unchanged assembly decision.
@@ -26,6 +38,9 @@ class PartyAssemblyEvents {
         this.records = new Map();
         this.groups = new Map();
         this.supports = new Map();
+        // meetingKey -> the bots whose open request to meet is heard there (an LFP:
+        // PartyRequestPlanner.meetingKey, region x level band), kept at its open and close.
+        this.meetings = new Map();
         this.dirty = new Set();
         this.deadlines = new Set();
         this.parked = new Set();
@@ -36,7 +51,7 @@ class PartyAssemblyEvents {
         this.generation = 0;
         this.safetyKey = {};
         this.helpKey = {};
-        this.metrics = { events: 0, attempts: 0, safetyInspected: 0, repaired: 0 };
+        this.metrics = { events: 0, attempts: 0, safetyInspected: 0, repaired: 0, meetingCut: 0 };
     }
 
     arm(key, at, callback) {
@@ -75,7 +90,8 @@ class PartyAssemblyEvents {
         this.active = false; this.generation++;
         this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.unsubscribeTick?.();
         for (const key of this.deadlines) this.registry.cancelDeadline(key);
-        this.deadlines.clear(); this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear(); this.parked.clear();
+        this.deadlines.clear(); this.records.clear(); this.groups.clear(); this.supports.clear(); this.meetings.clear();
+        this.dirty.clear(); this.parked.clear();
         this.rewake.clear(); this.slotWaiters.clear();
         this.cycle = null; this.helpPending = false;
     }
@@ -92,7 +108,7 @@ class PartyAssemblyEvents {
         if (!this.active) return false;
         if (packet.kind === 'reset') {
             for (const group of this.groups.values()) this.cancel(group);
-            this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear(); this.rewake.clear();
+            this.records.clear(); this.groups.clear(); this.supports.clear(); this.meetings.clear(); this.dirty.clear(); this.rewake.clear();
             this.slotWaiters.clear();
             return false;
         }
@@ -101,11 +117,8 @@ class PartyAssemblyEvents {
         if (packet.state && packet.state !== state) return false;
         const input = state && this.classify(state, this.now());
         const previous = this.records.get(id);
-        if (previous?.supportKey && previous.supportKey !== input?.supportKey) {
-            const pool = this.supports.get(previous.supportKey);
-            pool?.delete(id);
-            if (!pool?.size) this.supports.delete(previous.supportKey);
-        }
+        if (previous?.supportKey && previous.supportKey !== input?.supportKey) leavePool(this.supports, previous.supportKey, id);
+        if (previous?.meetingKey && previous.meetingKey !== input?.meetingKey) leavePool(this.meetings, previous.meetingKey, id);
         const moved = previous?.key !== input?.key;
         const changed = moved || !previous || !input || previous.stamp.some((field, index) => field !== input.stamp[index]);
         const wake = !!input && (this.rewake.delete(id) || changed && input.seeks);
@@ -124,10 +137,9 @@ class PartyAssemblyEvents {
         record.stamp = input.stamp;
         record.state = state;
         record.supportKey = input.supportKey;
-        if (input.supportKey) {
-            if (!this.supports.has(input.supportKey)) this.supports.set(input.supportKey, new Map());
-            this.supports.get(input.supportKey).set(id, record);
-        }
+        if (input.supportKey) joinPool(this.supports, input.supportKey, id, record);
+        record.meetingKey = input.meetingKey || null;
+        if (record.meetingKey) joinPool(this.meetings, record.meetingKey, id, record);
         if (!this.groups.has(input.key)) this.groups.set(input.key, { key: input.key, members: new Map(), revision: 0, handled: 0,
             moved: new Set(), seekers: new Set() });
         const group = this.groups.get(input.key);
@@ -221,7 +233,12 @@ class PartyAssemblyEvents {
     // rotates each one, so the next call starts with other candidates. A
     // returned id is added to `used`; ids already in it are skipped.
     supportShortlist(level, role, limit, used = new Set()) {
-        const pool = this.supports.get(`${level}:${role}`);
+        return this.shortlist(this.supports.get(`${level}:${role}`), limit, used);
+    }
+
+    // Up to `limit` current states of a pool, inspecting at most `limit` entries and
+    // rotating each one (the next call starts with others); `used` as supportShortlist's.
+    shortlist(pool, limit, used = new Set()) {
         const shortlist = [];
         if (!pool?.size) return shortlist;
         const count = Math.min(limit, pool.size), iterator = pool.entries();
@@ -267,6 +284,16 @@ class PartyAssemblyEvents {
                 inspected++;
                 for (const state of this.supportShortlist(level, role, 1, used)) { candidates.push(state); added++; }
             }
+        }
+        // A seeker's LFP is heard by the askers of its band in the region (meetings): up
+        // to MEETING_PAGE of them join the page from their own spots.
+        const meeting = candidates.find(state => this.records.get(Number(state.characterId))?.meetingKey);
+        if (meeting) {
+            const used = new Set(candidates.map(state => state.characterId));
+            const pool = this.meetings.get(this.records.get(Number(meeting.characterId)).meetingKey);
+            // meetingCut: a page that left askers of the pool for a later one.
+            if (pool?.size > MEETING_PAGE) DiagnosticConfig.developerDiagnostics && (this.metrics.meetingCut++);
+            candidates.push(...this.shortlist(pool, MEETING_PAGE, used));
         }
         const generation = this.generation, revision = group?.revision;
         // The members that moved since the group's last run: only a roster with one of

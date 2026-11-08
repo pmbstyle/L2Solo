@@ -109,6 +109,19 @@ async function run() {
         bot(4, 88, 77, 'ground76', 'dps')]);
     assert.deepStrictEqual(groups.map(group => group.map(state => state.characterId).sort()), [[3, 4, 9001]],
         'the seeker groups with the hunters of its request spot');
+    // Its LFP is heard across the region (C4 trade chat): a damage dealer of its band asking
+    // on another spot of the region meets it there; one of another band does not.
+    const Profiles = invoke('GameServer/Bot/Population/SpotProfiles'), ensure = Profiles.ensure;
+    try {
+        Profiles.ensure = () => spots;
+        const asking = (id, level) => bot(id, 2, level, 'grey65', 'dps', { stats: { classId: 2, role: 'dps',
+            earning: { spotId: 'grey65', income: 1000 }, partyRequest: { status: 'open', priority: 'preferred',
+                reason: 'party_progress', spotId: 'grey65', objectiveKey: 'spot:grey65' } } });
+        assert.strictEqual(Request.meetingKey(Request.partyObjectiveForState(seeker), 76, spots), 'de_village:15');
+        const met = PopulationService.groupPartyCandidatesByObjective([seeker, bot(3, 2, 76, 'ground76', 'dps'), asking(5, 77), asking(6, 71)]);
+        assert.deepStrictEqual(met.find(group => group.includes(seeker)).map(state => state.characterId).sort(), [3, 5, 9001],
+            'the seeker meets its spot and the askers of its band in the region');
+    } finally { Profiles.ensure = ensure; }
 
     // Rule 4: its held earning answer decides (the solo spot it hunts), not the spot it
     // stands on: an answer on ground of its level is solo ground; none or grey ground is not.

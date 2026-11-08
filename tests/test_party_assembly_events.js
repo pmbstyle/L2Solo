@@ -315,6 +315,29 @@ async function main() {
     assert.deepEqual([...stampService.dirty], ['spot:B'], 'a roster refused for want of a slot runs when any party ends');
     stampService.stop(); console.log('PASS waking stamp, 100 loot publications, request edge and one-spot dissolve');
 
+    // A C4 LFP is heard across its region: a seeker's page takes the askers of its
+    // region and level band from their own spots, not those of another band.
+    {
+        const meetCache = new Cache(), meetTick = { now: Date.now() }, meetRegistry = registry(meetTick), runs = [];
+        const meetService = new PartyAssemblyEvents({ registry: meetRegistry,
+            life: { cachedState: id => meetCache.get(id), subscribePublications: (...args) => meetCache.subscribePublications(...args) },
+            parties: { subscribeChanges() { return () => {}; } }, now: () => meetTick.now,
+            classify: state => ({ key: `spot:${state.spotId}`, seeks: !!state.meeting, meetingKey: state.meeting || null, stamp: [state.level] }),
+            run(rows) { runs.push(rows.map(row => row.characterId).sort()); return {}; } });
+        for (const [id, spotId, meeting] of [[5001, 'X', 'gludio:6'], [5002, 'Y', 'gludio:6'], [5003, 'Z', 'gludio:7'], [5004, 'X', null]])
+            meetCache.set(id, { characterId: id, spotId, meeting, level: 30 });
+        meetService.start(); disposers.push(() => meetService.stop()); await flush();
+        meetService.dirty.clear(); meetService.wakeNow(5001);
+        meetRegistry.tick(meetTick.now); await flush();
+        assert.deepEqual(runs.at(-1), [5001, 5002, 5004], 'the seeker meets its spot and its band\'s askers in the region');
+        meetCache.set(5002, { ...meetCache.get(5002), meeting: null }); await flush();
+        meetService.dirty.clear(); meetService.wakeNow(5001);
+        meetRegistry.tick(++meetTick.now); await flush();
+        assert.deepEqual(runs.at(-1), [5001, 5004], 'a closed request leaves the region\'s askers');
+        meetService.stop();
+    }
+    console.log('PASS a seeker meets the askers of its region and band');
+
     // Actual cache and common registry, controlled decision callback. Safety
     // uses pages of retained rows; no population iterator/planner is needed.
     const cache = new Cache(), tick = { now: 1000 }, queue = registry(tick);

@@ -31,7 +31,8 @@ function seeksParty(state) {
 // The seeking objective: a party of its level meets at the spot a party
 // search finds for it (mode party: the level fit and the group's matchup,
 // not its solo gate), so it groups with the bots that hunt there
-// (objectiveKey = their spot key) and joins parties that hunt there. The
+// (objectiveKey = their spot key) and the askers of its band in the region
+// (meetingKey), and joins parties that hunt there. The
 // spot holds while the request is open; a reopened request searches again.
 // Null: no such seeker, or no spot.
 function seekObjective(state, previous, { spots, timestamp, search = null, economy = null, plan }) {
@@ -54,7 +55,8 @@ function seekObjective(state, previous, { spots, timestamp, search = null, econo
 // its level (PartyProgressComparison.partnerFor: a healer, a damage dealer for a healer),
 // than solo there, its persona weighing it (PartyProgressComparison.compare: the same
 // comparison forming's verdict then asks of the real roster), asks for a party on that
-// ground (a C4 player's LFP), so it groups with the bots that hunt there. Asked at the
+// ground (a C4 player's LFP), so it groups with the bots that hunt there and the askers
+// of its band in the region (meetingKey). Asked at the
 // build, as every request; the next build asks again (two table rows, cheaper than
 // keying it on its inputs). Null: no held answer with a spot, or solo is sooner.
 // economy: the build's (its earning answer when the build took it with the request,
@@ -73,6 +75,24 @@ function progressObjective(state, { spots, timestamp, economy = null }) {
         spotId, npcId: null, itemId: null, targetId: null };
 }
 const seeksProgress = state => state?.stats?.partyRequest?.status === 'open' && state.stats.partyRequest.reason === PARTY_PROGRESS;
+
+// A C4 player's LFP goes out in trade chat, which reaches the map region it is said
+// in (L2J Lisvus Say2 TRADE, DEFAULT_TRADE_CHAT "limited": the players of the
+// speaker's MapRegionTable region). An open request to meet for no target (no solo
+// ground, party progress) is heard by the askers of its level band in the region of
+// the spot it names (TownRespawn.getRegionGroup, the C4 map regions) besides the bots
+// of that spot, so a damage dealer's ask meets a healer's from another spot (main's
+// assembly, PartyAssemblyEvents: a region-band pool beside the spot groups). The band
+// spans the party's level spread (BackgroundPartyComposition.DEFAULT_LEVEL_RANGE): any
+// two of a band fit one roster. Null: no such request, or a spot outside every region.
+const LFP_REASONS = new Set([NO_SOLO_GROUND, PARTY_PROGRESS]);
+function meetingKey(objective, level, spots) {
+    if (objective?.status !== 'open' || !LFP_REASONS.has(objective.reason)) return null;
+    const center = invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, objective.spotId)?.center;
+    const region = center ? invoke('GameServer/World/TownRespawn').getRegionGroup(center.locX, center.locY, center.locZ) : null;
+    const range = invoke('GameServer/Bot/Population/BackgroundPartyComposition').DEFAULT_LEVEL_RANGE;
+    return region ? `${region}:${Math.floor(Math.max(1, Math.floor(Number(level) || 1)) / (range + 1))}` : null;
+}
 
 // An objective that only names a spot to meet at (no target, no clan duty): a shared
 // target (a competition's offer_party), no solo ground, party progress. Its party hunts
@@ -243,6 +263,7 @@ module.exports = {
     seeksParty,
     seeksProgress,
     meetsAtSpot,
+    meetingKey,
     closed,
     limitsForObjective,
     objectiveSpot,

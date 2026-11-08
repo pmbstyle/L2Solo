@@ -1545,6 +1545,7 @@ const PopulationService = {
         const supportRole = PartyComposition.supportRole(state, objective);
         return { key: `spot:${spotId}`, seeks,
             supportKey: supportRole ? `${state.level}:${supportRole}` : null,
+            meetingKey: seeks ? PartyRequestPlanner.meetingKey(objective, state.level, SpotProfiles.ensure()) : null,
             stamp: [state.clanId ?? state.stats?.clanId ?? null, objective?.spotId ?? null, request?.status ?? null,
                 request?.priority ?? null, state.stats?.equipmentPlan?.strategy ?? null,
                 state.stats?.equipmentPlan?.target?.selfId ?? null, state.stats?.earning?.at ?? null,
@@ -2250,6 +2251,20 @@ const PopulationService = {
                 if (pool.length < 12) pool.push(state);
             }
         });
+        // An asker to meet (PartyRequestPlanner.meetingKey: its LFP heard across its
+        // region and level band) groups with the page's other askers of its band and
+        // region too, from their own spots (PartyAssemblyEvents adds them to the page).
+        const meetings = new Map();
+        for (const state of states || []) {
+            const meeting = PartyRequestPlanner.meetingKey(objectiveOf(state), state.level, SpotProfiles.ensure());
+            if (meeting) meetings.set(state, meeting);
+        }
+        if (meetings.size > 1) for (const group of grouped.values()) {
+            const anchor = group.find(state => meetings.has(state));
+            if (!anchor) continue;
+            const inGroup = new Set(group);
+            for (const [state, meeting] of meetings) if (!inGroup.has(state) && meeting === meetings.get(anchor)) group.push(state);
+        }
         // The addressed event page supplies a bounded support shortlist. A
         // helper's own hunting spot need not equal the material rendezvous.
         for (const group of grouped.values()) if (CraftMaterialParty.isObjective(partyObjectiveForState(group[0]))) {
