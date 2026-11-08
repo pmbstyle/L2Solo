@@ -103,9 +103,6 @@ function purchaseElsewhere(state, timestamp) {
         && goal.plan.marketTown !== state.currentRegion ? goal : null;
 }
 
-// The held earning answer's spot (situations.md §10; the worker decides it).
-const heldEarningSpot = state => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldSpot(state, SpotProfiles.ensure());
-
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
@@ -132,18 +129,17 @@ function finishVisit(state, timestamp, options) {
     }
     if (!destination?.loc && options.recoverMissingReturn) {
         // No saved return: the spot its held decisions name (main never chooses
-        // one), when its marks allow it. A party member's is its party's
-        // (temporary until the party aggregate, situations step 8: the party's
-        // objective spot, else the spot it hunts), a solo bot's its card's hunting
-        // leaf, else its held earning answer. With none it rests in town: its
-        // earning spot reads woken while it holds no answer (Situations.woken), so
-        // its next step decides it and the worker routes it (BotRoute).
+        // one, DecisionEvents.farHeldSpot). A party member's is its party's
+        // (temporary: until the party holds its spot as a decision; the party's
+        // objective spot, else the spot it hunts), when its marks allow it. With
+        // none it rests in town: its earning spot reads woken while it holds no
+        // answer (Situations.woken), so its next step decides it and the worker
+        // routes it (BotRoute).
         const party = state.party?.partyId ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.party.partyId) : null;
-        const heldId = state.party?.partyId ? party?.stats?.objective?.spotId ?? party?.spotId ?? null
-            // lazy: cycle the coordinator loads PopulationService, which loads this module.
-            : DecisionEvents.heldSpotOf(state.stats, invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state));
-        const fallback = heldId != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(heldId))
-            ? SpotProfiles.findById(heldId) : null;
+        const partySpot = party?.stats?.objective?.spotId ?? party?.spotId ?? null;
+        const heldId = !state.party?.partyId ? DecisionEvents.farHeldSpot(state)
+            : partySpot != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(partySpot)) ? partySpot : null;
+        const fallback = heldId != null ? SpotProfiles.findById(heldId) : null;
         const loc = fallback && SpotService.arrivalPointForState(state, fallback);
         if (loc) {
             destination = { loc, spotId: fallback.id, regionName: fallback.name };
@@ -171,28 +167,17 @@ function finishVisit(state, timestamp, options) {
     const spotBackoff = returnState && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
-    // Where the bot hunts next is the worker's decision, read here: the card's
-    // hunting leaf, else its gear plan's source while that stays viable (the
-    // route's own rule, BotRoute), else its held earning answer (every solo
-    // bot's spot, situations.md B12), else only then the spot it hunted before
-    // the trip; a spot the bot's marks exclude (died, was full, avoided,
-    // unreachable) is none of them. Main never searches. A full spot is met at
-    // arrival (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the
-    // worker's next trip start: one trip there before the worker moves it.
+    // Where the bot hunts next is the worker's decision, read here: the spot its
+    // held decisions name (DecisionEvents.farHeldSpot: the card's hunting leaf, its
+    // gear plan's source, its held earning answer, none its exclusions rule out),
+    // else only then the spot it hunted before the trip, unless it died there
+    // (spotBackoff). Main never searches. A full spot is met at arrival
+    // (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the worker's next
+    // trip start: one trip there before the worker moves it.
     let selectedSpot = clanReturn ? savedSpot : null;
     if (returnState && !clanReturn) {
-        const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
-        const usable = spotId => spotId != null && !excluded.has(String(spotId));
-        // lazy: cycle the coordinator loads PopulationService, which loads this module.
-        const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
-        const plan = state.stats?.equipmentPlan;
-        selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
-            || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
-                .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
-                ? SpotProfiles.findById(plan.next.spotId) : null)
-            || (usable(state.stats?.earning?.spotId) ? heldEarningSpot(state) : null)
-            || (usable(savedSpot.id) ? savedSpot : null)
-            || (spotBackoff ? null : savedSpot);
+        const heldId = DecisionEvents.farHeldSpot(returnState);
+        selectedSpot = (heldId != null ? SpotProfiles.findById(heldId) : null) || (spotBackoff ? null : savedSpot);
     }
     // Remaining in town is safer than silently returning to a spot that is
     // already over the death threshold. A later lifecycle pass can retry

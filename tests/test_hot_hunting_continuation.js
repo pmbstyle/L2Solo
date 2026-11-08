@@ -170,6 +170,15 @@ test('a first worker answer is awaited separately from an accepted empty occupat
     assert.equal(searchCalls.length, 0);
 });
 
+test('a visit\'s end sends a collector to its gear plan\'s source, as the worker\'s route does', () => {
+    const f = fixture(town, null, { ...holds(primary), equipmentPlan: { status: 'active', strategy: 'direct_drop',
+        next: { spotId: alternative.id } } });
+    f.session.pendingFarmDepartureAnnouncement = true;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id,
+        'the source before the held earning answer');
+    assert.equal(searchCalls.length, 0, 'main searches no spot');
+});
+
 test('a completed shopping visit with an accepted null leaf starts the farming route', async () => {
     const f = fixture(town, null, holds(primary));
     f.session.plan = 'shopping';

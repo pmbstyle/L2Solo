@@ -142,7 +142,7 @@ function tick(session, actor, timestamp = Date.now()) {
         session.plan = 'hunting';
         invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
         session.pendingFarmDepartureAnnouncement = true;
-        return require('./Departure').hot(session, actor, hall, timestamp);
+        return require('./Departure').hot(session, actor, hall);
     }
     return false;
 }

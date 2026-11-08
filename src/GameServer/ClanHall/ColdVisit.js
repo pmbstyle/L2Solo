@@ -185,7 +185,7 @@ async function resolve(original, timestamp = Date.now(), options = {}) {
             if (!inside || !Services.recovery(actorFor(serviced, hall), hall, timestamp)) {
                 next = finish(serviced, timestamp, 'clan_hall_services_complete');
                 next.patch.vitals = serviced.vitals;
-                const departure = require('./Departure').plan(serviced, hall, timestamp);
+                const departure = require('./Departure').plan(serviced, hall);
                 if (departure) {
                     next.patch.loc = departure.destination;
                     next.patch.spotId = departure.spot.id;
