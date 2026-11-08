@@ -141,6 +141,34 @@ const arrive = async id => {
         const back = Goals.finishMarketVisit(Life.cachedState(ids[0]), Date.now());
         assert.equal(back?.stats.travel.reason, 'return_after_market', 'the visit after the meeting returns to the field');
         assert.deepEqual(back.stats.travel.to, existing.loc);
+        for (const id of ids) {
+            await Database.settleBoardOwner(id);
+            Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
+            await Database.acknowledgeTradeMeeting(overtaking, id);
+        }
+        // A town visit's step that began before a meeting was accepted ends after the bot
+        // reached the meeting: the meeting holds the bot, its visit does not end on the
+        // step's older state (else the bot went home with the meeting accepted and its leg
+        // restarted from the field, left shopping there by the cancel).
+        const visiting = { ...Life.cachedState(ids[0]), activity: 'shopping', loc: point, currentRegion: 'Giran',
+            stats: { ...Life.cachedState(ids[0]).stats, travel: null, marketReturn: existing,
+                townVisit: { town: 'Giran', startedAt: Date.now(), reason: 'upgrade_gear', completed: true } } };
+        await Life.upsertState(visiting, 'fixture_visit');
+        const stale = Life.cachedState(ids[0]);
+        const held = await accept('return-held');
+        adopt(await Database.payTradeMeetingLeg(held, 0, 1, `walk:${point.locX}:${point.locY}:${point.locZ}`, 0, false));
+        await arrive(ids[0]);
+        assert(Life.cachedState(ids[0]).stats.tradeMeeting, 'fixture: the bot stands at its accepted meeting');
+        const Population = invoke('GameServer/Bot/Population/PopulationService');
+        const Market = invoke('GameServer/Bot/Economy/ColdMarketService'), errands = Market.finishTownErrands;
+        Market.finishTownErrands = async state => state;
+        try {
+            await Population.finishColdMarketStep(stale, null, null, false, { state: stale, closed: true }, { state: stale }, null);
+        } finally { Market.finishTownErrands = errands; }
+        const kept = Life.cachedState(ids[0]);
+        assert.equal(kept.activity, 'shopping', 'the meeting keeps the bot in town');
+        assert(kept.stats.tradeMeeting && kept.stats.travel?.reason !== 'return_after_market', 'no return trip while the meeting holds it');
+        adopt(await Database.cancelTradeMeeting(held, 'fixture_cancel'));
         console.log('PASS native buyer/seller meeting completion, original plan, return travel and cancellation recovery');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });
