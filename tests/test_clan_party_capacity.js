@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('../src/Global');
 const Capacity = require('../src/GameServer/Bot/Population/ClanPartyCapacity');
 const objective = { status: 'open', priority: 'required', clanId: 77, clanGoalKey: 'clan:77:gear' };
 const now = 1000000;

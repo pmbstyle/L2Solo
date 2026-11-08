@@ -560,6 +560,8 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(slimRow, JSON.stringify(expectedSlim),
         'v80 drops the build hint and the per-target lists and keeps every other value as stored');
 
+    const namedMigrations = ['bot-economy-intents', 'bot-items-synced', 'drop-capacity-backoffs-and-solo-avoid', 'drop-kit-targets',
+        'drop-revenge-and-conflict-windows', 'drop-unused-bot-life-indexes', 'drop-war-supply-tickets'];
     const freshPath = path.join(outputDir, 'fresh.sqlite');
     bootstrap(freshPath);
     const fresh = open(freshPath);
@@ -582,7 +584,7 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 72').get().count), 1);
     assert(!fresh.prepare('SELECT 1 FROM schema_migrations WHERE version > 83').get(), 'no numbered migration after 83');
     assert.deepStrictEqual(fresh.prepare('SELECT name FROM named_migrations').all().map((row) => row.name).sort(),
-        ['bot-economy-intents', 'bot-items-synced', 'drop-capacity-backoffs-and-solo-avoid', 'drop-kit-targets', 'drop-revenge-and-conflict-windows', 'drop-unused-bot-life-indexes'], 'a fresh world runs the named migrations after the numbered ones');
+        namedMigrations, 'a fresh world runs the named migrations after the numbered ones');
     insertBots(fresh, realisticRows.slice(0, 1));
     fresh.close();
     assertCandidateFollowsLifeRow(freshPath);
@@ -616,7 +618,7 @@ if (process.argv[2] === '--bootstrap') {
     const upgraded83 = open(version83Path);
     assert.deepStrictEqual(schemaShape(upgraded83), freshShape, 'an upgraded world reaches the fresh bot row indexes');
     const firstRows = namedRows(upgraded83);
-    assert.deepStrictEqual(firstRows.map((row) => row.name).sort(), ['bot-economy-intents', 'bot-items-synced', 'drop-capacity-backoffs-and-solo-avoid', 'drop-kit-targets', 'drop-revenge-and-conflict-windows', 'drop-unused-bot-life-indexes'], 'the upgrade applies the named migrations once');
+    assert.deepStrictEqual(firstRows.map((row) => row.name).sort(), namedMigrations, 'the upgrade applies the named migrations once');
     upgraded83.close();
     bootstrap(version83Path);
     const again = open(version83Path);
@@ -628,7 +630,7 @@ if (process.argv[2] === '--bootstrap') {
     bootstrap(stray84Path);
     const stray = open(stray84Path);
     assert.deepStrictEqual(schemaShape(stray), freshShape, 'a world that ran numbered 84 keeps the fresh bot row indexes');
-    assert.deepStrictEqual(namedRows(stray).map((row) => row.name).sort(), ['bot-economy-intents', 'bot-items-synced', 'drop-capacity-backoffs-and-solo-avoid', 'drop-kit-targets', 'drop-revenge-and-conflict-windows', 'drop-unused-bot-life-indexes'],
+    assert.deepStrictEqual(namedRows(stray).map((row) => row.name).sort(), namedMigrations,
         'the named migration runs again harmlessly where numbered 84 ran');
     assert.strictEqual(Number(stray.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version), 83,
         'the stray 84 row is deleted, so the launcher reads the world as schema 83');
