@@ -98,16 +98,20 @@ function npcPlanningCatalogRows() {
     }), ...BotMarketPricing.npcPriceRows()]);
 }
 
-// Main's copy of the worker's planning lookup: the same catalogue rows (static game
-// data, read once) over main's board, the table the worker's mirrors. A read main
-// takes for a near bot (a party's funded-bridge read, PartyStay.joins) prices from the
-// offers the worker's does for a far one.
+// Main's copy of the worker's planning lookup: the catalogue rows the worker was last
+// sent (sendPlanningCatalog rebuilds it from them) over main's board, the table the
+// worker's mirrors. A read main takes for a near bot (a party's funded-bridge read,
+// PartyStay.joins) prices from the offers the worker's does for a far one. Built on
+// first read only while no worker was sent a catalogue.
 let npcLookup = null;
-function npcPlanningLookup() {
-    return npcLookup ||= ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows(), () => {
+function npcLookupOver(rows) {
+    return ColdNpcPlanningCatalog.createLookup(rows, () => {
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
         return AfkTrade.isBoardReady() ? AfkTrade.boardIndex() : null;
     });
+}
+function npcPlanningLookup() {
+    return npcLookup ||= npcLookupOver(npcPlanningCatalogRows());
 }
 
 const HEAP_SNAPSHOT_DIR = path.join(__dirname, '..', '..', '..', '..', 'tmp', 'heap');
@@ -986,9 +990,11 @@ class ColdSimulationCoordinator {
     }
 
     sendPlanningCatalog() {
+        const npcRows = npcPlanningCatalogRows();
+        npcLookup = npcLookupOver(npcRows);
         const catalogs = [
             { catalog: 'spots', rows: SpotProfiles.ensure() || [] },
-            { catalog: 'npc_offers', rows: npcPlanningCatalogRows() }
+            { catalog: 'npc_offers', rows: npcRows }
         ];
         catalogs.forEach(({ catalog, rows }) => {
             // Count each row once, as sendIncrementalEntries does, instead of

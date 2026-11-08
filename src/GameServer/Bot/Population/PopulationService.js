@@ -2206,9 +2206,14 @@ const PopulationService = {
             if (acquisitionRequirementKey(member.stats?.equipmentPlan) === acquisitionRequirementKey(plan)) continue;
             // Held on the revision of the copy read above: the member's own
             // review runs meanwhile; a write it beat is skipped and the
-            // party's re-plan is marked due again below.
+            // party's re-plan is marked due again below. A plan the row refuses
+            // (a clan-locked or foreign clan goal, a failed write: null) is
+            // skipped the same way: the party's objective, set from the plans
+            // the re-plan made, would follow a plan no member holds; the next
+            // re-plan starts from the stored plans.
             const written = await LifeState.writePartyRequirementPlan(member, plan);
             if (written === false) skip('plan');
+            else if (written === null) skip('refused');
             changed = !!written || changed;
         }
         // A bounded worker re-plan may span steps: its mark clears only with its complete
