@@ -52,6 +52,20 @@ try {
     assert.deepEqual(JSON.parse(out[0]).candidates, [{ town: 'Giran', hours: 1.5 }], 'hours survive the hop to main');
     assert.equal(JSON.parse(out[0]).thread, 'worker');
 
+    // A far step main refuses re-runs on the moved row: its decisions are recorded once, by the step committed.
+    const steps = DecisionTrace.create({ config: { decisionTrace: true }, thread: 'worker', now: () => 5000 }), stepped = [];
+    steps.connect(batch => { stepped.push(...batch.records); steps.ack(batch.id, batch.records.length); });
+    for (const committed of [false, true]) {
+        steps.hold(77);
+        steps.record({ kind: 'raise', bot: 77, name: 'goal_done:line' });
+        steps.record({ kind: 'decided', bot: 77, decision: 'own_lines', how: 'taken', answer: '0/1' });
+        steps.record({ kind: 'raise', bot: 78, name: 'died' });
+        steps.settle(77, committed);
+    }
+    assert.deepEqual(stepped.map(row => JSON.parse(row)).map(row => [row.bot, row.kind, row.at]),
+        [[78, 'raise', 5000], [78, 'raise', 5000], [77, 'raise', 5000], [77, 'decided', 5000]], 'the refused step\'s records are not in the trace');
+    assert.equal(steps.stats().drops.refused, 2, 'and counted as refused');
+
     // The rate bound: records past it in one second are dropped and counted; a detail record never takes the
     // decisions' reserve.
     const clock = { at: 1000 }, bounded = DecisionTrace.create({ config: { decisionTrace: true }, thread: 'main', now: () => clock.at });

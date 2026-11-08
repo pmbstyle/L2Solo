@@ -152,17 +152,16 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     return { ...life, huntEfficiency, huntClock, stay: stayOf(state, round) };
 }
 // The bot's solo stay on its spot (situations.md §10 spot_disappoints): its kills, its net income (adena and loot less
-// the round's costs) and its hunting time since it began, under one mark: the spot, the earning answer it hunts on
-// (its time), its level and its last town arrival (stats.visitEvery's hours). A new answer, a level up, a town trip or
-// another spot starts a new stay, judged anew; a party round ends it (null: party rounds count into no solo stay).
-// judged: weighed against the held answer (once a stay). ~80 B in the stats.
+// the round's costs) and its hunting time since it came to the spot. Only another spot starts a new stay (a new
+// earning answer, a level or a town trip keep it: a spot's income is judged over the kills it takes to tell, which
+// are more than a stay between two of those usually holds); a party round ends it (null: party rounds count into no
+// solo stay). judged: weighed against the held answer (once a stay). ~60 B in the stats.
 function stayOf(state, round) {
     if (state.party?.partyId || state.partyId) return null;
-    const mark = { spotId: round.spotId == null ? null : String(round.spotId), at: state.stats?.earning?.at ?? null,
-        level: Number(state.level) || 0, visit: Number(state.stats?.visitEvery?.[0]) || 0 };
+    const spotId = round.spotId == null ? null : String(round.spotId);
     const stay = state.stats?.stay;
-    const same = !!stay && stay.spotId === mark.spotId && stay.at === mark.at && stay.level === mark.level && stay.visit === mark.visit;
-    return { ...mark, kills: (same ? stay.kills : 0) + round.kills, net: (same ? stay.net : 0) + round.adena + round.loot - round.costs,
+    const same = !!stay && stay.spotId === spotId;
+    return { spotId, kills: (same ? stay.kills : 0) + round.kills, net: (same ? stay.net : 0) + round.adena + round.loot - round.costs,
         ms: (same ? stay.ms : 0) + round.cycleMs, judged: same && stay.judged === true };
 }
 // The kills a stay needs before its income is weighed, and the sampling margin (limits.md "Earning spot disappoints").

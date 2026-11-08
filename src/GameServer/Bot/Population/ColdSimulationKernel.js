@@ -9,6 +9,8 @@ const SparseNumericStorage = require('./SparseNumericStorage');
 const { isMainThread } = require('node:worker_threads');
 const FailureLog = require('../../../FailureLog');
 const FaultHold = require('../BotFaultHold');
+// A step's decision records wait for its commit (DecisionTrace hold/settle).
+const Trace = require('../DecisionTrace');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
@@ -1061,6 +1063,7 @@ class ColdSimulationKernel {
             others.forEach(memberId => this.requeueAtDue(memberId));
         }
         this.inFlight.delete(id);
+        Trace.settle(id, false);
         this.dirty.delete(id);
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
@@ -1253,6 +1256,7 @@ class ColdSimulationKernel {
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
                 this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt) });
+                Trace.hold(id);
                 candidates.push({ characterId: id, purpose: { kind: 'resolver' } });
             } else if (kind === 'party') {
                 // The party row (the 'parties' table) without its two
@@ -1357,6 +1361,7 @@ class ColdSimulationKernel {
                     const record = this.states.get(memberId);
                     if (record) record.route = null;
                     this.inFlight.set(memberId, { state: member, startedAt, partyId: String(party.partyId) });
+                    Trace.hold(memberId);
                     candidates.push({ characterId: memberId, purpose });
                 });
             } else if (kind === 'command') {
@@ -1471,6 +1476,7 @@ class ColdSimulationKernel {
         this.raiseWakeups.delete(id);
         this.commandStartedAt.set(id, attempt);
         this.commanding.add(id);
+        Trace.hold(id);
         return attempt;
     }
 
@@ -1526,6 +1532,8 @@ class ColdSimulationKernel {
         if (!attempt || this.commandStartedAt.get(id) !== attempt) return false;
         this.commandStartedAt.delete(id);
         this.commanding.delete(id);
+        // A command ended without its commit: its records go (completeCommand settles a committed one first).
+        Trace.settle(id, false);
         // The due heap may have consumed this owner's token while consent
         // held it. ACK, rejection and expiry must all restore its lifecycle.
         if (attempt.kind === 'meeting' && !this.stopping) this.ensureScheduled(id);
@@ -1656,6 +1664,7 @@ class ColdSimulationKernel {
         for (const characterId of characterIds) {
             const id = Number(characterId), active = this.inFlight.get(id);
             this.inFlight.delete(id);
+            Trace.settle(id, false);
             this.dirty.delete(id);
             if (!active) continue;
             this.partyRequirementProgress.delete(String(active.partyId || active.state?.party?.partyId || ''));
@@ -2580,6 +2589,8 @@ class ColdSimulationKernel {
             if (this.states.get(id)?.state.phase !== 'cold') return;
             if (active.pendingRaidStepId) require('./ColdRaidEncounter').acknowledge(active.pendingRaidStepId, id, result.ok);
             this.inFlight.delete(id);
+            // Its decisions are recorded once, by the step main committed: a refused one re-runs on the moved row.
+            Trace.settle(id, result.ok);
             // A committed step ends the bot's (its party run's) faults in a row.
             if (result.ok) {
                 this.clearFault(id);
@@ -2702,6 +2713,7 @@ class ColdSimulationKernel {
         if (!attempt?.sent || !this.commanding.has(id) || current?.state.phase !== 'cold'
             || attempt.commandId !== identity.commandId
             || !Protocol.sameCommandCheckpoint(attempt.checkpoint, identity.checkpoint)) return false;
+        Trace.settle(id, payload.ok);
         this.cancelCommand(id, attempt);
         // A command answered that it waits on its bot's trade preparation (main holds its
         // step until the end): the card it carried stays the answer until the end, which

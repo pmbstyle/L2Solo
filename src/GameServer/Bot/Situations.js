@@ -198,8 +198,9 @@ const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // workshop: what a crafter offers (its listing on its known book, stats.workshop), taken
 // at the start of a town visit (arrived_town, either kind, one per visit; a craft level
 // gained in the field is read there) and at a recipe learned, held between: levels, worn
-// gear, prices, the board and its own fills wake it not. A bot that is no service crafter
-// takes it as none. It has no held key: only its raises wake it.
+// gear, prices, the board and its own fills wake it not. Only a class line that crafts
+// hears it (heardBy); one not yet a service crafter takes it as none. It has no held
+// key: only its raises wake it.
 // own_lines: the prices of its own board lines (MarketPricing.look over every own
 // priced line), taken at a town arrival (it sees the stores), a line undercut and a
 // line filled; held between: prices, deals and the clock wake it not. No held key.
@@ -250,10 +251,15 @@ const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => s
 // only its own situations wake (a solo row would carry it forever: no step decides it).
 const FIRST = ALL & ~BITS.party_stay;
 const storedBits = stats => stats?.woken === undefined ? FIRST : Number(stats.woken) || 0;
-// A member's stay is heard only while the bot is in a background party: a bit a row
-// keeps past a leave that dropped the party by another path (a player's takeover, an
-// orphan repair) reads unwoken on a solo row, whichever path left it there.
-const wokenBits = stats => (storedBits(stats) | unheld(stats)) & (stats?.backgroundPartyId ? ALL : ~BITS.party_stay);
+// The decisions a bot is a subject of: a member's stay is heard only while the bot is
+// in a background party, the workshop only by a class line that crafts (a dwarf's,
+// CraftEligibility.craftsLine; a row whose class is not known hears it). A bit a row
+// keeps outside them (a leave that dropped the party by another path: a player's
+// takeover, an orphan repair; a far row's SQL raise, BotLifeState.raiseOnRow) reads unwoken.
+let Craft = null;
+const heardBy = stats => ALL & (stats?.backgroundPartyId ? ALL : ~BITS.party_stay)
+    & (stats?.classId == null || (Craft ||= require('./Economy/CraftEligibility')).craftsLine(stats.classId) ? ALL : ~BITS.workshop);
+const wokenBits = stats => (storedBits(stats) | unheld(stats)) & heardBy(stats);
 // The health line's counts (counts()), always on: what was raised where, which
 // situation woke which decision, the decisions taken or served, and those taken with
 // no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
@@ -336,8 +342,8 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
     // A gear errand failed on its item (its mark) is its gear source failing: it wakes
     // what a stalled source wakes too (source_stalled: the gear plan).
-    // A member's stay hears its situations only while it is in a party.
-    const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & (stats?.backgroundPartyId ? ALL : ~BITS.party_stay);
+    // A decision hears its situations only on its subjects (heardBy).
+    const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & heardBy(stats);
     return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
         leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
 }

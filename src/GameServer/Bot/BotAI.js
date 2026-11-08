@@ -520,8 +520,8 @@ const BotAI = {
         if (!botDead && invoke('GameServer/Bot/Economy/BuffService').buyOnAnswer(session)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
-            // Far-away bot: light background event processing, skip everything else
+        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !lodContext.combat && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
+            // Far-away bot out of combat: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
             }

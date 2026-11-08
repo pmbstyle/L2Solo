@@ -247,7 +247,9 @@ async function run() {
                 projectClassProgression: true, moneyEscrowFor: () => 0, stepPlan });
             assert.equal(Situations.woken(projected.stats, 'build'), !stepPlan, stepPlan ? `${thread}: the leaf's own arrival wakes no build`
                 : 'a step without a plan knows no leaf: its arrival wakes the build');
-            assert(Situations.woken(projected.stats, 'workshop'), `${thread}: the workshop hears it`);
+            // A Warrior: its own lines hear it, the workshop is a crafter's.
+            assert(Situations.woken(projected.stats, 'own_lines') && !Situations.woken(projected.stats, 'workshop'),
+                `${thread}: its own lines hear it`);
         }
     }
     console.log('PASS a town arrival on the held leaf\'s own trip wakes no build');

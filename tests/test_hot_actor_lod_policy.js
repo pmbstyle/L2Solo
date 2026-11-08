@@ -84,6 +84,15 @@ assert.strictEqual(Policy.evaluate(stance, [player], 1000).tier, 'full', 'a visi
 assert.strictEqual(Policy.nextTickDelay(stance, Policy.evaluate(stance, [player], 1500), () => 0), 1000, 'visible combat keeps the fast cadence');
 stance.actor = actor(2008, 5000);
 assert.strictEqual(Policy.evaluate(stance, [player], 2000).tier, 'visible', 'visible combat ends with its stance, with no hold after it');
+// A hot bot out of every player's view (the activation ring past the client's view, or a spot it travelled to)
+// that a mob hits answers it at the fight's cadence: before, it took no decision at all and died standing.
+const unseen = botSession(2011, 8000, { combat: true });
+const unseenContext = Policy.evaluate(unseen, [player], 1000);
+assert.deepStrictEqual([unseenContext.tier, unseenContext.playerVisible, unseenContext.combat], ['full', false, true],
+    'an unseen bot in combat thinks at full quality');
+assert.strictEqual(Policy.nextTickDelay(unseen, unseenContext, () => 0), 1000, 'at the fight\'s cadence');
+unseen.actor = actor(2011, 8000);
+assert.strictEqual(Policy.evaluate(unseen, [player], 2000).tier, 'preload', 'and drops back to preload when its fight ends');
 
 const targetingPlayer = botSession(2006, 5500, { session: { currentTargetId: 1001 } });
 assert.strictEqual(Policy.evaluate(targetingPlayer, [player], 1000).tier, 'full', 'a bot attacking or chasing a real player is promoted');

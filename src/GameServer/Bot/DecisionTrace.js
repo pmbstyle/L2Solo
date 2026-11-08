@@ -9,6 +9,9 @@
 // and counted by reason (stats().drops), never silent. detail(): the build's inputs, purchases and funding (the old
 // economy journal's phases) for a fixed 1/64 sample of bots (detailed(id)), and only from the rate and queue left
 // above the decisions' reserve — temporary until level 3 (a bot followed on demand) replaces the sample per step.
+// A far bot's step is recorded on its commit: the worker holds its records while the step is in flight (hold) and
+// lets them go when main commits it, or drops them when main refuses it (settle), so a refused step re-run on the
+// moved row is recorded once, as the world took it (at most LIMITS.batch held records a step).
 // Off: every entry point returns before a clock, an allocation or a payload.
 const Config = require('./Population/PopulationConfig');
 const { isMainThread } = require('node:worker_threads');
@@ -18,10 +21,10 @@ const NUMBER_FIELDS = ['revision', 'item', 'need', 'actual', 'remaining', 'recor
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'nativeId', 'sequence',
     'errandAt', 'receiptUnits', 'receiptSpent', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
-    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level'];
+    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after', 'commandKind', 'soft', 'level', 'attackers'];
 const TEXT_FIELDS = ['kind', 'name', 'place', 'woke', 'waits', 'decision', 'how', 'answer', 'was', 'killer', 'spot', 'worker', 'site',
     'trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId',
-    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party'];
+    'moved', 'gate', 'mask', 'heldFocus', 'freshFocus', 'heldLeaf', 'freshLeaf', 'social', 'party', 'plan'];
 const LONG_TEXT = new Set(['wishKey', 'errandKey', 'site']);
 
 function create({ config = Config, thread = isMainThread ? 'main' : 'worker', now = Date.now } = {}) {
@@ -30,13 +33,15 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker', no
     const detailRate = Math.floor(LIMITS.perSecond * LIMITS.detailShare), detailQueue = Math.floor(capacity * LIMITS.detailShare);
     let rows = null, bytes = 0, transport = null, inFlight = null, seq = 0, second = -1, rate = 0, detailInSecond = 0;
     let offered = 0, sent = 0, written = 0, batches = 0, dropped = 0, drops = null;
+    // The records of the far bots whose step is in flight (hold): bot -> records, stamped when taken.
+    let held = null;
     const on = () => config.decisionTrace === true;
     // The detail sample: the same bots on both threads, no list to carry.
     const detailed = id => on() && Number.isSafeInteger(Number(id)) && Number(id) > 0
         && ((Math.imul(Number(id), 2654435761) >>> 0) % LIMITS.sample) === 0;
     function lose(reason, amount = 1) {
         dropped += amount;
-        drops ||= { rate: 0, queue: 0, size: 0, transport: 0, writer: 0, invalid: 0, stop: 0, upstream: 0, admission: 0 };
+        drops ||= { rate: 0, queue: 0, size: 0, transport: 0, writer: 0, invalid: 0, stop: 0, upstream: 0, admission: 0, refused: 0 };
         drops[reason] += amount;
     }
     function pump() {
@@ -78,8 +83,30 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker', no
         rate++; if (detail) detailInSecond++;
         rows ||= []; rows.push(row); bytes += size; pump(); return true;
     }
-    // A level-2 record: kind raise | stop | decided | death | restart | failure.
-    const record = fields => on() && enqueue(fields);
+    // A level-2 record: kind raise | stop | decided | death | restart | failure. A held bot's waits for its step's end.
+    function record(fields) {
+        if (!on()) return false;
+        const rows = held?.get(Number(fields?.bot ?? fields?.owner));
+        if (!rows) return enqueue(fields);
+        if (rows.length >= LIMITS.batch) { lose('queue'); return false; }
+        rows.push(Number.isFinite(fields.at) ? fields : { ...fields, at: now() });
+        return true;
+    }
+    // A far bot's step begins (hold) and ends (settle: committed lets its records go, else they are dropped,
+    // counted as refused).
+    function hold(bot) {
+        if (!on()) return;
+        held ||= new Map();
+        if (!held.has(Number(bot))) held.set(Number(bot), []);
+    }
+    function settle(bot, committed) {
+        const rows = held?.get(Number(bot));
+        if (!rows) return;
+        held.delete(Number(bot));
+        if (!on()) return;
+        if (!committed) { if (rows.length) lose('refused', rows.length); return; }
+        for (const fields of rows) enqueue(fields);
+    }
     // A level-3 record of a sampled bot (callers test detailed(id) before building it).
     const detail = fields => on() && enqueue({ ...fields, kind: 'detail' });
     // A worker's batch on main: each record re-enqueued under main's bounds.
@@ -98,13 +125,17 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker', no
         inFlight = null; pump(); return true;
     }
     function disconnect() { if (inFlight) lose('transport', inFlight.count); inFlight = null; transport = null; }
-    function stop() { disconnect(); if (rows?.length) lose('stop', rows.length); rows = null; bytes = 0; }
+    function stop() {
+        disconnect(); if (rows?.length) lose('stop', rows.length); rows = null; bytes = 0;
+        for (const kept of held?.values() || []) if (kept.length) lose('stop', kept.length);
+        held = null;
+    }
     function stats() {
         if (!on()) return { enabled: false };
         return { enabled: true, queued: rows?.length || 0, bytes, inFlight: inFlight?.count || 0, offered, sent, batches,
             dropped, [thread === 'main' ? 'written' : 'acceptedByMain']: written, drops: drops ? { ...drops } : null };
     }
-    return { on, detailed, record, detail, accept, ack, disconnect, stop, stats,
+    return { on, detailed, record, detail, hold, settle, accept, ack, disconnect, stop, stats,
         noteDropped(amount) { if (on() && Number.isSafeInteger(amount) && amount > 0) lose('upstream', amount); },
         connect(send) { if (!on()) return false; transport = send; pump(); return true; } };
 }

@@ -37,10 +37,17 @@ function craftLevelFor(state = {}) {
     return row[level];
 }
 
+// Does the class line learn Create Item at any level (a dwarf's, from level 5 in C4)? The
+// subjects of the workshop decision (Situations): a class read off the bot's stats.
+const TOP_LEVEL = 80;
+function craftsLine(classId) {
+    return craftLevelFor({ classId: Number(classId) || 0, level: TOP_LEVEL }) > 0;
+}
+
 // Create Item capability is shared by every class that has the skill.
 function canCraft(state = {}, recipe = {}) {
     const level = craftLevelFor(state), required = Number(recipe.level);
     return Number.isFinite(level) && Number.isFinite(required) && required > 0 && level >= required;
 }
 
-module.exports = { isServiceCrafter, craftLevelFor, canCraft };
+module.exports = { isServiceCrafter, craftLevelFor, canCraft, craftsLine };
