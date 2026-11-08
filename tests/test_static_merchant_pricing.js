@@ -23,14 +23,14 @@ const templates = new Map(DataCache.items.map((item) => [item.selfId, item]));
 const normalize = (store) => TradeService.normalizeStoreItems(store, { staticStore: true });
 const botLines = store => store.items.map(line => ({ selfId: line.selfId, count: line.count ?? 1,
     price: Pricing.botPriceFor(store, line) })).filter(line => line.price > 0);
-// All 367 configured lines from b5eb1b574942fd9c1622fe961e6a2f4eef9e5a03:
+// The 330 retained lines after removing permanent refined-material buyback:
 // moving player prices must not change any retained bot payout or shot price.
 // x10/x50 moved once when the payout cap read the one NPC table (town
 // sellers): 4 jewelry payouts no longer sit under fallback lists no NPC sells.
 const baselineBotPrices = {
-    1: '02b74cbda7b9d26662e0970bd3cbf3b1738ad1c61283df61a382b49061a127eb',
-    10: '2acd1485894e866485c9cd832c8537ce34c826f7e9ed1265570c68797175c824',
-    50: 'bc7ca65c882187db4f29f74561711d6329f378d96a28881e753bed88d91393c2'
+    1: '650518d7b76a4b21e7dc71255cad60543aee1ca6e291dda45783cfad1cb4f794',
+    10: 'a5f70e02681bb4a84613486029ab153743db24808598334544b08dc7c90057b6',
+    50: '848b3d3cd1d1391201a1df73179ad3653862a2bbf1d80472346e8b8af4e9fa24'
 };
 
 function inventoryItem(selfId, amount) {

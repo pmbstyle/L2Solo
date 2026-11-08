@@ -437,6 +437,7 @@ const tests = [
     'tests/test_bot_progression_audit_regressions.js',
     'tests/test_bot_economy_pricing.js',
     'tests/test_static_merchant_pricing.js',
+    'tests/test_static_raw_material_buyers.js',
     'tests/test_bot_gear_acquisition.js',
     'tests/test_bot_equipment_transition_recovery.js',
     'tests/test_bot_dual_sword_combine.js',

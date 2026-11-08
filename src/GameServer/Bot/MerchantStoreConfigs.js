@@ -2,8 +2,10 @@ const BUY_CAP = 999999;
 
 const s = (selfId, priceRate, count) => ({ selfId, priceRate, count });
 const b = (selfId, priceRate, count = BUY_CAP) => ({ selfId, priceRate, count });
-// Shared raw/refined resource prices across every town. Keep a spread between
-// permanent supply and buyback; the active Adena rate is applied by TradeService.
+// Resource sellers carry raw and refined stock; permanent resource buyers
+// take raw materials only. Crafted intermediates need actual market demand,
+// otherwise their guaranteed payouts displace shot production.
+// The active Adena rate is applied by TradeService.
 const RESOURCE_SELL_RATE = 1.20;
 const RESOURCE_BUY_RATE = 0.80;
 const rs = (selfId, count) => s(selfId, RESOURCE_SELL_RATE, count);
@@ -97,8 +99,7 @@ module.exports = {
         locX: -14590, locY: 123360, locZ: -3117,
         items: [
             rb(1867), rb(1868), rb(1869), rb(1870),
-            rb(1871), rb(1872), rb(1873), rb(1880),
-            rb(1878), b(1341, 0.55)
+            rb(1871), rb(1872), rb(1873), b(1341, 0.55)
         ]
     },
     "FriendShip": {
@@ -137,15 +138,11 @@ module.exports = {
         ]
     },
     "GeAnA": {
-        title: "Buy C mats",
+        title: "Buy silver nuggets",
         town: "Dion",
         storeType: 3,
         locX: 15860, locY: 143100, locZ: -2707,
-        items: [
-            rb(1873), rb(1879), rb(1880), rb(1881),
-            rb(1882), rb(1883), rb(1884), rb(1885),
-            rb(1887), rb(1888)
-        ]
+        items: [rb(1873)]
     },
     "Sunday": {
         title: "Buy Dion drops",
@@ -180,17 +177,6 @@ module.exports = {
             s(60, 0.62, 4), s(62, 0.66, 8), s(64, 0.66, 8),
             s(119, 0.66, 6), s(117, 0.66, 8), s(845, 0.68, 8),
             s(877, 0.68, 10), s(908, 0.68, 6), s(1539, 0.76, 500)
-        ]
-    },
-    "ProStyle": {
-        title: "Buy Giran mats",
-        town: "Giran",
-        storeType: 3,
-        locX: 83510, locY: 148120, locZ: -3406,
-        items: [
-            rb(1881), rb(1882), rb(1883), rb(1885),
-            rb(1887), rb(1888), rb(1889), rb(1890),
-            rb(1893), rb(1894)
         ]
     },
     "Veteranas": {
@@ -229,13 +215,11 @@ module.exports = {
         ]
     },
     "Puffy": {
-        title: "Buy Oren mats",
+        title: "Buy ore and stones",
         town: "Oren",
         storeType: 3,
         locX: 82800, locY: 53400, locZ: -1488,
         items: [
-            rb(1885), rb(1886), rb(1887), rb(1888),
-            rb(1889), rb(1890), rb(1893), rb(1894),
             rb(1874), rb(1875)
         ]
     },
@@ -281,8 +265,7 @@ module.exports = {
         storeType: 3,
         locX: 111520, locY: 219034, locZ: -3536,
         items: [
-            rb(1885), rb(1886), rb(1887), rb(1888), rb(1889),
-            rb(1890), rb(1893), rb(1894), rb(1874), rb(1875),
+            rb(1874), rb(1875),
             b(1830, 0.60), b(1343, 0.55), b(1539, 0.62),
             b(91, 0.56), b(212, 0.56), b(284, 0.56),
             b(79, 0.56), b(97, 0.56), b(856, 0.58), b(887, 0.58), b(918, 0.58)
