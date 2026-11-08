@@ -166,6 +166,40 @@ function recordRecovery(state, { deaths = 0, wins = 0, exp, expBeforeDeath, pres
     return recovery;
 }
 
+// One hunting record of a bot on its own, on either thread: a far round
+// (BotLifeState.prepareResolve) or a near body's won fight or death (BotLifeState.recordNearFight).
+// It moves the spot's risk window, marks the spot when the window turns to pressure (a mark
+// it did not hold) and moves the leveling recovery, so a death near a player counts as a far
+// one. A party member's record keeps its own risk as it was and writes no mark or recovery
+// (its party's risk, PartySpotRiskPolicy).
+// state: before the record; sample: spotId, fights, wins, deaths (a death is a fight), itemHunt
+// (its held step hunts the spot for an item), timestamp, exp after it, expBeforeDeath.
+// Returns the stats fields it writes (spotBackoffs only with a new mark).
+function recordHunt(state = {}, sample = {}) {
+    const stats = state.stats || {};
+    if (state.party?.partyId || state.partyId) return { spotRisk: stats.spotRisk };
+    const spotId = normalizedSpotId(sample.spotId);
+    const timestamp = Number(sample.timestamp || Date.now());
+    const deaths = Math.max(0, Number(sample.deaths || 0)), fights = Math.max(0, Number(sample.fights || 0));
+    const wins = Math.max(0, Number(sample.wins || 0));
+    const spotRisk = recordResolve(stats.spotRisk, {
+        spotId, itemHunt: sample.itemHunt === true, timestamp,
+        totalDeaths: Number(stats.deaths || 0), totalFights: Number(stats.fightsResolved || 0),
+        totalWins: Number(stats.fightsWon || 0), deaths, fights, wins,
+        // Only completed, abandoned hunts count. Pending encounter slices
+        // and pre-fight recovery have zero completed fights.
+        failedHunts: Math.max(0, fights - wins - deaths)
+    });
+    const after = { ...state, spotId, stats: { ...stats, spotRisk, deaths: Number(stats.deaths || 0) + deaths,
+        fightsResolved: Number(stats.fightsResolved || 0) + fights } };
+    const pressure = deathPressure(after);
+    const marked = pressure && !activeBackoffs(state).some(entry => entry.spotId === spotId)
+        ? withBackoff(after, backoffForStates([after], spotId, timestamp), timestamp).stats.spotBackoffs : null;
+    return { spotRisk, ...(marked ? { spotBackoffs: marked } : {}),
+        huntingRecovery: recordRecovery(state, { deaths, wins, exp: sample.exp, expBeforeDeath: sample.expBeforeDeath,
+            pressure: !!pressure }) };
+}
+
 // The holder's step counter: a bot's far steps (BotLifeState.prepareResolve),
 // a party's rounds (PartySpotRiskPolicy.state passes them as stats.stepCount).
 function stepCount(state = {}) {
@@ -352,6 +386,7 @@ module.exports = {
     recordResolve,
     recoveryFor,
     recordRecovery,
+    recordHunt,
     deathPressure,
     activeBackoffs,
     backoffForStates,

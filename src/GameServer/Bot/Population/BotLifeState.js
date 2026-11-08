@@ -106,6 +106,28 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
     handle.unref?.();
 }
 
+// A near body's fight on its row (session.coldLifeState), recorded as a far round's
+// (SpotRiskPolicy.recordHunt: the spot's risk window, its death mark, the leveling
+// recovery) so a death near a player keeps the bot off that spot as a far death does.
+// outcome: won (its kill, NpcDied) or died (Die), each one fight; the spot is the one
+// the body hunts. Main only; the row reaches the worker by the body's next post.
+function recordNearFight(session, state, { won = false, died = false, timestamp = now() } = {}) {
+    const stats = state.stats || {};
+    const spotId = session.currentSpot?.id ?? state.spotId ?? null;
+    const actor = session.actor;
+    const exp = Number(actor?.fetchExp?.() ?? state.exp ?? 0);
+    // The held step's leaf, as the body's target scan reads it.
+    const leaf = session.heldEconomy?.network.activity || session.activationEconomyDecision?.activity;
+    const hunt = SpotRiskPolicy.recordHunt(state, { spotId, timestamp, fights: 1, wins: won ? 1 : 0, deaths: died ? 1 : 0,
+        itemHunt: spotId != null && String(leaf?.spotId) === String(spotId)
+            && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(leaf),
+        exp, expBeforeDeath: died ? Number(actor?.deathExperience?.expBeforeDeath ?? exp) : exp });
+    return { ...state, stats: { ...stats, ...hunt,
+        fightsWon: Number(stats.fightsWon || 0) + (won ? 1 : 0),
+        fightsResolved: Number(stats.fightsResolved || 0) + 1,
+        deaths: Number(stats.deaths || 0) + (died ? 1 : 0) } };
+}
+
 // A near bot's body moved a fact (reason: bag, equip, level, death, revive,
 // near_spot, near_left, activated): its row goes to its slot in the worker, whose one fact
 // function decides whether that is an event. A delivery, not a save: neither
@@ -1927,6 +1949,7 @@ function reconcilePersistedLoadouts() {
 
 const BotLifeState = {
     notifyNearFacts,
+    recordNearFight,
     raiseOnRow,
     nearPosts,
 
@@ -2755,34 +2778,21 @@ const BotLifeState = {
         const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems;
         const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
         const nextSpotId = result.patch?.spotId || state.spotId;
-        const previousRisk = state.stats?.spotRisk;
         const previousDeaths = Number(state.stats?.deaths || 0);
         const nextDeaths = Number(result.patch?.deathCount ?? previousDeaths);
         // lazy: ColdEconomyDecision loads the economy modules that require this one.
         const stepLeaf = options.stepPlan ? invoke('GameServer/Bot/Population/ColdEconomyDecision').stepLeaf(options.stepPlan) : null;
-        const spotRisk = state.party?.partyId || state.partyId ? previousRisk : SpotRiskPolicy.recordResolve(previousRisk, {
+        // The round's hunting record (risk window, death mark, recovery), as a near body's fight's.
+        const hunt = SpotRiskPolicy.recordHunt(state, {
             spotId: nextSpotId || null,
             itemHunt: !!nextSpotId && String(stepLeaf?.spotId) === String(nextSpotId)
                 && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(stepLeaf),
             timestamp,
-            totalDeaths: previousDeaths,
-            totalFights: Number(state.stats?.fightsResolved || 0),
-            totalWins: Number(state.stats?.fightsWon || 0),
             deaths: Math.max(0, nextDeaths - previousDeaths),
             fights: Number(result.debug?.fights || 0),
             wins: Number(result.debug?.wins || 0),
-            // Only completed, abandoned hunts count. Pending encounter slices
-            // and pre-fight recovery have zero completed fights.
-            failedHunts: Math.max(0, Number(result.debug?.fights || 0)
-                - Number(result.debug?.wins || 0) - Math.max(0, nextDeaths - previousDeaths))
+            exp, expBeforeDeath: experienceAward.totalExp
         });
-        const soloRiskState = { ...state, spotId: nextSpotId, stats: { ...state.stats, spotRisk, deaths: nextDeaths,
-            fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0) } };
-        const soloPressure = !(state.party?.partyId || state.partyId) && SpotRiskPolicy.deathPressure(soloRiskState);
-        const newlyFailedSpot = soloPressure && !SpotRiskPolicy.activeBackoffs(state, timestamp)
-            .some(entry => entry.spotId === nextSpotId);
-        const failedSpotState = newlyFailedSpot ? SpotRiskPolicy.withBackoff(soloRiskState,
-            SpotRiskPolicy.backoffForStates([soloRiskState], nextSpotId, timestamp), timestamp) : null;
         // Resolver patches often carry a projected copy of the previous
         // stats so they can add lifecycle-specific fields such as cooldowns,
         // rest deadlines, travel state, or party affinity.  Merge that copy
@@ -2946,18 +2956,9 @@ const BotLifeState = {
                 ...stats,
                 // Resolver patches commonly start from the prior state. Keep
                 // the baseline stamped for this resolve's actual destination.
-                spotRisk,
                 // Save the failed ground before revival/physical movement can
                 // change the routing origin and lose its exclusion.
-                ...(failedSpotState ? { spotBackoffs: failedSpotState.stats.spotBackoffs } : {}),
-                ...(!(state.party?.partyId || state.partyId) ? {
-                    huntingRecovery: SpotRiskPolicy.recordRecovery(state, {
-                        deaths: Math.max(0, nextDeaths - previousDeaths),
-                        wins: Number(result.debug?.wins || 0), exp,
-                        expBeforeDeath: experienceAward.totalExp,
-                        pressure: soloPressure
-                    })
-                } : {}),
+                ...hunt,
                 // The one record of a hunting round, solo or a party member's
                 // own share; the lifecycle owns actual death penalties and
                 // capped XP, so the sample takes the net exp.

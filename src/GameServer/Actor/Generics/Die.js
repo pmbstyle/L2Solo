@@ -84,7 +84,10 @@ function die(session, actor, context = {}) {
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
                 startedAt: Number(victimSession.botStartedAt || timestamp)
             });
-            victimSession.coldLifeState = { ...prior, stats: { ...prior.stats, ...progress } };
+            // Its death is a far round's (deaths, the spot's risk, recovery): the died situation
+            // re-decides its spot on the row that carries it.
+            const recorded = Life.recordNearFight(victimSession, prior, { died: true, timestamp });
+            victimSession.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...progress } };
         }
         Life.notifyNearFacts(victimSession, 'death');
         const Trace = invoke('GameServer/Bot/DecisionTrace');
@@ -93,7 +96,10 @@ function die(session, actor, context = {}) {
             // Where and how the body died: the spot it hunts (the row's may be the one it left), what it was
             // doing, the mobs still on it and its time since it went hot (near and far deaths compared).
             const hotAt = Number(victimSession.populationHotAt) || 0;
+            // Its detail tier and the nearest player's distance at its last tick (HotActorLodPolicy).
+            const lod = victimSession.hotActorLod;
             Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(victimSession.currentSpot?.id ?? prior?.spotId ?? ''),
+                ...(lod ? { tier: lod.tier, playerDist: lod.nearestPlayerDistance ?? undefined } : {}),
                 level: Number(actor.fetchLevel?.()) || undefined, plan: String(victimSession.plan || ''),
                 attackers: invoke('GameServer/Bot/AI/PartyAwareness').npcsAttackingActor(actor, 900).length,
                 ...(hotAt > 0 ? { durationMs: Math.max(0, Number(context.timestamp || Date.now()) - hotAt) } : {}),

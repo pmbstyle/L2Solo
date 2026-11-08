@@ -236,9 +236,10 @@ function npcDied(session, actor, npc) {
             timestamp: Date.now(), startedAt: invoke('GameServer/Bot/AI/BotHuntEfficiency').SERVER_STARTED_AT,
             kills: 1, persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: learning.knowledgeEnabled() });
         // Its kill counts as a far round's won fight: resolved and won (GearStall's kill count,
-        // stats.fightsWon; the readers that take wins as a share of resolved fights).
-        reward.session.coldLifeState = { ...saved, stats: { ...saved.stats, ...life, fightsWon: Number(saved.stats?.fightsWon || 0) + 1,
-            fightsResolved: Number(saved.stats?.fightsResolved || 0) + 1 } };
+        // stats.fightsWon; the readers that take wins as a share of resolved fights), and a win
+        // in its spot's risk window and its recovery.
+        const recorded = invoke('GameServer/Bot/Population/BotLifeState').recordNearFight(reward.session, saved, { won: true });
+        reward.session.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...life } };
     }
     invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc);
 }
