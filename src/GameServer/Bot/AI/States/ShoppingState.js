@@ -1,5 +1,6 @@
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
-const { raiseDecision, held } = require('../DecisionEvents');
+const { raiseDecision, held, replaceStats, statsFor } = require('../DecisionEvents');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -1185,8 +1186,10 @@ module.exports = {
             session.plan = rebuffBeforeLeaving
                 ? 'getting_buffed'
                 : (returningToCompanion ? 'following' : 'hunting');
-            // The visit's end, its restock bought or given up: the build takes the next
-            // leaf. A buff stop after it belongs to this visit and raises nothing.
+            // The visit's end, its restock bought or given up: the bot's look at the market
+            // (as a far visit's), then the build takes the next leaf. A buff stop after it
+            // belongs to this visit and raises nothing.
+            replaceStats(session, GoalExecutor.townLooked(statsFor(session)));
             if (!returningToCompanion) raiseDecision(session, restockFailure ? 'goal_failed:visit' : 'goal_done:visit');
             BotEventJournal.record({
                 botId: bot.fetchId(),

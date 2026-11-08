@@ -18,7 +18,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
     const world = await createWorld(ids.map(id => ({ id, level: 30 })), 'meeting-detached-admission');
     const original = { prepare: Coordinator.requestMeetingPreparation, current: Coordinator.meetingPreparationCurrent,
         refresh: Events.raiseOn,
-        cancel: Coordinator.cancelMeetingPreparation, warn: utils.infoWarn };
+        cancel: Coordinator.cancelMeetingPreparation, warn: utils.infoWarn, reprice: Afk.repriceBotLines };
     try {
         await Database.createAccount('bot_detached_admission', 'test');
         await Database.execute(["UPDATE characters SET username='bot_detached_admission' WHERE id IN (?,?)", ids]);
@@ -156,9 +156,24 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
             return { approved: true, token: request.token, characterId: id,
                 sequence: request.parties[request.actorA === id ? 0 : 1].sequence };
         };
+        // A withdrawal that failed is tried again at the next refusal of the same quote,
+        // so sellers stop walking to it once one lands.
+        let withdrawals = 0;
+        Afk.repriceBotLines = async (...args) => {
+            if (++withdrawals === 1) throw new TypeError('fixture withdrawal failure');
+            return original.reprice(...args);
+        };
+        await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 1);
+        for (let pass = 0; pass < 100 && refreshed === null; pass++) await tick();
+        assert.equal(withdrawals, 1, 'the payer refusal tries to withdraw its buy line');
+        assert((Afk.boardIndex().records.get(buyAd.id) || []).some(row => row.selfId === 1867),
+            'a failed withdrawal leaves the line on the board');
+        refreshed = null;
         // A buy store never refuses a seller: the owner that will not pay its
         // price closes the line and decides anew, so no later seller walks to it.
         const priceRefusal = await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 1);
+        for (let pass = 0; pass < 100 && withdrawals < 2; pass++) await tick();
+        assert.equal(withdrawals, 2, 'the same quote refused again retries its withdrawal');
         for (let pass = 0; pass < 100 && refreshed === null; pass++) await tick();
         assert.equal(refreshed, ids[0], 'the buy ad owner that refused its price decides anew');
         assert(!await Database.fetchTradeMeetingByToken(priceRefusal.token));
@@ -174,6 +189,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         Coordinator.meetingPreparationCurrent = original.current;
         Coordinator.cancelMeetingPreparation = original.cancel;
         Events.raiseOn = original.refresh;
+        Afk.repriceBotLines = original.reprice;
         utils.infoWarn = original.warn;
         await world.close();
     }

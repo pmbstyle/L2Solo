@@ -39,6 +39,13 @@ const original = { stateForActor: Economy.stateForActor, registered: World.regis
         assert(Wealth.refused({ stats }, recipe.recipeId), 'the build does not pick it again before the next town look');
         assert(!Wealth.refused({ stats: { ...stats, townLook: { n: 4 } } }, recipe.recipeId), 'the next town look ends the mark');
         assert.equal(Events.rejections()['wealth:recipe_state'], before + 1, 'the refusal is counted by its reason');
+        // A refusal of a decision the body no longer holds marks nothing: its newer
+        // decision was built on newer facts.
+        const newer = registered.session = { actor, decisionStats: { townLook: { n: 3 }, decisionSeq: 5 } };
+        const late = await Hot.review(newer, { network: { activity: leaf }, statsPacket: { decisionSeq: 4 } });
+        assert.equal(late.attempted, false);
+        assert.equal(Events.statsFor(newer).wealthRefused, undefined, 'a stale refusal leaves the newer decision unmarked');
+        assert.equal(Events.rejections()['wealth:recipe_state'], before + 1, 'a stale refusal is not counted');
         console.log('PASS a near crafter refused at the act holds the craft refusal mark until its next town look');
     } finally {
         Economy.stateForActor = original.stateForActor; World.registeredActorById = original.registered;

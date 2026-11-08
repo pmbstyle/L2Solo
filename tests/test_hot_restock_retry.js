@@ -54,9 +54,15 @@ let failed = true;
         Shopping.scheduleRestock(session, bot, null, ai);
         assert.equal(timers.length, 0, 'the retry waits instead of looping each AI tick');
         failed = false;
+        // A craft refused in the field holds its mark until the bot's next look at the market.
+        const Wealth = invoke('GameServer/Bot/Economy/WealthCraftDecision');
+        session.decisionStats = { townLook: { n: 3 }, wealthRefused: { look: 3, recipes: [79] } };
+        assert(Wealth.refused({ stats: session.decisionStats }, 79));
         await attempt();
         assert.equal(session.plan, 'hunting');
         assert.equal(events.at(-1).eventType, 'shopping_completed', 'a later successful purchase ends the visit');
+        assert.equal(session.decisionStats.townLook.n, 4, 'a near visit\'s end is the bot\'s look at the market');
+        assert(!Wealth.refused({ stats: session.decisionStats }, 79), 'its look ends the craft refusal mark');
         assert.deepEqual(raised.splice(0), ['goal_done:visit'], 'its end wakes the build once, no second town arrival');
         session.plan = 'shopping'; session.shoppingLiveShotStopChecked = true; session.shoppingTarget = { town: 'Giran' };
         failed = true;
