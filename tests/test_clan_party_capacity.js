@@ -33,6 +33,7 @@ const members = [1, 2].map(characterId => ({ characterId, phase: 'cold', activit
     assert.strictEqual(commits[0].expectedPartyRevision, 4);
     assert.strictEqual(commits[0].party.status, 'dissolved');
     assert.deepStrictEqual(commits[0].party.memberIds, []);
+    assert.strictEqual(commits[0].party.stats.partyBreakReason, 'clan_priority', 'the ended party names why it ended');
     assert(commits[0].members.every(x => x.snapshot.activity === 'hunting' && !x.snapshot.party.partyId));
     accepted = 0;
     deps.database.commitBackgroundPartyMembership = async () => ({ ok: false, reason: 'membership_conflict' });

@@ -108,18 +108,34 @@ async function lifecycle() {
     const take = kind => events.splice(0).filter(row => row.kind === kind)
         .map(row => [row.bot, row.phase, row.outcome, row.reason].map(value => value ?? null));
 
-    // A party request opened by the build (a plan that needs a party), held open by the next build; closed by a
-    // leave that names it (an assembly timed out).
-    const Requests = invoke('GameServer/Bot/Population/PartyRequestPlanner');
-    const asker = { characterId: 601, level: 30, activity: 'hunting', phase: 'cold', stats: {} };
-    const plan = { status: 'active', requiresParty: true, strategy: 'market', next: { spotId: 's1', npcId: 20001 }, target: { selfId: 0 } };
-    const request = Requests.partyRequestForPlan(asker, plan, 1000, { economy: { worth: () => 0 } });
-    Requests.partyRequestForPlan({ ...asker, stats: { partyRequest: request } }, plan, 2000, { economy: { worth: () => 0 } });
+    // A party request's lifecycle, at the commits that change it (every committed state lands in BotLifeState's
+    // cache; the first load is no event): opened, held by the next commit, closed by a leave's commit with the
+    // leave's reason (the leave computed alone, as a projection does, records nothing), reopened and ended by joining
+    // a party, by the build no longer asking and by a supply pause.
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const commit = (id, patch) => {
+        const previous = Life.cachedState(id);
+        return Life.acceptSimulationOwnership(id, { revision: Number(previous?.simulation?.revision || 0) + 1 },
+            { ...previous, ...patch, characterId: id });
+    };
+    const ask = at => ({ objectiveKey: 'gear:1', reason: 'gear_acquisition', status: 'open', requestedAt: at, priority: 'required' });
     const { REASON: timeout } = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
-    require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle').releaseMember({ characterId: 602, phase: 'hot', activity: 'party_wait',
-        party: { partyId: 'bgp_t' }, stats: { backgroundPartyId: 'bgp_t' } }, 3000, timeout, { objectiveKey: 'k', status: 'open' });
-    assert.deepEqual(take('party'), [[601, 'request', 'open', 'gear_acquisition'], [602, 'request', 'closed', timeout]],
-        'a request opened once, closed once with its reason');
+    commit(601, { level: 30, phase: 'hot', activity: 'hunting', loc: { locX: 0, locY: 0, locZ: 0 }, party: {}, stats: {} });
+    commit(601, { stats: { partyRequest: ask(1000) } });
+    commit(601, { activity: 'party_wait', stats: { partyRequest: ask(1000), backgroundPartyId: null } });
+    const left = require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle').releaseMember(Life.cachedState(601), 3000,
+        timeout, ask(1000));
+    assert.deepEqual(take('party'), [[601, 'request', 'open', 'gear_acquisition']], 'opened once; a leave not committed is no close');
+    commit(601, left);
+    commit(601, { stats: { partyRequest: ask(4000) } });
+    commit(601, { party: { partyId: 'bgp_join' }, stats: { partyRequest: null, backgroundPartyId: 'bgp_join' } });
+    commit(601, { party: {}, stats: { partyRequest: ask(5000) } });
+    commit(601, { stats: { partyRequest: null } });
+    commit(601, { stats: { partyRequest: ask(6000) } });
+    commit(601, { stats: { partyRequest: { ...ask(6000), status: 'closed', suspendedFor: 'stock:craft' } } });
+    assert.deepEqual(take('party'), [[601, 'request', 'closed', timeout], [601, 'request', 'open', 'gear_acquisition'],
+        [601, 'request', 'closed', 'joined'], [601, 'request', 'open', 'gear_acquisition'], [601, 'request', 'closed', 'not_needed'],
+        [601, 'request', 'open', 'gear_acquisition'], [601, 'request', 'closed', 'supply_pause']], 'every end of a request closed once, with its reason');
 
     // A party formed (its new row), re-accepted unchanged, a member joined, its raid won, then dissolved (twice).
     const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -137,10 +153,23 @@ async function lifecycle() {
         [701, 'dissolved', 'dissolved', 'raid_defeated']], 'formed, joined and dissolved once each, the end with its reason');
     assert.deepEqual(partyRows.filter(row => row.kind === 'raid').map(row => [row.phase, row.outcome, row.npcId]), [['outcome', 'defeated', 10366]],
         'the raid\'s outcome once, with its boss');
+    // A party a required clan hunt reclaims ends with its reason, under the leader it had (the ended row holds none).
+    const reclaimed = (revision, status = 'active', stats = {}) => ({ partyId: 'bgp_reclaim', leaderId: 711, memberIdsJson: JSON.stringify([711, 712]),
+        spotId: 's1', startedAt: 1, status, statsJson: JSON.stringify(stats), roleCoverageJson: '{}', updatedAt: revision + 1, revision });
+    Parties.acceptRow(reclaimed(0));
+    events.splice(0);
+    const reclaimers = [711, 712].map(characterId => ({ characterId, phase: 'cold', activity: 'grouped', party: { partyId: 'bgp_reclaim' },
+        simulation: {}, stats: {} }));
+    assert.equal(await require('../src/GameServer/Bot/Population/ClanPartyCapacity').reclaim(
+        { status: 'open', priority: 'required', clanId: 77, clanGoalKey: 'clan:77:gear' }, {
+            parties: Parties, metrics: { recordPartyDissolution() {} },
+            life: { statesForParty: async () => reclaimers, preparePartyReview: (before, after) => ({ before, snapshot: after }), acceptPartyAssignments() {} },
+            database: { commitBackgroundPartyMembership: async ({ party }) => ({ ok: true, partyRow: { ...party, revision: 1 } }) } }), true);
+    assert.deepEqual(take('party'), [[711, 'dissolved', 'dissolved', 'clan_priority']], 'a reclaimed party ends once, named');
 
     // A trade meeting prepared, its accept refused (the reason), a second accepted, then delivered once and cancelled once.
     const Meetings = require('../src/GameServer/AfkTrade/TradeMeetingService');
-    const Life = invoke('GameServer/Bot/Population/BotLifeState'), Database = invoke('Database');
+    const Database = invoke('Database');
     const kept = { cached: Life.cachedState, accept: Database.acceptTradeMeeting, drain: Database.withoutMutationAdmission };
     const trader = { characterId: 801, phase: 'cold', activity: 'shopping', simulation: { revision: 0 }, stats: {} };
     const side = { phase: 'cold', revision: 0, hotAt: 0, sequence: 1, needRevision: 0, route: { fee: 0, scroll: false, method: 'walk', durationMs: 0 } };
@@ -164,14 +193,24 @@ async function lifecycle() {
         [801, 'prepared', null, null], [801, 'accepted', null, null], [801, 'delivered', null, 'arrived'], [801, 'cancelled', null, 'route_unfunded']],
         'each meeting event once, a refusal and a cancel with their reasons');
 
-    // A clan errand taken (the member left for the seller's town), filled, and another failed.
-    const Credit = invoke('GameServer/Clan/ClanPurchaseCredit');
-    await Credit.settle(3, 901, 0, { traveling: true, errandAt: 5, plan: { selfId: 1867 }, state: null }, 'clan_goal_purchase_refund');
-    await Credit.returnUnspent(901, { purpose: 'clan', selfId: 1867, at: 5, tag: { clanId: 3, clanPart: 0 } }, 100, 'done');
-    await Credit.returnUnspent(902, { purpose: 'clan', selfId: 1867, at: 6, tag: { clanId: 3, clanPart: 0 } }, 0, 'failed', 'no_source');
-    await Credit.returnUnspent(903, { purpose: 'supply', selfId: 1867, at: 7 }, 0, 'done');
-    assert.deepEqual(take('errand'), [[901, 'taken', null, 'traveling'], [901, 'done', null, null], [902, 'failed', null, 'no_source']],
-        'a clan errand\'s events once each; a bot\'s own errand is none');
+    // A clan errand's lifecycle, at the commits that change the bot's errands: taken, bought in part (no event), filled
+    // (done); another dropped with the commit's reason (failed), a third run out of time (lapsed). A bot's own
+    // errand, or one with no clan, is none.
+    const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
+    const errand = (selfId, at, amount, clanId = 3) => ({ town: 'Giran', selfId, amount, at, purpose: 'clan', tag: { clanId, clanPart: 100 } });
+    commit(901, { level: 30, phase: 'cold', activity: 'hunting', loc: { locX: 0, locY: 0, locZ: 0 }, updatedAt: 10, stats: {} });
+    events.splice(0);
+    commit(901, { updatedAt: 11, stats: { marketErrands: [errand(1867, 5, 2), errand(1868, 5, 1, 0), { ...errand(1869, 5, 1), purpose: 'supply' }] } });
+    commit(901, { updatedAt: 12, stats: { marketErrands: [errand(1867, 5, 1)], lastErrand: { purpose: 'clan', selfId: 1867, units: 1, at: 12 } } });
+    commit(901, { updatedAt: 13, stats: { marketErrands: [], lastErrand: { purpose: 'clan', selfId: 1867, units: 1, at: 13 } } });
+    commit(901, { updatedAt: 14, stats: { marketErrands: [errand(1870, 14, 1), errand(1871, 14, 1)] } });
+    commit(901, { updatedAt: 15, stats: { marketErrands: [errand(1871, 14, 1)], lastReason: 'market_errand_need_changed' } });
+    commit(901, { updatedAt: 14 + Errands.ERRAND_MS, stats: { marketErrands: [] } });
+    const errandRows = events.filter(row => row.kind === 'errand');
+    assert.deepEqual(take('errand'), [[901, 'taken', null, null], [901, 'done', null, null], [901, 'taken', null, null], [901, 'taken', null, null],
+        [901, 'failed', null, 'market_errand_need_changed'], [901, 'lapsed', null, null]], 'each clan errand event once, an end with its outcome');
+    assert.deepEqual(errandRows.map(row => [row.errandKey, row.item]), [['clan:3', 1867], ['clan:3', 1867], ['clan:3', 1870], ['clan:3', 1871],
+        ['clan:3', 1870], ['clan:3', 1871]], 'under its clan and item');
 
     // A raid search woken at the director's start forms a roster's party: forming once, the search once.
     const Policy = invoke('GameServer/Bot/Population/OpportunisticRaidPolicy');

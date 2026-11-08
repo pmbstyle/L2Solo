@@ -90,6 +90,8 @@ function native({ one, all, write, row: getRow, now }) {
             const pausedAt = previousTakeover ? Number(stats.playerTakeover?.at || timestamp) : timestamp;
             delete stats.playerTakeover;
             stats.constPartyPause = { at: pausedAt, nextResolveAt: party.nextResolveAt };
+            // The bots leave play for the player's constant party: the party's end while it waits.
+            stats.partyBreakReason = 'player_const_party';
             write(`UPDATE bot_background_parties SET status='const_paused',nextResolveAt=NULL,
                 statsJson=?,updatedAt=?,revision=revision+1 WHERE partyId=?`, [JSON.stringify(stats), timestamp, party.partyId]);
         }

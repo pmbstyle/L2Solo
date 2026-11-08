@@ -21,7 +21,10 @@ function consume(session, data) {
         // close first, so the board in memory and its index drop them.
         return invoke('GameServer/AfkTrade/AfkTradeService').leave(character.id).catch((error) => {
             utils.infoWarn('CharDelete', 'board leave failed for %s: %s', character.name, error.message);
-        }).then(() => Database.deleteCharacter(session.accountId, character.name)).then(() => {
+        }).then(() => Database.deleteCharacter(session.accountId, character.name)).then((deleted) => {
+            // Its meetings' ends land as any meeting end does: the other actor's row, its trace.
+            const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
+            for (const result of deleted?.meetings || []) Meetings.acceptRows(result);
             // The character's items, skills, shortcuts and macros go with its
             // row: every table references characters(id) ON DELETE CASCADE and
             // the game connection enables foreign keys (U53).

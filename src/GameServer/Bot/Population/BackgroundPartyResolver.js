@@ -866,6 +866,7 @@ const BackgroundPartyResolver = {
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
                 risk: clamp(Number(party.risk || 0.25) + riskDelta, 0.05, 0.95),
                 stats: {
+                    ...(raidFailed || raidDefeated ? { partyBreakReason: raidDefeated ? 'raid_defeated' : 'raid_failed' } : {}),
                     ...(lootDistribution.agreement ? { agreement: lootDistribution.agreement } : {}),
                     ...(materialHunt ? { materialTargetNpcId: targetNpcId } : {}),
                     pveEncounter: raid ? null : pending,

@@ -574,7 +574,7 @@ async function purchaseNeedChanged(ownerId, errand) {
         }, async () => {
             const saved = errand && await life().retireMarketErrand(ownerId, errand);
             if (saved && errand.purpose === 'clan') await invoke('GameServer/Clan/ClanPurchaseCredit')
-                .returnUnspent(ownerId, errand, 0, 'failed', 'need_changed');
+                .returnUnspent(ownerId, errand, 0);
         });
     } catch (error) { utils.infoWarn('AfkTrade', 'refused purchase of %d refresh: %s', ownerId, error.message); }
     events().raiseOn(ownerId, 'goal_failed', { impossible: true });
