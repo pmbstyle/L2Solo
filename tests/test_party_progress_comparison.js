@@ -30,7 +30,13 @@ assert.equal(Income.evaluate({ ...level, cash: 50000, spendable: 0 }).reason, 's
 assert.equal(Income.evaluate({ ...level, solo: null }).reason, 'goal_requires_party');
 assert.equal(Income.evaluate({ ...level, party: null }).reason, 'progress_unknown');
 assert.equal(Income.evaluate({ ...level, fee: 100 }).reason, 'help_fee_unfunded');
-assert.equal(Income.evaluate({ ...level, remaining: 0 }).accept, false, 'no level ahead and nothing to save for: solo');
+assert.equal(Income.evaluate({ ...level, remaining: 0 }).accept, false, 'no level ahead and nothing to save for: the solo hunt earns more');
+// At the level cap a bot weighs what it still gains: the party that earns more wins, the time its deaths take counted.
+const capped = { remaining: 0, solo: { exp: 0, income: 1000 }, party: { exp: 0, income: 1500 } };
+assert.equal(Income.evaluate(capped).reason, 'party_sooner', 'a capped bot parties where it earns more');
+assert.equal(Income.evaluate({ ...capped, party: { exp: 0, income: 1500, deaths: 1, deathHours: .6 } }).accept, false,
+    'a capped bot\'s party earning more but dying more is not sooner');
+assert.equal(Income.evaluate({ ...capped, solo: { exp: 0, income: 2000 } }).accept, false, 'nor one that earns less');
 assert.equal(Income.levelHours({ exp: 100, deaths: 1, deathHours: .25 }, 1000), 12.5);
 const base = { cash: 5000, spendable: 0, solo: { exp: 100, income: 1000 }, party: { exp: 100, income: 200 }, remaining: 1000 };
 assert.equal(Income.evaluate(base).accept, false, 'a saver at equal exp: the lower personal margin funds the piece later');

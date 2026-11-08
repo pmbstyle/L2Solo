@@ -24,8 +24,8 @@ const soloState = state => ({ ...state, activity: 'hunting', partyId: null,
 
 // Hours to the next level on a route: the exp still missing over its exp per hour,
 // each hour's deaths adding their price (route.deathHours: the exp a death takes and
-// the way back, EconomicValuation.deathHours). 0 with no level ahead (at the cap);
-// null when the route gives no exp.
+// the way back, EconomicValuation.deathHours). 0 with no level ahead (at the cap:
+// evaluate then weighs money); null when the route gives no exp.
 function levelHours(route, remaining) {
     if (!(remaining > 0)) return 0;
     if (!(route?.exp > 0)) return null;
@@ -33,7 +33,7 @@ function levelHours(route, remaining) {
 }
 
 // Pure comparison of the two sides in hours. A side's hours are its hours to the
-// next level (levelHours) plus, only for a bot saving for its path's piece (cash:
+// next level (levelHours; at the cap the hours to earn one sum, capped below) plus, only for a bot saving for its path's piece (cash:
 // the price its held gear plan names and it cannot pay yet; item hours: the piece's
 // own drop), the hours until it holds that piece: its income funding the price
 // (fundingDelay, the trip to the camp when it must earn first) or the drop, the
@@ -61,15 +61,23 @@ function evaluate({ solo, party, remaining = 0, cash = null, spendable = 0, fee 
         const paidReady = Math.max(deliveryHours, afterFee) + positive(party.travelHours);
         partyPiece = partyPiece === null ? paidReady : Math.min(partyPiece, paidReady);
     }
-    const side = (route, piece) => {
+    const partyIncome = party ? Number(party.income) + (deliveryHours > 0
+        ? positive(rewardFee) / (deliveryHours + positive(assemblyHours)) : 0) : null;
+    // No level ahead (the level cap, Progression.contentCap) and nothing saved for:
+    // the bot still gains money, so each side's hours are the hours it takes to
+    // earn the same sum (the better side's hour of income), deaths adding their
+    // time; a side that earns nothing never gets there (null). Our choice: a capped
+    // C4 player hunts for adena and drops, and parties where they come sooner.
+    const capped = !(remaining > 0) && !saving;
+    const sum = capped ? Math.max(positive(solo?.income), positive(partyIncome)) : 0;
+    const side = (route, piece, income = route?.income) => {
+        if (capped) return Number(income) > 0 ? sum / Number(income) * (1 + positive(route.deaths) * positive(route.deathHours)) : null;
         const level = route ? levelHours(route, remaining) : null;
         return level === null || piece === null ? null : level + piece;
     };
-    const soloHours = side(solo, soloPiece);
-    const partyRoute = party ? side(party, partyPiece) : null;
+    const soloHours = solo ? side(solo, soloPiece) : null;
+    const partyRoute = party ? side(party, partyPiece, partyIncome) : null;
     const partyHours = partyRoute === null ? null : partyRoute + positive(assemblyHours);
-    const partyIncome = party ? Number(party.income) + (deliveryHours > 0
-        ? positive(rewardFee) / (deliveryHours + positive(assemblyHours)) : 0) : null;
     let reason = 'solo_sooner', accept = false;
     if (positive(fee) > positive(spendable)) reason = 'help_fee_unfunded';
     else if (!party || partyHours === null && soloHours === null) reason = 'progress_unknown';
