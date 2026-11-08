@@ -313,6 +313,7 @@ const tests = [
     'tests/test_town_navigation.js',
     'tests/test_town_traffic.js',
     'tests/test_town_movement.js',
+    'tests/test_town_trade_navigation.js',
     'tests/test_openrouter_gateway.js',
     'tests/test_ai_config_surface.js',
     'tests/test_bot_inference_budget.js',
@@ -711,6 +712,7 @@ const tests = [
     'tests/test_bot_travel_realism.js',
     'tests/test_companion_equipment_shopping.js',
     'tests/test_hot_shopping_trade_meeting.js',
+    'tests/test_hot_shopping_progress.js',
     'tests/test_hot_restock_retry.js',
     'tests/test_companion_dual_sword_crafting.js',
     'tests/test_town_npc_routing.js',
@@ -1296,6 +1298,7 @@ const geodataTests = new Set([
     'tests/test_companion_pathfinding_worker.js',
     'tests/test_town_gate_routing.js',
     'tests/test_town_movement.js',
+    'tests/test_town_trade_navigation.js',
     'tests/test_town_navigation.js',
     'tests/test_town_npc_routing.js'
 ]);
