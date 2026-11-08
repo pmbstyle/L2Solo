@@ -2358,15 +2358,8 @@ function sourceRouteReader(state, options = {}) {
             ? spot.npcEntries.find(row => Number(row.selfId) === Number(npcId))
             : spot.npcSelfIds?.some(id => Number(id) === Number(npcId)) ? { selfId: npcId, count: 1 } : null;
         if (!entry) return false;
-        // The species' pulls the hunter survives, and every aggressive other of the
-        // spot at each of its pulls: they may engage a targeted hunt first, whatever
-        // it chose (ColdCombatProfile.killDraw). The pair's kept bits read only these
-        // (the spot's own groups, the reader's profiles).
-        const safety = { soloSafety: true, maxTargetLevel: targetLevel || null };
-        const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
-        const verdict = () => BotTargetMatchup.speciesPulls(profiles, entry, safety)?.canHunt === true
-            && Cold.interruptersOf(Cold.encounterOf(spot), npcId)
-                .every(other => BotTargetMatchup.speciesPulls(profiles, other, safety)?.whole === true);
+        const verdict = () => BotTargetMatchup.speciesPulls(profiles, entry,
+            { soloSafety: true, maxTargetLevel: targetLevel || null })?.canHunt === true;
         const pair = options.ground && at >= 0 ? speciesPair(spots, at, npcId) : undefined;
         if (pair !== undefined) {
             ground.species ||= new Uint8Array((speciesPairs(spots).size + 3) >> 2);

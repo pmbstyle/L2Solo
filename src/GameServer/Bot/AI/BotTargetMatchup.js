@@ -842,23 +842,22 @@ const spotMatchups = new WeakMap();
 
 // One spawn group's verdict over its pulls (BotPullEstimate.pullsOf): the
 // pulls the profiles survive (allowed, their shares as measured), their
-// share of the group, whether they survive every pull of it (whole), and the
-// efficiency over all its pulls; null for a species no one hunts. The bot
-// takes only the spawns it can (user 10-29).
+// share of the group, and the efficiency over all its pulls; null for a
+// species no one hunts. The bot takes only the spawns it can (user 10-29).
 function entryVerdict(verdicts, entry, verdictOptions) {
     const allowed = [];
-    let efficiency = 0, share = 0, known = 0;
+    let efficiency = 0, share = 0, known = false;
     for (const [size, part] of Pull.pullsOf(entry)) {
         const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions, size);
         if (!verdict) continue;
-        known++;
+        known = true;
         efficiency += part * verdict.efficiency;
         if (verdict.canHunt) {
             allowed.push([size, part]);
             share += part;
         }
     }
-    return known ? { efficiency, canHunt: share > 0, share, allowed, whole: allowed.length === known } : null;
+    return known ? { efficiency, canHunt: share > 0, share, allowed } : null;
 }
 
 // The spawn group's verdict for profiles under safety options, the one a spot

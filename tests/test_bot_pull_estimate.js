@@ -130,8 +130,20 @@ const mixedPick = Cold.npcForSpot(mixed, () => 0.99, { soloSafety: true, pull: t
 assert.deepStrictEqual([mixedPick.pull, mixedPick.usualPull], [2, 2], 'a trio roll becomes a pair');
 assert.deepStrictEqual(Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0], { soloSafety: true }),
     { efficiency: Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0], { soloSafety: true }).efficiency,
-        canHunt: true, share: 0.7, allowed: [[2, 0.7]], whole: false });
+        canHunt: true, share: 0.7, allowed: [[2, 0.7]] });
 assert.strictEqual(Cold.npcForSpot(mixed, () => 0.99, { pull: true }).pull, 3, 'without safety the whole mix is rolled');
+// What comes at a targeted hunt first is one of the groups the hunter takes, at a pull it
+// survives, as on an untargeted hunt: the hunter survives a lone White Wolf (aggressive), not a pair.
+{
+    const ground = wolves => ({ ...gremlins(0), npcEntries: [{ selfId: 1, count: 3 }, { selfId: 527, count: 10, pulls: wolves }] });
+    const engaged = wolves => Cold.npcForSpot(ground(wolves), () => 0,
+        { preferredNpcId: 1, soloSafety: true, pull: true, matchupProfiles: hunterProfiles });
+    assert.deepStrictEqual([engaged([[2, 1]]).selfId, engaged([[2, 1]]).aggressiveInterruption], [1, false],
+        'wolf pairs the hunter never takes do not engage its targeted gremlin hunt');
+    const lone = engaged([[2, 0.5], [1, 0.5]]);
+    assert.deepStrictEqual([lone.selfId, lone.pull, lone.aggressiveInterruption], [527, 1, true],
+        'a wolf group it takes engages it first, a lone wolf');
+}
 // User 10-29: a round counts only the spawns the bot may fight. One lone gremlin group
 // (production 6 a hour) beside 45 trio spawns it cannot survive feeds one kill in ten
 // minutes and one fight a round, not the trios' respawns.

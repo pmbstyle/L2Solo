@@ -131,13 +131,6 @@ try {
     assert.equal(reader(state)(mixed, 239), false, 'and the species');
     assert.equal(reader(shots(5000))(escort), true, 'shots back: the spot opens again');
     assert.equal(reader(shots(5000))(mixed, 239), true, 'and the species');
-    // Malruk Lords beside the captains: an aggressive group the bot cannot survive may
-    // engage its targeted hunt first, so the source on that ground is refused.
-    const guarded = { ...mixed, id: '99_94', npcEntries: [...mixed.npcEntries, { selfId: 627, level: 68, count: 2 }],
-        npcSelfIds: [...mixed.npcSelfIds, 627] };
-    const fresh = (bot, ground) => Planner.sourceRouteReader(bot, { timestamp, spots: [ground] })(ground, 239);
-    assert.equal(fresh(shots(5000), mixed), true, 'fixture: the captains alone are a source');
-    assert.equal(fresh(shots(5000), guarded), false, 'an aggressive group it cannot survive refuses the source');
 }
 // A pet's wound and the owner's MP do not move a source; the fight's own read keeps them.
 {
@@ -166,9 +159,7 @@ try {
     const live = { ...pet, active: true, hp: pet.maxHp, expiresAt: timestamp + 600000 };
     const beside = { ...warlock, stats: { ...warlock.stats, coldCombat: { ...warlock.stats.coldCombat, summon: live } } };
     const drained = { ...warlock, vitals: { ...warlock.vitals, mp: 0 } };
-    // Passive species only: an aggressive one may engage any targeted hunt of the field first.
-    const species = Data.npcs.filter(npc => Number(npc.template?.level) >= 45 && Number(npc.template?.level) <= 62 && npc.selfId < 7000
-        && npc.template?.hostile !== true);
+    const species = Data.npcs.filter(npc => Number(npc.template?.level) >= 45 && Number(npc.template?.level) <= 62 && npc.selfId < 7000);
     const field = { ...spot, id: '99_96', npcEntries: species.map(npc => ({ selfId: npc.selfId, level: Number(npc.template.level), count: 1 })),
         npcSelfIds: species.map(npc => npc.selfId) };
     const answers = (bot, kept) => {
