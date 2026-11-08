@@ -40,15 +40,6 @@ const LINK_INPUTS = Object.freeze({
         'route.travel' // routeInputs: the accepted trip's town and end
     ], [], [])
 });
-// What a bot's fight reads of the bag (PartyGoalPolicy's forming key): the shot its consumable prices name
-// (BotHuntEfficiency.consumablePrices: a spiritshot class's blessed or plain
-// one by what it holds) and the kind of shot the fight loads
-// (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply: none once the
-// charges end; none without a bag, as stateProfiles).
-function shotInputs(state, timestamp) {
-    return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
-        ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(CombatProfile.shotSupply(state, timestamp)) : 0];
-}
 // The route table's inputs (EconomicTrip.routeInputs): the whole key (route)
 // and one version per field (LINK_INPUTS routeRows).
 function routeVersions(state) {
@@ -310,11 +301,6 @@ function decisionRefusal(state, decisionSeq, activityLeaf, focus) {
     if ((stats.wishFocus?.[0] ?? null) !== focus) return 'wish_focus';
     return '';
 }
-function isEmptyWishPlan(plan) {
-    return plan?.status === 'deferred' && plan.strategy === 'none'
-        && plan.next == null && plan.reason === 'wish_focus'
-        && Object.keys(plan).every(key => ['status', 'strategy', 'next', 'reason'].includes(key));
-}
 // The one reading of an occupation against the held leaf (Recompute: own
 // outputs are not inputs): the trip the leaf ordered under way (to its
 // hunting spot arriving to hunt, or to its town), or the arrival where it
@@ -394,5 +380,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
-    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, isEmptyWishPlan, decisionRefusal };
+module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
+    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, decisionRefusal };

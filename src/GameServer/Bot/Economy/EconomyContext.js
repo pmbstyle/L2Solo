@@ -242,17 +242,6 @@ function restoreEventProof(prefix, accepted) {
             activity: activityIdentity(accepted.card.activity), generation });
     } catch (error) { FailureLog.note('economy.codec:proof_restore', error); return null; }
 }
-// The proof as it crosses the worker boundary (plain JSON), bounded.
-function wireEventProof(proof) {
-    if (!proof || proof.version !== PROOF_VERSION
-        || (proof.activity === null ? proof.decision?.[1] !== 0 : typeof proof.activity !== 'string')) return null;
-    try {
-        return Buffer.byteLength(JSON.stringify(proof)) <= PROOF_RAW_BYTES ? { ...proof } : null;
-    } catch (error) { FailureLog.note('economy.codec:proof_wire', error); return null; }
-}
-function receiveEventProof(proof) {
-    return proof?.version === PROOF_VERSION ? proof : null;
-}
 // The check of a held leaf where it is carried out: one row per kind of leaf answers
 // "does it still stand?" (leafOutcome: the executor's situation; the agenda's next
 // step). A row returns '' or its own frozen failure: the name (check:<name>).
@@ -1898,4 +1887,4 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { visitStopsLeft, decideEarning, quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, restoreEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };

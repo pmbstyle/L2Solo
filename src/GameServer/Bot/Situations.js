@@ -173,12 +173,6 @@ const SITUATIONS = Object.freeze({
     party_outleveled: link(0)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
-// One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
-function woke(name, where) {
-    const now = hears(name, where);
-    if (now) count(raisedCounts, `${name}@${NAMES.get(where)}`);
-    return now;
-}
 
 // The decisions a bot holds: one bit each in stats.woken, the same bits per plane
 // in stats.waiting (STOP plane the low byte, TOWN the next). Each declares here, once,
@@ -677,6 +671,6 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
-    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
+    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears,
     DECISIONS, ALL, FIRST, raise, delta, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };
