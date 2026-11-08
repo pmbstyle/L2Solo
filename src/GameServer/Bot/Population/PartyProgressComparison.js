@@ -226,7 +226,7 @@ function partyKills(cycles) {
 
 // One bounded forecast for a complete roster. Static point lookups are
 // cached by role/level/rates in SpotValueTable. No wish graph or combat roll.
-function prepare(members, { objective, party, spots, timestamp = Date.now() } = {}) {
+function prepare(members, { objective, party, spots, timestamp } = {}) {
     spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     const spotId = objective?.spotId || party?.spotId || members[0]?.spotId;
     const spot = invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId);
@@ -393,12 +393,16 @@ function focusedItem(state) {
 // need of it, else its party request, its gear plan's next step, the
 // objective; final: the goal is the focused gear itself (a recipe or
 // component delivery is not the completion of the final gear purchase: only
-// the focused equipment compares direct item time).
+// the focused equipment compares direct item time). A request that only meets
+// at a spot (no solo ground, party progress) names no item: the member saves for
+// its plan's step all the same, so the goal reads past it.
 function goalOf(state, members, objective, agreement) {
     const materialParty = Material.isObjective(objective);
     const materialGoal = materialParty ? Material.needs(members, objective, agreement)
         .find(row => row.characterId === Number(state.characterId)) : null;
-    const goal = materialGoal || state.stats?.partyRequest || state.stats?.equipmentPlan?.next || objective;
+    const request = state.stats?.partyRequest;
+    const asked = request && !require('./PartyRequestPlanner').meetsAtSpot(request) ? request : null; // lazy: the planner's chain loads this module
+    const goal = materialGoal || asked || state.stats?.equipmentPlan?.next || objective;
     const focused = focusedItem(state);
     return { materialGoal, goal, final: materialParty ? !!materialGoal
         : Number(goal?.itemId) > 0 && (!focused || focused === Number(goal.itemId)) };
@@ -428,6 +432,18 @@ function soloGoalHours(state, aim, spots, timestamp) {
         invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_goal_hours', 'evicted');
     }
     return kept.hours ?? null;
+}
+
+// A forming party hunts from its first step, which comes the party resolve's wait after
+// its formation (BackgroundPartyResolver: the minimum plus up to the spread); the ask
+// counts the mean of that wait (our choice, not C4).
+let firstStep = null;
+function firstStepHours() {
+    if (firstStep === null) {
+        const { PARTY_RESOLVE_MIN_MS, PARTY_RESOLVE_SPREAD_MS } = require('./BackgroundPartyResolver'); // lazy: the resolver's chain loads this module
+        firstStep = (PARTY_RESOLVE_MIN_MS + PARTY_RESOLVE_SPREAD_MS / 2) / HOUR_MS;
+    }
+    return firstStep;
 }
 
 function compare(state, peers, options = {}) {
@@ -472,7 +488,7 @@ function compare(state, peers, options = {}) {
         ? positive(helpers ? help.remaining ?? help.fee : help?.fee) / Math.max(1, helpers?.length ?? peers.length) : 0;
     const answer = evaluate({ solo, party, remaining: remainingExp(state), cash, spendable, fee, soloItemHours, partyItemHours,
         deliveryHours, rewardFee, lean: partyLean(state),
-        assemblyHours: options.party ? 0 : positive(party?.travelHours) + 45000 / HOUR_MS });
+        assemblyHours: options.party ? 0 : positive(party?.travelHours) + firstStepHours() });
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 

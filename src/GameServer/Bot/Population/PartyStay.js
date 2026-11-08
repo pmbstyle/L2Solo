@@ -44,7 +44,7 @@ function decide(member, reads = {}) {
 // reads (outleveled, soloSooner) are the forming verdict's own comparison. A candidate
 // with karma joins (C4 bars no PK from a party). A candidate that would leave at once is
 // not taken: forming builds no party to dissolve. reads: { now, bridgeReason }.
-function joins(member, { now = Date.now(), bridgeReason = null } = {}) {
+function joins(member, { now, bridgeReason = null } = {}) {
     return decide(member, { now, bridgeReason }).answer === 'stay';
 }
 
