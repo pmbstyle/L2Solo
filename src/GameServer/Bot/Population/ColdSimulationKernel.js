@@ -2621,8 +2621,12 @@ class ColdSimulationKernel {
                 if (this.tracedBots.has(id)) console.info('ColdWorker :: overdue refusal %s', JSON.stringify({ id, reason: result.reason, detail: result.detail,
                     stage: result.stage, revision: result.revision, proposed: active?.proposed?.simulation?.revision, stateRevision: result.state?.simulation?.revision,
                     activity: active?.proposed?.activity, proposedDue: active?.proposed?.timing?.nextResolveAt, keys: Object.keys(result).slice(0, 12) }));
+                // A row a player sees waits for its activation (detail near_player):
+                // held off the heap until main republishes it, when the player
+                // left (Coordinator.releaseNearHolds) or main wrote it; no retry before.
+                const nearPlayer = result.detail === 'near_player';
                 if (result.state) this.upsert({
-                    state: {
+                    state: nearPlayer ? result.state : {
                         ...result.state,
                         timing: {
                             ...(result.state.timing || {}),
@@ -2630,7 +2634,8 @@ class ColdSimulationKernel {
                         }
                     }
                 });
-                requeued.push(id);
+                if (nearPlayer) this.unschedule(id);
+                else requeued.push(id);
             }
             accepted.push(result);
         });

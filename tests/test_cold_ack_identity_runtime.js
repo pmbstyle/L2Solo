@@ -77,7 +77,8 @@ async function leafCommit(rowLeaf, proposalLeaf, proposalId) {
         await Life.init(); await create();
         World.user = { sessions: [], revision: 0 };
         coordinator = new ColdSimulationCoordinator();
-        await coordinator.start({ realPlayerSessionsNear: World.realPlayerSessionsNear.bind(World) });
+        // PopulationService's part the commit reads: these hunting rows are ones the near-player scan takes.
+        await coordinator.start({ realPlayerSessionsNear: World.realPlayerSessionsNear.bind(World), activationCandidate: () => true });
         await until(() => coordinator.ready && coordinator.snapshotsLoaded, 'actual ready Worker');
         assert(coordinator.worker instanceof Worker);
         const worker = coordinator.worker, post = worker.postMessage.bind(worker);

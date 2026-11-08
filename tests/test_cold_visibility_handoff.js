@@ -20,8 +20,13 @@ function playerAt(locX, locY, locZ) {
     const world = await createWorld([{ id: 7001 }], 'cold-visibility-handoff');
     await LifeState.init();
     const coordinator = new ColdSimulationCoordinator();
+    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+    const activationCandidate = state => PopulationService.activationCandidate(state);
+    // The index answers by the asked radius, as World's does.
+    let player = playerAt(1000, 2000, -4976);
     coordinator.population = {
-        realPlayerSessionsNear: () => [playerAt(1000, 2000, -4976)]
+        activationCandidate,
+        realPlayerSessionsNear: (loc, radius) => player && Math.hypot(loc.locX - 1000, loc.locY - 2000) <= radius ? [player] : []
     };
     const visible = {
         characterId: 7001,
@@ -41,6 +46,37 @@ function playerAt(locX, locY, locZ) {
         result: { events: [] }
     }), null, 'a visible actor proposal must be rejected until hot activation owns it');
 
+    // The refusal holds the bot for its activation (near_player) and the
+    // activation's own rule picks which rows: a merchant or a shopless crafter,
+    // which the scan never activates, steps on; so does a bot a player is near
+    // but does not see (past the client's view).
+    const held = { characterId: visible.characterId, nextState: { ...visible, activity: 'hunting' }, revision: 1 };
+    await coordinator.prepareProposal(held);
+    assert.strictEqual(held.prepareRefusal, 'near_player', 'the refusal names the hold for the worker');
+    for (const [label, row] of [
+        ['a merchant', { ...visible, activity: 'merchant' }],
+        ['a crafter without a shop', { ...visible, activity: 'crafting' }],
+        ['a member of a party the scan skips', { ...visible, party: { partyId: 'not-active-party', leaderId: 1 } }],
+        ['a bot past the client view', { ...visible, loc: { locX: 8000, locY: 2000, locZ: -4976 } }]
+    ]) {
+        await LifeState.upsertState({ ...row, simulation: { revision: 1 } }, 'visibility_fixture');
+        const proposal = { characterId: visible.characterId, nextState: { ...row, simulation: { revision: 1 } }, revision: 1 };
+        assert.notStrictEqual(await coordinator.prepareProposal(proposal), null, `${label} near a player steps on`);
+        assert.strictEqual(proposal.prepareRefusal, undefined, `${label} is not held`);
+    }
+    // Held until the player leaves: the scan's pass sends the row back to the worker, once.
+    await LifeState.upsertState(visible, 'visibility_fixture');
+    const marked = [];
+    coordinator.markDirty = (state, options) => marked.push([state.characterId, options.reason]);
+    coordinator.releaseNearHolds();
+    assert.deepStrictEqual(marked, [], 'a held bot the player still sees stays held');
+    player = null;
+    coordinator.releaseNearHolds();
+    coordinator.releaseNearHolds();
+    assert.deepStrictEqual(marked, [[visible.characterId, 'near_player_left']], 'the player left: the row goes back to the worker once');
+    player = playerAt(1000, 2000, -4976);
+    delete coordinator.markDirty;
+
     assert.strictEqual(coordinator.visibleToRealPlayer({
         ...visible,
         loc: { locX: 20000, locY: 2200, locZ: -4976 }
@@ -48,7 +84,7 @@ function playerAt(locX, locY, locZ) {
     assert.strictEqual(coordinator.visibleToRealPlayer({ ...visible, activity: 'traveling' }), false,
         'persisted travel remains event-scheduled until hot route materialization exists');
 
-    coordinator.population = { realPlayerSessionsNear: () => [] };
+    coordinator.population = { activationCandidate, realPlayerSessionsNear: () => [] };
     const transitioning = {
         ...visible,
         party: { partyId: 'visible-party', leaderId: visible.characterId }
