@@ -159,6 +159,9 @@ async function run() {
     Commit.finish(2, learnRetry.command);
     assert(learningReplay.replayed);
     assert.equal(await amount(2, recipe.recipeItemId), 1, 'learning retry cannot consume another scroll');
+    assert.equal(await amount(2, 1870), 2, 'the far buyer\'s own writes (its close, its recipe command) take its coal into the bag once');
+    assert.deepEqual(Database.boardSettlementOwners(), [], 'nothing waits on the board');
+    assert.equal(Number((await current(2)).inventory[1870]?.amount || 0), 2, 'its stored bag holds the coal');
     assert.equal((await Database.fetchCharacterRecipes(2)).filter(row => row.recipeId === recipe.recipeId).length, 1);
     const uncertain = Object.values(Recipes.loadRecipeItems()).find(row => row.type === 'dwarven' && row.successRate < 100 && row.mpCost > 0);
     assert(uncertain, 'native catalog supplies a probabilistic recipe');

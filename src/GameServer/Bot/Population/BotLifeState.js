@@ -3138,6 +3138,12 @@ const BotLifeState = {
                         ? Database.applyColdSoulCrystalResults(row.characterId, result.soulCrystals, nativeWriteOptions || {}) : null)
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, newDeath ? 'resolve_death' : 'resolve', nativeWriteOptions))
                     .then((deathDrop) => {
+                        // What waited for the bot on the board joined its bag
+                        // with this step (Database.syncInventorySummary).
+                        if (deathDrop?.settled?.inventorySummary) {
+                            row.inventorySummary = deathDrop.settled.inventorySummary;
+                            row.adena = deathDrop.settled.adena;
+                        }
                         if (deathDrop?.inventory) {
                             // The published state carries the row the drop read back.
                             row.simulationRevision = deathDrop.revision;

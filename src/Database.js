@@ -2875,10 +2875,12 @@ function mindPatchParams(mind) {
 }
 
 // The summary entries of changedIds and adena from the physical rows, and the
-// next simulationRevision, for a row its caller has checked.
+// next simulationRevision, for a row its caller has checked. The write moves
+// a far row, so what waits for it on the board joins it here.
 function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = null, statsPatch = null) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    const ids = [...new Set([57, ...changedIds].map(Number))];
+    const settled = farSettlementsWaitUnsafe(characterId) ? creditBoardSettlementsUnsafe(characterId) : null;
+    const ids = [...new Set([57, ...changedIds, ...(settled || [])].map(Number))];
     const physical = LifeState.inventorySummaryFromItems(all(`SELECT * FROM items
         WHERE characterId = ? AND selfId IN (${ids.map(() => '?').join(',')})`, [Number(characterId), ...ids]));
     const inventory = InventorySummary.read(row.inventorySummary);
@@ -4664,13 +4666,12 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
         coldLifeRows: difference ? fenceAfkTradePartiesUnsafe([characterId], [57]) : {} };
 }
 
-// Merges a bot's settlements into its bag; a far bot's row follows inside its
-// own step commit (the commit set the revision): the summary entries of the
-// merged items and the adena are read back from the items, as a fenced write
-// does (writeColdInventorySnapshotUnsafe). Returns { changedIds, row } or null
-// when nothing waited.
-function mergeBoardSettlementsUnsafe(characterId) {
+// Moves what waits for a bot on the board into its bag (items) and clears it,
+// in the caller's transaction. Returns the selfIds it changed (adena always),
+// or null when nothing waited.
+function creditBoardSettlementsUnsafe(characterId) {
     const id = Number(characterId);
+    if (!pendingSettlementOwners.has(id)) return null;
     const rows = all('SELECT * FROM board_settlements WHERE ownerId = ? ORDER BY id', [id]);
     if (!rows.length) {
         setPendingSettlementUnsafe(id, false);
@@ -4684,8 +4685,30 @@ function mergeBoardSettlementsUnsafe(characterId) {
     }
     write('DELETE FROM board_settlements WHERE ownerId = ?', [id]);
     setPendingSettlementUnsafe(id, false);
+    return [...changedIds];
+}
+
+// What waits for a far bot reaches its bag with a write of its own row that
+// moves the row anyway (its step commit, its lifecycle command's resolve, a
+// native command, a fence), in that write's transaction: no write moves a far
+// row only to merge, and a bot main drives through town merges without the
+// worker step it does not take there. A near bot's waits for settleBoardOwner.
+function farSettlementsWaitUnsafe(characterId) {
+    return pendingSettlementOwners.has(Number(characterId)) && settlesLaterUnsafe(characterId);
+}
+
+// Merges a bot's settlements into its bag; a far bot's row follows inside the
+// write of its own that called it (the write moved the revision and the
+// checkpoint, so neither moves here): the summary entries of the merged items
+// and the adena are read back from the items, as a fenced write does
+// (writeColdInventorySnapshotUnsafe). Returns { changedIds } and, for a far
+// row, its new { inventorySummary, adena }; null when nothing waited.
+function mergeBoardSettlementsUnsafe(characterId) {
+    const id = Number(characterId);
+    const changedIds = creditBoardSettlementsUnsafe(id);
+    if (!changedIds) return null;
     const life = one('SELECT phase, inventorySummary FROM bot_life_state WHERE characterId = ?', [id]);
-    if (!life || life.phase !== 'cold') return { changedIds: [...changedIds], row: null };
+    if (!life || life.phase !== 'cold') return { changedIds };
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [id]));
     const inventory = InventorySummary.read(life.inventorySummary);
@@ -4693,9 +4716,9 @@ function mergeBoardSettlementsUnsafe(characterId) {
         if (physical[selfId]) inventory[selfId] = physical[selfId];
         else delete inventory[selfId];
     }
-    write('UPDATE bot_life_state SET inventorySummary = ?, adena = ?, updatedAt = ? WHERE characterId = ?',
-        [InventorySummary.saved(inventory), Number(physical[57]?.amount || 0), now(), id]);
-    return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
+    const inventorySummary = InventorySummary.saved(inventory), adena = Number(physical[57]?.amount || 0);
+    write('UPDATE bot_life_state SET inventorySummary = ?, adena = ? WHERE characterId = ?', [inventorySummary, adena, id]);
+    return { changedIds, inventorySummary, adena };
 }
 
 function commitInteractionMemoryUnsafe(batch, timestamp) {
@@ -6567,8 +6590,7 @@ const Database = {
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.
             EconomyJournal.detail('board_settlement');
-            const settled = pendingSettlementOwners.has(characterId)
-                ? mergeBoardSettlementsUnsafe(characterId) : null;
+            const settled = mergeBoardSettlementsUnsafe(characterId);
             EconomyJournal.detail(null);
             // Persist the entitlement under the same revision fence and
             // transaction as EXP. Cold-to-hot resurrection reads this durable record.
@@ -6578,11 +6600,11 @@ const Database = {
             // with its save: the outbox row commits or rolls back with it.
             if (request.lifeEvents) historyOutboxUnsafe('life_events', request.lifeEvents);
             parts?.lap('settle');
-            // After the UPDATE only a settlement (it returns its read) and the
+            // After the UPDATE only a settlement and the
             // physical step's PvP tally or PK death drop write this bot's life
             // state: then the whole row goes back (its stats hold what SQL
             // wrote into them). Otherwise the UPDATE's own numbers.
-            const committedRow = settled?.row || (settled || rewrote ? coldSimulationRow(characterId) : written);
+            const committedRow = settled || rewrote ? coldSimulationRow(characterId) : written;
             parts?.lap('reread');
             parts?.done();
             return {
@@ -7320,11 +7342,17 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(
             () => {
                 checkCapturedWriteAdmission(admission, characterId);
-                const result = syncInventorySummaryUnsafe(characterId, inventory);
+                const synced = syncInventorySummaryUnsafe(characterId, inventory);
+                // A far bot's lifecycle step (its resolve: the row's save, then
+                // this sync) takes what waits for it on the board, after the
+                // sync wrote its bag; the step publishes the summary handed back.
+                const resolve = reason === 'resolve' || reason === 'resolve_death';
+                const settled = resolve && farSettlementsWaitUnsafe(characterId) ? mergeBoardSettlementsUnsafe(characterId) : null;
+                const result = settled ? { ...synced, settled } : synced;
                 // A new ordinary cold death consumes its ordered bag once, in
                 // the same transaction that reconciles the physical inventory.
                 if (reason !== 'resolve_death') return result;
-                const dropped = dropPkDeathItemsUnsafe(characterId);
+                const dropped = { ...dropPkDeathItemsUnsafe(characterId), ...(settled ? { settled } : {}) };
                 // The drop rewrote the row a worker command is writing; the
                 // command's next write (its publish) checks the row against its
                 // proof, so the proof moves with the row, as the save ROW does.
@@ -11795,6 +11823,9 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (Number(item.selfId) === 57) afkTradeCreditAdenaUnsafe(owner, amount);
         else afkTradeCreditItemUnsafe(owner, item, amount);
     }, funding: checkEconomyFundingUnsafe,
+    // An accepting actor's board settlements, near or far: the accept's fence
+    // writes a far actor's row, the accepted reply syncs a near one's bag.
+    deliver: creditBoardSettlementsUnsafe,
     canReceive: (id, life, itemId, count, pending) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending),
     canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),

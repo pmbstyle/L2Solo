@@ -180,6 +180,24 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         const survival = (await accept(kit)).meeting.id;
         await Database.cancelTradeMeeting(survival, 'fixture');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(survival, actor); }
+        // A board sale leaves the far seller's 150 adena on the board; its next
+        // accept takes them into the wallet it pays from (100 free above the
+        // reserve, 220 due), once, instead of being refused for them.
+        const stems = await Database.setItem(ids[0], { selfId: 1864, name: 'Stem', amount: 3, slot: 0 });
+        const stemShop = await Database.createAfkTradeShop(ids[0], { storeType: 1, kind: 'shop', town: 'Giran', title: 'Stems',
+            lines: [{ objectId: stems.insertId, selfId: 1864, name: 'Stem', count: 3, price: 50, stackable: true }] });
+        await Database.buyFromAfkTradeShop(ids[2], { shopId: stemShop.shop.id, ownerId: ids[0], lineId: stemShop.shop.lines[0].id,
+            amount: 3, expectedPrice: 50, expectedRevision: stemShop.shop.revision });
+        assert.deepEqual(Database.boardSettlementOwners(), [ids[0]], 'fixture: the sale waits on the board');
+        const beforeSale = await funds(ids[0]);
+        const settledAccept = await accept(await prepare());
+        assert.equal(settledAccept.meeting.state, 'accepted', 'a delivery on the board does not refuse the accept');
+        assert.equal(await funds(ids[0]), beforeSale + 150 - 220, 'the sale joins the wallet once and pays the meeting');
+        assert.deepEqual(Database.boardSettlementOwners(), [], 'nothing waits on the board');
+        assert.equal(Number(settledAccept.coldLifeRows[ids[0]].adena), beforeSale + 150 - 220, 'the accept\'s row carries the wallet');
+        await Database.cancelTradeMeeting(settledAccept.meeting.id, 'fixture');
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(settledAccept.meeting.id, actor); }
+        assert.equal(await funds(ids[0]), beforeSale + 150, 'the cancelled meeting refunds; the sale stays, once');
         // A world saved before that fix holds such records; they close once.
         const sellAd = async seller => {
             const stock = (await Database.fetchItems(seller)).find(row => row.selfId === 1867);

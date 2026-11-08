@@ -47,7 +47,7 @@ function canonical(request) {
     return { token, actorA, actorB, seqA, seqB, town, point: { locX: point.locX, locY: point.locY, locZ: point.locZ }, lines: basket, parties: sides };
 }
 function create(io) {
-    const { one, all, write, take, debit, credit, snapshot, protection, funding, now } = io;
+    const { one, all, write, take, debit, credit, deliver, snapshot, protection, funding, now } = io;
     const meeting = id => one('SELECT * FROM board_trade_meetings WHERE id=?', [requireSafe(id, true)]);
     const ids = row => [row.actorA, row.actorB];
     // Two indexed bounded arms: an actor's commitments never scan the world.
@@ -92,7 +92,7 @@ function create(io) {
         const fresh = preparation?.freshPreparation === true && typeof preparation.validatePreparation === 'function';
         if (fresh && preparation.validatePreparation(request) !== true) throw Error('trade_meeting_preparation_changed');
         const actors = [request.actorA, request.actorB], sequences = [request.seqA, request.seqB];
-        const totals = [0, 0], aggregate = new Map(), protectedTotals = new Map(), quoteTotals = new Map();
+        const totals = [0, 0], aggregate = new Map(), protectedTotals = new Map(), quoteTotals = new Map(), delivered = new Set();
         for (const line of request.lines) {
             totals[line.payer] = sum(totals[line.payer], line.count * line.price);
             const quoteKey = `${line.adId}:${line.selfId}:${line.enchant}`;
@@ -132,7 +132,9 @@ function create(io) {
                 if (!position?.alive || !position.available || Math.hypot(position.locX - request.point.locX,
                     position.locY - request.point.locY, position.locZ - request.point.locZ) > 200) throw Error('trade_meeting_player_at_point');
             }
-            if (one('SELECT 1 FROM board_settlements WHERE ownerId=? LIMIT 1', [id])) throw Error('trade_meeting_delivery_pending');
+            // What deals left for the actor on the board joins its bag before the
+            // accept spends from it; the accept's fence writes those entries too.
+            for (const selfId of deliver(id) || []) delivered.add(selfId);
             if (life && !fresh) for (const line of request.lines.filter(line => line.payer === side)) {
                 const adId = line.needAdId || line.adId;
                 const ad = adId && one('SELECT * FROM afk_trade_shops WHERE id=?', [adId]);
@@ -202,7 +204,7 @@ function create(io) {
             write('UPDATE board_trade_participants SET nextSequence=nextSequence+1,meetingId=COALESCE(meetingId,?) WHERE characterId=?', [id, actors[side]]);
         });
         const row = meeting(id);
-        return result(row, fence(row, [...request.lines.map(line => line.selfId), 736]));
+        return result(row, fence(row, [...request.lines.map(line => line.selfId), 736, ...delivered]));
     }
     function leg(id, side, sequence, legId, fee, scroll) {
         const row = meeting(id), suffix = side === 0 ? 'A' : side === 1 ? 'B' : null;
