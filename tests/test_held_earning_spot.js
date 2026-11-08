@@ -194,6 +194,17 @@ function onWorker() {
             const funded = count(() => Economy.forState(kit(1000000, 0), deps(9)));
             const answer = published(held, funded.result).stats.earning;
             assert.deepEqual([answer.spotId, answer.drinks], ['rich', true], 'a funded bot stays where it drinks, and its answer says so');
+            // The broke bot that moved on: its wallet reaching its survival potions wakes one search,
+            // which takes the spot where it drinks again, and the build that buys them.
+            const moved = published(held, broke.result);
+            const affordable = { ...kit(1000000, 0, 'goal_affordable:potions'), stats: { ...kit(1000000, 0, 'goal_affordable:potions').stats,
+                earning: moved.stats.earning, wishSections: moved.stats.wishSections } };
+            assert(Situations.woken(affordable.stats, 'earning_spot') && Situations.woken(affordable.stats, 'build'), 'fixture: both woken');
+            const back = count(() => Economy.forState(affordable, deps(10)));
+            assert.equal(back.searches, 1, 'its potions in reach wake one search');
+            assert.deepEqual([published(affordable, back.result).stats.earning.spotId, published(affordable, back.result).stats.earning.drinks],
+                ['rich', true], 'and the bot goes back to the spot where it drinks');
+            assert(!Situations.woken(published(affordable, back.result).stats, 'build'), 'the build is taken with it');
         } finally { Table.value = native.value; Table.cycle = native.cycle; }
     }
     // Its own stay disappoints its answer (situations.md Q2): weighed at a rest, once a stay, after enough kills.
