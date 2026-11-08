@@ -358,14 +358,14 @@ const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Num
 function mainVisit(state, facts) {
     return !!state.stats?.clanHallVisit || facts.hallNeeded(state);
 }
-// A far bot's held guide answer (ColdGuideVisit) is its step's round, pure, here; a
-// party member's buffs are its party's. The step's packet holds the answer as
-// decided and is merged after the round: it carries the round's done answer too.
+// A far bot's held guide answer (ColdGuideVisit) is its step's whole round, pure,
+// here, read on the state the step starts from: the bot goes for the buffs first and
+// that step plans nothing, its errand is planned on its next step (the round carries
+// the answer done). A party member's buffs are its party's. The round's result, or null.
 let Rebuff = null;
-function guideRound(state, plan, timestamp) {
+function guideRound(state, timestamp) {
     if (state.party?.partyId || state.partyId || !(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')) return null;
-    const result = require('./ColdGuideVisit').plan(state, timestamp), rebuff = result.patch.stats.rebuff;
-    return { result, plan: plan?.statsPacket?.rebuff ? { ...plan, statsPacket: { ...plan.statsPacket, rebuff } } : plan };
+    return require('./ColdGuideVisit').plan(state, timestamp);
 }
 // A held clan waiter (ClanPartyDuty.held) takes no step where the solo resolver
 // would plan it: the resolver only holds it again. A command still runs first.
@@ -1015,7 +1015,7 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         // The bot's one record: { state, version, route, spotFit, materialMemo, progressAsk,
-        // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute }.
+        // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute, stayHeld }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the kept route (BotRoute.trip) until its
         // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
@@ -1023,7 +1023,8 @@ class ColdSimulationKernel {
         // progress ask (partyRequestForPlan), the economy
         // plan sent and its hash, the card it holds and the commit that card
         // rides (cardInFlight), the facts of its last
-        // committed action ask (onCommitAck) and, for a near bot, the
+        // committed action ask (onCommitAck), a clan duty member's held stay trip
+        // (partyStay: the situationSeq it was held at) and, for a near bot, the
         // last raise applied and the route rows of its last decision
         // (ColdSimulationWorker nearEvents, publish).
         // A held event wait (lifecycleKind 'event_driven', stats.eventWait) ends
@@ -1588,17 +1589,16 @@ class ColdSimulationKernel {
             const elapsedMs = stepElapsedMs(current.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(current.state, timestamp);
             const hallVisit = !raidPreparing && mainVisit(current.state, this);
-            let lifecyclePlan = !hallVisit && !raidPreparing && this.planLifecycle
+            const guide = !hallVisit && !raidPreparing && guideRound(current.state, timestamp);
+            const lifecyclePlan = !hallVisit && !raidPreparing && !guide && this.planLifecycle
                 ? await this.planLifecycle({ state: current.state, timestamp })
                 : null;
             if (!this.currentCommand(id, attempt)) return;
             const resolveState = lifecyclePlan?.plannedState || current.state;
             const spot = this.spotOf(current.state);
-            const guide = !hallVisit && !raidPreparing && guideRound(resolveState, lifecyclePlan, timestamp);
-            if (guide) lifecyclePlan = guide.plan;
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : guide ? guide.result : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
+                : guide || occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
@@ -1788,7 +1788,10 @@ class ColdSimulationKernel {
     // main starts it with a return ticket: trips). A clan duty lets one member go at a
     // time: a trip answered while another member's absence holds (its ticket live) or
     // another trip went this step is not taken, its bit stays woken
-    // (party:stay_trip:held) and the party step after the absence ends decides again.
+    // (party:stay_trip:held, once per held trip) and the party step after the absence
+    // ends decides again. While that absence holds and no situation was raised on the
+    // member since (its situationSeq, kept on its record: stayHeld), the held answer
+    // stands and no step decides it again.
     // Not while the party meets a player, carries a dead member, fights a war or a
     // started raid, or evacuates: the bits wait. Returns { members (new copies where
     // anything moved), leaving: Map(id -> reason), trips: [{ characterId, reason }] }.
@@ -1814,13 +1817,17 @@ class ColdSimulationKernel {
                 stats = { ...stats, partyOutleveled: outleveled };
                 if (outleveled) Situations.raise(stats, 'party_outleveled', null, Situations.place(member), id);
             }
-            if (decides && Situations.woken(stats, 'party_stay')) {
+            const record = this.states.get(id), seq = Number(stats.situationSeq) || 0;
+            if (decides && Situations.woken(stats, 'party_stay') && !(absent && record?.stayHeld === seq)) {
                 const { answer, reason } = Stay.decide(member, { now: timestamp, outleveled: !!outleveled, clanDuty: duty,
                     requiredObjective: required,
                     bridgeReason: this.equipmentBridgeReason,
                     soloSooner: () => !!this.soloSooner?.({ member, party, members: run.members, timestamp, shares }) });
-                if (answer === 'trip' && duty && (absent || trips.length)) Situations.note('party:stay_trip:held');
-                else {
+                if (answer === 'trip' && duty && (absent || trips.length)) {
+                    if (record?.stayHeld == null) Situations.note('party:stay_trip:held');
+                    if (record) record.stayHeld = seq;
+                } else {
+                    if (record) record.stayHeld = null;
                     stats = { ...stats, woken: Situations.decided(stats, 'party_stay', { caller: 'party_step', subject: id, answer: `${answer}:${reason}` }) };
                     if (answer === 'leave' || answer === 'trip' && !duty) leaving.set(id, reason);
                     else if (answer === 'trip') trips.push({ characterId: id, reason });
@@ -2126,7 +2133,7 @@ class ColdSimulationKernel {
             // Collection quotas and their physical receipts share the same
             // commit, including completion with no funded helper contract.
             const atomicParty = raid || paidHelp || materialHunt || resolvedParty.status === 'dissolved';
-            let memoryGroup = atomicParty || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+            const memoryGroup = atomicParty || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${stepProposalId(run.party.leaderId, run.startedAt)}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
             if (atomicParty) resolvedParty.updatedAt = Math.max(resolveStartedAt, Number(run.party.updatedAt) + 1);
@@ -2142,13 +2149,19 @@ class ColdSimulationKernel {
                     revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
             }
             let requirementMs = 0, lastRequirementPlanMs = 0;
-            // The open re-plan of the party's needs (members already planned).
-            // It opens on main's due mark (a member joined or left, the
-            // objective moved: run.requirementRefresh) or on a member whose
-            // step raised its build section (its kit moved, below), and
-            // closes when every member is planned or the party ends.
+            // The open re-plan of the party's needs: the members whose plan landed (planned
+            // here, its commit not refused: onCommitAck takes a refused member out, so this
+            // step plans it again). It opens on main's due mark (a member joined or left, the
+            // objective moved: run.requirementRefresh) or on a member whose step raised its
+            // build section (its kit moved, below). Every member planned, the end rides the
+            // leader's commit; it holds every member at the next step when that end landed,
+            // and closes there, or when the party ends.
             let requirementProgress = this.partyRequirementProgress.get(String(run.party.partyId));
             const nativeExpedition = run.party.stats?.objective?.opportunisticRaid === true;
+            if (requirementProgress && run.members.every(member => requirementProgress.has(Number(member.characterId)))) {
+                this.partyRequirementProgress.delete(String(run.party.partyId));
+                requirementProgress = null;
+            }
             if (nativeExpedition) {
                 this.partyRequirementProgress.delete(String(run.party.partyId));
                 requirementProgress = null;
@@ -2236,23 +2249,17 @@ class ColdSimulationKernel {
                 proposals.push(proposal);
             }
             // The re-plan ends when every member is planned or the party ends. Done, the party's
-            // objective follows its members' plans, on the party row the leader's commit carries.
+            // objective follows its members' plans, on the party row the leader's commit carries
+            // with the end (requirementRefreshedAt). Each plan rides its member's own commit: a
+            // refused one re-opens the re-plan at that member, whose next plan sends the end again.
             const leader = proposals.find(proposal => proposal.characterId === Number(run.party.leaderId));
             const replanning = !!requirementProgress && !meetingPending && !materialHunt;
             const replanned = replanning && !!leader && run.members.every(member => requirementProgress.has(Number(member.characterId)));
-            if (replanned || replanning && resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
+            if (replanning && resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
             const party = replanned && resolvedParty.status !== 'dissolved' ? { ...resolvedParty, stats: { ...resolvedParty.stats,
                 ...Refresh.partyObjective(run.members.map(member => planned.has(Number(member.characterId))
                     ? { ...member, stats: { ...member.stats, equipmentPlan: planned.get(Number(member.characterId)) } } : member)) } }
                 : resolvedParty;
-            // The objective follows the plans this step changed: they commit together, so a
-            // refused member plan also refuses the re-plan's end (requirementRefreshedAt) and
-            // main's due mark stays for the next step to re-plan from the stored rows.
-            if (replanned && planned.size && !memoryGroup) {
-                memoryGroup = { id: `hunt:${stepProposalId(run.party.leaderId, run.startedAt)}`,
-                    memberIds: proposals.map(proposal => proposal.characterId) };
-                for (const proposal of proposals) Object.assign(proposal, { priority: 'P1', atomicGroup: memoryGroup });
-            }
             if (atomicParty) memoryGroup.partyChanges = [fencedPartyChange(run, party)];
             // What the leader's commit carries: main writes the party row from it (the row's
             // next due) and starts its members' duty trips (stayTrips).
@@ -2318,7 +2325,8 @@ class ColdSimulationKernel {
             const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0, ownClock(active.state)));
             const elapsedMs = stepElapsedMs(active.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(active.state, timestamp);
-            let lifecyclePlan = !raidPreparing && this.planLifecycle
+            const guide = !raidPreparing && guideRound(active.state, timestamp);
+            const lifecyclePlan = !raidPreparing && !guide && this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, timestamp })
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
@@ -2331,9 +2339,7 @@ class ColdSimulationKernel {
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
                     (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0)
             };
-            const guide = !raidPreparing && guideRound(resolveState, lifecyclePlan, timestamp);
-            if (guide) lifecyclePlan = guide.plan;
-            const result = guide ? guide.result : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
+            const result = guide || occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 ...roundOptions,
                 state: resolveState,
                 lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
@@ -2665,7 +2671,10 @@ class ColdSimulationKernel {
                 this.ackUnbuilt += 1;
                 requeued.push(id);
             } else {
-                this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
+                // Its plan did not land: the party's open re-plan plans it again.
+                if (this.partyRequirementProgress.get(String(active.partyId || active.state?.party?.partyId || ''))?.delete(id)) {
+                    EconomyDiagnostics.count('party_replan', 'reopened', 'refused');
+                }
                 // No review runs the plan this step stamped as sent.
                 if (active?.economyPlan) this.forgetSentPlan(id);
                 this.stepsRefused += 1;
