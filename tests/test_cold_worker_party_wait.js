@@ -6,6 +6,7 @@ require('../src/Global');
 const Geodata = require('../src/GameServer/Geodata/GeodataEngine');
 
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
 // The cold worker plans every solo resolve (planLifecycle) and decides there
 // whether a bot waits for a party and which spot it hunts meanwhile. The plan
@@ -30,6 +31,9 @@ const spots = [current, other, denser];
 const partyPlan = { status: 'active', strategy: 'farm', partyNeed: 'required', requiresParty: true,
     target: { selfId: 88 }, next: { spotId: 'party_only', npcId: 77, itemId: 88 } };
 const soloPlan = { ...partyPlan, partyNeed: 'solo_ok', requiresParty: false };
+const marketPlan = { status: 'active', strategy: 'market', target: { selfId: 88 } };
+const clanCall = { status: 'open', priority: 'required', clanGoalKey: 'clan-goal', clanId: 7,
+    objectiveKey: 'clan:party_only', spotId: 'party_only', npcId: 77, requestedAt: Date.now() };
 const request = { status: 'open', priority: 'required', objectiveKey: 'farm:party_only:77', spotId: 'party_only',
     npcId: 77, itemId: 88, targetId: 88, requestedAt: Date.now(), attempts: 0 };
 const scenarios = {
@@ -46,7 +50,10 @@ const scenarios = {
     108: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, town: true, activity: 'party_wait' },
     // A waiter already on its planned fallback, its hunting leaf naming no spot it may take:
     // the route search alone names the fallback and its NPC.
-    109: { plan: partyPlan, request, planned: { spotId: current.id, npcId: 321 }, leaf: { activity: 'hunting', spotId: 'nowhere' } }
+    109: { plan: partyPlan, request, planned: { spotId: current.id, npcId: 321 }, leaf: { activity: 'hunting', spotId: 'nowhere' } },
+    // A clan member called to a required clan hunt while it buys its gear on the market:
+    // forming never takes it, so the call does not hold it.
+    110: { plan: marketPlan, request: null, planned: null, clanCall: true }
 };
 const townLoc = { locX: 10 * 6000 + 3000, locY: 20 * 6000 + 3000, locZ: -3000 };
 
@@ -109,7 +116,8 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
                     : { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
                 timing: { lastResolvedAt: now - 45000, nextResolveAt: now - 1 },
                 stats: { generatedCold: true, classId: 0, role: 'dps', equipment: [],
-                    ...(scenario.resting ? { restUntil: now + 60000 } : {}) }
+                    ...(scenario.resting ? { restUntil: now + 60000 } : {}),
+                    ...(scenario.clanCall ? { clanId: 7, clanPartyObjective: clanCall, equipmentPlan: scenario.plan } : {}) }
             }
         }));
         send('snapshot_page', { done: true, rows });
@@ -167,6 +175,11 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
         // A waiter on its planned fallback farms the fallback's NPC (the route search's answer).
         assert.strictEqual(planned(109).spotId, current.id);
         assert.strictEqual(proposals.get(109).result?.debug?.targetNpcId, 321, 'a waiter on its fallback farms its planned NPC');
+        const shopper = proposals.get(110)?.nextState || commands.get(110)?.precomputedPlan?.plannedState;
+        assert(shopper, 'the clan member on a market plan is stepped');
+        assert.notStrictEqual(shopper.stats.eventWait, 'clan_party_assembly', 'no clan wait holds a bot forming never takes');
+        assert.notStrictEqual(shopper.activity, 'party_wait');
+        assert.notStrictEqual(lifecycleKind(shopper), 'event_driven', 'its own plan steps it, no party it cannot join');
         assert.strictEqual(planned(106).stats.equipmentPlan.inputPreparation.recipeId, 447,
             'the worker must not replace the selected plan with a bare wish that drops the retained project');
     } finally {

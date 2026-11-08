@@ -53,6 +53,11 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     const shown = line();
     Coordinator.lastWorkerSnapshot = { failures: { swallowed: { 'route.search': 3 } } };
     assert.strictEqual(line() - shown, 3, 'the worker\'s sites are summed on the line with main\'s');
+    // The full diagnostics line carries the decision counts too: the worker's situations
+    // with main's own notes (a forming outcome) summed in.
+    invoke('GameServer/Bot/Situations').note('party:form:roster_refused');
+    Coordinator.lastWorkerSnapshot = { situations: { raised: {}, woke: {}, decided: {}, unwoken: {} } };
+    assert.match(Status.summary().line, / situations=raised:\S*party:form:roster_refused:1/);
     Coordinator.lastWorkerSnapshot = {};
     // The shared rule: an owner's refusal code is an outcome, a bug's error is a failure even with a
     // code for a message; the backstop's unnamed sites (one per distinct throw) never crowd out a named one.

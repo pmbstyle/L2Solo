@@ -397,7 +397,6 @@ class Session {
             this.characterId = this.characterId || this.actor.fetchId?.();
             this.characterName = this.characterName || this.actor.fetchName?.();
             this.persistCharacterStatus({ currentOnly: true });
-            invoke('GameServer/Effects/EffectTicker').clearAll(this.actor);
             const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
             PartyCompanionService.detachAll(this, {
                 // A connection close is not the player dismissing companions.

@@ -1,13 +1,15 @@
 // A clan hunt is a shared assignment, never permission to attempt it alone. A
 // closed request (its assembly gave up: PartyRequestPlanner.closed) hunts solo
 // until its next build asks again.
+const Planner = () => invoke('GameServer/Bot/Population/PartyRequestPlanner'); // lazy: the planner's chain reads this module
 function objective(state) {
-    if (invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state)) return null; // lazy: the planner's chain reads this module
+    if (Planner().closed(state)) return null;
     const value = state?.stats?.clanPartyObjective;
     return value?.status === 'open' && value.clanGoalKey && value.priority === 'required' ? value : null;
 }
+// Only a bot forming may take waits for it (PartyRequestPlanner.formingSkips).
 function waiting(state) {
-    return !state?.party?.partyId && !state?.partyId && !!objective(state);
+    return !state?.party?.partyId && !state?.partyId && !Planner().formingSkips(state) && !!objective(state);
 }
 // The wait is published (hold below): the bot steps again only when a writer
 // changes its row (ColdSimulationKernel lifecycleKind 'event_driven'): its party
