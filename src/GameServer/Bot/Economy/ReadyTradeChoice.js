@@ -82,8 +82,6 @@ function resolve(tuple, board, ownerId) {
     const [side, selfId, count, recordId, lineId, revision, price] = tuple;
     const line = board?.records?.get(recordId)?.find(row => row.lineId === lineId);
     const state = tradeStateForOwner(ownerId);
-    if (line && side === BUY && line.custodyPolicy === 1
-        && require('./MeetingPriceRefusals').rejects(line, count, tradeStateForOwner(line.ownerId))) return null;
     if (line && side === SELL && line.custodyPolicy === 1
         && require('./MeetingPriceRefusals').rejects(line, count, state)) return null;
     return line && personalOfferAllowed(line, state) && line.storeType === side && executable(side, line, state) && line.selfId === selfId

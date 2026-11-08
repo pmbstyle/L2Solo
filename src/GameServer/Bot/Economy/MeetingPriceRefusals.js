@@ -1,6 +1,7 @@
 'use strict';
 
-// A buyer's fresh bilateral check can reject a specific advertised fill.
+// A buyer's fresh bilateral check can reject a specific advertised sale.
+// (A buy ad its own payer refuses is withdrawn by the meeting instead.)
 // Remember the exact buyer, quote and quantity while its
 // authority and sources hold, or while a dominating backed outside option
 // and its route remain valid. This is selection advice, not consent.
@@ -86,8 +87,7 @@ function remember(state, board, request, purchase, sourcesCurrent, { minimumFree
     if (!lines.length || lines.some(line => line.adId !== lines[0].adId || line.adRevision !== lines[0].adRevision)) return;
     const buyerId = Number(state.characterId), sellerId = Number(payer === 0 ? request.actorB : request.actorA);
     const quote = board.records.get(Number(lines[0].adId))?.find(line =>
-        (line.storeType === 3 && line.ownerId === buyerId || line.storeType === 1 && line.ownerId === sellerId)
-        && line.custodyPolicy === 1 && line.selfId === purchase.selfId
+        line.storeType === 1 && line.ownerId === sellerId && line.custodyPolicy === 1 && line.selfId === purchase.selfId
         && Number(line.enchant || 0) === Number(purchase.enchant || 0)
         && line.revision === lines[0].adRevision && lines.every(part => part.price === line.price));
     if (!quote) return;
@@ -101,9 +101,7 @@ function remember(state, board, request, purchase, sourcesCurrent, { minimumFree
 
 function rejects(line, units, buyer) {
     if (!buyer || !Number.isSafeInteger(units) || units < 1 || !(Number(buyer.characterId) > 0)
-        || line.storeType === 3 && Number(line.ownerId) !== Number(buyer.characterId)
-        || line.storeType === 1 && Number(line.ownerId) === Number(buyer.characterId)
-        || ![1, 3].includes(line.storeType)) return false;
+        || line.storeType !== 1 || Number(line.ownerId) === Number(buyer.characterId)) return false;
     const key = keyOf(Number(buyer.characterId), line.recordId, line.selfId, line.enchant || 0, units);
     const saved = refused.get(key);
     if (!saved) return false;

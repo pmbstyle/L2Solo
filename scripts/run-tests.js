@@ -465,6 +465,7 @@ const tests = [
     'tests/test_wealth_craft_policy.js',
     'tests/test_craft_facts.js',
     'tests/test_cold_wealth_craft.js',
+    'tests/test_hot_wealth_craft_refusal.js',
     'tests/test_next_e2_craft_choices.js',
     'tests/test_cold_occupation_planner.js',
     'tests/test_worker_economy_publication.js',

@@ -743,6 +743,8 @@ function buildProjection(state, ctx, deps) {
         for (const recipe of producerCandidates()) {
             if (!Sources.allowsRecipe(recipe) || seenProduction.has(Number(recipe.recipeId))) continue;
             seenProduction.add(Number(recipe.recipeId));
+            // A craft refused at the act waits for the bot's next town look.
+            if (need('./WealthCraftDecision').refused(state, recipe.recipeId)) continue;
             if (!serviceCraft.canCraft(state, recipe)) continue;
             const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
             if (!Number.isSafeInteger(count) || count <= 0) continue;
