@@ -133,33 +133,48 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         assert.deepStrictEqual(road.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the duty trip rides the travel wait');
         assert.deepStrictEqual(road.party.memberIds, [1, 2]);
     } finally { Disposition.inventoryCleanupNeed = () => null; Disposition.cleanupCounted = cleanupCounted; }
-    // A required party's re-plan (the worker's, at its step): a member whose plan comes to
-    // need no party hears it (party_need_ended); the party's objective follows the plans of
-    // the members who still need it, carried on the leader's row (main only writes plans).
+    // A required party's re-plan (the worker's, at its step): its members' plans ride the
+    // leader's commit (main writes them: the member whose need ended hears it once its
+    // plan is written, test_party_requirement_member_write); the party's objective follows
+    // the plans of the members who still need it, carried on the leader's row, and its
+    // spot answer, taken for the old objective, holds none: the next step decides its spot.
     const drop = (target, spotId) => ({ status: 'active', strategy: 'direct_drop', partyNeed: 'required', requiresParty: true,
         target: { selfId: target }, next: { spotId, npcId: 20100 + target, itemId: target } });
     const solo = { status: 'active', strategy: 'market', partyNeed: 'solo_ok', target: { selfId: 9399 }, next: {} };
-    const required = { objective: { status: 'open', priority: 'required', objectiveKey: 'old', spotId: 'stay-spot' } };
+    const objective = { status: 'open', priority: 'required', objectiveKey: 'old', spotId: 'stay-spot' };
+    const heldFor = { partyId: 'stay', memberIds: [1, 2, 3], spotId: 'stay-spot', stats: { objective } };
+    const required = { objective, partySpot: Situations.partySpotAnswer(heldFor, { spotId: 'stay-spot' }, at) };
+    assert(!Situations.partyWoken({ ...heldFor, stats: required }), 'fixture: the spot answer holds for the old objective');
     const needing = [member(1, { stats: { equipmentPlan: drop(9301, 'stay-spot') } }), member(2, { stats: { equipmentPlan: drop(9302, 'drop-spot') } }),
         member(3, { stats: { equipmentPlan: drop(9303, 'stay-spot') } })];
     const replans = { 1: drop(9301, 'drop-spot'), 2: drop(9302, 'drop-spot'), 3: solo };
     const replanned = await step(needing, { stats: required }, { run: { requirementRefresh: true },
         options: { planPartyRequirement: ({ state }) => ({ acquisitionPlan: replans[state.characterId] }) } });
-    assert(Situations.woken(replanned.states.find(state => state.characterId === 3).stats, 'party_stay'),
-        'the member whose plan needs no party hears it');
-    assert(!Situations.woken(replanned.states.find(state => state.characterId === 2).stats, 'party_stay'), 'one still needing it hears nothing');
+    assert.deepStrictEqual(replanned.resolution.memberPlans.map(entry => [entry.characterId, entry.plan]),
+        [[1, replans[1]], [3, solo]], 'the leader\'s commit carries the changed plans');
     assert.strictEqual(replanned.resolution.requirementRefreshedAt, at, 'the re-plan is complete');
     assert.strictEqual(replanned.party.stats.objective?.spotId, 'drop-spot', 'the objective follows the members still needing it');
     assert.strictEqual(replanned.party.stats.acquisitionGoal?.target?.selfId, 9301);
-    assert.strictEqual(replanned.party.spotId, 'stay-spot', 'the re-plan moves no party: its spot stays the spot decision\'s');
-    // Its next step: the member whose need ended leaves (its plan written by main), the party goes on.
-    const ended = replanned.states.find(state => state.characterId === 3);
+    assert(Situations.partyWoken(replanned.party), 'a new objective is a new question for the party\'s spot: its next step decides');
+    // Its next step: the member whose need ended (its plan and fact written by main, its stay
+    // woken) leaves, the party goes on.
+    const needEnded = { partyNeedEnded: 'stay', equipmentPlan: solo, woken: Situations.BITS.party_stay };
     const done = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
-        member(3, { stats: { ...ended.stats, equipmentPlan: solo } })], { stats: replanned.party.stats });
+        member(3, { stats: needEnded })], { stats: replanned.party.stats });
     assert.deepStrictEqual(done.party.memberIds, [1, 2]);
     assert.strictEqual(done.states.find(state => state.characterId === 3).stats.partyBreakReason, 'party_objective_complete');
+    // A member whose plan never needed the party (a recruited healer), its stay woken by its
+    // own new grade: what it came for is to help, it stays; at a full bag it goes to unload.
+    const healer = { equipmentPlan: solo, woken: Situations.BITS.party_stay };
+    const helped = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
+        member(3, { stats: healer })], { stats: replanned.party.stats });
+    assert.deepStrictEqual(helped.party.memberIds, [1, 2, 3], 'a helper whose need never was stays');
+    // A need ended in an earlier party is not this party's.
+    const earlier = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(2, { stats: { equipmentPlan: replans[2] } }),
+        member(3, { stats: { ...needEnded, partyNeedEnded: 'older' } })], { stats: replanned.party.stats });
+    assert.deepStrictEqual(earlier.party.memberIds, [1, 2, 3]);
     // Too few left needing it to go on: the member stays and helps (the party is not built to dissolve).
-    const pair = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(3, { stats: { ...ended.stats, equipmentPlan: solo } })],
+    const pair = await step([member(1, { stats: { equipmentPlan: replans[1] } }), member(3, { stats: needEnded })],
         { stats: replanned.party.stats });
     assert.deepStrictEqual(pair.party.memberIds, [1, 3], 'one member still needing it keeps its helper');
     // A member at weight penalty 1 whose last sale visit tried every kind it carries (the

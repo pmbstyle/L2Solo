@@ -21,16 +21,15 @@ const STAY = Object.freeze({ answer: 'stay', reason: 'stay' });
 // the member goes to buy, GearAcquisitionPlanner.equipmentBridgeReason), outleveled
 // (the party's XP share excludes it, PartyRewardMath), soloSooner() (its held solo
 // answer brings it to its next level sooner than its party share, its persona weighing
-// it, PartyProgressComparison), objectiveDone (the party holds a required objective,
-// the member's plan needs no party and enough members still need it to go on: what it
-// came for is done, as a C4 player leaves once his drop came), clanDuty, now }.
+// it, PartyProgressComparison), requiredObjective (the party holds a required objective
+// and enough members' plans still need a party to go on), clanDuty, now }.
 function decide(member, reads = {}) {
     // Dead: the party's rescue rule holds it (a party revives or carries its dead).
     if (Number(member.vitals?.hp) <= 0 || member.activity === 'dead') return STAY;
     const bridge = reads.bridgeReason?.(member);
     if (bridge) return { answer: 'leave', reason: bridge };
     if (reads.outleveled) return { answer: 'leave', reason: 'party_outleveled' };
-    if (reads.objectiveDone) return { answer: 'leave', reason: 'party_objective_complete' };
+    if (reads.requiredObjective && needEnded(member)) return { answer: 'leave', reason: 'party_objective_complete' };
     // The bag fact that woke it (bag_full): at its floor, or a cleanup count.
     const bag = MarketBreak.bagNeed(member, reads.now);
     if (bag && (!reads.clanDuty || FLOOR.has(bag.reason))) return { answer: 'trip', reason: 'bag_full' };
@@ -50,5 +49,11 @@ function joins(member, now = Date.now()) {
 // Whether a gear plan needs a party (its drop is party-only): what a required party
 // objective is for.
 const needsParty = plan => plan?.partyNeed === 'required' || plan?.requiresParty === true;
+// What it came for is done (as a C4 player leaves once his drop came): its party's re-plan
+// gave it a plan needing no party where it needed this party (stats.partyNeedEnded: that
+// party's id, written with the plan, LifeState.writePartyRequirementPlan) and its plan still
+// needs none. A member whose plan never needed the party (a recruited healer, a fill) helps on.
+const needEnded = member => member.stats?.partyNeedEnded != null && member.party?.partyId != null
+    && String(member.stats.partyNeedEnded) === String(member.party.partyId) && !needsParty(member.stats?.equipmentPlan);
 
 module.exports = { decide, joins, needsParty };

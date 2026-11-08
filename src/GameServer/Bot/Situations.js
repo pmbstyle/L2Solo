@@ -173,7 +173,8 @@ const SITUATIONS = Object.freeze({
     // too far below the party's), raised by the party step on the member (its flip).
     party_outleveled: link(0),
     // Its gear plan, re-planned by its party's step, came to need no party where it did
-    // (the drop it grouped for came, its target moved): raised by that step on the member.
+    // (the drop it grouped for came, its target moved): raised on the member's row once
+    // that plan is written (LifeState.writePartyRequirementPlan, with its partyNeedEnded fact).
     party_need_ended: link(0)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);

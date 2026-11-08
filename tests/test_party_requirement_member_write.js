@@ -86,6 +86,25 @@ const plan = target => ({ status: 'active', strategy: 'direct_drop', partyNeed: 
         assert.equal(Population.partyRequirementRefreshDue.has(PARTY), true, 'a skipped write marks the party re-plan due again');
         console.log('PASS a party requirement write holds on the member revision it read');
 
+        // A plan needing no party where the old one needed this party: the fact rides the
+        // plan's write, then party_need_ended wakes the member's stay, which reads both.
+        const Situations = invoke('GameServer/Bot/Situations');
+        const solo = { status: 'active', strategy: 'market', partyNeed: 'solo_ok', target: { selfId: 9399 }, next: {} };
+        const woke = characterId => Situations.woken(Life.cachedState(characterId).stats, 'party_stay');
+        const needing = await member('NeedEnds', PARTY, id, { backgroundPartyId: PARTY, equipmentPlan: plan(9301), woken: 0, waiting: 0 });
+        const helper = await member('NeverNeeded', PARTY, id, { backgroundPartyId: PARTY, equipmentPlan: null, woken: 0, waiting: 0 });
+        assert(!woke(needing) && !woke(helper), 'fixture: no stay woken');
+        await Population.applyWorkerPartyRequirements({ ...party, memberIds: [id, needing, helper] },
+            { memberPlans: [{ characterId: needing, plan: solo }, { characterId: helper, plan: { ...solo, target: { selfId: 9398 } } }] });
+        const ended = JSON.parse((await row(needing)).statsJson);
+        assert.equal(ended.equipmentPlan?.target?.selfId, 9399, 'the row holds the new plan');
+        assert.equal(ended.partyNeedEnded, PARTY, 'the row holds the party whose need ended');
+        assert(woke(needing), 'party_need_ended wakes its stay once the plan is written');
+        assert.equal(Life.cachedState(needing).stats.equipmentPlan?.target?.selfId, 9399, 'the woken stay reads the new plan');
+        assert.equal(JSON.parse((await row(helper)).statsJson).partyNeedEnded, undefined, 'a plan that never needed the party ends no need');
+        assert(!woke(helper), 'nor wakes a stay');
+        console.log('PASS a plan that ends a member\'s party need wakes its stay with the plan written');
+
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }

@@ -3783,7 +3783,10 @@ const BotLifeState = {
     // (PopulationService.applyWorkerPartyRequirements), held on the revision
     // of the copy read (writeHeldOnRevision: false when a member write beat
     // it). A clan-locked plan or a foreign clan's goal is not replaced, as the
-    // full save would not replace it (null: nothing to write).
+    // full save would not replace it (null: nothing to write). A plan needing no
+    // party where the old one needed it ends the member's need of its party: the
+    // fact (stats.partyNeedEnded: the party's id) rides the plan's write and, once
+    // it landed, party_need_ended wakes the member's stay, which reads both.
     writePartyRequirementPlan(member, plan = null) {
         const id = Number(member?.characterId), reason = 'party_requirement_refresh';
         if (!id) return Promise.resolve(null);
@@ -3792,7 +3795,13 @@ const BotLifeState = {
         if (next.stats.equipmentPlan !== plan || ClanMembershipPolicy.reconcileState(next).stats.equipmentPlan !== plan) {
             return Promise.resolve(null);
         }
-        return writeHeldOnRevision(member, { stats: { equipmentPlan: plan, lastReason: reason } }, reason);
+        const Stay = require('./PartyStay'), partyId = member.party?.partyId;
+        const ended = partyId != null && Stay.needsParty(member.stats?.equipmentPlan) && !Stay.needsParty(plan);
+        return writeHeldOnRevision(member, { stats: { equipmentPlan: plan, ...(ended ? { partyNeedEnded: partyId } : {}),
+            lastReason: reason } }, reason)
+            .then(written => written && ended
+                ? DecisionEvents.raiseFar(id, [{ name: 'party_need_ended', payload: null }], 'party_need_ended').then(raised => raised || written)
+                : written);
     },
 
     retireMarketErrand(characterId, expected) {
