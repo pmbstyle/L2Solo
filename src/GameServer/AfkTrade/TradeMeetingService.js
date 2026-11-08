@@ -151,6 +151,9 @@ function waitForResult(token, characterId, { signal } = {}) {
         read();
     });
 }
+// A meeting write's reply (accept, leg, arrival, end) fences both actors' rows:
+// main's cache takes each, and a far actor's goes to the worker. Every caller
+// of a meeting write (the hot traveller's too) hands its reply here.
 function acceptRows(result) {
     trackPlayerWaiting(result?.meeting);
     for (const row of Object.values(result?.coldLifeRows || {})) {
@@ -853,6 +856,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, paysInPreparation, paidPreparationEnd, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, acceptRows, stage, discard, hasPreparation, paysInPreparation, paidPreparationEnd, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };
