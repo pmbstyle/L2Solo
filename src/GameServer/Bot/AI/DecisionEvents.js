@@ -216,18 +216,41 @@ async function raiseFar(characterId, raises, reason) {
 // refused purchase): one situation raised where the bot is (raiseFar); a failure is
 // counted (FailureLog situations.raise_on). Raised from inside the bot's own command
 // (a town command, a review), it lands after that command ends (its revision-checked
-// writes first; counted raise:after_command), never mid-command. payload: as raiseFar's.
+// writes first; counted raise:after_command), never mid-command; on a bot that pays in a
+// trade preparation, after that preparation ends (its consent was read at the row's
+// revision; counted raise:after_preparation). Each holds it once: a preparation standing
+// at the command's end holds it until its end, then a command started meanwhile until
+// its end; a later preparation does not (no raise waits on a chain of them).
+// payload: as raiseFar's.
 // Resolves the raised row's state (null when it did not land on a far row), which a caller
-// that writes the row next builds on; one held behind the command resolves null at once
-// (the command's own writes come first), so a caller inside it may await it.
+// that writes the row next builds on; one held resolves null at once (the command's own
+// writes come first), so a caller inside it may await it.
 function raiseOn(characterId, name, payload = null, reason = `situation_${name}`) {
     const run = () => module.exports.raiseFar(characterId, [{ name, payload }], reason)
         .catch(error => { FailureLog.note('situations.raise_on', error); return null; });
-    // lazy: cycle the coordinator requires this module at its top.
-    const owned = isMainThread ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').commandInflight?.get?.(Number(characterId)) : null;
-    if (!owned) return run();
-    Situations.note('raise:after_command');
-    Promise.resolve(owned).catch(() => null).then(run);
+    if (!isMainThread) return run();
+    // lazy: cycles (the coordinator and the meetings require this module).
+    const command = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator').commandInflight?.get?.(Number(characterId));
+    const preparation = () => invoke('GameServer/AfkTrade/TradeMeetingService').paidPreparationEnd?.(characterId) || null;
+    // A command that failed (its owner counts it) still lets the raise land.
+    const afterCommand = () => {
+        const owned = command();
+        if (!owned) return run();
+        Situations.note('raise:after_command');
+        return Promise.resolve(owned).then(run, run);
+    };
+    const afterPreparation = () => {
+        const end = preparation();
+        if (!end) return afterCommand();
+        Situations.note('raise:after_preparation');
+        return end.then(afterCommand);
+    };
+    const owned = command();
+    if (!owned && !preparation()) return run();
+    if (owned) {
+        Situations.note('raise:after_command');
+        Promise.resolve(owned).then(afterPreparation, afterPreparation);
+    } else afterPreparation();
     return Promise.resolve(null);
 }
 // The mind keys a row raise writes (BotLifeState.raiseOnRow).

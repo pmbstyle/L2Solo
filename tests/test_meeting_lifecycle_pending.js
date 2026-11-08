@@ -81,14 +81,84 @@ const originalCached = Life.cachedState;
         }
         Shopping.tick({}, { fetchId: () => 1 }); // Any ordinary tick work would need the absent actor/session fields.
         assert(Service.hasPreparation(1));
+        // A raise on the payer (a recipe learned) waits for the preparation's end: landed now it
+        // would move the revision its consent was read at. The seller's lands at once.
+        const Events = invoke('GameServer/Bot/AI/DecisionEvents'), raised = [], keptRaise = Events.raiseFar;
+        Events.raiseFar = async id => { raised.push(id); return null; };
         // The preparation's end wakes its far actors: their rows go back to the worker, which
         // schedules a bot its waiting answer held (no poll).
         const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'), woken = [];
         const keptEnded = Coordinator.preparationEnded;
         Coordinator.preparationEnded = ids => woken.push(...ids);
-        try { Service.discard('pending-lifecycle'); } finally { Coordinator.preparationEnded = keptEnded; }
+        try {
+            Events.raiseOn(1, 'recipe_learned'); Events.raiseOn(2, 'recipe_learned');
+            await new Promise(resolve => setImmediate(resolve));
+            assert.deepEqual(raised, [2], 'the payer\'s raise waits, the seller\'s lands');
+            Service.discard('pending-lifecycle');
+            await new Promise(resolve => setImmediate(resolve));
+            assert.deepEqual(raised, [2, 1], 'the payer\'s raise lands at the preparation\'s end');
+        } finally { Coordinator.preparationEnded = keptEnded; Events.raiseFar = keptRaise; }
         assert(!Service.hasPreparation(1));
         assert.deepEqual(woken, [1, 2], 'the end wakes both far actors');
+        // A raise held behind a preparation lands at its end once: a preparation staged right
+        // after does not hold it again, a command started meanwhile does until it ends.
+        {
+            const Events = invoke('GameServer/Bot/AI/DecisionEvents'), raised = [], keptRaise = Events.raiseFar;
+            const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'), keptEnded = Coordinator.preparationEnded;
+            const request = token => ({ token, actorA: 1, actorB: 2, seqA: 1, seqB: 1, town: 'Giran', point: { locX: 0, locY: 0, locZ: 0 },
+                parties: [party, { ...party }], lines: [{ payer: 0, itemId: 3, selfId: 1867, count: 1, price: 10 }] });
+            Events.raiseFar = async id => { raised.push(id); return null; };
+            Coordinator.preparationEnded = () => {};
+            const tick = () => new Promise(resolve => setImmediate(resolve));
+            try {
+                Service.stage(request('held-once'));
+                Events.raiseOn(1, 'recipe_learned');
+                Service.discard('held-once'); Service.stage(request('staged-after'));
+                await tick();
+                assert.deepEqual(raised, [1], 'a preparation staged after the end does not hold the raise again');
+                Events.raiseOn(1, 'recipe_learned');
+                let finish; const command = new Promise(resolve => { finish = resolve; });
+                Coordinator.commandInflight.set(1, command);
+                Service.discard('staged-after');
+                await tick();
+                assert.deepEqual(raised, [1], 'a command started while the preparation stood holds the raise');
+                Coordinator.commandInflight.delete(1); finish();
+                await tick();
+                assert.deepEqual(raised, [1, 1], 'it lands at the command\'s end');
+            } finally { Coordinator.commandInflight.delete(1); Coordinator.preparationEnded = keptEnded; Events.raiseFar = keptRaise; }
+        }
+        // An accept's rows land before its preparation ends: the end's republication and the
+        // raises it held read the accepted rows, the board records refreshed before them.
+        {
+            const Events = invoke('GameServer/Bot/AI/DecisionEvents'), keptRaise = Events.raiseFar;
+            const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'), keptEnded = Coordinator.preparationEnded;
+            const Database = invoke('Database'), Afk = invoke('GameServer/AfkTrade/AfkTradeService');
+            const kept = { accept: Database.acceptTradeMeeting, shops: Database.fetchAfkTradeShops, admission: Database.withoutMutationAdmission,
+                refresh: Afk.refreshRecord, row: Life.acceptLifecycleRow };
+            const order = [];
+            Events.raiseFar = async id => { order.push(`raise:${id}`); return null; };
+            Coordinator.preparationEnded = ids => order.push(`ended:${ids.join(',')}`);
+            Database.fetchAfkTradeShops = async id => { await new Promise(resolve => setImmediate(resolve)); return [{ id: 90 + id }]; };
+            Database.withoutMutationAdmission = () => {};
+            Afk.refreshRecord = record => order.push(`record:${record.id}`);
+            Life.acceptLifecycleRow = row => { order.push(`row:${row.characterId}`); return null; };
+            const meeting = { id: 7, token: 'accepted-lifecycle', actorA: 1, actorB: 2, state: 'accepted', revision: 1, locX: 0, locY: 0, locZ: 0 };
+            Database.acceptTradeMeeting = async () => ({ meeting, pending: true, coldLifeRows: { 1: { characterId: 1 }, 2: { characterId: 2 } } });
+            try {
+                Service.stage({ token: 'accepted-lifecycle', actorA: 1, actorB: 2, seqA: 1, seqB: 1, town: 'Giran', point: { locX: 0, locY: 0, locZ: 0 },
+                    parties: [party, { ...party }], lines: [{ payer: 0, itemId: 3, selfId: 1867, count: 1, price: 10 }] });
+                Events.raiseOn(1, 'recipe_learned');
+                const answer = await Service.accept('accepted-lifecycle');
+                await new Promise(resolve => setImmediate(resolve));
+                assert.equal(answer.outcome, 'accepted');
+                assert.deepEqual(order, ['record:91', 'record:92', 'row:1', 'row:2', 'ended:1,2', 'raise:1'],
+                    'records, then the accepted rows, then the end and the raise it held');
+            } finally {
+                Object.assign(Database, { acceptTradeMeeting: kept.accept, fetchAfkTradeShops: kept.shops, withoutMutationAdmission: kept.admission });
+                Afk.refreshRecord = kept.refresh; Life.acceptLifecycleRow = kept.row;
+                Coordinator.preparationEnded = keptEnded; Events.raiseFar = keptRaise;
+            }
+        }
         const marked = [];
         Object.assign(coordinator, { worker: {}, ready: true, markDirty: (row, options) => marked.push([row.characterId, options.reason]) });
         coordinator.preparationEnded([1]);

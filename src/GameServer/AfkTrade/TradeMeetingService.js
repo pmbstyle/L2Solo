@@ -173,7 +173,7 @@ async function meetingRecords(row) {
         } catch (error) {
             // Publication must not strand already committed custody before
             // wake can start the paid route or acknowledge a terminal receipt.
-            utils.infoWarn('AfkTrade', 'meeting records for %d: %s', actor, error.message);
+            require('../../FailureLog').note('trade_meeting.records', error);
         }
     }
     return records;
@@ -232,7 +232,9 @@ function stage(request) {
     if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
     if ([request.actorA, request.actorB].some(id => preparedActors.has(Number(id)))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
-    staged.set(id, { frames, authorities: request.parties.map(party => ({ phase: party.phase, revision: party.revision, hotAt: party.hotAt })),
+    let end;
+    const ended = new Promise(resolve => { end = resolve; });
+    staged.set(id, { ended, end, frames, authorities: request.parties.map(party => ({ phase: party.phase, revision: party.revision, hotAt: party.hotAt })),
         payers: [0, 1].map(side => request.lines.some(line => line.payer === side)), quotes: quotedRecords(request),
         bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });
     for (const actor of [request.actorA, request.actorB]) preparedActors.set(Number(actor), id);
@@ -277,8 +279,13 @@ function hasPreparation(characterId) {
 // every guard that holds a bot's writes or steps while a preparation stands: the
 // non-paying side's standing offer holds through its own steps.
 function paysInPreparation(characterId) {
+    return !!paidPreparationEnd(characterId);
+}
+// The end of the preparation the actor pays in (a promise that resolves at its discard),
+// null when it pays in none: a raise on its row waits for it (DecisionEvents.raiseOn).
+function paidPreparationEnd(characterId) {
     const id = Number(characterId), entry = staged.get(preparedActors.get(id));
-    return !!entry && entry.payers[entry.actors.indexOf(id)] === true;
+    return entry && entry.payers[entry.actors.indexOf(id)] === true ? entry.ended : null;
 }
 // The preparation token this actor is in, or null.
 function preparationOf(characterId) {
@@ -294,6 +301,7 @@ function discard(id, notify = true) {
         pages -= entry.pages; staged.delete(id);
         for (const actor of entry.actors) if (preparedActors.get(Number(actor)) === id) preparedActors.delete(Number(actor));
         entry.cancelled = true;
+        entry.end();
         if (entry.ready) coordinator()?.cancelMeetingPreparation?.(id);
         if (notify && !entry.committed) notifyResult(id, entry.actors, { pending: false, token: id, outcome: 'cancelled' });
         // Every preparation ends here (the accept's too): a far actor whose command
@@ -376,7 +384,11 @@ async function accept(id, characterId = null) {
         });
         committed = entry.committed = true;
         countAccept('done');
-        return accepted(result);
+        // The accept's rows land before its preparation ends (the finally, after accepted's
+        // first turn): the end releases the raises held behind it (DecisionEvents.raiseOn)
+        // and republishes its actors (Coordinator.preparationEnded), both on the accepted rows.
+        // Until then the committed entry stands and its own rows do not void it (init).
+        return accepted(result, result.coldLifeRows ? await meetingRecords(result.meeting) : []);
     } finally { discard(id, !committed); }
 }
 // The accept refused goods a seller's reserves keep (Database.materialFreeUnsafe, the
@@ -389,12 +401,12 @@ async function trimSellerAds(request) {
         catch (error) { require('../../FailureLog').note('trade_meeting.seller_ad_trim', error); }
     }
 }
-async function accepted(result) {
+// records: the actors' board records read after the commit (meetingRecords), applied in
+// the same turn as the rows, before the first await: the seller's new bag is published
+// (its own-stock trim, AfkTradeService.reconcileOwnStock, reads the board) against
+// lines that no longer count the units this meeting holds.
+async function accepted(result, records = []) {
     const row = result.meeting;
-    // The records first, in the same turn as the rows: the seller's new bag is published
-    // (its own-stock trim, AfkTradeService.reconcileOwnStock, reads the board) against
-    // lines that no longer count the units this meeting holds.
-    const records = result.coldLifeRows ? await meetingRecords(row) : [];
     for (const record of records) afk().refreshRecord(record);
     acceptRows(result);
     if (row.state === 'accepted') { enroll(row.actorA, row.id); enroll(row.actorB, row.id); }
@@ -795,8 +807,9 @@ async function init() {
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
-        // accepted meeting survives ordinary economic revisions and ad edits.
-        for (const [key, entry] of staged) if (entry.actors.includes(id)) {
+        // accepted meeting survives ordinary economic revisions and ad edits. A
+        // committed one's rows (its accept moved its payer) end it in accept, not as a void.
+        for (const [key, entry] of staged) if (entry.actors.includes(id) && !entry.committed) {
             const cause = preparationVoid(entry, entry.actors.indexOf(id), life().cachedState(id));
             if (cause) discardCounted(key, cause);
         }
@@ -841,6 +854,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, paysInPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, paysInPreparation, paidPreparationEnd, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };
