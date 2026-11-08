@@ -393,47 +393,65 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.equal(combats, Number(!expired), 'an ongoing fight keeps ownership; an expired record cannot block the occupation');
     }
 
-    // A far newbie's held guide answer is its worker step's round: the guide's three
-    // buffs, no HP/MP, the walk there and back spent resting, the answer done. The step's
-    // packet (merged after the round, as the projection does) holds it done too, so the
-    // committed state carries the visit out once. In town (a command step) the same
-    // round rides the command, with no walk.
+    // A far newbie's held guide answer is its worker step's whole round: the guide's three
+    // buffs, no HP/MP, the walk there and back spent resting, the answer done, so the
+    // committed state carries the visit out once. That step plans nothing: the errand its
+    // card holds (a shopping trip) waits, and the next step holds that occupation's round.
+    // In town (a command step) the same round rides the command, with no walk and no plan.
     {
         const Buffs = invoke('GameServer/Bot/AI/BotBuffs');
-        const guide = Buffs.GUIDES[0], at = 5000;
+        const guide = Buffs.GUIDES[0];
+        let at = 5000;
         const answer = { via: 'guide', providerId: null, at: 4000 };
         const newbie = (id, activity) => state(id, { level: 12, activity,
             loc: { locX: guide.locX + 3000, locY: guide.locY, locZ: guide.locZ },
             vitals: { hp: 10, maxHp: 200, mp: 5, maxMp: 100 },
             stats: { karma: 0, coldCombat: { effects: [] }, rebuff: answer } });
         assert.strictEqual(lifecycleKind(newbie(90010, 'hunting')), 'resolver', 'a field newbie steps on the worker');
+        const shopping = { travel: 'stock:scrolls', sell: [], withdraw: [], buyAds: [] };
+        // The card's errand, the planner's trip back to the field (its rest over).
+        const card = ({ state: current }) => ({ plannedState: { ...current, activity: 'hunting' },
+            activityPick: { activity: 'shopping' }, economyPlan: shopping });
         let combats = 0, projected = null;
         const guided = recordingKernel({ now: () => at,
             resolveSolo: input => { combats++; return resolver(input); },
-            planLifecycle: ({ state: current }) => ({ plannedState: current, statsPacket: { rebuff: answer } }),
-            projectResolve: (current, result, stamp, plan) => (projected = { state: { ...current, activity: result.patch.activity,
-                vitals: { ...current.vitals, ...result.patch.vitals }, stats: { ...current.stats, ...result.patch.stats, ...plan.statsPacket } } }),
+            planLifecycle: card,
+            projectResolve: (current, result, stamp, plan) => (projected = { state: { ...current, activity: result.patch.activity ?? current.activity,
+                vitals: { ...current.vitals, ...result.patch.vitals }, stats: { ...current.stats, ...result.patch.stats, ...plan?.statsPacket } },
+            ...(plan?.economyPlan ? { economyPlan: plan.economyPlan } : {}) }),
             emit: () => {} });
         guided.upsert(standOn(guided, { state: newbie(90010, 'hunting') }, { id: 'newbie-field' }));
         guided.tick(); await guided.resolveChain; guided.flush(null, true);
         const proposal = sentProposals.get(guided).get(90010);
         assert(proposal && projected, 'the visit is the worker step\'s proposal, not a command');
         assert.equal(combats, 0, 'no fight on the guide\'s round');
+        assert.equal(proposal.economyPlan, undefined, 'the guide\'s step plans nothing: the errand waits');
         const committed = proposal.nextState;
         assert.deepStrictEqual(committed.stats.coldCombat.effects.map(effect => effect.key).sort(),
             Buffs.newbieEffects(at).map(effect => effect.key).sort());
         assert.equal(committed.vitals.hp, 10, 'the guide restores no HP');
         assert.equal(committed.activity, 'resting', 'the walk there and back');
-        assert.equal(committed.stats.rebuff.done, true, 'carried out once: the packet holds it done');
+        assert.equal(committed.stats.rebuff.done, true, 'carried out once');
         assert.equal(proposal.result.events[0].type, 'newbie_guide');
+        commitAck(guided, { results: [{ ok: true, characterId: 90010, state: { ...committed, simulation: { revision: 4 } } }] });
+        at += 3600000;
+        guided.tick(); await guided.resolveChain; guided.flush(null, true);
+        const errand = sentProposals.get(guided).get(90010);
+        assert.notStrictEqual(errand, proposal, 'the bot steps again');
+        assert.deepStrictEqual(errand.economyPlan, shopping, 'the next step holds the errand\'s round');
+        assert.equal(errand.result.events.some(event => event.type === 'newbie_guide'), false, 'the guide is visited once');
+        assert.equal(combats, 0, 'the occupation\'s round, no fight');
+        let townPlanned = 0;
         const town = recordingKernel({ now: () => at, resolveSolo: input => { combats++; return resolver(input); },
-            planLifecycle: ({ state: current }) => ({ plannedState: current, statsPacket: { rebuff: answer } }), emit: () => {} });
+            planLifecycle: input => { townPlanned++; return card(input); }, emit: () => {} });
         town.upsert(standOn(town, { state: newbie(90011, 'shopping') }, { id: 'newbie-town' }));
         town.tick(); await town.resolveChain;
         const request = sentCommands.get(town).get(90011);
         assert.equal(request.precomputedResult.debug.activity, 'newbie_guide');
         assert.equal(request.precomputedResult.patch.activity, undefined, 'in town no walk');
-        assert.equal(request.precomputedPlan.statsPacket.rebuff.done, true);
+        assert.equal(request.precomputedResult.patch.stats.rebuff.done, true);
+        assert.equal(request.precomputedPlan, null, 'in town too the guide\'s step plans nothing');
+        assert.equal(townPlanned, 0);
         assert.equal(combats, 0);
     }
 
@@ -768,7 +786,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.deepStrictEqual(refreshProposals.map(proposal => proposal.nextState.stats.equipmentPlan.strategy), ['market', 'market'],
         'each member\'s own commit carries its plan, the changed one its new plan');
     assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
-    assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
     // Main refuses that commit (a clan write moved the member's row since the worker read it):
     // its due mark stays, and the next step re-plans the member and its commit carries the plan.
     {
@@ -794,6 +811,59 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         await kernel.resolveChain;
         const again = messages.find(message => message.type === 'proposal_batch')?.payload.proposals.find(proposal => proposal.characterId === 120);
         assert.strictEqual(again?.nextState.stats.equipmentPlan.strategy, 'market', 'the re-planned member\'s commit carries its plan again');
+    }
+    // The re-plan holds only the members whose plan landed (main committed it). Each step
+    // below: { kit: the members whose own step moves their kit, refuse: the members whose
+    // commit main refuses }; returns what each step planned and sent. A re-plan a moved kit
+    // opened has no due mark on main to re-plan from: the worker's re-plan is its only record.
+    {
+        const steps = async (script, due = false) => {
+            let at = now, revision = 3;
+            const messages = [], planned = [];
+            let kit = [];
+            const kernel = recordingKernel({ resolveSolo: resolver, now: () => at,
+                resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+                    partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+                projectResolve: state => ({ state, kitMoved: kit.includes(state.characterId) }),
+                planPartyRequirement: ({ state }) => { planned.push(state.characterId); return { acquisitionPlan: state.characterId === 121
+                    ? { status: 'active', strategy: 'market', target: { selfId: 57 } } : state.stats.equipmentPlan }; },
+                emit: (type, payload) => messages.push({ type, payload }) });
+            kernel.upsert(standOn(kernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
+            kernel.upsert({ state: refreshMembers[1] });
+            const out = [];
+            for (const [index, { kit: moved = [], refuse = [] }] of script.entries()) {
+                kit = moved; planned.length = 0; messages.length = 0; revision += 1;
+                kernel.partyPut(refreshParty.partyId, { ...refreshParty, nextResolveAt: at, requirementRefresh: due && index === 0 });
+                kernel.tick();
+                await kernel.resolveChain;
+                const sent = messages.find(message => message.type === 'proposal_batch')?.payload.proposals || [];
+                out.push({ planned: [...planned], end: sent.find(proposal => proposal.partyResolution)?.partyResolution.requirementRefreshedAt,
+                    plan: id => sent.find(proposal => proposal.characterId === id)?.nextState.stats.equipmentPlan });
+                commitAck(kernel, { results: sent.map(proposal => refuse.includes(proposal.characterId)
+                    ? { ok: false, characterId: proposal.characterId, reason: 'stale_revision',
+                        state: { ...kernel.states.get(proposal.characterId).state, simulation: { revision } } }
+                    : { ok: true, characterId: proposal.characterId, state: { ...proposal.nextState, simulation: { revision } } }) });
+                at += 60000;
+            }
+            return out;
+        };
+        // Main commits every member's plan: the re-plan ended, its next step plans nothing.
+        const landed = await steps([{}, {}], true);
+        assert.deepStrictEqual(landed[0].planned, [120, 121]);
+        assert.strictEqual(landed[0].end, now);
+        assert.deepStrictEqual(landed[1].planned, [], 'the next step plans nothing');
+        assert.strictEqual(landed[1].end, undefined);
+        // A member's refused plan: the next step plans it again, its commit carries the plan, and the end goes.
+        const refused = await steps([{ kit: [121], refuse: [121] }, {}]);
+        assert.deepStrictEqual(refused[0].planned, [121], 'a moved kit opens the re-plan at that member');
+        assert.deepStrictEqual(refused[1].planned, [120, 121], 'the refused member is planned again');
+        assert.strictEqual(refused[1].plan(121).target.selfId, 57, 'its commit carries its plan');
+        assert.strictEqual(refused[1].end, now + 60000, 'every member planned: the re-plan ends');
+        // The re-plan's end refused (the leader's commit): the next step plans the leader and sends the end again.
+        const end = await steps([{ kit: [121] }, { refuse: [120] }, {}]);
+        assert.strictEqual(end[1].end, now + 60000);
+        assert.deepStrictEqual(end[2].planned, [120]);
+        assert.strictEqual(end[2].end, now + 120000, 'the end is sent again');
     }
     // A member whose own step changed its plan (the projection), re-planned to that same
     // plan: the plan rides its own proposal; no member plan and no fallback event go out.

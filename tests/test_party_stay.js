@@ -70,16 +70,19 @@ try {
 
 // One party step: { leader's party row, member states, batch }. round: each member's
 // round result (none: an empty one); project: the step's projection (none: as resolved).
-// options: the kernel's own (a re-plan's planner), run: the run's (a re-plan due).
-async function step(members, extra = {}, { round = () => ({}), project = state => ({ state }), options = {}, run = {} } = {}) {
-    const messages = [], party = { partyId: 'stay', leaderId: 1, memberIds: members.map(m => m.characterId), status: 'active',
+// options: the kernel's own (a re-plan's planner), run: the run's (a re-plan due);
+// kernel: an earlier step's (its records kept), else a new one.
+async function step(members, extra = {}, { round = () => ({}), project = state => ({ state }), options = {}, run = {}, kernel: given = null } = {}) {
+    const messages = given?.messages || [], party = { partyId: 'stay', leaderId: 1, memberIds: members.map(m => m.characterId), status: 'active',
         spotId: 'stay-spot', revision: 1, nextResolveAt: at, stats: {}, ...extra };
-    const kernel = new ColdSimulationKernel({ now: () => at, partyMinSize: 2, ...options,
+    messages.length = 0;
+    const kernel = given || new ColdSimulationKernel({ now: () => at, partyMinSize: 2, ...options,
         resolveSolo: () => { throw Error('no solo round'); },
         resolveParty: ({ members: roster }) => ({ memberResults: roster.map(state => ({ state, result: round(state) })), events: [],
             nextResolveAt: at + 45000, partyPatch: {} }),
         projectResolve: project,
         emit: (type, payload) => messages.push({ type, payload }) });
+    kernel.messages = messages;
     for (const state of members) {
         kernel.upsert({ state });
         kernel.inFlight.set(state.characterId, { state, startedAt: at, partyId: party.partyId });
@@ -88,7 +91,7 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     await kernel.resolvePartyStep(party.partyId);
     const proposals = messages.find(m => m.type === 'proposal_batch').payload.proposals;
     const resolution = proposals.find(p => p.partyResolution).partyResolution;
-    return { party: resolution.party, stayTrips: resolution.stayTrips, resolution, proposals, states: proposals.map(p => p.nextState) };
+    return { party: resolution.party, stayTrips: resolution.stayTrips, resolution, proposals, states: proposals.map(p => p.nextState), kernel };
 }
 
 (async () => {
@@ -136,11 +139,17 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
         assert.deepStrictEqual(road.party.memberIds, [1, 2]);
         // A clan duty lets one member go at a time: behind another member's absence the
         // trip is not taken and its stay stays woken; the absence over, the next step sends it.
+        // The held trip is one hold: the steps behind the same absence count it once.
         const away = { ...duty, marketAbsences: { 9: { characterId: 9, until: at + 60000 } } };
+        const held = () => Situations.counts().raised['party:stay_trip:held'] || 0, before = held();
         const behind = await step([member(1), member(2, { stats: full })], { stats: away });
         assert.deepStrictEqual(behind.stayTrips || [], [], 'no trip while another member is away');
         assert(Situations.woken(behind.states.find(state => state.characterId === 2).stats, 'party_stay'), 'its stay waits woken');
-        const over = await step([member(1), member(2, { stats: full })], { stats: { ...away, marketAbsences: { 9: { until: at - 1 } } } });
+        const still = await step([member(1), member(2, { stats: full })], { stats: away }, { kernel: behind.kernel });
+        assert.deepStrictEqual(still.stayTrips || [], []);
+        assert.strictEqual(held() - before, 1, 'two steps behind one absence: one held trip');
+        const over = await step([member(1), member(2, { stats: full })], { stats: { ...away, marketAbsences: { 9: { until: at - 1 } } } },
+            { kernel: behind.kernel });
         assert.deepStrictEqual(over.stayTrips, [{ characterId: 2, reason: 'bag_full' }], 'the absence over, the trip goes');
         Disposition.inventoryCleanupNeed = state => state.characterId >= 2 ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
         Disposition.cleanupCounted = state => state.characterId >= 2;
@@ -153,7 +162,7 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     // member's own commit, the member whose need ended holds that fact and its stay woken
     // there; the party's objective follows the plans of the members who still need it,
     // carried on the leader's row, and its spot answer, taken for the old objective, holds
-    // none: the next step decides its spot. The plans and the re-plan's end commit together.
+    // none: the next step decides its spot.
     const drop = (target, spotId) => ({ status: 'active', strategy: 'direct_drop', partyNeed: 'required', requiresParty: true,
         target: { selfId: target }, next: { spotId, npcId: 20100 + target, itemId: target } });
     const solo = { status: 'active', strategy: 'market', partyNeed: 'solo_ok', target: { selfId: 9399 }, next: {} };
@@ -173,8 +182,6 @@ async function step(members, extra = {}, { round = () => ({}), project = state =
     assert(Situations.woken(committed(3), 'party_stay'), 'party_need_ended wakes its stay on that commit');
     assert(committed(1).partyNeedEnded == null && !Situations.woken(committed(1), 'party_stay'), 'a member still needing it hears nothing');
     assert.strictEqual(replanned.resolution.requirementRefreshedAt, at, 'the re-plan is complete');
-    assert(replanned.proposals.every(proposal => proposal.atomicGroup?.id && proposal.atomicGroup.id === replanned.proposals[0].atomicGroup.id),
-        'a refused member plan refuses the re-plan\'s end');
     assert.strictEqual(replanned.party.stats.objective?.spotId, 'drop-spot', 'the objective follows the members still needing it');
     assert.strictEqual(replanned.party.stats.acquisitionGoal?.target?.selfId, 9301);
     assert(Situations.partyWoken(replanned.party), 'a new objective is a new question for the party\'s spot: its next step decides');
