@@ -108,7 +108,7 @@ async function run() {
     assert.strictEqual(missing.bot.backpack.fetchTotalWeaponKind(),'Weapon.Sword');
     await State.sellAndRestock(missing.session,missing.bot,{},ai);
     // The failed step is raised (goal_failed of a gear errand): its combination is marked (GearMarks) and
-    // planned no more until the bot's gear plan reviews again, instead of repeating each visit tick.
+    // planned no more until its source changed (GearMarks), instead of repeating each visit tick.
     const Marks=require('../src/GameServer/Bot/AI/GearMarks'),Events=invoke('GameServer/Bot/AI/DecisionEvents');
     assert(Marks.marked(Events.statsFor(missing.session),902576),'failed combination is marked');
     missing.session.companionShopping=undefined;

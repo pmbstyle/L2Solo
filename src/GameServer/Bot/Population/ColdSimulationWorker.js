@@ -108,7 +108,6 @@ const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Situations = invoke('GameServer/Bot/Situations');
-const GearMarks = require('../AI/GearMarks');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
@@ -589,9 +588,9 @@ const occupationPlanner = new ColdOccupationPlanner({
             // The near answer's mind beside the build's packet: the gear plan's review
             // when taken, and the failed errands' marks either way (the body's errand
             // planner reads them: CompanionEquipmentShopping.planErrand).
-            if (input.mode === 'near') input.nearMind = gearReview
+            if (input.mode === 'near') input.nearMind = { ...(gearReview
                 ? gearPlanTaken(stats, input.economy.statsPacket, stats.equipmentPlan, input.state.characterId, 'economy_near')
-                : { ...earningKeys, gearMarks: stats.gearMarks ?? null };
+                : earningKeys), gearMarks: stats.gearMarks ?? null };
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
@@ -807,14 +806,13 @@ function* nearDecision(input, iterator) {
         ...(lines?.market ? { market: lines.market } : {}) };
 }
 // The gear plan's full review taken (gear_plan), one rule for a far step and a near
-// decision: its bit cleared over the build's packet, and the marks of the errands the bot
-// failed dropped (GearMarks.afterReview: the review planned without them). The mind keys it writes.
+// decision: its bit cleared over the build's packet. The marks of the errands the bot failed
+// stay (the review planned without them; their situations forget them: GearMarks). The mind keys it writes.
 // Traced with its answer, the gear it works toward (strategy:item), against the plan it replaces.
 function gearPlanTaken(stats, packet, plan, subject, caller) {
     const traced = Trace.on();
     return { woken: Situations.decided({ ...stats, ...packet, equipmentPlan: plan }, 'gear_plan', { caller, subject,
-        answer: traced ? gearAnswer(plan) : null, was: traced ? gearAnswer(stats?.equipmentPlan) : null }),
-    gearMarks: GearMarks.afterReview() };
+        answer: traced ? gearAnswer(plan) : null, was: traced ? gearAnswer(stats?.equipmentPlan) : null }) };
 }
 const gearAnswer = plan => plan ? `${plan.strategy || plan.status || '-'}:${Number(plan.target?.selfId) || '-'}` : 'none';
 // options: { economy, stock, routeRows, routeKey } a step already holds, and
@@ -2100,7 +2098,7 @@ function startKernel(config = {}) {
             const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
             // A new packet, never the build's own (stepStatsPacket may return economy.statsPacket,
             // which the card shares). The gear plan's full review taken with the build (gear_plan):
-            // it planned without the errands the bot failed, whose marks go (GearMarks).
+            // it planned without the errands the bot failed (GearMarks).
             // The workshop and rebuff taken on this step ride it as on a served step: main
             // applies the packet over its row, so an answer left out is lost (a newbie's guide
             // visit answered at a town arrival). The build's woken, read after them, wins.

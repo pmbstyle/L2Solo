@@ -12,8 +12,8 @@ function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
     // expand geometry or treat an unprepared trip as free.
     const cost = deps.tripCost || ctx.trip;
     return id => {
-        // A gear errand the bot failed to buy (GearMarks) is no purchase until its gear plan
-        // reviews again: no power root or material leaf takes the same buy again.
+        // A gear errand the bot failed to buy (GearMarks) is no purchase while its mark lasts
+        // (until its source changed): no power root or material leaf takes the same buy again.
         if (GearMarks.marked(state.stats, id)) return null;
         // Every wish purchase is sized here: a leaf buys at most these units (Agenda.nextSeller).
         const capacity = ArrowStock.admitted(state, id, Infinity);

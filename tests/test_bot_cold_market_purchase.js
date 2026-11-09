@@ -405,7 +405,7 @@ async function run() {
     assert.strictEqual(incompatibleShield.reason, 'incompatible_loadout');
     assert.strictEqual(incompatibleShield.purchased, false);
     assert.strictEqual(blockedReserveCalls, 0, 'an incompatible purchase must be rejected before reserving market stock');
-    // The gear plan stays; the refused item is its mark (GearMarks), which its next review plans without.
+    // The gear plan stays; the refused item is its mark (GearMarks), which its reviews plan without.
     assert.strictEqual(incompatibleShield.state.stats.equipmentPlan?.target?.selfId, 626,
         'a refused shield leaves the gear plan to its own review');
     await new Promise(resolve => setImmediate(resolve));

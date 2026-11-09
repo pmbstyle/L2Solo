@@ -117,13 +117,14 @@ async function runWorker(state, predicate, followUp = null) {
         post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } });
         assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
         // A failed gear errand marks its key in the near mind and wakes the build and the gear
-        // review (its source failed): the review plans without the item and drops the mark, and
-        // the answer carries that to the body (GearMarks: one rule near and far).
+        // review (its source failed): the review plans without the item and keeps its mark
+        // (only its situations forget it), and the answer carries it to the body (GearMarks:
+        // one rule near and far), so the next failure's review cannot take it again.
         const planned = { ...raised, stats: { ...raised.stats, equipmentPlan: null, gearMarks: [{ key: 6 }] } };
         post({ ...planned, nearSeq: 7, updatedAt: now + 5,
             raise: { seq: 3, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 5 }, seq: 3 }] } });
-        assert.equal((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, null,
-            'the failure wakes the gear review, which drops the marks it planned without');
+        const reviewed = (await decidedAt(until, 7)).payload.near.statsPacket;
+        assert.deepEqual(reviewed.gearMarks, [{ key: 5 }], 'the review it woke keeps the mark it planned without');
     });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,
