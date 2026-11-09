@@ -107,10 +107,12 @@ stays for the leftovers or fights (KS etiquette, karma); the numbers are our cho
 Relationships are read for at most four met units and eight displacement candidates; an
 unread unit counts as a stranger, so a capped read only makes the arrival leave. A unit
 on a player's command or a safety evacuation never leaves (counted). Bodies near a player
-standing there are neither met nor displaced (their own tactics, below). Ordinary hunters
-with no active equipment target use a stable representative NPC drawn from
-level-appropriate spawns weighted by count (`PartyHuntingTarget.competitionNpcId`); this
-is competition context only, not the PvE target.
+standing there are neither met nor displaced (their own tactics, below). A unit competes
+for its active equipment target where that spawns on the spot; otherwise (no target, or one
+that does not spawn there) for a stable representative NPC drawn from the spawns in its
+target level window, else from every spawn, weighted by count
+(`PartyHuntingTarget.competitionNpcId`), so every unit on a spot that spawns anything is
+counted, met and displaceable; this is competition context only, not the PvE target.
 
 The arriving unit's own outcome rides its arrival step: leaving raises `contest_lost`
 with the spot as its mark (it wakes the earning spot; the mark lasts the outing). A

@@ -354,25 +354,32 @@ function route(state, currentSpot, party, partyMembers = [], { spots, timestamp,
 }
 
 // Does the bot's accepted non-hunting leaf hold it where it stands: only on its
-// ground (the catalogue spot under it), where its errand starts at the fight's edge.
-// A bot with no ground under it (a town after a visit) goes hunting at its held
-// choice and the errand starts from the field, as a C4 player done in town walks
-// to his camp. One rule for the cold trip (trip) and the hot body
-// (BotDecisionService).
-function occupationHolds(leaf, ground) {
-    return !!leaf?.activity && leaf.activity !== 'hunting' && !!ground;
+// ground (the catalogue spot under it) while it may still hunt there, where its
+// errand starts at the fight's edge. A bot with no ground under it (a town after a
+// visit), on ground its marks exclude (excludedSpotIds: SpotRiskPolicy, a contest
+// lost or displaced, a dangerous or unreachable spot), or on ground raised empty for
+// it (emptyGround: the stay's spot_empty, the cold round's or the body's) while the
+// spot it goes to when sent to hunt (heldSpotId, the held choice) is another, goes
+// hunting at its held choice and the errand starts from the field, as a C4 player
+// pushed off his camp, finding nothing to fight there, or done in town, walks to his
+// camp. One rule for the cold trip (trip) and the hot body (BotDecisionService).
+function occupationHolds(leaf, ground, excludedSpotIds, { emptyGround = null, heldSpotId = null } = {}) {
+    if (!leaf?.activity || leaf.activity === 'hunting' || !ground) return false;
+    const id = String(ground.id);
+    return !excludedSpotIds.has(id) && !(String(emptyGround ?? '') === id && heldSpotId != null && String(heldSpotId) !== id);
 }
 
 // The solo trip of a step: to the spot the bot's one choice names (heldHuntSpot,
 // kept on `owner`, the bot's kernel record), built from where it stands now; null:
 // no trip. What the trip adds is the executor's part: an accepted occupation leaf
-// holds the bot on its ground (occupationHolds: no field trip before the errand
+// holds the bot on ground it still hunts (occupationHolds: no field trip before the errand
 // runs), ground the bot may not hunt alone (party-only ground, unsafeSoloGround)
 // that the choice leaves it on is fled (the search's evacuation, choose, nothing
 // kept; ground whose spawns admit none of its fights is the round's spot_empty), and with no spot it may take and no ground under it the bot asks the
 // earning decision again once per answer (Situations.spotAsk on the record: the
 // route carries spot_empty to the step, stepTrip; an answer to that ask with none
-// either leaves it where it is, counted earning:no_spot). Counted as
+// either leaves it where it is, counted earning:no_spot), and so does a bot standing on
+// ground its marks exclude (huntSpot sends it to the leveling goal first). Counted as
 // route:trip:held_choice|evacuate|occupation. The held choice is read first, whatever
 // the trip does, and given to out.held (the step publishes it: huntSpotKeyOf).
 function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = null }) {
@@ -384,7 +391,8 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     // The accepted occupation owns this round on the bot's camp. A routine hunting
     // replan must not turn a pending purchase/craft/sale into another field trip
     // before the native economy executor gets to carry it out (occupationHolds).
-    if (occupationHolds(leaf, currentSpot) && !unsafeSoloGround(state, currentSpot, frame)) {
+    if (occupationHolds(leaf, currentSpot, frame.excludedSpotIds, { emptyGround: state.stats?.emptyGround, heldSpotId: held?.spotId })
+        && !unsafeSoloGround(state, currentSpot, frame)) {
         EconomyDiagnostics.count('route', 'trip', 'occupation');
         return null;
     }
@@ -396,7 +404,9 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     } else {
         EconomyDiagnostics.count('route', 'trip', 'held_choice');
         if (chosen?.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
-        else if (!currentSpot && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
+        // Ground its marks exclude (a contest lost, danger, deaths there) is no ground to stay on: it asks as a bot on none.
+        else if ((!currentSpot || frame.excludedSpotIds.has(String(currentSpot.id)))
+            && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
             return { needed: false, ask: 'spot_empty' };
         }
     }
@@ -407,7 +417,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
 // searched (the same after a worker restart: the answer is in the mind). { spotId:
 // null }: none it may take (none found, its marks exclude it, or ground it may not
 // hunt alone now, LevelingRoutes.groundVerdict: no walk into a flight): it stays
-// until a situation re-decides. undefined: no answer yet (its first decision pending), a
+// until a situation re-decides (pushed off its ground with none: huntSpot's leveling goal). undefined: no answer yet (its first decision pending), a
 // protected starter field or a party waiter: the search decides (choose).
 function heldChoice(state, spots, frame) {
     // A waiter for a required party hunts its safe fallback (PartyWaitFallback, in
@@ -456,7 +466,7 @@ function planSource(state, spots, frame) {
 // raid refuses it), the spot its hunting leaf names when it fits (leafChoice), the gear
 // plan's source (planSource; not for a protected starter or a party waiter), its held earning answer (heldChoice),
 // else the search (choose: a party waiter's fallback, a protected starter's field, the
-// leveling goal). The bot is judged as
+// leveling goal, also for a bot pushed off its ground whose answer names none). The bot is judged as
 // if it hunted now, under its exclusions (marks, death marks, death pressure). Our
 // choice, as a C4 player picks a camp: by level, gear goal and income he knows, the
 // crowd met only on arrival. { spotId (null: none found or none it may take), npcId (a
@@ -484,7 +494,14 @@ function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
         ? null : planSource(hunter, spots, frame);
     if (source) return { spotId: String(source.id) };
     let chosen = heldChoice(hunter, spots, frame);
-    if (chosen === undefined) chosen = choose(hunter, null, null, [], { spots, timestamp, frame });
+    // On a spot its marks exclude (a contest lost, danger, deaths there) while its earning answer
+    // names none: the leveling goal decides (choose, which never keeps excluded ground), as for a
+    // bot with no answer; a C4 player who left his camp and knows no better one goes to level elsewhere,
+    // not back to it. Its reads are in the held key (the answer's spot, the exclusions, the spot).
+    if (chosen === undefined || chosen.spotId == null && hunter.stats.earning?.spotId == null
+        && hunter.spotId != null && frame.excludedSpotIds.has(String(hunter.spotId))) {
+        chosen = choose(hunter, null, null, [], { spots, timestamp, frame });
+    }
     // A search that threw keeps nothing: asked again at the next read.
     if (!chosen) return undefined;
     return { spotId: chosen.spotId != null ? String(chosen.spotId) : null, ...(chosen.npcId ? { npcId: chosen.npcId } : {}) };

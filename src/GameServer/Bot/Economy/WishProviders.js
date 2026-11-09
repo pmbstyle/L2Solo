@@ -1258,10 +1258,16 @@ function buildProjection(state, ctx, deps) {
             price: price(rare.item.selfId), valueHours: rare.value * statusWeight,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
+    // The hunting paths name the hunt's own spot only when the build picked it (a party's
+    // table row, a solo bot with no earning answer); a solo bot's earning answer is not
+    // copied into its leaf: the route reads the answer when the bot goes (BotRoute.huntSpot),
+    // so an answer moved by a decision taken alone (an outleveled or disappointing spot)
+    // moves the bot without a build.
+    const huntSpot = spotId => ctx.hunt.answer ? {} : { spotId };
     if (!progression.required && ctx.hunt.expPerHour > 0 && state.level < invoke('GameServer/Progression/ProgressionCap').effectiveLevelCap()) {
         root({ key: `level:${state.level + 1}`, need: 'power', object: { level: state.level + 1 },
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',
-                spotId: ctx.hunt.progressSpotId || ctx.bestSpotId, costHours: 1, riskHours: ctx.expectedDeathHours }] });
+                ...huntSpot(ctx.hunt.progressSpotId || ctx.bestSpotId), costHours: 1, riskHours: ctx.expectedDeathHours }] });
     }
     // The kit in the field: a kind's root only below its line (one
     // hour of use), for one outing's refill; above it the money reserve holds that
@@ -1378,7 +1384,7 @@ function buildProjection(state, ctx, deps) {
     }
     for (const node of deps.nodes || []) { if (node.need) root(node); else add(node); }
     const moneyPaths = ctx.hunt.perHour > 0 ? [{ activity: 'hunting', kind: 'money',
-        spotId: ctx.bestSpotId, incomePerHour: ctx.hunt.perHour, riskHours: ctx.expectedDeathHours }] : [];
+        ...huntSpot(ctx.bestSpotId), incomePerHour: ctx.hunt.perHour, riskHours: ctx.expectedDeathHours }] : [];
     const liquidation = liquidationInputs(state, { shots: ctx.stock('shots'), potions: ctx.stock('potions'),
         excluded: [...values.keys()].filter(id => Object.hasOwn(state.inventory || {}, id)) });
     const sale = (liquidation || liquidationCandidates(state, ctx)).filter(row => !values.has(Number(row.selfId)));

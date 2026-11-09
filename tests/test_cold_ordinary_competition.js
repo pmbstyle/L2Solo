@@ -13,7 +13,13 @@ const entries=Array.from({length:40},(_,i)=>{
 const selected=entries.map(e=>Target.competitionNpcId(null,e.state,spot));
 assert(selected.includes(10)&&selected.includes(11),'ordinary hunters distribute across actual spawn types');
 assert(selected.filter(id=>id===11).length>selected.filter(id=>id===10).length,'spawn density weights the representative target');
-assert.strictEqual(Target.competitionNpcId(null,{...entries[0].state,level:79},spot),0,'outleveled mobs are not ordinary competition targets');
+// A unit that outlevelled the spot's spawns past the target window still hunts there: it competes for them.
+const outleveled=entries.map(e=>Target.competitionNpcId(null,{...e.state,level:79},spot));
+assert(outleveled.every(id=>id===10||id===11)&&outleveled.includes(10)&&outleveled.includes(11),'an outlevelled hunter draws among every spawn');
+// A planned target counts only where it spawns: elsewhere the unit competes for what does.
+const planned=npc=>({...entries[0].state,stats:{equipmentPlan:{status:'active',next:{npcId:npc}}}});
+assert.strictEqual(Target.competitionNpcId(null,planned(11),spot),11,'a planned target that spawns there is the target');
+assert([10,11].includes(Target.competitionNpcId(null,planned(99),spot)),'a planned target absent from the spot is not');
 assert.strictEqual(Target.competitionNpcId(null,entries[0].state,{...spot,npcEntries:[]}),0);
 const party={partyId:'ordinary-party',spotId:spot.id,stats:{}};
 assert.strictEqual(Target.competitionNpcId(party,entries[0].state,spot),Target.competitionNpcId(party,entries[0].state,{...spot,npcEntries:[...spot.npcEntries].reverse()}));
