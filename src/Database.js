@@ -2721,12 +2721,19 @@ function economyStepUnsafe(characterId, command, kind) {
     }
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
     economyOwnerUnsafe(characterId, command.authority, true);
-    const state = { level: Number(row.level), phase: row.phase, stats: SavedStats.merge(row.statsJson, row.mindJson),
-        inventory: InventorySummary.read(row.inventorySummary) };
     // Current own protection is prepared once inside the atomic boundary,
     // never inferred from the worker's spending proposal.
-    const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
+    const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(row));
     return { row, command, reserved };
+}
+
+// The state a commit's reserve check reads from a bot's life row: the planner's
+// inputs (ItemDisposition.reservedEquipmentAmounts), the bot's id included, so a
+// paused plan's need is first met from its warehouse stock as the planner's free
+// count assumes; without it the commit keeps the whole need in the bag and refuses
+// a spend the planner found free.
+function reserveStateUnsafe(row, stats = SavedStats.merge(row.statsJson, row.mindJson), inventory = InventorySummary.read(row.inventorySummary)) {
+    return { characterId: Number(row.characterId), level: Number(row.level), phase: row.phase, stats, inventory };
 }
 
 function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = null, learning = null, statsPatch = null) {
@@ -2841,10 +2848,8 @@ function prepareCraftReservationsUnsafe(step, recipe) {
     if (!final && !component) return;
     // A bot's own craft spends its own bag: a clan goal's reserve binds what the
     // bot sells or trades, not this plan (our choice).
-    step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
-        level: Number(step.row.level), phase: step.row.phase, stats,
-        inventory: InventorySummary.read(step.row.inventorySummary)
-    }, { craft: false, clan: false });
+    step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(step.row, stats),
+        { craft: false, clan: false });
 }
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false, held = 0) {
@@ -2874,8 +2879,7 @@ function materialReserveUnsafe(step, selfId, sale = false) {
     const { stats, inventory } = read;
     // Bilateral market acceptance also rechecks the current gear/craft/clan
     // reserves inside its transaction, without a prepared economy command.
-    step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
-        level: Number(step.row.level), phase: step.row.phase, stats, inventory });
+    step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(step.row, stats, inventory));
     const item = inventory[selfId] || {};
     if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return Infinity;
     const goalReserve = stats.equipmentPlan?.status === 'active' && Number(stats.equipmentPlan.target?.selfId) === Number(selfId) ? 1 : 0;

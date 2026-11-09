@@ -267,7 +267,7 @@ class ColdSimulationCoordinator {
         // lands under a step or leaves the cached copy behind the row.
         // commandDbErrors: commands that failed on the database or a pending
         // write, not on the bot (sharedCommandFailure); the first is logged.
-        this.refusals = { commitRefused: {}, staleCommand: 0, commandDbErrors: 0 };
+        this.refusals = { commitRefused: {}, commandRefused: {}, staleCommand: 0, commandDbErrors: 0 };
         // Worker faults main sees itself, counted always (cheap): protocol/size faults (no bot or party
         // in the message) and the last fault of any kind. A bot's own faults are counted in the worker
         // (ColdSimulationKernel.fault: backoff, quarantine) and merged in snapshot().
@@ -1996,11 +1996,15 @@ class ColdSimulationCoordinator {
                         utils.infoWarn('ColdWorker', 'command failed on the database (counted from now on as commandDbErrors): %s',
                             error?.stack || error);
                     }
-                    // A command's own throw: the worker's fault tracker holds the bot
+                    // A command's own throw (a bug): the worker's fault tracker holds the bot
                     // off (backoff, then quarantine) and sends the first stack back
-                    // to be logged here. A shared failure is a plain retry.
+                    // to be logged here. A shared failure is a plain retry, and so is a
+                    // refusal its owner names with a code (FailureLog.refusal: the act's
+                    // facts moved since the decision), counted by reason, never a fault.
+                    const refused = !shared && FailureLog.refusal(error);
+                    if (refused) this.refusals.commandRefused[error.message] = (this.refusals.commandRefused[error.message] || 0) + 1;
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error',
-                        ...(shared ? { retryAfterMs: 5000 }
+                        ...(shared || refused ? { retryAfterMs: 5000 }
                             : { fault: { stack: String(error?.stack || '').split('\n').slice(0, 10).join('\n').slice(0, 2000) } }),
                         ...(state ? { state } : {}) });
                 }
@@ -2445,7 +2449,7 @@ class ColdSimulationCoordinator {
             epoch: this.workerEpoch,
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
-            refusals: { commitRefused: { ...this.refusals.commitRefused },
+            refusals: { commitRefused: { ...this.refusals.commitRefused }, commandRefused: { ...this.refusals.commandRefused },
                 staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors,
                 planBidRefused: AfkMarket.planBidRefused(), townTripRefused: AfkMarket.townTripRefused() },
             failures: this.failureSnapshot(),

@@ -87,7 +87,7 @@ async function run() {
     });
     // The worker's fault tracker sets the retry (backoff, quarantine) and logs the stack once.
     await check('current command error sends its stack and original identity', async () => {
-        const h = fixture({ error: Error('current_operation_error') }), input = command(currentRows.get(1));
+        const h = fixture({ error: TypeError('current_operation_error') }), input = command(currentRows.get(1));
         await h.submit([input]); await h.coordinator.commandTail;
         const result = acknowledgements(h)[0].message.payload.results[0];
         assert.equal(result.ok, false); assert.equal(result.reason, 'current_operation_error');
@@ -95,6 +95,19 @@ async function run() {
         assert.equal(h.coordinator.refusals.commandDbErrors, 0);
         assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
         assert.equal(h.coordinator.counters.commandErrors, 1); assert.equal(h.coordinator.commandInflight.size, 0);
+    });
+    // A refusal the act names (its facts moved since the decision) is an outcome: a plain
+    // retry counted by reason, never a fault, so refusals in a row never quarantine the bot.
+    await check('named command refusal is counted and retried, never a fault', async () => {
+        const h = fixture({ error: Error('economy_material_protected') });
+        for (let i = 0; i < 5; i++) {
+            await h.submit([command(currentRows.get(1))]); await h.coordinator.commandTail;
+            const result = acknowledgements(h).at(-1).message.payload.results[0];
+            assert.equal(result.ok, false); assert.equal(result.reason, 'economy_material_protected');
+            assert.equal(result.fault, undefined); assert.equal(result.retryAfterMs, 5000);
+        }
+        assert.deepEqual(h.coordinator.refusals.commandRefused, { economy_material_protected: 5 });
+        assert.equal(h.coordinator.refusals.commandDbErrors, 0);
     });
     await check('retired command error has no replacement reply or error effects', async () => {
         const h = fixture({ held: true }); await h.submit([command(currentRows.get(1))]); await h.entered.promise;

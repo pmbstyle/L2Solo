@@ -209,6 +209,24 @@ async function run() {
     const selectedReserve = Disposition.selectedCraftAmounts(state(), network);
     assert.equal(selectedReserve[1458], 12, 'selected wish DAG protects the physical luxury input');
     assert.equal(count(state(), { reserved: selectedReserve }), 8);
+    // Gear bought to be crystallized waits for its conversion, never on the board or at the
+    // NPC: a shot kit's source gear and the selected exchange's crystallization input are
+    // held from every sale pass while their plan holds them (this step and the next).
+    const shield = 2495, now = Date.now();
+    const gearBag = { ...state(), level: 20, inventory: { [shield]: { selfId: shield, amount: 1, equipped: false, slot: 0 } } };
+    const listed = (s, extra = {}) => Disposition.saleCandidates(s, { ...saleOptions, ...extra })
+        .find(row => row.selfId === shield)?.count || 0;
+    assert.equal(listed(gearBag), 1, 'a spare shield is sold');
+    const kit = { ...gearBag, stats: { ...gearBag.stats, shotCraft: { preparing: { recipeId: 21, batches: 1,
+        productId: 1464, gearTarget: 0, gearInputs: {}, crystalGear: shield, at: now } } } };
+    for (const at of [now, now + 60000]) assert.equal(listed(kit, { now: at }), 0, 'the shot kit keeps its shield to crystallize');
+    assert.equal(Disposition.productionInputAmounts(kit)[shield], 1);
+    const crystallize = { kind: 'crystallize', grossRequirements: [{ key: `item:${shield}`, amount: 1 }] };
+    const exchangeNetwork = { activity: { rootKey: 'power:95:14' }, queue: [{ key: 'power:95:14', plan: { kind: 'luxury_exchange',
+        grossRequirements: [{ key: 'item:1458', amount: 12 }], requirements: [{ key: 'item:1458', plan: crystallize }] } }] };
+    const crystallizeReserve = Disposition.selectedCraftAmounts(gearBag, exchangeNetwork);
+    assert.equal(crystallizeReserve[shield], 1, 'the selected crystallization holds its source gear');
+    assert.equal(listed(gearBag, { reserved: crystallizeReserve }), 0);
     Supplies.useRowSource(id => id === 42 ? [42, 1, [[1458, 3]], 1] : undefined);
     assert.equal(count(state(1458, { clanId: 42, equipmentPlan: exchange })), 5,
         'personal C exchange and active clan need have separate quantities');

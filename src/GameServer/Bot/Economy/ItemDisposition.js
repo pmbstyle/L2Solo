@@ -493,12 +493,16 @@ function collectedEquipmentInputs(state, plan = state?.stats?.equipmentPlan) {
 
 // A selected finite production kit survives the ingredient trips. Selling
 // and storage retain it; the production executor still reads its own inputs.
+// A shot kit also holds the one piece of gear its crystals come from (crystalGear):
+// bought to be crystallized, it is never offered for sale meanwhile.
 function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
     const setup = shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? shot : wealth;
     if (!setup || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)) return {};
-    return recipeInputAmounts(setup.recipeId, setup.batches);
+    const kit = recipeInputAmounts(setup.recipeId, setup.batches), gear = Number(setup.crystalGear || 0);
+    if (gear > 0) kit[gear] = Number(kit[gear] || 0) + 1;
+    return kit;
 }
 // A production kit: the recipe's materials for its batches.
 function recipeInputAmounts(recipeId, batches) {

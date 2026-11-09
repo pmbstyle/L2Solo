@@ -325,6 +325,9 @@ async function obtainCrystals(state, candidate, batches) {
                 product: { selfId: gear.selfId, name: template.template.name, amount: 1, stackable: false, slot: template.etc.slot } });
             state = await acceptMutation(result, { ...consumeMaterials(state, gear.recipe.materials),
                 vitals: { ...state.vitals, mp: Number(result.mp) } }, 'shot_scrap_crafted');
+        } catch (error) {
+            if (!WealthCraft.craftRefused(error)) throw error;
+            return { state: await refusedCraft(state, candidate), ready: false };
         } finally { if (admitted) Commit.finish(state.characterId, admitted.command); }
         if (result.success !== true) return { state, ready: false };
     } else if (gear.source === 'afk' || gear.source === 'npc') {
@@ -350,6 +353,11 @@ async function obtainCrystals(state, candidate, batches) {
 
 function materialRows(items, recipe) { return Profit.materials(items, recipe); }
 
+// A shot craft (or the gear craft feeding its crystals) the native commit refused is
+// a wealth craft's refusal: counted, the shot recipe marked until the next town look.
+const refusedCraft = (state, candidate) => WealthCraft.rejectAccepted(state, state,
+    { kind: 'shot', reason: 'craft_failed', recipeId: Number(candidate.recipe.recipeId) });
+
 async function craft(state, candidate, index, now) {
     if (hotState(state)) return hotState(state);
     const productPerBatch = Number(candidate.recipe.productCount);
@@ -359,14 +367,18 @@ async function craft(state, candidate, index, now) {
     if (batches <= 0) return state;
     const held = state.stats?.shotCraft?.preparing;
     const gearTarget = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
+    // The piece of gear the crystals come from (bought, crafted or owned) is the kit's
+    // too: held from sale until it is crystallized (ItemDisposition.productionInputAmounts).
+    const crystalGear = candidate.gear && candidate.gear.source !== 'crystals' ? Number(candidate.gear.selfId) : 0;
     if (Number(held?.recipeId) !== Number(candidate.recipe.recipeId)
         || Number(held?.batches) !== batches || Number(held?.gearTarget) !== gearTarget
+        || Number(held?.crystalGear || 0) !== crystalGear
         || !held?.gearInputs || Number(held?.at) + 30 * 60 * 1000 <= now) {
         const gearInputs = Number(held?.gearTarget) === gearTarget && held?.gearInputs
             && Number(held.at) + 30 * 60 * 1000 > now ? held.gearInputs : ItemDisposition.collectedEquipmentInputs(state);
         state = await persist({ ...state, stats: { ...state.stats, shotCraft: { ...state.stats?.shotCraft,
             preparing: { recipeId: Number(candidate.recipe.recipeId), productId: Number(candidate.recipe.productId),
-                batches, gearTarget, gearInputs, at: now } } } }, 'shot_craft_preparing');
+                batches, gearTarget, gearInputs, ...(crystalGear ? { crystalGear } : {}), at: now } } } }, 'shot_craft_preparing');
     }
     const crystals = await obtainCrystals(state, candidate, batches);
     if (!crystals.ready || crystals.hot || hotState(crystals.state)) return hotState(crystals.state) || crystals.state;
@@ -393,6 +405,9 @@ async function craft(state, candidate, index, now) {
         state = await acceptMutation(crafted, { ...consumeMaterials(state, batchRecipe.materials), vitals: {
             ...(state.vitals || {}), mp: Number(crafted.mp)
         } }, 'shot_craft_inventory');
+    } catch (error) {
+        if (!WealthCraft.craftRefused(error)) throw error;
+        return refusedCraft(state, candidate);
     } finally { if (admitted) Commit.finish(state.characterId, admitted.command); }
     if (crafted.success !== true) return state;
     const craftedUnits = Number(crafted.units || 0);

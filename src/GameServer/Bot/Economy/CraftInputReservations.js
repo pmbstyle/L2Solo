@@ -13,7 +13,9 @@ function selectedCraftNeeds(network) {
     function visit(node) {
         if (!node || visited.has(node)) return;
         visited.add(node);
-        if (['craft', 'luxury_exchange', 'mammon_unseal'].includes(node.kind)) for (const row of node.grossRequirements || node.requirements || []) {
+        // A crystallization's source gear is an input as a recipe's material is: bought for
+        // the conversion, it is not offered for sale before it is crystallized.
+        if (['craft', 'luxury_exchange', 'mammon_unseal', 'crystallize'].includes(node.kind)) for (const row of node.grossRequirements || node.requirements || []) {
             const id = Number(String(row.key).replace(/^item:/, ''));
             if (!id) continue;
             const count = Number(row.amount || 0) * (row.once ? 1 : Math.max(1, Number(node.batches || 1)));
