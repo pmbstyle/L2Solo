@@ -1914,9 +1914,10 @@ class ColdSimulationCoordinator {
 
     // The steps of the review command the worker sends on this ok ack, decided
     // here where the facts are: the plan unless main started the build's cleanup trip over
-    // it (inventoryCleanupForced), the buff offer, training when the step moved the
-    // level fact (its durable class/level: B13, training is that fact's consumer) or brought a book into the bag,
-    // and the committed state needs it. None: no review.
+    // it (inventoryCleanupForced), the buff offer, training when the step's projection stands
+    // past the level or class main trained (durable.classId: training is that fact's consumer and
+    // the class record's one writer) or brought a book into the bag, and the committed state needs it.
+    // None: no review.
     reviewSteps(proposal, state) {
         const review = [];
         if (proposal?.economyPlan && !proposal.inventoryCleanupForced) review.push('plan');

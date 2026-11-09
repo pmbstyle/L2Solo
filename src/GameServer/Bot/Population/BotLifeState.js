@@ -1368,11 +1368,24 @@ function preserveStarterLootProvenance(previousInventory = {}, observedInventory
     }, {});
 }
 
+// Training is due when the level or class stands past what main last trained
+// (the stamp), when the class has a profession due at this level (a stamp
+// written over a class the record never took still heals), or a rank is unlearned.
 function classProgressionNeeded(state, classId, level) {
     const knownLevel = Number(state.stats?.classProgressionLevel || 0);
     const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
     return knownLevel < Number(level || 1) || knownClassId !== Number(classId)
+        || BotClassProgression.nextClass(classId, level, state.characterId) !== null
         || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(state);
+}
+
+// Main's training of a far bot: it advances the class its character row holds,
+// the one reconcile writes, never a state's stats.classId (a cold projection the
+// record has not taken yet). No row: nothing to train (null).
+function trainRecordedClass(characterId, level, options) {
+    return Database.execute(['SELECT classId FROM characters WHERE id = ? LIMIT 1', [Number(characterId)]], 'bot-life:class-record')
+        .then(rows => rows.length ? BotClassProgression.reconcile({ characterId, classId: Number(rows[0].classId), level,
+            seed: characterId }, options) : null);
 }
 
 // The far bots main trains after a commit: cold, alive.
@@ -3054,35 +3067,32 @@ const BotLifeState = {
             : nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
                 && state.phase === 'cold'
                 ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
+        const untrained = { classId: currentClassId, transitions: [] };
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            })) : BotClassProgression.reconcile({
-                characterId: nextState.characterId,
-                classId: currentClassId,
-                level,
-                seed: nextState.characterId
-            }, trainingWriteOptions))
-            : Promise.resolve({ classId: currentClassId, transitions: [] });
+            })) : trainRecordedClass(nextState.characterId, level, trainingWriteOptions).then(resolved => resolved || untrained))
+            : Promise.resolve(untrained);
 
         const prepared = progression.then((resolved) => {
             const classId = Number(resolved.classId || currentClassId);
             const role = BotRoles.inferRole({ classId, characterId: nextState.characterId });
+            // A projection carries the class for the bot's own fights only: the
+            // trained stamp and the transition record are main's training's, which
+            // wrote the class (its commit names that review while they lag).
+            const trained = options.projectClassProgression === true ? {} : {
+                classProgressionLevel: level,
+                classProgressionClassId: classId,
+                classTransitions: resolved.transitions?.length
+                    ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
+                    : nextState.stats?.classTransitions || []
+            };
             const progressedState = {
                 ...nextState,
                 party: { ...(nextState.party || {}), role },
-                stats: {
-                    ...(nextState.stats || {}),
-                    classId,
-                    role,
-                    classProgressionLevel: level,
-                    classProgressionClassId: classId,
-                    classTransitions: resolved.transitions?.length
-                        ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
-                        : nextState.stats?.classTransitions || []
-                }
+                stats: { ...(nextState.stats || {}), classId, role, ...trained }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
             const equippedProgressedState = reconcileEquipmentInventory(
@@ -3213,8 +3223,8 @@ const BotLifeState = {
                 options.beforeWrite?.();
                 if (cache.get(state.characterId) !== state) throw Error('cold_training_source_retired');
             });
-            const resolved = await BotClassProgression.reconcile({ characterId: state.characterId,
-                classId: state.stats?.classId || 0, level: state.level, seed: state.characterId }, { beforeWrite });
+            const resolved = await trainRecordedClass(state.characterId, state.level, { beforeWrite });
+            if (!resolved) return state;
             const row = await Database.publishColdTraining(state.characterId, resolved, { beforeWrite });
             return this.acceptLifecycleRow(row, 'automatic_skills');
         });

@@ -209,7 +209,8 @@ module.exports.kitProbe = async (id) => {
         const died = { ...rested.state, stats: { ...rested.state.stats, woken: Situations.BITS.earning_spot } };
         const after = await step(died, 0, timestamp + 4000);
         return { quiet: quiet.kitMoved, inFight: levelUp.kitMoved, levelUp: rested.kitMoved, levels: [quiet.state.level, levelUp.state.level],
-            earningBuilds: after.build ? 1 : 0 };
+            earningBuilds: after.build ? 1 : 0, classId: levelUp.state.stats.classId,
+            trainingAsked: [levelUp.durable?.classId ?? null, rested.durable?.classId ?? null] };
     }
 };
 // A crafter's workshop decision: taken at a recipe learned, held across a step that
@@ -430,6 +431,10 @@ parentPort.on('message', message => {
         assert.equal(kit.inFight, false, 'a grade gained in a party fight waits for the party\'s rest');
         assert.equal(kit.levelUp, true, 'and is a kit event for the party step there');
         assert.equal(kit.earningBuilds, 0, 'a member\'s woken earning spot builds nothing: its party holds the spot');
+        // The level crossed 40 in its round: the record takes the class only through main's
+        // training, so each step after it asks for that training until it lands, not only
+        // the step whose round gained the level (a hunt window's later rounds project on it).
+        assert.deepEqual(kit.trainingAsked, [kit.classId, kit.classId], 'a projected class keeps naming main\'s training');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'workshop'), workshopProbe: id });
         const workshopResponse = await wait(message => message.probeId === 'workshop');
         if (workshopResponse.error) throw Error(workshopResponse.error);

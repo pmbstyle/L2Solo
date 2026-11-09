@@ -3426,13 +3426,12 @@ function characterProgressStatement(characterId, values, { washKarma = false, be
 // inventoryRevision, the one its UPDATE left, and matched, whether the rows
 // matched the stored summary before that UPDATE (itemsMatchSummaryUnsafe).
 function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null, bag = null) {
-    const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
-    const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
+    // The class is not the commit's: main's training (BotClassProgression.reconcile) writes it.
+    const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp FROM characters WHERE id = ?', [characterId]);
     const values = {
         level: Number(physical.level || 1), exp: Number(physical.exp || 0), sp: Number(physical.sp || 0),
         hp: Number(physical.hp || 0), maxHp: Number(physical.maxHp || 0),
-        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0),
-        ...(classId !== null ? { classId } : {})
+        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0)
     };
     // Inside the fenced transaction: an unchanged snapshot cannot wash karma
     // twice, and a step without an EXP gain washes none.

@@ -239,9 +239,6 @@ function commitBatch(entries = [], options = {}) {
                 maxHp: Number(nextState.vitals?.maxHp || 0),
                 mp: Number(nextState.vitals?.mp || 0),
                 maxMp: Number(nextState.vitals?.maxMp || 0),
-                ...(entry.proposal?.durable?.classId !== undefined ? {
-                    classId: Number(entry.proposal.durable.classId)
-                } : {}),
                 ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
                 ...(entry.proposal?.durable?.soulCrystals?.length ? { soulCrystals: entry.proposal.durable.soulCrystals } : {}),
                 ...(inventoryChanged ? { inventory: physicalInventory } : {}),

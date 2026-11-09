@@ -1871,14 +1871,15 @@ function startKernel(config = {}) {
             if (Situations.arrivesInTown(state, resolved)) SpotRecords.heard(state.characterId, kernel.proposalIdOf(state.characterId));
             const projected = ClanMembershipPolicy.reconcileState(resolved);
             if (stepEconomy) seenEcho = ColdEconomyDecision.stateEcho(projected);
-            const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
-            const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
-            const afterClassId = Number(projected.stats?.classProgressionClassId ?? projected.stats?.classId ?? beforeClassId);
-            const progressionChanged = beforeLevel < Number(projected.level || 1) || beforeClassId !== afterClassId;
-            // The worker projects the class, but cannot grant tree ranks.
-            // Accepted main-owned commits train against actual SP and books.
+            // The worker projects the class for its own fights; main trains it (the
+            // record's class and ranks, then the stamp). Every step whose projection
+            // stands past main's stamp names that review (durable.classId), also when
+            // the level came in an earlier round of a hunt window.
+            const projectedClassId = Number(projected.stats?.classId ?? 0);
+            const untrained = Number(projected.stats?.classProgressionLevel || 0) < Number(projected.level || 1)
+                || Number(projected.stats?.classProgressionClassId ?? projectedClassId) !== projectedClassId;
             const durable = {
-                ...(progressionChanged ? { classId: afterClassId } : {}),
+                ...(untrained ? { classId: projectedClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
             // Accepted custody owns the next physical transition. Resume the
