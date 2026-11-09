@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N7): the bot's lease or simulation revision changes between the
+// The bot's lease or simulation revision changes between the
 // worker's card and the payment. The coordinator drops the old card (before
 // it starts, or inside the payment step): no order, no retry penalty and no
 // refresh of its own (the commit that moved the authority brings

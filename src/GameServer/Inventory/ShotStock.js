@@ -216,8 +216,8 @@ function paidShotId(plan) {
     return byRank[normalizeRank(plan.rank)];
 }
 
-// Blessed Spiritshot over Spiritshot for a role, level and grade (user 10-29,
-// docs/game-decisions.md "Shots"): the farm it adds over the spiritshot (the
+// Blessed Spiritshot over Spiritshot for a role, level and grade (our
+// choice, C4 leaves it to the player): the farm it adds over the spiritshot (the
 // best spots' exp, as usePolicy's benefit) pays its extra cost per hour at
 // the bot's buy price (botShotPrice: the NPC's, else the template's, a D+
 // shot's craft materials) against the hour's money before shots. One answer
@@ -776,7 +776,7 @@ function needsActorRestock(actor) {
 
 // Where a hot bot goes for its shots in `town`: the best seller there, a
 // city merchant's or a shop's stall, or an ad dealt with by record at its
-// place (D6). The purchase itself is the restock (purchaseActorRestock).
+// place, as a cold bot does. The purchase itself is the restock (purchaseActorRestock).
 function restockTarget(actor, town, excludedIds = [], kit = undefined) {
     const excluded = new Set(excludedIds.map(Number));
     const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');

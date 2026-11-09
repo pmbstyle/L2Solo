@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B3, question 1 = A (user 2026-10-10): on arrival a cold bot buys
+// On arrival a cold bot buys
 // only the card's step: this item in this town, at most the plan's unit
 // price (goal.target.adena), at most what is still missing (the goal read from
 // the card: its amount less what reached the bag or accepted incoming since).

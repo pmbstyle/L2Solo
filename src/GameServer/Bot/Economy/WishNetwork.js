@@ -346,7 +346,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             const owned = requested - remaining.toExecute;
             incomingHeld = remaining.toExecute - remaining.toOrder;
             amount = remaining.toOrder;
-            // Held units are worth their exit value (Q1 A); nodes built
+            // Held units are worth their exit value; nodes built
             // without that reader (groups, clan) keep their own price.
             ownValue = owned * nonnegative(Number.isFinite(node.exitValue) ? node.exitValue : node.price);
             // ARCH-NOTE: PERF only a real claim enters the map: every path copies it.
@@ -402,7 +402,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 // MVP-4: elapsed hours until the output is ready, in sequence:
                 // own labour, inputs, trips. Waiting for accepted incoming has
                 // no native delivery time. ARCH-NOTE: counted as zero.
-                // A farm's cost is its net hour (D7); its elapsed time is readyHours.
+                // A farm's cost is its net hour; its elapsed time is readyHours.
                 let hours = nonnegative(path.readyHours ?? path.costHours) * units;
                 const trip = travels(path) && trips.get(tripKey(path));
                 const tripEntries = trip ? [trip.index] : [];
@@ -451,7 +451,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 } else if (successProbability < 1) {
                     // One native attempt: the parent step runs only when every
                     // child succeeded, so that branch splits into own outcomes.
-                    // E190: one draw per native command (D3), not per batch.
+                    // One draw per native command, not per batch.
                     probability *= successProbability ** commands(units, path.perCommand);
                     branches += mergedBranches(2, commands(units, path.perCommand)) - 1;
                 }
@@ -753,12 +753,12 @@ class WishNetwork {
             // is affordable, spend on it before starting another earning trial.
             for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
             // A kit kind below its line is weighed with the gear it serves, by its
-            // value, never above it (situations.md A5); roadless below reads its road.
+            // value, never above it; roadless below reads its road.
             for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = gearPriority;
             wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
         }
         // Stock nobody can supply keeps its queue place and its bid. No visit closes it,
-        // so it takes the bot off nothing while something else can be done (user 11-01, T178).
+        // so it takes the bot off nothing while something else can be done.
         // So does required stock whose road its goods do not carry (EconomicValuation.roadCarried,
         // at the bot's own hour): no trip for a few potions; they ride along on a visit
         // made for something else, or are bought where the bot stands.

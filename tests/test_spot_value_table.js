@@ -33,8 +33,8 @@ near(Table.value('S', 'dps', 18).kills, 100, 'at the spot\'s level the curve hal
 near(Table.value('S', 'dps', 18).deaths, 100 * (0.001 + 0.01), 'deaths per kill add the curve\'s difference');
 near(Table.value('S', 'dps', 19).kills, 200 * 0.625, 'between measured gaps the curve is linear');
 near(Table.value('S', 'dps', 27).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
-// Spots down to the first deep-blue level only (user 10-29: 9 levels below
-// the bot, past it the C4 drop is 30% and less).
+// Spots down to the first deep-blue level only (9 levels below the bot;
+// past it the C4 drop is 30% and less).
 assert(Table.value('S', 'dps', 27), 'nine levels above the spot: read');
 assert.strictEqual(Table.value('S', 'dps', 28), null, 'ten levels above: not read');
 near(Table.value('T', 'dps', 24).kills, 48, 'kills never exceed what the spot\'s monster count allows');
@@ -88,7 +88,7 @@ try {
     fs.rmSync(scratch, { recursive: true, force: true });
 }
 
-// A per-mob table (user 10-29): a row's kills reach its own cap (the spawns
+// A per-mob table: a row's kills reach its own cap (the spawns
 // its bot may fight), are priced by the species it killed, and take their
 // exp gap from those species' levels, not the spot's other mobs.
 const mixScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-mix-'));
@@ -478,7 +478,7 @@ useRate('x1');
     } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
 }
 {
-    // One kills-per-hour answer (T127 D3): the hunt cycle's kph is value()'s
+    // One kills-per-hour answer: the hunt cycle's kph is value()'s
     // kills, the production cap included; its cap is the cap the kills meet.
     const offline = require('../data/Bots/spot-reward-npcs.json');
     const spotId = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 })[0];

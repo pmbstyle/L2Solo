@@ -62,7 +62,7 @@ function soloRoute(plan, backoff = null) {
 }
 
 // Only the bot's route starts a hunting trip (BotRoute, beginHuntingTrip): main
-// starts none of its own (situations.md §8, its cold command hunts the worker's route).
+// starts none of its own (its cold command hunts the worker's route).
 function soloChecks() {
     const at = 1800000000000;
     const plain = hunter(8101);

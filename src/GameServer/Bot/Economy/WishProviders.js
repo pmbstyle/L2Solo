@@ -454,7 +454,7 @@ function buildProjection(state, ctx, deps) {
         return fact;
     };
     // The farm or spoil path reads GearAcquisitionPlanner.sourceFacts: the
-    // hunt rules the bot hunts by (D4-D6), an hour at its net cost (D7). The
+    // hunt rules the bot hunts by, an hour at its net cost. The
     // trip is one row per town in the network, never once per unit.
     const sourcePath = (id, spoilOnly = false) => {
         if (!sourceIndex?.has(Number(id))) return null;
@@ -651,7 +651,7 @@ function buildProjection(state, ctx, deps) {
                     grossRequirements: requirements });
             }
         }
-        // Held units are worth what the bot gets selling them now (Q1 A);
+        // Held units are worth what the bot gets selling them now;
         // only an item the bot holds needs that value.
         let exitValue;
         if (present(id)) {
@@ -1263,12 +1263,12 @@ function buildProjection(state, ctx, deps) {
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',
                 spotId: ctx.hunt.progressSpotId || ctx.bestSpotId, costHours: 1, riskHours: ctx.expectedDeathHours }] });
     }
-    // The kit in the field (plan §5, A5): a kind's root only below its line (one
+    // The kit in the field: a kind's root only below its line (one
     // hour of use), for one outing's refill; above it the money reserve holds that
     // refill and the town visit buys it. Shots and potions are ordinary
     // consumables: weighed by their value with the gear they serve (WishNetwork),
     // their road taken only where its goods carry it (roadCarried). The Scroll of
-    // Escape has no line (B2): a visit's side purchase.
+    // Escape has no line: a visit's side purchase.
     for (const kind of ['shots', 'potions']) {
         const stock = ctx.stock(kind);
         if (stock?.benefitPerUnit > 0) values.set(stock.itemId, stock.benefitPerUnit);
@@ -1328,7 +1328,7 @@ function buildProjection(state, ctx, deps) {
             valueHours: ctx.hunt.perHour > 0 ? row.profit / ctx.hunt.perHour : 0, price: row.ask.price,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
-    // The weapon bridge (situations.md B4): an unarmed bot's NPC weapon the planner's
+    // The weapon bridge: an unarmed bot's NPC weapon the planner's
     // bridge rule picks (GearAcquisitionPlanner.npcWeaponBridgePlan: the cheapest one the
     // whole wallet pays, else the cheapest to save for) is a survival wish, ranked above
     // every other (priority 4) and paid from the whole wallet (the refill reserve holds

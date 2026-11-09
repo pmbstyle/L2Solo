@@ -71,7 +71,7 @@ try {
     assert.strictEqual(failed.bot.moves, 1);
     assert.strictEqual(failed.session.townRoutePlan, null);
     assert.strictEqual(failed.session.lastSpotRelocation.method, 'walk_route_unavailable');
-    // The walk that could not reach its spot is the earning spot's situation (situations.md B6): its mark keeps
+    // The walk that could not reach its spot is the earning spot's situation (spot_unreachable): its mark keeps
     // the body off that spot, whatever time passes, until the bot's next own situation re-decides it.
     const failedStats = failed.session.decisionStats;
     assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'spot_unreachable' }]);
@@ -186,7 +186,7 @@ try {
         Economy.stateForActor = () => purchaseState;
         TownTravel.request = () => { purchaseTrips++; return 'escape'; };
         // The held shopping leaf is its build's decision (its visit weighed there): its trip
-        // starts once per decision, no tick weighs it again (situations step 4 C9).
+        // starts once per decision, no tick weighs it again.
         const accepted = fixture();
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
@@ -200,7 +200,7 @@ try {
         purchaseEconomy.network.decisionSeq = 2;
         tick(accepted);
         assert.strictEqual(purchaseTrips, 2, 'a new decision of the leaf does');
-        // The bag's town trip a build decided (stats.cleanupDue, situations step 4 C4) starts
+        // The bag's town trip a build decided (stats.cleanupDue) starts
         // while the live bag needs it; an emptied bag ends the hold with no trip, so no
         // second trip starts before the next answer lands.
         {

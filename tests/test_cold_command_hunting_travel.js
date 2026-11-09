@@ -168,7 +168,7 @@ async function run() {
     MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
 
-    // Main starts no trip of its own (situations.md §8): every lifecycle command carries the worker's route
+    // Main starts no trip of its own: every lifecycle command carries the worker's route
     // (executeWorkerLifecycleCommand refuses one without a worker result).
 
     // Bots already stranded: the next resolve drops the leftover trip; a trip

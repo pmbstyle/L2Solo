@@ -8,7 +8,7 @@ const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const TableFingerprint = require('./TableFingerprint');
 
-// The world spot table (market-sim step 3.3(c), N44): what an hour of solo
+// The world spot table: what an hour of solo
 // hunting on a spot gives a bot of a role and level, with shots or without.
 // scripts/generate-spot-table.js measures it offline with the author's cold
 // combat and writes data/Bots/spot-table.json; main loads that file once on
@@ -265,11 +265,11 @@ function spotSlot(t, spotId) {
     return named === undefined ? undefined : t.spotIndex.get(String(named));
 }
 
-// The table key of a bot. A table by class lines (header roleLines, user
-// 10-29): its class's line (a third class its second's; a base or first
+// The table key of a bot. A table by class lines (header roleLines):
+// its class's line (a third class its second's; a base or first
 // class the line of its role's alias when that line holds the class, else
 // the first line that does; a split-kit first class its future second
-// class's line, user 10-30). An older table by roles: BotRoles.tableRoleFor.
+// class's line). An older table by roles: BotRoles.tableRoleFor.
 function roleFor(state = {}) {
     const role = BotRoles.tableRoleFor(state);
     const inputs = load().header.inputs;
@@ -886,7 +886,7 @@ function cycle(spotId, role, level, shots = true, rewardOptions = {}) {
     const { row, curve, gap, refGap } = c, f = t.f, spot = t.spots[s];
     const fight = ratio(curve.fight, t.gaps, refGap, gap), taken = ratio(curve.taken, t.gaps, refGap, gap);
     // kph: the hour's kills, value()'s (combat: the walk at the bot's gap, at
-    // most the cap); cap: the spawns' and their production's (T127 D3).
+    // most the cap); cap: the spawns' and their production's.
     return { spotId: spot[0], kph: kills, cap: c.cap, pull: 1,
         fight: row[f.fight] * fight, rest: row[f.rest] * ratio(curve.rest, t.gaps, refGap, gap),
         taken: row[f.taken] * taken, spellTaken: f.spellTaken < 0 ? 0 : row[f.spellTaken] * taken, hpLost: row[f.hpLost] * taken, mpLost: row[f.mpLost] * fight,
@@ -1021,8 +1021,8 @@ function rankedSpotValues(role, level, costs = { shots: 0, potions: 0 }, minGap 
 // The positive incomes of the role/level band at these consumable prices,
 // best first, ties to the spot whose level is closest to the bot's, then by
 // spot id; the first 64: [{ index, income }]. Best by what one bot gets on
-// the spot when it holds all the bots it has room for (T123, user 10-30:
-// a spot ranks by what it gives with the bots it holds, not one bot's
+// the spot when it holds all the bots it has room for
+// (a spot ranks by what it gives with the bots it holds, not one bot's
 // kills): the row's kills at most the production of its spawns over that
 // room (fullShare); `income` stays the one bot's row. One basis per role and level
 // spans the widest band any reader asks (BASIS_MIN_GAP, the income route's);
@@ -1097,7 +1097,7 @@ function roles() {
     return load().roles;
 }
 
-// The kit surface of a table key at a level (user 10-29): { fight, taken }
+// The kit surface of a table key at a level: { fight, taken }
 // coefficients over HuntCycle.KIT_FEATURES, measured on its band's curve
 // spots (the nearest measured band, lower first), or null (an older table, a
 // band without enough fights).

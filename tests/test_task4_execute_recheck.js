@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B3: the main thread executes the card's step only while it still
+// The main thread executes the card's step only while it still
 // holds. Units or accepted incoming that arrived since the decision make a
 // purchase wait for the worker's new card (buyPending); a stale craft step and
 // a stale wealth craft write nothing; the cache keeps accepted incoming when a

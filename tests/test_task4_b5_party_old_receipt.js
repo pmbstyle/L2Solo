@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N13 (E169 old accepted receipt): a trade meeting accepted before the
+// A trade meeting accepted before the
 // buyer joins a party still completes. Goods arrive, the receipt is readable,
 // custody is conserved, and the party bot accepts no new trade afterwards.
 const assert = require('node:assert/strict');

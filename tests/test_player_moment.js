@@ -15,7 +15,7 @@ const raiseAt = (name, activity) => Situations.raise({ woken: 0, wishSections: {
 assert(!Situations.woken(raiseAt('clan_call', 'hunting'), 'build') && Situations.woken(raiseAt('clan_call', 'resting'), 'build'),
     'a rest reads the clan\'s demand');
 assert(Situations.woken(raiseAt('clan_changed', 'resting'), 'build'));
-// The build and the gear plan wake on their own situations only (situations.md §14): the
+// The build and the gear plan wake on their own situations only: the
 // money's crossings of its thresholds, not its drift; a new level or gear waits for its stop.
 for (const name of ['arrived_town', 'goal_failed', 'goal_done:goal', 'bag_full', 'stock_low:shots', 'stock_low:potions', 'source_stalled',
     'goal_affordable:focus', 'out_of_money'])
@@ -51,7 +51,7 @@ assert(Situations.woken(raiseAt('grade_changed', 'resting'), 'gear_plan') && !Si
     assert(Situations.woken(raised, 'earning_spot'), 'no earning answer held: it reads woken');
     assert(!Situations.woken({ ...raised, earning: null }, 'earning_spot'), 'an answer held: the build\'s raise left it asleep');
 }
-// The wallet against the decision's thresholds (F3, B7): its goal in reach as the budget stands
+// The wallet against the decision's thresholds: its goal in reach as the budget stands
 // at or past it, out of money as it falls below the held leaf's funded row; a drift is nothing.
 // The build it wakes re-arms them; the agenda's move over the held baseline spends the passed ones.
 const baseline = { at: 100, affordAt: { at: 5000, kind: 'focus' }, fundedAt: 800 };

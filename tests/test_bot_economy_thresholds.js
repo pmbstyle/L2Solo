@@ -18,9 +18,9 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const { captureAndRead } = require('./helpers/nativeEconomyPolicyAssertions');
 const NOW = 1791343645000;
 
-// ARCH-NOTE: FX-E1 removed the level/percentage floor. The reserve holds one
-// outing's refill of each kind (plan §5: whole units, never under one hour of
-// use), whatever the bag holds; the escape scroll is no part (B2). No wish network is built here.
+// No level or percentage floor: the reserve holds one outing's refill of each
+// kind (whole units, never under one hour of use), whatever the bag holds; the
+// escape scroll is no part. No wish network is built here.
 function reserveInputs(state) {
     const base = Economy.basics(state, { timestamp: NOW });
     const stocks = ['shots', 'potions'].map(kind => {

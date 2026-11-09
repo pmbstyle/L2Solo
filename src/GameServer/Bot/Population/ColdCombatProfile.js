@@ -141,7 +141,7 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
 
     return {
         weaponKind: WeaponMask.weaponType(weapon?.template?.kind || fallback.weaponKind || '', weapon?.etc?.slot),
-        // The MP of one bow shot (user 10-29: bots pay it as players do).
+        // The MP of one bow shot (bots pay it as players do).
         bowMp: weapon?.template?.kind === 'Weapon.Bow' ? C4WeaponSA.expectedBowMp(weapon.selfId, weapon.etc?.mp) : 0,
         attackReuseDelay: number(weapon?.stats?.reuseDelay, 1500),
         pAtk: number(weapon?.stats?.pAtk, fallback.pAtk),
@@ -1141,7 +1141,7 @@ function spotSpawns(spot = {}, npcId) {
 // hunters prefer to fight (exposed: the huntable encounter before an
 // efficiency filter), but a solo hunter judged for survival stands where the
 // spawns it takes are, as on an untargeted hunt (the bot takes only the spawns
-// it can, user 10-29): exposed is then entries, and what comes at it first is
+// it can): exposed is then entries, and what comes at it first is
 // a group at a pull it survives, whatever it targeted (our choice; a C4 player
 // keeps clear of the aggressive packs it cannot take).
 function killDraw(entries, exposed, options = {}) {

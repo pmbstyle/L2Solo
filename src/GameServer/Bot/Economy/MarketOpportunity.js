@@ -355,7 +355,7 @@ function supplyCatalog(limit = 96, origin = null) {
 
 // Where a hot bot goes to deal with an offer: a stall's actor (a shop, a
 // live private store), or a board record without a stall (an ad), dealt
-// with by record at its place (D6: hot bots take ads by records like cold
+// with by record at its place (hot bots take ads by records like cold
 // ones). { actorId, recordId, sourceId, name, locX, locY, locZ, town }.
 function offerTarget(offer, town = null) {
     const actor = offer?.projection?.actor || offer?.session?.actor || null;

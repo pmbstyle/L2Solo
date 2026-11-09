@@ -191,7 +191,7 @@ async function run() {
         stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
     // Main reads the kit rates the bot's build publishes (stats.kitRates).
     state = require('./helpers/ratedKit')(state);
-    // The tranche the reserve holds is one outing's refill (plan §5).
+    // The tranche the reserve holds is one outing's refill.
     const survival = Economy.basics(state).stock('shots');
     const survivalUnits = survival.refill;
     const shotQuote = Npc.quoteFor(survival.itemId, 'Dion');
@@ -323,7 +323,7 @@ async function run() {
     ShotStock.usePolicy = (shotState, prepared = {}) => ({ ...realUse(shotState, prepared), usePerHour: 1000, paidUsePerHour: 1000, purchaseUsePerHour: 1000 });
     try {
         // Its build's kit rates (stats.kitRates), read at the visit's first restock: a Scroll of Escape
-        // saving an hour's walk at its 100k Adena hour is worth carrying (B2).
+        // saving an hour's walk at its 100k Adena hour is worth carrying.
         const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
         const rated = require('./helpers/ratedKit')(state), rates = Packet.ratesOf(rated.stats.kitRates);
         session.coldLifeState = { ...rated, stats: { ...rated.stats, money: [100000, .00001, 0, 0],

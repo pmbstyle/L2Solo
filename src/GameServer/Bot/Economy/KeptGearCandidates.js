@@ -2,7 +2,7 @@
 // The gear candidates of a bot's wish review (WishProviders: the items the
 // review weighs, each with its value and gain), kept with the bot's held build
 // (EconomyContext, beside its source facts) and served to the next build while
-// everything the weighing read is the same (decision links step 5, S4): it is
+// everything the weighing read is the same: it is
 // a pure function of what it reads, so the same reads give the same list.
 // Two lists are held, one for a full review and one for a quiet build (it
 // weighs only the followed gear). Owns the record's layout: the build notes

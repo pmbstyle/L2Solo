@@ -88,7 +88,7 @@ assert.strictEqual(ListingService.targetMarketTownName(state, [{ selfId: 1919 }]
 assert.strictEqual(ListingService.targetMarketTownName(state, [{ selfId: 1865 }]), 'Elven Village',
     'shared no-grade resources must keep their local starter market');
 // The legacy market-town migration of physical stalls is gone with the
-// stalls (step 3.3): the old world's bot stores closed once and relist.
+// stalls: the old world's bot stores closed once and relist.
 const first = ShopPlaces.take('Gludio', 'test:first');
 assert(ShopPlaces.isStallArea('Gludio', first), 'Gludio D-grade listings must remain inside the captured trading square');
 const second = ShopPlaces.take('Gludio', 'test:second');
@@ -226,7 +226,7 @@ const dwarvenStall = ShopPlaces.take('Dwarven Village', 'test:dwarvenStall');
 assert(ShopPlaces.isStallArea('Dwarven Village', dwarvenStall), 'Dwarven Village no-grade listings must remain inside the captured trading square');
 
 // The stall migration and stall expiry timers are gone with the stalls
-// (step 3.3): board records expire in the board's own queue.
+// with the board: its records expire in the board's own queue.
 assert.strictEqual(PopulationService.maybeMigrateLegacyMarketTowns, undefined);
 assert.strictEqual(PopulationService.maybeExpireStaleMarketStores, undefined);
 console.log('Bot market town routing checks passed');

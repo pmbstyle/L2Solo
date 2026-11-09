@@ -1,4 +1,4 @@
-// Suspects of step 3.3 group B, checked on board records in memory:
+// Suspected faults of the board's offers, checked on board records in memory:
 // E40 a hot bot's sell trip takes a buy ad, which has no stall to walk to;
 // E41 a clan order picks the market for an offer no member may buy;
 // E42 a record's second line of the same item is never offered.
@@ -47,7 +47,7 @@ function item(selfId, amount) {
 }
 
 // E40: a hot bot carrying stems looks for a buyer in Giran. A buy ad has no
-// stall: the bot sells into it by record at its place (D6, group C); a buy
+// stall: the bot sells into it by record at its place; a buy
 // shop's stall is walked to.
 check('E40', () => {
     // Both bids beat the NPC buy-back of Stem (50): since 71143511 a sale

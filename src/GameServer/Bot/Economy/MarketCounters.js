@@ -1,4 +1,4 @@
-// What a bot can know of the board's past (group E, market-sim step 3.3): the
+// What a bot can know of the board's past: the
 // counters of board purchases, one per sub-kind and grade (gear, shot,
 // recipe, material x none..s: 24 numbers per world, +1 per deal), and the
 // last deal prices of each item. The main thread counts every board deal

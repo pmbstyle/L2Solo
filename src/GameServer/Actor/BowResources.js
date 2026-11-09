@@ -11,7 +11,7 @@ function reject(session, actor, message) {
     return false;
 }
 
-// A shot's arrow and MP. A bot pays the MP as a player does (user 10-29);
+// A shot's arrow and MP. A bot pays the MP as a player does;
 // its arrows stay free; ArrowStock bounds the physical inventory separately.
 function consume(session, actor, rng = Math.random) {
     const backpack = actor.backpack;

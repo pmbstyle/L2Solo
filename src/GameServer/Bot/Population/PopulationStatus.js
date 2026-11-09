@@ -206,7 +206,7 @@ const PopulationStatus = {
     // <decision>:unwoken:<caller>:<n>,...[;search:<n>/<ms>ms][;over:<n>]: the worker's situation counts since it started
     // (Situations.counts), diagnostics off too, most first. decided build: taken (a situation woke it, the step
     // built) / served (the held card served the step). unwoken: a decision taken with no woken bit, by its
-    // caller (0 for a solo step since situations step 4: the one gate); search: the earning spot's searches and their
+    // caller (0 for a solo step: the one gate); search: the earning spot's searches and their
     // time (EquipmentIncomeRoute.searchTotals); over: keys past the maps' cap. main: main's
     // own counts (its raises on far rows, BotLifeState.raiseOnRow), summed in.
     situationsText(worker, main) {

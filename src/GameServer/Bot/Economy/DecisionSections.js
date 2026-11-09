@@ -85,7 +85,7 @@ function kitView(state) {
 function kit(state) {
     return kitFact(kitView(state));
 }
-// The build's money thresholds (situations.md §14, F3; step 4 C7): its wallet is read
+// The build's money thresholds: its wallet is read
 // when it decides and wakes nothing else. goal_affordable:<kind> as the budget stands at
 // or above the build's threshold (baseline.affordAt { at, kind }, affordAtOf), out_of_money
 // as it stands below the held leaf's funded row (baseline.fundedAt: the cumulative cost
@@ -122,7 +122,7 @@ function unspent(baseline, wallet) {
     if (short) delete kept.fundedAt;
     return kept;
 }
-// What the wallet waits to reach, the first of (situations.md §14, B7, B4): a broke
+// What the wallet waits to reach, the first of: a broke
 // bot's survival potions (the money for their missing line, the search's broke
 // rule: it re-opens buying them and the spots that need them), an unarmed bot's
 // weapon bridge (its price from the whole wallet, WishProviders' survival wish), its
@@ -213,7 +213,7 @@ function factsOf(view, memory = null) {
 // its line] (LINE_ABOVE, LINE_BELOW: under one hour of use, LINE_OUT: none
 // left of a kind the bot uses), the line the kit rates' (StatsPacket.lineOf).
 // Shots count the paid shot and the beginner grant a fight loads first. The
-// Scroll of Escape has no line (situations.md B2). A bot no build rated has none.
+// Scroll of Escape has no line (no survival item). A bot no build rated has none.
 const LINE_ABOVE = 0, LINE_BELOW = 1, LINE_OUT = 2;
 function supplyOf(state) {
     // The spot's use by the one rule (EquipmentIncomeRoute.spotUseOf: the answer's on its spot, else the table's).
@@ -288,8 +288,8 @@ function stateView(state, recipes = null) {
     view.outgrown = outgrownOf(state);
     view.supply = supplyOf(state);
     view.stores = storesOf(state);
-    // What the bag holds against its floor and its cleanup counts (situations.md F2:
-    // PartyMarketBreak.bagFact, no price, board or clock); its rise raises bag_full.
+    // What the bag holds against its floor and its cleanup counts (the bag fact,
+    // PartyMarketBreak.bagFact: no price, board or clock); its rise raises bag_full.
     view.bagNeed = (MarketBreak ||= invoke('GameServer/Bot/Population/PartyMarketBreak')).bagFact(state, view.kitHashes);
     return view;
 }

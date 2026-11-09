@@ -30,7 +30,7 @@ near(standing, 11.31, 'a Sorcerer standing: x1.1 and Clear Mind');
 const BR = invoke('GameServer/Bot/Population/BackgroundResolver');
 const vitals = BR.applyStandingRegen({ ...sorcerer, vitals: { hp: 1, mp: 0 } }, { hp: 1, mp: 0 }, 30000, 0);
 near(vitals.mp, standing * 10, 'ten standing ticks on the hunt');
-// The rest's posture (user 10-29, RestPolicy.sitsToRest): a Sorcerer short
+// The rest's posture (RestPolicy.sitsToRest): a Sorcerer short
 // of MP rests standing (Clear Mind), a Wizard sits; HP short, both sit.
 const short = (state, hp, mp) => ({ ...state, vitals: { hp, mp } });
 const sorcererRest = BR.resolveRest(short(sorcerer, 1e6, 0), 3000, 0);

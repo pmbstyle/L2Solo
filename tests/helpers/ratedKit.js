@@ -1,5 +1,5 @@
 'use strict';
-// A state as main reads it once its build published the kit (situations.md §14):
+// A state as main reads it once its build published the kit:
 // the per-bot kit rates (stats.kitRates) and the earning answer's per-spot use
 // (stats.earning: shotsPerHour, potionsPerHour), here from the bot's basics.
 // A held answer keeps its spot; a bot with none holds the basics' spot.

@@ -103,7 +103,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         spotId: event.spotId, npcId: event.npcId,
         sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
         roles: [...roles], seen: [...(resume?.seen || [])], willing }, pvp, timestamp) : null;
-    // No window after it: the pair meets again only at a later arrival (enemy_met, situations.md F10).
+    // No window after it: the pair meets again only at a later arrival (enemy_met).
     const episode = { key: event.key, at: resume?.startedAt || timestamp, action: revenge ? 'revenge' : 'contest', npcId: event.npcId, outcome };
     const wait = { start: timestamp, until: encounter ? timestamp + EncounterBudget.STEP_MS : pvp?.started ? Math.max(timestamp, pvp.until) : timestamp + waitMs,
         ...(pvp?.started ? { combat: true } : {}) };

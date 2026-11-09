@@ -1,5 +1,5 @@
 'use strict';
-// T141 (docs/game-decisions.md "Potions to save rest"): a solo bot drinks a
+// Potions to save rest (our choice): a solo bot drinks a
 // healing potion between fights when the rest it saves, at its own hour, is
 // worth more than the bottle's NPC price; one rule hot and cold; its potion
 // stock buys what the rule drinks.
@@ -153,7 +153,7 @@ try {
     const seconds = cycle.rest * cycle.kph * 2;
     assert(stock.target * 336 / seatedPerSecond < seconds * 1.2,
         `the outing's stock saves no more than the outing's rest (${stock.target} bottles, ${seconds} s)`);
-    // Above its line (no survival drinks at 0 deaths) the stock is no field wish: the town visit buys it (plan §5).
+    // Above its line (no survival drinks at 0 deaths) the stock is no field wish: the town visit buys it.
     const wish = Economy.forState(hunter(1e7), { timestamp: T }).network.queue.find(entry => entry.key === 'stock:potions');
     assert.equal(wish, undefined, 'no field wish for the rest bottles: the visit buys them');
     assert(stock.missing > 0 && stock.benefitPerUnit > 0, 'the visit\'s amount is worth buying');

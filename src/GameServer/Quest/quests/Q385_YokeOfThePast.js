@@ -7,7 +7,6 @@
 // standing errand: bring back Scrolls of Ancient Magic from anything inside, and
 // each one is exchanged for a Blank Scroll. There is no Seven Signs condition of
 // any kind in the pinned handler - no seal, no side, no participation check.
-// See docs/c4/quests/imported-quests.md.
 const GATEKEEPERS = [
     ...Array.from({ length: 16 }, (_, index) => 8095 + index),
     ...Array.from({ length: 13 }, (_, index) => 8114 + index)

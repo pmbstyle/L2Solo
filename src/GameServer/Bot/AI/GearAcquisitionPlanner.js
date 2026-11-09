@@ -2242,7 +2242,7 @@ function sourceYieldReaderFor(killerLevel) {
         source.npcLevel, killerLevel, ratesKey);
 }
 
-// Finite farm and spoil facts of one item for one bot (Task 2, D4-D7, D9):
+// Finite farm and spoil facts of one item for one bot:
 // every known source, eligible by the rules the bot hunts and spoils by, or
 // with the reason it is not. Hours for `units` come from the spot's kills
 // per hour (the same SpotEconomics row the bot chooses spots by) times the

@@ -2456,7 +2456,7 @@ class ColdSimulationKernel {
             // Three guards bound the loop whatever endOf decides: a round cap, the
             // look-ahead (the next round due past the step's clock + WINDOW_LEAD_MS:
             // huntedThrough stays inside it) and a round that does not move the
-            // clock (limits.md; counted in windowEnd).
+            // clock (counted in windowEnd).
             const ended = ColdSoloWindow.endOf(round.state, after, round.result, readers)
                 || (rounds >= MAX_WINDOW_ROUNDS ? 'round_cap' : '')
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) >= first.timestamp + WINDOW_LEAD_MS ? 'lead' : '')

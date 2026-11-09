@@ -1,4 +1,4 @@
-// The cold planner sees the board (D2, step 3.3 group B): its offers are the
+// The cold planner sees the board: its offers are the
 // NPC rows of the planning catalog and the board lines of the worker's index,
 // built from the 'board' table, in the one order with the bot's trip.
 const assert = require('assert');

@@ -2,7 +2,7 @@ const assert = require('assert');
 
 require('../src/Global');
 
-// A Scroll of Escape is no survival item (situations.md B2): a bot carries one
+// A Scroll of Escape is no survival item: a bot carries one
 // per outing when the walk it saves is worth more than the scroll at its hour,
 // bought at the local NPC from money its queue does not hold; a broke bot
 // walks. The sale keeps every scroll it holds.

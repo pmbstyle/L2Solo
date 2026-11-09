@@ -20,7 +20,7 @@ const NG_SOULSHOT = 1835;
 const WARRIOR = 1;
 
 // The bot's kit as its build published it (stats.kitRates and the earning answer's
-// per-spot use, situations.md §14): an unrated bot buys and keeps no shots by target.
+// per-spot use): an unrated bot buys and keeps no shots by target.
 const rated = state => {
     const { kitRates, earning } = ratedKit(state).stats;
     return { kitRates, earning };

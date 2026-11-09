@@ -1,5 +1,5 @@
 'use strict';
-// The bot's hunting route (docs/architecture.md §2 route): where a far bot
+// The bot's hunting route: where a far bot
 // hunts and the trip there. Three parts:
 // - huntSpot: where a solo bot hunts next, the one choice (command, leaf,
 //   plan source, held earning answer, search: the solo ones SpotSearch's), held on the bot's kernel record

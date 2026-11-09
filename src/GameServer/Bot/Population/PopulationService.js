@@ -2617,7 +2617,7 @@ const PopulationService = {
         }
         if (plannedState.activity === 'crafting') return this.resolveColdCraft(state, plannedState, startedAt);
         // The spot is the worker's route (BotRoute.choose: a party waiter's safe
-        // fallback too, PartyWaitFallback): main chooses none (situations.md §8).
+        // fallback too, PartyWaitFallback): main chooses none.
         const routedState = plannedState;
         const travellingState = ColdCraftingService.beginTravel(routedState, Date.now(), { decided: workerPlan?.buildTaken === true }) || routedState;
         const travel = travellingState.stats?.travel;
@@ -2974,7 +2974,8 @@ const PopulationService = {
                     .then(() => finalState);
             })
             .then(async (finalState) => {
-                // A side errand on a taken build only (F6, temporary until step 6).
+                // A side errand on a taken build only (temporary: until the town plan
+                // carries side errands as its own leaves).
                 const trip = workerPlan?.buildTaken === true && !LifeState.hotRow(finalState.characterId)
                     && BotWarehouse.beginCraftReturn(finalState, Date.now(), { decided: true });
                 if (trip) finalState = await LifeState.upsertState(trip, 'craft_warehouse_return') || finalState;

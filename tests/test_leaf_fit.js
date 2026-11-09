@@ -1,6 +1,6 @@
 'use strict';
-// The hunting leaf names a spot the bot may hunt (docs/architecture.md §2
-// route, BotRoute.leafFitReader): in a worker build a solo bot whose table
+// The hunting leaf names a spot the bot may hunt (the route,
+// BotRoute.leafFitReader): in a worker build a solo bot whose table
 // pick is unfit for it (a party-only ground, a raid spot, outside its level
 // window), excluded by its own risk marks, or missing from the catalog gets a
 // fitting spot of the income ranking (the money leaf: the first by income;

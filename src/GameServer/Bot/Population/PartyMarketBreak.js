@@ -5,7 +5,7 @@ const floorNeed = floor => floor?.action === 'unload'
     ? { ...floor, reason: floor.reason === 'no_slot' ? 'inventory_capacity' : 'inventory_overweight' } : null;
 // lazy: worker ItemDisposition's own links are not loaded with the worker kernel.
 const countNeed = (member, now) => invoke('GameServer/Bot/Economy/ItemDisposition').inventoryCleanupNeed(member, { now });
-// The bag fact (situations.md F2; DecisionSections.stateView: its rise raises bag_full):
+// The bag fact (DecisionSections.stateView: its rise raises bag_full):
 // what the bag holds, read without a price, the board or the clock. 2 at the slot or
 // weight floor (SurvivalFloor.bagFloor), 1 at a cleanup count (ItemDisposition.cleanupCounted),
 // else 0. Whether the bag goes to town, and what it sells, is the build's (cleanupDecision).

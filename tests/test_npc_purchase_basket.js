@@ -197,7 +197,7 @@ async function run() {
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
     state = { ...state, level: 30 };
     const packet = Economy.forState(state).statsPacket;
-    // Its earning answer carries the spot's kit use (situations.md §14), as the worker's decision publishes it.
+    // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
     state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');
     const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
     // A town restock buys from the build's published kit rates (stats.kitRates) over the live bag,

@@ -132,8 +132,8 @@ function partnerFor(state) {
     if (!partner) partners.set(key, partner = Object.freeze(invoke('GameServer/Bot/AI/HuntCycle').referenceState(classId, level)));
     return partner;
 }
-// The solo side's earning route: the bot's held earning answer (situations step 1,
-// stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute: one row
+// The solo side's earning route: the bot's held earning answer
+// (stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute: one row
 // evaluation, no search); null when it holds no answer (forming skips it,
 // PartyGoalPolicy.formingMembers), none with a spot, or a support's grey ground
 // (PartyRequestPlanner.supportWithoutGround: no solo ground, its solo hunt is none).
@@ -412,7 +412,7 @@ function goalOf(state, members, objective, agreement) {
 // taken again when the bot decided its earning spot again (a level up, new
 // gear, a death...) or its goal moved, not when only prices or samples moved
 // between those situations (they go stale until then, as the held answer's).
-// At most GOAL_HOURS_LIMIT bots (limits.md), the least recently read out.
+// At most GOAL_HOURS_LIMIT bots, the least recently read out.
 const GOAL_HOURS_LIMIT = 2048;
 const goalHours = new Map();
 function soloGoalHours(state, aim, spots, timestamp) {

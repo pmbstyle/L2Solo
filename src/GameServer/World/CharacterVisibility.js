@@ -36,7 +36,7 @@ function afterSend(session, packet) {
     const first = known.get(actor.fetchId())?.deref() !== actor;
     known.set(actor.fetchId(), new WeakRef(actor));
     // A player's client receives a bot for the first time: the bot meets the player
-    // (enemy_met, situations.md B8; BotRevenge.playerSeen decides, a bot's own grievance
+    // (enemy_met; BotRevenge.playerSeen decides, a bot's own grievance
     // or a clan war). A re-send after a teleport or a view re-entry rolls nothing new.
     if (first && session.actor && actor.session && actor !== session.actor) {
         // Never into the send path: a failed meeting is counted, the packet goes on.

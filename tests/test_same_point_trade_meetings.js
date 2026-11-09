@@ -101,7 +101,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.equal((await Database.fetchAfkTradeShops(ids[1])).some(row => row.id === ad.id), false, 'a filled advertisement is closed');
         assert.deepEqual(sold.closed.map(row => [row.id, row.status, row.lines[0].count]), [[ad.id, 'filled', 0]], 'the closed record reaches board memory');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(filled, actor); }
-        // ECO-14: a seller committed to a meeting in Giran cannot meet in Dion.
+        // A seller committed to a meeting in Giran cannot meet in Dion.
         // A Dion buyer is not offered its Dion ad (so it never picks or retries
         // it), and finds it again once that meeting ends.
         const adopt = result => { for (const row of Object.values(result.coldLifeRows || {})) Life.acceptLifecycleRow(row); return result; };

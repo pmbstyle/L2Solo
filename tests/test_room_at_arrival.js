@@ -1,4 +1,4 @@
-// The spot aggregate at an arrival (SpotContest, situations.md B9/B14): a far bot's
+// The spot aggregate at an arrival (SpotContest): a far bot's
 // trip ends on a spot, in the background thread, and meets the units standing there
 // once, by per-target pressure (the hunters on its target species against that
 // species' share of the room); bots still on their way do not count. Over room it
@@ -122,7 +122,7 @@ function bot(characterId, extra = {}) {
 }
 
 // The contest's own rule, pure: no contest under room; over room the rolled peers
-// are decided in order; a commanded unit never avoids (B14); at most four peers; a
+// are decided in order; a commanded unit never avoids; at most four peers; a
 // standing body near a player is skipped. Rolls forced to 0: a level gap of 10 makes
 // grouping impossible, so the first roll decides a retreat: avoid.
 invoke('GameServer/DataCache').init();

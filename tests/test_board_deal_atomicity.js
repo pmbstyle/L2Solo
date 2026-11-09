@@ -1,4 +1,4 @@
-// Requirements of the board (step 3.3, E18, E23, E24): a deal is one
+// Requirements of the board: a deal is one
 // world-DB transaction, all or nothing; a seller without the item is not
 // paid; a failed deal leaves nothing behind. Checked through the public
 // paths a cold bot uses to sell (ColdMarketListingService.open), to buy

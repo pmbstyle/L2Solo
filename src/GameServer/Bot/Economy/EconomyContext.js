@@ -170,7 +170,7 @@ function requestFacts(state, deps) {
 // the gear-threat mask the decision weighs and keeps, so the rebuild after a
 // threat refusal never reuses the weighing made under the other mask.
 const inputName = (facts, threat) => String(Sections.hash({ ...facts, occupation: null, threat }));
-// The held plan's proof (situations.md §14, step 4 C6): who decided it and what. A
+// The held plan's proof: who decided it and what. A
 // card or a held entry serves while its identity holds: its owner, the recompute
 // generation, the decision echo (decisionSeq, activityLeaf, focus) and the leaf's
 // identity. Nothing else is judged per step: a plan is held until a situation wakes
@@ -592,7 +592,7 @@ function ratesNow(rates, state, bag, price) {
     if (bag.potionId !== rates.potionId) now = { ...now, potionId: bag.potionId, potionRestUse: 0 };
     return now;
 }
-// The one kit rule, hot and cold, worker and main (plan §5): stock(kind),
+// The one kit rule, hot and cold, worker and main: stock(kind),
 // kitCost(id) and the survival reserve over the build's rates (kitRates: use
 // per hour, benefit per unit, outing hours; StatsPacket.kitRates publishes
 // them) and the live bag, wallet and prices. A kind's target is an outing's
@@ -603,7 +603,7 @@ function ratesNow(rates, state, bag, price) {
 // and the reserve is empty. Prices go through the caller's price reader, so
 // each read joins the review's inputs. scrollHours: the hours a Scroll of
 // Escape saves, read only when a scroll is priced (a build solves its route
-// lazily). The scroll is no survival item (situations.md B2): one is carried
+// lazily). The scroll is no survival item: one is carried
 // per outing when the walk it saves is worth more than it costs at the bot's
 // hour, none in towns karma closes; a broke bot walks. It is no part of the
 // reserve; a purchase pays it from money the queue does not hold (ScrollStock).
@@ -642,7 +642,7 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
     // The outing refill: the units one outing uses of a kind worth restocking,
     // never under its line (the bot's usual purchase). The reserve holds it at
     // the NPC list price whatever the bag holds now, so gear never takes the next
-    // kit's money (plan §5); a town counter spends of it what the bag misses.
+    // kit's money; a town counter spends of it what the bag misses.
     const refill = row => row.canRestock ? Math.max(row.line, Math.ceil(row.use * hours)) : 0;
     const reserve = kit.reduce((sum, row) => sum + refill(row) * row.survivalPrice, 0);
     const stock = kind => {
@@ -685,7 +685,7 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
 // the part of a review that needs no wish network. forState builds on it and
 // basics() returns it alone, so a reader that wants only these never builds
 // the network, and both give the same numbers.
-// The earning spot (situations step 1): a build whose decision is due
+// The earning spot: a build whose decision is due
 // (earningDue: deps.decideEarning) searches (EquipmentIncomeRoute.search) and
 // holds its answer (answerOf, published as statsPacket.earning, its bit cleared
 // by Situations.decided); every other read takes the held answer's route at
@@ -717,7 +717,7 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     // The decision asks for the bot's own spot whatever its focus (required: the search's gate open); a party
     // member's foundation hunts with its party (no route: Hunt.huntIncome in the party mode).
     const found = decide ? IncomeRoute.search(state, { ...deps, timestamp, required: true, price: read }) : null;
-    // The held answer is every solo bot's hunting spot (situations.md B12); earns: the bot's hour is earned on it,
+    // The held answer is every solo bot's hunting spot; earns: the bot's hour is earned on it,
     // priced at the inputs now (heldRoute); else it levels there (its hour Hunt.huntIncome's: the foundation reads
     // only the answer's spot and charge policy, no row evaluated).
     const earns = IncomeRoute.earnsOnRoute(state, required);
@@ -729,7 +729,7 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     keep?.(record);
     return record;
 }
-// Is the earning spot to be decided in this build (situations step 1)? Its
+// Is the earning spot to be decided in this build? Its
 // decision is woken (a situation, or no held answer: Situations.woken), the
 // bot hunts solo (a party member keeps its answer: the bit waits until it is
 // solo again) and the worker holds the catalogue it searches. Main never
@@ -756,8 +756,8 @@ function decideEarning(state, deps = {}) {
     return { earning, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
         subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
 }
-// The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
-// route): the route's one test, BotRoute.leafFitReader, as a yes or no per
+// The bot's own fit for the spot of its hunting leaf:
+// the route's one test, BotRoute.leafFitReader, as a yes or no per
 // spot. Only in a worker build (the worker owns the leaf and its planning
 // catalog; main's basics keep the table's pick, it reads them only for
 // execution caps), for a solo bot (a party hunts its party's route; mode:
@@ -967,7 +967,7 @@ function heldReadsFor(state, deps) {
     return { held, reads };
 }
 // The computed pieces a build keeps from its held entry while the facts each reads
-// are the same (step 4 C6: fact-keyed caches, no sections): the foundation (hunt
+// are the same (fact-keyed caches): the foundation (hunt
 // income, risk, death and kit hours, kit rates: the kit, death, recovery, the shots'
 // and potions' place against their lines (the lines fact; which shot and potion the kit
 // names is in the kit fact), spot, party and clan, and the held earning answer it
@@ -980,7 +980,7 @@ const PIECE_FACTS = Object.freeze({
 });
 const pieceKeys = (facts, earning) => Object.fromEntries(Object.entries(PIECE_FACTS).map(([piece, names]) =>
     [piece, Sections.hash(names.map(name => name === 'earning' ? [earning?.spotId ?? null, earning?.at ?? null] : facts[name] ?? null))]));
-// Who decides and who reads (situations step 4 C6). deps.decide: the bot's own
+// Who decides and who reads. deps.decide: the bot's own
 // decision point its gate let build (a woken build: ColdSimulationWorker's step, a
 // party member's or a near body's); it builds and keeps. A caller that names the
 // bot's own step (DECIDING) decides unless it says otherwise. Every other caller reads: the
@@ -1087,8 +1087,8 @@ function buildForState(state, deps) {
     const decide = (deps.decide ?? DECIDING.has(deps.caller)) === true, keeps = decide || !NO_KEEP.has(deps.caller);
     const { held, reads } = heldReadsFor(state, deps);
     const { gearThreat, current, facts, key } = reads;
-    // A woken build on a town visit first moves the agenda over the held entry (F4,
-    // temporary until step 6): the step its leaf check ended goes, the next one serves.
+    // A woken build on a town visit first moves the agenda over the held entry
+    // (temporary: until the town plan holds the visit's stops itself): the step its leaf check ended goes, the next one serves.
     const dropped = new Map();
     const visitEnd = decide && held && !deps.fullReview && Situations.onVisit(state)
         ? leafCheck(state, held.plan.network?.activity, deps, { heldUnits: held.heldUnits, current: null, prepared: {} }) : '';
@@ -1322,9 +1322,9 @@ function buildForState(state, deps) {
     // and the earning spot when it searched (its held answer published; the spot marks it read stay, they last the
     // outing, SpotRiskPolicy.LIFETIME; a mark raised meanwhile is a body's pending raise, applied again over this
     // answer: DecisionEvents.receive, the worker's next bag).
-    // The bag's town trip too (situations step 4 C4, the build bag_full wakes): its need, or
+    // The bag's town trip too (a build bag_full wakes): its need, or
     // none (PartyMarketBreak.cleanupDecision), held in stats.cleanupDue until the trip starts.
-    // Temporary until step 6: the town plan's sell stop (an unload root).
+    // Temporary: until the town visit's sell stop (an unload root) owns the bag's trip.
     // A reader's build takes no decision of the bot's: it clears nothing (counted).
     if (!decide) Situations.note(`build:reader:${deps.caller || 'economy_context'}`);
     const decided = !decide ? {} : { ...(earningDecided ? { earning: base.earning } : {}),

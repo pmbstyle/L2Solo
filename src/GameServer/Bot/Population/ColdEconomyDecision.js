@@ -587,8 +587,8 @@ function advisoryPublicationHolds(state, advice, previous = null, carried = fals
         || Number(state.updatedAt || 0) > advice.card.updatedAt
             && Number(state.stats?.wishSections?.at) > advice.baseline.at);
 }
-// The card a far bot's step serves while no situation woke its build (situations
-// step 4 C6): its proof's identity (EconomyContext.proofIdentity: the owner, the
+// The card a far bot's step serves while no situation woke its build:
+// its proof's identity (EconomyContext.proofIdentity: the owner, the
 // recompute generation, the decision echo, the leaf) and the field guards its
 // execution needs. Nothing else is judged: what ended its leaf is raised by the
 // executor (EconomyContext.leafOutcome). refusal: the first failing check's name,

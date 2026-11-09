@@ -288,7 +288,7 @@ function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelf
 // an ad against the NPC, the board and keeping the item), over the items it
 // may sell (its reservations kept); of those in this town, the record that
 // pays most. sale: selfId -> the units decided for that record. A buy shop's
-// stall is walked to; a buy ad is answered by record at its place (D6, E45).
+// stall is walked to; a buy ad is answered by record at its place, hot as cold.
 // options.now: the decision point (tests).
 function findAfkBuyerForActor(actor, town, state = null, options = {}) {
     const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');

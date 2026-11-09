@@ -66,7 +66,7 @@ and failed invitations.
 ## The spot aggregate: meetings at arrivals (worker)
 
 Cold competition and cold revenge are situations of a spot, decided once when a unit
-arrives there (situations.md §8, A2, B8-B14); there is no periodic scan, no pair or unit
+arrives there; there is no periodic scan, no pair or unit
 cooldown and no revenge or conflict window. A pair meets again only at a later arrival.
 
 `SpotContest` (pure) meets the arriving unit (a solo bot; a party through its leader

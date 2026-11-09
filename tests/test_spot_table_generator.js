@@ -57,7 +57,7 @@ try {
     assert.strictEqual(one, two, 'the table does not depend on the number of workers');
     const table = JSON.parse(one);
     const roles = table.roles.length;
-    // A key per C4 class line (its second profession), the author's role names as aliases (user 10-29).
+    // A key per C4 class line (its second profession), the author's role names as aliases.
     assert.strictEqual(roles, 31, 'a key per second-profession class line');
     assert.strictEqual(table.header.inputs.roleLines.dps, '2');
     assert.deepStrictEqual(table.header.inputs.roleClasses['3'], [0, 1, 3], 'a line holds its classes by profession stage');
@@ -82,7 +82,7 @@ try {
     assert(table.spots.every((spot) => spot.length === 9 && spot[3] > 0 && spot[4] === 1 && spot[5] > 0 && spot[6] > 0
         && spot[7] > 0 && spot[8] > 0),
         'every spot has its level, density, kill cap, a pull of one monster, its loot response to the rate and its kills\' accuracy and evasion');
-    // Per-mob rows (user 10-29): mobs per fight, the cap of the spawns the bot may fight, the kills by species.
+    // Per-mob rows: mobs per fight, the cap of the spawns the bot may fight, the kills by species.
     const field = name => table.rowFields.indexOf(name);
     for (const row of table.rows.flat().filter(Boolean)) {
         assert(row[field('pull')] >= 1 && row[field('cap')] > 0, 'a row has its pull and its own cap');
@@ -108,7 +108,7 @@ try {
             assert.strictEqual(rows[warlord * 3][exp], row[exp], 'lines of one class share its hunt');
         }
     });
-    // The kit surface (user 10-29): fight and damage-taken coefficients per
+    // The kit surface: fight and damage-taken coefficients per
     // line and band over the kit features, fitted from real fights in kits.
     assert.deepStrictEqual(table.kitSurface.features, ['offence', 'pDefence', 'mDefence', 'hp']);
     const surfaces = Object.entries(table.kitSurface.rows).flatMap(([line, byBand]) =>

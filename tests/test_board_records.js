@@ -1,4 +1,4 @@
-// The board's records (step 3.3, group A): a move between a bag and a record
+// The board's records: a move between a bag and a record
 // is one transaction (a failure moves nothing, a replay moves nothing twice);
 // per-bot caps refuse a record and leave the item or the money where it was;
 // the leave rule closes every record of an owner; a record has no deadline

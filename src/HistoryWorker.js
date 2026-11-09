@@ -83,12 +83,15 @@ parentPort.on('message', (message = {}) => {
     }
     if (message.type === 'decision_trace') {
         if (!traceWriter) return;
-        let written = 0;
+        let written = 0, failed = null;
         try {
             // Canonical history always goes first; the trace never aborts it.
             tick(); written = traceWriter.write(message.records) || 0;
-        } catch { /* Counted as lost by main's trace (writer), never stops the world. */ }
-        parentPort.postMessage({ type: 'decision_trace_ack', id: message.id, written, writer: traceWriter.snapshot() }); return;
+        } catch (error) {
+            // The unwritten records count as lost in main's trace; main counts the failure (this thread has no FailureLog).
+            failed = String(error?.stack || error).slice(0, 2000);
+        }
+        parentPort.postMessage({ type: 'decision_trace_ack', id: message.id, written, failed, writer: traceWriter.snapshot() }); return;
     }
     if (message.type !== 'flush' && message.type !== 'stop') return;
     let reply;

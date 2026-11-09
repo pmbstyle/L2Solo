@@ -4,11 +4,11 @@ const path = require('path');
 
 require('../src/Global');
 
-// Cold trip time (step 3.2, user 2026-10-04): scroll cast + 5 s per gatekeeper
+// Cold trip time (our choice): scroll cast + 5 s per gatekeeper
 // hop + the run at 120 units/s, the same for every bot; a solo bot running to
 // its spot is a walker in a small list (LifeStateCache.walkers), nothing is
 // computed while it travels, it appears near a player at the teleport point or
-// the spot edge, and a trip is no "busy" reason (design 5.9).
+// the spot edge, and a trip is no "busy" reason.
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');

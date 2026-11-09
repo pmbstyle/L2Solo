@@ -124,7 +124,7 @@ async function fillDuringStep(spec) {
     const cached = LifeState.cachedState(owner.id);
     assert.strictEqual(cached.adena, after[57], `${label}: the bot goes on with the merged wallet`);
     // A cache behind the row's updatedAt would make every later command of
-    // this bot stale against the row (L127).
+    // this bot stale against the row (a stale_command loop).
     const [lifeRow] = await Database.execute(['SELECT updatedAt FROM bot_life_state WHERE characterId = ?', [owner.id]]);
     assert.strictEqual(cached.updatedAt, Number(lifeRow.updatedAt), `${label}: the cached checkpoint follows the row`);
     const [replayed] = await step();

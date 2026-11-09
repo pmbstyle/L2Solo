@@ -1,5 +1,5 @@
 'use strict';
-// The decision trace (situations.md §13 level 2): off it records nothing and touches no file; on, a situation, a
+// The decision trace: off it records nothing and touches no file; on, a situation, a
 // stop and a decision become records of the bot they belong to, scripts/trace.js joins them into "situation →
 // decision", a rate past its bound is a counted drop, and the file stays inside its rotation. The lifecycle
 // events of parties, trade meetings, clan errands and raids are each recorded once, by their owner, for their event.

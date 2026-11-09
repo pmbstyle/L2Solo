@@ -1445,7 +1445,7 @@ const STALE_HOT_ACTIVITIES = new Set(['following', 'shopping', 'getting_buffed',
 // A row left hot by a restart (shutdown does not cool hot bots) is the copy
 // taken at activation: the hot session wrote its EXP, loot, spent potions and
 // shots and vitals only to the record (characters + items, skills).
-// The record wins (PER-7): the row is rebuilt from it before the worker reads
+// The record wins: the row is rebuilt from it before the worker reads
 // it, or the worker's first commit writes the stale copy back over the record.
 // The plan and the mind stay, and so does the row's position: the policy of
 // the activation is not saved, and a 'return' activation (forced near the
@@ -3009,7 +3009,7 @@ const BotLifeState = {
         nextState.stats.stepCount = SpotRiskPolicy.stepCount(state) + 1;
         // Then the step's stop: at a rest or in town what waited for it wakes.
         const where = Situations.place(nextState, state);
-        // A solo far hunter's stay weighed at its rest, once (situations.md Q2): its own income below its held
+        // A solo far hunter's stay weighed at its rest, once: its own income below its held
         // answer's expectation beyond its error. Cold only (a hot stint records no income: debt).
         const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
         if (where === Situations.REST && !(nextState.party?.partyId || nextState.partyId)
@@ -3036,7 +3036,7 @@ const BotLifeState = {
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
-        // Training is the level fact's consumer (situations.md B13: skills come with the
+        // Training is the level fact's consumer (skills come with the
         // level, ours, not C4): a level or class past what the profile trained, or a skill
         // book the round brought into the bag (its bag moved); no per-step scan else.
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId

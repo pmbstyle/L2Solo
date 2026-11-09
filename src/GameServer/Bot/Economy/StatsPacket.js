@@ -8,10 +8,10 @@
 // stats.money, the money packet (PurchaseFunding.packetFor writes it):
 //   [hourAdena, moneyPrice (hours per Adena), refillReserve, firstUnfundedPrice (the gap's cash, 0 without one),
 //    then one (ratio, cumulative, itemId) row per funded queue wish, at most MONEY_ROWS; with more funded
-//    wishes the last row merges the tail and carries itemId 0 (FX-E3)].
+//    wishes the last row merges the tail and carries itemId 0].
 // stats.kitRates, the build's per-bot kit rates (EconomyContext.kitRates writes it; EconomyContext.kitReader
 // computes the amounts from them and the held earning answer's per-spot rates over the live bag, wallet and
-// prices, situations.md §14):
+// prices):
 //   [shotId (the shot the verdict was judged for), shotBenefit (hours per unit), shot verdict (0: shots do not
 //    pay, 1: the bot fires the shots it holds, 2: a restock pays too), potionId, potionRestUse (rest bottles per
 //    hour, RestPotion), potionBenefit (hours per unit), scrollHours (-1: the build did not price the scroll),

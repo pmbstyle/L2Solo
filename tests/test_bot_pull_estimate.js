@@ -35,7 +35,7 @@ assert.strictEqual(joiners.get(445), 5, 'a hit minion alerts the leader and the 
 assert.strictEqual(joiners.get(1), undefined);
 
 // The start-time table: per spawn group (spot entry) the share of its spawns by pull size and their
-// mean, set only where a spawn pulls more than one (user 10-29: a spot mixes lone mobs, pairs and packs).
+// mean, set only where a spawn pulls more than one (a spot mixes lone mobs, pairs and packs).
 const spot = {
     npcEntries: [{ selfId: 10, count: 2 }, { selfId: 20, count: 1 }, { selfId: 30, count: 1 }],
     records: [
@@ -201,7 +201,7 @@ try {
     assert.strictEqual(builds, 3, 'a level builds anew');
     assert.deepStrictEqual(roundOf({ ...bot }), round, 'back to the first inputs: the first round');
 } finally { Matchup.coldProfiles = builtProfiles; }
-// T106 (user 10-29): a species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
+// A species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
 const pack = hunt(3);
 assert.deepStrictEqual([pack.debug.pulls, pack.patch.stats.lastReason], [0, 'no_safe_solo_target'],
     'a weaponless level-9 hunter leaves a field of gremlin trios alone');
@@ -213,7 +213,7 @@ const nextFight = pull => Resolver.resolveFight({ state: hurt, spot: gremlins(pu
 assert(!nextFight(0).avoided, 'a lone gremlin is fought at 250 HP');
 assert.strictEqual(nextFight(3).reason, 'solo_recovery_needed', 'a usual trio is rested for at 250 HP');
 
-// Area and aura skills hit every mob of the pull (F20, plan 3.3(в)): a nuker whose
+// Area and aura skills hit every mob of the pull: a nuker whose
 // only spell strikes an area kills a pull of three about as fast as one mob, while
 // a single-target nuker of the same damage needs three times as long.
 const fieldMob = Data.npcs.find(n => n.template?.kind === 'Monster' && Number(n.template.level) === 20 && !n.template.hostile);

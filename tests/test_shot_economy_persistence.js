@@ -72,7 +72,7 @@ async function run() {
     // refused by its stale state, never by an empty wallet.
     const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 100000 });
     const fallback = await nativeReview(empty);
-    // Task 4 B3: review plans no shot purchase on main; the card of the
+    // The review plans no shot purchase on main; the card of the
     // core's root stock:shots buys. The crafters' demand row is the far
     // step's output (test_cold_shot_economy).
     assert.strictEqual(fallback.state.adena, empty.adena, 'review buys no shots on main');

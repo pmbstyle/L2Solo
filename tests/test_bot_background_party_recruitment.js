@@ -459,7 +459,7 @@ async function run() {
             }
         }
     };
-    // A player's invite takes a traveller off its trip (design 5.9); a
+    // A player's invite takes a traveller off its trip (a trip is no busy reason); a
     // nearby player alone does not.
     const blockedTravel = await HotActivation.activate(travelingState, 'near_player', {
         keepStoreLocation: true

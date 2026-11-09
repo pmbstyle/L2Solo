@@ -92,7 +92,7 @@ class ColdCommitQueue {
         this.flushReasons = {};
         this.lastBatchReason = null;
         // Counted always (cheap): an afterCommit that throws (economy review, training, events) does
-        // not fail the commit, and its error was kept only on the result (POP-2).
+        // not fail the commit, and its error was kept only on the result.
         this.failures = { afterCommitErrors: 0, lastAfterCommitError: null };
         this.counters = {
             enqueued: 0,

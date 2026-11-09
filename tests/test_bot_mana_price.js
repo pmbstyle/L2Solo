@@ -10,7 +10,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
-// T100 (docs/game-decisions.md, Bot behaviour): MP priced in rest time.
+// MP is priced in rest time (our choice).
 const TS = 1_791_060_000_000;
 const mob = { maxHp: 5000, pDef: 400, mDef: 300, undead: false, vulnerabilities: {} };
 const profileOf = (classId, level) => ColdCombatProfile.fightProfile(HuntCycle.referenceState(classId, level), TS);

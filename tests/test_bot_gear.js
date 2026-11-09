@@ -179,7 +179,7 @@ assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weap
     'Titan must inherit the full Destroyer weapon profile through its normalized parent class');
 assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
     'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
-// Overlord keeps the Orc Shaman's melee blunt (user 10-29).
+// Overlord keeps the Orc Shaman's melee blunt.
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), false,
     'Dominator must inherit the Overlord melee kit through its normalized parent class: no caster sword');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon('Weapon.Blunt', 'buffer', 115), true,

@@ -26,7 +26,7 @@ const ARRIVALS = new Set(['arrived_town', 'arrived_town:own']);
 // same name and payload moves to the bag's end, a later command replaces the earlier.
 const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);
 // A near bot's pending raises (session.nearRaise.names): at most NEAR_NAMES
-// distinct situations wait for the worker's answer (limits.md); one past them is
+// distinct situations wait for the worker's answer; one past them is
 // counted (nearOverflow) and dropped.
 const NEAR_NAMES = 16;
 let nearOverflow = 0;

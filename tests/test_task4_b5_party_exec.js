@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N11 (E169 on the Task 4 execution paths): the cold arrival buy
+// The execution paths and a party bot: the cold arrival buy
 // (ColdMarketService.tryPurchase: gear bestOffer and material buyHere) and
 // BotAfkMarketService.executePlan take never trade a conditional line with a party
 // bot (seller or buyer); a backed line is still bought; a party bot's own ad stays.

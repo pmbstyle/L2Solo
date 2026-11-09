@@ -97,7 +97,7 @@ async function run() {
         assert.equal(next.network.queue.some(wish => wish.key === first.rootKey), false, 'what was bought left the money queue');
     }
     { // A step's count is taken at the build: what arrived on the way is its progress.
-        // Shots and potions are weighed alike with the gear (A5): the first kit kind among the later steps,
+        // Shots and potions are weighed alike with the gear: the first kit kind among the later steps,
         // every step before it bought.
         let found = null, ITEM = 0, shots = null, first = null;
         for (let tries = 0; tries < 40 && !found; tries++) {
@@ -232,7 +232,7 @@ async function run() {
         const built = Economy.forState(bought(state, plan.network.activity), { ...later(), fullReview: true });
         assert.equal(built.statsPacket.wishSections.at, T + 1000, 'the agenda waits');
     }
-    { // Shots and potions below their line are weighed with the gear they serve (A5): one tier,
+    { // Shots and potions below their line are weighed with the gear they serve: one tier,
         // one queue, by value; the agenda works through both in one review.
         const { plan, state } = review();
         const tier = key => plan.network.queue.find(wish => wish.key.startsWith(key))?.progressionPriority;

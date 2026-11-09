@@ -95,8 +95,8 @@ function fixedBuyerOffersFor(id) {
     return Production.buyersDisabled() ? EMPTY : fixedBuy.get(Number(id)) || EMPTY;
 }
 
-// One value of an owned item for the wish and the producer (user 2026-10-10,
-// Q1): what the bot gets selling one unit now. NPC buyback, the top
+// One value of an owned item for the wish and the producer:
+// what the bot gets selling one unit now. NPC buyback, the top
 // QUOTE_DEPTH board bids of others and the enabled fixed buyers.
 function* exitValue(state, id, board = null) {
     initialise();

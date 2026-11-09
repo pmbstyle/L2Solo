@@ -152,7 +152,7 @@ function selectionPlansFromHuntingSpot() {
     const spots = [{ id: 'origin-spot', center: huntCenter }];
     const original = { ...npcKitState(townCenters['Dwarven Village']), spotId: 'origin-spot', phase: 'cold', activity: 'hunting' };
     const lookup = ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows());
-    // An unarmed bot's NPC weapon is a survival wish of its build (situations.md B4): funded
+    // An unarmed bot's NPC weapon is a survival wish of its build: funded
     // from the whole wallet it is the step, and the gear plan buys it (the weapon bridge).
     const Context = invoke('GameServer/Bot/Economy/EconomyContext');
     const unarmed = (adena) => {
@@ -202,9 +202,9 @@ function selectionPlansFromHuntingSpot() {
     if (shot.survivalMissing > 0) {
         assert(Number.isFinite(shot.survivalMissing) && Number.isInteger(shot.survivalMissing));
         assert.strictEqual(shot.itemId, invoke('GameServer/Inventory/ShotStock').planForState(wanderer).selfId);
-        // The owned use (ShotStock.usePolicy) and the rate's use differ since step 3's kit rates: debt.md (step 4 C5).
+        // The owned use (ShotStock.usePolicy) and the kit rate's use are two numbers, not one yet: both positive.
         assert(shot.ownedUsePerHour > 0 && shot.usePerHour > 0);
-        // The shots a fight loads: the paid ones and the beginner grant (situations step 3 C3).
+        // The shots a fight loads: the paid ones and the beginner grant.
         const current = Number(wanderer.inventory[shot.itemId]?.amount || 0);
         assert.strictEqual(shot.current, current + Number(shot.beginnerCurrent || 0));
         wanderer.inventory[shot.itemId] = { ...(wanderer.inventory[shot.itemId] || {}),

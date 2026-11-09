@@ -6,7 +6,7 @@ const CASTER_BUFFER_CLASSES = new Set([17, 49]);
 // Orc Shamans level through melee while retaining their support role. A
 // physical blunt preserves Stun Attack; one hand leaves room for a shield.
 // Warcryer and Overlord keep it: they fight in melee too
-// (BotRoles.usesCasterWeaponCombat; user 10-29, T106 audit). That kit is our
+// (BotRoles.usesCasterWeaponCombat). That kit is our
 // choice; C4 lets any class hold any weapon, and Stun Attack and Hammer Crush
 // accept a two-handed blunt (weaponsAllowed Blunt|BigBlunt, C4SkillRules).
 // So the staff an Orc Mystic bought stays a weapon to fight with until the
@@ -29,7 +29,7 @@ const CLASS_PROFILES = {
     51: ORC_SHAMAN_PROFILE,
     52: ORC_SHAMAN_PROFILE,
     // A Human Warrior fights with a two-handed sword or a polearm, as C4
-    // players did, not the Knight's sword and shield (user 10-29, T106 audit:
+    // players did, not the Knight's sword and shield (our choice:
     // the dps rows read a tank's kit below 40). Gladiator's interim kit.
     1: {
         weaponKinds: ['Weapon.GreatSword', 'Weapon.Pole'],
@@ -81,7 +81,7 @@ const CLASS_PROFILES = {
         weaponHint: 'one_handed_blunt'
     },
     // Orc Raider: the Destroyer's masteries from 20 (two-handed weapon,
-    // polearm, no shield mastery; Mobius C4 skill trees), user 10-30.
+    // polearm, no shield mastery; Mobius C4 skill trees).
     45: {
         weaponKinds: ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],
         preferredWeaponKinds: ['Weapon.GreatSword'],

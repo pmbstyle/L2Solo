@@ -50,7 +50,7 @@ try {
     assert.notEqual(highRate.drop, lo.drop * 50, 'an x1 reward curve cannot predict saturated high-rate loot');
 
     // Same combat measurements, now backed by concrete native rewards. The table
-    // ends at the deep-blue gap where drops fall to 30% (user 10-29): level 27 on an 18 spot.
+    // ends at the deep-blue gap where C4 drops fall to 30%: level 27 on an 18 spot.
     const at = 18 + Rates.DEEP_BLUE_LEVEL_GAP;
     const tableRate = Rewards.value(blue, at, { spoilSkillLevel: 1 });
     useRate('x1');

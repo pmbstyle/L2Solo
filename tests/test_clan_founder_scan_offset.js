@@ -1,6 +1,6 @@
 // The founder scan pages through characters with clanId=0. Candidates that join or found a clan leave that
 // list, so the next page must start after the candidates that stayed, not after every processed row: counting
-// the departed ones skipped as many unseen candidates until the scan wrapped (code audit L90).
+// the departed ones skipped as many unseen candidates until the scan wrapped.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');

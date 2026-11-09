@@ -156,7 +156,7 @@ const LINES = {
     // Ours: a war enemy met in the field.
     clan_war: name => [`${name}, your clan picked this war.`, `For the clan, ${name}!`]
 };
-// An enemy met near a player (situations.md A2, B8): the bot starts the fight its rule
+// An enemy met near a player (enemy_met): the bot starts the fight its rule
 // decided (reason revenge | clan_war, roll: the meeting's seeded roll, key: the meeting's)
 // when its body may, the target is in reach (NOTICE_RADIUS) and it can win by what it
 // sees (BotPvpRisk); seeded by the meeting, never re-rolled. Returns what happened

@@ -98,7 +98,7 @@ async function run() {
     const packet = captured.statsPacket;
     assert(captured.reserveInputs.stocks.find(row => row.selfId === 1061)?.perHour > 0,
         'the unarmed native economic snapshot still has real healing demand');
-    // The earning answer carries the spot's kit use (situations.md §14), as the worker's decision publishes it.
+    // The earning answer carries the spot's kit use, as the worker's decision publishes it.
     cold = { ...mirrored, phase: 'cold', stats: { ...mirrored.stats, ...packet } };
     cold = { ...cold, stats: { ...cold.stats, earning: require('./helpers/ratedKit')(cold).stats.earning } };
     hot.session.coldLifeState = { ...cold, phase: 'hot' };

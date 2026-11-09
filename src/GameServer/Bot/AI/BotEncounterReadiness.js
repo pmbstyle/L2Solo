@@ -3,7 +3,7 @@ const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 let PotionStock;
 const potionStock = () => PotionStock || (PotionStock = invoke('GameServer/Bot/AI/HealingPotionStock'));
 
-// Readiness to start a voluntary solo fight (user 10-30, "Rest like a player"):
+// Readiness to start a voluntary solo fight, resting like a player:
 // a bot sits when the HP and MP it has now do not carry it through a bad fight
 // with this mob above the line where it would reach for a potion
 // (HealingPotionStock.useThreshold, the one the fight drinks by): a potion is

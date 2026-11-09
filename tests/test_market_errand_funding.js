@@ -241,7 +241,7 @@ async function noSpend(state, itemId, message) {
             { selfId: 736, name: 'Scroll of Escape', count: 1, price: 10, enchant: 0, stackable: true });
         const legacySurvival = await arrive(await stateFor(CHANGED, { marketErrand: {
             selfId: 736, amount: 2, town: 'Giran', purpose: 'scrolls', money: 985000, at: Date.now() } }));
-        // The scroll is no survival kit (situations.md B2): the reserve holds none of it.
+        // The scroll is no survival kit: the reserve holds none of it.
         assert.equal(invoke('GameServer/Bot/Economy/EconomyContext').basics(legacySurvival).kitCost(736), 0);
         // A legacy errand with no valuation restores only a missing survival kit: a scroll is none.
         const survival = await Market.tryPurchase(legacySurvival, { type: 'market_errand' });

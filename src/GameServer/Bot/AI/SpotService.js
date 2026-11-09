@@ -153,7 +153,7 @@ function cellAt(loc) {
     return { key: `${gx}_${gy}${area ? `:${area.id}` : ''}`, gx, gy, area };
 }
 
-// T123 (docs/game-decisions.md "Spot cutting"): a cell's spawns on floors
+// Spot cutting: a cell's spawns on floors
 // apart by more than `bound` in height are separate spots. The floors of the
 // spawns sorted by height, each spawn on its floor in its own order.
 function floorsOf(items, bound) {

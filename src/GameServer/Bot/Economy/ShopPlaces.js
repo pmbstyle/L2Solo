@@ -478,7 +478,7 @@ const stateOwner = (characterId) => `state:${Number(characterId)}`;
 const afkOwner = (ownerId) => `afk:${Number(ownerId)}`;
 
 // Where a bot life state's store stands: a crafting bot's craft shop, in any
-// town (the bots' sale stalls went with the board, step 3.3).
+// town (the bots' sale stalls went with the board).
 function placeOfState(state = {}) {
     const stats = state.stats || {};
     if (state.activity === 'crafting' && stats.craftShop?.town) {

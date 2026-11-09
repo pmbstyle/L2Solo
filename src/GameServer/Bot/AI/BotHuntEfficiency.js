@@ -151,7 +151,7 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const huntEfficiency = record(state, round);
     return { ...life, huntEfficiency, huntClock, stay: stayOf(state, round) };
 }
-// The bot's solo stay on its spot (situations.md §10 spot_disappoints): its kills, its net income (adena and loot less
+// The bot's solo stay on its spot (what spot_disappoints weighs): its kills, its net income (adena and loot less
 // the round's costs) and its hunting time since it came to the spot. Only another spot starts a new stay (a new
 // earning answer, a level or a town trip keep it: a spot's income is judged over the kills it takes to tell, which
 // are more than a stay between two of those usually holds); a party round ends it (null: party rounds count into no
@@ -164,9 +164,9 @@ function stayOf(state, round) {
     return { spotId, kills: (same ? stay.kills : 0) + round.kills, net: (same ? stay.net : 0) + round.adena + round.loot - round.costs,
         ms: (same ? stay.ms : 0) + round.cycleMs, judged: same && stay.judged === true };
 }
-// The kills a stay needs before its income is weighed, and the sampling margin (limits.md "Earning spot disappoints").
+// The kills a stay needs before its income is weighed, and the sampling margin.
 const STAY_KILLS = 50, NOISE_Z = 2;
-// Does the stay disappoint its held earning answer (situations.md Q2, N2)? Once per stay, after STAY_KILLS kills on
+// Does the stay disappoint its held earning answer? Once per stay, after STAY_KILLS kills on
 // the answer's own spot, its own net income an hour below the answer's unbiased expectation (answer.expected, not the
 // bot's belief) less the sampling noise of its kills: net/h < expected × (1 − NOISE_Z / √kills), taking a kill's
 // income as spread about its own mean (a coefficient of variation of 1: drops are lumpy), so two standard errors

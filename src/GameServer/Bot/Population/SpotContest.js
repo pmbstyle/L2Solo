@@ -1,15 +1,15 @@
 'use strict';
-// The spot aggregate's contest at an arrival (situations.md §8, B9, B14; step 2). Pure over what it
+// The spot aggregate's contest at an arrival. Pure over what it
 // is given: no clock, no World, seeded rolls. A unit (a solo bot; a party through its leader, until the
-// party aggregate, step 8) that arrives on a spot meets the units standing there once, at the arrival.
-// Over room is per-target pressure (B9): the hunters on the arriving unit's target species, those with
+// party aggregate) that arrives on a spot meets the units standing there once, at the arrival.
+// Over room is per-target pressure: the hunters on the arriving unit's target species, those with
 // no target by the species' spawn share, against that share of the spot's room
 // (LevelingRoutes.capacityForSpot). Over room, at most MAX_PEERS standing units on the same species,
 // picked and ordered by a seeded roll of (spot, arriving unit, arrival step, peer) (more: counted
 // spot:contest:capped), each decided by the shared ResourceCompetitionPolicy.decide in that order: the
 // first outcome other than coexist and yield wins; with none, yield when any yielded, else coexist. A
 // unit that holds its ground never gets avoid, read as coexist and counted spot:contest:<why>: one on
-// a player's command (B14, commanded), a safety evacuation off unsafe ground (evacuation). At CROWDED
+// a player's command (commanded), a safety evacuation off unsafe ground (evacuation). At CROWDED
 // pressure or more a settled coexist or yield (no peer took the spot from it, or none was met) is an
 // avoid by crowding: the arriving unit leaves and marks the spot, touching no standing unit (no event),
 // counted spot:contest:crowded; offer_party and contest stand, and a unit that holds its ground
@@ -23,10 +23,10 @@ const { coldStanding } = require('../../Social/PvpAggression');
 const TendencyRoll = require('../AI/TendencyRoll');
 const Situations = require('../Situations');
 const Trace = require('../DecisionTrace');
-// The standing units one arrival meets (limits.md "Spot contest").
+// The standing units one arrival meets.
 const MAX_PEERS = 4;
 const ROLLS = 4;
-// A yield's pause (an execution pause, not a decision: limits.md "Spot contest"), here and in main's
+// A yield's pause (an execution pause, not a decision), here and in main's
 // competition actions.
 const WAIT_MS = 15000;
 // How long a contest's outcome stays fresh from the arrival (its event's at), the worker's outbox and

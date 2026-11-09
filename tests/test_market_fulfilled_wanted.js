@@ -27,7 +27,7 @@ async function purchase(id, wantedId) {
         vitals: { hp: 1000, maxHp: 1000, mp: 300, maxMp: 300 }, timing: {},
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         // The worker's money packet funds the purchase of item 2 (71143511).
-        // A Human Knight wears the Long Sword (a Warrior holds a two-hander, user 10-29).
+        // A Human Knight wears the Long Sword (a Warrior holds a two-hander).
         stats: { classId: 4, generatedCold: true, money: [1000, .0001, 0, 0, .001, 1000, 2], equipmentPlan: { status: 'active', strategy: 'market',
             target: { selfId: 2, slot: 7 }, market: { price: 1000, town: 'Giran', sourceType: 'afk_bot_store' } },
             partyRequest: { status: 'open' }, marketWanted: wanted,

@@ -534,7 +534,7 @@ function expireSpotRelocation(session, bot, relocation) {
 }
 
 // A walk that ended without reaching its spot. Only a confirmed path failure (no
-// route there) is the earning spot's situation (situations.md B6): its mark keeps the
+// route there) is the earning spot's situation (spot_unreachable): its mark keeps the
 // body (BotDecisionService) and the search off that spot until the decision is
 // taken. A timeout (fights on the way) is an execution retry: no mark, no search,
 // the next walk bounded by the same relocation timeout.

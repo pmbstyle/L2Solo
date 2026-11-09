@@ -1,5 +1,5 @@
 'use strict';
-// The spot table by C4 class lines (user 10-29): a bot reads the rows of its
+// The spot table by C4 class lines: a bot reads the rows of its
 // own class's line, a role name reads its alias line, and a line's spoil level is its
 // class's learned Spoil.
 const assert = require('node:assert/strict');

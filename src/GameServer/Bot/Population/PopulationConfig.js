@@ -54,7 +54,7 @@ const DEFAULTS = {
     coldWorkerQueueMaxEntries: 1024,
     coldWorkerQueueMaxBytes: 4 * 1024 * 1024,
     // A full 1,700-bot world with warm economic caches exceeds 256 MiB
-    // after major GC. Leave headroom for transient planning/clone allocations.
+    // after major GC. Leave headroom for transient plan-build and clone allocations.
     coldWorkerHeapMb: 512,
     // The worker's young generation, three semi-spaces. V8's 48 MB let a plan
     // build's short-lived objects reach the old space: a major GC every 3 s

@@ -89,7 +89,7 @@ assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);
 assert.equal(Packet.hourAdena(undefined), undefined);
 const rates = { shotId: 1835, shotUse: 1200, shotBenefit: 0.0002, shotsPay: true, shotsCanRestock: true, potionId: 1061, potionUse: 9.2,
     potionRestUse: 3, potionBenefit: 0.01, scrollHours: null, outingHours: 2, gapHorizonHours: 2.5 };
-// The per-bot row; the spot's use per hour lives in the earning answer (situations.md §14).
+// The per-bot row; the spot's use per hour lives in the earning answer.
 const earning = { shotsPerHour: 1200, potionsPerHour: 9.2 };
 assert.deepEqual(Packet.kitRates(rates), [1835, 0.0002, 2, 1061, 3, 0.01, -1, 2, 2.5]);
 assert.deepEqual(Packet.kitRates({ ...rates, shotsCanRestock: false, scrollHours: 0.25 }).slice(2, 7), [1, 1061, 3, 0.01, 0.25],

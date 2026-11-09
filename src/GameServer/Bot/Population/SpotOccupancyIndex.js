@@ -8,7 +8,7 @@ const providers = new WeakMap();
 // source, read at an arrival (SpotContest's standing units, EnemyMet's standing
 // bots), by the searches' room filter and the kill share; main's is a status
 // mirror (the status line's per-spot count, a hot body's kill share, a party
-// search's room until step 8). No place is held for a bot ahead of its arrival.
+// search's room until parties form on the worker). No place is held for a bot ahead of its arrival.
 // Each spot has a crowd revision (spotVersion): a reader that holds a result over
 // a spot's hunters keeps it while the revision it read stands.
 
@@ -177,7 +177,7 @@ class SpotOccupancyIndex {
     }
 }
 
-// The hunters on a spot that share its production (E69, user 10-29), in the
+// The hunters on a spot that share its production, in the
 // index of the thread that asks (main's world index, a worker's kernel
 // index): the bots indexed there, those on their way included, at least one;
 // with a state, the others plus that bot, whether it stands there yet or

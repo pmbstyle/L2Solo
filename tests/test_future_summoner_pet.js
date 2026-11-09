@@ -175,7 +175,7 @@ assert.equal(Tactics.combatAction({}, hotWizard(sorcererId, { botSession: true }
 assert.equal(Tactics.combatAction({}, hotWizard(warlockId, {}), mob, Generics).reason, 'not_summoner',
     'a player picks its second class itself');
 
-// T163 (docs/game-decisions.md): an owner with no pet and the mob on it strikes
+// A summoner with no pet and the mob on it strikes
 // while it wins alone (soloSurvival at its HP and the mob's HP left), hot and
 // cold; it recasts once it cannot, and a mob not yet on it is no reason to wait.
 {

@@ -314,7 +314,7 @@ assert.deepStrictEqual(MarketListingPolicy.evaluate(scrollState, { now, slots: 0
 assert.strictEqual(MarketListingPolicy.evaluate(stationScrolls, { now, slots: 0 }).warehouse[0]?.selfId, dEnchantScroll.selfId,
     'infrastructure scroll cleanup retains stock when the board has no slot');
 MarketCounters.reset();
-// Every Scroll of Escape a bot holds saves a walk to town (situations.md B2):
+// Every Scroll of Escape a bot holds saves a walk to town:
 // none is NPC junk. A party resurrection remains a cast without an item: its
 // scrolls are sold.
 for (const consumable of [escapeScroll, resurrectionScroll]) {

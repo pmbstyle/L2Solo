@@ -144,7 +144,7 @@ function applyMoveToSpot(session, bot, spotId) {
     const targetLoc = SpotService.randomPointNear(spot);
     session.initialSpawnCoord = { ...assignedSpot.center };
     session.noTargetTicks = 0;
-    // The player named the spot: it is the held earning answer (situations.md B6,
+    // The player named the spot: it is the held earning answer (a
     // player_command; no search), so the spot held before no longer pulls the bot
     // back. Raised after the move's own post, whose moved_by_world it answers.
     invoke('GameServer/Bot/AI/DecisionEvents').raiseDecision(session, 'player_command',

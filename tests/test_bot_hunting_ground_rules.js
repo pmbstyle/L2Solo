@@ -49,7 +49,7 @@ try {
     });
     assert.strictEqual(selected.id, 'mid_level_field',
         'a level-16 bot must replan away from a physical level-1-3 starter field');
-    // B4 permits safe lower camps. Missing near-level ground alone cannot
+    // Safe lower camps are permitted. Missing near-level ground alone cannot
     // mean no destination: exclude every supplied candidate for that control.
     assert.strictEqual(SpotProfiles.findForState({ level: 78, stats: {} }, {
         excludedSpotIds: [starter.id, mid.id]

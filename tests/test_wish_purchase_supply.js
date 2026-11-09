@@ -350,7 +350,7 @@ assert(require('node:v8').serialize(richTransport).byteLength <= ColdDecision.MA
 NativeEconomy.reset();
 console.log('PASS native capture/transport/view: rich funded urgency, unknown arrival, stock horizons, empty queue and wire bound');
 
-// Identical facts (Task 2 D2/D3): the wish craft path, CraftProfitPolicy.craftFacts
+// Identical facts: the wish craft path, CraftProfitPolicy.craftFacts
 // and the producer's basket read one recipe through the one labour reader.
 {
     const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');

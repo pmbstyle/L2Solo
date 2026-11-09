@@ -135,8 +135,8 @@ async function run() {
     // Sell an actual target+20 stack under the native town-visit horizon.
     assert(keep > 0 && botSale.potionTarget === keep, `the native potion stock must match the real sale: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
-        // Every Scroll of Escape a bot holds saves a walk to town and is kept
-        // (situations.md B2). A no-grade recipe is a market item since b6eac2ed.
+        // Every Scroll of Escape a bot holds saves a walk to town and is kept.
+        // A no-grade recipe is a market item since b6eac2ed.
         [[D_RECIPE, 1], [CRYSTAL_D, 40], [ANIMAL_BONE, 5], [HEALING_POTION, keep], [MATERIAL_RECIPE, 1],
             [ESCAPE_SCROLL, 11], [ENCHANT_ARMOR_D, 1]],
         'a hot bot keeps what its class uses and sells what no bot uses, as when cold');

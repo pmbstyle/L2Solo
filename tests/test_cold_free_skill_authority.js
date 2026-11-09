@@ -103,7 +103,7 @@ async function main() {
                 inventory:{}, vitals:{hp:187,maxHp:187,mp:74,maxMp:74} },'committed_level_up');
             assert(Books.needsTraining(state),'a committed level gain still needs its native grants');
             assert(Life.trainingNeeded(state),'the commit ack names its training review');
-            // The ack names it for the step that moved the level fact (B13), not for one that moved nothing.
+            // The ack names it for the step that moved the level fact, not for one that moved nothing.
             assert.deepEqual(coordinator.reviewSteps({ durable:{ classId:46 } },state),{ review:['training'] },'a level step trains');
             assert.deepEqual(coordinator.reviewSteps({ durable:null },state),{},'a step that moved no level nor bag asks no training');
             coordinator.stopping = true;

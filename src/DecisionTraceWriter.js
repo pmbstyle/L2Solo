@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 // The decision trace's file (Bot/DecisionTrace): the history thread owns this writer and calls cleanup() at its
-// retention tick. Bounded (limits.md "Decision trace"): FILES rotated files of MAX_FILE each, a file older than AGE
+// retention tick. Bounded: FILES rotated files of MAX_FILE each, a file older than AGE
 // (48 h) deleted; only these FILES known paths are touched.
 const MAX_FILE = 32 * 1024 * 1024, FILES = 8, AGE = 48 * 60 * 60 * 1000;
 const BATCH = 64, BATCH_BYTES = 65536;

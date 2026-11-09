@@ -271,7 +271,7 @@ async function main() {
         assert.strictEqual(restart({ clanAllianceSupportLeaderId: 7 }), null);
         assert.strictEqual(restart({ plan: 'merchant' }), null, 'hot: a merchant restarts at its stall');
         assert.strictEqual(restart({}, { ...physical, fetchKarma: () => 10 }), null, 'hot: a red bot restarts in town');
-        // One rule for hot and cold (VisitPolicy, step 1.5): a party member and
+        // One rule for hot and cold (VisitPolicy): a party member and
         // a bot with an errand restart in town.
         assert.strictEqual(restart({ hotBackgroundPartyId: 'party' }), null, 'hot: a party member restarts in town');
         assert.strictEqual(restart({ coldLifeState: { stats: { marketReturn: { spotId: 'home' } } } }), null,

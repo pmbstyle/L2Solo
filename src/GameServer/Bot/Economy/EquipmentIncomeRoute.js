@@ -53,12 +53,12 @@ function fixedRoute(spot, evaluate) {
     const row = evaluate(spot, true) || evaluate(spot, false);
     return { spot, row: row || { income: 0, expected: 0, kills: 0, exp: 0, useShots: true }, earning: Number(row?.income) || 0 };
 }
-// Survival drinks (situations.md A5): potions are no must. A spot needs them of
+// Survival drinks: potions are no must. A spot needs them of
 // this bot when the table's reference bot drinks there (its row's potions at the
 // bot's level) and the bot's own HP margin does not carry the fight without: the
 // cycle's damage per fight × its pull × DRINK_TAIL against maxHp × (1 − the
 // potion threshold) (one Table.cycle read; the reference bot's gear is not the
-// bot's). DRINK_TAIL is ours (limits.md "Survival drinks tail"): rows are
+// bot's). DRINK_TAIL is ours: rows are
 // simulated with drinks, so a stay without them is unproven until deaths count.
 const DRINK_TAIL = 1.5;
 function needsDrinks(state, spot, shots) {
@@ -69,7 +69,7 @@ function needsDrinks(state, spot, shots) {
     const margin = maxHp * (1 - invoke('GameServer/Bot/AI/HealingPotionStock').useThreshold(state));
     return Number(cycle.taken) * (Number(cycle.pull) || 1) * DRINK_TAIL >= margin;
 }
-// The spot's own kit use for the bot (situations.md §14): the table row's shots
+// The spot's own kit use for the bot: the table row's shots
 // (the bot's shot kind fires; none for a weapon without a charge) and survival
 // potions per hour at its level and charge policy, and whether the spot needs
 // drinks of it. Written into the earning answer when the decision is taken
@@ -83,8 +83,8 @@ function spotRates(state, spot, shots) {
     return { shotKind: Shots.decidedKind(state), shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)), drinks: needsDrinks(state, spot, shots) };
 }
-// The kit's per-spot use for the bot now, one rule on both threads (situations.md
-// §14): its held earning answer's when the answer carries it and the bot hunts
+// The kit's per-spot use for the bot now, one rule on both threads:
+// its held earning answer's when the answer carries it and the bot hunts
 // that spot solo (or stands on none: the town, the road); else the spot table's
 // at the bot's spot and level (a party member, an answer saved before it carried
 // the use, none held, another spot), the band's best row without a spot. A pure
@@ -124,7 +124,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     maxChecks = 32, list = null } = {}) {
     const none = { route: null, error: 0 };
     if (!spots.length || state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return none;
-    // While the bot has karma the decision takes the karma wash's choice (situations.md B6, ColdKarmaPolicy's
+    // While the bot has karma the decision takes the karma wash's choice (ColdKarmaPolicy's
     // rule), whatever else it is (a crafter at its station too: karma closes its town): weaker experience-bearing
     // mobs, on foot; woken again by karma_changed. A party member searches none (its party's spot washes it).
     const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
@@ -240,7 +240,7 @@ const timed = entry => function (state, options) {
 function earnsOnRoute(state, required = false) {
     return !!required || economicHunt(state) || !!spotList(state).spoiler();
 }
-// The earning spot's held answer (situations.md §10, stats.earning in the mind; its one owner of the layout): what
+// The earning spot's held answer (stats.earning in the mind; its one owner of the layout): what
 // a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour, as
 // the bot believes it), expected (the same without its belief bias: SpotEconomics expected), earning (the bot's hour:
 // its best income among the spots it may hunt), error (its own error on a row's income, SpotEconomics incomeError),

@@ -206,9 +206,9 @@ function openingTown(state, items, timestamp = Date.now()) {
     return { town, shopTown: { town, at: timestamp } };
 }
 
-// Where a bot's sale trip goes: the town of a buyer bidding on its bag (the
-// static and buy-ad buyers, until step 3.6); else the town of its shop, which
-// never moves (N51, E46); else the town its shop will open in (openingTown).
+// Where a bot's sale trip goes: the town of a buyer bidding on its bag (a
+// buy ad's bidder, else a static buyer); else the town of its shop, which
+// never moves; else the town its shop will open in (openingTown).
 function saleTown(state, timestamp = Date.now()) {
     if (Karma.closesTowns(state?.stats?.karma)) return { town: Karma.TOWN_NAME, shopTown: null };
     const buyerTown = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService').bestTownFor(state)?.town

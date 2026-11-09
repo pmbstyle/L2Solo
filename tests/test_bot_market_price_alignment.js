@@ -108,7 +108,7 @@ function publicPrice(id, buyer, context) {
 
 // E1: an SoE plus the actual missing one-hour kit, not a wallet percentage.
 // The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
-// The Scroll of Escape is no part of it (situations.md B2).
+// The Scroll of Escape is no part of it.
 function kitReserve(buyer, context) {
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);
@@ -151,7 +151,7 @@ function purchaseFor(buyer) {
     // executable shopping. The henna catalog remains covered by npcPrice below.
     // The forecast only finds which candidates to stock; it is a probe, not
     // the bot's decision. Held as a decision, the new lines on its read items
-    // would be a soft market change that waits 10 min (L70, principles 3.5).
+    // would be a soft market change that waits 10 min.
     const forecast = Economy.forState(buyer, { ...deps, caller: 'meeting_prepare' });
     for (const wish of forecast.network.queue) {
         const id = Number(wish.object?.itemId);

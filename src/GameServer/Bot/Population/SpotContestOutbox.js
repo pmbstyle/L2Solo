@@ -1,5 +1,5 @@
 'use strict';
-// The spot aggregate's outcomes that touch other bots, on their way to main (worker only; step 2). An
+// The spot aggregate's outcomes that touch other bots, on their way to main (worker only). An
 // arrival's contest (SpotContest: offer_party, contest, a PvP intent) or meeting (EnemyMet: revenge,
 // clan_war) waits for the arriving step's own commit ack (keyed per arriving bot on its proposal), is
 // fenced with that bot's committed revisions (its own, its party row's: table changes reach the worker
@@ -8,8 +8,8 @@
 // arriving commit drops it (the arrival did not happen: arrival_refused; the next step arrives
 // anew); any other ack, the bot leaving the far simulation, the worker's stop or an age past the
 // event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops it (stale), never re-fenced.
-// An outcome with no step to wait for (unsent) is a caller's bug: expected 0. Bounds (limits.md
-// "Spot contest"): QUEUE events waiting for a frame, FRAME_EVENTS a frame, the message size
+// An outcome with no step to wait for (unsent) is a caller's bug: expected 0. Bounds:
+// QUEUE events waiting for a frame, FRAME_EVENTS a frame, the message size
 // (ColdCompetitionFrameSizer). Every drop is counted on the situations= line (spot:contest:<why>).
 const Situations = require('../Situations');
 const FailureLog = require('../../../FailureLog');

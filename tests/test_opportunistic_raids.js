@@ -30,7 +30,7 @@ function member(id, classId, level, weapon, healer = false) {
     return s;
 }
 
-// Member 8 holds a Two-Handed Sword: a Human Warrior wears only two-handers or polearms (user 10-29).
+// Member 8 holds a Two-Handed Sword: a Human Warrior wears only two-handers or polearms (C4 masteries).
 const party = [member(1, 32, 26, 3), member(2, 42, 29, 178, true), member(3, 29, 26, 178, true),
     member(4, 54, 31, 157), member(5, 56, 29, 93), member(6, 56, 28, 168),
     member(7, 54, 28, 156), member(8, 1, 29, 124), member(9, 56, 30, 291)];

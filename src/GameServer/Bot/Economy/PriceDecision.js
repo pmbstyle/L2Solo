@@ -1,6 +1,5 @@
-// One pricing decision for selling and buying (group E, user 2026-10-05;
-// market-sim step 3.3, tools/market-sim/n0/step33/groupE: e10 belief, e12
-// loss, e13 competition): the best expected outcome over a grid of prices on
+// One pricing decision for selling and buying (belief, loss
+// and competition): the best expected outcome over a grid of prices on
 // the bot's belief (PriceBelief), one roll among the near-best ones. One
 // module for the main thread and the cold worker.
 //
@@ -399,7 +398,7 @@ function chooseByValue(options, rollKey) {
 }
 
 // One roll among options [{ action, value }] in proportion to their values
-// (a weighted roll, Q6: variety over the best one): a value at or below 0
+// (a weighted roll: variety over the best one): a value at or below 0
 // weighs nothing but every option keeps a floor, together TendencyRoll.MIN
 // of the whole weight, so none is impossible. When no value is above 0 (all
 // are losses), the weights are how much less each loses than the worst.

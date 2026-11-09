@@ -5,7 +5,7 @@ invoke('GameServer/DataCache').init();
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Data = invoke('GameServer/DataCache');
 
-// The cleanup trip is decided by a build (situations step 4 C4, the build bag_full wakes:
+// The cleanup trip is decided by a build (a build bag_full wakes:
 // PartyMarketBreak.cleanupDecision) and held in stats.cleanupDue until it starts: the
 // first step that finds the bot free after its fight carries the need to main, which
 // starts the trip. A bot with no decided trip carries none (no per-step bag check).
@@ -104,7 +104,7 @@ async function step(states, { project = state => state } = {}) {
     assert.strictEqual(Break.bagFact(retried), 2, 'a bag past half its load is at its floor');
     assert.strictEqual(Break.cleanupDecision(retried, 3000)?.reason, 'inventory_overweight', 'the floor sends the bot to town past the retry');
 
-    // The bag fact (situations.md F2) is what the bag holds, no price or board: its floor (2),
+    // The bag fact is what the bag holds, no price or board: its floor (2),
     // a cleanup count (1: a solo bot's half bag) or none. Its rise raises bag_full once (it
     // wakes the build), a bag that stays raises nothing more, its floor after a count again.
     assert.deepStrictEqual([bot(508, { inventory: {} }), bot(508, { inventory: halfFull }), bot(508)].map(state => Break.bagFact(state)), [0, 1, 2]);

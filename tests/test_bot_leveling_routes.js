@@ -293,7 +293,7 @@ assert.deepStrictEqual([
 ].map((state) => LevelingRoutes.roleForState(state)), ['spoiler', 'crafter', 'crafter', 'spoiler', 'crafter', 'crafter'],
 'route roles of dwarves');
 
-// One reader per spot loop (L131): the same verdict as one call per spot,
+// One reader per spot loop: the same verdict as one call per spot,
 // with the matchup profiles and safety options read once, and not at all
 // when no spot passes the hunting ground check.
 {
