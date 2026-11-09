@@ -253,15 +253,26 @@ function prepare(members, { objective, party, spots, timestamp } = {}) {
     // die of the damage. Our choice: no heal model beyond.
     const healed = members.map((member, index) => !Roles.shouldRestForMana(member)
         && members.some((peer, other) => other !== index && Roles.isHealer(peer)));
-    const values = members.map(member => Table.value(spot.id, Table.roleFor(member), member.level, true,
-        { spoilSkillLevel: Rewards.spoilSkillLevel(member) }));
+    // Each member's table row (line, shots). A support whose solo search found no ground
+    // it may hunt (PartyRequestPlanner.supportWithoutGround: a starter mystic whose kit
+    // fails the solo safety gate) has no row of its own: its solo progress is none, yet
+    // in a safe roster it still swings its weapon, at the table's damage dealer of its
+    // level without shots (a melee blow fires no spiritshot). Our choice: the table
+    // simulates no party kit; a C4 starter mystic hunts its home field in a party.
+    const lines = members.map(member => {
+        const own = Table.roleFor(member), options = { spoilSkillLevel: Rewards.spoilSkillLevel(member) };
+        const row = Table.value(spot.id, own, member.level, true, options);
+        if (row || !require('./PartyRequestPlanner').supportWithoutGround(member, spots)) return { role: own, shots: true, row }; // lazy: the planner's chain loads this module
+        return { role: 'dps', shots: false, row: Table.value(spot.id, 'dps', member.level, false, options) };
+    });
+    const values = lines.map(line => line.row);
     // Each member's kill of its table row (SpotValueTable.cycle: the reference's fight,
     // rest and walk at the member's level), its fight shortened by the damage a native
     // buff adds (buff stats change damage throughput, never drop rates or the member's
     // ownership share).
     const cycles = members.map((member, index) => {
         if (!values[index]) return null;
-        const cycle = Table.cycle(spot.id, Table.roleFor(member), member.level, true,
+        const cycle = Table.cycle(spot.id, lines[index].role, member.level, lines[index].shots,
             { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         if (!(cycle?.kph > 0) || !(cycle.fight > 0)) return null;
         let fight = cycle.fight;

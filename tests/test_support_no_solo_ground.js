@@ -185,6 +185,21 @@ async function run() {
     assert(starters.every(state => Request.seeksParty(state)), 'every stranded starter asks for a party');
     assert.deepStrictEqual(PopulationService.groupPartyCandidatesByObjective(starters)
         .map(group => group.length), [4], 'stranded mystics can meet each other at their home field');
+    // ... the forming verdict admits them (no solo ground: a safe party is their only progress),
+    // and the party they form beats the real starter mobs and shares the exp.
+    const objective = starters[0].stats.partyRequest;
+    assert.deepStrictEqual(invoke('GameServer/Bot/Population/PartyGoalPolicy')
+        .formingVerdict(starters, objective, { spots: [field], timestamp: at }).formingAccepted,
+    starters.map(state => state.characterId), 'the forming verdict admits all four stranded starters');
+    const partyId = 'orc-starter-recovery';
+    const hunt = invoke('GameServer/Bot/Population/BackgroundPartyResolver').resolve({
+        party: { partyId, leaderId: starters[0].characterId, memberIds: starters.map(state => state.characterId),
+            spotId: field.id, cohesion: 1, risk: 0, roleCoverage: { buffer: 4 }, stats: { objective } },
+        members: starters.map(state => ({ ...state, party: { partyId, role: 'buffer' } })),
+        spot: field, elapsedMs: 60000, timestamp: at, rng: () => 0.1
+    });
+    assert(hunt.debug.wins > 0, 'the party fight beats the real starter mobs');
+    assert(hunt.memberResults.every(entry => entry.result.materialize.exp > 0), 'all four mystics earn shared exp');
 
     // Party progress -> a party: a bot that levels sooner in a party of two (itself and a
     // partner of its level) at its earning spot asks for a party there.
