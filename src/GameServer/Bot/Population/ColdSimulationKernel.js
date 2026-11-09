@@ -2241,6 +2241,9 @@ class ColdSimulationKernel {
             if (run.requirementRefresh) openRequirements('event');
             const Refresh = require('./PartyRequirementRefresh'), planned = new Map();
             for (const { state, result } of resolution.memberResults || []) {
+                // One member's projection per turn (resolveStep: phases).
+                await nextTurn();
+                if (!current()) return;
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
                     ? await this.projectResolve(state, result, startedAt, null, resolveStartedAt)
@@ -2402,6 +2405,12 @@ class ColdSimulationKernel {
             const lifecyclePlan = !raidPreparing && !guide && this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, timestamp })
                 : null;
+            // Each phase (plan, round, projection) is its own turn: acks, near asks and
+            // pages wait one phase, not the whole step. The step reads only its own copy
+            // (active.state), a fence or remove in between ends it here, and a row main
+            // moved meanwhile refuses its commit (the revision it started from); the world
+            // it reads (spot hunters, the board) is the world as it stands at each phase.
+            await nextTurn();
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
@@ -2424,7 +2433,9 @@ class ColdSimulationKernel {
             const first = { state: resolveState, result, timestamp };
             const round = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
                 startedAt + STEP_LEAD_MAX_MS) ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;
-            if (!round || !this.resolverSourceCurrent(source)) return;
+            if (!round) return;
+            await nextTurn();
+            if (!this.resolverSourceCurrent(source)) return;
             // The step's one decision (its economy, worker-local) travels
             // through the round: the projection asks no second one.
             const projection = this.projectResolve
@@ -2509,6 +2520,9 @@ class ColdSimulationKernel {
             // when it is the last; a round's own clock (lastResolvedAt) is the same.
             const stamped = { ...round.result, patch: { ...round.result.patch,
                 stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
+            // A round's projection is its own turn, as its fight is (resolveStep: phases).
+            await nextTurn();
+            if (!this.resolverSourceCurrent(source)) return null;
             const after = await projectRound(round.state, stamped, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
             // Three guards bound the loop whatever endOf decides: a round cap, the

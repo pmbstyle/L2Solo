@@ -235,5 +235,44 @@ function world() {
         assert.strictEqual(kernel.nextWakeAt(), T - kernel.stepLeadMs, 'a retry at the top does not hide an earlier lead start');
     }
 
+    {
+        // A step's phases run in their own turns: what arrives between its plan and its round
+        // (a message, a timer) is handled there, and a fence arriving then ends the step:
+        // its round is never resolved and nothing is sent.
+        for (const fenced of [false, true]) {
+            const clock = { at: 100000 }, order = [], sent = [];
+            const kernel = new ColdSimulationKernel({
+                now: () => clock.at,
+                flushTargetMs: FLUSH_MS,
+                planLifecycle: ({ state }) => {
+                    setImmediate(() => { order.push('message'); if (fenced) kernel.fence(1); });
+                    return { plannedState: state };
+                },
+                resolveSolo: ({ timestamp }) => {
+                    order.push('round');
+                    return { patch: {}, events: [], nextResolveAt: timestamp + ROUND_MS,
+                        materialize: { exp: 0, sp: 0, adena: 0, items: [] }, debug: {} };
+                },
+                projectResolve: (state, result, timestamp, lifecyclePlan, writtenAt) => Life.prepareResolve(state, result,
+                    { timestamp, writtenAt, persist: false, projectClassProgression: true }),
+                emit: (type, payload) => { if (type === 'proposal_batch') sent.push(...payload.proposals); return true; }
+            });
+            kernel.upsert({ state: soloState(1, clock.at) });
+            kernel.tick();
+            await kernel.resolveChain;
+            clock.at += FLUSH_MS;
+            kernel.flushDue();
+            assert.strictEqual(order[0], 'message', 'a message waits one phase, not the whole step');
+            if (fenced) {
+                assert.deepStrictEqual(order, ['message'], 'a fence between the phases ends the step before its round');
+                assert.strictEqual(sent.length, 0);
+                assert.strictEqual(kernel.inFlight.size, 0);
+            } else {
+                assert.deepStrictEqual(order, ['message', 'round']);
+                assert.strictEqual(sent.length, 1, 'the step goes on and sends its proposal');
+            }
+        }
+    }
+
     console.log('Cold step lead: a step starts its measured lead early, is resolved and committed as of its due; its row keeps the real write stamp; a retry at the top does not hide a lead start; commands keep their due passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
