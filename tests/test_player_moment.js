@@ -51,7 +51,7 @@ assert(Situations.woken(raiseAt('grade_changed', 'resting'), 'gear_plan') && !Si
     assert(Situations.woken(raised, 'earning_spot'), 'no earning answer held: it reads woken');
     assert(!Situations.woken({ ...raised, earning: null }, 'earning_spot'), 'an answer held: the build\'s raise left it asleep');
 }
-// The wallet against the decision's thresholds (F3, B7): its goal in reach as the budget stands
+// The wallet against the decision's thresholds: its goal in reach as the budget stands
 // at or past it, out of money as it falls below the held leaf's funded row; a drift is nothing.
 // The build it wakes re-arms them; the agenda's move over the held baseline spends the passed ones.
 const baseline = { at: 100, affordAt: { at: 5000, kind: 'focus' }, fundedAt: 800 };

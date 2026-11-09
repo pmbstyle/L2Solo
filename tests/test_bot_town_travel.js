@@ -189,7 +189,7 @@ try {
     redBot.fetchKarma = () => redKarma;
     const redSession = session(redBot);
     const redResult = BotTownTravel.request(redSession, redBot, farAi, 'Out of shots.');
-    // A bot with karma walks to Floran, the town where a PK trades (design 5.8).
+    // A bot with karma walks to Floran, the town where a PK trades.
     assert.strictEqual(redResult, 'walk', 'a hot bot with karma walks to its town');
     assert.strictEqual(redSession.plan, 'shopping');
     assert.strictEqual(redSession.townEscape, undefined, 'a bot with karma should not cast Scroll of Escape to town');

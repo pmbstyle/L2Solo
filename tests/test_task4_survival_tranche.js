@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B4: a survival item's buy ad may spend its kit cost from the survival
+// A survival item's buy ad may spend its kit cost from the survival
 // reserve, as the meeting and the NPC restock do. The worker decides the
 // tranche once with the bid (its own unit price estimate); the plan carries
 // it and the main executePlan check and the native conditional bid check

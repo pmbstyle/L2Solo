@@ -30,7 +30,7 @@ const original = {
     evaluate: NeedsEvaluator.evaluate
 };
 
-// The bot's buy order is a buy ad on the board (step 3.3); it has no shop.
+// The bot's buy order is a buy ad on the board; it has no shop.
 const stops = [];
 const order = { id: 95726, ownerId: 7, kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 37213, revision: 1,
     lines: [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }] };

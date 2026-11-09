@@ -131,7 +131,7 @@ async function main() {
         });
 
         // A merchant's live store that is not a board shop has fixed prices:
-        // the bots' stalls that haggled went with the board (step 3.3); a
+        // the bots' stalls that haggled went with the board; a
         // board shop haggles through its projection (test_bot_afk_sell_reprice).
         assert.strictEqual(BotNegotiationService.storeContext(bot, player), null);
         const quoted = BotAgentTools.execute(

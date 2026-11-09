@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N9): one decision read hot and cold gives the same leaf, root, item and amount, and a bot
+// One decision read hot and cold gives the same leaf, root, item and amount, and a bot
 // flipped cold -> hot -> cold with an open buy ad keeps exactly one ad for one root (no second ad,
 // no second escrow): hot leaves the cold ad standing, the cold return sees the same order.
 const assert = require('node:assert/strict');

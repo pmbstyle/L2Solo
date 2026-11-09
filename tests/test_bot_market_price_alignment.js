@@ -151,7 +151,7 @@ function purchaseFor(buyer) {
     // executable shopping. The henna catalog remains covered by npcPrice below.
     // The forecast only finds which candidates to stock; it is a probe, not
     // the bot's decision. Held as a decision, the new lines on its read items
-    // would be a soft market change that waits 10 min (L70, principles 3.5).
+    // would be a soft market change that waits 10 min.
     const forecast = Economy.forState(buyer, { ...deps, caller: 'meeting_prepare' });
     for (const wish of forecast.network.queue) {
         const id = Number(wish.object?.itemId);

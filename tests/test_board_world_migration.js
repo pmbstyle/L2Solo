@@ -1,4 +1,4 @@
-// The old world at the board's first start (step 3.3, Q8 option B): every
+// The old world at the board's first start: every
 // bot record closes once and gives back what it holds (stock to the bag,
 // escrow to the wallet); a bot's physical stall or budget-backed buy stall
 // is cancelled (its stock and money never left the bag); players' AFK shops

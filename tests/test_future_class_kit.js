@@ -1,5 +1,5 @@
 'use strict';
-// Class kits by C4 masteries (user 10-30): a Rogue fights 20-39 with the
+// Class kits by C4 masteries: a Rogue fights 20-39 with the
 // weapon of its own future second class, a bow for a future Hawkeye, a
 // dagger for a future Treasure Hunter, and reads that class's table line.
 const assert = require('node:assert/strict');

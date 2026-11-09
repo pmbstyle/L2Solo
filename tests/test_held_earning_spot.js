@@ -349,7 +349,7 @@ function onWorker() {
         const solo = Party.soloRoute(published(geared, decided.result), spots, time(12));
         assert.equal(solo?.spotId, 'rich', 'the solo side reads it');
         assert.equal(Party.evaluate({ solo, party: { income: solo.income * 0.9 } }).accept, false, 'a party paying less is refused');
-        // B12: the held answer is a leveling bot's hunting spot too. Its build names it (the hot body walks to the
+        // The held answer is a leveling bot's hunting spot too. Its build names it (the hot body walks to the
         // card's leaf) while its hour stays its own, and its cold route goes there, the same after a worker restart
         // (the answer is in the mind; no route is kept on the record).
         const answered = published(geared, decided.result);

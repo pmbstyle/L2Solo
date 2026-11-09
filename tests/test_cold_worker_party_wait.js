@@ -141,7 +141,7 @@ invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => st
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
         assert(!received.some((m) => m.type === 'fault'), JSON.stringify(received.filter((m) => m.type === 'fault')));
-        // L9: the size the worker stamps on a proposal batch, taken from the
+        // The size the worker stamps on a proposal batch, taken from the
         // kernel's count, is the batch's real JSON size.
         for (const message of received.filter((m) => m.type === 'proposal_batch')) {
             const { bytes, ...sent } = message;

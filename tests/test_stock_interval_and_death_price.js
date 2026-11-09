@@ -119,7 +119,7 @@ assert(Math.abs(poorContext.hunt.perHour - 1) < 1e-12);
 assert.equal(poorContext.stock('shots').usePerHour, 0);
 assert.equal(poorContext.kitCost(stock.itemId), 0);
 assert(!poorContext.projection.nodes.some(row => row.key === 'stock:shots'));
-// The kit at its NPC list price (survivalPrice), the price the reserve holds it at; no Scroll of Escape (B2).
+// The kit at its NPC list price (survivalPrice), the price the reserve holds it at; no Scroll of Escape.
 const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext.stock('potions').survivalPrice;
 assert.equal(poorContext.refillReserve, noShotReserve);
 

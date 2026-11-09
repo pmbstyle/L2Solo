@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N2): a material with both a buy path and an executable spoil path serves the same root.
+// A material with both a buy path and an executable spoil path serves the same root.
 // The bot that farms the missing material carries the root it farms for (rootKey power:101:7, amount 26 from
 // owned 4) and no second power:* root appears; the buy-only variant with incoming 2 still asks for 24.
 const assert = require('node:assert/strict');

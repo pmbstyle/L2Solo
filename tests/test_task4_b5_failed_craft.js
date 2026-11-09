@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N5: a failed craft roll spends its inputs and completes nothing.
+// A failed craft roll spends its inputs and completes nothing.
 // The native multi-batch command consumes exactly the materials; one failed
 // roll through ColdWealthCraftService.execute (stubbed roll) yields no product
 // and the re-derived need asks for the full batch again.

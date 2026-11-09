@@ -1,5 +1,5 @@
 // Pins what each caller of the offer query sees before the copies become one
-// query (step 3.3 group B, U20): the town each caller looks in, which owners
+// query: the town each caller looks in, which owners
 // and source kinds it skips, and the line it takes. Board records live in
 // memory only (AfkTrade.refreshRecord); no database.
 const assert = require('assert');
@@ -81,7 +81,7 @@ function picked(offer) {
 }
 
 // C11 (ShotStock.restockTarget): a hot shot trip goes to the best seller in
-// the town, an ad by record at its place (D6, group C); the bot's own shop
+// the town, an ad by record at its place; the bot's own shop
 // and the excluded sellers are skipped.
 {
     const actor = { fetchId: () => 991301, classId: 0 };

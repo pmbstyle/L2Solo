@@ -323,7 +323,7 @@ async function run() {
     ShotStock.usePolicy = (shotState, prepared = {}) => ({ ...realUse(shotState, prepared), usePerHour: 1000, paidUsePerHour: 1000, purchaseUsePerHour: 1000 });
     try {
         // Its build's kit rates (stats.kitRates), read at the visit's first restock: a Scroll of Escape
-        // saving an hour's walk at its 100k Adena hour is worth carrying (B2).
+        // saving an hour's walk at its 100k Adena hour is worth carrying.
         const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
         const rated = require('./helpers/ratedKit')(state), rates = Packet.ratesOf(rated.stats.kitRates);
         session.coldLifeState = { ...rated, stats: { ...rated.stats, money: [100000, .00001, 0, 0],

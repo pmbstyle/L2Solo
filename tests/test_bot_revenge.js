@@ -67,7 +67,7 @@ try {
     for (let i = 0; i < 500; i++) Memory.record(bot, foe, false, now + i);
     assert.strictEqual(Memory.entries(bot.session)[0].attacks, 1, 'a burst of damage counts as one incident');
     assert.strictEqual(writes.length, 1, 'damage bursts must not cause one write per hit');
-    // A player meets the bot (B8: its client first receives the bot): only a grievance in the shared memory counts.
+    // A player meets the bot (its client first receives the bot): only a grievance in the shared memory counts.
     assert.strictEqual(Revenge.playerSeen(bot, foe, now), null, 'attacks alone never authorize revenge');
     Memory.record(bot, foe, true, now);
     assert.strictEqual(Revenge.playerSeen(bot, foe, now), null, 'one kill is not repeated killing');

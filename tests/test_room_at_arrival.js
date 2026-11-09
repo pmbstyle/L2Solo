@@ -122,7 +122,7 @@ function bot(characterId, extra = {}) {
 }
 
 // The contest's own rule, pure: no contest under room; over room the rolled peers
-// are decided in order; a commanded unit never avoids (B14); at most four peers; a
+// are decided in order; a commanded unit never avoids; at most four peers; a
 // standing body near a player is skipped. Rolls forced to 0: a level gap of 10 makes
 // grouping impossible, so the first roll decides a retreat: avoid.
 invoke('GameServer/DataCache').init();

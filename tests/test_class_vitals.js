@@ -2,7 +2,7 @@ const assert = require('assert');
 
 require('../src/Global');
 
-// T109 (user 10-29 "Max HP by class"): max HP, MP and CP are the class's C4
+// Vitals by class: max HP, MP and CP are the class's C4
 // template value at the level (L2J Mobius C4 lvlUpgainData) times the CON or
 // MEN bonus, for players and bots alike.
 const Formulas = invoke('GameServer/Formulas');

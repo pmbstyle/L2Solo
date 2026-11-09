@@ -102,7 +102,7 @@ try {
         const row = Table.value(s.id, 'dps', 50, true);
         return row ? Hunt.netIncome(row, Hunt.consumablePrices(fighter)) : 0;
     };
-    // The table ends at the deep-blue gap (drops at 30%, user 10-29): every camp a naked
+    // The table ends at the deep-blue gap (C4 drops at 30%): every camp a naked
     // L50 survives lies past it, so none pays and the fallback takes the closest safe ground.
     assert.equal(Math.max(...oracle.map(income)), 0, 'no camp past the deep-blue gap carries table income');
     const distance = s => Math.abs(s.avgLevel - fighter.level);

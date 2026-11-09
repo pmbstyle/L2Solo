@@ -42,7 +42,7 @@ const spot = Catalog.findById('raid:10366');
     assert.equal(fit.defense.requiredHp,(fit.defense.bossDps+fit.defense.guardDps)*12);
     assert(fit.healing>=fit.healingRequired && fit.seconds<=720);
     assert.equal(JSON.stringify(party),original,'assessment preserves physical bags, funds, vitals and skills');
-    // The Warrior holds a C two-hander (user 10-29), the others a C War Axe.
+    // The Warrior holds a C two-hander (C4 masteries), the others a C War Axe.
     const older = party.map(s => member(s.characterId,s.classId,44,
         Policy.role(s)==='healer'?178:s.classId===1?71:162,Policy.role(s)==='healer'));
     const boss42 = Catalog.findById('raid:10007');

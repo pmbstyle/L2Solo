@@ -19,7 +19,7 @@ async function run() {
     LifeState.upsertState = async (value) => value;
     try {
         // The physical buy stall that abandoned the plan on expiry is gone
-        // (step 3.3: a buy ad returns its escrow and the bot reviews again);
+        // (a buy ad returns its escrow and the bot reviews again);
         // the planner's own abandonment stands for it here.
         const abandoned = Planner.abandonAcquisition(state, 75, now);
         assert.strictEqual(abandoned.stats.equipmentPlan.status, 'abandoned');

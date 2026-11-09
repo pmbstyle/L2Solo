@@ -148,7 +148,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(Situations.raise({ activityLeaf: 9 }, 'arrived_town', { impossible: true }).activityLeaf, 0,
         'a town visit that proved its step impossible drops it, as a failed goal does');
 
-    // A body's own facts are detected on main (A1) and ride its bag; a level is none,
+    // A body's own facts are detected on main and ride its bag; a level is none,
     // a new expertise grade on the hunt is heard where a far bot hears it: at its rest's end.
     {
         const body = { nearRaise: null, raiseSeq: 0 };

@@ -1,4 +1,4 @@
-// Trading on the board by trips (market-sim step 3.3 group C): what a trip
+// Trading on the board by trips: what a trip
 // costs, where a bot with karma may go, and the decisions built on them.
 const assert = require('assert');
 const fs = require('node:fs');
@@ -61,7 +61,7 @@ Config.staticShotsDisabled = false;
     assert.strictEqual(Karma.townFor(0, 'Giran'), 'Giran');
 }
 
-// 3. The shop town (б7, Q6): one weighted roll over the towns with shop
+// 3. The shop town: one weighted roll over the towns with shop
 // places, by the item's buyers there less the trip; the author's grade table
 // seeds it while its counter has no deals.
 {
@@ -106,7 +106,7 @@ Config.staticShotsDisabled = false;
     MarketCounters.reset();
 }
 
-// 4. A buy ad is answered by the side that acts (E45, user Q3 C): a seller
+// 4. A buy ad is answered by the side that acts: a seller
 // chooses it in its sale decision when the ad's price less its trip there
 // beats listing, the NPC and keeping; it sells only in the ad's town.
 {
@@ -145,7 +145,7 @@ Config.staticShotsDisabled = false;
     AfkTrade._resetForTests();
 }
 
-// 5. The cheapest town for a stack (user Q1 A): the board's lines of each
+// 5. The cheapest town for a stack: the board's lines of each
 // town, then its NPC as one more offer, plus the trip; the whole amount first.
 {
     const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');

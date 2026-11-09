@@ -17,7 +17,7 @@ const PartyMarketBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const RequiredPartyFormation = invoke('GameServer/Bot/Population/RequiredPartyFormation');
 
-// Pins of the goal rules that live in several copies (step 1.4): rest
+// Pins of the goal rules that live in several copies: rest
 // thresholds, the inventory cleanup goal, stale shopping and party request
 // expiry, limits and objective spot.
 const now = 1_750_000_000_000;
@@ -127,7 +127,7 @@ assert.strictEqual(partyRest(bot(MYSTIC, ratios(1, 0.19))), false);
 assert.strictEqual(partyRest(bot(TANK, ratios(1, 0.17))), true, 'a party tank rests for MP');
 assert.strictEqual(partyRest(bot(FIGHTER, ratios(1, 0.05))), false, 'a party fighter does not rest for MP');
 
-// Rest: activation near a player asks the same rule (step 1.5).
+// Rest: activation near a player asks the same rule.
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 0.1))), false,
     'activation: a solo fighter does not sit for MP');
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.34, 1))), true,

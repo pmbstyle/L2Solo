@@ -85,7 +85,7 @@ try {
             next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
     // A gear plan's source the route takes comes before the held answer (BotRoute.huntSpot).
     assert.equal(tripOf(back(published(changed))), money.id, 'an active plan\'s viable source, as the route takes it');
-    // The held answer comes before the spot it hunted before the trip (B12).
+    // The held answer comes before the spot it hunted before the trip.
     const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
     assert.equal(tripOf(back(published(heldElsewhere))), money.id, 'the held earning answer, not the saved spot');
     assert.equal(tripOf(back(published(shopper)), { activity: 'hunting', spotId: money.id }), money.id,

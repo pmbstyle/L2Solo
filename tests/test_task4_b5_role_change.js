@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N8): the role side changes between the worker's card and the
+// The role side changes between the worker's card and the
 // craft step. A committed role loss (level 30 -> 20, Artisan craft level 3 -> 2)
 // landing before the step makes it stale: no recipe check, no write, one
 // refresh. A card on the lowered state for a recipe above the new

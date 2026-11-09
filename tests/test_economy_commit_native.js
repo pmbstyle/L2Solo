@@ -175,7 +175,7 @@ async function run() {
     }
     const product = Data.items.find(row => Number(row.selfId) === Number(uncertain.productId));
     const beforeOutput = await amount(2, uncertain.productId);
-    // Task 4 B4: a failed roll yields no product; the next card re-derives the need from stock.
+    // A failed roll yields no product; the next card re-derives the need from stock.
     const failing = await step(2, Commit.KINDS.craft);
     let draws = 0;
     const failedArgs = { recipeId: uncertain.recipeId, batches: 3, materials: failureMaterials,

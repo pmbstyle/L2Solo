@@ -166,7 +166,7 @@ async function run() {
     const pressure = await DB.fetchClanWarPressure(20, at - 60000, at + 1);
     assert.equal(pressure[0].losses, 2, 'only the accepted cold battle reports its committed party casualties');
     assert.equal(pressure[0].victims, 2, 'preview resolutions and the refused stale impact report no deaths');
-    // A cold clan-war meeting (enemy_met at an arrival, B11) reaches main's actions as the worker
+    // A cold clan-war meeting (enemy_met at an arrival) reaches main's actions as the worker
     // builds it (no spot pressure) and is fought after the standing enemy committed a step
     // in between (main refreshes its revision; the meeting's own roll stands).
     {

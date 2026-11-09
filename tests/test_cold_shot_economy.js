@@ -235,7 +235,7 @@ async function images(ids) {
             purchases.push(['shop', args[3], args[4].expectedPrice]);return receipt;};
         Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc.apply(Database, args);
             purchases.push(['npc', args[1].amount, args[1].unitPrice]);return receipt;};
-        // Task 4 B3: main's shot review plans no purchase. The core's root
+        // Main's shot review plans no purchase. The core's root
         // stock:shots (the same stock rule) is executed by its card: board
         // deals by the economy plan, the NPC remainder by the town visit.
         const fighterBefore = await images([fighter.characterId, supplier.characterId]);

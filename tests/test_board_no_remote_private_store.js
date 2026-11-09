@@ -1,4 +1,4 @@
-// Requirement of the board (step 3.3, E14, E22): a cold bot never buys
+// Requirement of the board: a cold bot never buys
 // remotely from a live private store. A player's or a bot's live store
 // trades face to face; a cold buyer sees only board records, NPC shops and
 // the configured city merchants.

@@ -1,5 +1,5 @@
 'use strict';
-// T141 (docs/game-decisions.md "Potions to save rest"): a solo bot drinks a
+// Potions to save rest (our choice): a solo bot drinks a
 // healing potion between fights when the rest it saves, at its own hour, is
 // worth more than the bottle's NPC price; one rule hot and cold; its potion
 // stock buys what the rule drinks.

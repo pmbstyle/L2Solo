@@ -62,7 +62,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 (async () => {
     {
-        // L84: a handler throws on the first packet of a chunk; the second
+        // A handler throws on the first packet of a chunk; the second
         // packet of the same chunk must not reach the dropped session.
         const { socket, session } = connect(function (packet) {
             this.received.push(packet[2]);
@@ -88,7 +88,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
     }
 
     {
-        // L85: a handler that fails through its returned Promise costs the
+        // A handler that fails through its returned Promise costs the
         // connection, like a synchronous throw, instead of the process.
         const { socket } = connect(() => Promise.reject(new Error('late failure')));
 

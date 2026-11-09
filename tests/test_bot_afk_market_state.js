@@ -186,7 +186,7 @@ async function run() {
     const buyGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: cWeapon.selfId, itemName: cWeapon.template.name },
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } };
-    // A buy goal opens a buy ad beside the shop (the board, step 3.3): the bot
+    // A buy goal opens a buy ad on the board beside the shop: the bot
     // sells and buys at once; the shop and its stock stay.
     const varnishBefore = amount(await Database.fetchItems(ownerId), 1865);
     const switched = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);

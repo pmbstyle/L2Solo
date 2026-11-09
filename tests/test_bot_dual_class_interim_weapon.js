@@ -12,7 +12,7 @@ const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const byName = (name) => Data.items.find((item) => item.template?.name === name);
 const broadsword = byName('Broadsword');
 // A Gladiator's previous profession is a Human Warrior, who fights with a
-// two-handed sword (user 10-29); a Bladedancer's a Palus Knight, with a sword.
+// two-handed sword (C4 masteries); a Bladedancer's a Palus Knight, with a sword.
 const twoHander = byName('Two-Handed Sword');
 const interimWeapon = (classId) => classId === 2 ? twoHander : broadsword;
 const bow = byName('Bow');

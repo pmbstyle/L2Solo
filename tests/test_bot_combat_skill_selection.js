@@ -433,7 +433,7 @@ try {
     assert.strictEqual(summonerSession.lastCombatDecision.action, 'summon_servitor',
         'the hot summon action must be visible in combat telemetry');
 
-    // The pet tanks, as in C4 (user 10-29): with its servitor out, a hot
+    // The pet tanks, as in C4: with its servitor out, a hot
     // summoner adds its own damage only while the mob is on the pet.
     const pet = { fetchId: () => 77001, controlMode: 'attack', attackTargetId: 11041, fetchLocX: () => 390, fetchLocY: () => 0,
         fetchMaxHp: () => 500, fetchHp: () => 500, state: {} };

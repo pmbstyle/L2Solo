@@ -1,5 +1,5 @@
 'use strict';
-// Kits by class (user 10-29, T106 audit): a Human Warrior fights with a
+// Kits by class (C4 masteries, as C4 players fought): a Human Warrior fights with a
 // two-handed sword or a polearm, not the Knight's sword and shield; Warcryer
 // and Overlord keep the Orc Shaman's melee kit (blunt, heavy armour, shield)
 // and its soulshots, as they fight in melee.

@@ -27,7 +27,7 @@ options.default.Database.path = path.join(directory, 'world.sqlite');
         'UPDATE bot_life_state SET activity = ?, statsJson = ?, updatedAt = ? WHERE characterId = 7',
         [activity, stats(store, reason), timestamp + 1000]
     ]);
-    // The board replaced the stalls (step 3.3): a bot's statsJson no longer
+    // The board replaced the stalls: a bot's statsJson no longer
     // holds a store, and the triggers that journaled it are gone.
     await update(shop('first'), 'cold_market_demand_revalidated');
     await Database.execute(["UPDATE bot_life_state SET phase = 'hot' WHERE characterId = 7"]);

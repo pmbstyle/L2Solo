@@ -92,7 +92,7 @@ assert.strictEqual(meet([{ ...bot(1), party: { partyId: 'p' } }], [{ ...bot(2), 
 }
 {
     // Its clan at mutual war with its enemy's: the war is passed to the rule, so a red bot
-    // still meets its war enemy, with no karma cost; a war alone is a grievance (B11).
+    // still meets its war enemy, with no karma cost; a war alone is a grievance.
     const ClanWarView = require('../src/GameServer/Clan/ClanWarView');
     memory.clanWars = new ClanWarView();
     memory.clanWars.accept({ fromClanId: 10, toClanId: 20, revision: 1, active: 1 });
@@ -109,7 +109,7 @@ assert.strictEqual(meet([{ ...bot(1), party: { partyId: 'p' } }], [{ ...bot(2), 
     assert.strictEqual(meet([bot(1, { clanId: 10, karma: 240 })], [bot(2, { clanId: 20 })]), null, 'without the war it washes its karma first');
 }
 {
-    // A player and a bot (B8): the bot's grievance, rolled per (bot, player, the bot's stay).
+    // A player and a bot: the bot's grievance, rolled per (bot, player, the bot's stay).
     const relation = memory.assess({ id: 1 }, { id: 2 }, {}, at);
     TendencyRoll.roll = () => 0;
     try {

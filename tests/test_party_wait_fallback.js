@@ -128,8 +128,8 @@ function routeChecks() {
     SpotProfiles.findForState = findForStateStub;
     LevelingRoutes.isSpotAllowedForState = (candidate) => candidate.id !== unsafeFallback.id;
 
-    // The coordinator follows the party request like the worker (step 1.3
-    // U2): a party-only plan without a request does not wait...
+    // The coordinator follows the party request like the worker:
+    // a party-only plan without a request does not wait...
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
     assert.strictEqual(route(routeState(5, { equipmentPlan: partyPlan })).spotId, planSpot.id,
         'U2: a party-only plan without a party request does not wait');

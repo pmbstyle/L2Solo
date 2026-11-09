@@ -1,4 +1,4 @@
-// The N0 money check on the board (step 3.3): over a run of board moves and
+// Money is conserved on the board: over a run of board moves and
 // deals (shop, ads, a player's purchase, a seller's answer to a buy ad, a deal on a bot
 // the worker leases and the worker's commit, an expiry, the leave rule), the
 // economy journal's flows per item equal the change of everything held:

@@ -6,8 +6,8 @@ require('../src/Global');
 // H12 with H3: a bot keeps the consumables its class uses and the NPC buys the
 // rest, on the cold visit as on the hot one. Archers retain only their bounded bow stock.
 // No bot reads a scroll of resurrection, opens a chest with a key or drinks an antidote; it
-// drinks healing potions and reads Scrolls of Escape for town trips (step 3.2,
-// H12 narrowed 2026-10-05), so it keeps them up to their restock targets.
+// drinks healing potions and reads Scrolls of Escape for town trips,
+// so it keeps them up to their restock targets.
 // Enchant scrolls, crystals and Adena are not spare.
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');

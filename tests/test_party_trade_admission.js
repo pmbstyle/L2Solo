@@ -15,7 +15,7 @@ for (const phase of ['hot', 'cold']) {
         assert(personalOfferAllowed({ custodyPolicy: 0 }, grouped, grouped), 'backed shops remain available');
         assert(personalOfferAllowed({ sourceType: 'npc' }, grouped, grouped), 'NPC production/cleanup is not personal trade');
     }
-    // A side with an accepted meeting meets only at that meeting (ECO-14).
+    // A side with an accepted meeting meets only at that meeting.
     const giran = { phase, stats: { tradeMeeting: [1, 2, 'Giran', 1, 2, 3] } };
     assert(personalOfferAllowed({ custodyPolicy: 1, town: 'Giran' }, solo, giran), 'a seller anchored in this town meets here');
     assert(!personalOfferAllowed({ custodyPolicy: 1, town: 'Dion' }, giran, solo), 'a buyer anchored elsewhere cannot');

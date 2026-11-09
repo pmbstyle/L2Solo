@@ -75,7 +75,7 @@ assert.equal(drain(field.options.preparePurchase(state, 1864, 1, { npc: false })
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
 assert(npc.whole && npc.npc === 1 && npc.town);
-// One value of an owned item (Q1): what the bot gets selling one unit now.
+// One value of an owned item: what the bot gets selling one unit now.
 // Own bids are skipped but use a quote slot; NPC buyback is the floor.
 const bids = new BoardIndex();
 bids.put({ id: 700, ownerId: owner.characterId, storeType: 3, kind: 'buy_ad', town: 'Giran', revision: 1,

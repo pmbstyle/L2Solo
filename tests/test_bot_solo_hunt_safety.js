@@ -36,7 +36,7 @@ assert(Match.soloSurvival([fragile, servitor], target).eligible, 'native profile
 const withSummon = (owner, hp = servitor.maxHp) => Match.coldProfiles(owner, { stats: { coldCombat: {
     summon: { ...servitor, active: true, hp, expiresAt: at + 60000 }
 } } }, at);
-// The pet tanks first, as in C4 (user 10-29): a fragile owner hunts behind a
+// The pet tanks first, as in C4: a fragile owner hunts behind a
 // sound pet, not behind a pet with its HP nearly gone.
 assert(Match.soloSurvival(withSummon(fragile), target).eligible, 'a cold summon tanks for a fragile owner');
 assert(!Match.soloSurvival(withSummon(fragile, 1), target).eligible, 'a pet at 1 HP shields nothing');

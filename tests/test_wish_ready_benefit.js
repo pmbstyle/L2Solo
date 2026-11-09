@@ -22,7 +22,7 @@ const build = (name, nodes, extra = {}) => new WishNetwork().build({ actorKey: '
     wallet: 2e6, hourAdena: 5e5, persona: { traits: { commitment: 0 } }, roots: nodes.map(node => node.key), nodes, ...extra });
 const row = (result, key) => result.queue.find(wish => wish.key === key);
 
-// PLAN.md synthetic acceptance: mid C 3m gains 0.3, top C 4m gains 0.5.
+// Synthetic acceptance case: mid C 3m gains 0.3, top C 4m gains 0.5.
 const synthetic = build('mid-top', [gear('mid', 0.3, 3e6), gear('top', 0.5, 4e6)]);
 for (const [key, value, effort, ready] of [['mid', 11.4, 6, 2], ['top', 18, 8, 4]]) {
     near(row(synthetic, key).valueHours, value, `${key} benefit`);
