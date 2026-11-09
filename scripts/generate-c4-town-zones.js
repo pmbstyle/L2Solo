@@ -1,6 +1,10 @@
-// Import the C4 town peace zones: the town zones of L2J Lisvus (TownZone),
-// each an outline on the map. Lisvus L2TownZone makes every town a peace zone
-// but Floran Village (townId 16), the C4 village where PvP stays open.
+// Import the C4 town zones: the town zones of L2J Lisvus (TownZone), each an
+// outline on the map with its `peace` flag. Every town is a peace zone but
+// Floran Village (townId 16), which stays open to PvP. The C4 sources
+// disagree here: Lisvus L2TownZone.java leaves townId 16 out of peace, while
+// L2J Mobius C4 zones/peace.xml covers Floran (floran_town_peace1-3). We
+// follow Lisvus: our design names Floran the PK town, where a red name trades
+// and shops (AFK trade opens in any town zone, peace or not).
 // Usage: node scripts/generate-c4-town-zones.js [<Lisvus townZones.xml>]
 const fs = require('fs');
 const path = require('path');
@@ -23,9 +27,8 @@ const towns = [...xml.matchAll(/<zone ([^>]*)>([\s\S]*?)<\/zone>/g)].map(([, hea
     return { name: attrs.name, townId, outline };
 });
 if (towns.length !== 16 || new Set(towns.map((town) => town.townId)).size !== 16) throw Error('Expected the 16 C4 town zones');
-const peace = towns.filter((town) => town.townId !== FLORAN_TOWN_ID);
 fs.mkdirSync(path.join(root, 'data/World'), { recursive: true });
-fs.writeFileSync(path.join(root, 'data/World/c4_town_peace_zones.json'),
+fs.writeFileSync(path.join(root, 'data/World/c4_town_zones.json'),
     `{"source":${JSON.stringify(source)},"revision":${JSON.stringify(revision)},"towns":[\n`
-    + peace.map((town) => JSON.stringify(town)).join(',\n') + '\n]}\n');
-console.info(`Imported ${peace.length} town peace zones from Lisvus C4 ${revision}`);
+    + towns.map(({ name, townId, outline }) => JSON.stringify({ name, townId, peace: townId !== FLORAN_TOWN_ID, outline })).join(',\n') + '\n]}\n');
+console.info(`Imported ${towns.length} town zones (${towns.filter((town) => town.townId !== FLORAN_TOWN_ID).length} peace) from Lisvus C4 ${revision}`);

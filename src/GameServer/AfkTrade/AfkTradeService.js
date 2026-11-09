@@ -829,8 +829,10 @@ function activeShops() {
 async function begin(session, storeType) {
     const actor = session?.actor;
     if (!actor || isBotSession(session) || ![SELL, BUY].includes(Number(storeType))) return false;
-    if (!utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
-        commandMessage(session, 'AFK trade can only be opened in a peace zone.');
+    // A shop opens in a town, Floran included: a red name trades there, as
+    // karma bots open their shops in Floran.
+    if (!utils.isInTownZone(actor.fetchLocX(), actor.fetchLocY())) {
+        commandMessage(session, 'AFK trade can only be opened in a town.');
         return false;
     }
     if (actor.isDead?.() || actor.fetchMounted?.() || actor.state?.fetchCasts?.() || actor.state?.fetchHits?.()) {

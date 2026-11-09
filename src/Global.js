@@ -17,12 +17,13 @@ global.invoke = (module) => {
     return exports;
 };
 
-// Town peace zones: the C4 town outlines (Lisvus townZones.xml, imported by
-// scripts/generate-c4-town-zones.js), each with its bounding box. Heights are
-// not checked: callers pass a map point, and no town lies over or under a
-// hunting ground.
-const PEACE_ZONES = require('../data/World/c4_town_peace_zones.json').towns.map(({ outline }) => ({
-    outline,
+// Town zones: the C4 town outlines (Lisvus townZones.xml, imported by
+// scripts/generate-c4-town-zones.js), each with its bounding box. Every town
+// is a peace zone but Floran Village, the PK town open to PvP (Lisvus; Mobius
+// C4 makes Floran peace too). Heights are not checked: callers pass a map
+// point, and no town lies over or under a hunting ground.
+const TOWN_ZONES = require('../data/World/c4_town_zones.json').towns.map(({ name, peace, outline }) => ({
+    name, peace: peace === true, outline,
     minX: Math.min(...outline.map(node => node.x)), maxX: Math.max(...outline.map(node => node.x)),
     minY: Math.min(...outline.map(node => node.y)), maxY: Math.max(...outline.map(node => node.y))
 }));
@@ -35,6 +36,16 @@ function insideOutline(outline, x, y) {
         if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
     }
     return inside;
+}
+
+// The town zone holding a map point, or null in the field (towns never overlap).
+function townZoneAt(locX, locY) {
+    const x = Number(locX), y = Number(locY);
+    for (let at = 0; at < TOWN_ZONES.length; at++) {
+        const zone = TOWN_ZONES[at];
+        if (x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY && insideOutline(zone.outline, x, y)) return zone;
+    }
+    return null;
 }
 
 global.utils = {
@@ -118,13 +129,14 @@ global.utils = {
         return require('objcrush')(ob);
     },
 
+    // No PvP here: a town zone other than Floran.
     isInPeaceZone(locX, locY) {
-        const x = Number(locX), y = Number(locY);
-        for (let at = 0; at < PEACE_ZONES.length; at++) {
-            const zone = PEACE_ZONES[at];
-            if (x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY && insideOutline(zone.outline, x, y)) return true;
-        }
-        return false;
+        return townZoneAt(locX, locY)?.peace === true;
+    },
+
+    // Inside a town's outline, Floran included: where a shop may open.
+    isInTownZone(locX, locY) {
+        return townZoneAt(locX, locY) !== null;
     },
 
     totalMemUsed() {
