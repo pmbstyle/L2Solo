@@ -437,11 +437,35 @@ function onWorker() {
             const onCamp = { ...leveling, spotId: 'poor', loc: spots[0].center };
             assert.equal(BotRoute.trip({}, onCamp, selling, { spots, currentSpot: spots[0], timestamp: time(13) }), null,
                 'on its camp the errand holds it');
+            // Its camp raised empty for it (spot_empty: no fight there for it) while its answer names another
+            // spot: the errand holds it no more, it walks to the answer and the errand starts from there.
+            const emptied = { ...onCamp, stats: { ...onCamp.stats, emptyGround: 'poor' } };
+            assert.equal(BotRoute.trip({}, emptied, selling, { spots, currentSpot: spots[0], timestamp: time(13) })?.spotId, 'rich',
+                'an emptied camp with its answer elsewhere: the errand no longer holds it');
             // Pushed off its camp (a stronger arrival displaced it: the contest's mark on the camp), the errand
             // holds it no more: it walks to its held spot and the errand starts from the new field.
             const pushed = raisedWith(onCamp, 'contest_lost', { spotId: 'poor', reason: 'displaced', by: 1, at: time(13) });
             assert.equal(BotRoute.trip({}, pushed, selling, { spots, currentSpot: spots[0], timestamp: time(13) })?.spotId, 'rich',
                 'displaced off its camp, the errand no longer holds it there');
+            // Pushed off its camp while its earning answer names none: it does not stay on the camp it lost.
+            // The leveling goal sends it to other ground, cold and hot (the published choice); with no ground
+            // anywhere it asks once (spot_empty), and the answer to that ask, none again, is counted.
+            {
+                const noAnswer = { ...onCamp, stats: { ...onCamp.stats, earning: { ...onCamp.stats.earning, spotId: null, at: 9 } } };
+                const lost = raisedWith(noAnswer, 'contest_lost', { spotId: 'poor', reason: 'displaced', by: 1, at: time(13) });
+                const tripOn = (record, state) => BotRoute.trip(record, state, null, { spots, currentSpot: spots[0], timestamp: time(13) });
+                assert.equal(tripOn({}, lost)?.spotId, 'rich', 'displaced with no answer: it leaves for other ground');
+                assert.equal(BotRoute.heldHuntSpot({}, lost, null, { spots, timestamp: time(13) })?.spotId, 'rich',
+                    'and the hot body is sent there too');
+                const nowhere = raisedWith(lost, 'contest_lost', { spotId: 'rich', reason: 'avoid', at: time(13) });
+                const record = {};
+                assert.equal(tripOn(record, nowhere)?.ask, 'spot_empty', 'no ground anywhere: it asks the decision again');
+                assert.equal(tripOn(record, nowhere), null, 'and waits for the answer');
+                const before = Situations.counts().raised['earning:no_spot'] || 0;
+                const answered = { ...nowhere, stats: { ...nowhere.stats, earning: { ...nowhere.stats.earning, at: 10 } } };
+                assert.notEqual(tripOn(record, answered)?.spotId, 'poor', 'none again: never back onto the camp it lost');
+                assert.equal(Situations.counts().raised['earning:no_spot'], before + 1, 'counted');
+            }
         } finally { Service.arrivalPointForState = arrive; }
     }
     // A party member hunts with its party: its foundation does not price the held solo spot.

@@ -606,6 +606,22 @@ test('an errand does not hold a body pushed off its ground: it walks to its spot
     assert.equal(decision.action, 'move_to_spot', 'pushed off: the errand no longer holds it');
     assert.equal(decision.spot?.id, primary.id, 'to the published spot');
     assert.equal(decision.deferredOccupation, Decision.occupationKey(selling), 'the errand kept for the field');
+    // Its ground raised empty for it (spot_empty) while the worker publishes another spot: released the same.
+    const g = fixture(alternative.center, selling, { ...holds(primary), emptyGround: alternative.id });
+    g.session.currentSpot = alternative;
+    const emptied = Decision.suggest(g.session.botStatus, g.session);
+    assert.equal(emptied.action, 'move_to_spot', 'an emptied ground no longer holds the errand');
+    assert.equal(emptied.spot?.id, primary.id, 'to the published spot');
+    assert.equal(searchCalls.length, 0, 'main searches no spot');
+});
+
+test('a body pushed off its ground with no spot published asks once, as the far trip does', () => {
+    // A stronger arrival displaced it (the contest's mark) and its answer names none: its leaf's ground
+    // holds no hunt; it asks the decision again (spot_empty) for the worker to send it elsewhere.
+    const empty = { woken: 0, earning: { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at: 1 } };
+    const f = fixture(primary.center, leaf, { ...empty, spotMarks: [{ spotId: primary.id, reason: 'contest_lost' }] });
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'no_hunting_route', 'its lost ground holds no hunt');
+    assert(Situations.woken(f.session.coldLifeState.stats, 'earning_spot'), 'it asks the decision again (spot_empty)');
     assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 
