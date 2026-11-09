@@ -118,6 +118,14 @@ async function rejectedWork(current, accepted, why, recipeId) {
     if (!raised) return current;
     return recipeId > 0 ? { ...raised, stats: { ...raised.stats, wealthRefused: WealthDecision.refusedMark(raised, recipeId) } } : raised;
 }
+// The native craft's "no" (Database.craftInventoryItems) to a bot's own craft: the
+// recipe, its inputs or product moved since the decision, or a unit its reserves keep
+// (economy_material_protected). An outcome, not a fault: every own craft (wealth, shot)
+// marks the recipe refused until the next town look (rejectAccepted).
+const CRAFT_REFUSALS = new Set(['craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed',
+    'craft_product_template_changed', 'craft_material_identity_changed', 'craft material changed',
+    'economy_material_protected']);
+const craftRefused = error => CRAFT_REFUSALS.has(error?.message);
 // refusal: { reason, recipeId, kind: the craft's name in the count, wealth by default }.
 async function rejectAccepted(state, accepted = state, refusal = null) {
     const current = LifeState.cachedState(state.characterId) || state;
@@ -228,10 +236,7 @@ async function execute(state, opportunity, options = {}) {
         units = Number(crafted?.units || 0);
         remainingMp = Number(crafted?.mp ?? current.vitals?.mp);
     } catch (error) {
-        const semantic = ['craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed',
-            'craft_product_template_changed', 'craft_material_identity_changed', 'craft material changed',
-            'economy_material_protected'].includes(error?.message);
-        const failed = withOutcome(semantic ? await rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:craft_failed', recipe.recipeId) : current, opportunity, 'craft_rejected',
+        const failed = withOutcome(craftRefused(error) ? await rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:craft_failed', recipe.recipeId) : current, opportunity, 'craft_rejected',
             { spent, error: String(error?.message || error) });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_rejected') || failed,
             crafted: false, reason: 'craft_rejected' };
@@ -351,4 +356,4 @@ async function acquireRecipe(state, opportunity) {
     current = await LifeState.learnCraftableRecipes(current, { recipeIds: [Number(recipe.recipeId)] }) || current;
     return { state: current, ready: await knows(), spent, reason: 'recipe_not_learned' };
 }
-module.exports = { eligible, chooseOpportunity, opportunities, execute, recheck, acquireRecipe, rejectAccepted };
+module.exports = { eligible, chooseOpportunity, opportunities, execute, recheck, acquireRecipe, rejectAccepted, craftRefused };

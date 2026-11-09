@@ -354,6 +354,47 @@ async function images(ids) {
         assert.equal(cCrafter.stats.shotCraft.preparing, undefined, 'completed production clears its preparation facts');
         console.log('PASS physical C recipe purchase/learning, input allocation and C shot production');
 
+        // A paused exchange's need is met first from the bot's warehouse: the bag crystals the
+        // planner finds free are the ones the native commit lets the shot craft spend. A craft
+        // the commit refuses anyway is an outcome (counted, the recipe marked), not a throw.
+        const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        const WealthDecision = invoke('GameServer/Bot/Economy/WealthCraftDecision');
+        const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+        // The shots made above already fill the open bid: sold out of the bag, so the bid is
+        // demand a new batch can meet.
+        const bankerId = cCrafter.characterId, oreId = Number(cCandidate.ore.selfId);
+        for (const [selfId, amount] of [[1459, 200], [oreId, 10000], [1464, 0]]) {
+            await Database.execute(['DELETE FROM items WHERE characterId=? AND selfId=?', [bankerId, selfId]]);
+            if (amount) await Database.setItem(bankerId, { selfId, amount });
+        }
+        cCrafter = await Life.syncExternalInventory(bankerId, 'c_banked_exchange_stock', Life.cachedState(bankerId));
+        const bankedPlan = () => ({ ...Life.cachedState(bankerId), vitals: { ...Life.cachedState(bankerId).vitals, mp: 1000 },
+            stats: { ...Life.cachedState(bankerId).stats, wealthRefused: null, equipmentPlan: { strategy: 'none', status: 'deferred',
+                reason: 'wish_focus', exchange: { kind: 'luxury_exchange' }, target: { selfId: 95, slot: 14 },
+                materials: [{ selfId: 1459, amount: 1000 }] } } });
+        cCrafter = await Life.upsertState(bankedPlan(), 'c_banked_exchange_paused');
+        assert.equal(WealthDecision.freeOf(cCrafter, 1459), 0, 'without its bank the paused exchange keeps every bag crystal');
+        Warehouse.useRowSource(id => id === bankerId ? [bankerId, 1, [[1459, 1000, 0]]] : undefined, () => true);
+        const craftThrough = Database.craftInventoryItems;
+        try {
+            assert.equal(WealthDecision.freeOf(cCrafter, 1459), 200, 'the banked crystals meet the paused exchange');
+            const banked = Shots.craftCandidate(cCrafter, cRecipe, Shots.marketSnapshot(now + 150000));
+            assert(banked?.batches > 0, 'the freed bag crystals make a production batch');
+            const shotsBefore = held(await Database.fetchItems(bankerId), 1464);
+            const refusedBefore = DecisionEvents.rejections()['shot:craft_failed'] || 0;
+            Database.craftInventoryItems = async () => { throw Error('economy_material_protected'); };
+            const refused = await Shots.execute(cCrafter, { craft: Policy.selectionFor(banked) }, now + 150000);
+            Database.craftInventoryItems = craftThrough;
+            assert.equal(DecisionEvents.rejections()['shot:craft_failed'], refusedBefore + 1, 'a refused shot craft is counted');
+            assert(WealthDecision.refused(refused, cRecipe.recipeId), 'a refused shot recipe waits for the next town look');
+            assert.equal(held(await Database.fetchItems(bankerId), 1464), shotsBefore);
+            cCrafter = await Life.upsertState(bankedPlan(), 'c_banked_exchange_retry');
+            cCrafter = await Shots.execute(cCrafter, { craft: Policy.selectionFor(banked) }, now + 150000);
+            assert(held(await Database.fetchItems(bankerId), 1464) > shotsBefore, 'the commit spends the crystals the planner freed');
+            assert(held(await Database.fetchItems(bankerId), 1459) < 200);
+        } finally { Database.craftInventoryItems = craftThrough; Warehouse.useRowSource(); }
+        console.log('PASS banked exchange crystals free the bag for a shot craft, a refused craft is an outcome');
+
         // A whole native bootstrap through the hidden backed bid: no initial
         // C scroll knowledge, crystals or shots; the exact shield must be
         // bought, crystallized and paid for before either output can exist.

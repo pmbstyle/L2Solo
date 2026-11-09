@@ -63,7 +63,7 @@ async function reviewCold(state, options = {}) {
     // step for good: counted, goal_failed {impossible} drops it from the next build.
     const role = roleOf(improvement.kind);
     if (role && !catalog().improvementTowns(role).has(String(state.currentRegion))) {
-        const raised = await DecisionEvents.rejectOnRow(state, state, 'improvement:no_station');
+        const raised = await DecisionEvents.rejectOnRow(state, state, `improvement:${improvement.kind}:no_station`);
         return { state: raised || state, changed: false, reason: 'no_station' };
     }
     const original = Life.cachedState(state.characterId);
@@ -86,10 +86,11 @@ async function reviewCold(state, options = {}) {
             return { state: current, changed: false, reason: 'source_retired' };
         }
         // These native refusals describe the selected input, never a stale
-        // revision, location, MP or uncertain transaction-delivery retry.
+        // revision, location, MP or uncertain transaction-delivery retry. Counted
+        // by the improvement's kind and the reason (DecisionEvents.rejections).
         if (!rejectedInput(error)) throw error;
         if (current.phase !== 'cold') return { state: current, changed: false };
-        const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${error.message}`);
+        const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${improvement.kind}:${error.message}`);
         return { state: raised || current, changed: false, reason: error.message };
     }).finally(() => pendingCold.delete(state.characterId));
     pendingCold.set(state.characterId,work); return work;
@@ -149,7 +150,7 @@ function reviewHot(session) {
         session.dataSendToMe?.(invoke('GameServer/Network/Response').userInfo(actor));
         Economy.forget(actor.fetchId()); return result;
     }).catch(error => {
-        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted);
+        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
         throw error;
     }).finally(() => pendingHot.delete(actor));
     pendingHot.set(actor,work); return work;

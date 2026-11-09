@@ -165,6 +165,9 @@ const metrics = {
     writes: 0,
     transactions: 0,
     failures: 0,
+    // Operations the writer refused with a named code (REFUSALS: the act's facts
+    // moved since its decision): outcomes, apart from the failures above.
+    refusals: 0,
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
@@ -320,21 +323,43 @@ function operationName(sql, fallback = 'raw') {
     return match ? `${fallback}:${match[1].toLowerCase()}` : fallback;
 }
 
-function record(operation, wait, run, read, failed = false) {
+// The writer's named refusals: it refuses an act whose facts moved since its decision (a
+// unit the bot's reserves keep, money an earlier step spent, the economy step's sequence,
+// owner or intent, a recipe, an improvement's source, a board record or a bag line). An
+// outcome: counted apart from failures here, a refused decision at the cold command
+// boundary (ColdSimulationCoordinator). Any other throw, a bare code included (a missing
+// row or template, a broken invariant), is a failure with its stack.
+const REFUSALS = new Set(['economy_material_protected', 'economy_funding_changed', 'economy_sequence_changed',
+    'economy_owner_changed', 'economy_intent_changed', 'economy_plan_need_changed',
+    'craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed', 'craft_product_template_changed',
+    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_missing_materials',
+    'soul_crystal_resonance', 'afk_trade_shop_changed', 'afk_trade_stock_changed', 'inventory_item_changed',
+    'board_cap_reached', 'not_enough_adena']);
+const refused = error => FailureLog.refusal(error) && REFUSALS.has(error.message);
+
+// Named operations: OPERATION_NAMES of any kind, then OPERATION_FAILURE_NAMES more for
+// an operation that fails or is refused, so a failure keeps its name when ordinary
+// names filled the map; past both, 'other'.
+const OPERATION_NAMES = 127, OPERATION_FAILURE_NAMES = 32;
+// outcome: '' (done), 'failed' or 'refused' (a named refusal, REFUSALS).
+function record(operation, wait, run, read, outcome = '') {
     if (!DiagnosticConfig.developerDiagnostics) return;
     metrics.byOperation ||= new Map();
-    if (!metrics.byOperation.has(operation) && metrics.byOperation.size >= 127) operation = 'other';
+    if (!metrics.byOperation.has(operation)
+        && metrics.byOperation.size >= OPERATION_NAMES + (outcome ? OPERATION_FAILURE_NAMES : 0)) operation = 'other';
     metrics.total += 1;
     metrics.waitMs += wait;
     metrics.runMs += run;
     if (read) metrics.reads += 1;
     else metrics.writes += 1;
-    if (failed) metrics.failures += 1;
-    const entry = metrics.byOperation.get(operation) || { count: 0, waitMs: 0, runMs: 0, failures: 0 };
+    if (outcome === 'failed') metrics.failures += 1;
+    if (outcome === 'refused') metrics.refusals += 1;
+    const entry = metrics.byOperation.get(operation) || { count: 0, waitMs: 0, runMs: 0, failures: 0, refusals: 0 };
     entry.count += 1;
     entry.waitMs += wait;
     entry.runMs += run;
-    if (failed) entry.failures += 1;
+    if (outcome === 'failed') entry.failures += 1;
+    if (outcome === 'refused') entry.refusals += 1;
     metrics.byOperation.set(operation, entry);
 }
 
@@ -370,7 +395,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             EconomyJournal.discard();
             if (connection?.isTransaction) ClanReviewInputs.restoreCandidateCheckpoint(candidateCheckpoint);
             else ClanReviewInputs.discardCandidateCommit();
-            if (timed) record(operation, wait, now() - startedAt, read, true);
+            if (timed) record(operation, wait, now() - startedAt, read, refused(error) ? 'refused' : 'failed');
             throw error;
         } finally {
             metrics.pending -= 1;
@@ -2721,12 +2746,19 @@ function economyStepUnsafe(characterId, command, kind) {
     }
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
     economyOwnerUnsafe(characterId, command.authority, true);
-    const state = { level: Number(row.level), phase: row.phase, stats: SavedStats.merge(row.statsJson, row.mindJson),
-        inventory: InventorySummary.read(row.inventorySummary) };
     // Current own protection is prepared once inside the atomic boundary,
     // never inferred from the worker's spending proposal.
-    const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
+    const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(row));
     return { row, command, reserved };
+}
+
+// The state a commit's reserve check reads from a bot's life row: the planner's
+// inputs (ItemDisposition.reservedEquipmentAmounts), the bot's id included, so a
+// paused plan's need is first met from its warehouse stock as the planner's free
+// count assumes; without it the commit keeps the whole need in the bag and refuses
+// a spend the planner found free.
+function reserveStateUnsafe(row, stats = SavedStats.merge(row.statsJson, row.mindJson), inventory = InventorySummary.read(row.inventorySummary)) {
+    return { characterId: Number(row.characterId), level: Number(row.level), phase: row.phase, stats, inventory };
 }
 
 function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = null, learning = null, statsPatch = null) {
@@ -2841,10 +2873,8 @@ function prepareCraftReservationsUnsafe(step, recipe) {
     if (!final && !component) return;
     // A bot's own craft spends its own bag: a clan goal's reserve binds what the
     // bot sells or trades, not this plan (our choice).
-    step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
-        level: Number(step.row.level), phase: step.row.phase, stats,
-        inventory: InventorySummary.read(step.row.inventorySummary)
-    }, { craft: false, clan: false });
+    step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(step.row, stats),
+        { craft: false, clan: false });
 }
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false, held = 0) {
@@ -2874,8 +2904,7 @@ function materialReserveUnsafe(step, selfId, sale = false) {
     const { stats, inventory } = read;
     // Bilateral market acceptance also rechecks the current gear/craft/clan
     // reserves inside its transaction, without a prepared economy command.
-    step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
-        level: Number(step.row.level), phase: step.row.phase, stats, inventory });
+    step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(reserveStateUnsafe(step.row, stats, inventory));
     const item = inventory[selfId] || {};
     if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return Infinity;
     const goalReserve = stats.equipmentPlan?.status === 'active' && Number(stats.equipmentPlan.target?.selfId) === Number(selfId) ? 1 : 0;
@@ -4984,6 +5013,7 @@ function publishClanMembership(result) {
 
 
 const Database = {
+    refused,
     // BotLifeState.save builds its upsert with them.
     MOVE_FAR_REVISION,
     HELD_ROW_SET,
@@ -7319,6 +7349,7 @@ const Database = {
             writes: metrics.writes,
             transactions: metrics.transactions,
             failures: metrics.failures,
+            refusals: metrics.refusals,
             snapshots: metrics.snapshots,
             avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,

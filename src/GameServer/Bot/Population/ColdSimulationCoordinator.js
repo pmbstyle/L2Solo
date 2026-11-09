@@ -2013,13 +2013,22 @@ class ColdSimulationCoordinator {
                         utils.infoWarn('ColdWorker', 'command failed on the database (counted from now on as commandDbErrors): %s',
                             error?.stack || error);
                     }
-                    // A command's own throw: the worker's fault tracker holds the bot
+                    // A command's own throw (a bug): the worker's fault tracker holds the bot
                     // off (backoff, then quarantine) and sends the first stack back
-                    // to be logged here. A shared failure is a plain retry.
+                    // to be logged here. A shared failure is a plain retry. The writer's
+                    // named refusal (Database.refused: the act's facts moved since the
+                    // decision) that no owner caught refuses the decision: goal_failed
+                    // drops the held step and the bot decides again (counted by
+                    // DecisionEvents as command:<reason>), never the same command again.
+                    const refused = !shared && Database.refused(error), why = `command:${error?.message}`;
+                    const raise = refused && state ? DecisionEvents.rejectOnRow(state, state, why) : null;
+                    if (refused && !raise) DecisionEvents.refused(why);
+                    const raised = raise && await raise.catch(raiseError => {
+                        FailureLog.note('cold.command_refusal_raise', raiseError); return null; });
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error',
-                        ...(shared ? { retryAfterMs: 5000 }
+                        ...(shared ? { retryAfterMs: 5000 } : refused ? {}
                             : { fault: { stack: String(error?.stack || '').split('\n').slice(0, 10).join('\n').slice(0, 2000) } }),
-                        ...(state ? { state } : {}) });
+                        ...(raised || state ? { state: raised || state } : {}) });
                 }
                 await yieldToLoop();
             }
