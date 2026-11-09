@@ -1900,7 +1900,7 @@ function buildForState(state, deps) {
     Object.assign(context, valueReaders(state, network, projection.values, persona, knowledgeEnabled,
         base.kitCost, () => context.statsPacket.money));
     context.watchList = TradeIntent.project(state, network, projection, id => context.worth(id) ?? price(id),
-        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
+        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details, base.survivalReserve);
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
@@ -2252,7 +2252,8 @@ function view(state, plan, deps, built = {}) {
         || state.stats?.equipmentPlan?.strategy === 'craft' && state.stats?.equipmentPlan?.status === 'active'
         || state.stats?.equipmentPlan?.status === 'deferred' && state.stats?.equipmentPlan?.reason === 'wish_focus') {
         const watch = TradeIntent.project(state, network, context.projection,
-            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
+            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad,
+            context.board, context.trip?.details, context.survivalReserve);
         if (watch) context.watchList = Agenda.bidsAfter(watch, network.filled);
     }
     return context;

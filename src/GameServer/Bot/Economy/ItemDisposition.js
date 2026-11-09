@@ -457,6 +457,8 @@ function productionInputAmounts(state, timestamp = Date.now()) {
         for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
             inputs[id] = Math.max(Number(inputs[id] || 0),amount);
     }
+    const gearId = require('./ShotCrystalInput').itemId(state,timestamp);
+    if (gearId) inputs[gearId] = Math.max(Number(inputs[gearId] || 0),1);
     return inputs;
 }
 // A production kit: the recipe's materials for its batches.

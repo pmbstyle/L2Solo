@@ -85,6 +85,94 @@ const originalBoard = Afk.boardIndex;
     assert.equal(bid.count, 1);
     assert(bid.price <= waiting.stats.shotRecipeDemand.maxSpend, 'the public bid retains the finite investment cap');
 
+    const thin = { ...state, adena: 100000000, inventory: {}, stats: { ...state.stats,
+        shotRecipeDemand: { itemId: 1805, recipeId: 21, batches: 8, maxSpend: 1000000,
+            inputCash: 150000, amount: 1, at: now } } };
+    const thinRecords = noSeller.map(row => row.id === 910930
+        ? { ...row, lines: row.lines.map(line => ({ ...line, count: 3808, price: 200 })) } : row);
+    const thinBoard = new BoardIndex(); thinRecords.forEach(row => thinBoard.put(row));
+    const counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    counters.supplyDeal(1464, 200, 'Giran', now - 600000);
+    counters.supplyDeal(1464, 200, 'Giran', now - 300000);
+    let marketRows; counters.publish({ register: (_name, source) => marketRows = source.allRows(), changed: () => {} });
+    const thinInput = { timestamp: now, nativeRoutes: true, recipes: input.recipes,
+        tables: [{ name: 'board', from: null, to: 0, full: true, removed: [], rows: thinRecords.map(row => [row.id, rowOf(row)]) },
+            { name: 'market', from: null, to: 0, full: true, removed: [], rows: marketRows.map(row => [row[0], row]) }] };
+    const thinWants = await probe(thin, thinInput);
+    const thinIntent = thinWants.tradeIntents.find(row => row.itemId === 1805);
+    assert(thinIntent?.shotRecipeInvestment, `one recipe retains the accepted series value beside 120 ore and eight crystals: ${JSON.stringify({intent:thinIntent,queue:thinWants.queue})}`);
+    const thinState = { ...thin, stats: { ...thin.stats, ...thinWants.statsPacket } };
+    const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const thinCard = Decisions.compact(thinWants.decision);
+    const thinEconomy = Decisions.view(thinState, thinCard, { board: thinBoard });
+    assert(thinIntent.worth < thin.stats.shotRecipeDemand.maxSpend, 'the current graph narrows the old investment ceiling');
+    assert.equal(Decisions.preparedCardWorth(thinCard, 1805, thinState, thinEconomy.moneyPrice, .1, true), thinIntent.worth,
+        'card pricing preserves the exact certified cap without a second persona error');
+    assert.equal(thinEconomy.worth(1805), thinIntent.worth, 'the card economy reads that same exact monetary cap');
+    const thinBid = invoke('GameServer/Bot/Economy/BuyAdPolicy').bidFor(thinState, {
+        type: 'buy_craft_material', target: { itemId: 1805, amount: 1 }, intent: thinIntent,
+        plan: { purpose: 'recipe', valueRate: thinIntent.valueRate }
+    }, { economy: thinEconomy, board: thinBoard, town: 'Giran' });
+    assert(thinBid, 'the native market can price a missing scroll for the lower-priced C series');
+    assert(thinBid.price <= thinIntent.worth && thinBid.price > 10000,
+        'the scroll gets a viable price within the series investment');
+    const pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const bidLine = { ...thinBid, recordId: 910950, lineId: 9109500, ownerId: thin.characterId,
+        storeType: 3, kind: 'buy_ad', custodyPolicy: 1, town: 'Giran', revision: 1 };
+    const look = (state, card = thinCard) => {
+        const ctx = pricing.traderContext(state, { economy: thinEconomy, board: thinBoard,
+            preparedWorth: id => Decisions.preparedCardWorth(card, id, state, thinEconomy.moneyPrice, state.persona.understanding, true) });
+        ctx.reviewReasons = new Map([[bidLine.lineId, 2]]);
+        return pricing.look(state, [bidLine], ctx);
+    };
+    const reviewed = look(thinState);
+    assert(!reviewed?.withdrawals?.length, 'the accepted card preserves the recipe bid at the next market review');
+    assert(!reviewed?.reprices?.some(row => row.price > thinIntent.worth),
+        'market review cannot raise the scroll above its finite investment');
+    const short = { ...thinState, adena: thin.stats.shotRecipeDemand.inputCash - 1 };
+    const shortLook = look(short); assert(shortLook?.withdrawals?.length, `a spent wallet releases the bid before consuming the series capital: ${JSON.stringify({shortLook,wanted:short.stats.shotRecipeDemand,cap:require('../src/GameServer/Bot/Economy/TradeIntent').shotRecipeCap(short,1805,short.adena)})}`);
+    assert.equal(invoke('GameServer/Bot/Economy/BuyAdPolicy').bidFor(short, {
+        type: 'buy_craft_material', target: { itemId: 1805, amount: 1 }, intent: thinIntent,
+        plan: { purpose: 'recipe', valueRate: thinIntent.valueRate }
+    }, { economy: thinEconomy, board: thinBoard, town: 'Giran' }), null,
+    'old accepted value cannot spend the physical production capital');
+    const supplier = { id: 910960, ownerId: 910961, kind: 'sell_ad', custodyPolicy: 1, storeType: 1,
+        town: 'Giran', revision: 1, lines: [{ id: 9109600, lineId: 9109600, selfId: 1805,
+            enchant: 0, count: 1, price: thinBid.price }] };
+    const point = invoke('GameServer/World/TownRespawn').towns.giran_town;
+    const request = { token: 'finite-shot-recipe-bid', actorA: thin.characterId, actorB: supplier.ownerId,
+        seqA: 1, seqB: 1, town: 'Giran', point: { locX: point.locX, locY: point.locY, locZ: point.locZ },
+        parties: [0, 1].map(() => ({ phase: 'cold', hotAt: 0, revision: 1, sequence: 1,
+            route: { fee: 0, scroll: false, method: 'walk', durationMs: 0 } })),
+        lines: [{ payer: 0, itemId: 99999991, selfId: 1805, count: 1, price: thinBid.price,
+            enchant: 0, adId: supplier.id, adRevision: 1, certificate: null }] };
+    const withSupplier = { ...thinInput, tables: thinInput.tables.map(table => table.name === 'board'
+        ? { ...table, rows: [...table.rows, [supplier.id, rowOf(supplier)]] } : table) };
+    const meeting = await probe(thinState, { ...withSupplier, meetingRequest: request });
+    assert.equal(require('../src/GameServer/Bot/Economy/TradeIntent').decode(meeting.request.lines[0].certificate).itemId, 1805,
+        'the same native production goal consents when a supplier answers the bid');
+    const uncertified = await probe({ ...thin, stats: { ...thin.stats,
+        shotRecipeDemand: { ...thin.stats.shotRecipeDemand, inputCash: undefined } } }, thinInput);
+    assert(!uncertified.tradeIntents.find(row => row.itemId === 1805)?.shotRecipeInvestment,
+        'legacy wants cannot raise prices until native production refreshes their capital certificate');
+    const zeroState = { ...thin, stats: { ...thin.stats,
+        shotRecipeDemand: { ...thin.stats.shotRecipeDemand, inputCash: 5000000 } } };
+    const zeroWants = await probe(zeroState, thinInput);
+    const zeroIntent = zeroWants.tradeIntents.find(row => row.itemId === 1805);
+    assert.equal(zeroIntent?.worth, 0, 'current series value cannot pay the accepted capital floor');
+    const zeroCard = Decisions.compact(zeroWants.decision);
+    assert.equal(Decisions.preparedCardWorth(zeroCard, 1805, zeroState, thinEconomy.moneyPrice, .5, true), 0,
+        'the compact card retains a confirmed zero instead of reporting unknown worth');
+    assert.equal(invoke('GameServer/Bot/Economy/BuyAdPolicy').bidFor({ ...zeroState,
+        stats: { ...zeroState.stats, ...zeroWants.statsPacket } }, {
+        type: 'buy_craft_material', target: { itemId: 1805, amount: 1 }, intent: zeroIntent,
+        plan: { purpose: 'recipe', valueRate: zeroIntent.valueRate }
+    }, { economy: thinEconomy, board: thinBoard, town: 'Giran' }), null,
+    'a zero investment cannot fall back to the market belief and reopen the bid');
+    assert(look(zeroState, zeroCard)?.withdrawals?.length,
+        'the next confirmed-zero card withdraws a previously viable recipe bid');
+    counters.reset();
+
     const trip = () => 100; trip.details = () => ({known:true,hours:.01,fees:100});
     const raw = { recipe:{mpCost:10,productCount:100,successRate:100},batches:6,hours:.11,valueHours:10,
         basket:{actualCashFees:100,cost:1100,extraMp:0,purchases:[{selfId:1459,town:'Heine'},{selfId:1785,town:'Giran'}]},

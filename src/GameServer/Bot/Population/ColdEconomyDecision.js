@@ -20,8 +20,9 @@ const Reaction = require('../Economy/Reaction');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomicValuation = require('../Economy/EconomicValuation');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
+const SHOT_RECIPE_WATCH = 128 | kinds.indexOf('resale');
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
-function kindFor(code) { return kinds[code]; }
+function kindFor(code) { return kinds[code === SHOT_RECIPE_WATCH ? kinds.indexOf('resale') : code]; }
 // A wish row carrying only the urgent root's urgency: the leaf has no root of
 // its own, so no amount or price is published (MVP-1), only gapHorizonHours.
 const URGENCY_ONLY = 62;
@@ -323,8 +324,14 @@ function capture(economy, state, seen = state) {
     for (const [key, value] of economy?.network?.demands || []) {
         if (key.startsWith('item:') && value > 0) useful.set(Number(key.slice(5)), value);
     }
-    const usefulness = new Float32Array([...useful].filter(([id, value]) => id > 0 && value > 0)
-        .sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 40).flat());
+    const recipeValues = new Set();
+    for (const row of economy?.watchList || []) if (row.shotRecipeInvestment === true) {
+        recipeValues.add(Number(row.itemId));
+        useful.set(Number(row.itemId), Number(row.valueHours) / Number(row.amount));
+    }
+    const usefulness = new Float32Array([...useful].filter(([id, value]) => id > 0 && (value > 0 || recipeValues.has(id)))
+        .sort((a, b) => Number(recipeValues.has(b[0])) - Number(recipeValues.has(a[0]))
+            || b[1] - a[1] || a[0] - b[0]).slice(0, 40).flat());
     // The core's craft inputs to order only (MVP-3): a quantity-prepared
     // network (a stock reader) holds each input's remaining amount, stock and
     // accepted incoming subtracted once. A network without a stock reader has
@@ -389,7 +396,8 @@ function capture(economy, state, seen = state) {
         // Upper two bits reuse the existing byte; amount and price remain exact.
         wish: wish ? [(kindCode(wish.object?.kind) & 63) | (urgency << 6),
             Number(wish.object?.amount || 0), Number(wish.price || 0)] : urgency ? [URGENCY_ONLY | (urgency << 6), 0, 0] : null,
-        watch: (economy?.watchList || []).slice(0, 8).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
+        watch: (economy?.watchList || []).slice(0, 8).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth),
+            row.shotRecipeInvestment === true ? SHOT_RECIPE_WATCH : kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
         workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,
         feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
@@ -416,6 +424,14 @@ function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabl
     if (!decision || decision.stale || !(moneyPrice > 0)) return NaN;
     const data = decision.data, count = decision.counts & 63;
     if (!data || data.byteLength > MAX_BYTES) return NaN;
+    // A finite production cap is already the accepted monetary value. Keep
+    // its exact watch price; applying persona error again can exceed it.
+    const view = new DataView(data);
+    for (let row = 0; row < watchCount(decision.counts); row++) {
+        const at = 28 + count * 8 + row * 21;
+        if (view.getUint32(at, true) === Number(id) && view.getUint8(at + 20) === SHOT_RECIPE_WATCH)
+            return view.getFloat64(at + 12, true);
+    }
     const pairs = new Float32Array(data, 28, count * 2);
     for (let n = 0; n < pairs.length; n += 2) if (pairs[n] === Number(id)) {
         return personalUsefulness(pairs[n + 1], state, understanding, enabled, id) / moneyPrice;
@@ -431,7 +447,9 @@ function usefulnessVersion(decision) {
     if (!decision) return null;
     const data = decision.data;
     if (decision.stale || !data || data.byteLength > MAX_BYTES) return 'none';
-    const text = new Float32Array(data, 28, (decision.counts & 63) * 2).join(',');
+    const certified = decision.watch.filter(row => row[3] === SHOT_RECIPE_WATCH);
+    const text = new Float32Array(data, 28, (decision.counts & 63) * 2).join(',')
+        + (certified.length ? `|${certified.map(row => `${row[0]}:${row[2]}`).join(',')}` : '');
     return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
 }
 
@@ -472,7 +490,9 @@ function view(state, decision, deps = {}, preparedBase = null) {
         return null;
     };
     const enabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
-    const itemUsefulness = id => personalUsefulness(known(id) || 0, state, personal().persona.understanding, enabled, id);
+    const certified = new Map((decision?.watch || []).filter(row => row[3] === SHOT_RECIPE_WATCH).map(row => [row[0], row[2]]));
+    const itemUsefulness = id => certified.has(Number(id)) ? certified.get(Number(id)) * moneyPrice
+        : personalUsefulness(known(id) || 0, state, personal().persona.understanding, enabled, id);
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
@@ -485,10 +505,12 @@ function view(state, decision, deps = {}, preparedBase = null) {
     const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
-        watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
+        watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]),
+            ...(row[3] === SHOT_RECIPE_WATCH ? { shotRecipeInvestment: true } : {}) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
         workshop: decision?.workshop || unknownWorkshop(),
-        itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
+        itemUsefulness, worth: id => certified.has(Number(id)) ? certified.get(Number(id))
+            : known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
         stock: kind => basics().stock(kind) };
     if (base) return { ...base, ...own, gapHorizonHours: gapHorizonHours() };
     // Own enumerable getters: a spread or a key walk of the view sees the

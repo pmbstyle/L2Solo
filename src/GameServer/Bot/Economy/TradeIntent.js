@@ -58,9 +58,9 @@ function encode(row) {
 // Every caller passes a quantity-prepared network (EconomyContext.forState
 // builds it with a stock reader). A network without one has no remaining
 // amounts to project: defer the command instead of subtracting stock here.
-function project(state, network, projection, worth, limit = 3, board = null, routeDetails = null) {
+function project(state, network, projection, worth, limit = 3, board = null, routeDetails = null, survivalReserve = null) {
     if (!network?.quantityPrepared) return null;
-    const regular = preparedProject(network, worth, limit);
+    const regular = preparedProject(network, worth, limit, state, survivalReserve);
     if (!regular) return null;
     const retained = retainedProjectIntents(state, network, worth, board, routeDetails);
     if (!retained.length) return regular;
@@ -187,7 +187,7 @@ function purchaseWorth(intent, moneyPrice) {
 }
 // A quantitative network already owns allocation and batch rounding. Readers
 // only project that result; they never subtract physical stock a second time.
-function preparedProject(network, worth, limit) {
+function preparedProject(network, worth, limit, state, survivalReserve) {
     const watched = new Set(), result = [];
     for (const wish of network.queue || []) {
         if (!wish.object?.itemId && !wish.object?.materials) continue;
@@ -197,9 +197,49 @@ function preparedProject(network, worth, limit) {
         // add a second quantity for the same item to this goal.
         const rows = wishRows(wish, worth, false);
         for (const [id, row] of wishRows(wish, worth, true)) if (!rows.has(id)) rows.set(id, row);
-        for (const [id, row] of rows) if (!watched.has(id)) { watched.add(id); result.push(row); }
+        for (const [id, row] of rows) if (!watched.has(id)) {
+            watched.add(id); result.push(shotRecipeInvestment(state, network, wish, row, survivalReserve));
+        }
     }
     return result.slice(0, limit);
+}
+
+// One learned scroll serves the whole accepted shot series. Splitting its
+// value by ingredient units makes one scroll worth less than stacks of ore.
+// Reprice only a recipe the current quantity graph still needs, and keep the
+// other inputs' cash and higher-priority wishes before authorizing its price.
+function shotRecipeInvestment(state, network, wish, row, survivalReserve) {
+    const wanted = state?.stats?.shotRecipeDemand;
+    if (Number(wanted?.itemId) !== row.itemId || row.amount !== 1
+        || Number(wanted.recipeId) !== row.recipeId || !(Number(wanted.maxSpend) > 0)
+        || !Number.isFinite(Number(wanted.maxSpend)) || !integer(wanted.batches) || wanted.batches < 1
+        || !(network.moneyPrice > 0) || !(wish.ratio >= network.moneyPrice)) return row;
+    const recipe = require('../../Items/C4RecipeItems').resolveByRecipeId(row.recipeId);
+    if (!recipe || Number(recipe.recipeItemId) !== row.itemId
+        || !require('./ProductionPolicy').GRADED_SHOTS.has(Number(recipe.productId))
+        || row.key !== `resale:${Number(recipe.productId)}`
+        || wish.object?.amount !== Number(recipe.productCount) * wanted.batches
+        || wish.plan?.kind !== 'craft' || Number(wish.plan.recipeId) !== row.recipeId) return row;
+    const leaf = wish.plan.requirements?.find(input => input.key === `item:${row.itemId}`)?.plan;
+    if (!leaf || leaf.missingAmount !== 1 || !Number.isFinite(wanted.inputCash) || wanted.inputCash < 0) return row;
+    const inputCash = wanted.inputCash;
+    const funded = { ...state, stats: { ...state.stats,
+        money: Funding.packetFor(network, network.hourAdena, survivalReserve ?? Funding.operatingReserve(state)) } };
+    const cap = Math.max(0, Math.floor(Math.min(Number(wanted.maxSpend), wish.valueHours / network.moneyPrice - inputCash,
+        Funding.spendable(funded, 0, { r: row.valueRate }) - inputCash)));
+    return { ...row, worth: cap, valueHours: cap * network.moneyPrice, shotRecipeInvestment: true };
+}
+
+// Repricing uses the same accepted finite investment and physical capital
+// floor as publication. A stale want alone never creates an intent or worth.
+function shotRecipeCap(state, selfId, spendable = Infinity) {
+    const wanted = state?.stats?.shotRecipeDemand;
+    if (Number(wanted?.itemId) !== Number(selfId) || !Number.isFinite(wanted.maxSpend)) return Infinity;
+    const recipe = require('../../Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+    if (!recipe || Number(recipe.recipeItemId) !== Number(selfId)
+        || !require('./ProductionPolicy').GRADED_SHOTS.has(Number(recipe.productId))) return Infinity;
+    return Math.max(0, Math.min(wanted.maxSpend,
+        spendable - (Number.isFinite(wanted.inputCash) && wanted.inputCash >= 0 ? wanted.inputCash : 0)));
 }
 
 // Standing bids have one row per item and a publication limit. Meeting
@@ -287,4 +327,4 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
         : { ...intent, amount: leaf.amount, worth: leaf.unitPrice, valueRate,
             valueHours: intent.valueHours * leaf.amount / intent.amount };
 }
-module.exports = { rootTuple, rootKey, encode, decode, project, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource };
+module.exports = { rootTuple, rootKey, encode, decode, project, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource, shotRecipeCap };

@@ -222,7 +222,7 @@ function* prepareNative(state, economy, options) {
     const withdraw = own.filter(line => line.storeType === SELL && !listed.has(`${line.selfId}:${line.enchant || 0}`))
         .slice(0, 8).map(line => line.lineId);
     const plan = { sell, withdraw, ...(showcaseChanged ? { shop: shopTown } : {}), travel: null, ...bidLimits };
-    let goal, money;
+    let goal, money, recipeBidId = 0;
     if (!options.showcaseOnly) {
         const needs = NeedsEvaluator.evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
         goal = needs[0];
@@ -257,6 +257,12 @@ function* prepareNative(state, economy, options) {
             if (unprepared === 'intent_incoming') plan.d = 1;
             if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', unprepared);
         }
+        // A prepared recipe bid already performs this seek. Rewriting its
+        // durable series first would move the native revision and discard
+        // the same command's publication every time the batch count changes.
+        recipeBidId = lines.find(line => line.intent?.shotRecipeInvestment === true
+            && Number(line.intent.recipeId) === Number(options.preparedCraft?.recipeTarget)
+            && Number(line.selfId) === Number(state.stats?.shotRecipeDemand?.itemId))?.selfId || 0;
         const shot = decideShot(state, economy, { ...options, ownLines: own });
         if (shot) plan.shot = shot;
     }
@@ -268,6 +274,7 @@ function* prepareNative(state, economy, options) {
         if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', 'bytes');
     }
     fit(plan, showcaseRows);
+    if (recipeBidId && plan.buyAds?.some(row => row[0] === recipeBidId)) delete plan.shot;
     if (plan.d > 1 && Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', `bytes_${plan.d & ~1}`);
     if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {
         const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',

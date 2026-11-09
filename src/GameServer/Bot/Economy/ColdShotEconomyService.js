@@ -202,6 +202,14 @@ function hasShotSurplus(state) {
     return [...SHOT_PRODUCT_IDS].some(id => Number(state.inventory?.[id]?.amount || 0) > Number(kept[id] || 0));
 }
 
+// A public procurement goal is an input to the shared wish graph. Unlike
+// ordinary craft preparation, its arrival/removal must be heard in the field
+// too, or the warm graph never creates (or retires) the recipe request.
+function recipeDemandStats(state, wanted) {
+    return DecisionEvents.applyRaise({ ...(state.stats || {}), shotRecipeDemand: wanted },
+        require('./DecisionSections').sectionMask(['sources', 'benefits', 'money']));
+}
+
 async function obtainRecipe(state, selected, now) {
     const { recipe, route } = selected;
     const hourAdena = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, now).perHour;
@@ -213,13 +221,15 @@ async function obtainRecipe(state, selected, now) {
         Number(selected.recipeDecision?.best?.purchaseCap ?? Infinity)));
     const wanted = state.stats?.shotRecipeDemand;
     const plannedBatches = Number(selected.production?.batches || route.batches);
+    const inputCash = Number((selected.production || route).valuation?.cashNow);
+    if (!Number.isFinite(inputCash) || inputCash < 0) return state;
     if (!wanted || Number(wanted.itemId) !== itemId
         || Number(wanted.recipeId) !== Number(recipe.recipeId) || Number(wanted.batches) !== plannedBatches
+        || Number(wanted.inputCash) !== inputCash
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25 || maxSpend < Number(wanted.maxSpend || 0)) {
-        const stats = DecisionEvents.applyOwnRaise(state);
-        state = await persist({ ...state, stats: { ...stats,
-            shotRecipeDemand: { itemId, recipeId: Number(recipe.recipeId), batches: plannedBatches, amount: 1, maxSpend, at: now }
-        } }, 'shot_recipe_demand') || state;
+        state = await persist({ ...state, stats: recipeDemandStats(state,
+            { itemId, recipeId: Number(recipe.recipeId), batches: plannedBatches, amount: 1, maxSpend, inputCash, at: now })
+        }, 'shot_recipe_demand') || state;
     }
     const affordableOffer = () => {
         if (selected.scrollQuote) return Number(selected.scrollQuote.price) <= maxSpend ? selected.scrollQuote : null;
@@ -242,9 +252,7 @@ async function obtainRecipe(state, selected, now) {
         const learned = await LifeState.learnCraftableRecipes(bought.state, { recipeIds: [Number(recipe.recipeId)] }) || bought.state;
         if (!(learned.stats?.lastRecipeBookLearning?.learned || [])
             .some((entry) => Number(entry.recipeId) === Number(recipe.recipeId))) return learned;
-        const acquired = await persist({ ...learned, stats: {
-            ...(learned.stats || {}), shotRecipeDemand: null
-        } }, 'shot_recipe_acquired') || learned;
+        const acquired = await persist({ ...learned, stats: recipeDemandStats(learned, null) }, 'shot_recipe_acquired') || learned;
         return acquired;
     } catch (error) {
         // After a paid buy the cache's adena and recipe disagree with the row until the next read.
@@ -380,8 +388,10 @@ async function craft(state, candidate, index, now) {
     const series = candidate.series || null;
     const held = state.stats?.shotCraft?.preparing;
     const gearTarget = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
+    const crystalGearId = candidate.gear && candidate.gear.source !== 'crystals' ? Number(candidate.gear.selfId) : 0;
     if (Number(held?.recipeId) !== Number(candidate.recipe.recipeId)
         || Number(held?.batches) !== batches || Number(held?.gearTarget) !== gearTarget
+        || Number(held?.crystalGearId || 0) !== crystalGearId
         || !held?.gearInputs || Number(held?.at) + 30 * 60 * 1000 <= now
         || JSON.stringify(state.stats?.shotCraft?.series || null) !== JSON.stringify(series)) {
         const gearInputs = Number(held?.gearTarget) === gearTarget && held?.gearInputs
@@ -389,7 +399,7 @@ async function craft(state, candidate, index, now) {
         const stats = DecisionEvents.applyOwnRaise(state);
         state = await persist({ ...state, stats: { ...stats, shotCraft: { ...state.stats?.shotCraft, series,
             preparing: { recipeId: Number(candidate.recipe.recipeId), productId: Number(candidate.recipe.productId),
-                batches, gearTarget, gearInputs, at: now } } } }, 'shot_craft_preparing');
+                batches, gearTarget, gearInputs, crystalGearId, at: now } } } }, 'shot_craft_preparing');
     }
     const crystals = await obtainCrystals(state, candidate, batches);
     if (!crystals.ready || crystals.hot || hotState(crystals.state)) return hotState(crystals.state) || crystals.state;
@@ -472,14 +482,18 @@ const craftsShots = state => CraftShopService.isServiceCrafter(state) && CraftSh
     && !state.stats?.craftStationId;
 async function dropSeries(state, keepRecipeId = 0) {
     const series = state.stats?.shotCraft?.series;
-    if (!series || Number(series.recipeId) === Number(keepRecipeId)) return state;
+    const preparing = state.stats?.shotCraft?.preparing;
+    const clearSeries = series && Number(series.recipeId) !== Number(keepRecipeId);
+    const clearGear = preparing?.crystalGearId && Number(preparing.recipeId) !== Number(keepRecipeId);
+    if (!clearSeries && !clearGear) return state;
     return persist({...state,stats:{...DecisionEvents.applyOwnRaise(state),
-        shotCraft:{...state.stats.shotCraft,series:null}}},'shot_series_dropped');
+        shotCraft:{...state.stats.shotCraft,...(clearSeries?{series:null}:{}),
+            ...(clearGear?{preparing:{...preparing,crystalGearId:0}}:{})}}},'shot_series_dropped');
 }
 async function dropRecipeDemand(state, keepItemId = 0) {
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) === Number(keepItemId)) return state;
-    return await persist({ ...state, stats: { ...(state.stats || {}), shotRecipeDemand: null } }, 'shot_recipe_demand_dropped') || state;
+    return await persist({ ...state, stats: recipeDemandStats(state, null) }, 'shot_recipe_demand_dropped') || state;
 }
 
 async function execute(state, step, now = Date.now()) {
@@ -492,7 +506,7 @@ async function execute(state, step, now = Date.now()) {
     const known = (await Database.execute(['SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=? LIMIT 1',
         [Number(state.characterId), recipeId]])).length > 0;
     if (known && Number(recipe.recipeItemId) === Number(state.stats?.shotRecipeDemand?.itemId)) {
-        state = await persist({ ...state, stats: { ...(state.stats || {}), shotRecipeDemand: null } }, 'shot_recipe_demand_filled') || state;
+        state = await persist({ ...state, stats: recipeDemandStats(state, null) }, 'shot_recipe_demand_filled') || state;
     }
     const selected = step.craft || step.recipeRoute;
     if (!selected) return state;
