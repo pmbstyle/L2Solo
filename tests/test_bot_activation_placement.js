@@ -4,11 +4,13 @@ const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const World = invoke('GameServer/World/World');
 
 const original = {
     random: Math.random, findCurrentSpot: Spots.findCurrentSpot, findById: Spots.findById,
     getCellData: Geo.getCellData, getHeight: Geo.getHeight,
-    hasGeo: Geo.hasGeo, hasLineOfSight: Geo.hasLineOfSight
+    hasGeo: Geo.hasGeo, hasLineOfSight: Geo.hasLineOfSight, containsLocation: Spots.containsLocation,
+    npcsInRadius: World.fetchNpcsInRadius, sessionsNear: World.actorSessionsNear
 };
 const anchor = { locX: 83396, locY: 147904, locZ: -3404 };
 const roof = { locX: 82840, locY: 147257, locZ: -3032 };
@@ -157,6 +159,44 @@ try {
     assert.deepStrictEqual(Placement.resolve({ spotId: raid.id, loc: blocked }, { preferAnchor: true }).loc, rally,
         'a clear but isolated anchor cannot publish actors across a wall from the raid');
     Spots.findById = original.findById;
+
+    // A hunter on its held spot is shown by the mobs it hunts: 150-400 from a live mob of
+    // the species its unit competes for (its plan's target here), inside its spot, in sight
+    // of the mob, never within 100 of another body; not anywhere around its cold place.
+    Geo.getCellData = () => ({ z: 0, nswe: 15 });
+    Geo.getHeight = () => 0;
+    Geo.hasLineOfSight = () => true;
+    const field = { id: '3_3', center: flat, npcEntries: [{ selfId: 20001, count: 5, level: 20 }, { selfId: 20002, count: 5, level: 20 }] };
+    Spots.findById = () => field;
+    Spots.containsLocation = (spot, loc) => Math.abs(loc.locX) < 3000 && Math.abs(loc.locY) < 3000;
+    const mob = (selfId, locX, dead = false) => ({ fetchSelfId: () => selfId, isDead: () => dead,
+        fetchLocX: () => locX, fetchLocY: () => 0, fetchLocZ: () => 0 });
+    World.fetchNpcsInRadius = () => [mob(20001, 0), mob(20002, 150, true), mob(20002, 2000), mob(20002, 5000)];
+    const body = { locX: 2150, locY: 0 };
+    World.actorSessionsNear = (loc, radius) => Math.hypot(loc.locX - body.locX, loc.locY - body.locY) <= radius ? [{}] : [];
+    const hunter = { characterId: 9100, level: 20, spotId: field.id, loc: flat,
+        stats: { equipmentPlan: { status: 'active', targetNpcId: 20002 } } };
+    const rolls = [0, 0, 0.25, 0.5];
+    Math.random = () => rolls.shift() ?? 0.5;
+    const byMob = Placement.resolve(hunter, { playerLoc: { locX: 0, locY: 2000, locZ: 0 } });
+    assert.deepStrictEqual(byMob.loc, { locX: 2000, locY: 275, locZ: 0 },
+        'by the live mob of its species, past the point another body stands on');
+    assert.strictEqual(byMob.spot, field, 'on its held spot');
+    assert.ok(Math.hypot(byMob.loc.locX - 2000, byMob.loc.locY) >= 150 && Math.hypot(byMob.loc.locX - 2000, byMob.loc.locY) <= 400);
+    // No live mob of its species there: around its cold place, within the fallback radius.
+    World.fetchNpcsInRadius = () => [mob(20001, 0), mob(20002, 2000, true)];
+    Math.random = () => 0.99;
+    const fallback = Placement.resolve(hunter);
+    assert.ok(Math.hypot(fallback.loc.locX, fallback.loc.locY) <= 600, 'the cold place within 600');
+    // A bot off its spot (shopping in town) is not drawn to its spot's mobs.
+    World.fetchNpcsInRadius = () => [mob(20002, 2000)];
+    const town = { locX: 9000, locY: 0, locZ: 0 };
+    Math.random = () => 0;
+    assert.deepStrictEqual(Placement.resolve({ ...hunter, loc: town }).loc, town);
+    Spots.findById = original.findById;
+    Spots.containsLocation = original.containsLocation;
+    World.fetchNpcsInRadius = original.npcsInRadius;
+    World.actorSessionsNear = original.sessionsNear;
     assert.strictEqual(Placement.resolve({ loc: { ...flat, locZ: null } }), null);
     assert.strictEqual(Placement.resolve({}), null);
     console.log('Bot activation placement tests passed');
@@ -164,5 +204,8 @@ try {
     Math.random = original.random;
     Spots.findCurrentSpot = original.findCurrentSpot;
     Spots.findById = original.findById;
+    Spots.containsLocation = original.containsLocation;
+    World.fetchNpcsInRadius = original.npcsInRadius;
+    World.actorSessionsNear = original.sessionsNear;
     for (const key of ['getCellData', 'getHeight', 'hasGeo', 'hasLineOfSight']) Geo[key] = original[key];
 }

@@ -11,9 +11,14 @@ const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
 // An activation the bot's own state refuses (in transit, no placement a player
-// would see): counted by reason (PopulationMetrics), never logged.
+// would see): counted by reason (PopulationMetrics); with developer diagnostics one
+// line names the bot, its place and spot, so a run shows which bots stay unseen.
 function refused(reason, state) {
     Metrics.recordActivationRefusal(reason);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
+        'BotPopulation :: refused activation for %s reason=%s activity=%s spot=%s loc=%d,%d,%d',
+        state?.name, reason, state?.activity || 'hunting', state?.spotId || 'none',
+        Number(state?.loc?.locX) || 0, Number(state?.loc?.locY) || 0, Number(state?.loc?.locZ) || 0);
     return { ok: false, reason, state };
 }
 
@@ -294,7 +299,7 @@ const HotActivation = {
                         : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed');
                     // A refusal found after the fence is counted by reason, as before it
                     // (refused); any other failure is logged.
-                    if (error.activationRefusal) Metrics.recordActivationRefusal(error.activationRefusal);
+                    if (error.activationRefusal) refused(error.activationRefusal, state);
                     else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });
