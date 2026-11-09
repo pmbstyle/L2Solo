@@ -25,7 +25,7 @@
 // The answer of the unit that does not hold the spot by look is its persona's
 // (ResourceCompetitionPolicy.decide with it as the actor): avoid → leave; a party offer (no
 // party forms at the spot), a yield or a contest without PvP → share while the pressure is
-// within its tolerance (ResourceCompetitionPolicy.tolerance, ≤ 1.3× room), else leave
+// within its tolerance (ResourceCompetitionPolicy.tolerance, ≤ 1.15× room), else leave
 // (counted spot:contest:past_tolerance); a contest with PvP intent, PvP on → a dispute main
 // carries out. A sharer takes the crowd's equal share; the stay judge (spot_disappoints)
 // sends it away when that earns too far below its expectation.
