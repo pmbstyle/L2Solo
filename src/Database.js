@@ -8590,8 +8590,11 @@ const Database = {
         }, 'bot:npc-purchase'));
     },
 
+    // MP has one source per phase: a cold step's is its bot_life_state row, a hot
+    // step's the live body's (liveMp, read inside the transaction): the characters
+    // row keeps vitals saved at level-up only, so it lags a hot body's.
     craftInventoryItems(characterId, { materials, product, mp, coldState = null, economyCommand = null,
-        recipeId = 0, batches = 1, random = Math.random, validate = null }) {
+        recipeId = 0, batches = 1, random = Math.random, validate = null, liveMp = null }) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.craft);
             if (step?.replay) return step.replay;
@@ -8603,8 +8606,7 @@ const Database = {
                     || !one('SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=?', [characterId, recipeId])) throw Error('craft_recipe_changed');
                 const skill = one('SELECT level FROM skills WHERE characterId=? AND selfId=?',
                     [characterId, recipe.type === 'dwarven' ? 172 : 132]);
-                const currentMp = step.row.phase === 'cold' ? Number(step.row.mp)
-                    : Number(one('SELECT mp FROM characters WHERE id=?', [characterId])?.mp || 0);
+                const currentMp = step.row.phase === 'cold' ? Number(step.row.mp) : Number(liveMp?.() || 0);
                 if (Number(skill?.level || 0) < Number(recipe.level) || currentMp < recipe.mpCost * batches) throw Error('craft_skill_or_mp_changed');
                 const required = new Map(), supplied = new Map();
                 for (const material of recipe.materials) required.set(Number(material.selfId),

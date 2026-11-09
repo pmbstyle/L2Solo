@@ -213,6 +213,27 @@ async function run() {
     await assert.rejects(Database.purchaseNpcInventoryItem(1, { selfId: 1864, amount: 1, unitPrice: 1,
         economyCommand: recovered.command, funding: { r: 1 } }), /owner_changed/);
     Commit.finish(1, recovered.command);
+    // A near crafter spends its live MP: the characters row holds vitals saved at
+    // level-up only, so a stale row below the cost does not refuse the craft.
+    await seed(3, 'bot_e2_near');
+    await Database.setSkill({ selfId: 172, name: 'Create Item', level: 9 }, 3);
+    await Database.setCharacterRecipe(3, recipe.recipeId, recipe.type);
+    const nearMaterials = [];
+    for (const material of recipe.materials) {
+        const inserted = await Database.setItem(3, { selfId: material.selfId, name: 'Material', amount: material.amount });
+        nearMaterials.push({ id: inserted.insertId, selfId: material.selfId, amount: material.amount });
+    }
+    const near = await current(3);
+    await Life.upsertState({ ...near, phase: 'hot', timing: { ...near.timing, lastHotAt: Date.now() } }, 'near_crafter');
+    await Database.execute(['UPDATE characters SET mp = 0 WHERE id = 3']);
+    const nearStep = await step(3, Commit.KINDS.craft);
+    const nearCraft = await Database.craftInventoryItems(3, { materials: nearMaterials, recipeId: recipe.recipeId,
+        product: { selfId: recipe.productId, name: 'Product', amount: recipe.productCount, stackable: true },
+        economyCommand: nearStep.command, liveMp: () => recipe.mpCost + 7 });
+    Commit.finish(3, nearStep.command);
+    assert.equal(nearCraft.success, true, 'a near crafter with the live MP crafts whatever its saved row says');
+    assert.equal(Number(nearCraft.mp), 7, 'the craft spends the live MP');
+    assert.equal(await amount(3, recipe.productId), recipe.productCount);
     assert.equal(Commit.size(), 0);
     console.log('Native economy completion: craft/MP, NPC, closed AFK fill replay, partial refunds, protected leaf and handoff passed');
 }

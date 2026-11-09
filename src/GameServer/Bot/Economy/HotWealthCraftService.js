@@ -10,7 +10,10 @@ function canStart(session, leaf) {
     if (!actor || leaf?.activity !== 'crafting' || !/^resale:\d+$/.test(String(leaf.rootKey))
         || !Number.isSafeInteger(Number(leaf.recipeId)) || Number(leaf.recipeId) <= 0) return false;
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(leaf.recipeId));
+    // A craft refused at the act waits for the decision the refusal raised: the
+    // body does not try it again each tick (WealthCraftDecision.refused).
     return !!recipe && Number(recipe.productId) === Number(leaf.rootKey.slice(7))
+        && !require('./WealthCraftDecision').refused({ stats: DecisionEvents.statsFor(session) }, recipe.recipeId)
         && !actor.isDead?.() && Number(actor.fetchHp?.()) > 0 && Number(actor.fetchMp?.()) >= Number(recipe.mpCost)
         && Number(actor.fetchPrivateStoreType?.() || 0) === 0 && !actor.state?.fetchHits?.() && !actor.state?.fetchCasts?.()
         && !session.currentTargetId && !session.partyCompanion && !session.followPlayerSession && !session.hotBackgroundPartyId;
@@ -86,7 +89,9 @@ function review(session, context) {
                 if (!book().some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId))) return { attempted, crafted: false };
             }
             attempted = true;
-            const crafted = await invoke('GameServer/Crafting/RecipeCrafting').craftSelf(session, Number(recipe.recipeId));
+            const act = {};
+            const crafted = await invoke('GameServer/Crafting/RecipeCrafting').craftSelf(session, Number(recipe.recipeId), Math.random, act);
+            if (!crafted && act.refused) { refusal.reason = 'craft_refused'; reject(state); }
             return { attempted, crafted: !!crafted };
         } finally {
             if (attempted) {
