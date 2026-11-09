@@ -131,6 +131,24 @@ function world() {
         assert.deepStrictEqual(StepLateness.summary(counts, 1500), { steps: 2, p50Ms: 0, p99Ms: 1500, maxMs: 1500 });
     }
     {
+        // A bot queued long after its stored due (a save from days ago, a bot back cold)
+        // is late only from when it entered the queue: 1.5 s, not the save's age; a bot
+        // due when it is queued and committed 2 s later is 2 s late.
+        const { kernel, clock, tickAt, commit } = world();
+        const T = 100000, DAY = 24 * 3600 * 1000;
+        clock.at = T + 6 * DAY;
+        kernel.upsert({ state: soloState(4, T) });
+        assert.deepStrictEqual(await tickAt(T + 6 * DAY), [4]);
+        commit(4, 1500, T + 6 * DAY);
+        assert.strictEqual(kernel.takeStepLateMax(), 1500);
+        const T5 = T + 6 * DAY + 60000;
+        clock.at = T5;
+        kernel.upsert({ state: soloState(5, T5) });
+        assert.deepStrictEqual(await tickAt(T5), [5]);
+        commit(5, 2000, T5);
+        assert.strictEqual(kernel.takeStepLateMax(), 2000);
+    }
+    {
         // Slow commits (1.5 s from start to ack): the lead rises toward them,
         // so a bot due at T starts before T, never more than its slowest step
         // early, and its round is resolved and committed as of T.

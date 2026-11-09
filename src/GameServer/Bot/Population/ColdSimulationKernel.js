@@ -469,6 +469,13 @@ function playerWaitingTransition(state, kind = null, facts = NO_FACTS) {
         && (kind ?? lifecycleKind(state, facts)) === 'resolver';
 }
 
+// From when a step counts as late: its due, or the time its bot entered the queue
+// when that came later (a stored due from before boot, or before the bot went cold
+// or left a busy state, is not lateness of the queue).
+function lateFrom(entry) {
+    return Math.max(Number(entry.dueAt || 0), Number(entry.queuedAt || 0));
+}
+
 // A bot that matters to a player goes first in the due queue (DueHeap's player head,
 // dueCandidates): one the player waits for at a meeting, or one within the activation
 // radius of a real player's last published ring (it may go hot at the next scan).
@@ -1147,7 +1154,10 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         // Replacing a token also removes its actual indexed node; otherwise a
         // long future deadline keeps every superseded token until it is due.
-        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
+        const previous = this.scheduleTokens.get(id)?.heapEntry;
+        // Since when the bot waits in the queue: a replaced token keeps it.
+        const queuedAt = previous && this.heap.positions.has(previous) ? previous.queuedAt : this.now();
+        this.heap.remove(previous);
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
         // A failing bot's hold (fault) wins over every other wake: a catalog
@@ -1159,7 +1169,7 @@ class ColdSimulationKernel {
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
             forPlayer: forPlayerEntry(current?.state, kind, this),
-            meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
+            meetingTravel: meetingTravelTransition(current?.state, kind, this), lead, queuedAt };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
     }
@@ -1321,7 +1331,7 @@ class ColdSimulationKernel {
                 ? 'command' : lifecycleKind(current.state, this);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
-                this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt) });
+                this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt), lateFrom: lateFrom(entry) });
                 Trace.hold(id);
                 candidates.push({ characterId: id, purpose: { kind: 'resolver' } });
             } else if (kind === 'party') {
@@ -1423,7 +1433,8 @@ class ColdSimulationKernel {
                 });
                 candidateMemberIds.forEach((memberId) => {
                     const member = partyMembers.find((entry) => Number(entry.characterId) === memberId);
-                    this.inFlight.set(memberId, { state: member, startedAt, dueAt: Number(entry.dueAt), partyId: String(party.partyId) });
+                    this.inFlight.set(memberId, { state: member, startedAt, dueAt: Number(entry.dueAt), lateFrom: lateFrom(entry),
+                        partyId: String(party.partyId) });
                     Trace.hold(memberId);
                     candidates.push({ characterId: memberId, purpose });
                 });
@@ -2739,7 +2750,7 @@ class ColdSimulationKernel {
             Trace.settle(id, result.ok);
             // A committed step ends the bot's (its party run's) faults in a row.
             if (result.ok) {
-                this.noteStepLate(active.dueAt);
+                this.noteStepLate(active.lateFrom);
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
                 // Its grievances are written: counted once.
@@ -2810,10 +2821,10 @@ class ColdSimulationKernel {
         return accepted;
     }
 
-    // A committed step's lateness: this ack's time past its due (none for a step with no due).
-    noteStepLate(dueAt) {
-        if (!Number.isFinite(dueAt) || dueAt <= 0) return;
-        const lateMs = Math.max(0, this.now() - dueAt);
+    // A committed step's lateness: this ack's time past lateFrom (none for a step with no due).
+    noteStepLate(from) {
+        if (!Number.isFinite(from) || from <= 0) return;
+        const lateMs = Math.max(0, this.now() - from);
         this.stepLate[StepLateness.bucketOf(lateMs)] += 1;
         this.stepLateMaxMs = Math.max(this.stepLateMaxMs, lateMs);
     }
