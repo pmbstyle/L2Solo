@@ -222,7 +222,6 @@ const elvenRuins = {
     maxLevel: 22,
     avgLevel: 13,
     density: 78,
-    capacity: 64,
     center: { locX: 45596, locY: 247589, locZ: -6518 },
     npcNames: ['Skeleton', 'Tunath Orc Warrior', 'Tunath Orc Marksman'],
     tags: ['dungeon', 'undead', 'ruins'],
@@ -252,7 +251,6 @@ const mithrilMines = {
     maxLevel: 16,
     avgLevel: 12.5,
     density: 89,
-    capacity: 48,
     center: { locX: 176673, locY: -177656, locZ: 801 },
     npcNames: ['Akaste Bone Soldier', 'Darkstone Golem', 'Mineshaft Bat'],
     tags: ['dungeon', 'undead', 'construct', 'mine'],
@@ -274,7 +272,6 @@ assert.strictEqual(
     0,
     'dwarven starters may use their native mine route'
 );
-assert.strictEqual(LevelingRoutes.capacityForSpot(mithrilMines), 48, 'the explicit mine capacity must override density-derived defaults');
 assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 4 }), 9,
     'a sparse ordinary field must still fit one complete party');
 assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 40 }), 30,

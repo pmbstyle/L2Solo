@@ -162,6 +162,20 @@ assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1104], 'an u
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({ classId: 9, level: 10, items: [archerDagger, archerBow], paperdoll: {} }));
 assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1105], 'an unarmed archer owning a bow must wear the bow');
 
+// A dwarf's hands hold one layout: a two-handed pole, or a one-hander with a shield. The hot
+// equip settles on the stronger weapon and never adds a shield beside a two-hander.
+const dwarfLayout = (worn) => {
+    const club = wearable(1106, { kind: 'Weapon.Blunt', slot: 7, pAtk: 6, equipped: worn === 'club' });
+    const trident = wearable(1107, { kind: 'Weapon.Pole', slot: 14, pAtk: 40, rank: 'd', equipped: worn === 'trident' });
+    const shield = wearable(1108, { kind: 'Armor.Shield', slot: 8, pDef: 67, equipped: worn === 'shield' });
+    const worns = { club: { 7: { id: 1106 } }, trident: { 7: { id: 1107 }, 14: { id: 1107 } }, shield: { 8: { id: 1108 } } };
+    return BotEquipmentUpgrade.findBestUpgrades(upgradeSession({ classId: 56, level: 20, items: [club, trident, shield], paperdoll: worns[worn] }))
+        .map(({ item }) => item.fetchId());
+};
+assert.deepStrictEqual(dwarfLayout('club'), [1107], 'a dwarf with a club takes up the stronger pole, without a shield beside it');
+assert.deepStrictEqual(dwarfLayout('trident'), [], 'a dwarf wielding a pole keeps it and wears no shield');
+assert.deepStrictEqual(dwarfLayout('shield'), [1107], 'a dwarf with only a shield takes the stronger pole, not the weaker club');
+
 const demonFangsTemplate = itemTemplate(321);
 assert.strictEqual(demonFangsTemplate.template.name, 'Demon Fangs', 'the regression fixture must use the real C4 caster weapon');
 const healerOldBlunt = wearable(1120, { kind: 'Weapon.Blunt', slot: 7, pAtk: 10, mAtk: 8, equipped: true });
