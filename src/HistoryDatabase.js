@@ -1,4 +1,5 @@
 'use strict';
+const FailureLog = require('./FailureLog');
 
 // Main-thread side of the history database (HistoryStore.js): prepares the
 // file at start, runs the history thread (HistoryWorker.js) that moves the
@@ -146,6 +147,7 @@ function spawn() {
         if (message.type === 'decision_trace_ack') {
             if (!config?.trace) return;
             Trace.ack(message.id, message.written);
+            if (message.failed) FailureLog.note('history.trace_write', Object.assign(new Error('decision trace write failed'), { stack: message.failed }));
             const report = message.writer;
             if (report?.enabled === true) writerTelemetry = { enabled: true, batches: Number(report.batches || 0), records: Number(report.records || 0),
                 dropped: Number(report.dropped || 0), bytes: Number(report.bytes || 0), writeMs: Number(report.writeMs || 0), rotations: Number(report.rotations || 0), fileBytes: Number(report.fileBytes || 0) };
