@@ -97,8 +97,9 @@ parentPort.on('message', message => {
         await Database.setItem(sellerId, { selfId: offeredRecipe.recipeItemId, name: 'Genuine shot recipe', amount: 1 });
         await Database.setItem(sellerId, { selfId: 1458, name: 'Crystal D', amount: 10000 });
         await Database.setItem(buyerId, { selfId: 57, name: 'Adena', amount: 10000000 });
+        // Keep the offered recipe strongest in this physical receipt case.
         await Afk.publishBot(buyerId, { kind: 'shop',  storeType: 3, town: 'Giran',
-            lines: [1463, 2510].map(selfId => ({ selfId, count: 10000, price: selfId === 1463 ? 100 : 300, stackable: true })) });
+            lines: [1463, 2510].map(selfId => ({ selfId, count: 10000, price: selfId === 1463 ? 300 : 100, stackable: true })) });
         const supplierBag = await Database.fetchItems(sellerId);
         await Afk.publishBot(sellerId, { kind: 'shop',  storeType: 1, town: 'Giran', lines: [
             { objectId: supplierBag.find(item => item.selfId === offeredRecipe.recipeItemId).id, selfId: offeredRecipe.recipeItemId, count: 1, price: 1, stackable: false },
@@ -165,6 +166,11 @@ parentPort.on('message', message => {
             assert(Buffer.byteLength(JSON.stringify({ shot: packed })) - 2 <= 32);
             assert.deepEqual(Policy.unpackStep(packed), step);
         }
+        const seriesStep = { recipeTarget: 324, recipeRoute: { recipeId: 324, batches: 1, horizonBatches: 64 } };
+        const seriesPacket = Policy.packStep(seriesStep);
+        assert.deepEqual(Policy.unpackStep(seriesPacket), seriesStep);
+        assert(Buffer.byteLength(JSON.stringify(seriesPacket)) <= require('../src/GameServer/Bot/Population/ColdEconomyPlan').MAX_SHOT_PAYLOAD_BYTES,
+            'the largest projected series retains the native shot command byte limit');
         assert.deepEqual(Policy.unpackKnown(Policy.packKnown(Policy.SHOT_RECIPE_IDS)), Policy.SHOT_RECIPE_IDS);
         assert(Buffer.byteLength(JSON.stringify({ knownShotRecipes: Policy.packKnown(Policy.SHOT_RECIPE_IDS) })) <= 64);
         // The real execute site rejects non-positive margin before any write.

@@ -214,9 +214,13 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
             // Unsupported external demand permits only an explicitly valued
             // minimum trial, never a speculative larger production command.
             if (pricedExit.trial === true && batches > 1) continue;
-            const candidate = yield* evaluatePrepared({ state, recipe, batches, basket, exit: pricedExit, ownedFor, context });
+            const evaluated = yield* evaluatePrepared({ state, recipe, batches, basket, exit: pricedExit, ownedFor, context });
+            const candidate = evaluated && context.prepareCandidate ? yield* context.prepareCandidate(evaluated)
+                : evaluated && context.valueCandidate ? context.valueCandidate(evaluated) : evaluated;
+            if (candidate && context.acceptCandidate && !context.acceptCandidate(candidate)) continue;
             const score = mode === 'occupation' ? candidate?.incomePerHour : candidate?.valueHours;
-            if (candidate && score > 0 && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = candidate;
+            if (candidate && Number.isFinite(score) && score > (context.minimumValueHours ?? 0)
+                && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = candidate;
             else if (refusal) refusal.reason = candidate ? 'no_value' : 'no_outcome';
         }
         yield 'candidate';

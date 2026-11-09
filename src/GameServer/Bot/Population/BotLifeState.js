@@ -3839,6 +3839,15 @@ const BotLifeState = {
         if (!recipeIds) {
             const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state)?.activity;
             recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+            // A remote shot scroll arrives through the common market errand.
+            // Keep its accepted learning target through that handoff, before
+            // the visit's cleanup can publish the paid scroll as surplus.
+            const wanted = state.stats?.shotRecipeDemand;
+            const shot = wanted && invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+            if (shot && Number(shot.recipeItemId) === Number(wanted.itemId)
+                && require('../Economy/ProductionPolicy').GRADED_SHOTS.has(Number(shot.productId))) {
+                recipeIds = [...new Set([...recipeIds, Number(shot.recipeId)])];
+            }
         }
         if (!recipeIds.length) return Promise.resolve(state);
         const candidates = Object.values(state.inventory || {})
@@ -3854,7 +3863,7 @@ const BotLifeState = {
                     ? [{ ...decision.recipe, name: item.name }] : [];
             });
             if (!recipes.length) return state;
-            let saved = state, changed = false;
+            let saved = state, changed = false, learnedShotTarget = false;
             for (const recipe of recipes) {
                 const admitted = await EconomyCommit.admit(saved, EconomyCommit.KINDS.learn);
                 let learned;
@@ -3862,10 +3871,17 @@ const BotLifeState = {
                     { economyCommand: admitted.command }); }
                 finally { EconomyCommit.finish(state.characterId, admitted.command); }
                 if (learned.learned?.length) changed = true;
+                if (learned.learned?.some(entry => Number(entry.recipeId) === Number(state.stats?.shotRecipeDemand?.recipeId))) {
+                    learnedShotTarget = true;
+                }
                 if (learned.coldLifeRow) saved = EconomyCommit.acceptRow(learned.coldLifeRow);
                 if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
             }
             if (changed) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
+            if (learnedShotTarget && saved.phase === 'cold' && !this.hotRow(saved.characterId)) {
+                saved = await this.upsertState({ ...saved, stats: { ...saved.stats, shotRecipeDemand: null } },
+                    'shot_recipe_acquired') || saved;
+            }
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });
             return saved;
         }).catch(error => {

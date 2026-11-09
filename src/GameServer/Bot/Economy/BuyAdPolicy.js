@@ -11,6 +11,14 @@ function templateFor(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
+function shotRecipeCap(state, selfId) {
+    const wanted = state.stats?.shotRecipeDemand;
+    if (Number(wanted?.itemId) !== Number(selfId) || !Number.isFinite(wanted?.maxSpend)) return Infinity;
+    const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+    return recipe && Number(recipe.recipeItemId) === Number(selfId)
+        && require('./ProductionPolicy').GRADED_SHOTS.has(Number(recipe.productId)) ? Math.max(0, wanted.maxSpend) : Infinity;
+}
+
 // A survival item's tranche: its kit cost at the bot's own unit price
 // (EconomyContext.kitCost; 0 for any other item and without an economy).
 // Decided once with the bid: the plan carries it, executePlan and the native
@@ -135,7 +143,7 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         if (!belief) return null;
         worth = Math.exp(belief.mu);
     }
-    const cap = Math.floor(Math.min(worth, spendable));
+    const cap = Math.floor(Math.min(worth, spendable, shotRecipeCap(state, selfId)));
     const town = options.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, [{ selfId }]);
     const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
         preferProvidedWorth: goal.intent?.retainedProject === true,
