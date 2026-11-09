@@ -55,3 +55,5 @@ jobs:
         if: runner.os == 'Linux'
       - run: npm run test:packaged
         if: runner.os != 'Linux'
+      - run: npm run test:installer
+        if: runner.os == 'Windows'
