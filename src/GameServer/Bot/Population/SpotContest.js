@@ -10,15 +10,25 @@
 // MAX_PEERS met units and MAX_DISPLACED displacement candidates (more: counted
 // spot:contest:capped; an unread unit counts as a stranger, so a capped read can only make
 // the arrival leave):
-// 1 a stranger that looks stronger stands there: avoid, outmatched;
+// 1 a stranger that looks stronger stands there: the arriving unit answers the strongest one
+//   (answer): leave (avoid, outmatched), share (stay, tolerated) or dispute (stay, pvp);
 // 2 else the weakest strangers it looks stronger than, each by its can-I-win roll, weakest
 //   first, until the species is back to its room (at most MAX_DISPLACED units; a standing
-//   party is never displaced): it stays when it displaced at least its own hunters or the
-//   species is in room after; else avoid, outmatched;
-// 3 else (even): a clanmate or friend there and under CROWDED: it stays (friends share); a
-//   PvP dispute with a met stranger (ResourceCompetitionPolicy.decide's contest with PvP
-//   intent, PvP on): it stays and the dispute goes to main; else avoid ('crowded' at
-//   CROWDED or more, else 'even'): the first come holds the spot.
+//   party is never displaced), each answering the arrival at the pressure then: leave
+//   (displaced), share, or dispute (one per arrival; the loop ends): it stays when it
+//   displaced at least its own hunters, or the pressure after is within its own tolerance,
+//   or one stood its ground and the pressure after is under CROWDED (it takes the
+//   leftovers); else avoid, outmatched;
+// 3 else (even): a clanmate or friend there and under CROWDED: it stays (friends share);
+//   else it answers the first met stranger: share (stay, shared), dispute (stay, pvp) or
+//   leave ('crowded' at CROWDED or more, else 'even'): the first come holds the spot.
+// The answer of the unit that does not hold the spot by look is its persona's
+// (ResourceCompetitionPolicy.decide with it as the actor): avoid → leave; a party offer (no
+// party forms at the spot), a yield or a contest without PvP → share while the pressure is
+// within its tolerance (ResourceCompetitionPolicy.tolerance, ≤ 1.3× room), else leave
+// (counted spot:contest:past_tolerance); a contest with PvP intent, PvP on → a dispute main
+// carries out. A sharer takes the crowd's equal share; the stay judge (spot_disappoints)
+// sends it away when that earns too far below its expectation.
 // A unit that holds its ground never avoids, read as a stay and counted spot:contest:<why>:
 // one on a player's command (commanded), a safety evacuation off unsafe ground (evacuation).
 // A standing unit near a player is neither met nor displaced (its body's own tactics,
@@ -27,7 +37,7 @@
 // player sees no level). Callers: the worker's solo and party arrivals and its hot arrival
 // hook (ColdSimulationWorker); their outcomes for other bots go through SpotContestOutbox.
 // Counts go on the situations= line (Situations.note); the contest is traced with the spot as subject.
-const { decide, friendly } = require('../../Social/ResourceCompetitionPolicy');
+const { decide, friendly, tolerance } = require('../../Social/ResourceCompetitionPolicy');
 const Visible = require('../../Social/VisibleStrength');
 const { coldStanding } = require('../../Social/PvpAggression');
 const TendencyRoll = require('../AI/TendencyRoll');
@@ -72,9 +82,10 @@ function participant(unit, relation) {
 // itself (ColdPvpResolver.ownSide); capacityForSpot(spot); pvp: PvP disputes carried out (main's competition
 // actions with conflicts and PvP on).
 // Returns { action: 'coexist' | 'stay' | 'avoid', pressure, reason?, displaced?, spotId?, peer?, event? }:
-// coexist under room; stay with displaced (the standing units' ids it displaces, solos) and, for a PvP
-// dispute, event (main's competition actions take it, ColdCompetitionActions) and peer; avoid with reason
-// ('outmatched', 'even', 'crowded') and the spot (spotId).
+// coexist under room; stay with displaced (the standing units' ids it displaces, solos), peer (the
+// stronger unit it shares under, tolerated; the one it disputes, pvp) and, for a PvP dispute, event
+// (main's competition actions take it, ColdCompetitionActions); avoid with reason ('outmatched',
+// 'even', 'crowded') and the spot (spotId).
 function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, step, memory, personaFor, ownSide = Visible.stateSide,
     capacityForSpot, pvp = false }) {
     const peers = standing.filter(unit => Number(unit.npcId) === Number(npcId) && unit.key !== arriving.key);
@@ -109,16 +120,29 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         return settled(spot, arriving, { action: 'stay', pressure, reason: arriving.holds, displaced: outcome.displaced || [] });
     };
     const avoid = reason => ({ action: 'avoid', reason, spotId: String(spot.id) });
-    // 1 A stranger that looks stronger holds the spot against it.
+    // unit answers other (a met unit, read: the pair's relationship read) at a pressure.
+    const reply = (unit, other, read, atPressure, peerKey) => answer({ spot, npcId, unit, other, read, pressure: atPressure,
+        key: `${key}:${peerKey}`, at, demand, capacity, personaFor, ownSide, pvp });
+    // 1 A stranger that looks stronger holds the spot: it answers the strongest one.
     const stronger = sides.filter(entry => entry.verdict === 'weaker');
-    if (stronger.length > MAX_PEERS) capped = true;
-    if (stronger.length > MAX_PEERS || stronger.some(entry => !relation(entry.unit)?.friendly)) return verdict(avoid('outmatched'));
+    if (stronger.length > MAX_PEERS) { capped = true; return verdict(avoid('outmatched')); }
+    const holders = stronger.filter(entry => !relation(entry.unit)?.friendly)
+        .sort((a, b) => b.side.people - a.side.people || Visible.rank(b.side.look) - Visible.rank(a.side.look)
+            || String(a.unit.key).localeCompare(String(b.unit.key)));
+    if (holders.length) {
+        const holder = holders[0].unit, read = relation(holder);
+        // An unread holder is a stranger it cannot weigh: it leaves.
+        const said = read ? reply(arriving, holder, read, pressure, holder.key) : { answer: 'leave' };
+        if (said.answer === 'share') return verdict({ action: 'stay', reason: 'tolerated', displaced: [], peer: holder });
+        if (said.answer === 'dispute') return verdict({ action: 'stay', reason: 'pvp', displaced: [], peer: holder, event: said.event });
+        return verdict(avoid('outmatched'));
+    }
     // 2 The weakest strangers it looks stronger than make room, weakest first.
     const weaker = sides.filter(entry => entry.verdict === 'stronger' && !entry.unit.partyId)
         .sort((a, b) => a.side.people - b.side.people || Visible.rank(a.side.look) - Visible.rank(b.side.look)
             || String(a.unit.key).localeCompare(String(b.unit.key)));
     const displaced = [];
-    let left = demand + untargeted * fraction, freed = 0, reads = 0;
+    let left = demand + untargeted * fraction, freed = 0, reads = 0, answered = false, stood = false, dispute = null;
     const traits = persona?.traits || {};
     for (const entry of weaker) {
         if (!(left > capacity) || displaced.length >= MAX_DISPLACED) break;
@@ -129,47 +153,61 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         const knowledge = persona ? { source: arriving.state, persona, key: `${key}:${entry.unit.key}` } : null;
         const chance = Visible.canWin({ own, other: entry.side, traits, fear: Visible.fear(read.ab), knowledge });
         if (!Visible.willing(chance, key, 'displace', entry.unit.key)) continue;
-        displaced.push(entry.unit.id);
-        left -= entry.unit.hunters; freed += entry.unit.hunters;
+        // The weaker one answers the arrival (it is the actor: the read reversed).
+        const said = reply(entry.unit, arriving, { ab: read.ba, ba: read.ab }, left / capacity, entry.unit.key);
+        answered = true;
+        if (said.answer === 'leave') {
+            displaced.push(entry.unit.id);
+            left -= entry.unit.hunters; freed += entry.unit.hunters;
+            continue;
+        }
+        stood = true;
+        if (said.answer === 'dispute') { dispute = { peer: entry.unit, event: said.event }; break; }
+        Situations.note('spot:contest:tolerated_standing');
     }
-    if (displaced.length) {
-        return verdict(freed >= arriving.hunters || !(left > capacity) ? { action: 'stay', reason: 'stronger', displaced } : avoid('outmatched'));
+    if (answered) {
+        const after = left / capacity;
+        if (!(freed >= arriving.hunters || after <= tolerance(persona) || (stood && after < CROWDED))) return verdict(avoid('outmatched'));
+        return verdict(dispute ? { action: 'stay', reason: 'pvp', displaced, ...dispute } : { action: 'stay', reason: 'stronger', displaced });
     }
-    // 3 Even: friends share under CROWDED, a stranger may dispute it by PvP, else the first come holds it.
+    // 3 Even: friends share under CROWDED, else it answers the first met stranger.
     const met = [];
     for (const entry of sides) met.push([TendencyRoll.roll('spot_contest', spot.id, arriving.key, step, entry.unit.key), entry.unit]);
     met.sort((a, b) => a[0] - b[0] || String(a[1].key).localeCompare(String(b[1].key)));
     if (met.length > MAX_PEERS) capped = true;
-    const crowded = pressure >= CROWDED;
-    for (const [, peer] of met.slice(0, MAX_PEERS)) {
-        const read = relation(peer);
-        if (!read) continue;
-        if (read.friendly) {
-            if (!crowded) return verdict({ action: 'stay', reason: 'friendly_share', displaced: [] });
-            continue;
-        }
-        if (!pvp) continue;
-        const dispute = pvpDispute({ spot, npcId, arriving, peer, read, key: `${key}:${peer.key}`, at, demand, capacity, pressure, persona, personaFor, ownSide });
-        if (dispute) return verdict({ action: 'stay', reason: 'pvp', displaced: [], peer, event: dispute });
-    }
-    return verdict(avoid(crowded ? 'crowded' : 'even'));
+    const crowded = pressure >= CROWDED, even = avoid(crowded ? 'crowded' : 'even');
+    const readable = met.slice(0, MAX_PEERS).map(([, peer]) => [peer, relation(peer)]).filter(([, read]) => read);
+    if (!crowded && readable.some(([, read]) => read.friendly)) return verdict({ action: 'stay', reason: 'friendly_share', displaced: [] });
+    const first = readable.find(([, read]) => !read.friendly);
+    if (!first) return verdict(even);
+    const said = reply(arriving, first[0], first[1], pressure, first[0].key);
+    if (said.answer === 'share') return verdict({ action: 'stay', reason: 'shared', displaced: [] });
+    if (said.answer === 'dispute') return verdict({ action: 'stay', reason: 'pvp', displaced: [], peer: first[0], event: said.event });
+    return verdict(even);
 }
-// A met stranger's dispute by PvP (ResourceCompetitionPolicy.decide's contest with PvP intent): the event
-// main's competition actions carry out (ColdConflictDecision replays its rolls), or null.
-function pvpDispute({ spot, npcId, arriving, peer, read, key, at, demand, capacity, pressure, persona, personaFor, ownSide }) {
-    const look = unit => ({ ...unit, size: unit.size, level: unit.level, own: ownSide(unit.members, at),
-        seen: Visible.stateSide(unit.members, at), ...coldStanding(unit.state, at) });
+// unit's answer to other at a contest it does not hold by look (read: { ab: unit toward other,
+// ba: back }): { answer: 'leave' | 'share' | 'dispute', event? }. A dispute's event is what main's
+// competition actions carry out (ColdConflictDecision replays its rolls for a participant written
+// since), actor the disputing unit.
+function answer({ spot, npcId, unit, other, read, pressure, key, at, demand, capacity, personaFor, ownSide, pvp }) {
+    const look = side => ({ ...side, size: side.size, level: side.level, own: ownSide(side.members, at),
+        seen: Visible.stateSide(side.members, at), ...coldStanding(side.state, at) });
     // Main replays these in call order for a participant written since (ColdConflictDecision.refresh).
     const decisionRolls = Array.from({ length: ROLLS }, (_, i) => TendencyRoll.roll('spot_contest_decision', key, i));
     let index = 0;
-    const peerPersona = personaFor(peer.state);
-    const outcome = decide({ pressure, actor: look(arriving), peer: look(peer), towardPeer: read.ab, towardActor: read.ba,
-        actorPersona: persona, peerPersona, rng: () => decisionRolls[index++], key,
-        actorKnowledge: persona ? { source: arriving.state, persona, key: `${key}:0` } : null,
-        peerKnowledge: peerPersona ? { source: peer.state, persona: peerPersona, key: `${key}:1` } : null });
-    if (outcome.action !== 'contest' || !outcome.pvpIntent) return null;
-    return { at, key, spotId: spot.id, npcId: Number(npcId), contextVersion: 1, decisionRolls, demand, capacity, pressure,
-        actor: participant(arriving, read.ab), peer: participant(peer, read.ba), relationship: [read.ab.disposition, read.ba.disposition], ...outcome };
+    const persona = personaFor(unit.state), otherPersona = personaFor(other.state);
+    const outcome = decide({ pressure, actor: look(unit), peer: look(other), towardPeer: read.ab, towardActor: read.ba,
+        actorPersona: persona, peerPersona: otherPersona, rng: () => decisionRolls[index++], key,
+        actorKnowledge: persona ? { source: unit.state, persona, key: `${key}:0` } : null,
+        peerKnowledge: otherPersona ? { source: other.state, persona: otherPersona, key: `${key}:1` } : null });
+    if (outcome.action === 'avoid') return { answer: 'leave' };
+    if (outcome.action === 'contest' && outcome.pvpIntent && pvp) {
+        return { answer: 'dispute', event: { at, key, spotId: spot.id, npcId: Number(npcId), contextVersion: 1, decisionRolls, demand, capacity,
+            pressure, actor: participant(unit, read.ab), peer: participant(other, read.ba), relationship: [read.ab.disposition, read.ba.disposition], ...outcome } };
+    }
+    if (pressure <= tolerance(persona)) return { answer: 'share' };
+    Situations.note('spot:contest:past_tolerance');
+    return { answer: 'leave' };
 }
 // The contest's outcome counted and traced (subject: the spot; the arriving principal as its bot).
 function settled(spot, arriving, verdict) {

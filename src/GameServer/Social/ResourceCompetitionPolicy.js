@@ -90,5 +90,13 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
     }
     return { action: 'yield', pvpIntent: false, reason: 'tolerate_competition', willing: sides };
 }
+// How crowded a spot a unit that yields shares rather than moves on (pressure: hunters per
+// place): the sociable and empathic bear more, the ambitious less; capped well under twice
+// the room so a shared camp stays near its room. C4 has no number for it: our choice.
+const TOLERANCE_MAX = 1.3;
+function tolerance(persona) {
+    const t = traits(persona);
+    return 1 + (TOLERANCE_MAX - 1) * clamp((t.sociability + t.empathy + 1 - t.ambition) / 3);
+}
 
-module.exports = { decide, escalationChance, friendly };
+module.exports = { decide, escalationChance, friendly, tolerance, TOLERANCE_MAX };

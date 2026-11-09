@@ -149,11 +149,11 @@ invoke('GameServer/DataCache').init();
         const state = (id, level, grade) => ({ characterId: id, name: `P${id}`, level, stats: {}, simulation: { revision: 1 }, inventory: gear(grade) });
         const unit = (id, grade = 'none', extra = {}) => ({ key: `solo:${id}`, id, name: `P${id}`, partyId: null, size: 1, level: extra.level || 20,
             hunters: 1, members: [state(id, extra.level || 20, grade)], state: state(id, extra.level || 20, grade), npcId: NPC, hot: false, ...extra });
-        let clans = {}, unloaded = new Set();
+        let clans = {}, unloaded = new Set(), personas = {};
         const memory = { assess: (a, b) => ({ ready: !unloaded.has(b.id) && !unloaded.has(a.id), revision: 1, disposition: 'neutral', personal: null,
             sourceClanId: clans[a.id] || 0, targetClanId: clans[b.id] || 0 }) };
         const input = (standing, arriving = unit(1, 'd'), extra = {}) => ({ spot, npcId: NPC, arriving, standing, untargeted: 0,
-            at: 1000, step: 7, memory, personaFor: () => ({ traits: { caution: 0.5 } }), capacityForSpot: () => 4, ...extra });
+            at: 1000, step: 7, memory, personaFor: s => personas[s.characterId] || { traits: { caution: 0.5 } }, capacityForSpot: () => 4, ...extra });
         const raised = key => Situations.counts().raised[key] || 0;
         const solos = (...ids) => ids.map(id => unit(id));
         // Room 4, half of it this species: two places.
@@ -214,6 +214,47 @@ invoke('GameServer/DataCache').init();
         const capped = raised('spot:contest:capped');
         assert.equal(Contest.contest(input([2, 3, 4, 5, 6].map(id => unit(id, 'c')))).reason, 'outmatched');
         assert.equal(raised('spot:contest:capped'), capped + 1, 'more than four stronger units: counted');
+        // The unit that does not hold the spot by look answers by its persona (the old offer or
+        // yield of every forced roll): it shares up to its tolerance (sociable, empathic, not
+        // ambitious: 1.3x room), else leaves. room(demand, pressure): the room that puts demand
+        // hunters at that pressure.
+        const room = (demand, pressure) => () => 2 * demand / pressure;
+        const tolerant = { traits: { caution: 0, sociability: 1, empathy: 1, ambition: 0 } };
+        const proud = { traits: { caution: 0, sociability: 0, empathy: 0, ambition: 1 } };
+        personas = { 1: tolerant };
+        const kept = Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.1) }));
+        assert.deepEqual([kept.action, kept.reason, kept.peer.id], ['stay', 'tolerated', 2],
+            'a no-grade bot where a D-grade one hunts at 1.1x stays and takes the leftovers');
+        const past = raised('spot:contest:past_tolerance');
+        assert.equal(Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.4) })).reason, 'outmatched',
+            'at 1.4x it moves on');
+        assert.equal(raised('spot:contest:past_tolerance'), past + 1, 'past its tolerance: counted');
+        assert.deepEqual([Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason,
+            (personas = { 1: proud }, Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason)],
+        ['shared', 'even'], 'an even arrival at 1.2x: the tolerant one shares, the proud one leaves');
+        personas = { 2: tolerant };
+        const standingShare = raised('spot:contest:tolerated_standing');
+        const stood = Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) }));
+        assert.deepEqual([stood.action, stood.reason, stood.displaced], ['stay', 'stronger', []],
+            'a tolerant no-grade bot asked to make room at 1.25x stays, and the D-grade arrival hunts beside it');
+        assert.equal(raised('spot:contest:tolerated_standing'), standingShare + 1);
+        personas = { 2: proud };
+        assert.deepEqual(Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) })).displaced, [2],
+            'a proud one moves on');
+        // A weaker standing bot that will not give way: its contest with PvP intent is the dispute
+        // (it the actor), and main replays its rolls for a participant written since.
+        personas = {};
+        Tendency.roll = (kind, key, i) => kind === 'spot_contest_decision' ? (i === 0 ? 0.99 : 0) : 0;
+        const fought = Contest.contest(input([unit(2, 'none', { level: 30 })], unit(1, 'd'), { capacityForSpot: room(2, 1.5), pvp: true }));
+        Tendency.roll = () => 0;
+        assert.deepEqual([fought.action, fought.reason, fought.peer.id, fought.event.actor.id, fought.event.peer.id, fought.event.pvpIntent],
+            ['stay', 'pvp', 2, 2, 1, true], 'the standing bot disputes the spot with the arrival');
+        const states = { 1: { ...state(1, 20, 'd'), simulation: { revision: 2 } }, 2: state(2, 30, 'none') };
+        const replayed = require('../src/GameServer/Bot/Population/ColdConflictDecision').refresh(fought.event, { life: { cachedState: id => states[id] },
+            parties: null, memory: { ...memory, revision: () => 1 }, personaFor: s => personas[s.characterId] || { traits: { caution: 0.5 } } }, 1000);
+        assert.deepEqual([replayed.recomputed, replayed.event?.action, replayed.event?.actor.id], [true, 'contest', 2],
+            'replayed on main with the standing bot as the actor');
+        personas = {};
     } finally { Tendency.roll = roll; }
 }
 // The outbox's way to main (SpotContestOutbox): an arrival's outcome after its step's own
