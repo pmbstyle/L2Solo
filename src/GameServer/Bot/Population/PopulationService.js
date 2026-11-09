@@ -865,6 +865,12 @@ const PopulationService = {
     // cleared by the apply of the finished re-plan.
     partyRequirementRefreshDue: new Set(),
     phasePolicyTimer: null,
+    // A scan asked while one runs (requestPhaseScan): it runs again when that one ends.
+    phasePolicyRerun: false,
+    // The scan asked for the next turn (requestPhaseScan), until it starts.
+    phasePolicyNext: null,
+    // The last activation scan left near rows cold for its budget (activateNearPlayers).
+    activationRowsLeft: false,
     seedTimer: null,
     classProgressionMigrationTimer: null,
     nextStateRetentionAt: 0,
@@ -1035,6 +1041,11 @@ const PopulationService = {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
         }
+        if (this.phasePolicyNext) {
+            clearImmediate(this.phasePolicyNext);
+            this.phasePolicyNext = null;
+        }
+        this.phasePolicyRerun = false;
         if (this.seedTimer) {
             clearTimeout(this.seedTimer);
             this.seedTimer = null;
@@ -1187,11 +1198,39 @@ const PopulationService = {
             .then((activated) => this.cooldownEligibleHot().then((cooled) => ({ activated, cooled })))
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'phase policy failed: %s', err.message);
+                // A failed scan is not continued: the interval scan retries it.
+                this.activationRowsLeft = false;
                 return { activated: [], cooled: [] };
             })
             .finally(() => {
                 this.phasePolicyRunning = false;
+                const rerun = this.phasePolicyRerun;
+                this.phasePolicyRerun = false;
+                // The rest of a scan its budget cut runs on the next turn while main keeps
+                // up (lag under schedulerLagThrottleMs): a crowd fills in seconds, one batch
+                // a turn, so the per-turn stall is a batch's as before. A lagging main
+                // leaves it to the interval scan.
+                if (rerun || (this.activationRowsLeft
+                    && Number(Metrics.currentEventLoopLag()) < Number(Config.schedulerLagThrottleMs || 40))) {
+                    this.requestPhaseScan();
+                }
             });
+    },
+
+    // A scan now, not at the next interval: a real player's teleport or login (the
+    // crowd where the client loads is shown while it loads) or the rest of a scan its
+    // budget cut. Coalesced: one asked while one runs runs once after it.
+    requestPhaseScan() {
+        if (!this.phasePolicyTimer) return;
+        if (this.phasePolicyRunning) {
+            this.phasePolicyRerun = true;
+            return;
+        }
+        if (this.phasePolicyNext) return;
+        this.phasePolicyNext = setImmediate(() => {
+            this.phasePolicyNext = null;
+            this.tickPhasePolicy();
+        });
     },
 
     realPlayerSessions() {
@@ -1682,10 +1721,10 @@ const PopulationService = {
     },
 
     activateNearPlayers() {
+        this.activationRowsLeft = false;
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
 
-        const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         const ambientActivated = [];
         let chain = Promise.resolve();
@@ -1765,7 +1804,10 @@ const PopulationService = {
                                 activated.push(result);
                                 if (!craft) ambientActivated.push(...Array(result.count || 1).fill(result));
                             }
-                            if (cut) Metrics.recordActivationRefusal('activation_budget');
+                            if (cut) {
+                                Metrics.recordActivationRefusal('activation_budget');
+                                this.activationRowsLeft = true;
+                            }
                         };
                         return tryRows().then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });
@@ -1779,8 +1821,11 @@ const PopulationService = {
     // (HotActivation). Only the small walker list is read.
     showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now()) {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
-            if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
+            if (ambientActivated.length >= Config.maxActivationsPerScan) {
+                this.activationRowsLeft = true;
+                return null;
+            }
             return this.requestActivation(state, 'near_player', { readyOnActivation: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
