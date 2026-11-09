@@ -54,4 +54,10 @@ function competitionNpcId(party, leader, spot, stateOf = cachedState) {
     let roll = (hash >>> 0) / 4294967296 * entries.reduce((sum, e) => sum + weight(e), 0);
     return Number((entries.find(e => (roll -= weight(e)) < 0) || entries.at(-1)).selfId);
 }
-module.exports = { npcId, competitionNpcId };
+// The mob a solo hunt prefers on a spot that spawns it (killDraw's preferredNpcId on
+// the worker, the target scan of a hot body): its gear plan's next hunt, else its
+// hunting leaf's mob.
+function soloNpcId(plan, leaf) {
+    return Number(plan?.next?.npcId || (leaf?.activity === 'hunting' ? leaf.npcId : 0) || 0);
+}
+module.exports = { npcId, competitionNpcId, soloNpcId };

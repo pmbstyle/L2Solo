@@ -1134,7 +1134,7 @@ function spotSpawns(spot = {}, npcId) {
 // candidates (huntable, after the hunters' matchup filter: entry.match);
 // exposed: the groups that may engage the hunters first. An untargeted kill
 // draws from entries by killWeight. A targeted kill (options.preferredNpcId
-// among entries: an active plan's next hunt, PartyHuntingTarget.planTargetNpcId,
+// among entries: a solo hunt's planned mob, PartyHuntingTarget.soloNpcId,
 // or a material party) takes its target, unless an aggressive other group of
 // exposed engages first (interruption, 0.25 by default; an interrupted kill
 // draws from those by killWeight). Aggression is not erased by what the

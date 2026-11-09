@@ -479,6 +479,54 @@ test('a deferred purchase still hunts a safe local mob without taking a recovery
     } finally { while (restores.length > restoreAt) restores.pop()(); }
 });
 
+test('a solo hunt prefers its planned mob (gear plan or drop) on the spot and otherwise hunts the spot\'s other mobs, as the cold kill draw does', () => {
+    const drop = { activity: 'hunting', spotId: alternative.id, itemId: 167, amount: 1, npcId: 990202 };
+    const planned = (point, level = 57) => ({ ...npcNear(point), fetchId: () => 990202, fetchSelfId: () => 990202,
+        fetchName: () => 'Planned mob', fetchLocX: () => point.locX + 600, fetchLevel: () => level });
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    // Another solo hunter already fighting the planned mob.
+    const rival = { plan: 'hunting', currentTargetId: 990202, actor: { state: { fetchDead: () => false } } };
+    const cases = [
+        { why: 'on ground without the planned mob the hunter takes the spot\'s mob instead of standing idle',
+            entries: [990101], mobs: [npcNear(primary.center)], expected: 990101 },
+        { why: 'on ground that spawns it the planned mob wins over a nearer one',
+            mobs: [npcNear(primary.center), planned(primary.center)], expected: 990202 },
+        { why: 'a planned mob another hunter fights leaves the hunter the spot\'s other mob',
+            mobs: [npcNear(primary.center), planned(primary.center)], sessions: [rival], expected: 990101 },
+        { why: 'a planned mob the hunter cannot take leaves it the spot\'s other mob',
+            mobs: [npcNear(primary.center), planned(primary.center, 70)], expected: 990101 },
+        { why: 'a gear plan\'s next hunt is the planned mob on its spot, without a drop leaf',
+            chosen: leaf, stats: { equipmentPlan: { status: 'active', next: { kind: 'material_drop', spotId: primary.id, npcId: 990202 } } },
+            mobs: [npcNear(primary.center), planned(primary.center)], expected: 990202 },
+        { why: 'a planned mob standing off the bot\'s spot is not preferred over the spot\'s mob',
+            mobs: [npcNear(primary.center), planned({ ...primary.center, locX: 155500 })], expected: 990101 },
+        { why: 'a planned mob the bot is not ready for now goes after the fights it is ready for',
+            mobs: [npcNear(primary.center), { ...planned(primary.center), fetchHp: () => 5000, fetchMaxHp: () => 5000 }],
+            expected: 990101 }
+    ];
+    const restoreAt = restores.length;
+    try {
+        // Readiness reads what the bot has now, the scorer a whole bar: a 5000 HP mob
+        // stands for a fight longer than the bot's reserve now, one the scorer still admits.
+        const Readiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
+        const evaluate = Readiness.evaluate;
+        stub(Readiness, 'evaluate', (remaining, target, ...rest) => target.maxHp >= 5000
+            ? { ready: false, reason: 'no_reserve' } : evaluate(remaining, target, ...rest));
+        for (const { why, entries = [990101, 990202], chosen = drop, stats = {}, mobs, sessions = [], expected } of cases) {
+            const here = { ...primary, npcEntries: entries.map(selfId => ({ selfId, count: 5 })) };
+            const spots = [here, alternative];
+            stub(Spots, 'ensureIndexed', () => spots);
+            stub(BotManager, 'sessions', sessions);
+            const f = fixture(primary.center, chosen, { huntSpot: { spotId: primary.id }, ...stats });
+            f.session.currentSpot = here;
+            available = mobs;
+            f.tick();
+            assert.deepEqual(f.session.attacks, [expected], why);
+            assert.deepEqual(f.session.trips, []);
+        }
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('deferred scroll restocking can hunt a safe local mob below the ordinary level floor', () => {
     const f = fixture(primary.center, { activity: 'shopping', rootKey: 'stock:scrolls',
         itemId: 736, amount: 1, town: 'Aden' });

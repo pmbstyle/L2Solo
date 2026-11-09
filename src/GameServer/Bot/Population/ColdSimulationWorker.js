@@ -2089,7 +2089,7 @@ function startKernel(config = {}) {
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
                     partyRequest: state.stats?.partyRequest || null, reusablePartyRequest: false, replanFailure: null,
-                    targetNpcId: Number(previousPlan?.next?.npcId || leaf.npcId || 0), plannedState: routedState, route, lastFight };
+                    targetNpcId: PartyHuntingTarget.soloNpcId(previousPlan, leaf), plannedState: routedState, route, lastFight };
             }
             // A build (woken, or the step's card no longer names its decision: counted
             // unwoken under its caller). GearPlanSelection uses EconomyContext's same

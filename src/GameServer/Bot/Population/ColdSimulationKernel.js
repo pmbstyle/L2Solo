@@ -1668,8 +1668,8 @@ class ColdSimulationKernel {
                 spot,
                 lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(id)),
                 spotHunters: this.spotHunters(spot),
-                targetNpcId: Number(lifecyclePlan?.targetNpcId ||
-                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0),
+                targetNpcId: Number(lifecyclePlan?.targetNpcId
+                    || PartyHuntingTarget.soloNpcId(lifecyclePlan?.acquisitionPlan, lifecyclePlan?.activityPick)),
                 elapsedMs,
                 rng: deterministicRandom(current.state),
                 timestamp
@@ -2429,8 +2429,8 @@ class ColdSimulationKernel {
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 spot,
                 spotHunters: this.spotHunters(spot),
-                targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
-                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0)
+                targetNpcId: Number(lifecyclePlan?.targetNpcId
+                    || PartyHuntingTarget.soloNpcId(lifecyclePlan?.acquisitionPlan, lifecyclePlan?.activityPick))
             };
             const result = guide || occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 ...roundOptions,
