@@ -92,6 +92,14 @@ async function main() {
         assert.equal(attacks.at(-1), available[0].fetchId(), 'an actual attacker still owns self-defense despite lost visibility');
 
         session.testIncoming = null;
+        available = [{ ...npc(98, 100), fetchLocZ: () => -1689, fetchDestId: () => bot.fetchId() }];
+        session.currentTargetId = 98;
+        bot.moving = false;
+        tick();
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(session.currentTargetId, undefined, 'a retained underground attacker cannot pin a surface hunter');
+        assert.equal(session.lastDecision.reason, 'vertical_gap');
+
         session.currentTargetId = undefined;
         session.targetRetryAfter = {};
         available = [npc(99, 100)];
