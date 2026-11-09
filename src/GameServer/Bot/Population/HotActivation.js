@@ -5,6 +5,8 @@ const ActivationPlacement = invoke('GameServer/Bot/Population/ActivationPlacemen
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
@@ -122,23 +124,29 @@ const HotActivation = {
             }
             // A traveller a player invites or calls leaves its trip, as a hunter
             // leaves its spot (design 5.9). A walker (ColdTrip: a solo run to a
-            // spot) a player comes near leaves it too, at the endpoint in reach of
-            // the player walkerAppearance gives, never on the road between them;
-            // false when neither endpoint is in reach. A bot no longer a walker
-            // (it arrived while fenced) is taken as it is.
-            const walker = reason === 'near_player' && state.activity === 'traveling' && !!state.stats?.travel?.run;
-            const appearance = (s) => {
-                if (!walker) return s;
-                const shown = invoke('GameServer/Bot/Population/PopulationService').walkerAppearance(s, options.playerLoc);
-                return shown === null ? s : shown;
-            };
+            // spot) a player comes near shows itself where the cold model has it, on
+            // its road (ColdTrip.positionAt at one instant for the whole activation,
+            // grounded by ActivationPlacement), and walks the rest of its run as a
+            // hot body: it arrives once, at the walk's end. A walker bound for
+            // anything but a hunt (a clan's waiting point) stays cold until it
+            // arrives. A bot no longer a walker (it arrived while fenced) is taken
+            // as it is.
+            const shownAt = Date.now();
+            const onRoad = (s) => s?.activity === 'traveling' && !!s.stats?.travel?.run
+                && (s.stats.travel.arrivalActivity || 'hunting') === 'hunting';
+            const walker = reason === 'near_player' && onRoad(state);
+            const appearance = (s) => walker && onRoad(s) ? { ...s, loc: ColdTrip.positionAt(s, shownAt) } : s;
+            const placementOptions = (s, storeLoc) => ({
+                ...options,
+                keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
+                storeLoc,
+                ...(walker && onRoad(s) ? { roadFrom: s.stats.travel.run.from } : {})
+            });
             const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
                     && state.activity === 'traveling');
             if (state.activity === 'traveling' && !leavesTrip) return refused('in_transit', state);
-            const shown = appearance(state);
-            if (shown === false) return refused('walker_endpoint_far', state);
-            state = shown;
+            state = appearance(state);
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
@@ -146,11 +154,7 @@ const HotActivation = {
             const mammonVisit = state.activity === 'crafting' && !!state.stats?.mammonReturn;
             const craftShop = state.activity === 'crafting' && !mammonVisit && state.stats?.craftShop
                 ? CraftShopService.profileFor(state) : null;
-            let placement = ActivationPlacement.resolve(state, {
-                ...options,
-                keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
-                storeLoc: craftShop?.loc || state.loc
-            });
+            let placement = ActivationPlacement.resolve(state, placementOptions(state, craftShop?.loc || state.loc));
             // A failed placement must not dissolve a party, remove a market
             // listing or hand ownership away from the cold worker.
             // With playerLoc only a point within the activation radius of the
@@ -166,29 +170,29 @@ const HotActivation = {
             let releasedForActivation = false;
             let fencedForActivation = false;
             let economyDecision = null;
+            // The rest of a walker's run: the hot walk to its spot (BotManager).
+            let walkTo = null;
             return ColdSimulationCoordinator.fenceBot(state.characterId).then((fence) => {
                 fencedForActivation = true;
                 if (!fence.ok && fence.reason !== 'worker_not_ready') {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
                 const current = appearance(LifeState.cachedState(state.characterId) || state);
-                if (current === false) {
-                    throw Object.assign(Error('walker_endpoint_far'), { activationRefusal: 'walker_endpoint_far' });
-                }
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
                 const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
                     .some(key => current.loc?.[key] !== state.loc?.[key]);
                 state = current;
-                // Still traveling after its appearance: a walker began a trip with no run.
-                if (current.activity === 'traveling' && (walker || !leavesTrip)) {
+                // Still traveling but off a road: a walker began a trip with no run.
+                if (current.activity === 'traveling' && (walker ? !onRoad(current) : !leavesTrip)) {
                     throw Object.assign(Error('in_transit'), { activationRefusal: 'in_transit' });
                 }
+                if (walker && onRoad(current)) {
+                    const travel = current.stats.travel;
+                    const spotId = travel.spotId || SpotService.findCurrentSpot(travel.run.to)?.id || null;
+                    walkTo = spotId ? { spotId, destination: { ...travel.run.to } } : null;
+                }
                 if (moved) {
-                    placement = ActivationPlacement.resolve(current, {
-                        ...options,
-                        keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
-                        storeLoc: craftShop?.loc || current.loc
-                    });
+                    placement = ActivationPlacement.resolve(current, placementOptions(current, craftShop?.loc || current.loc));
                     if (!placement) throw Object.assign(Error('no_safe_activation_placement'),
                         { activationRefusal: 'no_safe_activation_placement' });
                 }
@@ -207,6 +211,9 @@ const HotActivation = {
                     state = {
                         ...state,
                         activity: 'hunting',
+                        // A walker holds the spot it walks to, as a far traveller counts at its travel spot.
+                        ...(walkTo ? { spotId: walkTo.spotId,
+                            currentRegion: state.stats.travel.regionName || state.currentRegion } : {}),
                         timing: {
                             ...(state.timing || {}),
                             activityStartedAt: Date.now(),
@@ -233,7 +240,9 @@ const HotActivation = {
                         homeRegion: state.homeRegion,
                         plan,
                         backgroundActivity: state.activity || 'hunting',
-                        currentSpot: spotSnapshot(placement.spot),
+                        // A walker stands on no spot until its walk ends there.
+                        currentSpot: walkTo ? null : spotSnapshot(placement.spot),
+                        walkTo,
                         spawnReady: true,
                         // Near-player ambient activation promises a ready
                         // actor. BotManager consumes this after enterWorld has

@@ -27,9 +27,12 @@ function emptyCounters() {
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
-        // Activations refused (HotActivation: in_transit, walker_endpoint_far, no_safe_activation_placement), by reason in
+        // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
         // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
+        // Walkers whose road point stood off the ground and were placed by a step back
+        // toward the run's start (ActivationPlacement.roadAnchor).
+        walkerRoadStepBacks: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -268,6 +271,10 @@ const PopulationMetrics = {
         this.counters.activationRefusals += 1;
         const key = String(reason || 'unknown');
         this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
+    },
+
+    recordWalkerRoadStepBack() {
+        this.counters.walkerRoadStepBacks += 1;
     },
 
     recordCooldown(durationMs) {

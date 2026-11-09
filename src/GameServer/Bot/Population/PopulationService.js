@@ -108,27 +108,6 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
         step, partyId, reason, detail ? ` detail=${detail}` : '');
 }
 
-// A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
-// endpoint of its run, never on the straight line between them (a walker on its
-// road is open work): at the spot edge it runs to when that is within the
-// activation radius of the player, else at the teleport point it ran from when
-// that is; the author's hot movement takes over from there. Either way the trip
-// is done (resolveTravel's arrival: activity, spot, region);
-// at the teleport point only its place differs, where the bot hunts or walks on
-// as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
-// run longer than twice the radius, a player by its middle), it stays cold.
-function walkerAppearance(state, playerLoc) {
-    const travel = state?.stats?.travel;
-    const run = travel?.run;
-    if (state?.activity !== 'traveling' || !run) return null;
-    const inReach = (loc) => !!loc && !!playerLoc && Math.hypot(Number(loc.locX) - Number(playerLoc.locX),
-        Number(loc.locY) - Number(playerLoc.locY)) <= Config.activationRadius;
-    const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
-    const shown = { ...state, ...arrival.patch };
-    if (inReach(shown.loc)) return shown;
-    return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
-}
-
 // The spot of a commanded bot, from its request's route: the trip the
 // worker's plan started (BotRoute), or the ground the worker fought on when
 // the bot needed no trip.
@@ -1796,15 +1775,13 @@ const PopulationService = {
         return chain.then(() => activated);
     },
 
-    // Walkers near a player appear within the same activation budget
-    // (walkerAppearance). Only the small walker list is read.
+    // Walkers near a player appear on their road within the same activation budget
+    // (HotActivation). Only the small walker list is read.
     showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now()) {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            // HotActivation leaves the trip at walkerAppearance's endpoint in reach of this
-            // player, read after its fence; with neither in reach the walker stays cold.
-            return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true, playerLoc: loc })
+            return this.requestActivation(state, 'near_player', { readyOnActivation: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
                     activated.push(result);
@@ -3247,7 +3224,6 @@ const PopulationService = {
 };
 
 PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPointForState(state, spot);
-PopulationService.walkerAppearance = walkerAppearance;
 PopulationService.marketListingIntent = marketListingIntent;
 PopulationService.openMarketListing = openMarketListing;
 PopulationService.partyLimitsForObjective = partyLimitsForObjective;
