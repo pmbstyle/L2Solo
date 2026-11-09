@@ -258,7 +258,8 @@ function prepare(members, { objective, party, spots, timestamp } = {}) {
     // fails the solo safety gate) has no row of its own: its solo progress is none, yet
     // in a safe roster it still swings its weapon, at the table's damage dealer of its
     // level without shots (a melee blow fires no spiritshot). Our choice: the table
-    // simulates no party kit; a C4 starter mystic hunts its home field in a party.
+    // simulates no party kit; a C4 starter mystic hunts its home field in a party. Temporary: until
+    // the tables carry a party-role row (a mystic priced at a fighter's blow overstates the party's kills).
     const lines = members.map(member => {
         const own = Table.roleFor(member), options = { spoilSkillLevel: Rewards.spoilSkillLevel(member) };
         const row = Table.value(spot.id, own, member.level, true, options);
