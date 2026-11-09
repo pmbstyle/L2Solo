@@ -1,17 +1,8 @@
 const definitions = require('../../../data/ClanHalls/doors.json');
-const SendPacket = invoke('Packet/Send');
+const packets = require('../Network/DoorPackets');
 const Rules = require('../Clan/ClanRules');
 const { inClientView } = invoke('GameServer/World/WorldConstants');
 let doors = [];
-
-function packets(door) {
-    // C4 DoorInfo binds a world object to the door already in the client map.
-    return [
-        new SendPacket(0x4c).writeD(door.objectId).writeD(door.id).fetchBuffer(),
-        new SendPacket(0x4d).writeD(door.objectId).writeD(door.open ? 0 : 1)
-            .writeD(0).writeD(0).writeD(door.id).writeD(door.maxHp).writeD(door.maxHp).fetchBuffer()
-    ];
-}
 
 function start(world) {
     doors = definitions.map(door => ({ ...door, objectId: world.npc.nextId++, open: false, revision: 0 }));

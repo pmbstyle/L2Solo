@@ -19,6 +19,8 @@ const requiredServerFiles = ['package.json', 'config/default.ini', 'scripts/run-
 const versionOf = tag => String(tag).replace(/^(?:server-|launcher-)?v/, '');
 const channelOf = version => versionOf(version).includes('-preview.') ? 'preview' : 'stable';
 
+class ReleaseNotFoundError extends Error {}
+
 function validateChannel(manifest, tag) {
     const channel = channelOf(tag);
     if (manifest.channel !== undefined && manifest.channel !== channel
@@ -33,7 +35,7 @@ async function json(url, fetcher = fetch) {
         signal: AbortSignal.timeout(20000)
     });
     if (!response.ok) {
-        if (response.status === 404) throw new Error('No stable release is published yet. You can connect an existing server while the first release is being prepared.');
+        if (response.status === 404) throw new Error('Update information could not be found. Please try again later.');
         if (response.status === 403 || response.status === 429) throw new Error('GitHub request limit reached. Try checking for updates later.');
         throw new Error(`Release request failed (HTTP ${response.status}).`);
     }
@@ -115,7 +117,7 @@ function selectRelease(releases, component, minimumVersion = '0.0.0', channel = 
 
 async function latestRelease(fetcher = fetch, releases, channel = 'stable') {
     const release = selectRelease(releases || await listReleases(fetcher), 'server', '0.0.0', channel);
-    if (!release) throw new Error(`No ${channel} server release is published yet. You can connect an existing server while the first release is being prepared.`);
+    if (!release) throw new ReleaseNotFoundError(`No ${channel} server release is available.`);
     const descriptor = release.assets?.find(asset => asset.name === 'l2solo-release.json');
     if (!descriptor || descriptor.browser_download_url !== assetUrl(release.tag_name, descriptor.name)) throw new Error('This release does not contain launcher installation files.');
     const manifest = validateManifest(await json(descriptor.browser_download_url, fetcher), release.tag_name);
@@ -155,7 +157,7 @@ function validateLauncherManifest(manifest, tag) {
 
 async function launcherRelease(fetcher = fetch, releases, minimumVersion = '0.0.0', channel = 'stable') {
     const release = selectRelease(releases || await listReleases(fetcher), 'launcher', minimumVersion, channel);
-    if (!release) throw new Error(`No compatible ${channel} launcher release is published yet.`);
+    if (!release) throw new ReleaseNotFoundError(`No compatible ${channel} launcher release is available.`);
     const tag = release.tag_name;
     const descriptor = release.assets?.find(asset => asset.name === 'launcher-release.json');
     if (descriptor?.browser_download_url !== assetUrl(tag, 'launcher-release.json')) throw new Error('The launcher release is incomplete.');
@@ -202,5 +204,5 @@ function newerVersion(candidate, current) {
     return BigInt(nextPreview) > BigInt(installedPreview);
 }
 
-module.exports = { repository, tagPattern, launcherTagPattern, versionPattern, stableVersionPattern, versionOf, channelOf, platforms, requiredServerFiles, assetUrl, validateManifest,
+module.exports = { repository, ReleaseNotFoundError, tagPattern, launcherTagPattern, versionPattern, stableVersionPattern, versionOf, channelOf, platforms, requiredServerFiles, assetUrl, validateManifest,
     validateLauncherManifest, listReleases, selectRelease, launcherRelease, latestRelease, download, newerVersion };

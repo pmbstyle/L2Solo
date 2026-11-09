@@ -1,6 +1,7 @@
 const path = require('path');
 const { isMainThread } = require('worker_threads');
 const SharedGeodata = require('./SharedGeodata');
+const GardenOfEvaBarriers = require('./GardenOfEvaBarriers');
 const VirtualObstacles = invoke('GameServer/Geodata/VirtualObstacles/index');
 
 const REGION_OFFSET_X = 20;
@@ -191,10 +192,12 @@ const GeodataEngine = {
     },
 
     sharedDescriptor() {
-        return getSharedGeodata(this.getGeodataDir()).descriptor;
+        return { ...getSharedGeodata(this.getGeodataDir()).descriptor,
+            gardenOfEvaBarriers: GardenOfEvaBarriers.sharedBuffer() };
     },
 
     attachShared(descriptor) {
+        if (descriptor?.gardenOfEvaBarriers) GardenOfEvaBarriers.attach(descriptor.gardenOfEvaBarriers);
         if (sharedGeodata) {
             if (sharedGeodata.descriptor.arena !== descriptor?.arena) {
                 throw new Error('Cannot replace the shared geodata arena before restart');
@@ -386,6 +389,7 @@ const GeodataEngine = {
     },
 
     hasLineOfSight(fromX, fromY, fromZ, toX, toY, toZ) {
+        if (GardenOfEvaBarriers.blocks(fromX, fromY, fromZ, toX, toY, toZ)) return false;
         let cx = fromX >> 4;
         let cy = fromY >> 4;
 
@@ -537,6 +541,7 @@ const GeodataEngine = {
 
         const immediate = { cx: startCx, cy: startCy, cz: startCell.z };
         if (reachedGoal(immediate)) {
+            if (GardenOfEvaBarriers.blocks(startX, startY, startZ, endX, endY, endZ)) return null;
             if (goalRadius > 0) {
                 return [{ locX: startX, locY: startY, locZ: startZ }];
             }
@@ -611,6 +616,9 @@ const GeodataEngine = {
                     continue;
                 }
 
+                if (GardenOfEvaBarriers.blocks((current.cx << 4) + 8, (current.cy << 4) + 8, current.cz,
+                    (nCx << 4) + 8, (nCy << 4) + 8, nCell.z)) continue;
+
                 const g = current.g + 16;
                 const previousCost = bestCosts.get(key);
                 if (previousCost !== undefined && previousCost <= g) {
@@ -684,6 +692,15 @@ const GeodataEngine = {
                 locY: endY,
                 locZ: endZ
             };
+        }
+
+        // Replacing cell centres with exact endpoints must not bridge a wall
+        // inside a single geodata cell, including the first approach segment.
+        let previous = { locX: startX, locY: startY, locZ: startZ };
+        for (const point of smoothedPath) {
+            if (GardenOfEvaBarriers.blocks(previous.locX, previous.locY, previous.locZ,
+                point.locX, point.locY, point.locZ)) return null;
+            previous = point;
         }
 
         return smoothedPath;

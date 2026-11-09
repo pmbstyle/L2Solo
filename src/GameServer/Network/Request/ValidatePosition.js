@@ -2,6 +2,7 @@ const ReceivePacket = invoke('Packet/Receive');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const GardenOfEvaBarriers = require('../../Geodata/GardenOfEvaBarriers');
 
 const FALL_HEIGHT = 333;
 const FALLING_VALIDATION_DELAY_MS = 10000;
@@ -38,6 +39,13 @@ function consume(session, data) {
         return false;
     }
     if (isFalling(session.actor, data)) return false;
+    const actor = session.actor;
+    if (GardenOfEvaBarriers.blocks(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
+        data.locX, data.locY, data.locZ)) {
+        actor.automation?.abortAll?.(actor);
+        EffectRestrictions.stopMovement(session, actor);
+        return false;
+    }
     if (invoke('GameServer/Geodata/PlayerTransitionRecovery').observe(session, data)) return false;
     session.actor.updatePosition(data);
     return true;

@@ -3,25 +3,20 @@ require('./Global');
 // [Perf] live: started before any worker, so the boot is recorded too; without it nothing runs.
 invoke('Perf/LiveRecorder').start();
 
-const { acquireDatabaseAccess, verifyUpdateDatabasePaths, rejectUpdateBeforeMigrations, beginUpdateMigrations } = require('../scripts/database-access');
+const { acquireDatabaseAccess, resolveDatabasePaths, rejectUpdateBeforeMigrations, beginUpdateMigrations } = require('../scripts/database-access');
 const startupRoot = require('path').resolve(__dirname, '..');
 const expectedUpdateDatabases = process.env.L2NODE_UPDATE_TRIAL === '1' && process.env.L2NODE_UPDATE_DATABASES
     ? JSON.parse(process.env.L2NODE_UPDATE_DATABASES) : null;
-const configuredDatabase = { ...options.default.Database };
 let releaseDatabaseAccess;
 try {
+    // Pin the configured pair for this process. Copied or moved databases are
+    // ordinary worlds; the update snapshot never restricts which one can start.
+    const databasePaths = resolveDatabasePaths(startupRoot, options.default.Database);
+    options.default.Database ||= {};
+    [options.default.Database.path, options.default.Database.historyPath] = databasePaths;
+    releaseDatabaseAccess = acquireDatabaseAccess(databasePaths[0]);
     if (expectedUpdateDatabases) {
-        const [world, history] = verifyUpdateDatabasePaths(startupRoot, configuredDatabase, expectedUpdateDatabases);
-        // Keep the checked physical pair even if an INI file or directory alias
-        // changes while the remaining startup modules load.
-        options.default.Database ||= {};
-        options.default.Database.path = world;
-        options.default.Database.historyPath = history;
-    }
-    releaseDatabaseAccess = acquireDatabaseAccess(require('path').resolve(startupRoot, options.default.Database?.path || 'tmp/nodel2.sqlite'));
-    if (expectedUpdateDatabases) {
-        verifyUpdateDatabasePaths(startupRoot, configuredDatabase, expectedUpdateDatabases);
-        beginUpdateMigrations(startupRoot, expectedUpdateDatabases);
+        beginUpdateMigrations(startupRoot, expectedUpdateDatabases, databasePaths);
     }
 } catch (error) {
     releaseDatabaseAccess?.();
@@ -94,6 +89,7 @@ function exitAfterFinalWrites() {
 async function drainServices(progress) {
     const steps = [
         ['cold simulation drain', () => invoke('GameServer/Bot/Population/PopulationService').stop()],
+        ['Garden of Eva doors', () => invoke('GameServer/World/GardenOfEvaDoors').stop()],
         ['pathfinding workers', () => PathfindingWorkerPool.shutdown()],
         ['clan planning worker', () => invoke('GameServer/Clan/ClanPlanningCoordinator').shutdown()],
         ['tracing', () => LangfuseTracing.shutdown()],
@@ -204,6 +200,13 @@ console.info(
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 async function startServer() {
     DataCache.init();
+    const nonStackableItemIds = (DataCache.items || [])
+        .filter(item => item.etc?.stackable !== true)
+        .map(item => Number(item.selfId));
+    const split = await Database.splitNonStackableItems(nonStackableItemIds);
+    if (split.rowsSplit > 0) {
+        utils.infoSuccess('DB', 'split non-stackable items rows=%d extra objects=%d', split.rowsSplit, split.copiesCreated);
+    }
     invoke('GameServer/Clan/ClanPlanningCoordinator').start();
     const stackableItemIds = (DataCache.items || [])
         .filter((item) => item.etc?.stackable === true)

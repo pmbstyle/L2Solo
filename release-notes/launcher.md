@@ -1,11 +1,5 @@
-Manage your local L2Solo server from one desktop application.
+🔄 **Faster update checks**
 
-- Install the server and its required Node.js runtime without Git or a system Node.js installation.
-- Start and stop the server, open World Observer, and see the login address and live bot/player population.
-- Create world backups, restore the matching world/history pair, and wipe selected world data while the server is stopped.
-- Find related settings together, with descriptions for each option and one AI provider section.
-- Download server updates in the background. Failed startup verification restores the previous code and world snapshot.
-- Preview builds use a separate application profile, server folder and update channel.
-- Read formatted release notes in one Updates panel, without duplicate launcher notes.
-
-Windows Setup and Linux AppImage support application updates. On macOS, download the matching DMG, quit the launcher and replace the application. These builds do not require paid signing certificates.
+- The launcher now checks for both server and launcher updates at startup and every five minutes, instead of every four hours.
+- Automatic checks refresh the release list even when a cached result is available, so a recent check no longer delays discovery of a new release.
+- Manual checks also refresh immediately. If you are offline, an installed server can still start.

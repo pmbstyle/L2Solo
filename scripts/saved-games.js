@@ -201,26 +201,33 @@ function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(d
         let history;
         try {
             history = fs.existsSync(historyPath) ? openStoppedDatabase(historyPath) : null;
+        } finally {
+            // Windows enforces SQLite's exclusive byte-range locks on ordinary
+            // file copies too. Checkpoint/check both sources, then close both
+            // handles before copying. The separate access lock stays held by
+            // the worker until the complete world/history save is published.
+            try { history?.close(); } finally { db.close(); }
+        }
+        const hasHistory = Boolean(history);
+        try {
             fs.mkdirSync(pending, { recursive: true });
-            const copies = [[databasePath, WORLD_FILE], ...(history ? [[historyPath, HISTORY_FILE]] : [])];
+            const copies = [[databasePath, WORLD_FILE], ...(hasHistory ? [[historyPath, HISTORY_FILE]] : [])];
             copies.forEach(([source, target]) => {
                 const file = path.join(pending, target);
                 fs.copyFileSync(source, file, fs.constants.COPYFILE_EXCL);
                 validateDatabase(file);
                 Restore.flushFile(file);
             });
-            validatePair(path.join(pending, WORLD_FILE), history ? path.join(pending, HISTORY_FILE) : null);
+            validatePair(path.join(pending, WORLD_FILE), hasHistory ? path.join(pending, HISTORY_FILE) : null);
             fs.writeFileSync(path.join(pending, 'save.json'), JSON.stringify({
                 name: trimmed || `Save — ${new Date(createdAt).toLocaleString('en-GB')}`,
-                createdAt, formatVersion: SAVE_FORMAT_VERSION, hasHistory: !!history,
+                createdAt, formatVersion: SAVE_FORMAT_VERSION, hasHistory,
                 files: Object.fromEntries(copies.map(([, target]) => [target, digestFile(path.join(pending, target))]))
             }, null, 2));
             Restore.flushFile(path.join(pending, 'save.json'));
             fs.renameSync(pending, directory);
             return readSave(savesDir, id);
         } finally {
-            history?.close();
-            db.close();
             fs.rmSync(pending, { recursive: true, force: true });
         }
     }

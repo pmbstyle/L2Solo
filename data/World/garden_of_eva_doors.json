@@ -1,0 +1,438 @@
+{
+  "source": "https://gitlab.com/TheDnR/l2j-lisvus/-/raw/fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975/datapack/data/doors.xml",
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "doors": [
+    {
+      "id": 22250001,
+      "name": "goe_001",
+      "locX": 86226,
+      "locY": 247063,
+      "locZ": -8584,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 86364,
+        "maxY": 247162,
+        "maxZ": -8333,
+        "minX": 86085,
+        "minY": 246961,
+        "minZ": -8845
+      }
+    },
+    {
+      "id": 22250002,
+      "name": "goe_002",
+      "locX": 88491,
+      "locY": 253871,
+      "locZ": -8584,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 88546,
+        "maxY": 254031,
+        "maxZ": -8333,
+        "minX": 88436,
+        "minY": 253707,
+        "minZ": -8845
+      }
+    },
+    {
+      "id": 22250003,
+      "name": "goe_003",
+      "locX": 76873,
+      "locY": 253954,
+      "locZ": -8584,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 76928,
+        "maxY": 254118,
+        "maxZ": -8344,
+        "minX": 76816,
+        "minY": 253788,
+        "minZ": -8856
+      }
+    },
+    {
+      "id": 22250004,
+      "name": "goe_004",
+      "locX": 79033,
+      "locY": 247128,
+      "locZ": -8584,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 79164,
+        "maxY": 247228,
+        "maxZ": -8326,
+        "minX": 78897,
+        "minY": 247031,
+        "minZ": -8838
+      }
+    },
+    {
+      "id": 22250005,
+      "name": "goe_005",
+      "locX": 82738,
+      "locY": 246603,
+      "locZ": -9093,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 82901,
+        "maxY": 246603,
+        "maxZ": -8847,
+        "minX": 82574,
+        "minY": 246603,
+        "minZ": -9359
+      }
+    },
+    {
+      "id": 22250006,
+      "name": "goe_006",
+      "locX": 87902,
+      "locY": 250378,
+      "locZ": -9093,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 87963,
+        "maxY": 250540,
+        "maxZ": -8849,
+        "minX": 87845,
+        "minY": 250218,
+        "minZ": -9361
+      }
+    },
+    {
+      "id": 22250007,
+      "name": "goe_007",
+      "locX": 85914,
+      "locY": 256377,
+      "locZ": -9093,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 86047,
+        "maxY": 256477,
+        "maxZ": -8840,
+        "minX": 85778,
+        "minY": 256278,
+        "minZ": -9352
+      }
+    },
+    {
+      "id": 22250008,
+      "name": "goe_008",
+      "locX": 79561,
+      "locY": 256348,
+      "locZ": -9093,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 79699,
+        "maxY": 256447,
+        "maxZ": -8836,
+        "minX": 79427,
+        "minY": 256253,
+        "minZ": -9348
+      }
+    },
+    {
+      "id": 22250009,
+      "name": "goe_009",
+      "locX": 77616,
+      "locY": 250361,
+      "locZ": -9093,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 77671,
+        "maxY": 250525,
+        "maxZ": -8848,
+        "minX": 77560,
+        "minY": 250195,
+        "minZ": -9360
+      }
+    },
+    {
+      "id": 22250010,
+      "name": "goe_010",
+      "locX": 80102,
+      "locY": 248387,
+      "locZ": -9611,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 80233,
+        "maxY": 248485,
+        "maxZ": -9371,
+        "minX": 79968,
+        "minY": 248290,
+        "minZ": -9883
+      }
+    },
+    {
+      "id": 22250011,
+      "name": "goe_011",
+      "locX": 85343,
+      "locY": 248344,
+      "locZ": -9611,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 85481,
+        "maxY": 248443,
+        "maxZ": -9357,
+        "minX": 85204,
+        "minY": 248243,
+        "minZ": -9869
+      }
+    },
+    {
+      "id": 22250012,
+      "name": "goe_012",
+      "locX": 87018,
+      "locY": 253389,
+      "locZ": -9611,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 87076,
+        "maxY": 253544,
+        "maxZ": -9363,
+        "minX": 86965,
+        "minY": 253223,
+        "minZ": -9875
+      }
+    },
+    {
+      "id": 22250013,
+      "name": "goe_013",
+      "locX": 82768,
+      "locY": 256485,
+      "locZ": -9611,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 82932,
+        "maxY": 256486,
+        "maxZ": -9361,
+        "minX": 82603,
+        "minY": 256484,
+        "minZ": -9873
+      }
+    },
+    {
+      "id": 22250014,
+      "name": "goe_014",
+      "locX": 78490,
+      "locY": 253391,
+      "locZ": -9611,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 78548,
+        "maxY": 253551,
+        "maxZ": -9372,
+        "minX": 78435,
+        "minY": 253230,
+        "minZ": -9884
+      }
+    },
+    {
+      "id": 22250015,
+      "name": "goe_015",
+      "locX": 79253,
+      "locY": 253097,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 79308,
+        "maxY": 253256,
+        "maxZ": -9874,
+        "minX": 79196,
+        "minY": 252936,
+        "minZ": -10386
+      }
+    },
+    {
+      "id": 22250016,
+      "name": "goe_016",
+      "locX": 79276,
+      "locY": 250856,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 79328,
+        "maxY": 251017,
+        "maxZ": -9874,
+        "minX": 79220,
+        "minY": 250697,
+        "minZ": -10386
+      }
+    },
+    {
+      "id": 22250017,
+      "name": "goe_017",
+      "locX": 80601,
+      "locY": 249046,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 80735,
+        "maxY": 249143,
+        "maxZ": -9858,
+        "minX": 80464,
+        "minY": 248949,
+        "minZ": -10370
+      }
+    },
+    {
+      "id": 22250018,
+      "name": "goe_018",
+      "locX": 82836,
+      "locY": 248341,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 82999,
+        "maxY": 248341,
+        "maxZ": -9879,
+        "minX": 82672,
+        "minY": 248340,
+        "minZ": -10391
+      }
+    },
+    {
+      "id": 22250019,
+      "name": "goe_019",
+      "locX": 84906,
+      "locY": 249034,
+      "locZ": -10116,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 85050,
+        "maxY": 249141,
+        "maxZ": -9867,
+        "minX": 84761,
+        "minY": 248927,
+        "minZ": -10379
+      }
+    },
+    {
+      "id": 22250020,
+      "name": "goe_020",
+      "locX": 86247,
+      "locY": 250888,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 86307,
+        "maxY": 251048,
+        "maxZ": -9856,
+        "minX": 86186,
+        "minY": 250724,
+        "minZ": -10368
+      }
+    },
+    {
+      "id": 22250021,
+      "name": "goe_021",
+      "locX": 86213,
+      "locY": 253197,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 86268,
+        "maxY": 253360,
+        "maxZ": -9868,
+        "minX": 86157,
+        "minY": 253034,
+        "minZ": -10380
+      }
+    },
+    {
+      "id": 22250022,
+      "name": "goe_022",
+      "locX": 84889,
+      "locY": 254973,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 85027,
+        "maxY": 255073,
+        "maxZ": -9864,
+        "minX": 84750,
+        "minY": 254873,
+        "minZ": -10376
+      }
+    },
+    {
+      "id": 22250023,
+      "name": "goe_023",
+      "locX": 82726,
+      "locY": 255659,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 82892,
+        "maxY": 255660,
+        "maxZ": -9875,
+        "minX": 82560,
+        "minY": 255658,
+        "minZ": -10387
+      }
+    },
+    {
+      "id": 22250024,
+      "name": "goe_024",
+      "locX": 80590,
+      "locY": 254950,
+      "locZ": -10118,
+      "maxHp": 187500,
+      "autoOpenDelay": 420000,
+      "autoCloseDelay": 420000,
+      "bounds": {
+        "maxX": 80727,
+        "maxY": 255050,
+        "maxZ": -9860,
+        "minX": 80454,
+        "minY": 254851,
+        "minZ": -10372
+      }
+    }
+  ]
+}

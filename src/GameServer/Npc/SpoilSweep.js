@@ -37,12 +37,7 @@ function rollSpoils(npc) {
     };
 
     fetchSpoilGroups(npc).forEach((group) => {
-        const groupRoll = ProgressionRates.rewardGroupRoll(group, 'spoil', rewardContext);
-        if (!groupRoll.hit) {
-            return;
-        }
-
-        for (const { item, amount } of ProgressionRates.rollSpoilGroup(group, groupRoll.amountMultiplier)) {
+        for (const { item, amount } of ProgressionRates.rollSpoilGroup(group, rewardContext)) {
             awarded.push({ selfId: item.selfId, name: item.name, amount });
         }
     });

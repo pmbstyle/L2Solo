@@ -143,9 +143,9 @@ function move(session, bot, target, kind, options = {}) {
     }
 
     const pendingTarget = session.pendingPathRequest?.requestedTo;
-    const activeTarget = session.activeMoveGoal?.requestedTo;
+    // A completed/cancelled executor may leave its goal behind. The goal is
+    // intent, not evidence that a timer still advances the actor.
     const movingToTarget = sameTarget(pendingTarget, target) ||
-        sameTarget(activeTarget, target) ||
         !!session.moveTimer;
     if (movingToTarget || bot.state?.inMotion?.() || bot.state?.fetchTowards?.()) {
         return { status: 'moving', failures: state.failures };

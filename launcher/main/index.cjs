@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { Controller } = require('./controller.cjs');
+const { confirmDatabaseRestore } = require('./database-recovery.cjs');
 const { news, safeLink } = require('./news.cjs');
 const { RuntimeManager } = require('./runtime.cjs');
 const { ReleaseCatalog, interval } = require('./release-catalog.cjs');
@@ -42,7 +43,8 @@ else {
         const runtimeManager = new RuntimeManager({ userData, bundledNode: app.isPackaged ? bundledNode : developmentNode });
         const nodePath = await runtimeManager.ensure();
         const catalog = new ReleaseCatalog({ userData });
-        controller = new Controller({ userData, nodePath, runtimeManager, catalog, channel: releaseChannel });
+        controller = new Controller({ userData, nodePath, runtimeManager, catalog, channel: releaseChannel,
+            confirmDatabaseRestore: journal => confirmDatabaseRestore(dialog, window, journal) });
         const launcherUpdates = new LauncherUpdates({ controller, catalog, currentVersion: app.getVersion(), packaged: app.isPackaged, channel: releaseChannel,
             beforeInstall: () => { quitting = true; }, installFailed: () => { quitting = false; }, createUpdater: options => {
                 if (process.platform === 'darwin') throw new Error('Update this macOS application using its DMG installer.');
@@ -52,8 +54,6 @@ else {
             } });
         async function checkAllUpdates(force = false) {
             const results = await Promise.allSettled([controller.checkUpdates(force), launcherUpdates.check(force)]);
-            controller.state.updateCheckError = results[0].status === 'rejected' ? results[0].reason.message : null;
-            controller.publish();
             const failures = results.filter(result => result.status === 'rejected');
             if (force && failures.length === results.length) throw failures[0].reason;
             return controller.snapshot();
@@ -124,9 +124,10 @@ else {
         });
         await window.loadURL('l2solo://app/index.html');
         await controller.initialize();
+        // Refresh both components even when the shared catalog cache is recent.
         // Update discovery is informational; an offline machine can still play.
-        if (!process.env.L2SOLO_SMOKE_DIR) checkAllUpdates().catch(() => {});
-        const updateTimer = setInterval(() => checkAllUpdates().catch(() => {}), interval);
+        if (!process.env.L2SOLO_SMOKE_DIR) checkAllUpdates(true).catch(() => {});
+        const updateTimer = setInterval(() => checkAllUpdates(true).catch(() => {}), interval);
         updateTimer.unref();
         if (!app.isPackaged && process.env.L2SOLO_SMOKE_DIR) {
             await require('../test/ui-smoke.cjs')({ window, controller, directory: process.env.L2SOLO_SMOKE_DIR });

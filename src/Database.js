@@ -31,6 +31,7 @@ const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
+const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
@@ -50,6 +51,7 @@ const SavedSkills = require('./GameServer/Bot/SavedSkills');
 const InventorySummary = require('./GameServer/Bot/Population/InventorySummary');
 const PartyCandidateProjection = require('./DatabasePartyCandidateProjection');
 const PlayerWarehouse = require('./DatabasePlayerWarehouse');
+const ItemInstances = require('./DatabaseItemInstances');
 const DataCache = invoke('GameServer/DataCache');
 const C4Recipes = require('./GameServer/Items/C4RecipeItems');
 const TradeIntent = require('./GameServer/Bot/Economy/TradeIntent');
@@ -2459,6 +2461,26 @@ function resolveClanActionUnsafe(action, status, result, reasonCode) {
     };
 }
 
+function clanActionScheduleUnsafe() {
+    return jsonObject(one('SELECT value FROM world_meta WHERE key = ?', [ClanActionScheduler.key])?.value);
+}
+
+function saveClanActionScheduleUnsafe(state) {
+    write(`INSERT INTO world_meta(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [ClanActionScheduler.key, JSON.stringify(state)]);
+}
+
+// Disposable wake-ups from earlier saves did not carry queueReview. Their
+// generated keys distinguish them from player order revisions and durable
+// equipment-completion commands, which must retain their individual keys.
+const CLAN_ACTION_REVIEW_SQL = `(json_extract(payloadJson, '$.queueReview') = 1
+    OR actionKey GLOB 'clan:*:after:*:goal_plan:*'
+    OR actionKey GLOB 'clan:*:after:*:contribution:*'
+    OR actionKey GLOB 'clan:*:event:*:goal_plan'
+    OR actionKey GLOB 'clan:*:recovery:v*'
+    OR actionKey GLOB 'clan:*:bootstrap:*'
+    OR actionKey GLOB 'clan:*:queue-repair:*')`;
+
 // A new pending clan action. Its actionKey stays unique across live and
 // finished actions, as when both were one table: a key taken by a finished
 // action fails (or is ignored) like the UNIQUE constraint did.
@@ -2474,10 +2496,12 @@ function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100,
     // action retains its captured inputs and may have one pending successor.
     // Only disposable wake-ups opt in. Commands such as equipment completion
     // retain their own durable key even when another review is already queued.
-    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)
-        && one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId])) {
+    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)) {
+        payload = { ...payload, queueReview: true };
+        const autonomous = !!one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId]);
         const pending = one(`SELECT * FROM clan_actions
-            WHERE clanId = ? AND status = 'pending' AND actionType = ? ORDER BY id LIMIT 1`, [clanId, actionType]);
+            WHERE clanId = ? AND status = 'pending' AND actionType = ?
+              AND (? OR ${CLAN_ACTION_REVIEW_SQL}) ORDER BY id LIMIT 1`, [clanId, actionType, autonomous ? 1 : 0]);
         if (pending) {
             const previous = jsonObject(pending.payloadJson);
             const merged = { ...previous, ...payload };
@@ -4963,6 +4987,7 @@ const Database = {
     bagRevisionSet,
 
     ...PlayerWarehouse.create({ one, all, write, inTransaction, withCharacterFlush }),
+    ...ItemInstances.create({ all, write, inTransaction, bagRevisionSet, now }),
     openClanRaidPartyAtImpact(request) {
         // The offensive callback cannot await our queue: its registered roster
         // could change meanwhile. Abort this native action when another write
@@ -7731,6 +7756,32 @@ const Database = {
         if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
         return withCharacterFlush(characterId, () => insert('items', values, 'item:insert'));
     },
+    // A multi-item award is committed before publishing any of its instances.
+    // Equipment always gets one object ID per copy, even at high reward rates.
+    setItemInstances(characterId, item) {
+        const template = ItemTemplateIndex.find(DataCache.items, item.selfId);
+        const amount = Number(item.amount);
+        if (!template || !Number.isSafeInteger(amount) || amount <= 0 || amount > 0x7fffffff) {
+            return Promise.reject(new Error('invalid item award'));
+        }
+        const stackable = (template.etc?.stackable ?? template.stackable) === true && !item.petData;
+        if (!stackable && amount > InventoryLimits.MAX_CAPACITY) {
+            return Promise.reject(new Error('item award exceeds inventory capacity'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const results = [];
+            const petData = item.petData
+                ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData)) : null;
+            for (let index = 0; index < (stackable ? 1 : amount); index++) {
+                const count = stackable ? amount : 1;
+                const packet = write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+                    VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, [item.selfId, item.name || '', count,
+                    Math.max(0, Number(item.enchant) || 0), item.slot ?? 0, petData, characterId]);
+                results.push({ insertId: Number(packet.insertId), amount: count });
+            }
+            return results;
+        }, 'item:award-instances'));
+    },
     // caller: a static tag of the call site, counted for developer diagnostics only.
     fetchItems(characterId, caller = 'untagged') {
         DiagnosticConfig.developerDiagnostics && Diagnostics.count('item_list', 'call', caller);
@@ -9818,13 +9869,15 @@ const Database = {
         }, 'clan-action:enqueue');
     },
     // A paged upgrade of saved queues, using the same admission and settlement
-    // as live actions. Leased work and player orders are never rewritten.
+    // as live actions. Player-managed clans also retain old review chains;
+    // only their identifiable wake-ups are repaired, never player commands.
     repairClanProgressionQueue({ afterId = 0 } = {}) {
         return inTransaction(() => {
             const deadlineAt = performance.now() + 8;
             const rows = all(`SELECT a.* FROM clan_actions a
-                JOIN clan_simulation_clans s ON s.clanId = a.clanId AND s.mode = 'autonomous'
+                JOIN clan_simulation_clans s ON s.clanId = a.clanId
                 WHERE a.id > ? AND a.status = 'pending' AND a.actionType IN ('goal_plan', 'contribution')
+                  AND (s.mode = 'autonomous' OR ${CLAN_ACTION_REVIEW_SQL})
                 ORDER BY a.id LIMIT 64`, [Number(afterId)]);
             let cancelled = 0, scanned = 0, cursor = Number(afterId);
             for (const action of rows) {
@@ -9865,13 +9918,12 @@ const Database = {
             const leaseUntil = timestamp + Math.max(1000, Math.floor(Number(leaseMs) || 120000));
             const recovery = write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
                 WHERE status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ?`, [timestamp, timestamp]);
-            // One priority point per ready minute prevents fresh planning work
-            // from indefinitely starving supplies and progression actions.
-            const pending = one(`SELECT * FROM clan_actions
-                WHERE status = 'pending' AND availableAt <= ?
-                ORDER BY priority + CAST(MAX(0, ? - availableAt) / 60000 AS INTEGER) DESC,
-                    availableAt ASC, id ASC LIMIT 1`, [timestamp, timestamp]);
-            if (!pending) {
+            // Read only the active queue's scheduling columns, never payloads
+            // or terminal history. The cursor commits with the exact lease,
+            // surviving restarts and rolling back with a failed admission.
+            const selection = ClanActionScheduler.select(all(`SELECT id, clanId, actionType, status, priority, availableAt
+                FROM clan_actions WHERE status IN ('pending', 'running')`), clanActionScheduleUnsafe(), timestamp);
+            if (selection.actionId === null) {
                 return {
                     action: null,
                     recovered: Number(recovery.affectedRows || 0)
@@ -9879,16 +9931,18 @@ const Database = {
             }
             const updated = write(`UPDATE clan_actions
                 SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
-                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(pending.id)]);
+                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, selection.actionId]);
+            const action = Number(updated.affectedRows || 0) === 1
+                ? one('SELECT * FROM clan_actions WHERE id = ?', [selection.actionId]) : null;
+            if (action) saveClanActionScheduleUnsafe(ClanActionScheduler.recordClaim(selection, action));
             return {
-                action: Number(updated.affectedRows || 0) === 1
-                    ? one('SELECT * FROM clan_actions WHERE id = ?', [Number(pending.id)])
-                    : null,
+                action,
                 recovered: Number(recovery.affectedRows || 0)
             };
         }, 'clan-action:claim-one');
     },
-    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null } = {}) {
+    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null,
+        continuation = false, unstarted = false } = {}) {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
@@ -9916,6 +9970,12 @@ const Database = {
                 dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
+            if (unstarted === true) {
+                const schedule = clanActionScheduleUnsafe();
+                const refunded = ClanActionScheduler.refundClaim(schedule, action);
+                if (refunded !== schedule) saveClanActionScheduleUnsafe(refunded);
+            } else if (continuation === true) saveClanActionScheduleUnsafe(
+                ClanActionScheduler.continueAction(clanActionScheduleUnsafe(), id));
             return {
                 ok: true,
                 actionId: id,

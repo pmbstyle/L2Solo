@@ -12,6 +12,7 @@ const TRADE_TTL_MS = 2 * 60 * 1000;
 const COMPLETION_REPLAY_TTL_MS = 15 * 1000;
 const MAX_TRADE_LINES = 8;
 const MAX_ITEM_AMOUNT = 10000;
+const MAX_ADENA_AMOUNT = 2147483647;
 const MAX_BOT_GIFT_UNITS = 5000;
 const MAX_INVENTORY_ITEMS = 80;
 const MIN_ADENA_RETAIN = 1000;
@@ -253,7 +254,7 @@ function startBuffTrade(playerSession, botSession, offer) {
     if (!offer || Number(offer.playerId) !== Number(playerSession.actor.fetchId())
         || Number(offer.providerId) !== Number(botSession.actor.fetchId())
         || !Number.isSafeInteger(Number(offer.price)) || Number(offer.price) <= 0
-        || Number(offer.price) > 2147483647) return { ok: false, reason: 'invalid_buff_quote' };
+        || Number(offer.price) > MAX_ADENA_AMOUNT) return { ok: false, reason: 'invalid_buff_quote' };
     cancel(playerSession, 'replaced', false);
     cancel(botSession, 'replaced', false);
     const trade = createTrade(playerSession, botSession, 'player_inbound');
@@ -329,8 +330,9 @@ function addPlayerItem(playerSession, objectId, amount) {
     if (trade.buffService && Number(item.fetchSelfId()) !== 57) return { ok: false, reason: 'buff_adena_only' };
     const current = trade.playerItems.get(Number(objectId));
     if (!current && trade.playerItems.size >= MAX_TRADE_LINES) return { ok: false, reason: 'trade_line_limit' };
-    const limit = trade.buffService && Number(item.fetchSelfId()) === 57
-        ? Number(trade.buffService.price) : MAX_ITEM_AMOUNT;
+    // Player payments use the client's signed 32-bit count, not the ordinary item cap.
+    const itemLimit = Number(item.fetchSelfId()) === 57 ? MAX_ADENA_AMOUNT : MAX_ITEM_AMOUNT;
+    const limit = trade.buffService ? Number(trade.buffService.price) : itemLimit;
     const qty = Math.max(1, Math.min(limit, Math.floor(Number(amount) || 1)));
     const nextCount = Math.min(item.fetchAmount(), limit, (current?.count || 0) + qty);
     if (nextCount <= 0 || nextCount + minimumRetain(item) > Number(item.fetchAmount())) return { ok: false, reason: 'insufficient_item' };

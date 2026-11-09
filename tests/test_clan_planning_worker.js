@@ -115,6 +115,24 @@ async function parityAndIntegration() {
                 `worker must preserve planning for class ${classId}, level ${level}`);
         }
         assert.equal(worker.metrics().completed, 4);
+        const PartyPolicy = require('../src/GameServer/Bot/Population/ClanEquipmentPartyPolicy');
+        const mage = { characterId: 990002, classId: 27, level: 45, phase: 'cold', adena: 0,
+            inventory: invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(
+                invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 27, level: 40 }).items),
+            stats: { classId: 27, equipmentPlan: { status: 'active', strategy: 'direct_drop', grade: 'c',
+                rateModelVersion: invoke('GameServer/Bot/AI/GearAcquisitionPlanner').RATE_MODEL_VERSION,
+                rateProfileSignature: invoke('GameServer/Bot/AI/GearAcquisitionPlanner').rateProfileSignature(),
+                target: { selfId: 440, slot: 15 },
+                next: { spotId: 'lilim-worker', npcId: 1175, itemId: 440, kind: 'spoil' } } } };
+        const spoilSpots = [{ id: 'lilim-worker', avgLevel: 48, npcEntries: [{ selfId: 1175, count: 1 }] }];
+        for (const level of [40, 43]) {
+            const options = { craftRecipes: [], allowedRecipeIds: [], spoilCapable: true,
+                spoilProviders: PartyPolicy.spoilProvidersFor([{ classId: 55, level, stats: { classId: 55 } }]) };
+            const expected = planForMember(mage, spoilSpots, [], options);
+            const actual = await worker.plan({ member: mage, spots: spoilSpots, warehouseRows: [], options }, DataCache);
+            assert.deepEqual(actual, expected, 'the real worker applies source-specific spoiler admission');
+            assert.equal(actual.next?.kind === 'spoil', level === 43);
+        }
         // The offers are board records: a cold buyer never buys from a live
         // private store (E14).
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -215,7 +233,8 @@ async function parityAndIntegration() {
         const Shops = invoke('GameServer/Bot/Economy/CraftShopService');
         const craftRecipes = Shops.availableRecipes(Shops.STATION_CRAFTER);
         assert(craftRecipes.length > 100, 'the fixture plans with the real recipe list');
-        const craft = { craftRecipes, allowedRecipeIds: craftRecipes.map(recipe => recipe.recipeId), craftProviders: {} };
+        const craft = { craftRecipes, allowedRecipeIds: craftRecipes.map(recipe => recipe.recipeId), craftProviders: {},
+            spoilProviders: [{ level: 43, stats: { stepCount: 0, clanHuntBackoffs: [] } }] };
         const warehouseRows = [{ selfId: 1864, amount: 20 }];
         const sizes = [], send = jobWorker.send;
         jobWorker.send = (type, payload) => {

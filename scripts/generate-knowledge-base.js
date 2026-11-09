@@ -121,19 +121,18 @@ function buildRateProfiles() {
 function rateResult(group, item, itemIndex, kind, preset, npcLevel) {
     process.env.L2NODE_PROGRESSION_RATE = preset;
     ProgressionRates.reset();
+    if (kind === 'spoil') {
+        const plan = ProgressionRates.spoilItemPlan(group, item, { npcLevel, killerLevel: npcLevel });
+        return { chancePercent: round(plan.chance * 100), expectedAmountPerKill: round(plan.expectedYield) };
+    }
     const roll = ProgressionRates.rewardGroupRoll(group, kind, {
         npcLevel,
         killerLevel: npcLevel,
         attackerLevels: []
     }, () => 0);
     const groupChance = Number(roll.chance || 0) / 100;
-    const selectionChance = kind === 'drop'
-        ? ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate)
-        : ProgressionRates.spoilItemChance(item);
-    const expectedConditionalAmount = kind === 'drop'
-        ? ProgressionRates.expectedDropAmount(group, item, roll.itemRate)
-        : ((Number(item.min || 1) + Number(item.max || item.min || 1)) / 2)
-            * Number(roll.amountMultiplier || 1);
+    const selectionChance = ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate);
+    const expectedConditionalAmount = ProgressionRates.expectedDropAmount(group, item, roll.itemRate);
 
     return {
         chancePercent: round(groupChance * selectionChance * 100),

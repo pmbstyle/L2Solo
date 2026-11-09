@@ -398,6 +398,7 @@ function moveTo(session, actor, coords) {
 
     if (!isBot) {
         // Normal player movement
+        coords = { ...coords, to: require('../../Geodata/GardenOfEvaBarriers').clip(coords.from, coords.to) };
         session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
     } else {
         // Bot movement

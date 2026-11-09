@@ -294,7 +294,7 @@ async function scheduleReviews() {
                     // A pending review reads fresh inputs, but a delayed
                     // strategy review must become ready on a real change.
                     if (active.status === 'running' || actionType !== ACTION_TYPES.PLAN
-                        || active.mode !== 'autonomous' || number(active.availableAt) <= at) continue;
+                        || number(active.availableAt) <= at) continue;
                 }
                 await Database.enqueueClanAction({ clanId: event.clanId, actionType, priority: actionType === ACTION_TYPES.PLAN ? 75 : 40,
                     coalescePending: actionType === ACTION_TYPES.PLAN,
@@ -594,7 +594,8 @@ async function resolveAction(action, options = {}) {
                 actionId: action.id,
                 availableAt: Date.now() + retryDelay,
                 expectedAttempt: action.attempt,
-                expectedLeaseUntil: action.leaseUntil
+                expectedLeaseUntil: action.leaseUntil,
+                continuation: true
             }).finally(() => {
                 DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
             });
@@ -787,7 +788,8 @@ const ClanActionService = {
                     const released = await Database.releaseClanAction({
                         actionId: action.id,
                         expectedAttempt: action.attempt,
-                        expectedLeaseUntil: action.leaseUntil
+                        expectedLeaseUntil: action.leaseUntil,
+                        unstarted: true
                     }).finally(() => {
                         DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'release', Date.now() - releaseStartedAt);
                     });

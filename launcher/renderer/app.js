@@ -29,12 +29,23 @@ function element(tag, className, text) {
     if (text !== undefined) node.textContent = text;
     return node;
 }
-function error(message) { $('error-message').textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, ''); $('error-banner').hidden = false; }
-function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { $('toast').hidden = true; }, 4000); }
+const notificationTimers = new Map();
+function dismissNotification(id) {
+    clearTimeout(notificationTimers.get(id));
+    notificationTimers.delete(id);
+    $(id).hidden = true;
+}
+function showNotification(id) {
+    dismissNotification(id);
+    $(id).hidden = false;
+    notificationTimers.set(id, setTimeout(() => dismissNotification(id), 5000));
+}
+function error(message) { $('error-message').textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, ''); showNotification('error-banner'); }
+function toast(message) { $('toast').textContent = message; showNotification('toast'); }
 async function run(work) {
     if (actionPending) return;
     actionPending = true;
-    $('error-banner').hidden = true;
+    dismissNotification('error-banner');
     render();
     try { return await work(); }
     catch (cause) { error(cause.message); }
@@ -93,16 +104,24 @@ function render(next) {
     $('server-release-label').textContent = state.releaseChannel === 'preview' ? 'SERVER · PREVIEW' : 'SERVER · STABLE';
     renderReleaseNotes();
     if (state.latest) {
-        $('update-title').textContent = !state.installed ? `${state.latest.tag} is ready to install` : state.latest.updateAvailable ? `${state.latest.tag} is available` : 'Your server is up to date';
+        $('update-title').textContent = !state.installed ? `${state.latest.tag} is ready to install` : state.latest.updateAvailable ? `${state.latest.tag} is available` : 'The server is up to date.';
         $('update-description').textContent = !state.installed ? 'Choose a folder to install the server.' : state.latest.updateAvailable ? `Installed: ${state.version?.split(' ·')[0]}. Your database and settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
         if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Update the launcher above before installing this server release.';
-        if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update. World and history snapshots will be restored if startup fails.';
+        if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update.';
         if (state.developerMode) $('update-description').textContent = 'Update this Git checkout with your development tools, or choose a separate folder for a managed installation.';
         if (serverDownload?.status === 'downloading') $('update-description').textContent = `${serverDownload.label || 'Downloading server release'}… The running world is unaffected.`;
         if (serverDownload?.status === 'ready') $('update-description').textContent = `${serverDownload.tag} is downloaded and verified. Stop the server to install it.`;
         if (serverDownload?.error) $('update-description').textContent = serverDownload.error;
+    } else {
+        $('update-title').textContent = state.updateCheckStatus === 'checked' ? 'No updates available' : 'Server updates';
+        $('update-description').textContent = state.updateCheckStatus === 'checked' ? 'The server is up to date.'
+            : state.updateCheckStatus === 'checking' ? 'Checking for server updates…' : 'Check for server updates.';
     }
-    if (state.updateCheckError) $('update-description').textContent = state.updateCheckError;
+    if (state.updateCheckStatus === 'checking') $('update-description').textContent = 'Checking for server updates…';
+    if (state.updateCheckError) {
+        $('update-title').textContent = 'Unable to check for updates';
+        $('update-description').textContent = state.updateCheckError;
+    }
     $('console-status').textContent = `SERVER ${state.phase.toUpperCase()}`;
     const output = state.logs.map(entry => `${new Date(entry.at).toLocaleTimeString('en-GB')}  ${entry.line}`).join('\n');
     if (output && $('console-output').textContent !== output) {
@@ -122,8 +141,8 @@ function renderLauncherUpdate(locked) {
     const busy = ['checking', 'downloading', 'installing'].includes(update.status);
     $('launcher-update-title').textContent = update.availableVersion && ['available', 'downloading', 'downloaded', 'installing'].includes(update.status)
         ? `Launcher ${update.availableVersion} ${update.status === 'downloaded' ? 'is ready' : 'is available'}` : `L2Solo Launcher ${update.currentVersion || ''}`;
-    $('launcher-update-description').textContent = update.error || ({ idle: 'Check for application updates.', checking: 'Checking GitHub Releases…',
-        current: 'Your launcher is up to date.', available: update.supported ? 'Download in the background. The server can keep running.'
+    $('launcher-update-description').textContent = update.error || ({ idle: 'Check for launcher updates.', checking: 'Checking for launcher updates…',
+        current: 'The launcher is up to date.', available: update.supported ? 'Download in the background. The server can keep running.'
             : api?.platform === 'darwin' ? 'Download the DMG, then quit the launcher and replace the app. Your server folder and settings are kept.' : 'Download the installer from GitHub to update this build.',
         downloading: `Downloading… ${Math.floor(update.percent || 0)}%`, downloaded: 'Ready to install. Restarting the launcher will save and stop the server first.',
         installing: 'Stopping the server and restarting the launcher…' }[update.status] || 'Check for updates to try again.');
@@ -141,7 +160,8 @@ function releaseNotesSource() {
 }
 function renderReleaseNotes() {
     const release = releaseNotesSource();
-    const notes = release ? release.notes || 'No release notes were provided.' : 'Check for updates to load release notes.';
+    const notes = release ? release.notes || 'No release notes available.'
+        : state.updateCheckStatus === 'checked' || state.launcherUpdate?.status === 'current' ? 'No new release notes.' : 'Check for updates to load release notes.';
     if (notes !== renderedReleaseNotes) {
         $('release-notes').innerHTML = releaseMarkdown.render(notes);
         renderedReleaseNotes = notes;
@@ -381,7 +401,14 @@ async function chooseFolder() {
     if (state.root && !state.installed) render(await api.install());
     else if (state.root && before !== state.root && !state.geodata?.valid) render(await api.repair());
 }
-async function checkUpdates() { render(await api.checkUpdates()); toast(state.latest?.updateAvailable ? `${state.latest.tag} is available.` : 'Update check complete.'); }
+async function checkUpdates() {
+    dismissNotification('toast');
+    render(await api.checkUpdates());
+    const failures = [...new Set([state.updateCheckError, state.launcherUpdate?.error].filter(Boolean))];
+    if (failures.length) { error(failures.join(' ')); return; }
+    toast(state.latest?.updateAvailable ? `${state.latest.tag} is available.`
+        : ['available', 'downloading', 'downloaded', 'installing'].includes(state.launcherUpdate?.status) ? `Launcher ${state.launcherUpdate.availableVersion} is available.` : 'Everything is up to date.');
+}
 async function primaryAction() {
     if (state.phase !== 'stopped') render(await api.stop());
     else if (!state.root) await chooseFolder();
@@ -440,7 +467,7 @@ $('save-settings').addEventListener('click', () => run(async () => {
     sections = await api.saveSettings([...dirty.values()]);
     dirty.clear(); renderSettingsNav(); renderFields(); toast('Settings saved. They will apply on the next server start.');
 }));
-$('dismiss-error').addEventListener('click', () => { $('error-banner').hidden = true; });
+$('dismiss-error').addEventListener('click', () => dismissNotification('error-banner'));
 $('quick-backup').addEventListener('click', () => run(() => createBackup()));
 $('backup-form').addEventListener('submit', event => { event.preventDefault(); if (!$('create-backup').disabled) run(() => createBackup($('backup-name').value)); });
 $('refresh-backups').addEventListener('click', () => run(async () => { render(await api.world()); }));

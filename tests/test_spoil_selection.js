@@ -4,6 +4,7 @@
 // the cold fight (BackgroundDropResolver.rollSpoilForFight) roll it, the
 // planner's units per kill and the spot value count it the same way.
 const assert = require('node:assert/strict');
+const { useRate } = require('./helpers/progressionRate');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -24,7 +25,7 @@ const firstAlone = { ...spoilReward([{ selfId: firstItem, chance: 60, min: 1, ma
 const spotOf = (id, selfId) => ({ id, avgLevel: 20, npcEntries: [{ selfId, count: 1 }] });
 const originalRandom = Math.random;
 try {
-    process.env.L2NODE_PROGRESSION_RATE = 'x1';
+    useRate('x1');
     Data.npcs = [...Data.npcs,
         { selfId: npcId, template: { level: 20, name: 'Spoil Pair Mob', kind: 'Monster' } },
         { selfId: aloneNpcId, template: { level: 20, name: 'Spoil Single Mob', kind: 'Monster' } },
@@ -59,6 +60,5 @@ try {
 } finally {
     Math.random = originalRandom;
     Data.npcs = original.npcs; Data.npcRewards = original.rewards; Data.items = original.items;
-    if (original.rate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
-    else process.env.L2NODE_PROGRESSION_RATE = original.rate;
+    useRate(original.rate);
 }

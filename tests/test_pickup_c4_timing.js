@@ -102,7 +102,9 @@ async function main() {
             } };
             const recipient = { actor: owner, dataSendToMe() {} };
             replace(Database, 'updateItemAmount', (_id, _item, total) => new Promise(resolve => writes.push(() => { resolve(); })));
-            replace(Database, 'setItem', () => new Promise(resolve => writes.push(() => { inserts++; resolve({ insertId: 99 }); })));
+            replace(Database, 'setItemInstances', (_id, item) => new Promise(resolve => writes.push(() => {
+                inserts++; resolve([{ insertId: 99, amount: item.amount }]);
+            })));
             const pending = [Purchase(recipient, 57, 3), Purchase(recipient, 57, 7), Purchase(recipient, 57, 11)];
             for (let i = 0; i < 3; i++) {
                 await flush(); assert.strictEqual(writes.length, 1, 'only one inventory write may be in flight');

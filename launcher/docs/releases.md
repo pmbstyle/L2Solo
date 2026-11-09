@@ -1,19 +1,19 @@
 # Releases and updates
 
-## Versions and first publication
+## Versions and publication
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The current launcher is `0.2.0`, the server is `0.1.0`, and schema-2 server packages require launcher `0.2.0` or newer. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable versions are launcher `0.2.2` and server `0.1.1`. Schema-2 server packages still require launcher `0.2.0` or newer; this update does not raise the updater protocol requirement. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
 # After review, commit and integration of the intended release source:
-git tag launcher-v0.2.0
-git push origin launcher-v0.2.0
+git tag launcher-v0.2.2
+git push origin launcher-v0.2.2
 
 # Wait for the launcher release workflow and all platform artifacts.
-git tag server-v0.1.0
-git push origin server-v0.1.0
+git tag server-v0.1.1
+git push origin server-v0.1.1
 ```
 
 Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI requires the tagged commit to be in `main`. Future server-only releases reuse the same launcher binaries until a new launcher version is published. PRs never publish releases. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases, but no longer trigger new publications.
@@ -84,11 +84,15 @@ The server directory owns `config/local.ini`, world/history databases, `tmp/save
 
 The selected release object is fixed for the entire installation even when an informational check discovers a newer release. After installation, update availability is compared against the actual installed version.
 
-Before trial startup the launcher revalidates the configured world/history paths, canonical paths and file identities against the pending snapshot. Changes before or during preparation refuse startup without changing either world; restore the original paths/files to continue. The server checks the same pair before opening databases and again under the access lock, then pins the physical paths for its process. Startup protocol 2 distinguishes `starting` from `migrating`: the server durably records `migrating` under that lock before opening either database. A refusal is recorded as `rejected`. Recovery before migration authorization rolls back only code, even if the process crashed before it could record a rejection.
+Trial startup uses the configured world/history pair without comparing it to the update snapshot. Copying, moving or replacing database files does not produce warnings or require reinstalling the update. The server pins the physical paths for its process and records those destinations in the update journal under the world access lock. Startup protocol 2 distinguishes `starting` from `migrating`: the server durably records `migrating` before opening either database. Recovery before migration authorization rolls back only code and leaves current data unchanged.
 
-A trial remains pending until initialization and both TCP listeners report readiness. The launcher commits its journal before telling the server to admit players. A failed/interrupted trial after migration authorization restores both data files and previous code; a crash after commit does not restore old gameplay data. Recovery records `recovering` before replacement so it can resume its own interrupted database restore. Legacy journals without this startup protocol must pass a file identity check (or a hash check when no identity was recorded) before recovery changes code or data. If that check or a recovery copy's integrity verification fails, or a copy cannot be restored, the journal remains for a later recovery attempt. Do not delete `.l2solo/backups` or start the pending installation through another entry point.
+A trial remains pending until initialization and both TCP listeners report readiness. The launcher commits its journal before telling the server to admit players. Only a failed/interrupted trial that may have modified databases offers to restore the pre-update world/history backup. **Yes, restore backup** replaces both databases at the failed startup's recorded destinations; **No, keep current data** leaves both files unchanged. Closing the dialog also keeps current data. Previous server files are restored in either case. There is no database restore prompt when no database backup exists, during ordinary startup, or after a successful trial.
 
-Manual world backups remain separate. The updater snapshot is not an autosave schedule and does not change the existing restore/wipe confirmation behavior. Pending verification blocks restore/wipe and database path changes so a failed update cannot undo a later user operation. Source checkouts containing `.git` are explicitly excluded from archive replacement.
+The answer is persisted before recovery changes code or data. An interrupted recovery resumes the saved choice without asking again. Older journals also pin recovery destinations before the question, so later configuration changes or partial code recovery cannot redirect a confirmed restore. A confirmed restore records `recovering` before replacement and verifies backup checksums and database integrity before replacing either member of the pair. Legacy interrupted startups follow the same explicit choice. A crash after commit does not restore old gameplay data. If code or database recovery fails, the journal remains for a later recovery attempt. Old snapshots remain in `.l2solo/backups`; do not delete that directory or start an unverified installation through another entry point.
+
+Manual world backups remain separate. The updater snapshot is not an autosave schedule and does not change the existing restore/wipe confirmation behavior. Pending verification blocks restore/wipe and database path changes through the settings UI. Source checkouts containing `.git` are explicitly excluded from archive replacement.
+
+Manual saves checkpoint and check both stopped databases, then close both SQLite connections before copying either file. The separate world access lock covers preparation, copying, validation and publication. Keeping an exclusive SQLite transaction open during `copyFileSync` makes Windows reject the copy with `EBUSY`; retrying the copy cannot release that lock. The history database contains finished events and analytics and belongs to the world/history pair; it is not a disposable temporary file.
 
 ## Validation before public rollout
 

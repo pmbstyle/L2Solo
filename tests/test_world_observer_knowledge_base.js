@@ -221,8 +221,9 @@ try {
     const gremlinX50 = service.npcDetail(1);
     assert.strictEqual(gremlinX50.rateProfile.drop, 50);
     assert.strictEqual(gremlinX50.drops[1].items[0].chancePercent, 33.49182068);
-    assert.strictEqual(gremlinX50.spoils[0].items[0].chancePercent, 12.0603);
+    assert.strictEqual(gremlinX50.spoils[0].items[0].chancePercent, 100);
     assert.strictEqual(gremlinX50.spoils[0].items[0].expectedAmountPerKill, 6.03015);
+    assert.deepStrictEqual([gremlinX50.spoils[0].items[0].minAmount, gremlinX50.spoils[0].items[0].maxAmount], [6, 7]);
     const keltirAdena = service.npcDetail(481).drops.flatMap((group) => group.items)
         .find((item) => item.itemId === 57);
     assert.deepStrictEqual({

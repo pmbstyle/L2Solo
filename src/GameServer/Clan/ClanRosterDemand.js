@@ -133,7 +133,7 @@ function discoveryOptions(options) {
     const recipes = options.economicCraftAllowed === false ? options.craftRecipes || []
         : require('../Knowledge/RecipeCatalog').currentDwarvenScrollRows(Recipes);
     return { ...options, craftRecipes: recipes, allowedRecipeIds: recipes.map(recipe => recipe.recipeId),
-        craftProviders: options.craftProviders, spoilCapable: true, ignoreExistingPlan: true };
+        craftProviders: options.craftProviders, spoilCapable: true, spoilProviders: undefined, ignoreExistingPlan: true };
 }
 function ownedSpoilCapability(clan, member, plan = null) {
     if (!member || member.phase !== 'cold' || member.recruitmentReserved || member.stats?.tradeMeeting || member.stats?.playerPartyTakeover) return false;
@@ -234,6 +234,7 @@ function economicPlan(planner, job, member, spots, warehouseRows, options) {
     const requirements = options.economicRequirements || [];
     const conditional = conditionalOptions(base, requirements, job.prospects, options.recipeKnowledge);
     const owned = ownAvailable(job.clan);
+    conditional.spoilProviders = require('../Bot/Population/ClanEquipmentPartyPolicy').spoilProvidersFor([...owned, ...job.prospects]);
     conditional.spoilCapable ||= requirements.some(row => row.kind === 'spoil' && owned.some(value => economicCapable(value, row)));
     const plan = planner(member, spots, warehouseRows, conditional);
     const relevant = economicRequirements(plan, base, member, warehouseRows);

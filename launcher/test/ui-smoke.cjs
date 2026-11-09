@@ -22,11 +22,12 @@ module.exports = async function smoke({ window, controller, directory }) {
             await new Promise(resolve => setTimeout(resolve, 50));
         }
     };
-    const capture = async name => {
+    const capture = async (name, { notifications = false } = {}) => {
         window.show();
         window.focus();
         await window.webContents.insertCSS('*{animation:none!important;transition:none!important}');
-        await js("document.getElementById('toast').hidden = true; new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        if (!notifications) await js("dismissNotification('toast'); dismissNotification('error-banner')");
+        await js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
         await new Promise(resolve => setTimeout(resolve, 150));
         await fs.promises.writeFile(path.join(directory, `${name}.png`), (await window.webContents.capturePage()).toPNG());
     };
@@ -43,6 +44,23 @@ module.exports = async function smoke({ window, controller, directory }) {
     await wait("document.getElementById('primary-label').textContent === 'Start server'");
     assert.equal(await js("document.getElementById('channel-label').textContent"), controller.channel === 'preview' ? 'PREVIEW' : 'BETA');
     assert.equal(await js("document.getElementById('preview-notice').hidden"), controller.channel !== 'preview');
+    assert.equal(await js("document.querySelector('.brand > div').firstChild.textContent"), 'L2Solo');
+    const layoutBeforeNotifications = await js("[document.getElementById('view-home').getBoundingClientRect().top, document.querySelector('main').scrollHeight]");
+    await js("error('Unable to check for updates. Please try again.'); toast('Settings saved.');");
+    assert.equal(await js("getComputedStyle(document.querySelector('.notification-stack')).position"), 'fixed');
+    assert.equal(await js("document.getElementById('error-banner').closest('main') === null"), true);
+    assert.deepEqual(await js("[document.getElementById('view-home').getBoundingClientRect().top, document.querySelector('main').scrollHeight]"), layoutBeforeNotifications);
+    await capture('notifications', { notifications: true });
+    await js("document.getElementById('dismiss-error').click()");
+    assert.equal(await js("document.getElementById('error-banner').hidden"), true);
+    await js("error('Checking again…')");
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    await js("error('The connection was interrupted. Please try again.'); toast('World backup created.'); window.__notificationStartedAt = performance.now();");
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    assert.equal(await js("!document.getElementById('error-banner').hidden && !document.getElementById('toast').hidden"), true, 'new notifications must outlive the previous timers');
+    await wait("document.getElementById('error-banner').hidden && document.getElementById('toast').hidden");
+    assert.equal(await js('performance.now() - window.__notificationStartedAt >= 5000'), true, 'notifications remain visible for five seconds');
+    assert.deepEqual(await js("[document.getElementById('view-home').getBoundingClientRect().top, document.querySelector('main').scrollHeight]"), layoutBeforeNotifications);
     await wait("!document.getElementById('quick-backup').disabled");
     await js("document.getElementById('quick-backup').click()");
     await wait("document.querySelectorAll('.backup-row').length === 1 && !document.getElementById('quick-backup').disabled");
@@ -199,12 +217,50 @@ module.exports = async function smoke({ window, controller, directory }) {
         assert.deepEqual(opened, [controller.state.latest.url]);
     } finally { shell.openExternal = openExternal; }
     await capture('updates');
+    try {
+        controller.state.updatePending = true;
+        controller.publish();
+        await wait("document.getElementById('update-description').textContent === 'Start the server to verify this update.'");
+        assert.equal(await js("document.getElementById('install-update').disabled"), true);
+        assert.equal(await js("document.getElementById('confirm-dialog').open"), false);
+        await capture('updates-pending');
+    } finally {
+        controller.state.updatePending = false;
+        controller.publish();
+    }
     controller.state.latest.notes = '<img src=x onerror="window.__notesExecuted=true">\n\n[bad](javascript:alert(1))\n\n![<svg onload=alert(1)>](https://example.invalid/image.png)';
     controller.publish();
     await wait("document.getElementById('release-notes').textContent.includes('<img')");
     assert.equal(await js("document.querySelector('#release-notes img, #release-notes svg, #release-notes script, #release-notes a') === null"), true);
     assert.equal(await js("window.__notesExecuted === undefined"), true);
+    const catalogReleases = controller.catalog.releases;
+    try {
+        controller.catalog.releases = async () => [];
+        // Exercise the real combined IPC check with an empty release catalog.
+        controller.state.releaseChannel = controller.channel;
+        controller.state.launcherUpdate.status = 'idle';
+        controller.publish();
+        await js("document.getElementById('updates-check').click()");
+        await wait("document.getElementById('toast').textContent === 'Everything is up to date.' && !document.getElementById('updates-check').disabled");
+        assert.equal(await js("document.getElementById('update-description').textContent"), 'The server is up to date.');
+        assert.equal(await js("document.getElementById('launcher-update-description').textContent"), 'The launcher is up to date.');
+        assert.equal(await js("document.getElementById('release-notes').textContent.trim()"), 'No new release notes.');
+        assert.equal(await js("document.getElementById('error-banner').hidden && document.getElementById('update-dot').hidden && document.getElementById('install-update').disabled"), true);
+        await capture('updates-current');
+        controller.catalog.releases = async () => { throw new Error('Network unavailable. Please try again.'); };
+        await js("document.getElementById('updates-check').click()");
+        await wait("!document.getElementById('error-banner').hidden && !document.getElementById('updates-check').disabled");
+        assert.equal(await js("document.getElementById('update-title').textContent"), 'Unable to check for updates');
+        assert.equal(await js("document.getElementById('launcher-update-description').textContent"), 'Network unavailable. Please try again.');
+        assert.equal(await js("document.getElementById('toast').hidden"), true);
+        controller.catalog.releases = async () => [{ tag_name: `launcher-v1.0.0${controller.channel === 'preview' ? '-preview.1' : ''}`,
+            prerelease: controller.channel === 'preview', assets: [] }];
+        await js("document.getElementById('updates-check').click()");
+        await wait("document.getElementById('error-message').textContent === 'The launcher release is incomplete.' && !document.getElementById('updates-check').disabled");
+        assert.equal(await js("document.getElementById('update-description').textContent"), 'The server is up to date.');
+        assert.equal(await js("document.getElementById('toast').hidden"), true, 'a partial check failure must not show a success notification');
+    } finally { controller.catalog.releases = catalogReleases; }
     assert.deepEqual(rendererErrors, []);
-    await fs.promises.writeFile(path.join(directory, 'result.json'), JSON.stringify({ passed: true, checks: ['home', 'compact layout', 'login address', 'bot target separate from players', 'settings help and units', 'hidden settings excluded from search', 'semantic settings groups', 'stop hover', 'unified AI', 'backup create/restore/delete', 'wipe confirmation/cancel/scope', 'world tools disabled online', 'observer availability', 'navigation', 'settings saved to INI', 'enum selects', 'enum saved to INI', 'start', 'console streaming', 'graceful stop', 'updates'], rendererErrors }, null, 2));
+    await fs.promises.writeFile(path.join(directory, 'result.json'), JSON.stringify({ passed: true, checks: ['home', 'compact layout', 'brand casing', 'notification overlay', 'notification dismissal and five-second expiry', 'notification timer reset', 'login address', 'bot target separate from players', 'settings help and units', 'hidden settings excluded from search', 'semantic settings groups', 'stop hover', 'unified AI', 'backup create/restore/delete', 'wipe confirmation/cancel/scope', 'world tools disabled online', 'observer availability', 'navigation', 'settings saved to INI', 'enum selects', 'enum saved to INI', 'start', 'console streaming', 'graceful stop', 'updates', 'no-update state', 'update request failure'], rendererErrors }, null, 2));
     console.log('Desktop UI smoke passed: app layout, backups, wipe, settings, start/stop, Markdown notes, single notes panel, safe links and escaped HTML.');
 };

@@ -62,18 +62,30 @@ async function snapshot(clanId) {
         JOIN clan_simulation_clans s ON s.clanId=c.id WHERE c.id=?`, [clanId]);
     return { ...row, state: JSON.parse(row.stateJson) };
 }
+async function runType(clanId, actionType) {
+    const actions = () => Database.fetchClanActions({ clanId, limit: 200 });
+    const before = new Map((await actions()).map(action => [action.id, action.attempt]));
+    // Other ready types keep their turns between planning and payment. Wait
+    // for this native action within one complete round, without skipping them.
+    for (let turn = 0; turn < Object.keys(Actions.actionTypes).length; turn++) {
+        const result = await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        assert.equal(result.failed, 0, JSON.stringify(result));
+        assert.equal(result.budgetStopped, false, JSON.stringify(result));
+        if ((await actions()).some(action => action.actionType === actionType
+            && action.attempt > (before.get(action.id) || 0))) return;
+    }
+    assert.fail(`${actionType} for clan ${clanId} did not receive a turn`);
+}
 async function plan(clanId) {
     await Database.enqueueClanAction({ clanId, actionType: 'goal_plan',
         actionKey: `handoff:${clanId}:${++planSequence}`, priority: 100 });
-    const result = await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
-    assert.equal(result.failed, 0, JSON.stringify(result));
+    await runType(clanId, 'goal_plan');
 }
 async function runContribution(clanId) {
-    const pending = (await Database.fetchClanActions({ clanId, limit: 100 }))
-        .filter(action => action.actionType === 'contribution' && action.status === 'pending');
+    const pending = (await Database.fetchClanActions({ clanId, status: 'pending', limit: 100 }))
+        .filter(action => action.actionType === 'contribution');
     assert.equal(pending.length, 1, 'completed cash goal must hand off to one native contribution action');
-    const result = await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
-    assert.equal(result.failed, 0, JSON.stringify(result));
+    await runType(clanId, 'contribution');
 }
 async function noContribution(clanId) {
     assert(!(await Database.fetchClanActions({ clanId, limit: 100 }))
@@ -110,7 +122,7 @@ async function coldSp(leaderId, sp, replay = false) {
 }
 
 async function main() {
-    Database.init();
+    await Database.init();
     try {
         await Database.initClanHalls();
         // Real Hall dues -> native goal completion -> PLAN -> CONTRIBUTION ->
@@ -118,11 +130,11 @@ async function main() {
         const first = await fixture(720001, 0, Rules.LEVEL_REQUIREMENTS[0].sp + 5);
         assert.equal((await snapshot(first.clanId)).state.goal.status, 'completed');
         await Events.start(null, { subscribeBoardChanges: () => () => {} }, () => {});
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(first.clanId, 'goal_plan');
         await runContribution(first.clanId);
         assert.equal((await snapshot(first.clanId)).level, 1);
         assert.equal((await one('SELECT sp FROM characters WHERE id=?', [first.leaderId])).sp, 5);
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(first.clanId, 'goal_plan');
         const next = await snapshot(first.clanId);
         assert.equal(next.state.goal.target.level, 2, 'successful payment installs the next native cash goal');
         const spent = await one("SELECT COUNT(*) AS n FROM clan_warehouse_ledger WHERE clanId=? AND operation='level_up_consume'", [first.clanId]);
@@ -136,7 +148,7 @@ async function main() {
         await coldSp(waiting.leaderId, 30000, true);
         assert.deepEqual(await Events.drain(), [{ clanId: waiting.clanId, causes: ['leader_sp'] }]);
         Events.changed(waiting.clanId, 'leader_sp');
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(waiting.clanId, 'goal_plan');
         await runContribution(waiting.clanId);
         assert.equal((await snapshot(waiting.clanId)).level, 1);
         assert.equal((await one('SELECT sp FROM characters WHERE id=?', [waiting.leaderId])).sp, 0);
@@ -163,12 +175,12 @@ async function main() {
         assert.equal((await snapshot(second.clanId)).level, 1);
         await Events.drain();
         await coldSp(second.leaderId, 150000);
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(second.clanId, 'goal_plan');
         await runContribution(second.clanId);
         assert.equal((await snapshot(second.clanId)).level, 2);
         assert.equal((await one('SELECT sp FROM characters WHERE id=?', [second.leaderId])).sp, 0);
         assert.equal((await one("SELECT amount FROM clan_warehouse_items WHERE clanId=? AND selfId=57", [second.clanId])).amount, 1);
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(second.clanId, 'goal_plan');
         const itemGoal = (await snapshot(second.clanId)).state.goal;
         assert(itemGoal && itemGoal.target.level !== 2, 'level 2 installs its native next goal');
         const duplicate = await Database.advanceAutonomousClanLevel({ clanId: second.clanId, fromLevel: 1, toLevel: 2, requiredAmount: second.required });
@@ -188,12 +200,12 @@ async function main() {
             actor.setSp(30001);
             assert.equal(Events.pending(), 1, 'duplicate awards coalesce into one clan review');
             actor.setSp(29998); // Native payment must see later training spending.
-            await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+            await runType(hot.clanId, 'goal_plan');
             await runContribution(hot.clanId);
             assert.equal((await snapshot(hot.clanId)).level, 0);
             await noContribution(hot.clanId);
             actor.setSp(30000);
-            await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+            await runType(hot.clanId, 'goal_plan');
             await runContribution(hot.clanId);
             assert.equal((await snapshot(hot.clanId)).level, 1);
             assert.equal(actor.fetchSp(), 0, 'hot native payment charges the authoritative actor once');
@@ -208,7 +220,7 @@ async function main() {
         assert.equal((await snapshot(reserved.clanId)).level, 0, 'reserved cash remains protected');
         assert((await Database.releaseClanWarehouseReservation(reservation)).ok);
         assert.equal(Events.pending(), 1, 'committed release wakes the waiting cash goal');
-        await Actions.resolveBatch({ limit: 1, budgetMs: 5000 });
+        await runType(reserved.clanId, 'goal_plan');
         await runContribution(reserved.clanId);
         assert.equal((await snapshot(reserved.clanId)).level, 1);
         await Events.drain();
@@ -264,7 +276,15 @@ async function main() {
         await sql(`UPDATE clan_simulation_clans SET stateJson=json_set(stateJson,'$.strategy',json(?)) WHERE clanId=?`,
             [JSON.stringify({ version: 1, objective: 'advance_clan', status: 'active', target: { level: 2 },
                 leaderKey, selectedAt: at, progressAt: at, lastDecisionAt: at }), strategic.clanId]);
-        for (let i = 0; i < 8; i++) await plan(strategic.clanId);
+        // Isolate the producer/coalescing checks from payment: a fair
+        // scheduler may otherwise pay between these repeated reviews.
+        for (let i = 0; i < 8; i++) {
+            await plan(strategic.clanId);
+            await sql("UPDATE clan_actions SET availableAt=? WHERE clanId=? AND actionType='contribution' AND status='pending'",
+                [at + 600000, strategic.clanId]);
+        }
+        await sql("UPDATE clan_actions SET availableAt=? WHERE clanId=? AND actionType='contribution' AND status='pending'",
+            [at, strategic.clanId]);
         const queued = () => sql("SELECT * FROM clan_actions WHERE clanId=? AND status='pending' ORDER BY id", [strategic.clanId]);
         let pending = await queued();
         assert.equal(pending.filter(row => row.actionType === 'contribution').length, 1, 'one native payment after repeated strategic reviews');
@@ -297,6 +317,13 @@ async function main() {
         await sql("UPDATE clan_simulation_clans SET mode='player_managed' WHERE clanId=?", [first.clanId]);
         for (let i = 0; i < 2; i++) await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,status,availableAt,createdAt,updatedAt)
             VALUES(?,?,'goal_plan','pending',?,?,?)`, [first.clanId, `player-order:${i}`, at, at, at]);
+        const playerCommand = await Database.enqueueClanAction({ clanId: first.clanId, actionType: 'goal_plan',
+            actionKey: `clan:${first.clanId}:order:99:r1:goal_plan`, payload: { orderId: 99 } });
+        for (const type of ['goal_plan', 'contribution']) for (let i = 0; i < 3; i++) {
+            await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,status,availableAt,payloadJson,createdAt,updatedAt)
+                VALUES(?,?,?,'pending',?,?,?,?)`, [first.clanId, `clan:${first.clanId}:after:${100 + i}:${type}:1`, type,
+                at, JSON.stringify({ goalType: 'level' }), at, at]);
+        }
         let afterId = 0, cancelled = 0;
         for (;;) {
             const page = await Database.repairClanProgressionQueue({ afterId });
@@ -305,19 +332,30 @@ async function main() {
             if (!page.scanned) break;
             afterId = page.afterId;
         }
-        assert.equal(cancelled, 150);
+        assert.equal(cancelled, 154, 'autonomous and legacy player-clan review storms are repaired');
         pending = await queued();
         assert.equal(pending.filter(row => row.actionType === 'contribution').length, 1);
         assert.equal(pending.filter(row => row.actionType === 'goal_plan').length, 1);
         assert.equal((await one('SELECT status FROM clan_actions WHERE id=?', [leased.actionId])).status, 'running');
         assert.equal((await one("SELECT COUNT(*) n FROM clan_actions WHERE clanId=? AND actionKey LIKE 'player-order:%'", [first.clanId])).n, 2,
             'repair does not merge player orders');
+        assert.equal((await one('SELECT status FROM clan_actions WHERE id=?', [playerCommand.actionId])).status, 'pending',
+            'a real player order revision retains its durable command');
+        for (const actionType of ['goal_plan', 'contribution']) {
+            const review = await Database.enqueueClanAction({ clanId: first.clanId, actionType, coalescePending: true,
+                actionKey: `test:player-review:${actionType}`, payload: { reason: 'warehouse_changed' } });
+            assert(review.coalesced, 'new player-clan wake-ups merge into the repaired chain');
+            const again = await Database.enqueueClanAction({ clanId: first.clanId, actionType, coalescePending: true,
+                actionKey: `test:player-review:${actionType}:again`, payload: { reasons: ['board_changed'] } });
+            assert.equal(again.actionId, review.actionId, 'explicit review opt-in persists across generated keys');
+            assert.notEqual(review.actionId, playerCommand.actionId, 'a review never absorbs the player command');
+        }
         const cancelledActions = await Database.fetchClanActions({ clanId: strategic.clanId, status: 'cancelled', limit: 200 });
         assert.equal(cancelledActions.length, 150, 'removed duplicates remain in durable history');
         assert(cancelledActions.some(row => row.reasonCode === 'clan_strategy_review_replaced'));
         assert(cancelledActions.some(row => row.reasonCode === 'clan_action_coalesced'));
         assert.equal((await Database.repairClanProgressionQueue()).cancelled, 0, 'queue repair is repeatable');
-        await Actions.resolveBatch({ limit: 2, budgetMs: 5000 });
+        await runContribution(strategic.clanId);
         assert.equal((await snapshot(strategic.clanId)).level, 2, 'funded clan advances before the next wave of reviews');
         assert.equal((await one('SELECT sp FROM characters WHERE id=?', [strategic.leaderId])).sp, 10);
         assert.equal((await one("SELECT COUNT(*) n FROM clan_warehouse_ledger WHERE clanId=? AND operation='level_up_consume'", [strategic.clanId])).n, 1);

@@ -14,7 +14,7 @@ const { Controller } = require('../main/controller.cjs');
 const { RuntimeManager, prepareRuntime, targetFor } = require('../main/runtime.cjs');
 const { ReleaseCatalog } = require('../main/release-catalog.cjs');
 const { LauncherUpdates, validateFeed } = require('../main/launcher-updates.cjs');
-const { requiredServerFiles, assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
+const { requiredServerFiles, assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion, ReleaseNotFoundError } = require('../main/releases.cjs');
 const { applyRelease, markerPath, journalPath, recover } = require('../main/installer.cjs');
 const { writeJson, readJson, sha256, canonicalPath } = require('../main/files.cjs');
 const { collect, verifyTarget, feeds, feedsForChannel } = require('../scripts/launcher-assets.cjs');
@@ -23,7 +23,7 @@ const { plan } = require('../scripts/release-plan.cjs');
 const { prepare: preparePreview } = require('../scripts/prepare-preview.cjs');
 const { databaseSchema } = require('../scripts/package-server.cjs');
 const { prepareWorld, query } = require('./world-fixture.cjs');
-const { rejectUpdateBeforeMigrations } = require('../../scripts/database-access.js');
+const { acquireDatabaseAccess, rejectUpdateBeforeMigrations } = require('../../scripts/database-access.js');
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'l2solo-updates-'));
 after(() => fs.rmSync(temporary, { recursive: true, force: true, maxRetries: 10 }));
@@ -143,6 +143,68 @@ test('stable and preview discovery stay separate and preview build numbers compa
     assert.equal(newerVersion('0.2.0', '0.2.0-preview.999'), true);
     assert.equal(newerVersion('0.2.0-preview.10', '0.2.0'), false);
     assert.equal(newerVersion('0.3.0-preview.1', '0.2.0'), true);
+});
+
+test('successful checks without channel releases clear stale updates and report no updates', async () => {
+    for (const channel of ['stable', 'preview']) {
+        const opposite = channel === 'stable' ? '-preview.1' : '';
+        const releases = ['server', 'launcher'].map(component => ({ tag_name: `${component}-v1.0.0${opposite}`, prerelease: Boolean(opposite) }));
+        const catalog = { releases: async () => releases };
+        const controller = new Controller({ userData: directory('no-releases'), nodePath: process.execPath, catalog, channel });
+        controller.latest = { tag: 'server-v0.1.0' };
+        controller.state.latest = { tag: 'server-v0.1.0', updateAvailable: true };
+        controller.state.updateCheckError = 'Previous check failed';
+        const result = await controller.checkUpdates();
+        assert.equal(result.updateCheckStatus, 'checked');
+        assert.equal(result.updateCheckError, null);
+        assert.equal(result.latest, null);
+        assert.equal(controller.latest, null);
+        assert.equal(result.error, null);
+        await assert.rejects(controller.findRelease(), ReleaseNotFoundError);
+
+        const service = new LauncherUpdates({ controller, catalog, channel, currentVersion: '0.2.0', packaged: false });
+        service.latest = { tag: 'launcher-v0.3.0' };
+        Object.assign(service.state, { status: 'error', availableVersion: '0.3.0', notes: 'Old notes', url: 'https://l2solo.com', error: 'Previous check failed' });
+        await service.check();
+        assert.equal(service.state.status, 'current');
+        for (const field of ['availableVersion', 'notes', 'url', 'error']) assert.equal(service.state[field], null, field);
+        assert.equal(service.latest, null);
+        assert.throws(() => service.installerUrl(), /Check for launcher updates first/);
+    }
+});
+
+test('failed update requests remain errors rather than reporting current versions', async () => {
+    const failures = [
+        { fetcher: async () => { throw new Error('Network unavailable'); }, message: /Network unavailable/ },
+        ...[404, 429, 503].map(status => ({ fetcher: async () => new Response('', { status }),
+            message: status === 404 ? /Update information could not be found/ : status === 429 ? /request limit/ : /HTTP 503/ }))
+    ];
+    for (const { fetcher, message } of failures) {
+        const controller = new Controller({ userData: directory('failed-update'), nodePath: process.execPath, fetcher });
+        const service = new LauncherUpdates({ controller, catalog: controller.catalog, currentVersion: '0.2.0', packaged: false, fetcher });
+        await assert.rejects(controller.checkUpdates(), message);
+        assert.equal(controller.state.updateCheckStatus, 'error');
+        assert.match(controller.state.updateCheckError, message);
+        await assert.rejects(service.check(), message);
+        assert.equal(service.state.status, 'error');
+        assert.match(service.state.error, message);
+        controller.catalog.releases = async () => [];
+        await controller.checkUpdates();
+        await service.check();
+        assert.equal(controller.state.updateCheckError, null);
+        assert.equal(service.state.error, null);
+    }
+});
+
+test('missing release assets remain check failures', async () => {
+    const releases = ['server', 'launcher'].map(component => ({ tag_name: `${component}-v1.0.0`, assets: [] }));
+    const catalog = { releases: async () => releases };
+    const controller = new Controller({ userData: directory('incomplete-releases'), nodePath: process.execPath, catalog });
+    const service = new LauncherUpdates({ controller, catalog, currentVersion: '0.2.0', packaged: false });
+    await assert.rejects(controller.checkUpdates(), /does not contain launcher installation files/);
+    await assert.rejects(service.check(), /launcher release is incomplete/);
+    assert.equal(controller.state.updateCheckStatus, 'error');
+    assert.equal(service.state.status, 'error');
 });
 
 function previewPackages(sequence = 10, sourceCommit = 'a'.repeat(40)) {
@@ -305,7 +367,7 @@ test('launcher manifest and feeds reject missing platforms, foreign URLs and mis
 });
 
 test('release publisher exposes a complete draft only after every asset is uploaded and verified', async () => {
-    const item = await launcherFixture('0.2.0');
+    const item = await launcherFixture(require('../package.json').version);
     const calls = [], uploaded = [];
     let draft = false;
     const ghClient = args => {
@@ -321,17 +383,18 @@ test('release publisher exposes a complete draft only after every asset is uploa
         assert.ok(args.includes('--draft=false')); assert.ok(args.includes('--latest=false'));
         return '';
     };
-    await publishRelease({ tag: 'launcher-v0.2.0', directory: item.root, ghClient,
+    await publishRelease({ tag: item.manifest.tag, directory: item.root, ghClient,
         fetcher: async () => Response.json([{ tag_name: 'server-v9.0.0' }, { tag_name: 'launcher-v0.1.0' }]) });
     const create = calls.find(args => args[1] === 'create');
     assert.ok(create.includes('--notes-file'));
     assert.ok(!create.includes('--generate-notes'));
-    assert.match(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), /Manage your local L2Solo server/);
+    const notes = fs.readFileSync(path.join(__dirname, '../../release-notes/launcher.md'), 'utf8').trim();
+    assert.equal(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), `${notes}\n`);
     assert.equal(calls.at(-1)[1], 'edit');
-    await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
+    await assert.rejects(publishRelease({ tag: item.manifest.tag, directory: item.root,
         ghClient: () => JSON.stringify({ isDraft: false }), fetcher: async () => { throw new Error('Must not fetch a published version'); } }), /already published/);
     draft = true;
-    await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
+    await assert.rejects(publishRelease({ tag: item.manifest.tag, directory: item.root,
         fetcher: async () => Response.json([]), ghClient: args => {
             if (args[1] === 'edit') throw new Error('Must not publish an incomplete draft');
             return args.at(-1) === 'assets' ? JSON.stringify({ assets: [] }) : JSON.stringify({ isDraft: true });
@@ -488,18 +551,19 @@ async function serverFixture(script, tag = 'v0.1.0', schemaVersion = 1, { source
         : url.endsWith('l2solo-release.json') ? Response.json(manifest) : new Response(bytes) };
 }
 const oldScript = "console.log('GameServer :: successful init'); process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});process.on('disconnect',()=>process.exit(0));";
+const trialReady = `${oldScript}\nprocess.send({type:'launcher:initialized'});for(const service of ['AuthServer','GameServer'])process.send({type:'launcher:listening',service});`;
 const migration = `const path=require('node:path'),{DatabaseSync}=require('node:sqlite');
     const world=new DatabaseSync(path.join(process.env.L2NODE_RUNTIME_DIR,'world-data.sqlite'));
     world.exec('CREATE TABLE failed_migration(value TEXT)');world.close();
     const history=new DatabaseSync(path.join(process.env.L2NODE_RUNTIME_DIR,'world-history.sqlite'));
     history.exec("UPDATE bot_life_events SET summary='during-update'");history.close();`;
-async function upgrade(script, timeout = 5000) {
+async function upgrade(script, timeout = 5000, confirmDatabaseRestore = async () => { throw new Error('Unexpected database restore prompt'); }) {
     const root = directory('world');
     const initial = await serverFixture(oldScript);
     await applyRelease(root, initial.stage, initial.manifest);
     put(root, 'config/local.ini', ''); prepareWorld(root, process.execPath);
     const next = await serverFixture(script, 'server-v0.2.0', 2);
-    const controller = new Controller({ userData: directory('world-profile'), nodePath: process.execPath, fetcher: next.fetcher, startupTimeout: timeout });
+    const controller = new Controller({ userData: directory('world-profile'), nodePath: process.execPath, fetcher: next.fetcher, startupTimeout: timeout, confirmDatabaseRestore });
     await controller.choose(root); await controller.install();
     assert.equal(controller.state.updatePending, true);
     return { root, controller, initial };
@@ -554,9 +618,9 @@ function alternateWorld(root) {
     return paths;
 }
 
-test('pending trial refuses changed world/history paths without touching either pair and can retry the original pair', async () => {
+test('pending trial starts changed world/history paths silently without changing either pair', async () => {
     for (const changed of ['world', 'history', 'both', 'during-preparation']) {
-        const { root, controller } = await upgrade(configuredMigration);
+        const { root, controller } = await upgrade(trialReady);
         const original = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
         const other = alternateWorld(root);
         const files = [...original, ...other], hashes = await Promise.all(files.map(sha256));
@@ -567,50 +631,84 @@ test('pending trial refuses changed world/history paths without touching either 
         if (changed === 'during-preparation') controller.ensureGeodata = async () => { await prepare(); fs.writeFileSync(local, modified); };
         else fs.writeFileSync(local, modified);
         try {
-            await assert.rejects(controller.start(), /Database paths changed/, changed);
-            assert.equal(controller.child, null, changed);
-            assert.equal(fs.existsSync(path.join(root, 'tmp/trial-started')), false, changed);
-            assert.equal((await readJson(journalPath(root))).phase, 'awaiting-start', changed);
+            await controller.start();
+            await waitFor(() => controller.state.phase === 'running');
+            assert.equal(controller.state.error, null, changed);
+            assert.equal(fs.existsSync(journalPath(root)), false, changed);
             assert.deepEqual(await Promise.all(files.map(sha256)), hashes, changed);
         } finally { await controller.stop(); }
-        controller.ensureGeodata = prepare;
-        fs.writeFileSync(local, ini);
-        await controller.start();
-        await waitFor(() => !controller.child && !controller.busy);
-        await controller.releasePromise;
-        assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0', changed);
-        assert.deepEqual(query(root, process.execPath, "SELECT name FROM sqlite_master WHERE name='wrong_world_migration'"), [], changed);
-        assert.ok(query(root, process.execPath, 'SELECT summary FROM bot_life_events', true).every(row => row.summary === 'original'), changed);
-        assert.deepEqual(await Promise.all(other.map(sha256)), hashes.slice(2), changed);
     }
 });
 
-test('pending trial rejects replacing a database file at the same configured path', async () => {
-    const { root, controller } = await upgrade(configuredMigration);
+test('pending trial starts a copied database at the same configured path without a warning or restore prompt', async () => {
+    const { root, controller } = await upgrade(trialReady);
     const world = path.join(root, 'tmp/world-data.sqlite'), moved = `${world}.original`;
     const [other] = alternateWorld(root);
     fs.renameSync(world, moved);
     fs.copyFileSync(other, world);
     try {
-        await assert.rejects(controller.start(), /database was replaced/);
-        assert.equal(controller.child, null);
-        assert.equal(fs.existsSync(path.join(root, 'tmp/trial-started')), false);
-        assert.equal((await readJson(journalPath(root))).phase, 'awaiting-start');
-    } finally { fs.rmSync(world); fs.renameSync(moved, world); await controller.stop(); }
+        query(root, process.execPath, 'UPDATE characters SET level=70 RETURNING id');
+        const hash = await sha256(world);
+        await controller.start();
+        await waitFor(() => controller.state.phase === 'running');
+        assert.equal(controller.state.error, null);
+        assert.equal(await sha256(world), hash);
+        assert.equal(fs.existsSync(journalPath(root)), false);
+    } finally { await controller.stop(); }
 });
 
-test('pending trial detects a retargeted database symlink', { skip: process.platform === 'win32' ? 'Creating symlinks requires Windows developer mode or elevation.' : false }, async () => {
-    const { root, controller } = await upgrade(configuredMigration);
+test('declining recovery after a migration failure preserves the replacement pair and asks only after failure', async () => {
+    let prompts = 0, answer;
+    const choice = new Promise(resolve => { answer = resolve; });
+    const { root, controller } = await upgrade(configuredMigration, 5000, async () => { prompts++; return choice; });
+    const original = await readJson(journalPath(root));
+    const paths = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
+    const replacements = alternateWorld(root);
+    for (const [index, file] of paths.entries()) {
+        fs.renameSync(file, `${file}.original`);
+        fs.renameSync(replacements[index], file);
+    }
+    query(root, process.execPath, 'UPDATE characters SET level=70 RETURNING id');
+    query(root, process.execPath, "UPDATE bot_life_events SET summary='imported-world' RETURNING id", true);
+    assert.equal(prompts, 0);
+    try {
+        await controller.start();
+        await waitFor(() => prompts === 1);
+        const hashes = await Promise.all(paths.map(sha256));
+        assert.equal(controller.busy, true, 'recovery waits for the answer');
+        assert.equal((await readJson(markerPath(root))).tag, 'server-v0.2.0', 'no code rollback before the answer');
+        assert.equal(query(root, process.execPath, "SELECT name FROM sqlite_master WHERE name='wrong_world_migration'").length, 1);
+        answer(false);
+        await controller.releasePromise;
+        for (const file of original.databaseBackup.files) {
+            assert.equal(await sha256(path.join(root, '.l2solo/backups', original.id, 'databases', file.name)), file.sha256,
+                'the earlier snapshot remains available');
+        }
+        assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
+        assert.equal(fs.existsSync(journalPath(root)), false);
+        assert.deepEqual(await Promise.all(paths.map(sha256)), hashes, 'No keeps the current pair byte-for-byte');
+        assert.equal(query(root, process.execPath, 'SELECT level FROM characters LIMIT 1')[0].level, 70);
+        assert.equal(query(root, process.execPath, 'SELECT summary FROM bot_life_events LIMIT 1', true)[0].summary, 'wrong-world-migration');
+        assert.equal(prompts, 1);
+        const restarted = new Controller({ userData: directory('declined-profile'), nodePath: process.execPath,
+            confirmDatabaseRestore: async () => { throw new Error('Must not ask again'); } });
+        await restarted.choose(root);
+        assert.deepEqual(await Promise.all(paths.map(sha256)), hashes);
+    } finally { answer(false); await controller.stop(); }
+});
+
+test('pending trial accepts a retargeted database symlink without a warning', { skip: process.platform === 'win32' ? 'Creating symlinks requires Windows developer mode or elevation.' : false }, async () => {
+    const { root, controller } = await upgrade(trialReady);
     const world = path.join(root, 'tmp/world-data.sqlite'), moved = `${world}.original`;
     const [other] = alternateWorld(root);
     fs.renameSync(world, moved);
     fs.symlinkSync(other, world);
     try {
-        await assert.rejects(controller.start(), /Database paths changed/);
-        assert.equal(controller.child, null);
-        assert.equal(fs.existsSync(path.join(root, 'tmp/trial-started')), false);
-        assert.equal((await readJson(journalPath(root))).phase, 'awaiting-start');
-    } finally { fs.rmSync(world); fs.renameSync(moved, world); await controller.stop(); }
+        await controller.start();
+        await waitFor(() => controller.state.phase === 'running');
+        assert.equal(controller.state.error, null);
+        assert.equal(fs.existsSync(journalPath(root)), false);
+    } finally { await controller.stop(); }
 });
 
 test('a refused startup preserves a replacement world when recovery resumes after a launcher restart', async () => {
@@ -648,19 +746,22 @@ test('a crash before the server database guard preserves a replacement world wit
     assert.equal(fs.existsSync(journalPath(root)), false);
 });
 
-test('legacy recovery refuses an unidentified replacement database before changing code or data', async () => {
+test('legacy recovery asks before restoring a changed database and honors No', async () => {
     const { root } = await upgrade(configuredMigration);
     const world = path.join(root, 'tmp/world-data.sqlite'), moved = `${world}.original`;
     const journal = await readJson(journalPath(root));
     fs.renameSync(world, moved); fs.copyFileSync(moved, world);
     query(root, process.execPath, "UPDATE characters SET name='LegacyReplacement' WHERE id=11 RETURNING name");
-    const hash = await sha256(world), codeHash = await sha256(path.join(root, 'scripts/run-server.js'));
+    const hash = await sha256(world);
     await writeJson(journalPath(root), { ...journal, startupProtocolVersion: 1, phase: 'starting' });
-    const restarted = new Controller({ userData: directory('legacy-recovery-profile'), nodePath: process.execPath });
-    await assert.rejects(restarted.choose(root), /Automatic recovery stopped/);
+    let prompts = 0;
+    const restarted = new Controller({ userData: directory('legacy-recovery-profile'), nodePath: process.execPath,
+        confirmDatabaseRestore: async () => { prompts++; return false; } });
+    await restarted.choose(root);
+    assert.equal(prompts, 1);
     assert.equal(await sha256(world), hash);
-    assert.equal(await sha256(path.join(root, 'scripts/run-server.js')), codeHash);
-    assert.equal((await readJson(journalPath(root))).phase, 'starting');
+    assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), oldScript);
+    assert.equal(fs.existsSync(journalPath(root)), false);
 });
 
 test('an interrupted database rollback can resume after its own file replacements', async () => {
@@ -670,25 +771,157 @@ test('an interrupted database rollback can resume after its own file replacement
     query(root, process.execPath, "UPDATE characters SET name='InterruptedMigration' WHERE id=11 RETURNING name");
     const release = await controller.guard();
     try {
-        await assert.rejects(recover(root, () => {}, { restoreDatabases: async current => {
+        await assert.rejects(recover(root, () => {}, { confirmDatabaseRestore: async () => true, restoreDatabases: async current => {
             await controller.helper('update-data.cjs', ['restore', JSON.stringify({ id: current.id, ...current.databaseBackup })]);
             throw new Error('Simulated interruption after database replacement');
         } }), /Simulated interruption/);
     } finally { await release(); }
     assert.equal((await readJson(journalPath(root))).phase, 'recovering');
-    const restarted = new Controller({ userData: directory('resume-rollback-profile'), nodePath: process.execPath });
+    assert.equal((await readJson(journalPath(root))).databaseRestoreDecision, true);
+    const restarted = new Controller({ userData: directory('resume-rollback-profile'), nodePath: process.execPath,
+        confirmDatabaseRestore: async () => { throw new Error('The saved Yes decision must not prompt again'); } });
     await restarted.choose(root);
     assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
     assert.equal(query(root, process.execPath, 'SELECT name FROM characters WHERE id=11')[0].name, 'Bot');
     assert.equal(fs.existsSync(journalPath(root)), false);
 });
 
-test('failed migration startup restores both databases and previous code before another start', async () => {
-    const { root, controller } = await upgrade(`${migration}\nprocess.exit(7);`);
+test('an interrupted code recovery retains the saved No answer and never restores databases', async () => {
+    const { root } = await upgrade(configuredMigration);
+    const journal = await readJson(journalPath(root));
+    await writeJson(journalPath(root), { ...journal, phase: 'migrating' });
+    query(root, process.execPath, "UPDATE characters SET name='KeepAfterFailure' WHERE id=11 RETURNING name");
+    const world = path.join(root, 'tmp/world-data.sqlite'), hash = await sha256(world);
+    const copy = fs.promises.copyFile;
+    let prompts = 0;
+    try {
+        fs.promises.copyFile = async () => { throw new Error('Interrupted code recovery'); };
+        await assert.rejects(recover(root, () => {}, {
+            confirmDatabaseRestore: async () => { prompts++; return false; },
+            restoreDatabases: async () => { throw new Error('Database restore must not run'); }
+        }), /Interrupted code recovery/);
+    } finally { fs.promises.copyFile = copy; }
+    assert.equal(prompts, 1);
+    assert.equal((await readJson(journalPath(root))).databaseRestoreDecision, false);
+    const restarted = new Controller({ userData: directory('resume-declined-profile'), nodePath: process.execPath,
+        confirmDatabaseRestore: async () => { throw new Error('The saved No decision must not prompt again'); } });
+    await restarted.choose(root);
+    assert.equal(await sha256(world), hash);
+    assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
+    assert.equal(fs.existsSync(journalPath(root)), false);
+});
+
+test('recovery of an older journal pins confirmed destinations across interruption and configuration changes', async () => {
+    let prompts = 0;
+    const { root, controller } = await upgrade(configuredMigration, 5000, async journal => {
+        prompts++;
+        assert.ok(journal.startupDatabasePaths[0].path.endsWith('other-world.sqlite'));
+        return true;
+    });
+    const journal = await readJson(journalPath(root));
+    await writeJson(journalPath(root), { ...journal, phase: 'migrating' });
+    const other = alternateWorld(root);
+    const local = path.join(root, 'config/local.ini'), ini = fs.readFileSync(local, 'utf8');
+    fs.writeFileSync(local, ini.replace('path = tmp/world-data.sqlite', `path = ${other[0]}`)
+        .replace('historyPath = tmp/world-history.sqlite', `historyPath = ${other[1]}`));
+    query(root, process.execPath, "UPDATE characters SET name='KeepOriginalPair' WHERE id=11 RETURNING name");
+    const originalPaths = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
+    const originalHashes = await Promise.all(originalPaths.map(sha256));
+    const helper = controller.helper.bind(controller);
+    controller.helper = async (filename, args, ...rest) => {
+        if (filename === 'update-data.cjs' && args[0] === 'restore') throw new Error('Interrupted before database restore');
+        return helper(filename, args, ...rest);
+    };
+    const release = await controller.guard();
+    try { await assert.rejects(controller.recoverUpdate(), /Interrupted before database restore/); }
+    finally { await release(); }
+    assert.equal(prompts, 1);
+    const pending = await readJson(journalPath(root));
+    assert.equal(pending.databaseRestoreDecision, true);
+    assert.deepEqual(pending.startupDatabasePaths.map(file => file.canonicalPath), other.map(canonicalPath));
+    fs.writeFileSync(local, ini);
+    const restarted = new Controller({ userData: directory('pinned-recovery-profile'), nodePath: process.execPath,
+        confirmDatabaseRestore: async () => { throw new Error('Must not ask again'); } });
+    await restarted.choose(root);
+    assert.deepEqual(await Promise.all(originalPaths.map(sha256)), originalHashes, 'later config edits must not retarget the confirmed restore');
+    assert.deepEqual(await Promise.all(other.map(sha256)), journal.databaseBackup.files.map(file => file.sha256));
+});
+
+test('recovery locks the recorded world even when an interrupted install is missing its entry point', async () => {
+    const { root, controller } = await upgrade(configuredMigration);
+    fs.rmSync(path.join(root, 'scripts/run-server.js'));
+    controller.state.installed = false;
+    const release = acquireDatabaseAccess(path.join(root, 'tmp/world-data.sqlite'));
+    try {
+        await assert.rejects(controller.guard().then(async unlock => {
+            await unlock();
+            throw new Error('Recovery did not lock the recorded world');
+        }), /world is in use/);
+    } finally { release(); }
+});
+
+test('restore refuses overlapping world/history destinations before changing either database', async () => {
+    const { root, controller } = await upgrade(configuredMigration);
+    const journal = await readJson(journalPath(root));
+    const paths = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
+    const hashes = await Promise.all(paths.map(sha256));
+    const files = journal.databaseBackup.files.map(file => ({ ...file, path: paths[0], canonicalPath: canonicalPath(paths[0]) }));
+    const release = await controller.guard();
+    try {
+        await assert.rejects(controller.helper('update-data.cjs', ['restore', JSON.stringify({ id: journal.id, files })]), /different database files/);
+    } finally { await release(); }
+    assert.deepEqual(await Promise.all(paths.map(sha256)), hashes);
+});
+
+test('confirmed recovery restores the pair used by the failed startup after database paths were changed', async () => {
+    let prompts = 0;
+    const { root, controller } = await upgrade(configuredMigration, 5000, async journal => {
+        prompts++;
+        assert.ok(journal.startupDatabasePaths[0].path.endsWith('other-world.sqlite'));
+        return true;
+    });
+    const originalPaths = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
+    const originalHashes = await Promise.all(originalPaths.map(sha256));
+    const other = alternateWorld(root);
+    const local = path.join(root, 'config/local.ini');
+    fs.writeFileSync(local, fs.readFileSync(local, 'utf8').replace('path = tmp/world-data.sqlite', `path = ${other[0]}`)
+        .replace('historyPath = tmp/world-history.sqlite', `historyPath = ${other[1]}`));
+    await controller.start();
+    await waitFor(() => !controller.child && !controller.busy);
+    await controller.releasePromise;
+    assert.equal(prompts, 1);
+    assert.deepEqual(await Promise.all(other.map(sha256)), originalHashes, 'Yes restores the failed pair to the saved snapshot');
+    assert.deepEqual(await Promise.all(originalPaths.map(sha256)), originalHashes, 'the original file locations stay untouched');
+});
+
+test('recovery with no pre-update database files keeps current data without a restore prompt', async () => {
+    const { root, controller } = await upgrade(configuredMigration);
+    const journal = await readJson(journalPath(root));
+    await writeJson(journalPath(root), { ...journal, phase: 'migrating', databaseBackup: {
+        files: journal.databaseBackup.files.map(file => ({ ...file, existed: false }))
+    } });
+    const paths = [path.join(root, 'tmp/world-data.sqlite'), path.join(root, 'tmp/world-history.sqlite')];
+    const hashes = await Promise.all(paths.map(sha256));
+    const release = await controller.guard();
+    try { await controller.recoverUpdate(); } finally { await release(); }
+    assert.deepEqual(await Promise.all(paths.map(sha256)), hashes);
+    assert.equal(fs.existsSync(journalPath(root)), false);
+});
+
+test('failed migration startup restores both databases only after the user chooses Yes', async () => {
+    let prompts = 0;
+    const { root, controller } = await upgrade(`${migration}\nprocess.exit(7);`, 5000, async journal => {
+        prompts++;
+        assert.equal(journal.phase, 'migrating');
+        assert.equal(journal.startupDatabasePaths.length, 2);
+        return true;
+    });
+    assert.equal(prompts, 0);
     await assert.rejects(controller.wipe('all', 'WIPE ALL'), /pending update/);
     await controller.start();
     await waitFor(() => !controller.child && !controller.busy);
     await controller.releasePromise;
+    assert.equal(prompts, 1);
     assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
     assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), oldScript);
     assert.deepEqual(query(root, process.execPath, "SELECT name FROM sqlite_master WHERE name='failed_migration'"), []);
@@ -788,8 +1021,8 @@ test('successful trial requires both bound ports and initialized world before ad
     assert.ok(query(root, process.execPath, 'SELECT summary FROM bot_life_events', true).every(row => row.summary === 'during-update'));
 });
 
-test('startup timeout and process interruption retain recoverable world snapshots', async () => {
-    const { root, controller } = await upgrade(`${migration}\nprocess.on('message',m=>{if(m.type==='shutdown')process.exit(0)});`, 150);
+test('startup timeout and process interruption offer world recovery', async () => {
+    const { root, controller } = await upgrade(`${migration}\nprocess.on('message',m=>{if(m.type==='shutdown')process.exit(0)});`, 150, async () => true);
     await controller.start(); await waitFor(() => !controller.child && !controller.busy); await controller.releasePromise;
     assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
     assert.deepEqual(query(root, process.execPath, "SELECT name FROM sqlite_master WHERE name='failed_migration'"), []);
@@ -797,7 +1030,7 @@ test('startup timeout and process interruption retain recoverable world snapshot
     const journal = await readJson(journalPath(second.root));
     await writeJson(journalPath(second.root), { ...journal, phase: 'migrating' });
     query(second.root, process.execPath, "UPDATE bot_life_events SET summary='interrupted' RETURNING summary", true);
-    const restarted = new Controller({ userData: directory('recovery-profile'), nodePath: process.execPath });
+    const restarted = new Controller({ userData: directory('recovery-profile'), nodePath: process.execPath, confirmDatabaseRestore: async () => true });
     await restarted.choose(second.root);
     assert.equal((await readJson(markerPath(second.root))).tag, 'v0.1.0');
     assert.ok(query(second.root, process.execPath, 'SELECT summary FROM bot_life_events', true).every(row => row.summary === 'original'));
@@ -822,7 +1055,7 @@ test('server archive downloads while the old world runs and is reused when apply
     const next = await serverFixture(`${migration}\nprocess.exit(1);`, 'server-v0.2.0', 2);
     let archives = 0;
     const fetcher = async (url, options) => { if (url.endsWith('.zip')) archives++; return next.fetcher(url, options); };
-    const controller = new Controller({ userData: directory('background-profile'), nodePath: process.execPath, fetcher });
+    const controller = new Controller({ userData: directory('background-profile'), nodePath: process.execPath, fetcher, confirmDatabaseRestore: async () => true });
     await controller.choose(root); await controller.start();
     try {
         await waitFor(() => controller.state.phase === 'running');
@@ -915,7 +1148,7 @@ test('real server TCP listeners reject players until the launcher commits the in
     }
 });
 
-test('real server rejects a changed database pair before acquiring its lock or announcing readiness', async () => {
+test('real server starts the configured database pair even when the update snapshot describes other files', async () => {
     const root = directory('startup-path-mismatch');
     prepareStartupFixture(root);
     const env = { ...process.env, L2NODE_UPDATE_TRIAL: '1', L2NODE_LAUNCHER_STATUS: '0', L2SOLO_FIXTURE_SOURCE_ROOT: fs.realpathSync(root),
@@ -923,16 +1156,21 @@ test('real server rejects a changed database pair before acquiring its lock or a
             path: path.join(root, name), canonicalPath: canonicalPath(path.join(root, name)), existed: false
         }))) };
     delete env.NODE_OPTIONS; delete env.ELECTRON_RUN_AS_NODE;
+    await writeJson(journalPath(root), { id: crypto.randomUUID(), startupProtocolVersion: 2, phase: 'starting',
+        databaseBackup: { files: JSON.parse(env.L2NODE_UPDATE_DATABASES) }, operations: [] });
     const child = fork(path.join(__dirname, 'startup-fixture.cjs'), [], { cwd: root, env, silent: true });
     const messages = []; let stderr = '', exited = false;
     child.on('message', message => messages.push(message)); child.on('exit', () => { exited = true; });
     child.stderr.on('data', data => { stderr += data; });
     try {
         await waitFor(() => exited || messages.some(message => message.type === 'launcher:initialized'));
-        assert.equal(exited, true, 'Server must refuse a pair that differs from the launcher snapshot.');
-        assert.match(stderr, /Database paths changed before update startup/);
-        assert.equal(messages.some(message => ['launcher:initialized', 'launcher:listening'].includes(message.type)), false);
-        assert.equal(fs.existsSync(path.join(root, 'world.sqlite.access.sqlite')), false);
+        assert.equal(exited, false, stderr);
+        assert.equal(messages.some(message => message.type === 'launcher:initialized'), true);
+        assert.equal(fs.existsSync(path.join(root, 'world.sqlite.access.sqlite')), true);
+        const journal = await readJson(journalPath(root));
+        assert.equal(journal.phase, 'migrating');
+        assert.deepEqual(journal.startupDatabasePaths.map(file => file.path),
+            [path.join(fs.realpathSync(root), 'world.sqlite'), path.join(fs.realpathSync(root), 'world.history.sqlite')]);
     } finally {
         if (!exited) child.send({ type: 'shutdown' });
         await waitFor(() => exited);

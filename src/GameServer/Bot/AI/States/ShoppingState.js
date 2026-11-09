@@ -475,6 +475,14 @@ function arrive(session, bot) {
     raiseDecision(session, own ? 'arrived_town:own' : 'arrived_town');
 }
 
+function shoppingMeetingPending(session, bot) {
+    // The live lifecycle cache owns custody. A pre-receipt session copy
+    // can still contain a meeting that has already completed/cancelled.
+    const id = bot.fetchId();
+    const currentLife = LifeState.cachedState(id) || session.coldLifeState;
+    return TradeMeetings.hasPreparation(id) || currentLife?.stats?.tradeMeeting;
+}
+
 module.exports = {
     workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
     tick(session, bot, Generics, BotAI) {
@@ -483,10 +491,16 @@ module.exports = {
         // the counter queue during its delay steals time from real shoppers.
         if (session.shoppingDoneAnnounced) {
             TownNpcApproach.reset(session);
+            // A failed restock schedules a retry after its callback releases
+            // the work promise. Keep the visit closed to sales, but resume
+            // that restock once its delay expires.
+            if (!session.shoppingRestock && Number(session.shoppingRestockRetryAt || 0) > 0
+                && Number(session.shoppingRestockRetryAt) <= Date.now() && !shoppingMeetingPending(session, bot)) {
+                this.scheduleRestock(session, bot, Generics, BotAI);
+            }
             return;
         }
-        if (TradeMeetings.hasPreparation(bot.fetchId())
-            || session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
+        if (shoppingMeetingPending(session, bot)) {
             return;
         }
         invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 2);
@@ -1080,6 +1094,7 @@ module.exports = {
 
     scheduleRestock(session, bot, Generics, BotAI) {
         if (session.shoppingRestock || Number(session.shoppingRestockRetryAt || 0) > Date.now()) return;
+        session.shoppingRestockRetryAt = undefined;
         if (!session.shoppingLiveShotStopChecked) {
             session.shoppingLiveShotStopChecked = true;
             const town = TownTransitPolicy.townAt(bot);
