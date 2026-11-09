@@ -424,11 +424,13 @@ const PopulationStatus = {
         summary.moneyPacketMissingTotal = missingTotal;
         lastMoneyPacketMissing = missingTotal;
         summary.line += ` moneyPacketMissing=${summary.moneyPacketMissing}`;
-        summary.improvementDeferred = invoke('GameServer/Bot/Economy/BotImprovementService').summary().improvementDeferred;
+        const improvements = invoke('GameServer/Bot/Economy/BotImprovementService').summary();
+        summary.improvementDeferred = improvements.improvementDeferred;
+        summary.improvementRetired = improvements.improvementRetired;
         summary.planDeferred = Number(invoke('GameServer/Bot/Population/PopulationService').planDeferred || 0);
         summary.coldBuffSales = invoke('GameServer/Bot/Economy/ColdBuffService').summary();
         summary.line += ` coldBuffSales=${summary.coldBuffSales.offers}/${summary.coldBuffSales.sold}/${summary.coldBuffSales.dropped}`;
-        summary.line += ` improvementDeferred=${summary.improvementDeferred} planDeferred=${summary.planDeferred}`;
+        summary.line += ` improvementDeferred=${summary.improvementDeferred} improvementRetired=${summary.improvementRetired} planDeferred=${summary.planDeferred}`;
         summary.line += ` floorCandidates=${metrics.delta.activationFloorCandidates || 0} floorAccepted=${metrics.delta.activationFloorAccepted || 0} floorRejected=${metrics.delta.activationFloorRejected || 0} floorGeo=${metrics.delta.activationFloorGeoChecks || 0}/${metrics.delta.activationFloorCacheHits || 0}/${metrics.delta.activationFloorBudgetDeferred || 0} floorP95=${activationFloor.p95Ms || 0}ms floorReasons=${activationFloorReasons} companionWorkers=${pathWorkers.companionBusy || 0}b/${pathWorkers.companionQueue || 0}q lod=${hotLod.population.full}/${hotLod.population.visible}/${hotLod.population.preload} lodTicks=${hotLod.delta.fullTicks || 0}/${hotLod.delta.visibleTicks || 0}/${hotLod.delta.preloadTicks || 0} lodDeferred=${hotLod.delta.deferrals || 0} lodPromotions=${hotLod.delta.promotions || 0} aiP95=${hotLod.tick.p95Ms || 0}ms statusP95=${hotLod.status.p95Ms || 0}ms botPackets=${hotLod.delta.packetBroadcasts || 0}/${hotLod.delta.packetSkips || 0}/${hotLod.delta.packetRecipients || 0} lodStages=${lodSubsystems}`;
         summary.clanFinanceMs = invoke('GameServer/ClanHall/Runtime').financeSummary().p95Ms;
         summary.line += ` clanFinanceMs=${summary.clanFinanceMs}`;

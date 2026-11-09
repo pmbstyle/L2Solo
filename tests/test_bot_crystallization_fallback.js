@@ -55,6 +55,15 @@ async function run() {
         const leaf = { activity: 'improving', improvement: { ...proposal, mode: 'self' } };
         assert.equal(Service.acquisitionTravel(crafter, leaf), null, 'own skill does not send the crafter to a service');
         const worn = (await DB.fetchItems(crafter.characterId)).filter(row => row.equipped);
+        // Its row moved between the review and the transaction (the review read a copy the
+        // cache no longer holds): nothing is written and the held improvement stands for the
+        // next review, a retry, neither a command fault nor a failed goal.
+        const bagBefore = await DB.fetchItems(crafter.characterId);
+        const raced = await apply({ ...crafter }, leaf.improvement);
+        assert.equal(raced.changed, false, 'a moved row writes nothing');
+        assert.equal(raced.reason, 'source_retired', 'the race is its own counted outcome');
+        assert.deepEqual(await DB.fetchItems(crafter.characterId), bagBefore, 'the bag is untouched');
+        assert.equal(Life.cachedState(crafter.characterId), crafter, 'no failed goal was raised on the row');
         const broken = await apply(crafter, leaf.improvement);
         assert(broken.changed, 'the native cold command crystallizes outside town');
         crafter = broken.state;
