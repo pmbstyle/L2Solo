@@ -32,7 +32,7 @@ function freeze(value) {
 
 class SpotContestOutbox {
     // stateOf(id): the bot's state in the kernel; partyOf(id): its party row; memoryRevision(id);
-    // displace(id, spotId, by): a displaced bot told at the arrival's ack (the worker's step wake);
+    // displace(id, spotId, by, at): a displaced bot told at the arrival's ack (the worker's step wake; at: the arrival's);
     // frameSizing({ frameId, at }): the sizer of a frame (ColdCompetitionFrameSizer) or null.
     constructor({ stateOf, partyOf, memoryRevision, displace = () => {}, frameSizing = null }) {
         Object.assign(this, { stateOf, partyOf, memoryRevision, displace, frameSizing });
@@ -87,7 +87,7 @@ class SpotContestOutbox {
             const committed = this.stateOf(id);
             if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold') { this.drop(id, 'stale'); continue; }
             this.pending.delete(id);
-            for (const displaced of entry.arrival?.displaced || []) this.displace(displaced, entry.arrival.spotId, id);
+            for (const displaced of entry.arrival?.displaced || []) this.displace(displaced, entry.arrival.spotId, id, entry.arrival.at);
             const party = partyIdOf(committed) ? this.partyOf(id) : null;
             const fenced = side => Number(side.id) !== id ? side : { ...side, revision: Number(committed.simulation?.revision || 0),
                 memoryRevision: this.memoryRevision(id),

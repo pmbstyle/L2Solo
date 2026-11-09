@@ -396,11 +396,14 @@ const GearMarks = require('./AI/GearMarks');
 // A stronger arrival displaced the bot off the spot a player's command holds (contest_lost,
 // reason displaced): the command ends there (outcome displaced, uncommanded; news on a spot
 // already marked), so its route reads its marks again. Our choice (C4 has no bot command): a
-// player's order yields to a stronger holder, the player is told (the worker's displace).
+// player's order yields to a stronger holder, the player is told (the worker's displace). An
+// order given after the arrival (payload.at, the arrival's time; earning.at, the order's) is
+// a new one the displacement never touched: it stands.
 function endsCommand(stats, name, payload) {
     if (name !== 'contest_lost' || payload?.reason !== 'displaced') return false;
     IncomeRoute ||= invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
-    return IncomeRoute.isCommanded(stats?.earning) && String(stats.earning.spotId) === String(payload.spotId);
+    return IncomeRoute.isCommanded(stats?.earning) && String(stats.earning.spotId) === String(payload.spotId)
+        && Number(payload.at) >= (Number(stats.earning.at) || 0);
 }
 function marked(stats, name, payload) {
     if (!stats || payload?.spotId == null || !MARKS.has(name) || endsCommand(stats, name, payload)) return false;

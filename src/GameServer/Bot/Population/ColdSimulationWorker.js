@@ -1010,16 +1010,16 @@ function nearArrival(id, previous, row) {
     if (to == null) { Situations.note('spot:left@hot'); return; }
     Situations.note('spot:arrival@hot');
     // Its enemies standing there (enemy_met; its step: the stay, the post's number, as main's for a player seen).
-    arrivalEnemies({ arriving: [row], spotId: to, step: Number(post.seq), at: Number(row.updatedAt) || Date.now(), proposalOf: () => null });
+    const at = Number(row.updatedAt) || Date.now();
+    arrivalEnemies({ arriving: [row], spotId: to, step: Number(post.seq), at, proposalOf: () => null });
     if (row.party?.partyId || row.partyId) { Situations.note('spot:contest:hot_party'); return; }
-    const verdict = arrivalContest({ spotId: to, members: [row], principal: row, step: Number(row.nearSeq) || 0,
-        at: Number(row.updatedAt) || Date.now() });
+    const verdict = arrivalContest({ spotId: to, members: [row], principal: row, step: Number(row.nearSeq) || 0, at });
     if (!verdict || verdict.action === 'coexist') return;
     if (verdict.action === 'avoid') {
         Situations.raise(row.stats ||= {}, 'contest_lost', { spotId: String(to), reason: verdict.reason }, Situations.bodyPlace(row), id);
         return;
     }
-    for (const displaced of verdict.displaced) displace(displaced, to, id);
+    for (const displaced of verdict.displaced) displace(displaced, to, id, at);
     if (verdict.event) Situations.note('spot:contest:pvp_hot_skipped');
 }
 tables.watch('board', {
@@ -1436,13 +1436,14 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
 }
 // A displaced bot (SpotContest): contest_lost on the spot at its next step (the kernel's step
 // wake; it hunts out the window its step already credited), if it still stands there far and
-// solo; else counted spot:contest:displaced_left. by: the arriving principal. A bot there on
-// a player's command loses it at that step (Situations' endsCommand); the player who gave it
-// is told now, by main (spot_command command_lost: BotRemoteChat.commandLost).
-function displace(id, spotId, by) {
+// solo; else counted spot:contest:displaced_left. by: the arriving principal; at: the
+// arrival's time. A bot there on a player's command loses it at that step (Situations'
+// endsCommand), unless the player ordered it again after the arrival (a hot period before that
+// step); the player who gave it is told now, by main (spot_command command_lost: BotRemoteChat.commandLost).
+function displace(id, spotId, by, at) {
     const state = kernel.states.get(Number(id))?.state;
     if (state?.phase !== 'cold' || String(state.spotId) !== String(spotId) || state.party?.partyId || state.partyId
-        || !kernel.stepWake(id, 'contest_lost', { spotId: String(spotId), reason: 'displaced', by: Number(by) })) {
+        || !kernel.stepWake(id, 'contest_lost', { spotId: String(spotId), reason: 'displaced', by: Number(by), at: Number(at) || 0 })) {
         Situations.note('spot:contest:displaced_left');
         return;
     }

@@ -49,7 +49,7 @@ Contest.contest = input => {
 };
 const marksOf = stats => Risk.spotMarks(stats).map(mark => mark.spotId + ':' + mark.reason);
 const own = new Map();
-module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false }) => {
+module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false, at = 1 }) => {
     if (kind !== 'memory') for (const gone of remove || []) kernel.remove(gone);
     forced = outcome; seen = null;
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
@@ -60,18 +60,19 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     // A standing bot's earning answer on a player's command (by: the player) on the spot, or back to its own.
     if (kind === 'command') {
         const s = kernel.states.get(id).state, Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
-        if (by) own.set(id, s.stats.earning);
-        const earning = by ? Income.commanded(s.stats.earning, spotId, 1, by) : own.get(id);
+        if (by && !own.has(id)) own.set(id, s.stats.earning);
+        const earning = by ? Income.commanded(s.stats.earning, spotId, at, by) : own.get(id);
+        if (!by) own.delete(id);
         return kernel.upsert({ state: { ...s, stats: { ...s.stats, earning } } });
     }
     // The bot's next step raises what other owners woke it with (kernel stepWake), as its step
-    // does; then that step is answered. Its command, its earning spot's wake and its next spot.
+    // does; then that step is answered (keep: not yet). Its command, its earning spot's wake and its next spot.
     if (kind === 'step') {
         const record = kernel.states.get(id), state = record.state, ended = () => Catalogue.counts().raised['command:displaced'] || 0;
         const was = ended();
         let stats = { ...state.stats };
         for (const [name, payload] of Object.entries(record.stepWake?.raises || {})) stats = Catalogue.raise(stats, name, payload, Catalogue.place(state), id);
-        record.stepWake = null;
+        if (!keep) record.stepWake = null;
         const after = { ...state, stats }, Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
         return { commanded: Income.isCommanded(stats.earning), woken: Catalogue.woken(stats, 'earning_spot'), ended: ended() - was,
             next: require('./BotRoute').huntSpot(after, null, { spots: planningSpots, timestamp: Date.now() })?.spotId ?? null };
@@ -381,6 +382,12 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual(told.payload.commands, [{ kind: 'command_lost', botId: 101, botName: 'Room101', playerId: 9001,
             spotName: room.name, holder: 'Room104' }], 'its player is told who pushed it out');
         assert(Protocol.validateEnvelope({ ...told, version: Protocol.PROTOCOL_VERSION }, 'worker', { workerEpoch: epoch }).ok, 'a message main accepts');
+        // The player meets it (a hot period) and orders the same spot again before its next step:
+        // the displacement it has not heard yet predates the order, which stands.
+        await probe({ kind: 'command', id: 101, spotId: room.id, by: 9001, at: (await probe({ kind: 'wake', id: 101 })).at + 1 });
+        assert.deepEqual(await probe({ kind: 'step', id: 101, keep: true }), { commanded: true, woken: true, ended: 0, next: room.id },
+            'an order given after the displacement survives its step');
+        await probe({ kind: 'command', id: 101, spotId: room.id, by: 9001 });
         // (The marked spot is refused; with nothing else here it waits for its woken earning decision.)
         assert.deepEqual(await probe({ kind: 'step', id: 101 }), { commanded: false, woken: true, ended: 1, next: null },
             'its next step ends the command (counted), wakes its earning spot and no longer goes to the spot it lost');
@@ -397,7 +404,8 @@ invoke('GameServer/DataCache').init();
         assert.equal(second.seen.reason, 'outmatched', 'and a weaker second arrival leaves');
         assert.deepEqual(await probe({ kind: 'ack', id: 104, ok: true, reason: holder.proposalId }),
             { before: true, after: false, sent: [], stale: 0, unsent: 0, arrival_refused: 0 });
-        assert.deepEqual(await probe({ kind: 'wake', id: gone }), { spotId: room.id, reason: 'displaced', by: 104 },
+        const wake = await probe({ kind: 'wake', id: gone });
+        assert.deepEqual({ ...wake, at: wake?.at > 0 }, { spotId: room.id, reason: 'displaced', by: 104, at: true },
             'at the ack the displaced bot hears contest_lost at its next step');
         assert.equal(await probe({ kind: 'wake', id: kept }), null, 'the other keeps its spot');
         const after = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
