@@ -9,7 +9,7 @@ const Situations = require('../src/GameServer/Bot/Situations');
 // a member joined or left, a contest lost at its arrival, a round its ground admitted no
 // fight of it, its own deaths there, its leader outleveling the ground; with no answer
 // for its objective (a new party, a new objective) the first step decides. No ground at
-// all breaks the party up. A competition "offer_party" pins the party to the shared
+// all breaks the party up. A hot competition's "offer_party" pins the party to the shared
 // target's ground: once that ground no longer stands for the party (its leader outlevels
 // it: the search answers objectiveEnded, BotRoute.choose), the decision drops the
 // objective and the party routes as any other.

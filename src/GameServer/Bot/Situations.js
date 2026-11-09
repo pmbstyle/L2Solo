@@ -73,9 +73,10 @@ const SITUATIONS = Object.freeze({
     // Its party left (BackgroundPartyLifecycle.releaseMember, the one leave rule: raised
     // where the leave is written; a hot body's by its lifecycle).
     party_left: link(NOW),
-    // A contest lost at its arrival on a spot, or the spot found crowded there (SpotContest:
-    // it avoids the units standing there; payload { spotId, reason: 'contest_lost' |
-    // 'crowded' }: its spot mark, raisedFacts).
+    // A spot lost to the units there (SpotContest): turned away at its arrival, or displaced
+    // from it by a stronger arrival (heard at its next step, the kernel's step wake); payload
+    // { spotId, reason: 'outmatched' | 'even' | 'crowded' | 'displaced', by? (who displaced
+    // it) }: its spot mark, raisedFacts.
     contest_lost: link(NOW),
     // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
     // arrival (SpotContest), a grievance pair met there (enemy_met).
@@ -439,12 +440,13 @@ function spotAsk(memory, earning, subject = 0) {
 // while its raise waits for the background thread, which writes the same in its raise).
 const applyFacts = (stats, name, payload = null) => writeFacts(stats, raisedFacts(stats, name, payload));
 // A raise counted on the health line: where, and the decisions it woke (before, after: the woken bits); and traced
-// (subject: the bot; waits: the bits it left waiting on a plane; payload: its impossible mark).
+// (subject: the bot; waits: the bits it left waiting on a plane; payload: its impossible mark, else its reason).
 function counted(name, where, before = 0, after = 0, subject = 0, waits = 0, payload = null) {
     count(raisedCounts, `${name}@${NAMES.get(where)}`);
     countWoke(before, after, name);
     if (Trace.on()) Trace.record({ kind: 'raise', bot: subject, name, place: NAMES.get(where), woke: decisionNames(after & ~before),
-        waits: decisionNames(waits), ...(payload?.impossible === true ? { reason: 'impossible' } : {}) });
+        waits: decisionNames(waits), ...(payload?.impossible === true ? { reason: 'impossible' }
+            : typeof payload?.reason === 'string' ? { reason: payload.reason } : {}) });
 }
 // A stop (a far step at a rest or in town, a hot body's rest end): what waited on
 // the planes this place hears wakes. Written and returned as raise.

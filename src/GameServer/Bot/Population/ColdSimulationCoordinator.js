@@ -200,7 +200,6 @@ class ColdSimulationCoordinator {
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             releaseForecasts: events => this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
                 actor: { id: e.actor.id, partyId: e.actor.partyId || null }, peer: { id: e.peer.id, partyId: e.peer.partyId || null } })) }),
-            formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
             onState: id => {
                 const state = LifeState.cachedState(id);
                 if (state) this.markDirty(state, { critical: true, reason: 'competition_action' });
@@ -927,6 +926,9 @@ class ColdSimulationCoordinator {
             developerDiagnostics: Config.developerDiagnostics === true,
             decisionTrace: Trace.on(),
             pvpAggression: Config.pvpAggression,
+            // A spot's PvP dispute is carried out here (competition actions, conflicts and PvP on).
+            coldCompetitionPvp: Config.coldCompetitionActionsEnabled === true && Config.coldCompetitionConflictsEnabled === true
+                && Config.coldCompetitionPvpEnabled === true,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
             // Normal ambient parties keep their configured cap, while a clan

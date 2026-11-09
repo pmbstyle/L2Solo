@@ -22,6 +22,11 @@ function feeling(relation) {
     if (sameClan(relation)) result.warmth = Math.max(result.warmth, CLANMATE_WARMTH);
     return result;
 }
+// Clanmates or friends both ways (each at least the clanmate warmth toward the other):
+// they share a spot instead of holding it against each other (SpotContest).
+function friendly(towardPeer, towardActor) {
+    return Math.min(feeling(towardPeer).warmth, feeling(towardActor).warmth) >= CLANMATE_WARMTH;
+}
 function disciplineRestraint(persona, relation) {
     const stage = relation?.clanSocial?.selfDiscipline?.stage;
     const weight = { concern: 0.2, warned: 0.4, probation: 0.7, expulsion_pending: 0.85 }[stage] || 0;
@@ -86,4 +91,4 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
     return { action: 'yield', pvpIntent: false, reason: 'tolerate_competition', willing: sides };
 }
 
-module.exports = { decide, escalationChance };
+module.exports = { decide, escalationChance, friendly };

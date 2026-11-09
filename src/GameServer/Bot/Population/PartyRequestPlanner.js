@@ -119,7 +119,8 @@ function meetingKey(objective, level, spots) {
 }
 
 // An objective that only names a spot to meet at (no target, no clan duty): a shared
-// target (a competition's offer_party), no solo ground, party progress. Its party hunts
+// target (a hot competition's offer_party, HotCompetitionParty; a saved row's request
+// reason), no solo ground, party progress. Its party hunts
 // there only while that spot stands for it as any party ground (BotRoute.choose),
 // else the objective ends and the party routes as any other.
 const MEETING_REASONS = new Set(['shared_target', NO_SOLO_GROUND, PARTY_PROGRESS]);
