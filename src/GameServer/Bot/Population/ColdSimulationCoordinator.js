@@ -134,7 +134,7 @@ function heapSnapshotOptions() {
     return { execArgv: ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${HEAP_SNAPSHOT_DIR}`] };
 }
 
-const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0, lateMaxMs: 0 });
+const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0, lateMax: null });
 
 class ColdSimulationCoordinator {
     constructor(options = {}) {
@@ -168,6 +168,7 @@ class ColdSimulationCoordinator {
         // or has no body before its decision arrived).
         this.nearDecisions = { accepted: 0, refused: 0, dropped: 0, linesStale: 0 };
         this.workerMaxInFlight = null;
+        this.workerPlayer = null;
         this.restartCount = 0;
         this.loadedAt = 0;
         this.restartTimer = null;
@@ -322,8 +323,9 @@ class ColdSimulationCoordinator {
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
             // A full worker window commits at once only within the governor's budget (with a
-            // player 50 ms/s): about 1.85 ms of main per row, so 40-50 steps/s would take 75-90 ms/s
-            // of main. Asks one DB slice, admitted while a third of it is left, charged what it took.
+            // player 80 ms/s): about 1.2-1.85 ms of main per row, so 40-50 steps/s would take 50-90 ms/s
+            // of main. Asks one DB slice, admitted while a third of it is left, charged what it took;
+            // it commits half the worker's window (windowRows), so one such commit is one short turn.
             admitWindowFlush: () => {
                 const pressure = this.desiredWorkerPressure();
                 if (pressure.lagMs >= Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)) return null;
@@ -336,6 +338,7 @@ class ColdSimulationCoordinator {
                 });
                 return admission.ok ? admission.lease : null;
             },
+            windowRows: () => Math.ceil((Number(this.workerMaxInFlight) || this.desiredWorkerPressure().maxInFlight) / 2),
             completeWindowFlush: (lease, durationMs) => {
                 invoke('GameServer/Bot/Population/BackgroundWorkGovernor').complete(lease, { durationMs });
             }
@@ -474,10 +477,12 @@ class ColdSimulationCoordinator {
         window.idleMs += Number(payload.eluIdleMs) || 0;
         window.maxElu = Math.max(window.maxElu, Number(payload.eventLoopUtilization) || 0);
         window.lagMs = Math.max(window.lagMs, Number(payload.eventLoopLagMaxMs) || 0);
-        window.lateMaxMs = Math.max(window.lateMaxMs, Number(payload.stepLateMaxMs) || 0);
+        const late = payload.stepLateMax;
+        if (Number(late?.maxMs) > Number(window.lateMax?.maxMs || 0)) window.lateMax = late;
     }
 
-    // Also closes the window of step lateness (stepLateWindow): the steps committed since the last line.
+    // Also closes the window of step lateness (stepLateWindow): the steps committed since the last line,
+    // the latest one's bot (maxBot) and main's event wait that came off its lateness.
     takeBusyWindow() {
         const window = this.busyWindow;
         this.busyWindow = emptyBusyWindow();
@@ -485,7 +490,8 @@ class ColdSimulationCoordinator {
         if (Array.isArray(counts)) {
             const since = StepLateness.since(counts, this.stepLateTaken);
             this.stepLateTaken = counts.slice();
-            this.stepLateWindow = { ...StepLateness.summary(since, window.lateMaxMs), counts: since };
+            this.stepLateWindow = { ...StepLateness.summary(since, window.lateMax?.maxMs), counts: since,
+                maxBot: window.lateMax ? { characterId: window.lateMax.characterId, eventWaitMs: window.lateMax.eventWaitMs } : null };
         }
         window.due = this.stepLateWindow;
         return window;
@@ -2277,7 +2283,7 @@ class ColdSimulationCoordinator {
         );
         const player = Number(scheduler.realPlayers || 0) > 0 || scheduler.mode === 'player';
         const idleLimit = Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32));
-        const playerLimit = Math.max(1, Math.min(idleLimit, Number(Config.coldWorkerPlayerMaxInFlight) || 8));
+        const playerLimit = Math.max(1, Math.min(idleLimit, Number(Config.coldWorkerPlayerMaxInFlight) || 16));
         const lagLimit = Math.max(1, Math.min(playerLimit, Number(Config.coldWorkerLagMaxInFlight) || 2));
         const throttleMs = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
         const abortMs = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
@@ -2299,8 +2305,9 @@ class ColdSimulationCoordinator {
     syncWorkerPressure() {
         if (!this.worker || !this.ready) return null;
         const pressure = this.desiredWorkerPressure();
-        if (this.workerMaxInFlight === pressure.maxInFlight) return pressure;
+        if (this.workerMaxInFlight === pressure.maxInFlight && this.workerPlayer === pressure.player) return pressure;
         this.workerMaxInFlight = pressure.maxInFlight;
+        this.workerPlayer = pressure.player;
         this.post('throttle', {
             maxInFlight: pressure.maxInFlight,
             lagMs: pressure.lagMs,
@@ -2340,6 +2347,7 @@ class ColdSimulationCoordinator {
         this.tableChannel.detach(this);
         this.worker = null;
         this.workerMaxInFlight = null;
+        this.workerPlayer = null;
         this.ready = false;
         this.snapshotsLoaded = false;
         this.waiters.forEach((waiter) => waiter.reject(new Error('cold_worker_exited')));

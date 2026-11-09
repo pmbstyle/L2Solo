@@ -1264,8 +1264,13 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     capacityFlushKernel.tick();
     assert.strictEqual(lastSteps(capacityFlushKernel).length, 8);
     await capacityFlushKernel.resolveChain;
-    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
-    const readyProposals = [...capacityFlushKernel.dirty.entries()];
+    // Each finished half of the window goes to main at once, its commit asked at once.
+    const halves = capacityFlushMessages.splice(0).filter(entry => entry.type === 'proposal_batch');
+    assert.deepStrictEqual(halves.map(entry => [entry.payload.proposals.length, entry.payload.capacityBlocked]), [[4, true], [4, true]]);
+    assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.half_window, 2);
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
+    const readyProposals = halves.flatMap(entry => entry.payload.proposals).map(proposal => [proposal.characterId, proposal]);
+    readyProposals.forEach(([id, value]) => capacityFlushKernel.dirty.set(id, value));
     for (const reason of ['forced', 'priority', 'batch']) {
         capacityFlushKernel.flush(null, reason === 'forced', { reason });
         const message = capacityFlushMessages.pop();
@@ -1285,23 +1290,72 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
 
-    // The worker asks main to commit at once only when every slot of its full window waits on
-    // main: a step still running can join the batch, so its finished neighbours wait for it.
+    // The worker asks main to commit at once when half its window waits on main: the other half
+    // runs while main commits that half (pipelined), so the worker does not idle through the commit.
+    // Fewer sent: a running step can still join the batch, so its finished neighbours wait for it.
     const windowMessages = [];
-    const windowKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 2,
+    const windowKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 4,
         emit: (type, payload) => windowMessages.push({ type, payload }) });
     const pendingOf = id => ({ ...oversizedProposal, characterId: id, enqueuedAt: now,
         proposalId: `${id}:${now}`, revision: 3, nextState: state(id), result: { events: [], debug: {} } });
-    for (const id of [700, 701]) {
+    for (const id of [700, 701, 702, 703]) {
         windowKernel.upsert({ state: state(id) });
         windowKernel.inFlight.set(id, { state: state(id), startedAt: now });
     }
     windowKernel.dirty.set(700, pendingOf(700));
     windowKernel.flush(null, false, { reason: 'capacity' });
-    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, false, 'a running step can still join: main keeps batching');
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, false, 'a quarter sent: main keeps batching');
     windowKernel.dirty.set(701, pendingOf(701));
     windowKernel.flush(null, false, { reason: 'capacity' });
-    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, true, 'every slot waits on main: it commits at once');
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, true,
+        'half the window waits on main while two steps still run: it commits at once');
+
+    // Half the window finished is sent at once, with the commit asked at once: the worker does not
+    // wait for the whole window or the 2 s batching age while the other half could run.
+    const halfMessages = [];
+    const halfKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxBatch: 64, maxInFlight: 16,
+        flushTargetMs: 2000, flushHardMs: 5000, emit: (type, payload) => halfMessages.push({ type, payload }) });
+    Array.from({ length: 8 }, (_, index) => state(720 + index)).forEach(entry =>
+        halfKernel.upsert(standOn(halfKernel, { state: entry }, { id: 'spot', rewards: {} })));
+    halfKernel.tick();
+    assert.strictEqual(lastSteps(halfKernel).length, 8);
+    await halfKernel.resolveChain;
+    const halfBatch = halfMessages.find(entry => entry.type === 'proposal_batch');
+    assert(halfBatch, 'eight finished steps of a 16-slot window go to main without waiting for their age');
+    assert.strictEqual(halfBatch.payload.proposals.length, 8);
+    assert.strictEqual(halfBatch.payload.capacityBlocked, true, 'main commits the half window at once');
+    // The worker's flush timer sends the same half window (steps finished before a window shrank to it).
+    const timerMessages = [];
+    const timerKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 16,
+        emit: (type, payload) => timerMessages.push({ type, payload }) });
+    for (let id = 740; id < 750; id++) {
+        timerKernel.upsert({ state: state(id) });
+        timerKernel.inFlight.set(id, { state: state(id), startedAt: now });
+    }
+    for (let id = 740; id < 747; id++) timerKernel.dirty.set(id, pendingOf(id));
+    assert.strictEqual(timerKernel.flushDue(), 0, 'seven of a 16-slot window finished, six free: they wait for more or their age');
+    timerKernel.dirty.set(747, pendingOf(747));
+    assert.strictEqual(timerKernel.flushDue(), 8);
+    assert.strictEqual(timerMessages.pop().payload.capacityBlocked, true);
+    // With a player online one finished step of an unfilled window goes to main after 250 ms, not the 2 s
+    // batching age; with no player it keeps the 2 s age.
+    let ageNow = now;
+    const ageMessages = [];
+    const ageKernel = recordingKernel({ resolveSolo: resolver, now: () => ageNow, maxInFlight: 16,
+        flushTargetMs: 2000, flushHardMs: 5000, emit: (type, payload) => ageMessages.push({ type, payload }) });
+    for (const id of [760, 761]) {
+        ageKernel.upsert({ state: state(id) });
+        ageKernel.inFlight.set(id, { state: state(id), startedAt: ageNow });
+    }
+    ageKernel.dirty.set(760, { ...pendingOf(760), enqueuedAt: ageNow });
+    ageNow += 300;
+    assert.strictEqual(ageKernel.flushDue(), 0, 'no player: a lone finished step waits for the 2 s batching age');
+    ageKernel.setPressure({ maxInFlight: 16, player: true });
+    assert.strictEqual(ageKernel.flushDue(), 1, 'player online: a lone finished step goes to main after 250 ms');
+    assert.strictEqual(ageMessages.pop().payload.proposals[0].characterId, 760);
+    ageKernel.dirty.set(761, { ...pendingOf(761), enqueuedAt: ageNow });
+    ageNow += 200;
+    assert.strictEqual(ageKernel.flushDue(), 0, 'player online: a step younger than 250 ms still waits');
 
     // An atomic clan party needs the entire small player window. A few free
     // slots must not leave the completed owners waiting for the ordinary timer.

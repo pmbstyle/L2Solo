@@ -14,7 +14,8 @@ const HeapProfile = require('./HeapProfile');
 // Without live it registers nothing and starts no timer. With it, per boot folder:
 // - timeline-<day>.jsonl: a "summary" line per population summary (logSummary, every 30 s) and a
 //   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns); the
-//   summary line carries main's GC pauses by kind (count, ms, longest), cumulative from the recorder's start;
+//   summary line carries main's GC pauses by kind (count and ms cumulative from the recorder's start, the
+//   longest since the line before);
 // - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
 //   (scripts/perf.js capture cpu), for Chrome DevTools;

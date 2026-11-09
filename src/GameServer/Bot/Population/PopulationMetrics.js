@@ -3,6 +3,9 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const { monitorEventLoopDelay } = require('perf_hooks');
 const WorkerHeapTelemetry = require('./WorkerHeapTelemetry');
+// Main's loop delay with diagnostics: 5 ms tells one turn from the next (two tasks back to back with a timer
+// run between them read as two turns); 200 timer runs a second, native.
+const DELAY_RESOLUTION_MS = 5;
 
 function now() {
     return Date.now();
@@ -175,7 +178,7 @@ const PopulationMetrics = {
         this.lagHistory.length = 0;
 
         if (Config.developerDiagnostics) {
-            this.delayHistogram = monitorEventLoopDelay({ resolution: 20 });
+            this.delayHistogram = monitorEventLoopDelay({ resolution: DELAY_RESOLUTION_MS });
             this.delayHistogram.enable();
             this.delayWindowStartedAt = now();
             this.heapObserver = WorkerHeapTelemetry.observe();
@@ -485,14 +488,9 @@ const PopulationMetrics = {
         if (!Config.developerDiagnostics) return { enabled: false };
         const elapsedMs = Math.max(1, now() - (this.startedAt || now()));
         const histogram = this.delayHistogram;
-        const delay = {
-            resolutionMs: 20,
-            windowMs: histogram ? Math.max(0, now() - this.delayWindowStartedAt) : 0,
-            samples: Number(histogram?.count || 0),
-            p95Ms: histogram?.count ? Math.round(histogram.percentile(95) / 1e6) : 0,
-            p99Ms: histogram?.count ? Math.round(histogram.percentile(99) / 1e6) : 0,
-            maxMs: histogram?.count ? Math.round(histogram.max / 1e6) : 0
-        };
+        // Main's turn length over the summary's window (loopDelay: the resolution is off the numbers).
+        const delay = { resolutionMs: DELAY_RESOLUTION_MS, windowMs: histogram ? Math.max(0, now() - this.delayWindowStartedAt) : 0,
+            ...WorkerHeapTelemetry.loopDelay(histogram, DELAY_RESOLUTION_MS) };
         histogram?.reset();
         this.delayWindowStartedAt = now();
         const delta = {};

@@ -49,10 +49,14 @@ const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkG
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const STATE_RETENTION_KEY = Symbol('state-retention');
-// The WAL truncate's budget before one was measured: under the governor's 50 ms
-// player budget, so the first truncate (and its measurement) can happen in play.
+// The WAL truncate is one pause of main: with a player online it runs only when
+// its estimate fits one turn (the 50 ms turn target), however much of the
+// governor's per-second player budget is left.
+const WAL_TRUNCATE_PLAYER_TURN_MS = 50;
+// The WAL truncate's budget before one was measured: under that turn, so the
+// first truncate (and its measurement) can happen in play.
 const WAL_TRUNCATE_FIRST_ESTIMATE_MS = 40;
-// A player stays online for hours: a truncate estimated over the player budget
+// A player stays online for hours: a truncate estimated over the player turn
 // is tried again once per this period (its new measurement replaces the
 // estimate), and past this WAL size it runs anyway (one bounded pause is
 // better than an unbounded file). The size, not the period, bounds the file:
@@ -2436,9 +2440,10 @@ const PopulationService = {
         const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
         const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
         const estimateMs = Math.ceil(Math.max(busyTimeoutMs, this.walTruncateEstimateMs || WAL_TRUNCATE_FIRST_ESTIMATE_MS));
-        const playerBudgetMs = Math.max(1, Number(Config.backgroundGovernorPlayerBudgetMs) || 50);
-        // Over budget with a player: skipped, but tried once per retry period
-        // (with the player budget; the governor records the overrun).
+        const playerBudgetMs = Math.max(1, Math.min(WAL_TRUNCATE_PLAYER_TURN_MS,
+            Number(Config.backgroundGovernorPlayerBudgetMs) || WAL_TRUNCATE_PLAYER_TURN_MS));
+        // Over one turn with a player: skipped, but tried once per retry period
+        // (with that budget; the governor records the overrun).
         let ranAs = forced ? 'forced_over_ceiling' : null;
         if (!forced && activity.protected && estimateMs > playerBudgetMs) {
             if (!this.walResetEstimateRetryAt) {

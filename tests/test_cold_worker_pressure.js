@@ -88,6 +88,12 @@ try {
     coordinator.syncWorkerPressure();
     assert.deepStrictEqual(messages.map((message) => message.payload.maxInFlight), [8, 2],
         'pressure sync must send a lower worker limit when the player loop is critical');
+
+    // The player logs out while the lag holds the same limit: the worker still learns it (its batching age follows).
+    Metrics.schedulerState = { realPlayers: 0, mode: 'idle', lagMs: 0 };
+    coordinator.syncWorkerPressure();
+    assert.deepStrictEqual(messages.map((message) => [message.payload.maxInFlight, message.payload.player]),
+        [[8, true], [2, true], [2, false]], 'pressure sync must send a player change at an unchanged worker limit');
 } finally {
     Object.assign(Config, originalConfig);
     Metrics.schedulerState = originalSchedulerState;

@@ -48,6 +48,10 @@ const nextTurn = require('../../EventLoopTurn');
 const STEP_LEAD_RISE = 0.25;
 const STEP_LEAD_FALL = 0.02;
 const STEP_LEAD_MAX_MS = 5000;
+// With a player online a finished step goes to main once it has waited here this long (the batching age
+// with no player is flushTargetMs): the same as main's overdue commit, so a step's send and its commit each add about
+// this to its lateness while the player is in the world.
+const PLAYER_FLUSH_TARGET_MS = 250;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const Protocol = require('./ColdSimulationProtocol');
@@ -475,6 +479,7 @@ function playerWaitingTransition(state, kind = null, facts = NO_FACTS) {
 function lateFrom(entry) {
     return Math.max(Number(entry.dueAt || 0), Number(entry.queuedAt || 0));
 }
+const NO_STEP_LATE = Object.freeze({ maxMs: 0, characterId: 0, eventWaitMs: 0 });
 
 // A bot that matters to a player goes first in the due queue (DueHeap's player head,
 // dueCandidates): one the player waits for at a meeting, or one within the activation
@@ -707,6 +712,7 @@ class ColdSimulationKernel {
         this.maxInFlight = Math.max(1, Math.min(128, Number(options.maxInFlight) || 32));
         this.flushTargetMs = Math.max(100, Number(options.flushTargetMs) || 2000);
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
+        this.player = false;
         this.partySession = options.partySession || {};
         this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
         this.maxAtomicPartySize = Math.max(
@@ -753,9 +759,9 @@ class ColdSimulationKernel {
         // on this thread's own commit acks (onCommitAck); 0 until the first.
         this.stepLeadMs = 0;
         // Each committed step's lateness (StepLateness: ack minus due), cumulative,
-        // and the longest since the last heartbeat took it (takeStepLateMax).
+        // and the longest since the last heartbeat took it, with its bot (takeStepLateMax).
         this.stepLate = StepLateness.empty();
-        this.stepLateMaxMs = 0;
+        this.stepLateMax = NO_STEP_LATE;
         this.partyRuns = new Map();
         this.dirty = new Map();
         this.commanding = new Set();
@@ -2488,8 +2494,9 @@ class ColdSimulationKernel {
             active.grievances = grievances.length;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
-            if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
-                this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
+            if (priority !== 'P2' || this.dirty.size >= this.maxBatch || this.halfWindowDone()) {
+                this.flush(priority, false, { reason: priority !== 'P2' ? 'priority'
+                    : this.dirty.size >= this.maxBatch ? 'batch' : 'half_window' });
             }
         } catch (error) {
             if (!this.resolverSourceCurrent(source)) return;
@@ -2676,11 +2683,14 @@ class ColdSimulationKernel {
                 active.proposed = proposed.get(Number(proposal.characterId));
             }
         }
-        // Sent proposals keep their in-flight slots until the commit ACK. With
-        // the window full and every step in it sent (a command waits on main
-        // too), nothing more comes before an ack: main commits what it holds at
-        // once. A party waiting for slots asks the same.
+        // Sent proposals keep their in-flight slots until the commit ACK. Main
+        // commits what it holds at once when half the window waits on it: the
+        // other half runs while that half commits, so the worker does not idle
+        // through main's commit (with the window full and every step in it sent,
+        // a command waiting on main too, nothing more comes before an ack). A
+        // party waiting for slots asks the same.
         const capacityBlocked = this.partyCapacityBlocked === true
+            || this.sentSteps() >= Math.ceil(this.maxInFlight / 2)
             || this.inFlight.size + this.commanding.size >= this.maxInFlight && this.everyStepSent();
         // Each proposal's measured size travels with it, so the main commit
         // queue need not serialise it again (the list fits the 16 KiB left
@@ -2706,6 +2716,19 @@ class ColdSimulationKernel {
         return true;
     }
 
+    // Steps of the window sent to main and waiting for its commit (at most maxInFlight entries).
+    sentSteps() {
+        let sent = 0;
+        for (const active of this.inFlight.values()) if (active.pendingCommitId) sent += 1;
+        return sent;
+    }
+
+    // Half the window has finished and waits to be sent: it goes to main at once and commits
+    // while the other half runs (flush asks main to commit at once from half the window sent).
+    halfWindowDone() {
+        return this.dirty.size >= Math.ceil(this.maxInFlight / 2);
+    }
+
     flushDue() {
         const now = this.now();
         const oldest = Math.min(...[...this.dirty.values()].map((proposal) => Number(proposal.enqueuedAt || now)), now);
@@ -2722,10 +2745,13 @@ class ColdSimulationKernel {
         if (this.dirty.size >= this.maxBatch) {
             return this.flush(null, false, { reason: 'batch' });
         }
+        if (this.halfWindowDone()) {
+            return this.flush(null, false, { reason: 'half_window' });
+        }
         if (ageMs >= this.flushHardMs) {
             return this.flush(null, true, { reason: 'hard_age' });
         }
-        if (ageMs >= this.flushTargetMs) {
+        if (ageMs >= (this.player ? Math.min(this.flushTargetMs, PLAYER_FLUSH_TARGET_MS) : this.flushTargetMs)) {
             return this.flush(null, false, { reason: 'target_age' });
         }
         return 0;
@@ -2748,9 +2774,14 @@ class ColdSimulationKernel {
             this.inFlight.delete(id);
             // Its decisions are recorded once, by the step main committed: a refused one re-runs on the moved row.
             Trace.settle(id, result.ok);
+            // Main's wait for the step's future events (a step run early by its lead
+            // holds its commit until its events' time): not work, not lateness.
+            const elapsedMs = Math.max(0, this.now() - active.startedAt);
+            const eventWaitMs = Number.isFinite(result.eventWaitMs)
+                && result.eventWaitMs >= 0 && result.eventWaitMs <= elapsedMs ? result.eventWaitMs : 0;
             // A committed step ends the bot's (its party run's) faults in a row.
             if (result.ok) {
-                this.noteStepLate(active.lateFrom);
+                this.noteStepLate(active.lateFrom, id, eventWaitMs);
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
                 // Its grievances are written: counted once.
@@ -2761,9 +2792,6 @@ class ColdSimulationKernel {
             // output, not work. A party's shared start and wait are one sample.
             if (result.ok && !(active.partyId && sampledParties.has(active.partyId))) {
                 if (active.partyId) sampledParties.add(active.partyId);
-                const elapsedMs = Math.max(0, this.now() - active.startedAt);
-                const eventWaitMs = Number.isFinite(result.eventWaitMs)
-                    && result.eventWaitMs >= 0 && result.eventWaitMs <= elapsedMs ? result.eventWaitMs : 0;
                 this.measureStepLead(elapsedMs - eventWaitMs);
             }
             // An ok ack without the state carries the commit's numbers: main's
@@ -2821,19 +2849,21 @@ class ColdSimulationKernel {
         return accepted;
     }
 
-    // A committed step's lateness: this ack's time past lateFrom (none for a step with no due).
-    noteStepLate(from) {
+    // A committed step's lateness: this ack's time past lateFrom, less main's wait for
+    // its future events (none for a step with no due).
+    noteStepLate(from, characterId, eventWaitMs = 0) {
         if (!Number.isFinite(from) || from <= 0) return;
-        const lateMs = Math.max(0, this.now() - from);
+        const lateMs = Math.max(0, this.now() - from - eventWaitMs);
         this.stepLate[StepLateness.bucketOf(lateMs)] += 1;
-        this.stepLateMaxMs = Math.max(this.stepLateMaxMs, lateMs);
+        if (lateMs > this.stepLateMax.maxMs) this.stepLateMax = { maxMs: lateMs, characterId: Number(characterId), eventWaitMs };
     }
 
-    // The longest lateness since the last call (the worker's heartbeat).
+    // The longest lateness since the last call (the worker's heartbeat): { maxMs, characterId,
+    // eventWaitMs } of the latest step, the wait main added and that came off it.
     takeStepLateMax() {
-        const maxMs = this.stepLateMaxMs;
-        this.stepLateMaxMs = 0;
-        return maxMs;
+        const max = this.stepLateMax;
+        this.stepLateMax = NO_STEP_LATE;
+        return max;
     }
 
     // One-sided average of start -> commit ack, excluding event waits (STEP_LEAD_*).
@@ -3007,6 +3037,12 @@ class ColdSimulationKernel {
         return this.maxInFlight;
     }
 
+    // Main's pressure: the window size and whether a player is online (the batching age follows it).
+    setPressure({ maxInFlight, player }) {
+        this.player = player === true;
+        return this.setMaxInFlight(maxInFlight);
+    }
+
     async shutdown() {
         this.stopping = true;
         this.partyRequirementProgress.clear();
@@ -3109,6 +3145,7 @@ class ColdSimulationKernel {
 module.exports = {
     ColdSimulationKernel,
     DueHeap,
+    PLAYER_FLUSH_TARGET_MS,
     deterministicRandom,
     finishPartyRouteTravelState,
     lifecycleKind,

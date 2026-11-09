@@ -30,8 +30,9 @@ const DEFAULTS = {
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
     // Cold simulation remains alive while a player is online, but its IPC
-    // and commit burst must yield the main event loop to player traffic.
-    coldWorkerPlayerMaxInFlight: 8,
+    // and commit burst must yield the main event loop to player traffic:
+    // main commits each half of the window (8 rows) while the other half runs.
+    coldWorkerPlayerMaxInFlight: 16,
     coldWorkerLagMaxInFlight: 2,
     // Resolver work is serialized inside the worker. Keep the lease window
     // bounded so a catch-up burst cannot create a large queue of expiring
@@ -80,7 +81,7 @@ const DEFAULTS = {
     backgroundJobTickMs: 250,
     backgroundGovernorWindowMs: 1000,
     backgroundGovernorIdleBudgetMs: 250,
-    backgroundGovernorPlayerBudgetMs: 50,
+    backgroundGovernorPlayerBudgetMs: 80,
     backgroundGovernorIdleDbQueueMax: 8,
     backgroundGovernorPlayerDbQueueMax: 8,
     backgroundGovernorLagAbortMs: 120,

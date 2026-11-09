@@ -130,7 +130,7 @@ const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const { SpotContestOutbox } = require('./SpotContestOutbox');
 const FailureLog = require('../../../FailureLog');
-const { ColdSimulationKernel } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel, PLAYER_FLUSH_TARGET_MS } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const PveEncounter = require('./ColdPveEncounter');
@@ -1255,6 +1255,21 @@ ClanSupplyPolicy.useRowSource(id => tables.rows('clan_supplies').get(id), () => 
 PersonalWarehouseIndex.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 let eventLoopDelay = null;
 const LAG_RESOLUTION_MS = 20;
+// The worker's turns with diagnostics (the run summary's turn length): loop delay at 5 ms, which tells one
+// turn from the next (a step's phases yield between them), over TURN_WINDOW_MS windows with the GC pauses by
+// kind in each. A window closes at the first beat past its length; every beat carries the last closed one
+// (main's summary line takes it; the perf report reads each window once by its end, `at`).
+const TURN_RESOLUTION_MS = 5;
+const TURN_WINDOW_MS = 30000;
+let turnDelay = null, turnWindowStartedAt = 0, turnWindow = null;
+function takeTurnWindow(at) {
+    if (!turnDelay || at - turnWindowStartedAt < TURN_WINDOW_MS) return turnWindow;
+    const Telemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry');
+    turnWindow = { at, ms: at - turnWindowStartedAt, ...Telemetry.loopDelay(turnDelay, TURN_RESOLUTION_MS), gc: heapTelemetry.pauses() };
+    turnDelay.reset();
+    turnWindowStartedAt = at;
+    return turnWindow;
+}
 
 // The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -1768,12 +1783,17 @@ function startKernel(config = {}) {
     Config.decisionTrace = config.decisionTrace === true;
     // Busy share and heap after GC are two of the goal's three numbers (read with diagnostics off): always on, one
     // major-GC observer and two clock reads per heartbeat.
-    heapTelemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
+    heapTelemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe({ pauses: Config.developerDiagnostics });
     previousElu = performance.eventLoopUtilization();
     // The longest loop delay per heartbeat is the health line's spike number (workerLag): always on,
     // a native histogram on a LAG_RESOLUTION_MS timer.
     eventLoopDelay = monitorEventLoopDelay({ resolution: LAG_RESOLUTION_MS });
     eventLoopDelay.enable();
+    if (Config.developerDiagnostics) {
+        turnDelay = monitorEventLoopDelay({ resolution: TURN_RESOLUTION_MS });
+        turnDelay.enable();
+        turnWindowStartedAt = Date.now();
+    }
     // The decision trace's records go to main (ColdSimulationCoordinator), which owns the history writer.
     Trace.connect(batch => {
         if (shuttingDown) return false;
@@ -2312,11 +2332,12 @@ function startKernel(config = {}) {
                 competition: { mode: 'addressed', at: frame.at, events: [], frame: { ...frame, events: [] } },
                 tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
                 eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
-                eventLoopLagMaxMs: large, stepLateMaxMs: large
+                eventLoopLagMaxMs: large, stepLateMax: { maxMs: large, characterId: large, eventWaitMs: large }
             }, 'x'.repeat(160));
             return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, []);
         } });
-    flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
+    // Half the shortest batching age: a finished step waits at most 1.5 times its age.
+    flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(PLAYER_FLUSH_TARGET_MS, Number(config.flushTargetMs) || 2000) / 2));
     heartbeatTimer = setInterval(() => {
         // Read and reset first: the beat's own work (the review, the send) counts in the next beat; a
         // sample counts the whole timer interval, so the resolution comes off (0 = no delay).
@@ -2334,7 +2355,7 @@ function startKernel(config = {}) {
             // The beat's busy share and its active / idle ms: main sums the ms into the health line's
             // busy share over its own window (a beat delayed by a long task lasts longer).
             eventLoopUtilization: elu.utilization, eluActiveMs: elu.active, eluIdleMs: elu.idle,
-            eventLoopLagMaxMs: lagMaxMs, stepLateMaxMs: kernel.takeStepLateMax(),
+            eventLoopLagMaxMs: lagMaxMs, stepLateMax: kernel.takeStepLateMax(),
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: outbox.snapshot(),
@@ -2345,7 +2366,8 @@ function startKernel(config = {}) {
             caches: { spotValue: SpotValueTable.cacheStats(), kitProfiles: ColdCombatProfile.kitStoreSize() },
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
-            eventLoopLagP95Ms: lagP95Ms
+            eventLoopLagP95Ms: lagP95Ms,
+            turn: takeTurnWindow(Date.now())
             } : {})
         };
         // A beat main did not take: its frame stays the outbox's for the next beat;
@@ -2479,7 +2501,7 @@ async function handle(message) {
         kernel?.traceBot(payload.characterId, payload.main);
         break;
     case 'throttle':
-        kernel?.setMaxInFlight(payload.maxInFlight);
+        kernel?.setPressure(payload);
         break;
     case 'diagnostics_resync':
         economyDiagnostics.requestFull();
@@ -2501,6 +2523,7 @@ async function handle(message) {
         outbox?.stop();
         stopTimers();
         eventLoopDelay?.disable();
+        turnDelay?.disable();
         heapTelemetry?.close();
         send('drained', await kernel?.shutdown() || {}, message.msgId);
         parentPort.close();

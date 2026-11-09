@@ -19,9 +19,10 @@ const round = (value, digits = 1) => Math.round(value * 10 ** digits) / 10 ** di
 // 2026-11-03) moved cores and busy shares 3-4 %, long turns a minute 10-16 %, heap at the end
 // 9-16 %, the sampled growth up to 50 % and the single longest turn 30-90 %. A change inside these
 // (with some margin) is marked "noise": it needs more runs, or a longer window, to mean anything.
-// Main's GC pauses a minute are not measured run to run yet: they take the gc % band.
+// Main's GC pauses a minute are not measured run to run yet: they take the gc % band; the turn p99 and max
+// (loop delay) neither: they take the longest turn's.
 const NOISE = [[/% cpu/, 0.15], [/WAL|db queue|commit queue|page faults/, 0.3], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/^main gc .*\/min$/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
-    [/sampled growth/, 0.6], [/longest|player .* max/, 1], [/player /, 0.3]];
+    [/sampled growth/, 0.6], [/longest|player .* max| turn (p99|max) ms/, 1], [/player /, 0.3]];
 
 const GC_NAMES = { minor: 'scavenge', major: 'mark-compact', incremental: 'incremental marking', weak: 'weak callbacks' };
 
@@ -48,6 +49,10 @@ function rows(a, b) {
             const share = (t) => t.cpuParts?.find(row => row.part === part)?.pct ?? 0;
             out.push([`${label} ${part} % cpu`, share(x), share(y)]);
         }
+    }
+    for (const thread of ['main', 'worker']) {
+        const x = a.turns?.[thread], y = b.turns?.[thread];
+        if (x || y) out.push([`${thread} turn p99 ms`, x?.p99Ms, y?.p99Ms], [`${thread} turn max ms`, x?.maxMs, y?.maxMs]);
     }
     if (a.player || b.player) {
         out.push(['player hot bots avg', a.player?.hotAvg, b.player?.hotAvg],
@@ -80,10 +85,11 @@ function rows(a, b) {
         // shows 0); the longest only for mark-compacts, the pause that holds a turn (a scavenge is a few ms).
         const ga = ca.memory?.mainGc, gb = cb.memory?.mainGc;
         for (const kind of new Set([...Object.keys(ga || {}), ...Object.keys(gb || {})])) {
-            const none = { perMin: 0, msPerMin: 0, maxMsSinceStart: 0 }, name = GC_NAMES[kind] || kind;
+            const none = { perMin: 0, msPerMin: 0, maxMs: 0 }, name = GC_NAMES[kind] || kind;
             const x = ga && (ga[kind] || none), y = gb && (gb[kind] || none);
             out.push([`main gc ${name}/min`, x?.perMin, y?.perMin], [`main gc ${name} ms/min`, x?.msPerMin, y?.msPerMin]);
-            if (kind === 'major') out.push([`main gc ${name} longest since start ms`, x?.maxMsSinceStart, y?.maxMsSinceStart]);
+            // A run reported before the window's longest was kept has the longest since start.
+            if (kind === 'major') out.push([`main gc ${name} longest ms`, x?.maxMs ?? x?.maxMsSinceStart, y?.maxMs ?? y?.maxMsSinceStart]);
         }
     }
     out.push(['main heap end MB', a.memory.mainHeapUsedMb?.end, b.memory.mainHeapUsedMb?.end],

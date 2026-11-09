@@ -117,18 +117,30 @@ function world() {
         kernel.upsert({ state: soloState(2, T) });
         assert.deepStrictEqual(await tickAt(T), [2]);
         commit(2, 1500, T);
-        assert.strictEqual(kernel.takeStepLateMax(), 1500);
-        assert.strictEqual(kernel.takeStepLateMax(), 0, 'the longest is taken once');
+        assert.strictEqual(kernel.takeStepLateMax().maxMs, 1500);
+        assert.strictEqual(kernel.takeStepLateMax().maxMs, 0, 'the longest is taken once');
         const lead = kernel.stepLeadMs, T3 = T + 100000;
         assert(lead > 100, 'the slow commit measured a lead');
         kernel.upsert({ state: soloState(3, T3) });
         assert.deepStrictEqual(await tickAt(T3 - Math.ceil(lead)), [3]);
         commit(3, Math.floor(lead) - 50, T3 - Math.ceil(lead));
-        assert.strictEqual(kernel.takeStepLateMax(), 0);
+        assert.strictEqual(kernel.takeStepLateMax().maxMs, 0);
         const counts = kernel.heartbeatSnapshot().stepLate;
         assert.strictEqual(counts[StepLateness.bucketOf(1500)], 1);
         assert.strictEqual(counts[StepLateness.bucketOf(0)], 1);
         assert.deepStrictEqual(StepLateness.summary(counts, 1500), { steps: 2, p50Ms: 0, p99Ms: 1500, maxMs: 1500 });
+    }
+    {
+        // Main's wait for a step's future events (its commit parked until their time) is not
+        // lateness: a step due at T committed 41 s later after a 40 s event wait is 1 s late,
+        // and the heartbeat names the bot and the wait that came off.
+        const { kernel, tickAt, commit } = world();
+        const T = 100000;
+        kernel.upsert({ state: soloState(6, T) });
+        assert.deepStrictEqual(await tickAt(T), [6]);
+        commit(6, 41000, T, 40000);
+        assert.deepStrictEqual(kernel.takeStepLateMax(), { maxMs: 1000, characterId: 6, eventWaitMs: 40000 });
+        assert.strictEqual(kernel.heartbeatSnapshot().stepLate[StepLateness.bucketOf(1000)], 1);
     }
     {
         // A bot queued long after its stored due (a save from days ago, a bot back cold)
@@ -140,13 +152,13 @@ function world() {
         kernel.upsert({ state: soloState(4, T) });
         assert.deepStrictEqual(await tickAt(T + 6 * DAY), [4]);
         commit(4, 1500, T + 6 * DAY);
-        assert.strictEqual(kernel.takeStepLateMax(), 1500);
+        assert.strictEqual(kernel.takeStepLateMax().maxMs, 1500);
         const T5 = T + 6 * DAY + 60000;
         clock.at = T5;
         kernel.upsert({ state: soloState(5, T5) });
         assert.deepStrictEqual(await tickAt(T5), [5]);
         commit(5, 2000, T5);
-        assert.strictEqual(kernel.takeStepLateMax(), 2000);
+        assert.strictEqual(kernel.takeStepLateMax().maxMs, 2000);
     }
     {
         // Slow commits (1.5 s from start to ack): the lead rises toward them,

@@ -146,7 +146,7 @@ async function run() {
     checkpointState.pending = 0;
     assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
     // A completed truncate that held main's DB queue 60 ms is over the 50 ms
-    // player budget: with a player online it is skipped (counted).
+    // turn a truncate may take with a player online: it is skipped (counted).
     const idleProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
     const playerProfile = () => ({ protected: true, realPlayers: 1, connectingPlayers: 0 });
     PopulationService.playerActivityProfile = idleProfile;

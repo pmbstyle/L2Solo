@@ -235,8 +235,9 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         assert.strictEqual(memoryQueue.bytes, 0);
     }
 
-    // Every worker slot waits on main (capacityBlocked): the whole window commits at once as one
-    // batch, admitted by the governor; refused, the rows keep their own age.
+    // Half the worker's window waits on main (capacityBlocked): it commits at once, half the window
+    // (windowRows) per commit so one is one short turn of main, admitted by the governor; refused,
+    // the rows keep their own age.
     let allowed = false;
     let admissions = 0;
     const completedLeases = [];
@@ -248,6 +249,7 @@ function proposal(characterId, priority = 'P2', revision = 1) {
             return entries.map((entry) => ({ ok: true, characterId: entry.nextState.characterId }));
         },
         admitWindowFlush: () => { admissions++; return allowed ? { id: 1 } : null; },
+        windowRows: () => 4,
         completeWindowFlush: (lease, duration) => completedLeases.push({ lease, duration })
     });
     for (let id = 40; id < 48; id++) windowQueue.enqueue(proposal(id));
@@ -261,25 +263,34 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     allowed = true;
     windowQueue.capacityBlocked = true;
     assert.strictEqual(await windowQueue.flushDue(), true, 'a full window commits at once with an admitted budget');
-    assert.strictEqual(windowQueue.size(), 0, 'the whole window commits as one batch');
-    assert.deepStrictEqual(completedLeases, [{ lease: { id: 1 }, duration: 7 }]);
+    assert.strictEqual(windowQueue.size(), 4, 'one window commit takes half the window: one short turn of main');
+    assert.strictEqual(windowQueue.capacityBlocked, true, 'the rest still waits on main');
+    assert.strictEqual(await windowQueue.flushDue(), true, 'the other half commits at the next turn');
+    assert.strictEqual(windowQueue.size(), 0);
+    assert.deepStrictEqual(completedLeases, [{ lease: { id: 1 }, duration: 7 }, { lease: { id: 1 }, duration: 7 }]);
     assert.strictEqual(windowQueue.capacityBlocked, false);
     windowQueue.enqueue(proposal(41, 'P0'));
     allowed = false;
     assert.strictEqual(await windowQueue.flushDue(), true, 'durability priority does not depend on the window admission');
-    assert.strictEqual(admissions, 2);
+    assert.strictEqual(admissions, 3);
     allowed = true;
-    [61, 62, 63].forEach(id => windowQueue.enqueue({ ...proposal(id, 'P1'),
-        atomicGroup: { id: 'window-party', memberIds: [61, 62, 63] } }));
+    const party = [61, 62, 63, 64, 65];
+    party.forEach(id => windowQueue.enqueue({ ...proposal(id, 'P1'),
+        atomicGroup: { id: 'window-party', memberIds: party } }));
+    windowQueue.enqueue(proposal(66));
     windowQueue.capacityBlocked = true;
-    assert.strictEqual(await windowQueue.flushDue(), true, 'a party in a full window commits whole at once');
+    assert.strictEqual(await windowQueue.flushDue(), true, 'a party larger than a window commit commits whole, alone');
+    assert.strictEqual(windowQueue.size(), 1, 'the party is not split and nothing joins it');
+    await windowQueue.flushDue();
     assert.strictEqual(windowQueue.size(), 0);
     for (let id = 70; id < 72; id++) windowQueue.enqueue(proposal(id));
     allowed = false;
     windowQueue.capacityBlocked = true;
     assert.strictEqual(await windowQueue.flushDue(), false);
-    now += 500;
-    assert.strictEqual(await windowQueue.flushDue(), true, 'a refused window still commits at its rows\' overdue age');
+    now += 249;
+    assert.strictEqual(await windowQueue.flushDue(), false);
+    now += 1;
+    assert.strictEqual(await windowQueue.flushDue(), true, 'a refused window still commits at its rows\' overdue age, 250 ms');
 
     let clock = 1000;
     const measured = new ColdCommitQueue({
@@ -292,20 +303,20 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         afterCommit: async () => { clock += 11; }
     });
     measured.enqueue(proposal(70));
-    clock = 1499;
+    clock = 1249;
     assert.strictEqual(await measured.flushDue(), false);
-    clock = 1500;
-    assert.strictEqual(await measured.flushDue(), true, 'the P2 fairness deadline must flush at 500 ms, before the 2 second target');
+    clock = 1250;
+    assert.strictEqual(await measured.flushDue(), true, 'the P2 fairness deadline must flush at 250 ms, before the 2 second target');
     const timing = measured.snapshot();
-    assert.strictEqual(timing.queueP95Ms, 500, 'queue wait ends before preparation begins');
+    assert.strictEqual(timing.queueP95Ms, 250, 'queue wait ends before preparation begins');
     assert.strictEqual(timing.commitP95Ms, 21, 'legacy commit timing includes preparation, commit callback and after-commit work');
     assert.deepStrictEqual(timing.stages.prepare, { count: 1, p95Ms: 3 });
     assert.deepStrictEqual(timing.stages.commitCall, { count: 1, p95Ms: 7 });
     assert.deepStrictEqual(timing.stages.afterCommit, { count: 1, p95Ms: 11 });
     assert.deepStrictEqual(timing.flushReasons, { p2_overdue: 1 });
     assert.strictEqual(windowQueue.snapshot().windowDenied, 2);
-    assert.strictEqual(windowQueue.snapshot().windowFlushes, 2);
-    assert.strictEqual(windowQueue.snapshot().flushReasons.window, 2);
+    assert.strictEqual(windowQueue.snapshot().windowFlushes, 4);
+    assert.strictEqual(windowQueue.snapshot().flushReasons.window, 4);
 
     console.log('Cold commit queue coalescing, durability, backpressure, full-window commit, and retry checks passed');
 })().catch((error) => {

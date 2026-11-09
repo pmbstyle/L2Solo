@@ -56,7 +56,7 @@ function windowMs() {
 function budgetMs(playerProtected) {
     return Math.max(1, Math.floor(number(playerProtected
         ? Config.backgroundGovernorPlayerBudgetMs
-        : Config.backgroundGovernorIdleBudgetMs, playerProtected ? 50 : 250)));
+        : Config.backgroundGovernorIdleBudgetMs, playerProtected ? 80 : 250)));
 }
 
 function refreshWindow(timestamp) {

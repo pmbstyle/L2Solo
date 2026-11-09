@@ -29,7 +29,8 @@ async function run() {
     const entered = new Promise(resolve => { reachedParty = resolve; });
     const parked = new Promise(resolve => { finishParty = resolve; });
     const published = [];
-    const kernel = new ColdSimulationKernel({ now: () => now, maxInFlight: 10,
+    // A window of 20: the eight finished solo steps stay unsent (half the window sends at once).
+    const kernel = new ColdSimulationKernel({ now: () => now, maxInFlight: 20,
         resolveSolo: resolution,
         resolveParty: async ({ members }) => {
             reachedParty();
