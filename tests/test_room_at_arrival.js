@@ -50,7 +50,7 @@ Contest.contest = input => {
 };
 const marksOf = stats => Risk.spotMarks(stats).map(mark => mark.spotId + ':' + mark.reason);
 const own = new Map();
-module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false, at = 1 }) => {
+module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false, at = 1, to: dest = null }) => {
     if (kind !== 'memory') for (const gone of remove || []) kernel.remove(gone);
     forced = outcome; seen = null;
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
@@ -144,7 +144,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, ou
     const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const held = kernel.states.get(id), now = Date.now();
     const entry = inventory ? { ...held, state: { ...held.state, inventory } } : held;
-    const to = { locX: 50000, locY: -176000, locZ: -1000 };
+    const to = dest || { locX: 50000, locY: -176000, locZ: -1000 };
     // A solo trip takes its own time: started that long ago, it has arrived by now.
     const tripMs = require('./ColdTrip').spotPlan(entry.state, to).durationMs;
     const traveling = beginHuntingTrip(entry.state, { needed: true, mode: 'solo', spotId, regionName: 'Room',
@@ -179,6 +179,10 @@ const room = { id: 'room-at-arrival', name: 'Room at arrival', center: { locX: 5
     minLevel: 18, maxLevel: 24, avgLevel: 21, density: 12, capacity: 2, levelCounts: { 20: 6 },
     npcEntries: [{ selfId: NPC, count: 2, level: 21 }], rewards: { adenaMin: 0, adenaMax: 0 } };
 const away = { ...room, id: 'room-away', name: 'Away field', center: { locX: 20000, locY: -176000, locZ: -1000 }, capacity: 20 };
+// The room's level-21 spawns on a spot no level-20 search picks (its listed levels far off): only the
+// outlevelled bots below stand there or arrive.
+const low = { ...room, id: 'room-low', name: 'Low field', center: { locX: 80000, locY: -176000, locZ: -1000 },
+    minLevel: 60, maxLevel: 62, avgLevel: 61, levelCounts: { 61: 6 } };
 
 function bot(characterId, extra = {}) {
     const now = Date.now();
@@ -392,7 +396,7 @@ invoke('GameServer/DataCache').init();
         };
         await wait(message => message.type === 'ready' && message.payload.phase === 'loaded');
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        send('catalog_page', { catalog: 'spots', rows: [room, away] });
+        send('catalog_page', { catalog: 'spots', rows: [room, away, low] });
         send('init', { config: { loopIntervalMs: 1000 }, recomputeGeneration: { code: 'a'.repeat(40), config: 'b'.repeat(64) } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running');
         send('pause', {}, 'pause');
@@ -403,9 +407,25 @@ invoke('GameServer/DataCache').init();
         // On its way to the spot: indexed there, not standing there.
         const onTheWay = bot(103, { activity: 'traveling', stats: { ...bot(103).stats,
             travel: { spotId: room.id, reason: 'level_replan', to: { ...room.center }, arrivalAt: Date.now() + 600000 } } });
-        const rows = [standing(101), standing(102), onTheWay, bot(104), bot(105), bot(110), bot(111)];
+        // Level 30 on the level-21 spawns of the low field (past the target window), no gear target.
+        const outlevelled = (id, extra = {}) => bot(id, { level: 30, ...extra,
+            stats: { ...bot(id).stats, classProgressionLevel: 30, equipmentPlan: null, ...extra.stats } });
+        const onLow = id => outlevelled(id, { spotId: low.id, currentRegion: low.name, loc: { ...low.center } });
+        const rows = [standing(101), standing(102), onTheWay, bot(104), bot(105), bot(110), bot(111),
+            onLow(130), onLow(131), outlevelled(132), outlevelled(133, { stats: { equipmentPlan: { status: 'active', next: { npcId: NPC + 50 } } } })];
         send('snapshot_page', { rows: rows.map(state => ({ state })), ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
+
+        // Bots that outlevelled a spot's spawns past the target window still hunt there and are met:
+        // an even arrival over room leaves, and so does one whose gear target does not spawn there.
+        await probe({ kind: 'memory', remove: [130, 131, 132, 133] });
+        for (const [id, why] of [[132, 'outlevelled'], [133, 'its planned target absent']]) {
+            const met = await probe({ kind: 'solo', id, spotId: low.id, reason: 'level_replan', to: low.center });
+            assert.equal(met.seen?.npcId, NPC, `${why}: the arrival contests a species that spawns there`);
+            assert.deepEqual(met.seen.standing, ['solo:130', 'solo:131'], `${why}: the outlevelled units standing there are met`);
+            assert.deepEqual([met.seen.pressure, met.seen.action, met.marks], [1.5, 'avoid', [`${low.id}:contest_lost`]],
+                `${why}: over room the even arrival leaves`);
+        }
 
         // Two bots stand on a spot of two places: one more on the same species is over room.
         const over = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan' });
