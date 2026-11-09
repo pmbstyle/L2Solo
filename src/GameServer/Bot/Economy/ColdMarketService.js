@@ -828,7 +828,7 @@ const ColdMarketService = {
         // A missed step failed where it acts (after any return handling): the bot decides anew.
         // A buy whose source failed here (GEAR_SOURCE_FAILED: a gear piece or a craft material)
         // is a failed errand: its item is marked (GearMarks), so the build it wakes does not
-        // send the bot for it again; a new offer of it wakes the build (offer_posted).
+        // send the bot for it again until the money or its gear moved (GearMarks.LIFETIME).
         const refreshAfter = written => written.then(result => {
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(result?.reason)

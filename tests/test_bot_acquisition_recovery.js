@@ -68,18 +68,16 @@ async function run() {
         const second = Situations.raise(reviewed, 'goal_failed', { kind: 'gear_errand', key: 75, impossible: true });
         assert.deepEqual(Planner.replanContextFor({ ...state, stats: second }, plan, now).excludedTargetIds.filter(id => [2566, 75].includes(id)).sort((a, b) => a - b),
             [75, 2566], 'the second failure\'s review plans without both');
-        // A board offer of one item forgets that mark alone, and wakes the gear plan (its source changed).
-        const offered = Situations.raise({ ...second, woken: 0 }, 'offer_posted', { itemId: 2566, price: 100 });
-        assert(!Marks.marked(offered, 2566) && Marks.marked(offered, 75), 'an offer of the item frees it, the other stays marked');
-        assert(Situations.woken(offered, 'gear_plan'), 'the freed item wakes the gear plan');
-        const other = Situations.raise({ ...offered, woken: 0 }, 'offer_posted', { itemId: 1, price: 100 });
-        assert(Marks.marked(other, 75) && !Situations.woken(other, 'gear_plan'), 'an offer of another item forgets nothing');
-        // The money the build waited for, a new grade or new gear forget every mark.
+        // The money the build waited for, a new grade or new gear forget every mark, and wake the
+        // gear plan (its source changed).
         for (const name of ['goal_affordable:focus', 'grade_changed', 'gear_changed']) {
-            assert.deepEqual(Marks.keys(Situations.raise({ ...second, woken: 0 }, name)), [], `${name} forgets the marks`);
+            const freed = Situations.raise({ ...second, woken: 0 }, name);
+            assert.deepEqual(Marks.keys(freed), [], `${name} forgets the marks`);
+            assert(Situations.woken(freed, 'gear_plan'), `${name} wakes the gear plan`);
         }
-        // A town arrival or a death changes neither the shop's answer nor the money: the marks stay.
-        for (const name of ['arrived_town', 'died', 'goal_failed:visit']) {
+        // A town arrival, a death or a board offer (a marked item is no purchase: no offer of it
+        // is watched) changes neither the shop's answer nor the money: the marks stay.
+        for (const name of ['arrived_town', 'died', 'goal_failed:visit', 'offer_posted']) {
             assert.deepEqual(Marks.keys(Situations.raise({ ...second, woken: 0 }, name)), [2566, 75], `${name} keeps the marks`);
         }
     }

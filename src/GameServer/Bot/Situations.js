@@ -201,8 +201,8 @@ const SITUATIONS = Object.freeze({
 // own grade, gear and clan (a clan's goal plan dropped with it), and its source
 // failing: a craft route's stall (source_stalled) or a gear errand failed on its item
 // (goal_failed with its mark, GearMarks: delta), as a C4 player whose item was sold
-// looks for another, and a failed errand's source changing (its mark forgotten: an offer of
-// it, the money, its gear); not a death (PvE costs no gear), a party left, a town arrival or
+// looks for another, and a failed errand's source changing (its mark forgotten: the money,
+// its gear or grade); not a death (PvE costs no gear), a party left, a town arrival or
 // another failed step.
 // workshop: what a crafter offers (its listing on its known book, stats.workshop), taken
 // at the start of a town visit (arrived_town, either kind, one per visit; a craft level
@@ -387,9 +387,8 @@ const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 // Memory a situation ends, declared once by the memory's owner at its load (forgets):
 // situation name -> [forget(stats, name) -> the facts it rewrites, with forgot: how many
 // entries went]. The owners: SpotRiskPolicy's spot marks, which last the outing, and
-// GearMarks' failed gear errands, which last until their source changed (forget also reads
-// the raise's payload: an offer's item). Applied by every raise beside its bits, on both
-// threads (and main's row raises).
+// GearMarks' failed gear errands, which last until their source changed. Applied by every
+// raise beside its bits, on both threads (and main's row raises).
 const FORGETS = new Map();
 function forgets(owner, names, forget) {
     for (const name of names) {
@@ -422,7 +421,7 @@ function raisedFacts(stats, name, payload, dropped = null) {
     Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
     const forgetting = FORGETS.get(name);
     if (forgetting) return forgetting.reduce((facts, { owner, forget }) => {
-        const wrote = forget(stats, name, payload);
+        const wrote = forget(stats, name);
         return wrote.forgot ? { ...facts, ...wrote, forgot: [...(facts.forgot || []), [owner, wrote.forgot]] } : facts;
     }, {});
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
