@@ -175,9 +175,9 @@ function selectionPlansFromHuntingSpot() {
     assert.strictEqual(afford?.kind, 'focus', 'a broke bot waits for its weapon bridge first');
     assert(afford.at > 100);
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-    assert.strictEqual(Sections.goalReached({ ...broke.state, adena: afford.at - 1 }, broke.economy.statsPacket.wishSections), null);
-    assert.strictEqual(Sections.goalReached({ ...broke.state, adena: afford.at, inventory: { 57: { selfId: 57, amount: afford.at } } },
-        broke.economy.statsPacket.wishSections), 'focus', 'its price in the wallet raises goal_affordable:focus');
+    const raised = wallet => Sections.moneyCrossings(wallet, broke.economy.statsPacket.wishSections).includes('goal_affordable:focus');
+    assert.strictEqual(raised(afford.at - 1), false);
+    assert.strictEqual(raised(afford.at), true, 'its price in the wallet raises goal_affordable:focus');
     const kit = require('./fixtures/profitable_stock_state').kitFor(0, original.level);
     const wanderer = { ...original, exp: Number(DataCache.experience[13]), currentRegion: 'Dwarven Village',
         loc: { ...original.loc, locZ: 0 }, stats: { ...original.stats }, inventory: structuredClone(kit.inventory) };

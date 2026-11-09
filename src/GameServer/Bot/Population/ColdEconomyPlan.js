@@ -174,7 +174,8 @@ function* prepareNative(state, economy, options) {
         let lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
             townFor: items => Town.buyAdTown(state, items, own, { findSpot: options.findSpot }),
             watchList: economy.watchList || [], money });
-        lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0);
+        lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0,
+            BuyAds.heldPurchaseRoot(goal));
         // The native activity selected the priority. A buy may replace a sale
         // shop; ordinary surplus listings cannot evict a standing buy shop.
         plan.buyShop = ['upgrade_gear', 'buy_craft_material'].includes(goal?.type) ? BoardRules.BUY

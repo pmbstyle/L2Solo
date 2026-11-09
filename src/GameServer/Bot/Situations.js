@@ -652,8 +652,9 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const current = { ...Sections.factsOf(view), relations: previousFact('relations') };
     // The wallet now against the decision's armed money thresholds (goal_affordable:<kind>,
     // out_of_money), while the wallet stands past them (moneyCrossings).
-    const money = Sections.moneyCrossings(invoke('GameServer/Bot/Economy/PurchaseFunding').budget(after, escrow),
-        represented || before.stats?.wishSections || after.stats?.wishSections);
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const money = Sections.moneyCrossings(Funding.budget(after, escrow),
+        represented || before.stats?.wishSections || after.stats?.wishSections, Funding.budget(after));
     if (out) out.facts = current;
     const names = factNames(previousFact, current, body || Sections.occupationPlanned(after, leaf));
     for (const name of money) names.push(name);

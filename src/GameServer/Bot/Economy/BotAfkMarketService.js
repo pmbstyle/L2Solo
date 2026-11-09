@@ -92,7 +92,7 @@ function canTradeRemotely(state, goal) {
         // The offer as the buyer weighs it: its price and its trip there (б5, C7).
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
-            budget: PurchaseFunding.spendable(state, reserved, PurchaseFunding.goalTerms(goal)),
+            budget: PurchaseFunding.payable(state, reserved, PurchaseFunding.goalTerms(goal)),
             buyerCharacterId: state.characterId,
             cost: invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state)
         });
@@ -541,6 +541,38 @@ async function openBuyAd(state, goal) {
     const saved = LifeState.snapshot(ownerId) || state;
     rememberInventory(ownerId, saved);
     return { state: saved, opened: !!store, item: wanted[0], store };
+}
+
+// The money the bot's own backed bids on a shop step's `bids` hold (its card's: its root's
+// bids, WishNetwork), as the network counted it.
+function stepBidMoney(ownerId, bids) {
+    return bids?.length ? PurchaseFunding.bidMoney(PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId))), bids) : 0;
+}
+// A shop step may spend its root's own bids: when the bag alone is short of its cost and
+// those bids cover the rest, its buyer takes them back before it pays (their escrow returns
+// to the bag). C4: a player at the shop with his money in a buy store for the same project
+// closes that store to pay. Only the bids the bag needs: each one taken back is closed and
+// posted again by the next bid plan (a write, and the bid's place on the board), so they
+// go largest first (ties by item), the fewest that cover the cost. Hot and cold buyers
+// call it once a seller is chosen. Null when nothing is taken back, else a promise of the
+// owner's state after.
+function freeStepBids(ownerId, bids, cost, bag) {
+    if (!bids?.length || !(Number(cost) > Number(bag))) return null;
+    const own = PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId)));
+    const held = [...new Set(bids.map(Number))].filter(id => own.has(id)).sort((a, b) => own.get(b) - own.get(a) || a - b);
+    const taken = [];
+    let money = Number(bag);
+    for (const id of held) {
+        if (money >= Number(cost)) break;
+        taken.push(id);
+        money += own.get(id);
+    }
+    if (money < Number(cost)) return null;
+    return (async () => {
+        let state = null;
+        for (const id of taken) state = (await withdrawBuyAds(ownerId, id, state)).state || state;
+        return state;
+    })();
 }
 
 // Takes the bot's buy ads back (all, or those for one item): the escrow
@@ -1031,7 +1063,8 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         // this does not choose a new price or rebuild the worker's wishes.
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
         const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow,
+            BuyAdPolicy.heldPurchaseRoot(invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state)));
         let town = buyAdTown(state, ads, wanted);
         for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
@@ -1142,7 +1175,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
+module.exports = { executePlan, applyReview, buyOrderEscrow, stepBidMoney, freeStepBids, buyLines, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     planBidRefused: () => ({ ...planBidRefused }),

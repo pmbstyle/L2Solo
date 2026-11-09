@@ -255,10 +255,8 @@ async function run() {
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 2);
 
     const lowTierMarketLookups = [];
-    let lowTierBudget;
     MarketOpportunity.bestOffer = (_itemId, options) => {
         lowTierMarketLookups.push(options);
-        lowTierBudget = options.budget;
         const offer = {
             selfId: 2,
             itemName: 'Long Sword',
@@ -278,7 +276,7 @@ async function run() {
     const lowTierState = await declaredState(lowTierNative.state, 'low_tier');
     // The native bot also probes public offers while checking remote-trade
     // eligibility. Count this consumer separately from capture/preparation.
-    lowTierMarketLookups.length = 0; lowTierBudget = undefined;
+    lowTierMarketLookups.length = 0;
     const lowTierPlayerPurchase = await purchaseOnCard(lowTierState, {
         type: 'upgrade_gear',
         status: 'active',
@@ -286,17 +284,14 @@ async function run() {
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
-    assert.strictEqual(lowTierBudget, Funding.spendable(lowTierNative.state, 0, { itemId: 2 }));
-    assert(lowTierBudget < 900, 'the unchanged cheaper quote is still outside the real queue');
-    assert.strictEqual(lowTierPlayerPurchase.reason, 'low_tier_offer_missing');
+    // A purse short of the card's price is refused for money: no seller is looked up or marked.
+    assert.strictEqual(lowTierPlayerPurchase.reason, 'funding_short');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
-    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 1,
-        'NG/D purchase consumer performs one indexed market lookup');
+    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 0,
+        'a purse short of the step looks up no seller');
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost === 'function').length, 0,
         'a miss on arrival plans nothing on main: no remote-trade probe (Task 4 question 1 = A)');
-    assert(lowTierMarketLookups.every(lookup => lookup.budget === lowTierBudget),
-        'neither public lookup fabricates funding for the original quote');
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
     // Separate public counterpart keeps the low-tier seller id/name, 900
@@ -313,10 +308,13 @@ async function run() {
         lowTierBuyStoreCalls += 1;
         return Promise.resolve({ opened: true });
     };
+    // A purse that covers the step: the miss is the seller's, not the money's.
     const missingLowTierNpcGear = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 87,
         level: 14,
+        adena: 100000,
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: {
             ...state.stats,
             equipmentPlan: {
@@ -414,9 +412,11 @@ async function run() {
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
 
+    // The miss cases below hold a purse that covers the step: the miss is the seller's.
     const noOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 79,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
@@ -430,6 +430,7 @@ async function run() {
     const failedBuyStore = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 82,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
     }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a miss on arrival enters the normal market retry path; no WTB opens from main');
@@ -441,6 +442,7 @@ async function run() {
     const changedOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 80,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });

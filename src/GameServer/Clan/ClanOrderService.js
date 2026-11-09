@@ -90,11 +90,12 @@ function marketMembers(clan, memberIds = null) {
 
 // What one member may buy for the clan: in its town (Giran without one),
 // never from its own records, within what it may spend
-// (PurchaseFunding.spendable) and `cap`.
+// (PurchaseFunding.payable, as its errand's buyer pays) and `cap`.
 function memberOffer(state, itemId, cap = Infinity) {
     return MarketOpportunity.bestOffer(itemId, {
         town: state.currentRegion || 'Giran',
-        budget: Math.min(PurchaseFunding.spendable(state, 0, { free: true }), cap),
+        budget: Math.min(PurchaseFunding.payable(state,
+            invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId), { free: true }), cap),
         buyerCharacterId: state.characterId
     });
 }

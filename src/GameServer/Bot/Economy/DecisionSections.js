@@ -85,41 +85,41 @@ function kitView(state) {
 function kit(state) {
     return kitFact(kitView(state));
 }
-// The build's money thresholds: its wallet is read
-// when it decides and wakes nothing else. goal_affordable:<kind> as the budget stands at
-// or above the build's threshold (baseline.affordAt { at, kind }, affordAtOf), out_of_money
-// as it stands below the held leaf's funded row (baseline.fundedAt: the cumulative cost
-// the money queue held for its root). budget: PurchaseFunding.budget (the escrow in it).
-function goalReached(state, baseline, escrow = 0) {
-    const afford = baseline?.affordAt ?? (baseline?.goalBudget > 0 ? { at: baseline.goalBudget, kind: 'focus' } : null);
-    return afford?.at > 0 && PurchaseFunding.budget(state, escrow) >= afford.at ? afford.kind : null;
-}
-// The money situations of the wallet now against the decision's armed thresholds
+// The build's money thresholds: its wallet is read when it decides and wakes nothing
+// else. goal_affordable:<kind> as the wallet stands at or above the build's threshold
+// (baseline.affordAt { at, kind }, affordAtOf), out_of_money as it stands below the held
+// leaf's funded row (baseline.fundedAt: the cumulative cost the money queue held for its
+// root). The money situations of the wallet now against those armed thresholds
 // (detect: a far step, a body's post). One comparison per step with the wallet as it
 // stands, so money main adds between steps (an AFK sale paid, an escrow returned, a
 // meeting settled) is heard at the next one. Raised while the wallet stands past a
 // threshold: a raise on the woken build is no news, and the build it wakes re-arms both
 // (a build arms affordAt only above the wallet, fundedAt only within it; the agenda's
-// move drops the ones passed: unspent). Returns the names to raise.
-function moneyCrossings(wallet, baseline) {
+// move drops the ones passed: unspent). Returns the names to raise. bag: the bag alone
+// (PurchaseFunding.budget without the escrow), which a shop step's wait (bagAt) reads: a
+// bid taken back moves money from the escrow to the bag, the wallet stays.
+function moneyCrossings(wallet, baseline, bag = wallet) {
     const names = [];
     if (!baseline || !Number.isFinite(wallet)) return names;
     const afford = baseline.affordAt;
     // Potions wake the earning spot too; any other threshold is the build's alone (a
     // row saved with an older kind reads as focus).
     if (afford?.at > 0 && wallet >= afford.at) names.push(afford.kind === 'potions' ? 'goal_affordable:potions' : 'goal_affordable:focus');
+    if (baseline.bagAt > 0 && bag >= baseline.bagAt && !names.includes('goal_affordable:focus')) names.push('goal_affordable:focus');
     if (baseline.fundedAt > 0 && wallet < baseline.fundedAt) names.push('out_of_money');
     return names;
 }
 // A held baseline taken again without a build (the agenda's move on a town visit,
 // EconomyContext.advanced): the thresholds the wallet passed are spent (their raise woke
 // that move), the rest stand until a build re-arms them.
-function unspent(baseline, wallet) {
+function unspent(baseline, wallet, bag = wallet) {
     const reached = baseline?.affordAt?.at > 0 && wallet >= baseline.affordAt.at, short = baseline?.fundedAt > 0 && wallet < baseline.fundedAt;
-    if (!reached && !short) return baseline;
+    const paid = baseline?.bagAt > 0 && bag >= baseline.bagAt;
+    if (!reached && !short && !paid) return baseline;
     const kept = { ...baseline };
     if (reached) delete kept.affordAt;
     if (short) delete kept.fundedAt;
+    if (paid) delete kept.bagAt;
     return kept;
 }
 // What the wallet waits to reach, the first of: a broke
@@ -127,8 +127,8 @@ function unspent(baseline, wallet) {
 // rule: it re-opens buying them and the spots that need them), an unarmed bot's
 // weapon bridge (its price from the whole wallet, WishProviders' survival wish), its
 // focus (the goal's cumulative cost) or, when nearer, the gear plan's market piece (its
-// cumulative cost in the money queue); all wake the same decision, so all are kind
-// focus. Re-armed by each build.
+// cumulative cost in the money queue); all wake the same decision, so all are kind focus.
+// Re-armed by each build. wallet: PurchaseFunding.budget with the escrow in it.
 function affordAtOf(context, wallet) {
     const potions = context.stock?.('potions');
     if (potions && potions.current < potions.line) {
@@ -163,13 +163,16 @@ function incomeError(state, persona) {
         Learning.INCOME_ERROR_FLOOR, state.stats?.lifelongKills ?? state.stats?.fightsWon ?? 0, Learning.gradeOfLevel(state.level)) : 0;
 }
 // The build's baseline (stats.wishSections): its time, its money thresholds (affordAt,
-// fundedAt), its income error (the party forming's), the facts it decided on (the
-// step's diff compares against them) and its kit lines. facts: the build's
+// fundedAt, bagAt: the least bag a shop step the queue funds but the bag cannot pay needs,
+// network.bagShort, kind focus), its income error (the party forming's), the facts it
+// decided on (the step's diff compares against them) and its kit lines. facts: the build's
 // semanticFacts(state) when its caller already has them.
 function snapshot(state, context, money = null, facts = null) {
     const wallet = PurchaseFunding.budget(state, money?.buyOrderEscrow || 0);
     const afford = affordAtOf(context, wallet);
+    const bagAt = Number(context.network?.bagShort) || 0;
     return { at: Number(context.timestamp), ...(afford ? { affordAt: afford } : {}),
+        ...(bagAt > PurchaseFunding.budget(state) ? { bagAt } : {}),
         ...(context.leafBudget > 0 && context.leafBudget <= wallet ? { fundedAt: context.leafBudget } : {}),
         ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning),
         incomeError: incomeError(state, context.persona) };
@@ -397,5 +400,5 @@ function sameSpot(spotId, planned) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, routedSourceOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, routedSourceOf, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
     baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, leafTrip, hash, decisionRefusal };

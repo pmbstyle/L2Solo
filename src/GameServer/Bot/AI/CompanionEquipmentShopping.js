@@ -42,10 +42,17 @@ function currentState(session, bot, town, economy = null) {
     };
 }
 
+// What a body may pay at a shop: PurchaseFunding.payable over its own buy orders' escrow,
+// as a cold buyer pays; a step's own root bids (bids) count, its buyer takes them back first.
+const payable = (state, terms, bids = null) => {
+    const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+    return PurchaseFunding.payable(state, Market.buyOrderEscrow(state.characterId), terms, null, Market.stepBidMoney(state.characterId, bids));
+};
+
 // The purchase writers refuse a wallet with no money packet: such a companion
 // plans nothing until its first worker decision writes one.
 function companionBudget(state, itemId) {
-    return Array.isArray(state.stats?.money) ? PurchaseFunding.spendable(state, 0, PurchaseFunding.companionTerms(itemId)) : 0;
+    return Array.isArray(state.stats?.money) ? payable(state, PurchaseFunding.companionTerms(itemId)) : 0;
 }
 
 function affordableOffers(target, state, town) {
@@ -92,7 +99,7 @@ function checkedPlan(session, state, town, options = {}) {
         // The leaf's funded root funds it (the card leaf's r), as for a cold goal (PurchaseFunding.goalTerms).
         const ratio = PurchaseFunding.leafRatio(leaf);
         const funding = ratio > 0 ? { valueRate: ratio } : {};
-        const budget = Math.min(PurchaseFunding.spendable(fundedState, 0, PurchaseFunding.goalTerms({ plan: funding }, selfId)) / amount,
+        const budget = Math.min(payable(fundedState, PurchaseFunding.goalTerms({ plan: funding }, selfId), leaf.bids) / amount,
             economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestHotOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget,
             accept: row => Number(row.count) >= amount && (row.sourceType === 'private_store' && row.store?.kind === 'player'
@@ -100,7 +107,8 @@ function checkedPlan(session, state, town, options = {}) {
                     : ['afk_player_store', 'afk_bot_store'].includes(row.sourceType))) });
         return { statsPacket: economy.statsPacket, plan: offer ? { status: 'active', strategy: 'market',
             target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
-            market: { sourceType: offer.sourceType }, ...funding } : null, offers: offer ? [offer] : [] };
+            market: { sourceType: offer.sourceType }, ...funding } : null, offers: offer ? [offer] : [],
+            ...(offer && leaf.bids?.length ? { bids: leaf.bids } : {}) };
     }
     const previous = state.stats?.equipmentPlan;
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
@@ -197,6 +205,8 @@ function errandFor(session, bot, town, purchaseCount = 0, excludedSlots = [], ec
             : PurchaseFunding.nativeTerms(PurchaseFunding.goalTerms({ plan }), plan.target.selfId),
         purchaseCount,
         excludedSlots: [...excludedSlots],
+        // The root's own bids its buyer takes back to pay the step (ShoppingState).
+        ...(checked.bids ? { bids: checked.bids } : {}),
         target: offer.sourceType === 'npc'
             ? npcTarget(offer, bot, town)
             : merchantTarget(offer, town)

@@ -323,9 +323,12 @@ const LEAF_CHECKS = Object.freeze({
         if (holds ? offer.unitPrice > leaf.unitPrice : offer.unitPrice !== leaf.unitPrice) return OFFER_PRICE;
         if (offer.availableUnits < remaining) return OFFER_UNITS;
         // The purse is read by the step's place in the money queue: its value per unit
-        // stops a dearer seller, not a tight purse.
-        return Funding.spendable(state, deps.buyOrderEscrow, Funding.nativeTerms(holds ? { ...held, valueHours: undefined } : held, leaf.itemId))
-            >= remaining * offer.unitPrice + trade.route.fees ? '' : SHORT;
+        // stops a dearer seller, not a tight purse. The buyer's own rule (payable: its
+        // bids' escrow counted, paid from the bag and the step's own bids it takes back),
+        // so a step funded here is paid there.
+        const stepBids = leaf.bids?.length ? Funding.bidMoney(Funding.ownBids(deps.board?.ownerLines?.(Number(state.characterId))), leaf.bids) : 0;
+        return Funding.payable(state, deps.buyOrderEscrow, Funding.nativeTerms(holds ? { ...held, valueHours: undefined } : held, leaf.itemId),
+            null, stepBids) >= remaining * offer.unitPrice + trade.route.fees ? '' : SHORT;
     },
     selling: (state, leaf, deps, input) => {
         deps = resolved(state, deps, false);
@@ -1029,7 +1032,7 @@ function advanced(held, why, state, deps, dropped, facts) {
             [leaf, ...rest.filter(step => step.town === leaf.town)], tripOf(state, own).details?.(leaf.town)),
         dropped: (leaf, cause) => dropped.set(stepPlace(leaf), cause),
         identity: activityIdentity,
-        baseline: kept => ({ ...Sections.unspent(kept, Funding.budget(state, deps.buyOrderEscrow)), ...facts }) });
+        baseline: kept => ({ ...Sections.unspent(kept, Funding.budget(state, deps.buyOrderEscrow), Funding.budget(state)), ...facts }) });
 }
 // A step by what it does and where, for the health line's repick row: a build after a
 // dropped step that takes it again names two answers to one question that disagree.
@@ -1290,7 +1293,8 @@ function buildForState(state, deps) {
         stockFor: context.stockFor,
         completionKey: context.completionKey,
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
-        wallet: context.wallet, refillReserve: base.refillReserve,
+        wallet: context.wallet, bag: Funding.budget(state), ownBids: Funding.ownBids(sourceBoard?.ownerLines?.(Number(state.characterId))),
+        refillReserve: base.refillReserve,
         reconsider,
         // Diagnostics only: the events that re-weigh (network:reconsider), 'quiet' for none.
         reconsiderReasons: !diagnostic ? null : [decide ? 'woken' : 'quiet'],

@@ -55,10 +55,11 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         };
 
         const bot = (characterId, extra = {}) => ({
-            characterId, accountName: `bot${characterId}`, name: `Buyer${characterId}`, level: 40, adena: 1000,
+            // A purse that pays the 1000 Adena sword above its reserve: the trades below are committed or refused by the store.
+            characterId, accountName: `bot${characterId}`, name: `Buyer${characterId}`, level: 40, adena: 100000,
             phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
             inventory: {
-                57: { selfId: 57, name: 'Adena', amount: 1000 },
+                57: { selfId: 57, name: 'Adena', amount: 100000 },
                 1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7, rank: 'none', kind: 'Weapon.Sword' }
             },
             stats: {

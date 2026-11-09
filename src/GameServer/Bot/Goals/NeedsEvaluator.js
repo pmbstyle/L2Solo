@@ -84,6 +84,8 @@ function evaluate(state = {}, options = {}) {
             plan: { ...common.plan, expectedBenefit: equipment ? 'market_search_for_gear' : 'market_buy_craft_material',
                 marketTown: leaf.town || state.currentRegion, sourceType: leaf.sourceType || null,
                 ...(leaf.sourceType === 'afk' && leaf.unitPrice > 0 ? { priceSource: 'offer' } : {}),
+                // The root's own bids the buyer takes back to pay the step (WishNetwork).
+                ...(leaf.bids?.length ? { bids: leaf.bids } : {}),
                 ...(Number.isFinite(leaf.valueHours)
                     ? { valueHours: leaf.amount > 0 ? leaf.valueHours * amount / leaf.amount : leaf.valueHours } : {}),
                 // Its funded root's place in the money queue (the card's r, or

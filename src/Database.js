@@ -2835,21 +2835,25 @@ function checkArrowPurchaseUnsafe(characterId, itemId, count, source = null, pen
     if (Arrows.purchaseAmount(state, itemId, count) < count) throw Error('arrow_stock_limit');
 }
 
+// What a native purchase may pay: PurchaseFunding.payable over the bag and the money the
+// owner's own buy orders hold, at the purchase's place in the money queue.
 function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), packet = packetOverride || stats.money;
     if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
+    const escrow = Number(one("SELECT COALESCE(SUM(escrowAdena),0) amount FROM afk_trade_shops WHERE ownerId=? AND storeType=? AND status='active'",
+        [characterId, BoardRules.BUY]).amount);
     const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Trace.detailed(characterId) ? {} : null;
-    const budget = PurchaseFunding.spendable({
+    const budget = PurchaseFunding.payable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
-    }, 0, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
+    }, escrow, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(StatsPacket.refillReserve(packet)),
-            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow: 0,
+            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow,
             decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
 
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');

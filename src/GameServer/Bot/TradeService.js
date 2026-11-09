@@ -169,7 +169,8 @@ function deductAdena(actor, amount) {
     return new Promise((resolve, reject) => {
         const adenaItem = fetchAdena(actor);
         if (!adenaItem || adenaItem.fetchAmount() < amount) {
-            return reject("Not enough Adena.");
+            // An Error: its readers name a refusal for money by its message (ShoppingState).
+            return reject(Error("Not enough Adena."));
         }
 
         const total = adenaItem.fetchAmount() - amount;

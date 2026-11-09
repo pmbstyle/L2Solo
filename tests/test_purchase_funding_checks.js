@@ -141,9 +141,10 @@ Life.upsertState = async state => state;
 Afk.canTradeRemotely = () => false;
 (async () => {
     try {
-        await Market.tryPurchase({ ...state, activity: 'shopping' }, { type: 'upgrade_gear',
+        const refused = await Market.tryPurchase({ ...state, activity: 'shopping' }, { type: 'upgrade_gear',
             target: { itemId: 123, adena: 30000 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
-        assert.equal(seenBudget, 0, 'the shop refuses the same unfunded item');
+        assert.equal(refused.reason, 'funding_short', 'the shop refuses the same unfunded item, for money');
+        assert.equal(seenBudget, undefined, 'a purse short of the step looks up no seller');
         console.log('Money queue budgets, survival, merge, escrow and planner/shop agreement: PASS');
     } finally { [Opportunity.bestOffer, Life.upsertState, Afk.canTradeRemotely] = originals; Economy.reset(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

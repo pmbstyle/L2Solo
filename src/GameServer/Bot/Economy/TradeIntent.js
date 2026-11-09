@@ -188,8 +188,16 @@ function purchaseWorth(intent, moneyPrice) {
 // A quantitative network already owns allocation and batch rounding. Readers
 // only project that result; they never subtract physical stock a second time.
 function preparedProject(network, worth, limit) {
+    return watchRows(network.queue, worth)?.slice(0, limit) ?? null;
+}
+// The watch rows of a money queue in its order, one per item: the first root whose
+// paths need an item owns its bid (the board holds one bid per item). The bid plan
+// publishes them (preparedProject); the network reads whose root a standing bid is
+// (WishNetwork: a shop step spends only its own root's bids). Null on a root key the
+// certificate cannot carry.
+function watchRows(queue, worth) {
     const watched = new Set(), result = [];
-    for (const wish of network.queue || []) {
+    for (const wish of queue || []) {
         if (!wish.object?.itemId && !wish.object?.materials) continue;
         try { rootTuple(wish.key); } catch (_) { return null; }
         // Keep the chosen acquisition first. A craft alternative can add
@@ -199,7 +207,7 @@ function preparedProject(network, worth, limit) {
         for (const [id, row] of wishRows(wish, worth, true)) if (!rows.has(id)) rows.set(id, row);
         for (const [id, row] of rows) if (!watched.has(id)) { watched.add(id); result.push(row); }
     }
-    return result.slice(0, limit);
+    return result;
 }
 
 // Standing bids have one row per item and a publication limit. Meeting
@@ -287,4 +295,4 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
         : { ...intent, amount: leaf.amount, worth: leaf.unitPrice, valueRate,
             valueHours: intent.valueHours * leaf.amount / intent.amount };
 }
-module.exports = { rootTuple, rootKey, encode, decode, project, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource };
+module.exports = { rootTuple, rootKey, encode, decode, project, watchRows, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource };

@@ -2,6 +2,7 @@ const Diagnostics = require('./EconomyDiagnostics');
 const Trace = require('../DecisionTrace');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 const Packet = require('./StatsPacket');
+const BoardRules = require('../../AfkTrade/BoardRules');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
 // higher-valued funded wishes keep their cumulative costs before a spend.
 const nonnegative = value => Math.max(0, Number(value) || 0);
@@ -163,6 +164,31 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
     return available;
 }
+// What a purchase may pay now: the planner's rule (spendable over the bag and the money
+// the bot's own buy orders hold, escrow) paid from the bag. One rule for the planner and
+// every buyer: hot and cold, main and the native writer. stepBids: the money of the bids
+// the step's buyer takes back before it pays (bidMoney of the card's `bids`).
+function payable(state = {}, escrow = 0, options = {}, captureOutput = null, stepBids = 0) {
+    return Math.min(budget(state) + nonnegative(stepBids), spendable(state, escrow, options, captureOutput));
+}
+// The money the bot's own backed bids hold per item (item -> count x price of its BUY lines
+// that hold escrow; a conditional bid holds none), from its board lines (BoardIndex.ownerLines,
+// either thread). O(its lines).
+function ownBids(lines) {
+    const held = new Map();
+    for (const line of lines || []) {
+        if (Number(line.storeType) !== BoardRules.BUY || Number(line.custodyPolicy) === 1) continue;
+        const id = Number(line.selfId);
+        held.set(id, (held.get(id) || 0) + nonnegative(line.count) * nonnegative(line.price));
+    }
+    return held;
+}
+// What those of `items` hold.
+function bidMoney(own, items) {
+    let money = 0;
+    for (const id of items || []) money += own.get(Number(id)) || 0;
+    return money;
+}
 // Finite action utility supplies a funding ratio, never an extra purse.
 // Native writers still reread the current money packet and physical wallet.
 // A shot, potion or scroll restock: survival first (the kit's cost), the rest
@@ -265,5 +291,5 @@ function packetFor(network, hour, reserve) {
     }
     return packet;
 }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, payable, ownBids, bidMoney, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

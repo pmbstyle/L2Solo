@@ -37,8 +37,9 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
 const ERRAND_MS = CombinedErrands.ERRAND_MS;
 // The reasons a gear buy fails on the item itself: no offer at the step's price, the line
 // gone, the supply retired, the bot's gear rules refusing it (already held, a shield under
-// a two-hander). A price change, an arrow or war-ticket limit, a full bag or weight and a
-// failed write are not the item failing: they mark nothing (their facts have other owners).
+// a two-hander). A price change, an arrow or war-ticket limit, a full bag or weight, a
+// failed write and a purse short of the step's price (funding_short) are not the item
+// failing: they mark nothing (their facts have other owners).
 const GEAR_SOURCE_FAILED = new Set(['no_affordable_offer', 'low_tier_offer_missing', 'offer_changed',
     'configured_supply_retired', 'already_owned', 'incompatible_loadout']);
 
@@ -262,8 +263,14 @@ function arrivalStep(goal) {
     return unitPrice > 0 ? { unitPrice, amount: Math.max(1, Math.ceil(Number(goal.target.amount) || 1)) } : null;
 }
 
-// price: the unit price this money buys at (a board line's, else the NPC's).
-function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
+// The money the bot's own buy orders hold (its buy shop's escrow) is its own, as the
+// planner counts it: a purchase pays PurchaseFunding.payable over the bag and that escrow
+// at its place in the money queue (the queue's higher rows already hold the bids' money).
+const ownEscrow = state => invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
+
+// price: the unit price this money buys at (a board line's, else the NPC's). stepBids: the
+// money of the step's own root bids its buyer takes back to pay (PurchaseFunding.payable).
+function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice, stepBids = 0) {
     const wallet = PurchaseFunding.budget(state);
     const limit = Number.isFinite(plan.money) ? Math.max(0, plan.money - spent) : Infinity;
     let funded;
@@ -271,7 +278,7 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
         // The treasury part was already credited by ClanMarketService. It
         // is excluded from personal free money before adding its remainder.
         const clanPart = Math.min(wallet, Math.max(0, Number(plan.tag?.clanPart || 0) - spent));
-        funded = clanPart + PurchaseFunding.spendable({ ...state, adena: wallet - clanPart }, 0,
+        funded = clanPart + PurchaseFunding.payable({ ...state, adena: wallet - clanPart }, ownEscrow(state),
             { free: true, ownClanErrand: { clanId: plan.tag?.clanId, selfId: plan.selfId } });
     } else {
         const terms = fundingTerms(plan);
@@ -288,9 +295,9 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
                 options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(price));
             }
         }
-        funded = PurchaseFunding.spendable(state, 0, options);
+        funded = PurchaseFunding.payable(state, ownEscrow(state), options, null, stepBids);
     }
-    return Math.max(0, Math.floor(Math.min(wallet, limit, funded)));
+    return Math.max(0, Math.floor(Math.min(limit, funded)));
 }
 
 function purchaseTerms(state, plan, spent = 0) {
@@ -837,12 +844,35 @@ const ColdMarketService = {
         });
         const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));
         if (!arrival) return missed('arrival_step_gone');
-        // What the bot may spend (PurchaseFunding.spendable): its wallet above
-        // the operating reserve, at the goal root's place in the money queue.
-        // A buy ad's escrow is not in the wallet a shop is paid from.
+        // The step's own root bids pay it when the bag alone cannot (the card's bids): their
+        // money counts in its purse, and once a seller is chosen the bids the bag needs are
+        // taken back and the step is bought from the bag they returned to. No seller, no bid
+        // taken back.
+        const Bids = invoke('GameServer/Bot/Economy/BotAfkMarketService'), bids = goal.plan?.bids;
+        const stepBids = bids?.length ? Bids.stepBidMoney(state.characterId, bids) : 0;
+        const freeFor = cost => {
+            const freeing = stepBids > 0 ? Bids.freeStepBids(state.characterId, bids, cost, PurchaseFunding.budget(state)) : null;
+            return freeing && freeing.then(freed => ColdMarketService.tryPurchase(freed || state, { ...goal, plan: { ...goal.plan, bids: null } }));
+        };
+        // What the bot may pay (ownEscrow) at the goal root's place in the money queue
+        // (a weapon bridge: the whole bag).
         let refusedOffer = false, overPlanPrice = false;
-        const budget = activeMaterialPurchase ? 0 : goal.plan?.weaponBridge ? PurchaseFunding.budget(state)
-            : PurchaseFunding.spendable(state, 0, PurchaseFunding.goalTerms(goal));
+        const budget = activeMaterialPurchase ? 0 : goal.plan?.weaponBridge ? PurchaseFunding.budget(state) + stepBids
+            : PurchaseFunding.payable(state, ownEscrow(state), PurchaseFunding.goalTerms(goal), null, stepBids);
+        // A purse short of one unit at the card's price is refused for money, not for a
+        // missing seller: the visit ends and nothing is marked; the build it wakes reads the
+        // same purse (the planner's rule), so it funds the step again only once money moved.
+        const fundingShort = money => {
+            if (money >= arrival.unitPrice) return null;
+            MarketTelemetry.fundingShort();
+            purchaseObservation(state, goal.target.itemId, arrival.amount, money, 'purchase_goal', 'funding_short',
+                { unitPrice: arrival.unitPrice, town: state.currentRegion });
+            return refreshAfter(finishBlockedPurchase(state, 'funding_short'));
+        };
+        if (!activeMaterialPurchase) {
+            const short = fundingShort(budget);
+            if (short) return short;
+        }
         const offer = activeMaterialPurchase ? null : MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion, budget,
             buyerCharacterId: state.characterId,
@@ -868,12 +898,17 @@ const ColdMarketService = {
             // incoming since; native funding at the root's queue place.
             const terms = { ...goalFunding(goal), purpose: goal.plan?.purpose || 'supply',
                 selfId: Number(goal.target.itemId) };
+            const money = purchaseMoney(state, terms, 0, undefined, stepBids);
+            const short = fundingShort(money);
+            if (short) return short;
             const plan = planPurchase(state, terms.selfId, arrival.amount, {
-                ...terms, money: purchaseMoney(state, terms), towns: [state.currentRegion], maxPrice: arrival.unitPrice,
+                ...terms, money, towns: [state.currentRegion], maxPrice: arrival.unitPrice,
                 npcOnly: goal.plan?.sourceType === 'npc'
                     && invoke('GameServer/Bot/Economy/BotCrystallization').inputAmount(state, terms.selfId) > 0
             });
             if (!plan) return missed('no_affordable_offer');
+            const freeing = freeFor(Number(plan.cost));
+            if (freeing) return freeing;
             return buyHere(state, plan, { basket: true }).then(bought => {
                 if (detailed) Trace.detail({ owner: state.characterId, revision: Number(bought.state?.simulation?.revision),
                     trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units >= arrival.amount ? 'filled' : bought.units > 0 ? 'partial' : 'no_fill',
@@ -890,6 +925,8 @@ const ColdMarketService = {
             const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
             if (blocker) return refreshAfter(finishBlockedPurchase(state, blocker));
         }
+        const freeing = freeFor(Number(offer.price));
+        if (freeing) return freeing;
         offer.buyerCharacterId = Number(state.characterId);
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
         const execution = offer.sourceType === 'npc' ? buyHere(state, { selfId: goal.target.itemId, amount: 1,

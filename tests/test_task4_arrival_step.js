@@ -27,9 +27,11 @@ const dependencies = {
     'GameServer/Bot/Economy/MarketOpportunity': { botCanBuy: () => true, fixedStoreOffers: () => [], npcOffersAll: () => [],
         bestOffer: (_id, options) => { offered.push(options); return offer && options.accept(offer) ? offer : null; } },
     'GameServer/Bot/Economy/MarketTelemetry': { offerChanged: () => {}, noOffer: () => {}, purchaseFailed: () => {} },
-    'GameServer/Bot/Economy/PurchaseFunding': { budget: () => 100000, spendable: () => 100000,
+    'GameServer/Bot/Economy/PurchaseFunding': { budget: () => 100000, spendable: () => 100000, payable: () => 100000,
         goalTerms: goal => goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate },
         nativeTerms: (options, itemId) => ({ itemId, ...(options.r !== undefined ? { r: options.r } : {}) }) },
+    // The bot holds no buy order: its bids' escrow is none, no step bid to take back.
+    'GameServer/Bot/Economy/BotAfkMarketService': { buyOrderEscrow: () => 0, stepBidMoney: () => 0, freeStepBids: () => null },
     'GameServer/Bot/Economy/ColdMarketTradeChat': { maybeAnnounceWanted: state => ({ state, announced: false }) },
     'GameServer/Bot/Goals/GoalExecutor': { finishMarketVisit: state => ({ ...state, activity: 'hunting' }) },
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {}, boardIndex: () => ({}),

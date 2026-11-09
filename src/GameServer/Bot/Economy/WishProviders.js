@@ -1336,7 +1336,7 @@ function buildProjection(state, ctx, deps) {
     }
     // The weapon bridge: an unarmed bot's NPC weapon the planner's
     // bridge rule picks (GearAcquisitionPlanner.npcWeaponBridgePlan: the cheapest one the
-    // whole wallet pays, else the cheapest to save for) is a survival wish, ranked above
+    // whole bag pays, as its buyer pays, else the cheapest to save for) is a survival wish, ranked above
     // every other (priority 4) and paid from the whole wallet (the refill reserve holds
     // none of it back); its leaf is the NPC town's shopping step, its gear plan the
     // bridge (GearPlanSelection). Its key is the gear root's (power:<item>:<slot>), so

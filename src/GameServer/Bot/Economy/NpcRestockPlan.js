@@ -48,6 +48,9 @@ function collect(state, options = {}) {
     // quotes, unless the visit holds its own (a hot visit: options.kit, fixed
     // after its sale).
     const onMain = require('node:worker_threads').isMainThread;
+    // Each line pays PurchaseFunding.payable: the bag and the bot's own buy orders' escrow
+    // (the board's records live on main).
+    const escrow = onMain ? invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId) : 0;
     const quote = id => quoteFor(id, town, null, options.seller)?.price;
     let preparedState = null, prepared = null, kitState = null, visitKit = null;
     const economics = () => {
@@ -81,7 +84,7 @@ function collect(state, options = {}) {
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
         const desired = Math.floor(amount);
-        const available = Funding.spendable(current, 0, funding);
+        const available = Funding.payable(current, escrow, funding);
         const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price),
             ArrowStock.admitted(current, selfId, desired));
         if (!(count > 0)) {

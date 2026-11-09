@@ -105,6 +105,13 @@ async function withdrawBuyOrderFor(bot, selfId) {
     }
 }
 
+// The step's own root bids pay it when the bag alone cannot (the errand's bids, the
+// decision's): taken back before the body pays (BotAfkMarketService.freeStepBids).
+async function freeStepBids(bot, errand) {
+    await invoke('GameServer/Bot/Economy/BotAfkMarketService').freeStepBids(bot.fetchId(), errand.bids,
+        Number(errand.price) * Number(errand.amount || 1), Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0));
+}
+
 function clearCompletedMarketPlan(session, bot, purchase) {
     const state = session.coldLifeState;
     if (!state) return;
@@ -211,9 +218,16 @@ function deferEquipmentRetry(session) {
         payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping) } });
 }
 
+// A purchase refused for money (the purse moved since the plan) is not its source failing:
+// its step fails and nothing is marked, as a cold buyer's funding_short.
+const FUNDING_REFUSALS = new Set(['Not enough Adena.', 'not_enough_adena', 'insufficient_adena', 'economy_funding_changed', 'npc_line_not_funded']);
+
 // A refused gear purchase names its cause: the bot only says it could not buy.
 function equipmentPurchaseFailed(session, bot, errand, error) {
-    deferEquipmentRetry(session);
+    if (FUNDING_REFUSALS.has(error?.message)) {
+        invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
+        raiseDecision(session, 'goal_failed', { impossible: true });
+    } else deferEquipmentRetry(session);
     session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
     utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
 }
@@ -938,6 +952,7 @@ module.exports = {
                 const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId)
                     && (store.afkTrade !== true || Number(item.afkTradeLineId) === Number(companionErrand.lineId)));
                 if (store?.afkTrade === true && !storeItem) throw new Error('afk_trade_stock_changed');
+                await freeStepBids(bot, companionErrand);
                 let bought = store?.afkTrade === true
                     ? await AfkTradeService.buyFromShop(
                         bot.fetchId(), store, companionErrand.itemId, companionErrand.amount || 1,
@@ -994,6 +1009,7 @@ module.exports = {
                             || Number(candidate[key]) === Number(companionErrand.target[key]))
                     ));
                 if (!offer) throw new Error('npc_offer_unavailable');
+                await freeStepBids(bot, companionErrand);
                 const seller = { ...offer, locX: Number(companionErrand.target.locX),
                     locY: Number(companionErrand.target.locY), locZ: Number(companionErrand.target.locZ) };
                 const result = await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(bot, {

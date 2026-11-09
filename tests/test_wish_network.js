@@ -340,3 +340,60 @@ console.log('PASS selected purchase is payable by the money packet rows (FX-E3 r
     assert.equal(crafted('power:300:6', { itemId: 300, slot: 6 }).activity?.itemId, 301, 'fixture: a kit piece\'s input goes to its seller');
     assert.notEqual(crafted('resale:300', { itemId: 300, kind: 'resale' }).activity?.itemId, 301, 'a resale craft\'s input is weighed on its value');
 }
+// A shop step is paid from the bag: the money the bot's bids for other roots hold buys
+// nothing at a shop. A queue funded over the bag and that escrow takes no step the bag cannot
+// pay (the buyer would refuse it for money and the bot come back for it); the wallet waits
+// for it (bagShort), and once the bag pays it the same build takes it. The bot's own bids of
+// the step's root (on its item or an input of its paths) pay it: the step names them (bids),
+// its buyer takes them back before it pays; a bid of another root does not.
+{
+    const piece = { key: 'power:120:6', need: 'power', object: { itemId: 120, slot: 6 }, valueHours: 1, price: 100, progressionPriority: 3,
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran', itemId: 120, price: 100,
+            unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: 0, tripFees: 0 }] };
+    const build = (bag, ownBids = null) => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, bag, ownBids,
+        inputKey: `bag:${bag}:${ownBids ? [...ownBids.keys()].join() : ''}`, previous: { focus: null, dormant: [] }, roots: [piece.key], nodes: [piece] });
+    const escrowed = build(50);
+    assert.equal(escrowed.queue.find(wish => wish.key === piece.key)?.funded, true, 'fixture: the queue funds the piece');
+    assert.notEqual(escrowed.activity?.itemId, 120, 'a step the bag cannot pay is no step');
+    assert.equal(escrowed.bagShort, 100, 'the wallet waits for the step');
+    assert.equal(build(1000).activity?.itemId, 120, 'a bag that pays it takes it');
+    const ownBid = build(50, new Map([[120, 60]]));
+    assert.deepEqual([ownBid.activity?.itemId, ownBid.activity?.bids], [120, [120]], 'its own bid\'s money pays it, the step names the bid');
+    assert.notEqual(build(50, new Map([[999, 60]])).activity?.itemId, 120, 'a bid of another root does not');
+    // A kit piece crafted from an input bought at a shop: the root's bid for that input
+    // (its watch row's key is the root, its item the input) pays the input's step.
+    const crafted = (bag, ownBids) => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, bag, ownBids,
+        inputKey: `craft:${bag}:${ownBids ? [...ownBids.keys()].join() : ''}`, previous: { focus: null, dormant: [] }, roots: ['power:300:6'], nodes: [
+            { key: 'power:300:6', need: 'power', object: { itemId: 300, slot: 6 }, valueHours: 1, price: 100, progressionPriority: 3,
+                paths: [{ kind: 'craft', activity: 'crafting', executable: true, costHours: .01, requirements: [{ key: 'item:301', amount: 1 }] }] },
+            { key: 'item:301', object: { itemId: 301 }, paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran',
+                itemId: 301, price: 100, unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: 0, tripFees: 0 }] }] });
+    assert.notEqual(crafted(50, null).activity?.itemId, 301, 'fixture: the bag alone does not pay the input');
+    const input301 = crafted(50, new Map([[301, 60]]));
+    assert.deepEqual([input301.activity?.itemId, input301.activity?.bids], [301, [301]], 'the root\'s bid for its input pays the input\'s step');
+    // The board holds one bid per item, the first root's in the queue whose watch rows need
+    // it: a root ahead of the piece in the money queue (its craft fee is its price) that also
+    // needs the input 302 owns the bid for it, so the piece's step for its input 301 cannot
+    // spend that bid's money.
+    const shared = ahead => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, bag: 50, ownBids: new Map([[302, 60]]),
+        stockFor: () => ({ owned: 0, incoming: 0 }), inputKey: `shared:${ahead}`, previous: { focus: null, dormant: [] },
+        roots: [...(ahead ? ['power:500:7'] : []), 'power:300:6'], nodes: [
+            { key: 'power:300:6', need: 'power', object: { itemId: 300, slot: 6 }, valueHours: 1, price: 100, progressionPriority: 3,
+                paths: [{ kind: 'craft', activity: 'crafting', executable: true, costHours: .01,
+                    requirements: [{ key: 'item:301', amount: 1 }, { key: 'item:302', amount: 1 }] }] },
+            ...(ahead ? [{ key: 'power:500:7', need: 'power', object: { itemId: 500, slot: 7 }, valueHours: 10, price: 10, progressionPriority: 3,
+                paths: [{ kind: 'craft', activity: 'crafting', executable: true, costHours: .01, price: 10, requirements: [{ key: 'item:302', amount: 1 }] }] }] : []),
+            { key: 'item:301', object: { itemId: 301 }, paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran',
+                itemId: 301, price: 100, unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: 0, tripFees: 0 }] },
+            { key: 'item:302', object: { itemId: 302 }, paths: [{ kind: 'drop', activity: 'hunting', costHours: .5 }] }] });
+    assert.equal(shared(false).bagShort, 0, 'its own bid for an input of its paths pays the piece\'s step');
+    const owned = shared(true);
+    assert.equal(owned.queue[0]?.key, 'power:500:7', 'fixture: the other root is ahead in the queue');
+    assert.equal(owned.bagShort, 100, 'a bid another root owns does not pay the step: the wallet waits for it');
+    // The card the body and the buyer read carries the bids.
+    const ColdEconomyDecision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const card = ColdEconomyDecision.compact({ updatedAt: 1, echo: [1, 1, null], riskWeight: 0, inputHash: 0,
+        activity: new ColdEconomyDecision.CompactActivity({ ...input301.activity, heldAtDecision: 0 }) });
+    assert.deepEqual([card.activity.itemId, card.activity.bids, card.activity.town], [301, [301], 'Giran'], 'the card keeps the step\'s bids');
+}
+console.log('PASS a shop step the bag cannot pay is not taken; its root\'s own bids pay it, another root\'s do not; the wallet waits for it');

@@ -1066,12 +1066,14 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 }
 
 // What a bot may spend on NPC gear: its purchase budget (wallet plus its own
-// buy-order escrow) above the operating reserve.
+// buy-order escrow: a bid for the target holds its money) above the operating reserve.
+// The shop step is paid from the bag (PurchaseFunding.payable: the network's step rule).
 function npcPurchaseBudget(state = {}, options = {}) {
-    // ARCH-NOTE: a missing usable weapon is survival; its bridge may spend the whole wallet.
+    // ARCH-NOTE: a missing usable weapon is survival; its bridge, bought at an NPC only,
+    // may spend the whole bag, as its buyer pays (the money bids hold buys nothing there).
     const reserveOptions = { upperBound: true };
     return { reserve: options.weaponBridge ? 0 : operationalAdenaReserve(state),
-        spendable: options.weaponBridge ? PurchaseFunding.budget(state, options.buyOrderEscrow)
+        spendable: options.weaponBridge ? PurchaseFunding.budget(state)
             : PurchaseFunding.spendable(state, options.buyOrderEscrow, reserveOptions) };
 }
 
@@ -1262,7 +1264,8 @@ function npcEquipmentBridgePlan(state = {}, options = {}) {
 }
 
 // Funded = the bot can pay for the bridge now (weaponBridgeFunded for a
-// weapon; the armour from what it may spend on that item, escrow included).
+// weapon; the armour from what it may spend on that item, escrow included: its own order
+// for it holds its money, taken back by its buyer: BotAfkMarketService.freeStepBids).
 function bridgeFunded(plan, state, options = {}) {
     return plan.weaponBridge ? weaponBridgeFunded(plan, state, options)
         : Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId });

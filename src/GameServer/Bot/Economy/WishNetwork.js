@@ -5,6 +5,8 @@ const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('./EconomyDiagnostics');
 const { packetRowWishes } = require('./PurchaseFunding');
 const Trace = require('../DecisionTrace');
+// Lazy, once: TradeIntent requires this module at its load.
+let TradeIntent = null;
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -680,7 +682,10 @@ class WishNetwork {
     // `remembered: false` builds without touching the per-actor cache (a
     // caller that holds the result itself, or a one-off proposal). The worker
     // never retains (RETAIN_ACTORS).
-    build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, refillReserve = 0,
+    // wallet: the money the queue orders (the bag and the bot's own bids' escrow); bag: what a
+    // shop is paid from (PurchaseFunding.budget of the state), the wallet when no bid holds any;
+    // ownBids: item -> the money the bot's own backed bids for that item hold (PurchaseFunding.ownBids).
+    build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, bag = wallet, ownBids = null, refillReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
         caller = 'wish_network', trigger = 'request', stockFor = null, completionKey = null, reconsider = true,
         reconsiderReasons = null, onReadyCraftProof = null }) {
@@ -901,10 +906,53 @@ class WishNetwork {
         // A step that spends no money stays available toward an unsupported
         // wish (farming its material); only money waits for a step now.
         const unfundable = new Set(queue.filter(wish => !fundable(wish)).map(wish => wish.key));
+        // A shop step is paid as every buyer pays (PurchaseFunding.payable): its root's queue
+        // place funds it, the bag pays it. Money the bot's bids hold buys nothing at a shop,
+        // save its root's own bids (on its item or an item of its paths): the step names them
+        // (`bids`) and its buyer takes them back before it pays when the bag alone is short
+        // (BotAfkMarketService.freeStepBids). A step the bag and those bids cannot pay is no
+        // step: the least bag such a step needs is its wait (bagShort, goal_affordable:focus),
+        // so a buyer's funding_short never sends the bot back to it. The board holds one bid
+        // per item, the first root's in the queue whose watch rows need it
+        // (TradeIntent.watchRows): another root's bid on an item of this root's paths is not
+        // this root's money. A bid no watch row needs (its root's own item, a bid the next
+        // bid plan drops) is the root's whose paths hold it.
+        let bagShort = 0, owners = null;
+        const ownerOf = id => (owners ||= new Map((TradeIntent ||= require('./TradeIntent')).watchRows(queue, () => 0)
+            ?.map(row => [Number(row.itemId), row.key]) || [])).get(id);
+        const bidsOf = new Map();
+        const rootBids = key => {
+            let items = bidsOf.get(key);
+            if (!items) {
+                const tree = new Set([rootItem(key)]), seen = new Set();
+                const walk = (plan, depth) => {
+                    if (!plan || depth > MAX_DEPTH || seen.has(plan)) return;
+                    seen.add(plan);
+                    for (const path of [plan, plan.intentionPath]) for (const row of (path?.execution || path)?.requirements || []) {
+                        if (String(row.key).startsWith('item:')) tree.add(Number(String(row.key).slice(5)));
+                        walk(row.plan, depth + 1);
+                    }
+                };
+                walk(plans.get(key) || wishes.find(wish => wish.key === key)?.plan, 0);
+                items = [...tree].filter(id => ownBids.has(id) && (ownerOf(id) ?? key) === key);
+                bidsOf.set(key, items);
+            }
+            return items;
+        };
+        const bagPaid = leaf => {
+            if (leaf.kind !== 'buy') return leaf;
+            const bids = ownBids?.size ? rootBids(leaf.rootKey) : [];
+            let needed = nonnegative(leaf.price);
+            for (const id of bids) needed -= ownBids.get(id);
+            if (needed <= nonnegative(bag)) return bids.length ? { ...leaf, bids } : leaf;
+            bagShort = bagShort ? Math.min(bagShort, needed) : needed;
+            return null;
+        };
         const candidates = [...leaves.values()].filter(leaf => wishes.find(wish => wish.key === leaf.rootKey)?.progressionPriority === activePriority
                 || leaf.funding && leaf.rootKey === unfunded?.key)
             .filter(leaf => leaf.funding || !queue.some(wish => wish.key === leaf.rootKey)
-            || funded.has(leaf.rootKey) || leaf.price === 0 && (leaf.rootKey === unfunded?.key || unfundable.has(leaf.rootKey)));
+            || funded.has(leaf.rootKey) || leaf.price === 0 && (leaf.rootKey === unfunded?.key || unfundable.has(leaf.rootKey)))
+            .map(bagPaid).filter(Boolean);
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
         const heldLeaf = individual && activityLeaf ? candidates.find(leaf => leafId(leaf) === activityLeaf) : null;
@@ -950,7 +998,7 @@ class WishNetwork {
             }
             if (heldActivity && activity !== heldActivity && decisionSeq === inputDecisionSeq) { decisionSeq++; activityLeaf = 0; }
         }
-        const result = { inputKey, queue, moneyPrice, available, gap, hourAdena,
+        const result = { inputKey, queue, moneyPrice, available, gap, hourAdena, bagShort,
             quantityPrepared: !!stockFor,
             focus, dormant, activity, demands, plans, decisionSeq,
             activityLeaf: individual && activity ? leafId(activity) : 0 };
