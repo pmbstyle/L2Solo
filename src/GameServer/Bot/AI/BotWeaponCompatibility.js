@@ -52,6 +52,27 @@ function isSuitableWeapon(kind, name, pAtk, mAtk, role, classId) {
     return !isCasterWeapon(kind, name, pAtk, mAtk);
 }
 
+// A bot with no weapon worn and none its role uses owned wears the best weapon it
+// does own rather than fight barehanded: a C4 player wears any weapon he has. Which
+// one is our choice: the role's own weapon score, then the cheaper, then the lower id.
+// A weapon its role uses replaces it once owned (the callers, hot BotEquipmentUpgrade
+// and cold GearAcquisitionPlanner, offer this only when no role weapon is owned).
+// rows: the owned weapons of a grade the level allows, { kind, pAtk, mAtk, price, id }
+// plus the caller's own fields; a pet's weapon is never worn. Returns a row or null.
+function stopgapWeapon(rows, role, classId) {
+    let best = null, bestScore = 0;
+    for (const row of rows) {
+        if (!String(row.kind || '').startsWith('Weapon.') || row.kind === 'Weapon.Pet') continue;
+        const score = scoreWeapon(row.pAtk, row.mAtk, role, classId);
+        if (!best || score > bestScore || score === bestScore
+            && (row.price < best.price || row.price === best.price && row.id < best.id)) {
+            best = row;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
 module.exports = {
     isCasterRole,
     isCasterWeapon,
@@ -59,5 +80,6 @@ module.exports = {
     isCompatibleWeapon,
     isSuitableWeapon,
     scoreWeapon,
+    stopgapWeapon,
     weaponKindsFor
 };

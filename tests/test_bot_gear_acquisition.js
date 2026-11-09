@@ -859,6 +859,18 @@ const bowAndShieldInventory = GearAcquisitionPlanner.equipInventoryUpgrades({ le
 });
 assert.strictEqual(bowAndShieldInventory[starterBow.selfId].equipped, true, 'the cold inventory should retain its two-handed bow');
 assert.strictEqual(bowAndShieldInventory[starterShield.selfId].equipped, false, 'the cold inventory must unequip a shield when a two-handed bow is equipped');
+// An archer wearing nothing wears the dagger it owns rather than fight barehanded,
+// and the bow once it owns one.
+const archerWithDagger = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 10, stats: { role: 'archer' } }, {
+    10: { selfId: 10, amount: 1, equipped: false, slot: 7 }
+});
+assert.strictEqual(archerWithDagger[10].equipped, true, 'an archer with only a dagger must wear it, not fight barehanded');
+const archerWithBow = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 10, stats: { role: 'archer' } }, {
+    ...archerWithDagger,
+    13: { selfId: 13, amount: 1, equipped: false, slot: 14 }
+});
+assert.strictEqual(archerWithBow[13].equipped, true, 'an archer given a bow must wear the bow');
+assert.strictEqual(archerWithBow[10].equipped, false, 'the dagger must come off once the archer wears its bow');
 const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
     && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
 const dRing = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'

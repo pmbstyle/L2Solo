@@ -588,16 +588,26 @@ function equipUpgradesOf(state, inventory, role, classId) {
         return selected;
     }, new Map());
     if (!best.has('weapon')) {
-        // Legacy starter saves can have both a spare sword and training fists
-        // worn before the bot owns its preferred weapon. Resolve the conflict
-        // without stripping its last usable weapon or equipping new off-build gear.
+        // No role weapon owned: a worn weapon stays (legacy starter saves can wear
+        // both a spare sword and training fists: keep one, never strip the last),
+        // and a bot wearing none wears the best one it owns (stopgapWeapon).
         const worn = Object.values(inventory || {}).flatMap((entry) => {
             const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
             return String(item?.template?.kind || '').startsWith('Weapon.')
                 && equippedSlotsFor(entry, item.etc?.slot).some(slot => slot === 7 || slot === 14)
                 ? [{ entry, item }] : [];
         });
-        if (worn.length > 1) {
+        if (!worn.length) {
+            const grade = rankIndex(gradeForLevel(state.level));
+            const pick = BotWeaponCompatibility.stopgapWeapon(Object.values(inventory || {}).flatMap((entry) => {
+                const item = Number(entry?.amount || 0) >= 1 ? ItemTemplateIndex.find(DataCache.items, entry.selfId) : null;
+                return item && BotEquipmentCompatibility.isWeaponSlot(item.etc?.slot) && isRealCatalogItem(item)
+                    && rankIndex(item.etc?.rank) <= grade
+                    ? [{ entry, item, kind: item.template?.kind, pAtk: item.stats?.pAtk, mAtk: item.stats?.mAtk,
+                        price: Number(item.template?.price || 0), id: Number(entry.selfId) }] : [];
+            }), role, classId);
+            if (pick) best.set('weapon', pick);
+        } else if (worn.length > 1) {
             const starters = require('../../Knowledge/StarterItemCatalog').ids(DataCache.newbieItems, 'strict', classId);
             worn.sort((left, right) => Number(starters.has(Number(right.entry.selfId)))
                 - Number(starters.has(Number(left.entry.selfId)))

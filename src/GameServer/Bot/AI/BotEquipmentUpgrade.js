@@ -289,6 +289,17 @@ function findBestUpgrades(session) {
             return upgrades;
         }, []);
 
+    // No weapon worn and none its role uses in the bag: the best weapon it owns
+    // (stopgapWeapon, the cold equip's rule too).
+    if (!actor.backpack.fetchEquippedWeapon?.()
+        && !otherUpgrades.some(({ slot }) => slot === ARMOR_SLOTS.weapon || slot === ARMOR_SLOTS.dual)) {
+        const pick = BotWeaponCompatibility.stopgapWeapon(items.flatMap((item) => (
+            item.isWeapon?.() && rankAllowed(item, actor) && item.fetchPrice?.() > 0
+                ? [{ item, kind: item.fetchKind(), pAtk: item.fetchPAtk(), mAtk: item.fetchMAtk(),
+                    price: item.fetchPrice(), id: Number(item.fetchSelfId()) }] : []
+        )), BotRoles.inferRole(actor), actor.fetchClassId());
+        if (pick) otherUpgrades.push({ item: pick.item, slot: Number(pick.item.fetchSlot()), score: scoreItem(actor, pick.item) });
+    }
     const ordinary = [...torsoUpgrades, ...otherUpgrades];
     const availableArmor = items.filter(item => isSuitableItem(actor,item,true) && ArmorPolicy.ARMOR_SLOTS.has(Number(item.fetchSlot())));
     const currentArmor = availableArmor.filter(item => item.fetchEquipped());
