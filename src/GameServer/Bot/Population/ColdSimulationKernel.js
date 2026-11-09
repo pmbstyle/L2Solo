@@ -2586,18 +2586,6 @@ class ColdSimulationKernel {
         // to 32 characters, so off need only preserve the original shape.
         if (!Object.hasOwn(this.stats.flushReasons, reason)) this.stats.flushReasons[reason] = 0;
         DiagnosticConfig.developerDiagnostics && (this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1);
-        // Sent proposals keep their in-flight slots until the commit ACK.
-        // Priority and party flushes can fill that window just like a timer flush.
-        const capacityBlocked = this.partyCapacityBlocked === true
-            || this.inFlight.size + this.commanding.size >= this.maxInFlight;
-        // Each proposal's measured size travels with it, so the main commit
-        // queue need not serialise it again (the list fits the 16 KiB left
-        // between the payload limit and the message limit).
-        // The payload's JSON size follows from the sizes already counted:
-        // { proposals } and { proposalBytes, capacityBlocked } joined by a
-        // comma, less the brace each drops. send() need not serialise it again.
-        const tail = { proposalBytes, capacityBlocked };
-        const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
         for (const proposal of proposals) {
             const active = this.inFlight.get(Number(proposal.characterId));
             if (active && stepProposalId(proposal.characterId, active.startedAt) === proposal.proposalId) {
@@ -2611,6 +2599,20 @@ class ColdSimulationKernel {
                 active.proposed = proposed.get(Number(proposal.characterId));
             }
         }
+        // Sent proposals keep their in-flight slots until the commit ACK. With
+        // the window full and every step in it sent (a command waits on main
+        // too), nothing more comes before an ack: main commits what it holds at
+        // once. A party waiting for slots asks the same.
+        const capacityBlocked = this.partyCapacityBlocked === true
+            || this.inFlight.size + this.commanding.size >= this.maxInFlight && this.everyStepSent();
+        // Each proposal's measured size travels with it, so the main commit
+        // queue need not serialise it again (the list fits the 16 KiB left
+        // between the payload limit and the message limit).
+        // The payload's JSON size follows from the sizes already counted:
+        // { proposals } and { proposalBytes, capacityBlocked } joined by a
+        // comma, less the brace each drops. send() need not serialise it again.
+        const tail = { proposalBytes, capacityBlocked };
+        const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
         if (this.emit('proposal_batch', { proposals, ...tail }, null, payloadBytes) === false) {
             // Never sent: no ack comes, the stall recovery frees these steps.
             for (const proposal of proposals) {
@@ -2619,6 +2621,12 @@ class ColdSimulationKernel {
             }
         }
         return proposals.length;
+    }
+
+    // No step in the window is still running or unsent (at most maxInFlight entries).
+    everyStepSent() {
+        for (const active of this.inFlight.values()) if (!active.pendingCommitId) return false;
+        return true;
     }
 
     flushDue() {

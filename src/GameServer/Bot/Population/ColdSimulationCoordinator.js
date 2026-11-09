@@ -37,7 +37,7 @@ const { STEP_MS: PVP_STEP_MS } = require('./PvpEncounterBudget');
 const ColdStateDelta = require('./ColdStateDelta');
 const InventorySummary = require('./InventorySummary');
 const RestartBackoff = require('../../../WorkerRestartBackoff');
-const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
+const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -316,19 +316,22 @@ class ColdSimulationCoordinator {
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
-            admitEarlyFlush: () => {
+            // A full worker window commits at once only within the governor's budget (with a
+            // player 50 ms/s): about 1.85 ms of main per row, so 40-50 steps/s would take 75-90 ms/s
+            // of main. Asks one DB slice, admitted while a third of it is left, charged what it took.
+            admitWindowFlush: () => {
                 const pressure = this.desiredWorkerPressure();
                 if (pressure.lagMs >= Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)) return null;
                 const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+                const requestedBudgetMs = Math.max(8, Number(Config.schedulerSliceMs) || 12);
                 const admission = governor.admit({
-                    job: 'cold_commit_early', resource: 'sqlite-heavy',
-                    requestedBudgetMs: Math.max(8, Number(Config.schedulerSliceMs) || 12),
-                    minimumBudgetMs: EARLY_COMMIT_ROW_BUDGET_MS,
+                    job: 'cold_commit_window', resource: 'sqlite-heavy',
+                    requestedBudgetMs, minimumBudgetMs: Math.ceil(requestedBudgetMs / 3),
                     playerProtected: pressure.player, lagMs: pressure.lagMs
                 });
                 return admission.ok ? admission.lease : null;
             },
-            completeEarlyFlush: (lease, durationMs) => {
+            completeWindowFlush: (lease, durationMs) => {
                 invoke('GameServer/Bot/Population/BackgroundWorkGovernor').complete(lease, { durationMs });
             }
         });
