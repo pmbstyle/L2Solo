@@ -98,13 +98,20 @@ function die(session, actor, context = {}) {
             const hotAt = Number(victimSession.populationHotAt) || 0;
             // Its detail tier and the nearest player's distance at its last tick (HotActorLodPolicy).
             const lod = victimSession.hotActorLod;
+            // A character's kill (a summon's: its owner's): who opened the fight, the victim's part
+            // in it and why the opener struck (PvpResponsibility).
+            const rival = killer && killer !== actor ? invoke('GameServer/Bot/AI/BotPvpThreats').character(killer) : null;
+            const fight = rival && rival !== actor
+                ? invoke('GameServer/Social/PvpResponsibility').assess(actor, rival, Number(context.timestamp || Date.now())) : null;
             Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(victimSession.currentSpot?.id ?? prior?.spotId ?? ''),
                 ...(lod ? { tier: lod.tier, playerDist: lod.nearestPlayerDistance ?? undefined } : {}),
                 level: Number(actor.fetchLevel?.()) || undefined, plan: String(victimSession.plan || ''),
                 attackers: invoke('GameServer/Bot/AI/PartyAwareness').npcsAttackingActor(actor, 900).length,
                 ...(hotAt > 0 ? { durationMs: Math.max(0, Number(context.timestamp || Date.now()) - hotAt) } : {}),
                 killer: !killer || killer === actor ? 'unknown' : killer.fetchKind ? `npc:${killer.fetchSelfId?.() ?? '?'}`
-                    : `char:${killer.fetchId?.()}` });
+                    : `char:${killer.fetchId?.()}`,
+                ...(fight ? { opener: fight.openerId ? `char:${fight.openerId}` : 'unknown', role: fight.responsibility,
+                    why: fight.why || 'unknown' } : {}) });
         }
         invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),

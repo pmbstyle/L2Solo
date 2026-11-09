@@ -64,14 +64,15 @@ function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes
 }
 
 // A hot kill of a character (ReceivedHit.creditKill), with the karma before
-// the kill; outcome is PvpRules.killOutcome's.
-function hotKill({ attacker, victim, outcome, attackerKarma, playerInvolved, at }) {
+// the kill; outcome is PvpRules.killOutcome's; reason: the killer's part in the
+// fight and why its opener struck (`defense:unprovoked`, PvpResponsibility).
+function hotKill({ attacker, victim, outcome, attackerKarma, playerInvolved, reason = null, at }) {
     record({
         at,
         source: 'hot',
         conflictKey: null,
         action: 'kill',
-        reason: null,
+        reason,
         spotId: null,
         npcId: null,
         matchup: null,
