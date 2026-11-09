@@ -360,10 +360,12 @@ async function images(ids) {
         const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
         const WealthDecision = invoke('GameServer/Bot/Economy/WealthCraftDecision');
         const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+        // The shots made above already fill the open bid: sold out of the bag, so the bid is
+        // demand a new batch can meet.
         const bankerId = cCrafter.characterId, oreId = Number(cCandidate.ore.selfId);
-        for (const [selfId, amount] of [[1459, 200], [oreId, 10000]]) {
+        for (const [selfId, amount] of [[1459, 200], [oreId, 10000], [1464, 0]]) {
             await Database.execute(['DELETE FROM items WHERE characterId=? AND selfId=?', [bankerId, selfId]]);
-            await Database.setItem(bankerId, { selfId, amount });
+            if (amount) await Database.setItem(bankerId, { selfId, amount });
         }
         cCrafter = await Life.syncExternalInventory(bankerId, 'c_banked_exchange_stock', Life.cachedState(bankerId));
         const bankedPlan = () => ({ ...Life.cachedState(bankerId), vitals: { ...Life.cachedState(bankerId).vitals, mp: 1000 },
