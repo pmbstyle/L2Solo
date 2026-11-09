@@ -294,7 +294,7 @@ function findBestUpgrades(session) {
     if (!actor.backpack.fetchEquippedWeapon?.()
         && !otherUpgrades.some(({ slot }) => slot === ARMOR_SLOTS.weapon || slot === ARMOR_SLOTS.dual)) {
         const pick = BotWeaponCompatibility.stopgapWeapon(items.flatMap((item) => (
-            item.isWeapon?.() && rankAllowed(item, actor) && item.fetchPrice?.() > 0
+            item.isWeapon?.() && rankAllowed(item, actor)
                 ? [{ item, kind: item.fetchKind(), pAtk: item.fetchPAtk(), mAtk: item.fetchMAtk(),
                     price: item.fetchPrice(), id: Number(item.fetchSelfId()) }] : []
         )), BotRoles.inferRole(actor), actor.fetchClassId());

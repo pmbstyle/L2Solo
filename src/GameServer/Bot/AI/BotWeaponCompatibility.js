@@ -62,7 +62,8 @@ function isSuitableWeapon(kind, name, pAtk, mAtk, role, classId) {
 function stopgapWeapon(rows, role, classId) {
     let best = null, bestScore = 0;
     for (const row of rows) {
-        if (!String(row.kind || '').startsWith('Weapon.') || row.kind === 'Weapon.Pet') continue;
+        // A priced weapon only: the free ones are quest weapons (Neti's Dagger, Old Knight's Sword).
+        if (!String(row.kind || '').startsWith('Weapon.') || row.kind === 'Weapon.Pet' || !(Number(row.price) > 0)) continue;
         const score = scoreWeapon(row.pAtk, row.mAtk, role, classId);
         if (!best || score > bestScore || score === bestScore
             && (row.price < best.price || row.price === best.price && row.id < best.id)) {
