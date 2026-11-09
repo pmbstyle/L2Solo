@@ -5,13 +5,22 @@ const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const SourceCatalog = require('../../Knowledge/SourceCatalog');
 
 function rewardDataForSpot(spot, rng, npcSelfId = 0) {
+    const defeatedNpcId = Number(npcSelfId || 0);
+    const defeatedReward = defeatedNpcId > 0 ? ItemTemplateIndex.find(DataCache.npcRewards, defeatedNpcId) : null;
+    // A pending fight may outlive its NPC's place in the spot catalogue.
+    // Its explicitly empty drop remains authoritative even after that move.
+    if (defeatedReward && !(defeatedReward.rewards || []).length && !(defeatedReward.spoils || []).length) {
+        return defeatedReward;
+    }
     const entries = spot?.npcEntries?.length
         ? spot.npcEntries
         : (spot?.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    // An explicit empty row means zero loot, not missing source data. Keep
+    // it so callers cannot replace it with name aliases or fallback Adena.
     const byId = entries.map((entry) => ({
         reward: ItemTemplateIndex.find(DataCache.npcRewards, entry.selfId),
         count: Math.max(1, Number(entry.count || 1))
-    })).filter((entry) => (entry.reward?.rewards || []).length > 0 || (entry.reward?.spoils || []).length > 0);
+    })).filter((entry) => !!entry.reward);
     const knownIds = new Set(byId.map((entry) => Number(entry.reward.selfId)));
     const names = new Set((spot?.npcNames || []).map((name) => String(name || '').trim().toLowerCase()).filter(Boolean));
     // World-spawn ids may not be the datapack reward ids. The spot index also
@@ -24,7 +33,6 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
         .map((entry) => ({ reward: entry.reward, count: 1 }));
     const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
-    const defeatedNpcId = Number(npcSelfId || 0);
     if (defeatedNpcId > 0) {
         const exact = candidates.find((candidate) => Number(candidate.reward.selfId) === defeatedNpcId)?.reward;
         if (exact) return exact;

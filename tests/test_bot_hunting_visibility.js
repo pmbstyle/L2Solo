@@ -101,6 +101,18 @@ async function main() {
         assert.equal(attacks.at(-1), 99);
 
         session.currentTargetId = undefined;
+        const questMonster = { ...npc(100, 50), fetchTitle: () => 'Quest Monster' };
+        available = [questMonster, npc(101, 100)];
+        tick();
+        assert.equal(session.currentTargetId, 101, 'ordinary hunting skips the closer quest monster');
+        assert.equal(attacks.at(-1), 101);
+        session.currentTargetId = undefined;
+        session.testIncoming = questMonster;
+        tick();
+        assert.equal(attacks.at(-1), 100, 'the hunting restriction must still permit defense against a quest monster');
+        session.testIncoming = null;
+
+        session.currentTargetId = undefined;
         available = [];
         bot.moving = false;
         bot.moves.length = 0;

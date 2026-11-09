@@ -92,6 +92,11 @@ try {
     Data.npcs = ordinaryNpcs.map(npc => npc.selfId === 99001 ? { ...npc, clanName: 'Siege Guard' } : npc);
     const guarded = facts(warsmith);
     assert(guarded.length === 2 && guarded.every(row => row.reason === 'cannot_hunt'));
+    Data.npcs = ordinaryNpcs.map(npc => npc.selfId === 99001
+        ? { ...npc, template: { ...npc.template, title: 'Quest Monster' } } : npc);
+    const questSources = facts(warsmith);
+    assert(questSources.length === 2 && questSources.every(row => row.reason === 'cannot_hunt'),
+        'quest-only drops and spoils must not become ordinary material-farming plans');
     Data.npcs = ordinaryNpcs;
     assert.equal(byKind(facts(warsmith)).drop.status, 'ready');
 
