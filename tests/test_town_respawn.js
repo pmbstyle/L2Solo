@@ -5,6 +5,7 @@ require('../src/Global');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
 
 assert.strictEqual(
@@ -31,10 +32,12 @@ assert.strictEqual(elvenRuins?.mapLayer, 'dungeon', 'Elven Ruins must not be pro
 const decoratedElvenSpot = WorldAreaCatalog.decorateSpot({
     id: '7_41',
     name: 'Skeleton fields',
+    density: 78,
     center: { locX: 45596, locY: 247589, locZ: -6518 }
 });
 assert.strictEqual(decoratedElvenSpot.name, 'Elven Ruins', 'canonical area metadata must replace generated mob-field labels');
-assert.strictEqual(decoratedElvenSpot.capacity, 64, 'Elven Ruins must carry its explicit population capacity');
+assert.strictEqual(LevelingRoutes.roomForSpot(decoratedElvenSpot), 36,
+    'a dense Elven Ruins room holds what its own spawns feed, capped like any field');
 assert.strictEqual(decoratedElvenSpot.tagsAuthoritative, true, 'area tags must override incidental mob-name tags');
 assert.strictEqual(
     WorldAreaCatalog.resolve({ locX: 45596, locY: 247589, locZ: -3400 }),
@@ -48,10 +51,12 @@ assert.strictEqual(mithrilMines?.mapLayer, 'dungeon', 'Mithril Mines must not be
 const decoratedMithrilSpot = WorldAreaCatalog.decorateSpot({
     id: '29_-30',
     name: 'Akaste Bone Soldier fields',
+    density: 5,
     center: { locX: 176673, locY: -177656, locZ: 801 }
 });
 assert.strictEqual(decoratedMithrilSpot.name, 'Mithril Mines', 'mob-derived Akaste labels must be replaced by the canonical mine name');
-assert.strictEqual(decoratedMithrilSpot.capacity, 48, 'Mithril Mines must carry a bounded per-sector population capacity');
+assert.strictEqual(LevelingRoutes.roomForSpot(decoratedMithrilSpot), 9,
+    'a five-spawn mine room holds one party, not the whole mine');
 assert.deepStrictEqual(decoratedMithrilSpot.localStarterRegions, ['dwarf'], 'the low-level mine route must remain local to dwarven starters');
 assert.strictEqual(decoratedMithrilSpot.tagsAuthoritative, true, 'canonical mine tags must override incidental mob-name tags');
 assert.strictEqual(
