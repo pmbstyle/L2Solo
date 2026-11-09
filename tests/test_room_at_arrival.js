@@ -49,20 +49,39 @@ Contest.contest = input => {
         spotId: input.spot.id, npcId: input.npcId, actor: { id: input.arriving.id }, peer: { id: peer.id }, action: 'contest', pvpIntent: true } };
 };
 const marksOf = stats => Risk.spotMarks(stats).map(mark => mark.spotId + ':' + mark.reason);
-module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome = null, ok = true, keep = false, inventory = null }) => {
+module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, outcome = null, ok = true, keep = false, inventory = null }) => {
     if (kind !== 'memory') for (const gone of remove || []) kernel.remove(gone);
     forced = outcome; seen = null;
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
     if (kind === 'wake') return kernel.states.get(id)?.stepWake?.raises?.contest_lost || null;
     if (kind === 'step') {
-        // The bot's next step as the kernel runs it, up to its commit proposal (not sent).
-        const held = kernel.states.get(id), now = Date.now(), flush = kernel.flush;
+        // The bot's next step as the kernel runs it, up to its commit proposal (not sent);
+        // ack: main commits it (an ok ack carrying the commit's numbers).
+        const held = kernel.states.get(id), now = Date.now(), flush = kernel.flush, active = { state: held.state, startedAt: now, dueAt: now };
+        const counted = () => Catalogue.counts().raised['spot:contest:grievance'] || 0, was = counted();
         kernel.flush = () => {};
-        kernel.inFlight.set(id, { state: held.state, startedAt: now, dueAt: now });
-        try { await kernel.resolveStep(id); } finally { kernel.flush = flush; kernel.inFlight.delete(id); }
+        kernel.inFlight.set(id, active);
+        try { await kernel.resolveStep(id); } finally { kernel.flush = flush; }
         const proposal = kernel.dirty.get(id);
         kernel.dirty.delete(id);
-        return { proposed: !!proposal, memoryEvents: proposal?.result?.memoryEvents || [], faults: kernel.faults.get(id)?.logged || [] };
+        if (ack && proposal) {
+            Object.assign(active, { pendingCommitId: proposal.proposalId, proposed: proposal.nextState });
+            kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId: proposal.proposalId }] });
+        }
+        kernel.inFlight.delete(id);
+        return { proposed: !!proposal, memoryEvents: proposal?.result?.memoryEvents || [], faults: kernel.faults.get(id)?.logged || [],
+            counted: counted() - was };
+    }
+    if (kind === 'command') {
+        // The bot's next step as a command (main's world action): its request as sent, then main's ok.
+        const emit = kernel.emit;
+        let request = null;
+        kernel.emit = (type, payload) => type === 'command_request' ? (request = payload.requests[0], true) : emit.call(kernel, type, payload);
+        const attempt = kernel.beginCommand(id);
+        try { await kernel.resolveCommand(id, attempt); } finally { kernel.emit = emit; }
+        kernel.completeCommand({ characterId: id, commandId: attempt.commandId, commandCheckpoint: attempt.checkpoint, ok: true });
+        return { sent: !!request, posted: request?.precomputedPlan?.memoryEvents || null,
+            wake: kernel.states.get(id)?.stepWake?.raises?.contest_lost || null };
     }
     // Their relationships loaded (a stranger unread is never displaced).
     if (kind === 'memory') { for (const m of remove) kernel.interactionMemory.accept(require('../../Social/InteractionMemoryPolicy').empty(m)); return true; }
@@ -413,15 +432,23 @@ invoke('GameServer/DataCache').init();
         assert.equal(await probe({ kind: 'wake', id: kept }), null, 'the other keeps its spot');
         // The displaced bot remembers who took its spot: its next step's own commit carries it.
         const pushed = await probe({ kind: 'step', id: gone });
-        assert.deepEqual([pushed.proposed, pushed.faults], [true, []]);
+        assert.deepEqual([pushed.proposed, pushed.faults, pushed.counted], [true, [], 0], 'counted only once committed');
         assert.deepEqual(pushed.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), [[gone, 104, 'mob_contested']],
             'a grievance toward the bot that displaced it');
-        const remembered = Policy.apply(Policy.empty(gone), Policy.event(pushed.memoryEvents[0]), Date.now() + 1000);
+        // Main writes it when its commit queue lets the proposal go: at the events' time (the step's), never before.
+        const remembered = Policy.apply(Policy.empty(gone), Policy.event(pushed.memoryEvents[0]), Math.max(Date.now(), pushed.memoryEvents[0].at));
         assert.equal(remembered.status, 'applied', 'its memory takes it');
         assert(remembered.snapshot.relations.find(row => row.targetId === 104).hostility > 0, 'and holds a grudge against him');
         assert.deepEqual((await probe({ kind: 'step', id: kept })).memoryEvents, [], 'the one that kept its spot remembers nothing');
         const after = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
         assert(!after.seen.standing.includes(`solo:${gone}`), 'until its next step, the displaced bot no longer counts there');
+        // Its next step a command instead (main's commit writes no memory): the grievance waits for the step after.
+        const commanded = await probe({ kind: 'command', id: gone });
+        assert.deepEqual([commanded.sent, commanded.posted, commanded.wake], [true, null, null], 'the command hears the wake and posts no memory');
+        const later = await probe({ kind: 'step', id: gone, ack: true });
+        assert.deepEqual([later.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), later.counted],
+            [[[gone, 104, 'mob_contested']], 1], 'the next step commits the grievance, counted once');
+        assert.deepEqual((await probe({ kind: 'step', id: gone })).memoryEvents, [], 'and only once');
 
         // One bot stands there and one is on its way: two hunters on two places is no contest.
         const free = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', remove: [gone], outcome: 'outmatched' });

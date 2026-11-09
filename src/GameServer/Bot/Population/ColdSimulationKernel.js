@@ -1016,7 +1016,7 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         // The bot's one record: { state, version, huntSpot, spotFit, materialMemo, progressAsk,
-        // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute, stayHeld }.
+        // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute, stayHeld, heldMemory }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the held hunt spot (BotRoute.heldHuntSpot) until its
         // inputs move or its step drops it, the trip's kept spot verdicts (BotRoute heldVerdict,
@@ -1028,7 +1028,8 @@ class ColdSimulationKernel {
         // (partyStay: { partyId, seq }, the party and situationSeq it was held at, kept
         // while that absence holds and its stay stays woken) and, for a near bot, the
         // last raise applied and the route rows of its last decision
-        // (ColdSimulationWorker nearEvents, publish).
+        // (ColdSimulationWorker nearEvents, publish), the memory events a command step
+        // could not carry, waiting for its next step commit (resolveCommand).
         // A held event wait (lifecycleKind 'event_driven', stats.eventWait) ends
         // at the write that ends it: that step runs now, not at the hold's due.
         if (current?.state.stats?.eventWait && lifecycleKind(current.state, this) === 'event_driven') {
@@ -1615,6 +1616,9 @@ class ColdSimulationKernel {
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
             attempt.stepWakeSeq = Number(lifecyclePlan?.stepWakeSeq) || 0;
+            // Main's command commit writes no memory: the plan's events (a displaced bot's
+            // grievance) wait on the record for the bot's next step commit (heldMemory).
+            attempt.memoryEvents = lifecyclePlan?.memoryEvents?.length ? lifecyclePlan.memoryEvents : null;
             const sent = this.emit('command_request', {
                 requests: [{
                     characterId: id,
@@ -2389,6 +2393,10 @@ class ColdSimulationKernel {
                 && PartyMarketBreak.cleanupFree(PartyMarketBreak.withoutStartedTrip(active.state, projectedState)) ? cleanupDue : null;
             const priority = playerWaitingTransition(active.state, null, this) ? 'P0'
                 : projection?.durable ? 'P1' : priorityForResult(active.state, round.loot || round.result);
+            // The step's spot grievances ride its own commit: the projection's (SpotContest) and
+            // those a command step held (heldMemory), the only memory events a solo step adds.
+            const held = this.states.get(Number(characterId))?.heldMemory || null;
+            const grievances = [...(projection?.memoryEvents || []), ...(held || [])];
             const proposal = {
                 proposalId: stepProposalId(characterId, active.startedAt),
                 characterId: Number(characterId),
@@ -2403,13 +2411,14 @@ class ColdSimulationKernel {
                 ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 ...(projection?.buffOffer ? { buffOffer: projection.buffOffer } : {}),
                 ...(cleanupNeed ? { cleanupNeed } : {}),
-                // The projection's memory events (a spot contest's grievance) ride the step's own commit.
-                result: proposalResult({ ...round.result, ...round.posted, ...(projection?.memoryEvents
-                    ? { memoryEvents: [...(round.result.memoryEvents || []), ...projection.memoryEvents] } : {}) }),
+                result: proposalResult({ ...round.result, ...round.posted, ...(grievances.length
+                    ? { memoryEvents: [...(round.result.memoryEvents || []), ...grievances] } : {}) }),
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
             active.stepWakeSeq = Number(lifecyclePlan?.stepWakeSeq) || 0;
+            active.heldMemory = held;
+            active.grievances = grievances.length;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
@@ -2665,6 +2674,10 @@ class ColdSimulationKernel {
             if (result.ok) {
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
+                // Its grievances are written: counted once, the held ones no longer wait.
+                for (let i = 0; i < (active.grievances || 0); i++) (Situations ||= require('../Situations')).note('spot:contest:grievance');
+                const record = active.heldMemory ? this.states.get(id) : null;
+                if (record?.heldMemory === active.heldMemory) record.heldMemory = null;
             }
             // A committed step's start -> ack time sets the lead, excluding
             // main's wait for its future events: that wait is the lead's own
@@ -2792,6 +2805,7 @@ class ColdSimulationKernel {
         // a throw here is (fault); before the upsert, so its schedule keeps the hold.
         if (payload.ok) this.clearFault(id);
         if (payload.ok) this.stepWakeAnswered(current, attempt.stepWakeSeq);
+        if (payload.ok && attempt.memoryEvents) current.heldMemory = [...(current.heldMemory || []), ...attempt.memoryEvents];
         const retryAt = payload.fault && payload.ok === false
             ? this.fault(id, { message: payload.reason, stack: payload.fault.stack }, 'main_command')
             : this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000);
@@ -2906,8 +2920,11 @@ class ColdSimulationKernel {
         this.stopping = true;
         this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
-        // A board wake no step committed is lost with this worker (a restart re-plans).
-        for (const record of this.states.values()) if (record.stepWake) (Situations ||= require('../Situations')).note('step:wake:lost');
+        // A board wake or a held grievance no step committed is lost with this worker (a restart re-plans).
+        for (const record of this.states.values()) {
+            if (record.stepWake) (Situations ||= require('../Situations')).note('step:wake:lost');
+            if (record.heldMemory) (Situations ||= require('../Situations')).note('step:memory:lost');
+        }
         this.commanding.clear();
         this.commandStartedAt.clear();
         await this.resolveChain.catch(() => null);

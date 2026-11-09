@@ -120,9 +120,12 @@ displaced bot hears `contest_lost` (reason `displaced`) at its next step once th
 arriving commit is acked (the kernel's step wake: no commit of its own, it finishes the
 window its step already credited); a near arrival displaces at once. The unit that lost
 remembers the stronger one (`mob_contested`, `SpotContest.grievance`, counted
-`spot:contest:grievance`), written by its own commit: a displaced far bot at that next
-step, a far solo arrival that shares under a stronger stranger (`tolerated`) at its
-arrival step. Parties and standing units that chose to share write none; bodies near a
+`spot:contest:grievance` once its commit lands), written by its own commit: a displaced
+far bot at that next step (a command step, whose commit main writes without memory, holds
+it on the kernel record for the next step's commit; a restart loses it, counted
+`step:memory:lost`), a far solo arrival that shares under a stronger stranger
+(`tolerated`) at its arrival step. The event carries the step's time; main's commit queue
+writes it once that time has come. Parties and standing units that chose to share write none; bodies near a
 player write theirs per mob (`BotMobCompetition`).
 
 The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
