@@ -3269,7 +3269,11 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}, selfIds = null)
         const baseSlot = Number(item.slot || rows[0]?.slot || 0);
         const hasEnchant = item.enchant !== null && item.enchant !== undefined;
         const enchant = hasEnchant ? Math.max(0, Number(item.enchant || 0) || 0) : null;
-        const nonStackable = baseSlot > 0 || item.stackable === false;
+        // Stackability is the item's (its template), never the summary entry's hints: an entry
+        // without them over unequipped weapon rows would merge them into one unwearable stack.
+        // An id with no template (no item data) keeps the entry's hints.
+        const template = ItemTemplateIndex.find(DataCache.items, selfId);
+        const nonStackable = template ? template.etc?.stackable !== true : baseSlot > 0 || item.stackable === false;
         if (!nonStackable) {
             const current = rows[0];
             const equipped = item.equipped ? 1 : 0;

@@ -2871,7 +2871,10 @@ const BotLifeState = {
                 nextAmount,
                 Number(inventory[key]?.starterMobLootAmount || 0) + protectedStarterLoot
             );
+            // Loot adds to the stack the bag holds: its worn copies, instances and
+            // reserves stay (a looted second dagger must not unequip the first).
             inventory[key] = {
+                ...inventory[key],
                 selfId: item.selfId,
                 name: item.name || inventory[key]?.name || itemName(item.selfId),
                 amount: nextAmount,
