@@ -120,12 +120,24 @@ function withPersistedStats(state, result) {
     }
 }
 
+// A far bot's committed memory into main's view (published to the worker from there).
+function acceptMemory(snapshots) {
+    if (!snapshots?.length) return snapshots;
+    const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    snapshots.forEach(snapshot => memory.accept(snapshot));
+    return snapshots;
+}
+
+// The memory events of a far bot's step main ran as a command (a displaced bot's
+// grievance): main's command writes the step in several transactions, so they are
+// written after its writes landed, as a step commit writes them.
+function commitMemory(characterId, memoryEvents) {
+    return Database.commitColdInteractionMemory({ characterId, memoryEvents }).then(acceptMemory);
+}
+
 function reflect(result, committedState = null) {
     if (!result?.ok || !result.characterId) return result;
-    if (result.memorySnapshots?.length) {
-        const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
-        result.memorySnapshots.forEach(snapshot => memory.accept(snapshot));
-    }
+    acceptMemory(result.memorySnapshots);
     LifeState.acceptSimulationOwnership(result.characterId, result, committedState);
     if (result.pkDrops?.length) {
         const row = result.row;
@@ -287,5 +299,6 @@ module.exports = {
     eligibility,
     persistencePatch,
     commitBatch,
+    commitMemory,
     handoffToMain
 };

@@ -43,22 +43,52 @@ Contest.contest = input => {
     const peer = input.standing.find(unit => !unit.hot);
     if (!forced || !(verdict.pressure > 1) || !peer) return verdict;
     if (forced === 'coexist') return { action: 'coexist', pressure: verdict.pressure };
+    if (forced === 'tolerated') return { action: 'stay', reason: 'tolerated', displaced: [], pressure: verdict.pressure, peer };
     if (forced !== 'pvp') return { action: 'avoid', reason: forced, pressure: verdict.pressure, spotId: String(input.spot.id) };
     return { action: 'stay', reason: 'pvp', displaced: [], pressure: verdict.pressure, peer, event: { at: input.at, key: 'forced:' + input.arriving.key,
         spotId: input.spot.id, npcId: input.npcId, actor: { id: input.arriving.id }, peer: { id: peer.id }, action: 'contest', pvpIntent: true } };
 };
 const marksOf = stats => Risk.spotMarks(stats).map(mark => mark.spotId + ':' + mark.reason);
 const own = new Map();
-module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false, at = 1 }) => {
+module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, outcome = null, ok = true, keep = false, inventory = null, by = 0, clear = false, at = 1 }) => {
     if (kind !== 'memory') for (const gone of remove || []) kernel.remove(gone);
     forced = outcome; seen = null;
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
     if (kind === 'wake') return kernel.states.get(id)?.stepWake?.raises?.contest_lost || null;
+    if (kind === 'step') {
+        // The bot's next step as the kernel runs it, up to its commit proposal (not sent);
+        // ack: main commits it (an ok ack carrying the committed state).
+        const held = kernel.states.get(id), now = Date.now(), flush = kernel.flush, active = { state: held.state, startedAt: now, dueAt: now };
+        const counted = () => Catalogue.counts().raised['spot:contest:grievance'] || 0, was = counted();
+        kernel.flush = () => {};
+        kernel.inFlight.set(id, active);
+        try { await kernel.resolveStep(id); } finally { kernel.flush = flush; }
+        const proposal = kernel.dirty.get(id);
+        kernel.dirty.delete(id);
+        if (ack && proposal) {
+            Object.assign(active, { pendingCommitId: proposal.proposalId, proposed: proposal.nextState });
+            kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId: proposal.proposalId, state: proposal.nextState }] });
+        }
+        kernel.inFlight.delete(id);
+        return { proposed: !!proposal, memoryEvents: proposal?.result?.memoryEvents || [], faults: kernel.faults.get(id)?.logged || [],
+            counted: counted() - was };
+    }
+    if (kind === 'command') {
+        // The bot's next step as a command (main's world action): its request as sent, then main's answer.
+        const emit = kernel.emit;
+        let request = null;
+        kernel.emit = (type, payload) => type === 'command_request' ? (request = payload.requests[0], true) : emit.call(kernel, type, payload);
+        const attempt = kernel.beginCommand(id);
+        try { await kernel.resolveCommand(id, attempt); } finally { kernel.emit = emit; }
+        kernel.completeCommand({ characterId: id, commandId: attempt.commandId, commandCheckpoint: attempt.checkpoint, ok });
+        return { sent: !!request, posted: request?.precomputedPlan?.memoryEvents || null,
+            wake: kernel.states.get(id)?.stepWake?.raises?.contest_lost || null };
+    }
     // Their relationships loaded (a stranger unread is never displaced).
     if (kind === 'memory') { for (const m of remove) kernel.interactionMemory.accept(require('../../Social/InteractionMemoryPolicy').empty(m)); return true; }
     if (kind === 'near') return { marks: marksOf(kernel.states.get(id)?.state.stats), seen };
     // A standing bot's earning answer on a player's command (by: the player) on the spot, or back to its own.
-    if (kind === 'command') {
+    if (kind === 'order') {
         const s = kernel.states.get(id).state, Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
         if (by && !own.has(id)) own.set(id, s.stats.earning);
         const earning = by ? Income.commanded(s.stats.earning, spotId, at, by) : own.get(id);
@@ -67,7 +97,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     }
     // The bot's next step raises what other owners woke it with (kernel stepWake), as its step
     // does; then that step is answered (keep: not yet). Its command, its earning spot's wake and its next spot.
-    if (kind === 'step') {
+    if (kind === 'raise') {
         const record = kernel.states.get(id), state = record.state, ended = () => Catalogue.counts().raised['command:displaced'] || 0;
         const was = ended();
         let stats = { ...state.stats };
@@ -131,7 +161,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     if (!keep) outbox.pending.delete(id);
     return { standingAfter: arrival ? arrival.unit.key : null, displaced: arrival?.displaced || [], arrived: result.patch.activity === 'hunting' && result.patch.spotId === spotId, changed: !!contested,
         marks: marksOf({ ...traveling.stats, ...stats }), woken: Catalogue.woken({ ...traveling.stats, ...stats }, 'earning_spot'),
-        wait: stats.coldCompetition?.wait || null, outbox: queued, proposalId, seen };
+        wait: stats.coldCompetition?.wait || null, outbox: queued, proposalId, seen, grievance: contested?.spotGrievance || null };
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -181,11 +211,11 @@ invoke('GameServer/DataCache').init();
         const state = (id, level, grade) => ({ characterId: id, name: `P${id}`, level, stats: {}, simulation: { revision: 1 }, inventory: gear(grade) });
         const unit = (id, grade = 'none', extra = {}) => ({ key: `solo:${id}`, id, name: `P${id}`, partyId: null, size: 1, level: extra.level || 20,
             hunters: 1, members: [state(id, extra.level || 20, grade)], state: state(id, extra.level || 20, grade), npcId: NPC, hot: false, ...extra });
-        let clans = {}, unloaded = new Set();
+        let clans = {}, unloaded = new Set(), personas = {};
         const memory = { assess: (a, b) => ({ ready: !unloaded.has(b.id) && !unloaded.has(a.id), revision: 1, disposition: 'neutral', personal: null,
             sourceClanId: clans[a.id] || 0, targetClanId: clans[b.id] || 0 }) };
         const input = (standing, arriving = unit(1, 'd'), extra = {}) => ({ spot, npcId: NPC, arriving, standing, untargeted: 0,
-            at: 1000, step: 7, memory, personaFor: () => ({ traits: { caution: 0.5 } }), capacityForSpot: () => 4, ...extra });
+            at: 1000, step: 7, memory, personaFor: s => personas[s.characterId] || { traits: { caution: 0.5 } }, capacityForSpot: () => 4, ...extra });
         const raised = key => Situations.counts().raised[key] || 0;
         const solos = (...ids) => ids.map(id => unit(id));
         // Room 4, half of it this species: two places.
@@ -246,6 +276,47 @@ invoke('GameServer/DataCache').init();
         const capped = raised('spot:contest:capped');
         assert.equal(Contest.contest(input([2, 3, 4, 5, 6].map(id => unit(id, 'c')))).reason, 'outmatched');
         assert.equal(raised('spot:contest:capped'), capped + 1, 'more than four stronger units: counted');
+        // The unit that does not hold the spot by look answers by its persona (the old offer or
+        // yield of every forced roll): it shares up to its tolerance (sociable, empathic, not
+        // ambitious: 1.3x room), else leaves. room(demand, pressure): the room that puts demand
+        // hunters at that pressure.
+        const room = (demand, pressure) => () => 2 * demand / pressure;
+        const tolerant = { traits: { caution: 0, sociability: 1, empathy: 1, ambition: 0 } };
+        const proud = { traits: { caution: 0, sociability: 0, empathy: 0, ambition: 1 } };
+        personas = { 1: tolerant };
+        const kept = Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.1) }));
+        assert.deepEqual([kept.action, kept.reason, kept.peer.id], ['stay', 'tolerated', 2],
+            'a no-grade bot where a D-grade one hunts at 1.1x stays and takes the leftovers');
+        const past = raised('spot:contest:past_tolerance');
+        assert.equal(Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.4) })).reason, 'outmatched',
+            'at 1.4x it moves on');
+        assert.equal(raised('spot:contest:past_tolerance'), past + 1, 'past its tolerance: counted');
+        assert.deepEqual([Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason,
+            (personas = { 1: proud }, Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason)],
+        ['shared', 'even'], 'an even arrival at 1.2x: the tolerant one shares, the proud one leaves');
+        personas = { 2: tolerant };
+        const standingShare = raised('spot:contest:tolerated_standing');
+        const stood = Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) }));
+        assert.deepEqual([stood.action, stood.reason, stood.displaced], ['stay', 'stronger', []],
+            'a tolerant no-grade bot asked to make room at 1.25x stays, and the D-grade arrival hunts beside it');
+        assert.equal(raised('spot:contest:tolerated_standing'), standingShare + 1);
+        personas = { 2: proud };
+        assert.deepEqual(Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) })).displaced, [2],
+            'a proud one moves on');
+        // A weaker standing bot that will not give way: its contest with PvP intent is the dispute
+        // (it the actor), and main replays its rolls for a participant written since.
+        personas = {};
+        Tendency.roll = (kind, key, i) => kind === 'spot_contest_decision' ? (i === 0 ? 0.99 : 0) : 0;
+        const fought = Contest.contest(input([unit(2, 'none', { level: 30 })], unit(1, 'd'), { capacityForSpot: room(2, 1.5), pvp: true }));
+        Tendency.roll = () => 0;
+        assert.deepEqual([fought.action, fought.reason, fought.peer.id, fought.event.actor.id, fought.event.peer.id, fought.event.pvpIntent],
+            ['stay', 'pvp', 2, 2, 1, true], 'the standing bot disputes the spot with the arrival');
+        const states = { 1: { ...state(1, 20, 'd'), simulation: { revision: 2 } }, 2: state(2, 30, 'none') };
+        const replayed = require('../src/GameServer/Bot/Population/ColdConflictDecision').refresh(fought.event, { life: { cachedState: id => states[id] },
+            parties: null, memory: { ...memory, revision: () => 1 }, personaFor: s => personas[s.characterId] || { traits: { caution: 0.5 } } }, 1000);
+        assert.deepEqual([replayed.recomputed, replayed.event?.action, replayed.event?.actor.id], [true, 'contest', 2],
+            'replayed on main with the standing bot as the actor');
+        personas = {};
     } finally { Tendency.roll = roll; }
 }
 // The outbox's way to main (SpotContestOutbox): an arrival's outcome after its step's own
@@ -364,6 +435,10 @@ invoke('GameServer/DataCache').init();
             'an ack of another step drops it as stale, never re-fenced');
         const evacuating = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'unsafe_ground_evacuation' });
         assert.deepEqual([evacuating.seen.holds, evacuating.marks], ['evacuation', []], 'a safety evacuation holds its new ground: it never avoids');
+        // One that stays under a stronger stranger's kill-stealing remembers him too (its arrival's commit).
+        const tolerated = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'tolerated' });
+        assert.deepEqual([tolerated.marks, tolerated.grievance?.sourceId, tolerated.grievance?.targetId, tolerated.grievance?.type],
+            [[], 104, 101, 'mob_contested'], 'a tolerated arrival stays, unmarked, with a grievance toward the holder');
         const coexist = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'coexist' });
         assert.equal(coexist.changed, false, 'coexist changes nothing');
 
@@ -374,7 +449,7 @@ invoke('GameServer/DataCache').init();
         await probe({ kind: 'memory', remove: [101, 102, 104, 105] });
         // A bot on a player's command is displaced like any weaker stranger: the player is told
         // who pushed it out, and its next step ends the command, so it goes elsewhere.
-        await probe({ kind: 'command', id: 101, spotId: room.id, by: 9001 });
+        await probe({ kind: 'order', id: 101, spotId: room.id, by: 9001 });
         const commandLost = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', inventory: dGrade, keep: true });
         assert.deepEqual([commandLost.seen.action, commandLost.displaced], ['stay', [101]], 'the commanded bot is displaced');
         await probe({ kind: 'ack', id: 104, ok: true, reason: commandLost.proposalId });
@@ -384,14 +459,14 @@ invoke('GameServer/DataCache').init();
         assert(Protocol.validateEnvelope({ ...told, version: Protocol.PROTOCOL_VERSION }, 'worker', { workerEpoch: epoch }).ok, 'a message main accepts');
         // The player meets it (a hot period) and orders the same spot again before its next step:
         // the displacement it has not heard yet predates the order, which stands.
-        await probe({ kind: 'command', id: 101, spotId: room.id, by: 9001, at: (await probe({ kind: 'wake', id: 101 })).at + 1 });
-        assert.deepEqual(await probe({ kind: 'step', id: 101, keep: true }), { commanded: true, woken: true, ended: 0, next: room.id },
+        await probe({ kind: 'order', id: 101, spotId: room.id, by: 9001, at: (await probe({ kind: 'wake', id: 101 })).at + 1 });
+        assert.deepEqual(await probe({ kind: 'raise', id: 101, keep: true }), { commanded: true, woken: true, ended: 0, next: room.id },
             'an order given after the displacement survives its step');
-        await probe({ kind: 'command', id: 101, spotId: room.id, by: 9001 });
+        await probe({ kind: 'order', id: 101, spotId: room.id, by: 9001 });
         // (The marked spot is refused; with nothing else here it waits for its woken earning decision.)
-        assert.deepEqual(await probe({ kind: 'step', id: 101 }), { commanded: false, woken: true, ended: 1, next: null },
+        assert.deepEqual(await probe({ kind: 'raise', id: 101 }), { commanded: false, woken: true, ended: 1, next: null },
             'its next step ends the command (counted), wakes its earning spot and no longer goes to the spot it lost');
-        await probe({ kind: 'command', id: 101 });
+        await probe({ kind: 'order', id: 101 });
         const refusedHold = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', inventory: dGrade, keep: true });
         assert.deepEqual([refusedHold.seen.action, refusedHold.seen.reason, refusedHold.displaced.length], ['stay', 'stronger', 1]);
         await probe({ kind: 'ack', id: 104, ok: false, reason: refusedHold.proposalId });
@@ -408,6 +483,16 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual({ ...wake, at: wake?.at > 0 }, { spotId: room.id, reason: 'displaced', by: 104, at: true },
             'at the ack the displaced bot hears contest_lost at its next step');
         assert.equal(await probe({ kind: 'wake', id: kept }), null, 'the other keeps its spot');
+        // The displaced bot remembers who took its spot: its next step's own commit carries it.
+        const pushed = await probe({ kind: 'step', id: gone });
+        assert.deepEqual([pushed.proposed, pushed.faults, pushed.counted], [true, [], 0], 'counted only once committed');
+        assert.deepEqual(pushed.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), [[gone, 104, 'mob_contested']],
+            'a grievance toward the bot that displaced it');
+        // Main writes it when its commit queue lets the proposal go: at the events' time (the step's), never before.
+        const remembered = Policy.apply(Policy.empty(gone), Policy.event(pushed.memoryEvents[0]), Math.max(Date.now(), pushed.memoryEvents[0].at));
+        assert.equal(remembered.status, 'applied', 'its memory takes it');
+        assert(remembered.snapshot.relations.find(row => row.targetId === 104).hostility > 0, 'and holds a grudge against him');
+        assert.deepEqual((await probe({ kind: 'step', id: kept })).memoryEvents, [], 'the one that kept its spot remembers nothing');
         const after = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
         assert(!after.seen.standing.includes(`solo:${gone}`), 'until its next step, the displaced bot no longer counts there');
         // An arrival in flight that a later one displaced no longer stands there for a third.
@@ -415,6 +500,15 @@ invoke('GameServer/DataCache').init();
         const third = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
         assert.deepEqual(third.seen.standing, [`solo:${kept}`, 'solo:111'], 'the displaced arrival in flight is gone');
         await probe({ kind: 'flight', spotId: room.id, party: [[110], [111]], clear: true });
+        // Its next step a command instead: the command carries the grievance to main's commit
+        // (written there: test_cold_command_inner_admission); main refuses it, so the wake stays.
+        const commanded = await probe({ kind: 'command', id: gone, ok: false });
+        assert.deepEqual([commanded.sent, (commanded.posted || []).map(event => [event.sourceId, event.targetId, event.type]), !!commanded.wake],
+            [true, [[gone, 104, 'mob_contested']], true], 'the command hears the wake and carries the grievance');
+        const later = await probe({ kind: 'step', id: gone, ack: true });
+        assert.deepEqual([later.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), later.counted],
+            [[[gone, 104, 'mob_contested']], 1], 'the refused command\'s grievance rides the next step commit, counted once');
+        assert.deepEqual((await probe({ kind: 'step', id: gone })).memoryEvents, [], 'and only once');
 
         // One bot stands there and one is on its way: two hunters on two places is no contest.
         const free = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', remove: [gone], outcome: 'outmatched' });

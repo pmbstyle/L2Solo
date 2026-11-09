@@ -6190,6 +6190,13 @@ const Database = {
         return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
     },
 
+    // The memory events of a far bot's step main ran as a command (a displaced bot's
+    // grievance), checked and written as a step commit's are; an event its key already
+    // wrote (a retried step) is a duplicate. Returns the owner's snapshots.
+    commitColdInteractionMemory(request) {
+        return inTransaction(() => commitColdInteractionMemoryUnsafe(request) || [], 'social-memory:cold-command');
+    },
+
     loadInteractionMemories(ownerIds) {
         const ids = ownerIds.map(InteractionMemoryPolicy.id);
         if (ids.length > InteractionMemoryPolicy.MAX_BATCH) return Promise.reject(Error('interaction memory: invalid load batch'));

@@ -124,6 +124,7 @@ const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const SpotContest = require('./SpotContest');
 const SpotRecords = require('./SpotRecords');
+const RelationshipContext = require('../../Social/RelationshipContext');
 const EnemyMet = require('./EnemyMet');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
@@ -1492,6 +1493,12 @@ function arrivalEnemies({ arriving, spotId, step, at, proposalOf }) {
     const arrived = keys.has(stateKey(found.meeting.holder)) ? found.meeting.holder : found.meeting.peer;
     outbox?.add(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
 }
+// A spot contest's loser remembers the stronger unit (SpotContest.grievance), the event enriched
+// with its own state; it rides the loser's own step commit (counted spot:contest:grievance once
+// written: the kernel at the step's ok ack, main at a command step's write).
+function spotGrievance(state, by, step, at) {
+    return RelationshipContext.enrich(SpotContest.grievance({ victim: state.characterId, by, step, at }), state);
+}
 // The arriving unit's own outcome on its states (its step's patch): avoid (outmatched,
 // even, crowded) raises contest_lost with the spot as its mark (it wakes the earning spot
 // at once). stats: a copy the caller owns, written and returned.
@@ -1500,9 +1507,10 @@ function contestLost(verdict, stats, principal) {
 }
 
 // A solo trip ends on its spot: the arrival's contest, its outcome in the step's
-// patch (the arrival patch carries the whole stats copy, resolveTravel). A party trip
-// is checked once, at the party's arrival (partyArrival). Returns the patched result,
-// or null when the step is no such arrival or nothing changes.
+// patch (the arrival patch carries the whole stats copy, resolveTravel); one that shares
+// under a stronger unit (tolerated) carries its grievance (spotGrievance) for its commit. A
+// party trip is checked once, at the party's arrival (partyArrival). Returns the patched
+// result, or null when the step is no such arrival or nothing changes.
 function soloArrival(state, result, timestamp) {
     const travel = state?.activity === 'traveling' ? state.stats?.travel : null;
     if (!travel?.spotId || travel.reason === 'party_spot_replan' || result?.patch?.activity !== 'hunting'
@@ -1515,6 +1523,7 @@ function soloArrival(state, result, timestamp) {
     const proposalId = kernel.proposalIdOf(state.characterId);
     holdArrival(verdict, travel.spotId, timestamp, proposalId);
     if (verdict?.event) outbox?.add(state.characterId, proposalId, verdict.event);
+    if (verdict?.reason === 'tolerated') return { ...result, spotGrievance: spotGrievance(arrived, verdict.peer.id, SpotRiskPolicy.stepCount(state), timestamp) };
     if (verdict?.action !== 'avoid') return null;
     return { ...result, patch: { ...result.patch, stats: contestLost(verdict, { ...result.patch.stats }, arrived) } };
 }
@@ -1804,7 +1813,10 @@ function startKernel(config = {}) {
             // bot's outcome rides the patch (SpotContest; contest_lost raised there).
             const raidPreparing = require('./RaidSupplyPolicy').held(state, timestamp);
             const contested = !raidPreparing && soloArrival(state, result, timestamp);
+            const repatched = !!contested && contested.patch !== result.patch;
             if (contested) result = contested;
+            // The step's grievances (spotGrievance): a displacement heard (planLifecycle), a tolerated arrival.
+            const memoryEvents = [...(lifecyclePlan?.memoryEvents || []), ...(contested?.spotGrievance ? [contested.spotGrievance] : [])];
             // The step's one decision, taken before the round (planLifecycle):
             // the round's consequences run on it, no second ask. A step
             // without one (a party member, karma) decides after the round
@@ -1813,7 +1825,7 @@ function startKernel(config = {}) {
             const stepEconomy = lifecyclePlan?.economy || null;
             let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null;
             const base = roundProjection(state, timestamp, writtenAt, lifecyclePlan);
-            const resolved = ready && stepEconomy && !raidPreparing && !contested ? ready
+            const resolved = ready && stepEconomy && !raidPreparing && !repatched ? ready
                 : await LifeStateProjector.prepareResolve(state, result, raidPreparing
                 ? { ...base, statsPacket: {}, statsPacketBeforeResolve: true } : stepEconomy
                 // Merged before the event check, whose dirty bits follow it.
@@ -1902,6 +1914,7 @@ function startKernel(config = {}) {
                 state: committed,
                 // A member's kit event, read by its party step (worker-local).
                 kitMoved,
+                ...(memoryEvents.length ? { memoryEvents } : {}),
                 ...(economyPlan ? { economyPlan } : {}),
                 ...(market ? { market } : {}),
                 durable: Object.keys(durable).length ? durable : null,
@@ -1982,7 +1995,10 @@ function startKernel(config = {}) {
             // member's wait for its solo step.
             const stepWake = !state.party?.partyId && !state.partyId ? record?.stepWake || null : null;
             for (const [name, payload] of Object.entries(stepWake?.raises || {})) raise(name, payload);
-            const stepWakeSeq = stepWake ? { stepWakeSeq: stepWake.seq } : {};
+            // Displaced off its spot: it remembers who did it (spotGrievance; worker-local, projectResolve takes it).
+            const lost = stepWake?.raises?.contest_lost;
+            const stepWakeSeq = stepWake ? { stepWakeSeq: stepWake.seq, ...(lost?.reason === 'displaced' && lost.by
+                ? { memoryEvents: [spotGrievance(state, lost.by, SpotRiskPolicy.stepCount(state), timestamp)] } : {}) } : {};
             const leaf = card?.card?.activity;
             const outcome = card && solo ? Economy.leafOutcome(state, leaf, deps, leaf?.heldAtDecision) : '';
             // A town visit's stop ended with a stop after it in the held plan: the plan moves

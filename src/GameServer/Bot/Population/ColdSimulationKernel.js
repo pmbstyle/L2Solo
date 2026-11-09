@@ -475,7 +475,8 @@ function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
 
 // A lifecycle plan as main receives it: the step's economy object stays in
 // the worker (it carries functions and is never posted).
-// economy and route are worker-local (the request carries the route's spot).
+// economy and route are worker-local (the request carries the route's spot); the
+// plan's memoryEvents (a displaced bot's grievance) go: main's command commit writes them.
 function postedPlan(plan) {
     if (!plan?.economy && !plan?.route && !plan?.stepWakeSeq) return plan;
     const posted = { ...plan };
@@ -2388,6 +2389,8 @@ class ColdSimulationKernel {
                 && PartyMarketBreak.cleanupFree(PartyMarketBreak.withoutStartedTrip(active.state, projectedState)) ? cleanupDue : null;
             const priority = playerWaitingTransition(active.state, null, this) ? 'P0'
                 : projection?.durable ? 'P1' : priorityForResult(active.state, round.loot || round.result);
+            // The step's spot grievances (SpotContest) ride its own commit, the only memory events a solo step adds.
+            const grievances = projection?.memoryEvents || [];
             const proposal = {
                 proposalId: stepProposalId(characterId, active.startedAt),
                 characterId: Number(characterId),
@@ -2402,11 +2405,13 @@ class ColdSimulationKernel {
                 ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 ...(projection?.buffOffer ? { buffOffer: projection.buffOffer } : {}),
                 ...(cleanupNeed ? { cleanupNeed } : {}),
-                result: proposalResult({ ...round.result, ...round.posted }),
+                result: proposalResult({ ...round.result, ...round.posted, ...(grievances.length
+                    ? { memoryEvents: [...(round.result.memoryEvents || []), ...grievances] } : {}) }),
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
             active.stepWakeSeq = Number(lifecyclePlan?.stepWakeSeq) || 0;
+            active.grievances = grievances.length;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
@@ -2662,6 +2667,8 @@ class ColdSimulationKernel {
             if (result.ok) {
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
+                // Its grievances are written: counted once.
+                for (let i = 0; i < (active.grievances || 0); i++) (Situations ||= require('../Situations')).note('spot:contest:grievance');
             }
             // A committed step's start -> ack time sets the lead, excluding
             // main's wait for its future events: that wait is the lead's own

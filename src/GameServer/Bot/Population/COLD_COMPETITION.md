@@ -79,15 +79,30 @@ the spawn share, at least one place). Over room the arriving unit compares itsel
 each standing unit by what a player sees (`VisibleStrength`: weapon grade and glow, body
 armour grade, people with servitors; no level):
 
-1. a stranger that looks stronger stands there: the arriving unit leaves (`outmatched`);
-2. else it displaces the weakest strangers it looks stronger than, each by its
-   can-I-win roll, until the species is back to its room (at most eight units; standing
-   parties are not displaced): it stays when it displaced at least its own hunters or the
-   species is in room after, else it leaves (`outmatched`);
+1. a stranger that looks stronger stands there: the arriving unit answers the strongest
+   one: it leaves (`outmatched`), shares (`tolerated`) or disputes it (`pvp`);
+2. else it asks the weakest strangers it looks stronger than, each by its can-I-win roll,
+   to make room until the species is back to its room (at most eight units; standing
+   parties are not asked); each answers at the pressure then: it leaves (displaced),
+   shares (`spot:contest:tolerated_standing`) or disputes (one per arrival). The arrival
+   stays (`stronger`, or `pvp` with a dispute) when it displaced at least its own hunters,
+   the pressure after is within its own tolerance, or one stood its ground and the
+   pressure after is under twice the room; else it leaves (`outmatched`);
 3. else (an even look) a clanmate or friend there lets it share under twice the room
-   (`friendly_share`); a stranger may dispute the spot by PvP (`decide`'s contest with
-   PvP intent, PvP on); otherwise the first come holds it and the arriving unit leaves
-   (`even`, or `crowded` at twice the room).
+   (`friendly_share`); otherwise it answers the first met stranger: it shares (`shared`),
+   disputes (`pvp`) or leaves (`even`, or `crowded` at twice the room): the first come
+   holds it.
+
+The answer of the unit that does not hold the spot by look is its persona's
+(`ResourceCompetitionPolicy.decide` with it as the actor): avoid is leaving; a party
+offer (no party forms at the spot), a yield or a contest without PvP is sharing while the
+pressure is within its tolerance (`ResourceCompetitionPolicy.tolerance`: 1 to 1.3 times
+the room, by sociability, empathy and the lack of ambition), else leaving
+(`spot:contest:past_tolerance`); a contest with PvP intent, PvP on, is a dispute main
+carries out, the disputing unit its actor. A sharer takes the crowd's equal share; the
+stay judge (`spot_disappoints`) sends it away when that earns too far below its
+expectation. C4 has no bot rule here: a polite weaker player moves on, a stubborn one
+stays for the leftovers or fights (KS etiquette, karma); the numbers are our choice.
 
 Relationships are read for at most four met units and eight displacement candidates; an
 unread unit counts as a stranger, so a capped read only makes the arrival leave. A unit
@@ -103,8 +118,14 @@ party's leave is a mark on the party (`PartySpotRiskPolicy.withMark`): its next 
 hears `contest_lost` on its held spot and its spot decision (`party_spot`) moves it. A
 displaced bot hears `contest_lost` (reason `displaced`) at its next step once the
 arriving commit is acked (the kernel's step wake: no commit of its own, it finishes the
-window its step already credited); a near arrival displaces at once. No grievance is
-written for a displacement.
+window its step already credited); a near arrival displaces at once. The unit that lost
+remembers the stronger one (`mob_contested`, `SpotContest.grievance`, counted
+`spot:contest:grievance` once its commit lands), written by its own commit: a displaced
+far bot at that next step (a command step carries it to main, which writes it once the
+command's writes landed, `ColdSimulationOwner.commitMemory`), a far solo arrival that
+shares under a stronger stranger (`tolerated`) at its arrival step. The event carries the step's time; main's commit queue
+writes it once that time has come. Parties and standing units that chose to share write none; bodies near a
+player write theirs per mob (`BotMobCompetition`).
 
 The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
 room it is held (the holder's best look and largest unit), until an arrival finds it at
@@ -133,7 +154,8 @@ situations= line), never re-fenced. A displaced bot standing there on a player's
 loses the command at its next step (`command:displaced`) and its player is told who pushed
 it out (`spot_command` `command_lost`, main's `command_lost:told/offline`; an offline player
 is told nothing). Counters: `spot:arrival:checked/over`,
-`spot:contest:outmatched/even/crowded/stronger/friendly_share/pvp`,
+`spot:contest:outmatched/even/crowded/stronger/friendly_share/tolerated/shared/pvp`,
+`spot:contest:tolerated_standing/past_tolerance/grievance`,
 `spot:contest:displaced/displaced_left`,
 `spot:contest:capped/memory/commanded/evacuation/hot_peer/pvp_hot_skipped` (a near
 arrival's PvP verdict runs no dispute: its body's own tactics),
