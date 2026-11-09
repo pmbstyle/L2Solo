@@ -246,6 +246,64 @@ async function run() {
     assert.deepStrictEqual(activated, ['A1', 'Row306']);
     Parties.find = originalFindParty;
 
+    // A crowd around a player fills in one go: a scan its budget cut goes on at the next
+    // turn while main keeps up, 6 bodies a batch, until every near row is shown; with main
+    // lagging only the first batch is shown and the rest waits for the interval scan. A
+    // player's teleport or login asks a scan at once, never two at a time.
+    const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+    const realLag = Metrics.currentEventLoopLag;
+    const realTimer = PopulationService.phasePolicyTimer;
+    let lag = 0;
+    Metrics.currentEventLoopLag = () => lag;
+    PopulationService.phasePolicyTimer = { scanning: true };
+    publishSessions([session('player_crowd', actor(12, 0))]);
+    BotManager.sessions = [];
+    Config.maxActivationsPerScan = 6;
+    let crowd = [];
+    LifeState.coldNear = async () => crowd.filter(state => !state.hot);
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    PopulationService.requestActivation = async state => {
+        concurrent++;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise(setImmediate);
+        concurrent--;
+        state.hot = true;
+        return { ok: true, state };
+    };
+    const shown = () => crowd.filter(state => state.hot).length;
+    const settled = async () => {
+        for (let turn = 0; turn < 200 && (PopulationService.phasePolicyRunning || PopulationService.phasePolicyNext); turn++) {
+            await new Promise(setImmediate);
+        }
+    };
+    const newCrowd = (base) => Array.from({ length: 20 }, (_, i) => ({ characterId: base + i, name: `Crowd${base + i}`,
+        level: 20, activity: 'hunting' }));
+    try {
+        crowd = newCrowd(700);
+        await PopulationService.tickPhasePolicy();
+        assert.strictEqual(shown(), 6, 'one batch a turn');
+        await settled();
+        assert.strictEqual(shown(), 20, 'the rest of the crowd is shown in the next turns, not at the next interval scan');
+
+        crowd = newCrowd(800);
+        lag = 50;
+        await PopulationService.tickPhasePolicy();
+        await settled();
+        assert.strictEqual(shown(), 6, 'a lagging main leaves the rest to the interval scan');
+
+        lag = 0;
+        crowd = newCrowd(900);
+        PopulationService.requestPhaseScan();
+        PopulationService.requestPhaseScan();
+        await settled();
+        assert.strictEqual(shown(), 20, 'a teleport or login shows the crowd without waiting for the interval');
+        assert.strictEqual(maxConcurrent, 1, 'requested scans never overlap');
+    } finally {
+        Metrics.currentEventLoopLag = realLag;
+        PopulationService.phasePolicyTimer = realTimer;
+    }
+
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
     PopulationService.resolving = false;

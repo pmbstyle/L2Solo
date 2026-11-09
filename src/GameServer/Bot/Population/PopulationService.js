@@ -108,27 +108,6 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
         step, partyId, reason, detail ? ` detail=${detail}` : '');
 }
 
-// A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
-// endpoint of its run, never on the straight line between them (a walker on its
-// road is open work): at the spot edge it runs to when that is within the
-// activation radius of the player, else at the teleport point it ran from when
-// that is; the author's hot movement takes over from there. Either way the trip
-// is done (resolveTravel's arrival: activity, spot, region);
-// at the teleport point only its place differs, where the bot hunts or walks on
-// as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
-// run longer than twice the radius, a player by its middle), it stays cold.
-function walkerAppearance(state, playerLoc) {
-    const travel = state?.stats?.travel;
-    const run = travel?.run;
-    if (state?.activity !== 'traveling' || !run) return null;
-    const inReach = (loc) => !!loc && !!playerLoc && Math.hypot(Number(loc.locX) - Number(playerLoc.locX),
-        Number(loc.locY) - Number(playerLoc.locY)) <= Config.activationRadius;
-    const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
-    const shown = { ...state, ...arrival.patch };
-    if (inReach(shown.loc)) return shown;
-    return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
-}
-
 // The spot of a commanded bot, from its request's route: the trip the
 // worker's plan started (BotRoute), or the ground the worker fought on when
 // the bot needed no trip.
@@ -886,6 +865,12 @@ const PopulationService = {
     // cleared by the apply of the finished re-plan.
     partyRequirementRefreshDue: new Set(),
     phasePolicyTimer: null,
+    // A scan asked while one runs (requestPhaseScan): it runs again when that one ends.
+    phasePolicyRerun: false,
+    // The scan asked for the next turn (requestPhaseScan), until it starts.
+    phasePolicyNext: null,
+    // The last activation scan left near rows cold for its budget (activateNearPlayers).
+    activationRowsLeft: false,
     seedTimer: null,
     classProgressionMigrationTimer: null,
     nextStateRetentionAt: 0,
@@ -1056,6 +1041,11 @@ const PopulationService = {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
         }
+        if (this.phasePolicyNext) {
+            clearImmediate(this.phasePolicyNext);
+            this.phasePolicyNext = null;
+        }
+        this.phasePolicyRerun = false;
         if (this.seedTimer) {
             clearTimeout(this.seedTimer);
             this.seedTimer = null;
@@ -1208,11 +1198,39 @@ const PopulationService = {
             .then((activated) => this.cooldownEligibleHot().then((cooled) => ({ activated, cooled })))
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'phase policy failed: %s', err.message);
+                // A failed scan is not continued: the interval scan retries it.
+                this.activationRowsLeft = false;
                 return { activated: [], cooled: [] };
             })
             .finally(() => {
                 this.phasePolicyRunning = false;
+                const rerun = this.phasePolicyRerun;
+                this.phasePolicyRerun = false;
+                // The rest of a scan its budget cut runs on the next turn while main keeps
+                // up (lag under schedulerLagThrottleMs): a crowd fills in seconds, one batch
+                // a turn, so the per-turn stall is a batch's as before. A lagging main
+                // leaves it to the interval scan.
+                if (rerun || (this.activationRowsLeft
+                    && Number(Metrics.currentEventLoopLag()) < Number(Config.schedulerLagThrottleMs || 40))) {
+                    this.requestPhaseScan();
+                }
             });
+    },
+
+    // A scan now, not at the next interval: a real player's teleport or login (the
+    // crowd where the client loads is shown while it loads) or the rest of a scan its
+    // budget cut. Coalesced: one asked while one runs runs once after it.
+    requestPhaseScan() {
+        if (!this.phasePolicyTimer) return;
+        if (this.phasePolicyRunning) {
+            this.phasePolicyRerun = true;
+            return;
+        }
+        if (this.phasePolicyNext) return;
+        this.phasePolicyNext = setImmediate(() => {
+            this.phasePolicyNext = null;
+            this.tickPhasePolicy();
+        });
     },
 
     realPlayerSessions() {
@@ -1703,10 +1721,10 @@ const PopulationService = {
     },
 
     activateNearPlayers() {
+        this.activationRowsLeft = false;
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
 
-        const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         const ambientActivated = [];
         let chain = Promise.resolve();
@@ -1786,7 +1804,10 @@ const PopulationService = {
                                 activated.push(result);
                                 if (!craft) ambientActivated.push(...Array(result.count || 1).fill(result));
                             }
-                            if (cut) Metrics.recordActivationRefusal('activation_budget');
+                            if (cut) {
+                                Metrics.recordActivationRefusal('activation_budget');
+                                this.activationRowsLeft = true;
+                            }
                         };
                         return tryRows().then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });
@@ -1796,15 +1817,16 @@ const PopulationService = {
         return chain.then(() => activated);
     },
 
-    // Walkers near a player appear within the same activation budget
-    // (walkerAppearance). Only the small walker list is read.
+    // Walkers near a player appear on their road within the same activation budget
+    // (HotActivation). Only the small walker list is read.
     showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now()) {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
-            if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            // HotActivation leaves the trip at walkerAppearance's endpoint in reach of this
-            // player, read after its fence; with neither in reach the walker stays cold.
-            return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true, playerLoc: loc })
+            if (ambientActivated.length >= Config.maxActivationsPerScan) {
+                this.activationRowsLeft = true;
+                return null;
+            }
+            return this.requestActivation(state, 'near_player', { readyOnActivation: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
                     activated.push(result);
@@ -3247,7 +3269,6 @@ const PopulationService = {
 };
 
 PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPointForState(state, spot);
-PopulationService.walkerAppearance = walkerAppearance;
 PopulationService.marketListingIntent = marketListingIntent;
 PopulationService.openMarketListing = openMarketListing;
 PopulationService.partyLimitsForObjective = partyLimitsForObjective;

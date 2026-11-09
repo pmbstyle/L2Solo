@@ -1,6 +1,31 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const PartyHuntingTarget = invoke('GameServer/Bot/Population/PartyHuntingTarget');
+
+// A walker shown on its road (HotActivation) stands within ROAD_RADIUS of its road
+// point; a point off the ground is stepped back toward the run's start in at most
+// ROAD_STEPS equal steps, the last one the start itself (a teleport point or where it
+// set out). Our choice: the run is a straight line until roads exist.
+const ROAD_RADIUS = 300;
+const ROAD_STEPS = 12;
+// A hunter shown on its held spot stands by the mobs it hunts, as a C4 player stands
+// by the mobs he farms: MOB_NEAR..MOB_FAR from a live mob of the species its unit
+// competes for, in sight of it, inside its spot, never within BODY_GAP of another
+// body. The mobs: of that species within MOB_SCAN of its cold place and MOB_FLOOR of
+// its floor, the MOB_ANCHORS nearest; with none placed, within HUNTER_RADIUS of its cold
+// place. Any other bot (in town, a raid, off its spot) is placed within the wider
+// activationPlacementRadius, which leaves room past activationMinPlayerDistance from a
+// player standing on its anchor. Our choice. Temporary: until the territory rework
+// places the cold place and the body by territory.
+const MOB_NEAR = 150;
+const MOB_FAR = 400;
+const BODY_GAP = 100;
+const MOB_SCAN = 6000;
+const MOB_FLOOR = 500;
+const MOB_ANCHORS = 4;
+const HUNTER_RADIUS = 600;
 
 function finiteLocation(loc) {
     return !!loc && ['locX', 'locY', 'locZ'].every((key) =>
@@ -48,6 +73,58 @@ function raidSurface(loc) {
     return surface({ ...loc, locZ: z });
 }
 
+function grounded(locX, locY, locZ) {
+    locX = Math.round(locX);
+    locY = Math.round(locY);
+    return surface({ locX, locY, locZ: Geo.getHeight(locX, locY, Number(locZ)) });
+}
+
+// The walkable ground of a walker's road point (ColdTrip.positionAt, a straight-line
+// estimate that can sit in rock or water): the point itself, else the first step
+// back toward `from` that stands on ground. A step back is counted (walkerRoadStepBacks).
+function roadAnchor(loc, from) {
+    if (!finiteLocation(loc)) return null;
+    const own = grounded(Number(loc.locX), Number(loc.locY), loc.locZ);
+    if (own || !finiteLocation(from)) return own;
+    for (let i = 1; i <= ROAD_STEPS; i++) {
+        const t = i / ROAD_STEPS;
+        const point = grounded(Number(loc.locX) + (Number(from.locX) - Number(loc.locX)) * t,
+            Number(loc.locY) + (Number(from.locY) - Number(loc.locY)) * t,
+            Number(loc.locZ) + (Number(from.locZ) - Number(loc.locZ)) * t);
+        if (point) {
+            Metrics.recordWalkerRoadStepBack();
+            return point;
+        }
+    }
+    return null;
+}
+
+// A bot on its held grid spot; not one off it (in town, on a road).
+function onHeldSpot(state, spot) {
+    return !!spot && spot.raidBoss !== true && Array.isArray(spot.npcEntries)
+        && SpotService.containsLocation(spot, state.loc);
+}
+
+// The live mobs a hunter on its held grid spot is shown by: of the species its unit
+// competes for (PartyHuntingTarget.competitionNpcId, the one the background thread
+// contests on), inside the spot.
+function huntedMobs(state, spot) {
+    const npcId = PartyHuntingTarget.competitionNpcId(null, state, spot);
+    if (!npcId) return [];
+    const from = { locX: Number(state.loc.locX), locY: Number(state.loc.locY), locZ: Number(state.loc.locZ) };
+    const mobs = [];
+    for (const npc of invoke('GameServer/World/World').fetchNpcsInRadius(from.locX, from.locY, MOB_SCAN)) {
+        if (Number(npc.fetchSelfId?.()) !== npcId || npc.isDead?.()) continue;
+        const loc = { locX: npc.fetchLocX(), locY: npc.fetchLocY(), locZ: npc.fetchLocZ() };
+        if (Math.abs(loc.locZ - from.locZ) <= MOB_FLOOR && SpotService.containsLocation(spot, loc)) mobs.push(loc);
+    }
+    return mobs.sort((a, b) => distance(a, from) - distance(b, from)).slice(0, MOB_ANCHORS);
+}
+
+function crowded(loc) {
+    return invoke('GameServer/World/World').actorSessionsNear(loc, BODY_GAP).length > 0;
+}
+
 function resolve(state, options = {}) {
     const fixed = options.keepStoreLocation === true;
     const summoned = options.forceNearPlayer === true && !fixed;
@@ -57,7 +134,8 @@ function resolve(state, options = {}) {
     const source = fixed ? (options.storeLoc || state?.loc)
         : options.forceNearPlayer ? options.playerLoc
             : state?.loc || savedSpot?.center;
-    let anchor = surface(source);
+    const road = !fixed && !summoned && !!options.roadFrom;
+    let anchor = road ? roadAnchor(source, options.roadFrom) : surface(source);
     const raid = !fixed && !summoned && savedSpot?.raidBoss === true;
     // A height-valid arrival can still be against a cliff or separated from
     // the boss by a wall. Recover before sampling around that unusable anchor,
@@ -79,18 +157,34 @@ function resolve(state, options = {}) {
             }
         }
     }
-    if (!anchor) return null;
     const player = options.playerLoc;
     if (player && !finiteLocation(player)) return null;
-    const acceptable = (point) => {
+    const acceptable = (point, from = anchor) => {
         if (player) {
             const dist = distance(point, player);
             if (dist < (summoned ? 0 : Config.activationMinPlayerDistance) || dist > Config.activationRadius) return null;
         }
         const loc = clearSurface(point);
-        if (!loc || (raid && !SpotService.containsLocation(savedSpot, loc)) || !connected(anchor, loc)) return null;
+        if (!loc || (raid && !SpotService.containsLocation(savedSpot, loc)) || !connected(from, loc)) return null;
         return { loc, spot: SpotService.findCurrentSpot(loc) || null };
     };
+    // A solo hunter on its held spot (not a party rally, a raid, a store, a walker or a
+    // summoned bot): by a mob it hunts; else around its cold place below.
+    const hunter = !fixed && !summoned && !raid && !road && options.preferAnchor !== true && onHeldSpot(state, savedSpot);
+    const mobs = hunter ? huntedMobs(state, savedSpot) : [];
+    for (let i = 0; mobs.length && i < Config.activationPlacementAttempts; i++) {
+        const mob = grounded(mobs[i % mobs.length].locX, mobs[i % mobs.length].locY, mobs[i % mobs.length].locZ);
+        if (!mob) continue;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = MOB_NEAR + Math.random() * (MOB_FAR - MOB_NEAR);
+        const locX = Math.round(mob.locX + Math.cos(angle) * radius);
+        const locY = Math.round(mob.locY + Math.sin(angle) * radius);
+        const placement = acceptable({ locX, locY, locZ: Geo.getHeight(locX, locY, mob.locZ) }, mob);
+        if (placement && SpotService.containsLocation(savedSpot, placement.loc) && !crowded(placement.loc)) {
+            return { loc: placement.loc, spot: savedSpot };
+        }
+    }
+    if (!anchor) return null;
     if (fixed) {
         const loc = clearSurface(anchor);
         return loc ? { loc, spot: SpotService.findCurrentSpot(loc) || null } : null;
@@ -110,7 +204,8 @@ function resolve(state, options = {}) {
         const placement = acceptable(anchor);
         if (placement) return placement;
     }
-    const placementRadius = Math.max(0, Number(options.placementRadius ?? Config.activationPlacementRadius) || 0);
+    const placementRadius = Math.max(0, Number(options.placementRadius
+        ?? (road ? ROAD_RADIUS : hunter ? HUNTER_RADIUS : Config.activationPlacementRadius)) || 0);
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {
         const angle = Math.random() * Math.PI * 2;
         const radius = Math.random() * placementRadius;
