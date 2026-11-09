@@ -248,7 +248,8 @@ function bestUpgradeSlot(actor, item, plannedScores) {
     if (itemScore <= 0) return null;
 
     return candidateSlots(item).reduce((best, slot) => {
-        const currentScore = plannedScores.get(slot) ?? currentScoreForSlot(actor, slot);
+        const currentScore = plannedScores.get(BotEquipmentCompatibility.equipmentSlotKey(slot))
+            ?? currentScoreForSlot(actor, slot);
         if (itemScore <= currentScore) return best;
         if (!best) return { slot, currentScore };
         return currentScore < best.currentScore ? { slot, currentScore } : best;
@@ -269,6 +270,9 @@ function findBestUpgrades(session) {
     const items = (actor?.backpack?.fetchItems ? actor.backpack.fetchItems() : []).filter(item => !isReservedExchangeMaterial(session, item));
     const suitableItems = items.filter((item) => isSuitableItem(actor, item));
     const torsoUpgrades = findTorsoUpgrades(actor, suitableItems);
+    // Keyed by paperdoll group (equipmentSlotKey): one- and two-handed weapons
+    // compete for the same hands, so a weapon is an upgrade only over the best
+    // weapon already planned or worn.
     const plannedScores = new Map();
     const usedIds = new Set();
 
@@ -283,7 +287,7 @@ function findBestUpgrades(session) {
 
             const itemScore = scoreItem(actor, item);
             usedIds.add(item.fetchId());
-            plannedScores.set(slot, itemScore);
+            plannedScores.set(BotEquipmentCompatibility.equipmentSlotKey(slot), itemScore);
 
             upgrades.push({ item, slot, score: itemScore });
             return upgrades;
@@ -301,7 +305,14 @@ function findBestUpgrades(session) {
         )), BotRoles.inferRole(actor), actor.fetchClassId());
         if (pick) otherUpgrades.push({ item: pick.item, slot: Number(pick.item.fetchSlot()), score: scoreItem(actor, pick.item), stopgap: true });
     }
-    const ordinary = [...torsoUpgrades, ...otherUpgrades];
+    // C4 paperdoll: a two-handed weapon holds both hands, so no shield beside it.
+    // The weapon is chosen first by score and the shield follows it (our choice,
+    // as the cold equip and the gear plan do).
+    const weaponSlot = otherUpgrades.find(({ slot }) => BotEquipmentCompatibility.isWeaponSlot(slot))?.slot
+        ?? actor.backpack.fetchEquippedWeapon?.()?.fetchSlot();
+    const handUpgrades = otherUpgrades.filter(({ slot }) => slot !== ARMOR_SLOTS.shield
+        || !BotEquipmentCompatibility.equipmentReplacementConflict(weaponSlot, ARMOR_SLOTS.shield));
+    const ordinary = [...torsoUpgrades, ...handUpgrades];
     const availableArmor = items.filter(item => isSuitableItem(actor,item,true) && ArmorPolicy.ARMOR_SLOTS.has(Number(item.fetchSlot())));
     const currentArmor = availableArmor.filter(item => item.fetchEquipped());
     const proposed = new Map(currentArmor.map(item => [Number(item.fetchSlot()),item]));
