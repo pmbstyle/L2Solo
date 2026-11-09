@@ -123,6 +123,7 @@ const EconomicTrip = require('../Economy/EconomicTrip');
 const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const SpotContest = require('./SpotContest');
+const SpotRecords = require('./SpotRecords');
 const EnemyMet = require('./EnemyMet');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
@@ -983,7 +984,9 @@ function nearEvents(id, previous, entry, applied) {
     // done here, or the bot would carry it out again once far.
     const held = stats.rebuff;
     if (posted?.done && held && !held.done && posted.at === held.at && posted.via === held.via) stats.rebuff = Rebuff.done(held);
-    // Main detected the body's own facts and named them in the bag.
+    // Main detected the body's own facts and named them in the bag; a town arrival there
+    // hears the spots' holds (SpotRecords.heard).
+    if (row.raise?.names?.some(entry => Number(entry.seq || 0) > applied && /^arrived_town/.test(entry.name))) SpotRecords.heard(id);
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
 }
 // A near bot's spot post (SpotService.assignSpot's near_spot, leaveSpot's near_left; main
@@ -1423,6 +1426,9 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
     const verdict = SpotContest.contest({ spot, npcId, arriving, standing: standing.units, untargeted: standing.untargeted, at, step,
         memory: kernel.interactionMemory, personaFor: state => BotPersona.of(state), ownSide: ColdPvpResolver.ownSide,
         capacityForSpot: LevelingRoutes.capacityForSpot, pvp: Config.coldCompetitionPvp === true });
+    // The spot's reputation: who holds it, from the units this arrival met (and itself when it stays).
+    const met = standing.units.filter(unit => Number(unit.npcId) === Number(npcId));
+    SpotRecords.note(spot.id, verdict.pressure, verdict.action === 'stay' ? [...met, arriving] : met);
     return { ...verdict, unit: arriving };
 }
 // A displaced bot (SpotContest): contest_lost on the spot at its next step (the kernel's step
@@ -1786,6 +1792,8 @@ function startKernel(config = {}) {
             const raidPreparing = require('./RaidSupplyPolicy').held(state, timestamp);
             const contested = !raidPreparing && soloArrival(state, result, timestamp);
             if (contested) result = contested;
+            // A town arrival hears the spots' holds (SpotRecords.heard).
+            if (result?.events?.some(event => event.type === 'arrived_town')) SpotRecords.heard(state.characterId);
             // The step's one decision, taken before the round (planLifecycle):
             // the round's consequences run on it, no second ask. A step
             // without one (a party member, karma) decides after the round

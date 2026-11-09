@@ -37,6 +37,8 @@ const BotCrystallization = invoke('GameServer/Bot/Economy/BotCrystallization');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
+const SpotRecords = require('./SpotRecords');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PartyHuntingAssembly = require('./PartyHuntingAssembly');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const CraftMaterialPartyRoute = require('./CraftMaterialPartyRoute');
@@ -85,7 +87,8 @@ function groundOf(state, currentSpot) {
 // unsafe-ground verdict. One frame serves one trip start (leafChoice or
 // choose, then record): the caller builds it once and passes it to each.
 // No search reads the crowd: a spot is chosen by fit and met at arrival
-// (SpotContest).
+// (SpotContest); a solo bot's search skips a camp known held against it
+// (repelled: SpotRecords.reader, a hold it heard of in town).
 function frameFor(state, party, partyMembers = [], timestamp) {
     const partyRoute = !!party;
     const routedMembers = partyRoute ? partyMembers : [state];
@@ -93,7 +96,7 @@ function frameFor(state, party, partyMembers = [], timestamp) {
         : SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
     const role = partyRoute ? PartyComposition.roleForState(state) : null;
     const options = { capacityStates: routedMembers, excludedSpotIds, timestamp,
-        ...(partyRoute ? { mode: 'party', role } : {}) };
+        ...(partyRoute ? { mode: 'party', role } : { repelled: SpotRecords.reader(state, BotPersona.of(state)) }) };
     let soloProfiles = null;
     const solo = () => {
         soloProfiles = soloProfiles || BotTargetMatchup.stateProfiles(state, { ...options, mode: 'solo' });
@@ -427,9 +430,13 @@ function planSource(state, spots, frame) {
     const timestamp = frame.options.timestamp, solo = frame.solo();
     const route = GearAcquisitionPlanner.sourceRouteReader(state, { timestamp, spots, matchupProfiles: solo.matchupProfiles });
     let ready = null;
+    // A camp heard held against the bot (repelled, SpotRecords) is no source it takes: asked as
+    // the route's verdict, counted spot:repelled as SpotSearch.rank's filter counts it.
+    const repelled = frame.options.repelled;
     const allowed = source => {
         const spot = SpotIndex.spotById(spots, source.spotId);
         if (!spot) return false;
+        if (repelled?.(spot.id)) { Situations.note('spot:repelled'); return false; }
         return spot.raidBoss === true ? (ready ||= LevelingRoutes.readySpotReaderFor(state, solo))(spot) : route(spot, source.npcId);
     };
     // The pick is the route's answer: its habit counted (countHabit).

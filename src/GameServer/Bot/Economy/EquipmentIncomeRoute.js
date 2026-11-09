@@ -196,7 +196,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // route carries its solo profiles: the same build's source route reader
     // (GearAcquisitionPlanner.sourceRouteReader) reads the same ones.
     // The crowd is no input: a C4 player picks a camp by what he knows of it and
-    // meets the crowd on arrival (SpotContest turns it away from one found crowded).
+    // meets the crowd on arrival (SpotContest); what he knows includes a camp known
+    // held against him, heard in town (SpotRecords: repelled).
     const allowed = Routes.spotAllowedReaderFor(state, options);
     // Each spot's verdict, asked once (the two charge policies share it).
     const verdicts = new Map();
@@ -207,7 +208,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     };
     const { pick, ranked } = Search.rank(state, { candidates: [true, false].flatMap(candidates), fits, value,
         tie: (a, b) => Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1) || String(a.spot.id).localeCompare(String(b.spot.id)) },
-    { excluded, allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
+    { excluded, repelled: invoke('GameServer/Bot/Population/SpotRecords').reader(state, invoke('GameServer/Bot/AI/BotPersona').of(state)),
+        allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
     if (pick) {
         pick.matchupProfiles = options.matchupProfiles;
         // The bot's hour (hourAdena, the unit of every value) stays what it could

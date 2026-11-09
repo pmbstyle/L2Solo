@@ -2,8 +2,8 @@
 // A solo bot's spot choice (EquipmentIncomeRoute.search, T156): it weighs what
 // a spot gives in exp and in money by its own money price, in an hour that does
 // not depend on the spot it stands on, keeps its best income as its hour, prices
-// a far spot by the trip it makes (not a run across the world), and takes its
-// next best when other bots fill the best one.
+// a far spot by the trip it makes (not a run across the world), does not read the
+// crowd, and takes its next best when it has heard in town that the best is held against it.
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -96,4 +96,46 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
     } finally { Spots.useOccupancy(null); }
 }
 
-console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, no crowd');
+// A camp held (SpotRecords: five arrivals over its room) is known to a bot by hearsay at its
+// town arrival: before it hears, it still goes there (to meet the holder at its arrival); once
+// heard, a bot that looks weaker than the holder, or even and more cautious than assertive,
+// takes its next best, an assertive even bot still goes; an arrival that finds it at 0.7 of
+// its room clears it at once, with no town visit; the bot standing on it keeps it; four
+// arrivals hold nothing.
+{
+    const Records = invoke('GameServer/Bot/Population/SpotRecords');
+    const Situations = invoke('GameServer/Bot/Situations');
+    const spots = [at('home', -80000), at('next', -79000), at('best', -78000)];
+    const samples = [['home', 0.5, 0.15], ['next', 0.75, 0.225], ['best', 1, 0.3]];
+    const persona = traits => ({ traits, understanding: 1 });
+    const cautious = { ...hunter(990305, spots, samples, [36000, 1 / 36000, 0, 0]), persona: persona({ caution: 0.8, assertiveness: 0.2 }) };
+    const assertive = { ...cautious, characterId: 990306, persona: persona({ caution: 0.1, assertiveness: 0.9 }) };
+    const holder = grade => ({ members: [{ characterId: 990500, inventory: grade ? { 1: { rank: grade, equippedSlots: [7] }, 2: { rank: grade, equippedSlots: [10] } }
+        : cautious.inventory }] });
+    const hold = (grade, arrivals = Records.HELD) => { for (let n = 0; n < arrivals; n++) Records.note('best', 1.5, [holder(grade)]); };
+    const town = (...bots) => bots.forEach(bot => Records.heard(bot.characterId));
+    try {
+        Records.clear();
+        town(cautious);
+        hold('c');
+        assert.equal(chosen(cautious, spots), 'best', 'held since its last town visit: it has not heard, it goes there');
+        town(cautious);
+        const repelled = Situations.counts().raised['spot:repelled'] || 0;
+        assert.equal(chosen(cautious, spots), 'next', 'heard in town: held by a C-grade holder, the weaker bot takes its next best');
+        assert(Situations.counts().raised['spot:repelled'] > repelled, 'counted');
+        town(assertive);
+        assert.equal(chosen(assertive, spots), 'next', 'a weaker look is turned away whatever the persona');
+        assert.equal(chosen({ ...cautious, spotId: 'best', loc: spots[2].center }, spots), 'best', 'the bot standing on it keeps it');
+        Records.note('best', 0.7, [holder('c')]);
+        assert.equal(chosen(cautious, spots), 'best', 'an arrival finding it at 0.7 of its room clears it, known at once');
+        Records.clear();
+        hold(null); town(cautious, assertive);
+        assert.equal(chosen(cautious, spots), 'next', 'held by an even look: the cautious bot keeps away');
+        assert.equal(chosen(assertive, spots), 'best', 'the assertive one goes');
+        Records.clear();
+        hold('c', Records.HELD - 1); town(cautious);
+        assert.equal(chosen(cautious, spots), 'best', 'four contested arrivals hold nothing');
+    } finally { Records.clear(); }
+}
+
+console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, no crowd, held camps');

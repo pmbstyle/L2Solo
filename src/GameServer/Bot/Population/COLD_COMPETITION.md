@@ -106,6 +106,13 @@ arriving commit is acked (the kernel's step wake: no commit of its own, it finis
 window its step already credited); a near arrival displaces at once. No grievance is
 written for a displacement.
 
+The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
+room it is held (the holder's best look and largest unit), until an arrival finds it at
+0.8 of its room or less. A bot hears of a hold at its town arrival; once heard, its solo
+spot search skips the camp when it looks weaker than the holder, has fewer people, or
+looks even and is more cautious than assertive (`spot:repelled`). A clearing is known at
+once; the bot's own sight is its outing mark.
+
 `EnemyMet` (pure, both threads) meets the arriving bots with the standing ones, both
 ways, where the holder remembers the peer or their clans are in a mutual war; the shared
 `RevengePolicy` decides (karma-aware: a red bot starts no fight outside a war, a red
