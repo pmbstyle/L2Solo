@@ -3,6 +3,9 @@ const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+// lazy: BotRoute loads the route's population modules, which load this one.
+let route = null;
+const Route = () => (route ||= invoke('GameServer/Bot/Population/BotRoute'));
 
 const EMPTY_HUNT_SCANS = 3;
 
@@ -154,14 +157,20 @@ const BotDecisionService = {
             const stats = DecisionEvents.statsFor(session);
             // A player's command waits for its answer: the card still names the spot it replaced.
             if (DecisionEvents.commandPending(session)) return { action: 'search_locally', reason: 'awaiting_command_answer' };
-            if (leaf?.activity && leaf.activity !== 'hunting') {
+            const loc = physicalLocation(status, session);
+            const physical = SpotService.findCurrentSpot(loc);
+            // An errand holds the body only on its ground (BotRoute.occupationHolds, the cold
+            // trip's rule); with none under it (a town after a visit) it goes hunting as a
+            // finished visit does (completedVisit below), the errand kept for the field.
+            const occupied = !!leaf?.activity && leaf.activity !== 'hunting';
+            if (Route().occupationHolds(leaf, physical)) {
                 // A deferred errand keeps its wish, but cannot pin a hunter
                 // forever to ground that admits none of its fights: the same
                 // look as a hunt's (groundLook: spot_empty once a stay, or it
                 // gets ready), and once the ground is empty for it, it walks to
                 // the spot it goes to when sent to hunt when that is another spot.
                 if (session.deferredOccupation === occupationKey(leaf) && session.huntingTargetScan) {
-                    const ground = SpotService.findCurrentSpot(physicalLocation(status, session));
+                    const ground = physical;
                     const look = groundLook(session, ground);
                     if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
                     if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
@@ -174,13 +183,11 @@ const BotDecisionService = {
                 }
                 return { action: 'continue_occupation', reason: 'selected_occupation', activity: leaf.activity };
             }
-            const loc = physicalLocation(status, session);
-            const physical = SpotService.findCurrentSpot(loc);
             const plannedOn = spotId => DecisionSections.occupationPlanned({ activity: 'hunting', spotId, stats }, leaf);
             // An accepted empty decision is different from awaiting the first
             // worker answer. Once a town visit has ended, the bot returns to the
             // spot it goes to when sent to hunt; an empty target scan in the field stays local.
-            const completedVisit = !leaf && economy?.decided === true
+            const completedVisit = occupied || !leaf && economy?.decided === true
                 && (session.pendingFarmDepartureAnnouncement || TownTransitPolicy.townAt(loc));
             const hunt = leaf?.activity === 'hunting';
             // Where it hunts is the worker's one choice (its leaf's spot when it may hunt
@@ -210,7 +217,9 @@ const BotDecisionService = {
                 return { action: 'search_locally', reason: economy?.decided === false
                     ? 'awaiting_occupation_decision' : 'selected_hunting_ground' };
             }
-            return { action: 'move_to_spot', reason: completedVisit ? 'return_to_hunting' : 'selected_hunting_ground', spot };
+            return { action: 'move_to_spot', reason: completedVisit ? 'return_to_hunting' : 'selected_hunting_ground', spot,
+                // The errand's key keeps the walk (HuntingState defers an errand off ground).
+                ...(occupied ? { deferredOccupation: occupationKey(leaf) } : {}) };
         }
 
         return {

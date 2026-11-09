@@ -624,6 +624,10 @@ async function reconcileSellShop(state, goal) {
 const PLAN_BID_REFUSALS = new Set(['economy_plan_bid_unfunded', 'economy_plan_need_changed', 'afk_trade_shop_changed',
     'board_cap_reached', 'not_enough_adena']);
 const planBidRefused = {};
+// A plan's town trip main does not start, since start: goal_moved (main's goal no longer
+// names the planned wish), refused (GoalExecutor.beginMarketTravel: remote trade, a sale
+// retry, a busy errand, no town). The bot goes on hunting; its build is not asked again.
+const townTripRefused = { goal_moved: 0, refused: 0 };
 
 function staleMove(error) {
     return error?.message === 'afk_trade_shop_changed';
@@ -1052,8 +1056,9 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {
         const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
-        if (goal?.plan?.wishKey !== plan.travel) return { state };
+        if (goal?.plan?.wishKey !== plan.travel) { townTripRefused.goal_moved += 1; return { state }; }
         const travel = invoke('GameServer/Bot/Goals/GoalExecutor').beginMarketTravel(state, goal);
+        if (!travel) townTripRefused.refused += 1;
         return { state: travel ? await LifeState.upsertState(travel, 'worker_economy_market_travel') : state };
     });
     return { state };
@@ -1139,4 +1144,5 @@ module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcile
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     planBidRefused: () => ({ ...planBidRefused }),
+    townTripRefused: () => ({ ...townTripRefused }),
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };

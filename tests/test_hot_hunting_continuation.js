@@ -566,8 +566,29 @@ test('an unreachable mark, a pending command, survival and explicit non-hunting 
     } finally { while (restores.length > restoreAt) restores.pop()(); }
     f.session.nearRaise = null;
     assert.equal(Decision.suggest({ ...f.session.botStatus, blockers: ['low_hp'] }, f.session).action, 'rest');
+    // Its errand holds it on its ground (in town it holds nothing: see below).
     f.session.heldEconomy.network.activity = { activity: 'shopping', town: 'Oren' };
+    Object.assign(f.loc, primary.center);
     assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'continue_occupation');
+});
+
+test('an errand it cannot start in town does not hold the body there: it walks to its spot', () => {
+    // The build answered a visit's end with an errand run in the field (pvp): no ground holds the
+    // body in town, so it goes hunting where the worker's route publishes, the errand kept.
+    const pvp = { activity: 'pvp', targetId: 7, rootKey: 'scores:7' };
+    const f = fixture(town, pvp, { huntSpot: { spotId: primary.id } });
+    const decision = Decision.suggest(f.session.botStatus, f.session);
+    assert.equal(decision.action, 'move_to_spot');
+    assert.equal(decision.spot?.id, primary.id, 'to the published spot');
+    f.tick();
+    assert.deepEqual(f.session.trips, [primary.id], 'the walk starts');
+    assert.equal(f.session.spotRelocation?.deferredOccupation, Decision.occupationKey(pvp), 'and the errand does not cancel it');
+    assert.equal(f.session.heldEconomy.network.activity, pvp, 'the errand stays held');
+    // The visit's end unanswered in its bag: it waits for the answer, not walks and turns.
+    const waiting = fixture(town, pvp, { huntSpot: { spotId: primary.id } });
+    waiting.session.nearRaise = { seq: 1, names: [{ name: 'goal_done:visit', payload: null, seq: 1 }], impossible: false };
+    assert.equal(Decision.suggest(waiting.session.botStatus, waiting.session).reason, 'awaiting_hunt_answer');
+    assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 
 (async () => {

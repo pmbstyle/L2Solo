@@ -387,6 +387,19 @@ function onWorker() {
             const still = { ...stranded, stats: { ...stranded.stats, earning: { ...stranded.stats.earning, at: 8 } } };
             assert.equal(tripOf(still), null, 'an answer to its ask with none either: it stays');
             assert.equal(Situations.counts().raised['earning:no_spot'], before + 1, 'counted');
+            // A far bot left in town after a visit whose build answers an errand it cannot run there (pvp,
+            // a sale): no ground holds it, it walks to its held spot and the errand starts from the field.
+            // On its camp the errand holds it.
+            const inTown = { ...leveling, spotId: null, loc: { locX: 0, locY: 0, locZ: 0 } };
+            const pvp = { activity: 'pvp', targetId: 7, rootKey: 'scores:7' };
+            const selling = { activity: 'selling', rootKey: 'money:liquidate' };
+            assert.equal(BotRoute.trip({}, inTown, pvp, { spots, currentSpot: null, timestamp: time(13) })?.spotId, 'rich',
+                'in town with a pvp errand: it goes hunting');
+            assert.equal(BotRoute.trip({}, inTown, selling, { spots, currentSpot: null, timestamp: time(13) })?.spotId, 'rich',
+                'in town with a sale it cannot start: it goes hunting');
+            const onCamp = { ...leveling, spotId: 'poor', loc: spots[0].center };
+            assert.equal(BotRoute.trip({}, onCamp, selling, { spots, currentSpot: spots[0], timestamp: time(13) }), null,
+                'on its camp the errand holds it');
         } finally { Service.arrivalPointForState = arrive; }
     }
     // A party member hunts with its party: its foundation does not price the held solo spot.

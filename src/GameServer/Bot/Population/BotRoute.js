@@ -360,12 +360,22 @@ function route(state, currentSpot, party, partyMembers = [], { spots, timestamp,
     return record(state, chosen, party, partyMembers, { spots, currentSpot, timestamp, frame });
 }
 
+// Does the bot's accepted non-hunting leaf hold it where it stands: only on its
+// ground (the catalogue spot under it), where its errand starts at the fight's edge.
+// A bot with no ground under it (a town after a visit) goes hunting at its held
+// choice and the errand starts from the field, as a C4 player done in town walks
+// to his camp. One rule for the cold trip (trip) and the hot body
+// (BotDecisionService).
+function occupationHolds(leaf, ground) {
+    return !!leaf?.activity && leaf.activity !== 'hunting' && !!ground;
+}
+
 // The solo trip of a step: to the spot the bot's one choice names (heldHuntSpot,
 // kept on `owner`, the bot's kernel record), built from where it stands now; null:
 // no trip. What the trip adds is the executor's part: an accepted occupation leaf
-// holds the bot (no field trip before the errand runs), ground the bot may not hunt
-// that the choice leaves it on is fled (the search's evacuation, choose, nothing
-// kept), and with no spot it may take and no ground under it the bot asks the
+// holds the bot on its ground (occupationHolds: no field trip before the errand
+// runs), ground the bot may not hunt that the choice leaves it on is fled (the
+// search's evacuation, choose, nothing kept), and with no spot it may take and no ground under it the bot asks the
 // earning decision again once per answer (Situations.spotAsk on the record: the
 // route carries spot_empty to the step, stepTrip; an answer to that ask with none
 // either leaves it where it is, counted earning:no_spot). Counted as
@@ -377,10 +387,10 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     if (!routable(state, null, [])) return null;
     const frame = frameFor(state, null, [], timestamp);
     frame.owner = owner || null;
-    // The accepted occupation owns this round. A routine hunting replan
-    // must not turn a pending purchase/craft/sale into another field trip
-    // before the native economy executor gets to carry it out.
-    if (leaf?.activity && leaf.activity !== 'hunting' && !unsafeSoloGround(state, currentSpot, frame)) {
+    // The accepted occupation owns this round on the bot's camp. A routine hunting
+    // replan must not turn a pending purchase/craft/sale into another field trip
+    // before the native economy executor gets to carry it out (occupationHolds).
+    if (occupationHolds(leaf, currentSpot) && !unsafeSoloGround(state, currentSpot, frame)) {
         EconomyDiagnostics.count('route', 'trip', 'occupation');
         return null;
     }
@@ -538,4 +548,4 @@ function planKey(plan, request) {
         + `${plan?.requiresParty}|${request?.status}|${request?.priority}|${!!request?.materialParty}|${!!request?.suspendedFor}`;
 }
 
-module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, huntSpot, heldHuntSpot, huntSpotHeld, huntSpotKeyOf, drop };
+module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, occupationHolds, huntSpot, heldHuntSpot, huntSpotHeld, huntSpotKeyOf, drop };

@@ -256,7 +256,9 @@ try {
         purchaseState.inventory = {};
         const crafting = fixture();
         Events.held = () => ({ network: { activity: { activity: 'crafting', kind: 'craft', rootKey: 'stock:shots' } } });
-        tick(crafting);
+        // On its ground the errand holds the body (off ground it would walk to its spot, errand kept).
+        Spots.findCurrentSpot = () => ({ ...spot, npcNames: [] });
+        try { tick(crafting); } finally { Spots.findCurrentSpot = () => null; }
         assert.strictEqual(crafting.session.spotRelocation, undefined, 'a craft waiting for its worker details releases an old hunting route');
         assert.strictEqual(crafting.bot.moves, 0, 'the hunt cannot steal the craft waiting window');
         assert.strictEqual(crafting.session.lastDecision.activity, 'crafting');

@@ -2432,7 +2432,7 @@ class ColdSimulationCoordinator {
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
                 staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors,
-                planBidRefused: AfkMarket.planBidRefused() },
+                planBidRefused: AfkMarket.planBidRefused(), townTripRefused: AfkMarket.townTripRefused() },
             failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
