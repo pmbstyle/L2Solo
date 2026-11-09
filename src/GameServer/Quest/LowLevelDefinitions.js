@@ -1,5 +1,5 @@
 // Reviewed gameplay facts: supplied inventory plus pinned MOBIUS_C4 6674a607.
-// NPC IDs below are L2Solo's native datapack IDs. See docs/c4/quests/imported-quests.md.
+// NPC IDs below are L2Solo's native datapack IDs.
 const collect = (id, name, minLevel, startNpc, item, count, drops, reward, extra = {}) => ({
     id, name, minLevel, startNpc, repeatable: true, ...extra,
     stages: [{ type: 'KILL_COLLECT', item, count, drops: drops.map(([npc,chance,amounts]) => ({npc,chance,...(amounts ? {amounts} : {})})) },
@@ -33,7 +33,7 @@ const definitions = [
     // The reference registers a third target, Crimson Tarantula 20394 (native
     // 394), but the pinned C4 datapack never spawns it anywhere - its template
     // exists and no spawn file mentions it. The two targets below are therefore
-    // all a C4 player can actually kill. See docs/c4/quests/imported-quests.md.
+    // all a C4 player can actually kill.
     {id:296,name:"Tarantula's Spider Silk",minLevel:15,startNpc:7519,repeatable:true,requiredAny:[1508,1509],
         stages:[{type:'COLLECT',npc:7519,prices:[[1493,20]],bonusAt:10,bonusAdena:2000,
             drops:[403,508].map(npc=>({npc,chance:1,outcomes:[{item:1494,chance:.04},{item:1493,chance:.5}]}))}],

@@ -2,8 +2,8 @@
 // The source facts of a bot's wish build (WishProviders sourcePath over
 // GearAcquisitionPlanner.sourceFacts), kept with the bot's held build
 // (EconomyContext, beside its source ground) and served to the next build of
-// the same bot while every input the fact read is the same (decision links
-// step 5, S1): the walk is a pure function of what it reads, so the same reads
+// the same bot while every input the fact read is the same:
+// the walk is a pure function of what it reads, so the same reads
 // give the same answer. Owns the record's layout; worker and main builds.
 //
 // What a fact reads:

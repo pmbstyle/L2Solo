@@ -10,7 +10,7 @@ const TableChannel = require('../Population/ColdTableChannel');
 
 const TABLE = 'bot_personas';
 // 2: eleven types chosen by class and share, +-0.2 triangular spread,
-// inclinations (step 3.1, N6a; migration 52 rewrote the v1 rows).
+// inclinations (migration 52 rewrote the v1 rows).
 const VERSION = 2;
 const TRAITS = Types.TRAITS;
 const INCLINATIONS = Types.INCLINATIONS;

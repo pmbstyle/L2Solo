@@ -1,7 +1,6 @@
 // Per class and level, the C4 template's max HP, MP and CP before the CON/MEN
-// bonus (L2J Mobius C4 lvlUpgainData, data/Templates/class-vitals.json; user
-// 10-29 "Max HP by class" in docs/game-decisions.md). Levels past the table
-// read its last row; an unknown class reads the Human Fighter's.
+// bonus (L2J Mobius C4 lvlUpgainData, data/Templates/class-vitals.json).
+// Levels past the table read its last row; an unknown class reads the Human Fighter's.
 const CLASS_VITALS = require('../../data/Templates/class-vitals.json').classes;
 
 function classVital(kind, level, classId) {

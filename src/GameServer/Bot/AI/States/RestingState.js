@@ -59,7 +59,7 @@ function sitDown(session, bot) {
     return true;
 }
 
-// The rest's posture (RestPolicy.sitsToRest, user 10-29): seated unless
+// The rest's posture (RestPolicy.sitsToRest): seated unless
 // standing refills what the bot lacks faster (a Sorcerer's Clear Mind).
 function restsSeated(session, bot) {
     const automation = bot.automation;

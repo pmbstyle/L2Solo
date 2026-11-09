@@ -1721,12 +1721,12 @@ function applySchemaMigrations() {
         `);
         PartyCandidateProjection.createIndex(connection);
     }]);
-    // Personas v2 (step 3.1, N6a): eleven types by class and share, clan
+    // Personas v2: eleven types by class and share, clan
     // leaders through the author's founder gate, remembered listing prices reset.
     migrations.push([52, () => invoke('GameServer/Bot/AI/BotPersonaMigration').apply(connection, now())]);
-    // The board (step 3.3, group A): every AFK shop row is a record of a
+    // The board: every AFK shop row is a record of a
     // kind with an expiry; one active shop per owner, any number of other
-    // records. Closed records are deleted at once (design 16.19).
+    // records. Closed records are deleted at once.
     migrations.push([53, () => {
         const columns = connection.prepare('PRAGMA table_info(afk_trade_shops)').all().map((column) => column.name);
         if (!columns.includes('kind')) {
@@ -2816,7 +2816,7 @@ function prepareCraftReservationsUnsafe(step, recipe) {
         && Number(plan.componentRecipes?.[recipe.productId]) === Number(recipe.recipeId);
     if (!final && !component) return;
     // A bot's own craft spends its own bag: a clan goal's reserve binds what the
-    // bot sells or trades, not this plan (docs/game-decisions.md, 11-02).
+    // bot sells or trades, not this plan (our choice).
     step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats,
         inventory: InventorySummary.read(step.row.inventorySummary)
@@ -3131,8 +3131,8 @@ function heldRowSetSql(sql, held = []) {
 }
 // A save's text with the held columns put back, and with its RETURNING list,
 // held per (held set, RETURNING list) for one base text: the BotLifeState
-// save's constant, so at most 2^5 held sets x 2 lists = 64 (limits.md
-// "Lifecycle save texts"). A different base text (only tests alternate one)
+// save's constant, so at most 2^5 held sets x 2 lists = 64. A different
+// base text (only tests alternate one)
 // clears them and they are built again. Built per save they were ~15 KB of
 // new strings each.
 const SAVE_RETURNING_NATIVE = `${NativeWriteCheckpoint.columns.join(', ')}, statsJson, mindJson`;
@@ -5696,7 +5696,7 @@ const Database = {
         return [...pendingSettlementOwners];
     },
 
-    // The old world at the first start of the board (Q8 B, user 2026-10-05):
+    // The old world at the first start of the board:
     // every bot record closes once and gives back what it holds; the bots
     // relist under the board's rules at their next review. A physical cold
     // store or a budget-backed buy store in a bot's state is cancelled (its

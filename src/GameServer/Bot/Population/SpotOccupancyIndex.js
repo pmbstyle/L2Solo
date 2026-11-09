@@ -177,7 +177,7 @@ class SpotOccupancyIndex {
     }
 }
 
-// The hunters on a spot that share its production (E69, user 10-29), in the
+// The hunters on a spot that share its production, in the
 // index of the thread that asks (main's world index, a worker's kernel
 // index): the bots indexed there, those on their way included, at least one;
 // with a state, the others plus that bot, whether it stands there yet or

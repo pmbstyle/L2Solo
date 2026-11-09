@@ -141,7 +141,7 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
 
     return {
         weaponKind: WeaponMask.weaponType(weapon?.template?.kind || fallback.weaponKind || '', weapon?.etc?.slot),
-        // The MP of one bow shot (user 10-29: bots pay it as players do).
+        // The MP of one bow shot (bots pay it as players do).
         bowMp: weapon?.template?.kind === 'Weapon.Bow' ? C4WeaponSA.expectedBowMp(weapon.selfId, weapon.etc?.mp) : 0,
         attackReuseDelay: number(weapon?.stats?.reuseDelay, 1500),
         pAtk: number(weapon?.stats?.pAtk, fallback.pAtk),

@@ -306,7 +306,7 @@ function purchaseTerms(state, plan, spent = 0) {
     return terms;
 }
 
-// The one purchase path of a cold bot (б5, D1, user 2026-10-05): every
+// The one purchase path of a cold bot: every
 // board purchase is a trip to the seller's town. planPurchase picks the town
 // (OfferQuery.cheapestTown over the board and the NPC shops, the bot's round
 // trip included; none to the town it is shopping in); acquire buys there at

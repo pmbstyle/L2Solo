@@ -454,7 +454,7 @@ function buildProjection(state, ctx, deps) {
         return fact;
     };
     // The farm or spoil path reads GearAcquisitionPlanner.sourceFacts: the
-    // hunt rules the bot hunts by (D4-D6), an hour at its net cost (D7). The
+    // hunt rules the bot hunts by, an hour at its net cost. The
     // trip is one row per town in the network, never once per unit.
     const sourcePath = (id, spoilOnly = false) => {
         if (!sourceIndex?.has(Number(id))) return null;
@@ -651,7 +651,7 @@ function buildProjection(state, ctx, deps) {
                     grossRequirements: requirements });
             }
         }
-        // Held units are worth what the bot gets selling them now (Q1 A);
+        // Held units are worth what the bot gets selling them now;
         // only an item the bot holds needs that value.
         let exitValue;
         if (present(id)) {

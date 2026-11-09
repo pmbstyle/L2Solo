@@ -37,7 +37,7 @@ function leaderPersona(row, regular, thresholds, total, Policy) {
     return best.candidate;
 }
 
-// Migration 52 (step 3.1, N6a), run by Database.applySchemaMigrations inside
+// Migration 52, run by Database.applySchemaMigrations inside
 // its transaction on the world database: every version 1 persona gets a type
 // that fits the bot's current class by the deficit against the type shares
 // (dwarves first, so they fill wealth), its traits and inclinations rolled by

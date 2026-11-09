@@ -1,6 +1,6 @@
 'use strict';
 
-// What a review decided, in order (design rules, Agenda; user 11-03): the step the bot
+// What a review decided, in order: the step the bot
 // takes and the steps after it. A step that ends moves the held plan to the next with
 // no weighing; proof, money queue, bids and focus move as one. Only an agenda that has
 // no step left, or a native plan that failed, is a build.

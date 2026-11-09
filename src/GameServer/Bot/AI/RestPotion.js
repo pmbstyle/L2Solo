@@ -1,8 +1,8 @@
 'use strict';
 
 // Owner: the healing potion a solo bot drinks to save its seated rest, hot and
-// cold alike, and what that rule adds to its potion stock (T141,
-// docs/game-decisions.md "Potions to save rest"): between fights a bot drinks
+// cold alike, and what that rule adds to its potion stock:
+// between fights a bot drinks
 // when the rest the bottle saves, at the bot's own hour, is worth more than
 // the bottle's NPC price, and the bot misses at least what it heals. The rest
 // is the one ColdRest counts: the longer of its HP and, for a bot that sits for

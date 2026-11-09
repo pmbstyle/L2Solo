@@ -180,7 +180,7 @@ function open(state, options = {}) {
             market
         }));
     }
-    // The board replaced the stall (step 3.3): the listings go to the bot's
+    // The board replaced the stall: the listings go to the bot's
     // shop and, past its lines, to sell ads; their items leave the bag into
     // the records. The bot then goes back to its hunt.
     return invoke('GameServer/Bot/Economy/BotAfkMarketService').listOnBoard(marketState, { ...options, decided: market }).then((board) => {
@@ -247,7 +247,7 @@ function travelToShopTown(state, board, timestamp) {
             reason: travel ? 'shop_town_trip' : 'shop_town_unreached', shopTown: board.shopTown }));
 }
 
-// A merchant without a stall: the board replaced the stalls (step 3.3), and
+// A merchant without a stall: the board replaced the stalls, and
 // an old state can still say merchant. There is no
 // expiry event to release it: it goes back to its trip or its hunt.
 function resolve(state, timestamp = Date.now()) {

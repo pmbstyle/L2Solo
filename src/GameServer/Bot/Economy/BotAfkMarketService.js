@@ -659,7 +659,7 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
     }
 }
 
-// The record-backed equivalent of the author's market stall (step 3.3): a
+// The record-backed equivalent of the author's market stall: a
 // bot in a market town lists what the listing policy would put on a stall.
 // Its shop takes up to MAX_LINES lines (kept lines first, as a review keeps
 // them); each listing past the shop becomes a sell ad, up to the bot's cap;

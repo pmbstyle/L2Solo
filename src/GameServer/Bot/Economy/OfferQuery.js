@@ -81,7 +81,7 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
 let pastDepth = 0;
 
 // The town where a buyer gets `amount` units of an item for the least, its
-// trip there included (б5, D1; user Q1 A for shots): in each town the board's
+// trip there included: in each town the board's
 // lines there and the NPC shop there as one more offer (fill), plus the
 // buyer's round trip (`cost`, OfferOrder.tripCost; 0 for its own town). A
 // town that fills the whole amount comes first, then the least landed price

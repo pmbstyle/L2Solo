@@ -8,7 +8,7 @@
 // summon 12564, C4ItemSkills gives the collar its summon skill, and the pet's
 // own level, feeding and persistence are the ordinary pet runtime. What this
 // quest owns is the errand that earns the collar and the reckoning that spends
-// it. See docs/c4/quests/imported-quests.md.
+// it.
 //
 // The reckoning is the only authoritative way a character's PK count falls, and
 // it is deliberately expensive: the Sin Eater must have gained a level since the

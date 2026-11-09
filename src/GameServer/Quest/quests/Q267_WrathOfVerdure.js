@@ -2,7 +2,7 @@
 //
 // Treant Bremec is reference NPC 31853. Its local template is 12092, which is
 // the id block Pixy Murika's proven spawn also comes from; native 196 carries
-// the same name but has no world spawn at all. See docs/c4/quests/imported-quests.md.
+// the same name but has no world spawn at all.
 //
 // The hand-in pays one Silvery Leaf per club rather than a flat sum, which is
 // why this stays a script instead of a reviewed COLLECT definition: the

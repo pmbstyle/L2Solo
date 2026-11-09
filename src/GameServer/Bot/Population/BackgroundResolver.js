@@ -200,7 +200,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         mp: Math.max(0, Number(state.vitals?.mp || 0)),
         maxMp: combat.maxMp
     };
-    // Seated, or standing when that refills the rest faster (user 10-29).
+    // Seated, or standing when that refills the rest faster.
     const regen = restRegenPerTick(state, vitals.maxHp - vitals.hp, vitals.maxMp - vitals.mp, { profile: combat, timestamp, ...options });
     const ticks = Math.max(0, Number(elapsedMs) || 0) / Formulas.REGEN_TICK_MS;
     vitals.hp = Math.min(vitals.maxHp, vitals.hp + regen.hp * ticks);
@@ -638,7 +638,7 @@ function soloMusicGain(provider, skill) {
         * hit(Math.min(1, rate * mul('pCritRateMul')), mul('pCritDamageMul')) / hit(rate, 1) - 1);
 }
 
-// T100 (docs/game-decisions.md): BotCombatUtility.manaPrice's rule for a
+// BotCombatUtility.manaPrice's rule for a
 // solo song. Its damage gain over its duration must cover the attacks lost
 // sitting for its MP (BotCombatUtility.restMsPerMp, the skills' price: none
 // for a bot that never rests for MP); the attack rate cancels out.
@@ -940,8 +940,8 @@ function castHuntPartyBuffs(members, timestamp) {
     };
 }
 
-// A solo bot's own buffs before a fight (T106, docs/game-decisions.md "Solo
-// self-buffs"): the party plan (coldBuffPlan) on the bot alone, its own
+// A solo bot's own buffs before a fight:
+// the party plan (coldBuffPlan) on the bot alone, its own
 // buffs included, paying the MP and the cast time. The fighter is built only
 // when one of the plan's buffs (buffSkills, useful to the bot by the plan's
 // PartyBuffLoadout.useful) is missing or about to expire, castable now; the
@@ -2372,7 +2372,7 @@ function soloPickOptions(state) {
 // Each spawn group of the spot and the share of its spawns the bot may fight
 // alone (BotTargetMatchup.speciesPulls under the pick's options; 0 for one it
 // may not hunt), once per round: a solo hunter takes only the pulls it
-// survives (user 10-29), so a spot's other mobs neither feed its kills nor
+// survives, so a spot's other mobs neither feed its kills nor
 // widen its round. Null for a spot without spawn groups or with none the
 // verdict knows (the fight then takes the spot's own mob: resolveFight).
 // profiles: the round's (roundProfiles), else built here.
@@ -2512,7 +2512,7 @@ function admittedDensity(spot, shares) {
     return total > 0 ? density * admitted / total : density;
 }
 
-// T106 (docs/game-decisions.md "Solo fights per hour"): the walk from a kill
+// Solo fights per hour: the walk from a kill
 // to the next mob, at runSpd: the mean distance to the nearest of the density
 // monsters a bot may fight (admittedDensity) spread over the area its spawns
 // cover (SpotService spawnArea; without one the SPOT_CELL_SIZE square of the
@@ -2606,8 +2606,8 @@ const BackgroundResolver = {
 
         const raidSupply = require('./RaidSupplyPolicy').held(state, timestamp);
         if (raidSupply && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
-            // In town the command retries its purchase (kept, limits.md "Wait
-            // polls"). Parked, the bot waits for main's preparation: its party,
+            // In town the command retries its purchase (a bounded
+            // wait poll). Parked, the bot waits for main's preparation: its party,
             // its cancel or an errand trip each write the row with their own
             // due; the hold ends by itself when the reservation expires.
             const shopping = ['shopping', 'merchant'].includes(state.activity);
@@ -2835,7 +2835,7 @@ const BackgroundResolver = {
         const drunkPotions = {};
         let combatMs = 0;
         let damageTaken = 0, spellTaken = 0;
-        // The pet's share (user 10-29: it tanks a solo fight): the damage it took, its deaths.
+        // The pet's share (it tanks a solo fight): the damage it took, its deaths.
         let petTaken = 0, summonDeaths = 0, petWaits = 0;
         const foughtNpcIds = [];
         // The mobs killed by species (the spot table's measured kill mix).

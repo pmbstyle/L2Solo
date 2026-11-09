@@ -756,8 +756,8 @@ function decideEarning(state, deps = {}) {
     return { earning, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
         subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
 }
-// The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
-// route): the route's one test, BotRoute.leafFitReader, as a yes or no per
+// The bot's own fit for the spot of its hunting leaf:
+// the route's one test, BotRoute.leafFitReader, as a yes or no per
 // spot. Only in a worker build (the worker owns the leaf and its planning
 // catalog; main's basics keep the table's pick, it reads them only for
 // execution caps), for a solo bot (a party hunts its party's route; mode:

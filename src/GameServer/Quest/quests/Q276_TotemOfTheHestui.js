@@ -4,7 +4,7 @@
 //
 // The Kasha Bear Totem Spirit is a transient quest spawn, exactly as the
 // reference's addSpawn is: it belongs to the character who provoked it and is
-// not restored across a restart. See docs/c4/quests/imported-quests.md.
+// not restored across a restart.
 const TANAPI = 7571;
 const KASHA_BEAR = 479;
 const TOTEM_SPIRIT = 5044;

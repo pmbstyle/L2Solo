@@ -1445,7 +1445,7 @@ const STALE_HOT_ACTIVITIES = new Set(['following', 'shopping', 'getting_buffed',
 // A row left hot by a restart (shutdown does not cool hot bots) is the copy
 // taken at activation: the hot session wrote its EXP, loot, spent potions and
 // shots and vitals only to the record (characters + items, skills).
-// The record wins (PER-7): the row is rebuilt from it before the worker reads
+// The record wins: the row is rebuilt from it before the worker reads
 // it, or the worker's first commit writes the stale copy back over the record.
 // The plan and the mind stay, and so does the row's position: the policy of
 // the activation is not saved, and a 'return' activation (forced near the

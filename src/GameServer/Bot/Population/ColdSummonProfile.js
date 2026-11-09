@@ -33,7 +33,7 @@ function summonNpcStats(profile, details) {
         accur: Math.max(1, Number(combat?.accur || profile.accur)),
         critical: Math.max(0, Number(npc?.stats?.crit || profile.critical)),
         atkSpd: Math.max(1, Number(npc?.stats?.atkSpd || profile.atkSpd)),
-        // Its defence as the mobs' target (the pet tanks, user 10-29) and its
+        // Its defence as the mobs' target (the pet tanks) and its
         // HP back per regen tick between fights (the template's revHp).
         mDef: Math.max(1, Number(npc?.stats?.mDef || profile.mDef * 0.8)),
         dex: Math.max(1, Number(npc?.base?.dex || profile.dex || 1)),
