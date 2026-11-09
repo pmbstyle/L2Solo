@@ -1,5 +1,5 @@
 'use strict';
-// The earning spot decides on its situations (situations.md §10, step 1): a bot holds the answer of its last search
+// The earning spot decides on its situations: a bot holds the answer of its last search
 // (stats.earning, in the mind) and searches again only when a situation that wakes the decision is heard where it
 // stands: a level up at its next stop, new gear in town, a death, its spot empty or dangerous, its survival potions
 // low, leaving a party; or when it holds no answer. Prices, the crowd at other spots, its money weight, its own
@@ -171,7 +171,7 @@ function onWorker() {
         assert.equal(Situations.detect(taken, taken).includes('shots_out'), false,
             'the answer taken alone keeps its supply lines: shots_out is not raised again');
     }
-    // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
+    // Survival drinks: a spot that needs them of the bot (the table's bot drinks there and this
     // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line
     // and its money above the refill short of an hour of them); a funded bot stays and buys them. Low potions
     // wake no search (a bot buys them): a broke bot moves on at its next death or dangerous spot.
@@ -207,7 +207,7 @@ function onWorker() {
             assert(!Situations.woken(published(affordable, back.result).stats, 'build'), 'the build is taken with it');
         } finally { Table.value = native.value; Table.cycle = native.cycle; }
     }
-    // Its own stay disappoints its answer (situations.md Q2): weighed at a rest, once a stay, after enough kills.
+    // Its own stay disappoints its answer: weighed at a rest, once a stay, after enough kills.
     {
         // The bot believes the spot pays 1300 an hour (its persona's bias); unbiased it pays 1000.
         const answer = { spotId: 'rich', income: 1300, expected: 1000, error: 0.2 };

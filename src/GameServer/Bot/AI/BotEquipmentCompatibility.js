@@ -6,7 +6,7 @@ const CASTER_BUFFER_CLASSES = new Set([17, 49]);
 // Orc Shamans level through melee while retaining their support role. A
 // physical blunt preserves Stun Attack; one hand leaves room for a shield.
 // Warcryer and Overlord keep it: they fight in melee too
-// (BotRoles.usesCasterWeaponCombat; user 10-29, T106 audit). That kit is our
+// (BotRoles.usesCasterWeaponCombat). That kit is our
 // choice; C4 lets any class hold any weapon, and Stun Attack and Hammer Crush
 // accept a two-handed blunt (weaponsAllowed Blunt|BigBlunt, C4SkillRules).
 // So the staff an Orc Mystic bought stays a weapon to fight with until the

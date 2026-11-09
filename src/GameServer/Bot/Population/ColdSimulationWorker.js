@@ -907,8 +907,8 @@ function recipeKnowledgeOf(state) {
 // The spot a bot stands at, in this worker's spot catalog.
 const standingSpot = state => SpotService.standingSpot(state, planningSpots);
 // A far bot's next page of a deferred plan (mode page: main moved its row while a
-// sent plan waits with pages deferred, entry.economyPending; temporary until step 6,
-// when the town plan pages itself), or a near bot's decision on its post (mode
+// sent plan waits with pages deferred, entry.economyPending; temporary: until
+// the town plan pages itself), or a near bot's decision on its post (mode
 // near): the raise it consumed (raiseSeq) and the route rows of its last decision
 // while its route key holds.
 function occupationOwnerChanged(id, page = false) {
@@ -984,28 +984,28 @@ function nearEvents(id, previous, entry, applied) {
     // done here, or the bot would carry it out again once far.
     const held = stats.rebuff;
     if (posted?.done && held && !held.done && posted.at === held.at && posted.via === held.via) stats.rebuff = Rebuff.done(held);
-    // Main detected the body's own facts (A1) and named them in the bag.
+    // Main detected the body's own facts and named them in the bag.
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
 }
 // A near bot's spot post (SpotService.assignSpot's near_spot, leaveSpot's near_left; main
 // raises no moved_by_world for it, Situations.detect's body), heard once by its number
 // (row.nearSpot { seq, spotId }, BotLifeState.notifyNearFacts), never by comparing the
 // rows' spotId (a later post falls back to the physical spot): an arrival at its spot, or
-// a leave, for the spot aggregate. Its own hook, apart from nearEvents (whose soft part
-// goes in step 4). previous: the record's row before; row: the post, its mind the
+// a leave, for the spot aggregate. Its own hook, apart from nearEvents.
+// previous: the record's row before; row: the post, its mind the
 // worker's (nearEvents). A solo body's arrival meets the
 // spot's standing units (SpotContest; its step: the post's number): a lost contest
 // raises contest_lost with its mark in the near mind, which the near decision answers;
 // any other outcome is the body's own tactics near the player (no hot contest command,
 // HotResourceCompetition): counted. A body in a party arrives with its party's tactics
-// (temporary until the party aggregate, step 8): counted.
+// (temporary: until the party aggregate meets a party at its arrival): counted.
 function nearArrival(id, previous, row) {
     const post = row.nearSpot;
     if (!post || Number(post.seq) === Number(previous?.nearSpot?.seq)) return;
     const to = post.spotId ?? null;
     if (to == null) { Situations.note('spot:left@hot'); return; }
     Situations.note('spot:arrival@hot');
-    // Its enemies standing there (enemy_met; its step: the stay, the post's number, as main's B8).
+    // Its enemies standing there (enemy_met; its step: the stay, the post's number, as main's for a player seen).
     arrivalEnemies({ arriving: [row], spotId: to, step: Number(post.seq), at: Number(row.updatedAt) || Date.now(), proposalOf: () => null });
     if (row.party?.partyId || row.partyId) { Situations.note('spot:contest:hot_party'); return; }
     const verdict = arrivalContest({ spotId: to, members: [row], principal: row, step: Number(row.nearSeq) || 0,
@@ -1413,7 +1413,7 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
 function contestAcked(results) {
     if (outbox?.acked(results)) wakeLoopIfSooner();
 }
-// enemy_met at an arrival (EnemyMet, situations.md A2/B10/B11): the arriving bots against
+// enemy_met at an arrival (EnemyMet): the arriving bots against
 // the bots standing on the spot (the occupancy index, those on their way left out), both
 // ways. A meeting of far bots goes to the outbox of its arriving one (proposalOf(id): the
 // arriving step's proposal); one of two bodies near a player goes to main at once (a
@@ -1960,11 +1960,11 @@ function startKernel(config = {}) {
             // The rebuff decision next, held on the state the same way.
             const rebuffKeys = decideRebuff(state, 'lifecycle', timestamp);
             if (rebuffKeys) state = { ...state, stats: { ...state.stats, ...rebuffKeys } };
-            // The one gate (situations step 4 C6): the build runs only when a situation woke
+            // The one gate: the build runs only when a situation woke
             // it or the earning spot (its search runs in the build), or the bot holds no
             // card naming its decision; else the card serves, judging nothing more. The
             // gear plan's full review (every candidate, the native plan afresh) only when
-            // woken (gear_plan, F1).
+            // woken (gear_plan).
             // The earning spot woken alone is taken alone (EconomyContext.decideEarning): its new
             // answer wakes no build, which serves on (its hunting leaf reads the answer's spot).
             const earningKeys = solo && !visitStop && !Situations.woken(state.stats, 'build')
@@ -2084,10 +2084,10 @@ function startKernel(config = {}) {
                 ...(preparedOccupation?.economyPlan ? { economyPlan: preparedOccupation.economyPlan } : {}),
                 statsPacket,
                 economy,
-                // The step took the build (F6): main runs the side errands (a Mammon visit,
+                // The step took the build: main runs the side errands (a Mammon visit,
                 // the warehouse craft return, a moved clan crafter asked again) only then; a
-                // failed one waits for the build's next waking situation. Temporary until
-                // step 6: real leaves of the town plan.
+                // failed one waits for the build's next waking situation. Temporary: until
+                // the town plan carries them as its own leaves.
                 ...(!nullReuse ? { buildTaken: true } : {}),
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
                     spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,

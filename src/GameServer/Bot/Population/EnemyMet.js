@@ -1,13 +1,13 @@
 'use strict';
-// enemy_met (situations.md A2, B8, B10, B11; step 2): a bot meets a grievance peer on a spot at an
+// enemy_met: a bot meets a grievance peer on a spot at an
 // arrival, either one arriving. Pure over what it is given (both threads): no clock, no World, seeded
 // rolls. The pairs: each arriving bot against each standing one (the spot's room bounds them, ≤ 36),
 // both ways, where the holder remembers the peer (its memory view) or their clans are in a mutual war
-// (a grievance of its own, B11). Each pair is decided by the shared PvP/revenge rule
+// (a grievance of its own). Each pair is decided by the shared PvP/revenge rule
 // (RevengePolicy.evaluate with the pair's C4 standing) and rolled once per (holder, peer, arrival step)
 // (TendencyRoll 'enemy_met'); the first pair whose roll is under its chance is the meeting, one per
 // arrival. Callers: the worker's arrivals (ColdSimulationWorker: a far trip's end, a party's arrival,
-// a near post's spot change) and main's visibility for a player and a bot (CharacterVisibility, B8,
+// a near post's spot change) and main's visibility for a player and a bot (CharacterVisibility,
 // through player()). Counts go on the situations= line (Situations.note), the meeting is traced with
 // the spot as subject.
 const Policy = require('../../Social/RevengePolicy');
@@ -15,7 +15,7 @@ const { coldPair } = require('../../Social/PvpAggression');
 const TendencyRoll = require('../AI/TendencyRoll');
 const Situations = require('../Situations');
 const Trace = require('../DecisionTrace');
-// The standing bots one arrival meets (limits.md "enemy_met"): a spot's largest room.
+// The standing bots one arrival meets: a spot's largest room.
 const MAX_STANDING = 36;
 const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 const identity = state => ({ id: Number(state.characterId), clanId: Number(state.stats?.clanId || 0), partyId: partyIdOf(state) });

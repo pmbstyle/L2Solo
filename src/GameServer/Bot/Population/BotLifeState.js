@@ -3009,7 +3009,7 @@ const BotLifeState = {
         nextState.stats.stepCount = SpotRiskPolicy.stepCount(state) + 1;
         // Then the step's stop: at a rest or in town what waited for it wakes.
         const where = Situations.place(nextState, state);
-        // A solo far hunter's stay weighed at its rest, once (situations.md Q2): its own income below its held
+        // A solo far hunter's stay weighed at its rest, once: its own income below its held
         // answer's expectation beyond its error. Cold only (a hot stint records no income: debt).
         const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
         if (where === Situations.REST && !(nextState.party?.partyId || nextState.partyId)
@@ -3036,7 +3036,7 @@ const BotLifeState = {
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
-        // Training is the level fact's consumer (situations.md B13: skills come with the
+        // Training is the level fact's consumer (skills come with the
         // level, ours, not C4): a level or class past what the profile trained, or a skill
         // book the round brought into the bag (its bag moved); no per-step scan else.
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId

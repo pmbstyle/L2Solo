@@ -1,4 +1,4 @@
-// The spot aggregate at an arrival (SpotContest, situations.md B9/B14): a far bot's
+// The spot aggregate at an arrival (SpotContest): a far bot's
 // trip ends on a spot, in the background thread, and meets the units standing there
 // once, by per-target pressure (the hunters on its target species against that
 // species' share of the room); bots still on their way do not count. Over room it

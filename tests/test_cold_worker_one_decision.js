@@ -390,7 +390,7 @@ parentPort.on('message', message => {
         assert.equal(step.afterRound, 0, 'the projection after the round builds no economy');
         assert.equal(step.buildPlan, true, 'a build taken in the field plans its market once');
         assert.equal(step.fieldPlans, 0, 'loot, a rest and its end ask no market plan in the field');
-        // A looted Scroll of Escape is no supply event: the scroll has no line (situations.md B2).
+        // A looted Scroll of Escape is no supply event: the scroll has no line.
         assert.equal(step.woken, 0, 'on the hunt the round\'s loot wakes no build');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');

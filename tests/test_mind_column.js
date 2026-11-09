@@ -156,7 +156,7 @@ async function bodyMoney(id) {
         const quietRevision = (await row(raisedId)).simulationRevision;
         assert(await Life.raiseOnRow(raisedId, [{ name: 'party_outleveled' }]), 'a stay-only raise on a solo row lands');
         assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision on a solo row');
-        // The facts a raise carries land in the mind with its bits (situations.md B6): a spot the body could not
+        // The facts a raise carries land in the mind with its bits: a spot the body could not
         // reach is marked, and a player's command is the held earning answer, decided as its caller: the bit its
         // move woke and one waiting for a stop both cleared.
         await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: { spotId: 'far', reason: 'walk_timeout' } }]);

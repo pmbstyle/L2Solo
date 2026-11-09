@@ -41,11 +41,11 @@ function nearOwn(state, spot) {
 }
 
 // The karma wash's spot: the earning spot decision's answer while the bot has
-// karma (situations.md B6: EquipmentIncomeRoute's search takes it, woken by
+// karma (EquipmentIncomeRoute's search takes it, woken by
 // karma_changed and the earning spot's other situations), never asked per step.
 // Its own spot while near and eligible, else the best eligible field: mobs up to
 // eight levels below it, out of a peace zone, not a raid, not excluded.
-// accept(spot): the earning decision's own filter (a broke bot skips spots that need survival drinks, A5).
+// accept(spot): the earning decision's own filter (a broke bot skips spots that need survival drinks).
 function washSpot(state, spots, timestamp = Date.now(), accept = null) {
     const clean = washingState(state, timestamp);
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([clean], timestamp);

@@ -8,7 +8,7 @@ const providers = new WeakMap();
 // source, read at an arrival (SpotContest's standing units, EnemyMet's standing
 // bots), by the searches' room filter and the kill share; main's is a status
 // mirror (the status line's per-spot count, a hot body's kill share, a party
-// search's room until step 8). No place is held for a bot ahead of its arrival.
+// search's room until parties form on the worker). No place is held for a bot ahead of its arrival.
 // Each spot has a crowd revision (spotVersion): a reader that holds a result over
 // a spot's hunters keeps it while the revision it read stands.
 

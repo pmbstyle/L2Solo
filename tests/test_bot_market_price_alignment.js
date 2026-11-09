@@ -108,7 +108,7 @@ function publicPrice(id, buyer, context) {
 
 // E1: an SoE plus the actual missing one-hour kit, not a wallet percentage.
 // The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
-// The Scroll of Escape is no part of it (situations.md B2).
+// The Scroll of Escape is no part of it.
 function kitReserve(buyer, context) {
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);

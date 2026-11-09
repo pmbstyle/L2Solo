@@ -143,8 +143,8 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    // The reserve holds one outing's refill of each kind used (plan §5: whole units, never
-    // under one hour of use), whatever the bag holds; no Scroll of Escape in it (B2).
+    // The reserve holds one outing's refill of each kind used (whole units, never
+    // under one hour of use), whatever the bag holds; no Scroll of Escape in it.
     const outingHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
     const refillOf = use => use > 0 ? Math.max(Math.ceil(use), Math.ceil(use * outingHours)) : 0;
     const refillReserve = refillOf(shotUse) * listPrice(plan.selfId) + refillOf(potionUse) * listPrice(potionId);
@@ -2531,7 +2531,7 @@ try {
     };
     publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
     deliverNearDecision(errandSession);
-    // The spot's kit use lives in the bot's earning answer (situations.md §14), the one it held solo.
+    // The spot's kit use lives in the bot's earning answer, the one it held solo.
     const errandStats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(errandSession);
     errandStats.earning = { ...errandStats.earning, shotsPerHour: authoredShotInputs.shotUse, potionsPerHour: authoredShotInputs.potionUse };
     FollowingState.tick(errandSession, errandBot, {}, {

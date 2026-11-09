@@ -102,7 +102,7 @@ try {
             assert.equal(kills.length, beforeExcluded);
         } finally { Service.duelForActor = original; War.view.replace(previous); }
     }
-    // A war enemy met in the field (enemy_met, situations.md B11): the bot starts the war
+    // A war enemy met in the field (enemy_met): the bot starts the war
     // fight its rule decided; its party's war members join at the first blow.
     const Revenge = invoke('GameServer/Bot/AI/BotRevenge'), Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
     const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');

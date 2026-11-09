@@ -22,8 +22,8 @@ function marketTown(name = 'Giran') {
 
 // A bot with karma travels only to Floran: ColdTrip.townPlan refuses the
 // other towns. The plan's step or errand travels as its decision weighed it
-// (EconomicValuation.visitPays, ColdMarketService.acquire; situations step 4
-// C9): who sells what is read at the market, on arrival (decision 11-02).
+// (EconomicValuation.visitPays, ColdMarketService.acquire): who sells what
+// is read at the market, on arrival.
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     const ticket = state.stats?.partyMarketReturn;

@@ -1,6 +1,6 @@
 'use strict';
 // A craft gear route stalls when its kit collects nothing for STALL_KILLS kills (ours:
-// about 2-4 h of a hunter's fights, limits.md "Craft route stall"). Owned here, read by
+// about 2-4 h of a hunter's fights). Owned here, read by
 // the gear plan (GearAcquisitionPlanner: finalizePlan stamps equipmentPlan.stall
 // { kills, kind }, craftPlanFailure judges it at the build) and by the step's fact diff
 // (DecisionSections.factsOf kills/stall, Situations.factNames: source_stalled at the

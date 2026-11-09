@@ -74,7 +74,7 @@ function endOf(before, after, result, readers) {
     // The round's own end: a rest, a death, a flight.
     if (after.activity !== 'hunting') return after.activity === 'dead' ? 'death' : 'rest';
     // A decision woken by the round (Situations: what is heard at work; a level up
-    // waits for the rest, situations.md Q7): its step decides. What waits does not end it.
+    // waits for the rest): its step decides. What waits does not end it.
     if (Situations.anyWoken(after.stats)) return 'event';
     if (!readers.feasible(after)) return 'leaf';
     return readers.kind(after) !== 'resolver' ? 'command' : '';

@@ -1,7 +1,7 @@
 'use strict';
 
 // The situations a bot hears and the decisions they wake: one catalogue for both
-// threads (main's raises, the worker's steps; situations.md §14). A bot holds its
+// threads (main's raises, the worker's steps). A bot holds its
 // decisions; a situation raised (raise, the one writer of the bits) wakes the ones that
 // declare it, heard where the bot stands (NOW, its next STOP, in TOWN); a decision runs
 // only woken and clears its bit when it is taken (decided). A new rule is a row here.
@@ -48,7 +48,7 @@ function readsFacts(before, after) {
 }
 
 // The planes a far bot hears a situation on (a row's heard): NOW anywhere, STOP at
-// its next stop (a rest or the town), TOWN in town only (situations.md §10).
+// its next stop (a rest or the town), TOWN in town only.
 const NOW = 0, STOP = 1, TOWN = 2;
 const link = heard => Object.freeze({ heard });
 
@@ -68,7 +68,7 @@ const SITUATIONS = Object.freeze({
     recipe_learned: link(STOP),
     died: link(NOW),
     // Its clan joined, left or changed (detect's clan fact): heard at its next stop. Its
-    // friends and enemies wake nothing (Q13): they are read when it decides.
+    // friends and enemies wake nothing: they are read when it decides.
     clan_changed: link(STOP),
     // Its party left (BackgroundPartyLifecycle.releaseMember, the one leave rule: raised
     // where the leave is written; a hot body's by its lifecycle).
@@ -78,7 +78,7 @@ const SITUATIONS = Object.freeze({
     // 'crowded' }: its spot mark, raisedFacts).
     contest_lost: link(NOW),
     // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
-    // arrival (SpotContest), a grievance pair met there (step 2 S4).
+    // arrival (SpotContest), a grievance pair met there (enemy_met).
     spot_contested: link(NOW),
     enemy_met: link(NOW),
     // What main refused at the act or a body that failed its step five times: the plan
@@ -117,7 +117,7 @@ const SITUATIONS = Object.freeze({
     spot_dangerous: link(NOW),
     // The recovery's penalty lifted by clean wins.
     recovered: link(STOP),
-    // The earning spot's own inputs (situations.md B6): karma that appeared or cleared
+    // The earning spot's own inputs: karma that appeared or cleared
     // (detect; the decision takes the karma wash's choice while it lasts), a spot the
     // body's relocation could not reach (payload { spotId, reason }: its spot mark)
     // and a player's command naming a spot (payload { spotId, at }: the held answer
@@ -129,8 +129,8 @@ const SITUATIONS = Object.freeze({
     // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only.
     spot_disappoints: link(STOP),
     // What its clan asks of it moved (the stores fact: its material demand, the clan
-    // supply, the crystals): heard at its next stop (situations.md §3 clan_call; the
-    // clan raises it itself in step 9).
+    // supply, the crystals): heard at its next stop (temporary: until
+    // the clan's planners raise it themselves).
     clan_call: link(STOP),
     // A condition, not a change: a need that opened. The shots a fight loads or the
     // survival potions fell under their line (one hour of use, the kit rates'), the
@@ -180,8 +180,7 @@ const SITUATIONS = Object.freeze({
 
 // The decisions a bot holds: one bit each in stats.woken, the same bits per plane
 // in stats.waiting (STOP plane the low byte, TOWN the next). Each declares here, once,
-// the situations that wake it; a decision joins as the step that moves it does
-// (situations.md §10, §14).
+// the situations that wake it.
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
 // which names the spot a body walks to), spot_unreachable (the spot a body could not
@@ -191,7 +190,7 @@ const SITUATIONS = Object.freeze({
 // whose held plan has no stop left: the next leaf). A death wakes
 // the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
-// gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
+// gear_plan: the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
 // gear the bot follows. One question, which gear to work toward: it hears the bot's
 // own grade, gear and clan (a clan's goal plan dropped with it), and its source
@@ -273,7 +272,7 @@ const heardBy = stats => ALL & (stats?.backgroundPartyId ? ALL : ~BITS.party_sta
 const wokenBits = stats => (storedBits(stats) | unheld(stats)) & heardBy(stats);
 // The health line's counts (counts()), always on: what was raised where, which
 // situation woke which decision, the decisions taken or served, and those taken with
-// no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
+// no bit woken by their caller. Each map holds at most COUNT_KEYS keys;
 // a key past them is counted in overflow.
 const COUNT_KEYS = 256;
 const raisedCounts = new Map(), wokeCounts = new Map(), decidedCounts = new Map(), unwokenCounts = new Map();
@@ -352,7 +351,7 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     // body that fails the same walk again while it waits).
     if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
-    // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
+    // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted.
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
     // A gear errand failed on its item (its mark) is its gear source failing: it wakes
     // what a stalled source wakes too (source_stalled: the gear plan).

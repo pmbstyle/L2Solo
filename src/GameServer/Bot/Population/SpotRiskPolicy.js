@@ -12,7 +12,7 @@ const MAX_BACKOFF_STEPS = 360;
 const MAX_BACKOFFS = 8;
 const MAX_FAILED_HUNTS = 3;
 const FAILED_HUNT_RECOVERY_WINS = 3;
-// Spots a bot's situation ruled out (situations.md B6: spot_unreachable, a walk or
+// Spots a bot's situation ruled out (spot_unreachable, a walk or
 // gatekeeper relocation that failed; spot_dangerous on ground it may not hunt alone;
 // contest_lost, a spot contest it lost or a spot it found crowded at its arrival,
 // SpotContest): stats.spotMarks [{ spotId, reason: the situation's name }], the latest

@@ -753,7 +753,7 @@ class WishNetwork {
             // is affordable, spend on it before starting another earning trial.
             for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
             // A kit kind below its line is weighed with the gear it serves, by its
-            // value, never above it (situations.md A5); roadless below reads its road.
+            // value, never above it; roadless below reads its road.
             for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = gearPriority;
             wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
         }

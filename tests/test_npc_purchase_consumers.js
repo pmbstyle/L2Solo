@@ -191,7 +191,7 @@ async function run() {
         stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
     // Main reads the kit rates the bot's build publishes (stats.kitRates).
     state = require('./helpers/ratedKit')(state);
-    // The tranche the reserve holds is one outing's refill (plan §5).
+    // The tranche the reserve holds is one outing's refill.
     const survival = Economy.basics(state).stock('shots');
     const survivalUnits = survival.refill;
     const shotQuote = Npc.quoteFor(survival.itemId, 'Dion');

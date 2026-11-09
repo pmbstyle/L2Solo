@@ -89,7 +89,7 @@ function routeChecks() {
     assert.strictEqual(route(routeState(1, { equipmentPlan: partyPlan, partyRequest: requiredRequest })).spotId,
         plannedFallback.id, 'a required waiter routes to the safe fallback of its plan');
     // End to end on the step's trip: a required-party waiter holding an earning answer elsewhere still walks
-    // to its safe fallback (the waiter's rule goes first, until the party aggregate, step 8).
+    // to its safe fallback (the waiter's rule goes first, until the party aggregate decides it).
     const held = { spotId: levelSpot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
     // (Its plan deferred, so only the waiter's rule, not an active plan's source, keeps it off the answer.)
     const waiter = routeState(19, { equipmentPlan: { ...partyPlan, status: 'deferred' },
@@ -191,7 +191,7 @@ async function commandChecks() {
 
     // The waiter's safe fallback is the worker's rule (BotRoute.choose →
     // PartyWaitFallback.spotFor); main applies the worker's route and relabels
-    // nothing (situations.md §8).
+    // nothing.
     const { spotFor } = require('../src/GameServer/Bot/Population/PartyWaitFallback');
     const fallbackOf = (state, plan) => spotFor(state, plan, profiles, { timestamp: Date.now() })?.spot?.id;
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
@@ -208,7 +208,7 @@ async function commandChecks() {
     assert.strictEqual(applied[0].spotId, currentSpot.id, 'a waiter\'s command hunts the worker\'s route, relabelled by none');
 
     // Main takes the spot the worker fought on and keeps the worker fight; it
-    // runs no spot search of its own (step 1.3 U3).
+    // runs no spot search of its own.
     SpotProfiles.findForState = () => assert.fail('a command runs no second spot search');
     result = await command(routeState(15, {}), soloPlan, worked);
     assert.strictEqual(result.ok, true);

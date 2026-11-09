@@ -1,5 +1,5 @@
 'use strict';
-// The decision trace (situations.md §13, level 2): one record per situation raised, stop heard, decision taken,
+// The decision trace: one record per situation raised, stop heard, decision taken,
 // death (with its killer), worker restart and survived failure, and per lifecycle event of a party (request opened
 // or closed, formed, joined, dissolved), a trade meeting (prepared, accepted, refused, cancelled, delivered), a clan
 // errand (taken, done, failed) and a raid (search, forming, outcome), for every bot, while `[BotPopulation] decisionTrace`
@@ -7,10 +7,10 @@
 // the cold worker's records travel to main (`decision_trace` messages, ColdSimulationCoordinator), main's to the
 // history thread (HistoryDatabase), whose writer (DecisionTraceWriter) appends them to logs/decision-trace.jsonl and
 // drops files past 48 h at the history retention tick. Readers: scripts/trace.js.
-// Bounded (limits.md "Decision trace"): a rate and a queue per thread, a record size; a record past them is dropped
+// Bounded: a rate and a queue per thread, a record size; a record past them is dropped
 // and counted by reason (stats().drops), never silent. detail(): the build's inputs, purchases and funding (the old
 // economy journal's phases) for a fixed 1/64 sample of bots (detailed(id)), and only from the rate and queue left
-// above the decisions' reserve — temporary until level 3 (a bot followed on demand) replaces the sample per step.
+// above the decisions' reserve — temporary: until following one bot on demand replaces the sample per step.
 // A far bot's step is recorded on its commit: the worker holds its records while the step is in flight (hold) and
 // lets them go when main commits it, or drops them when main refuses it (settle), so a refused step re-run on the
 // moved row is recorded once, as the world took it (at most LIMITS.batch held records a step).

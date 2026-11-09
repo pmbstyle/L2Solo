@@ -187,7 +187,7 @@ async function run() {
     assert(Math.abs(gladiator.hourAdena - Hunt.netIncome(Table.value(gladiatorHunt.spotId, 'dps', 50, true),
         Hunt.consumablePrices(gladiator.state))) < 1);
     assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
-    // The reserve is the next outing's refill whatever the bag holds (plan §5): a bag with
+    // The reserve is the next outing's refill whatever the bag holds: a bag with
     // its refill owes the counter nothing, yet gear never takes the refill's money.
     const warriorPotions = warriorContext.stock('potions');
     const stocked = { ...warrior, inventory: { ...warrior.inventory,
@@ -228,7 +228,7 @@ async function run() {
     assert.equal(Economy.forState({ ...published, phase: 'hot', level: base.level + 1 }, { caller: 'meeting_prepare' }).plan, context.plan,
         'a reader reads the held decision whatever moved');
     assert.equal(Economy.forState(published).plan, context.plan, 'an unkept read never replaces the held decision');
-    // The held decision is not judged on its facts (situations step 4 C6): it serves its
+    // The held decision is not judged on its facts: it serves its
     // readers until a situation wakes its build; the woken build decides anew.
     let clanRow = Supply.prepareRow([9, 1, [], 1]);
     Supply.useRowSource(id => id === 9 ? clanRow : undefined, () => true);
@@ -315,7 +315,7 @@ async function run() {
             assert.equal(Economy.restoreEventProof(bytes, accepted), null, 'nor restores one');
         } finally { Generation.configure(kept); Economy.forget(native.characterId); }
     }
-    // An unwoken far bot's step serves its card (situations step 4 C6): the card names its
+    // An unwoken far bot's step serves its card: the card names its
     // decision whatever moved in its wallet, its bag or the prices (ColdEconomyDecision.refusal:
     // its proof's identity and the field guards only), and serving it clears no bit. A
     // situation that wakes its build (goal_affordable, a goal done) is the gate's, not the card's.

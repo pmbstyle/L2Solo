@@ -15,7 +15,7 @@ const raiseAt = (name, activity) => Situations.raise({ woken: 0, wishSections: {
 assert(!Situations.woken(raiseAt('clan_call', 'hunting'), 'build') && Situations.woken(raiseAt('clan_call', 'resting'), 'build'),
     'a rest reads the clan\'s demand');
 assert(Situations.woken(raiseAt('clan_changed', 'resting'), 'build'));
-// The build and the gear plan wake on their own situations only (situations.md §14): the
+// The build and the gear plan wake on their own situations only: the
 // money's crossings of its thresholds, not its drift; a new level or gear waits for its stop.
 for (const name of ['arrived_town', 'goal_failed', 'goal_done:goal', 'bag_full', 'stock_low:shots', 'stock_low:potions', 'source_stalled',
     'goal_affordable:focus', 'out_of_money'])

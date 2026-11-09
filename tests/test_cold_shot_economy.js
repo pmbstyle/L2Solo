@@ -277,7 +277,7 @@ async function images(ids) {
         const fieldLoc = { locX: -45000, locY: 110000, locZ: -3000 };
         // T43 table: a level-30 Warrior's owned D shots no longer pay (no batch to weigh); at 38 they do.
         let hunter = await nativeEconomy(await seed(fighterItems, { classId: 1, level: 38, name: 'Field', town: 'Gludio', loc: fieldLoc }), now);
-        // Its earning answer carries the spot's kit use (situations.md §14), as the worker's decision publishes it.
+        // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
         hunter = await Life.upsertState({ ...hunter, activity: 'hunting',
             stats: { ...hunter.stats, earning: require('./helpers/ratedKit')(hunter).stats.earning } }, 'native_field_restock');
         const fieldBefore = await images([hunter.characterId]);purchases.length = 0;

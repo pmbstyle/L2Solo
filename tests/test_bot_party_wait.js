@@ -165,7 +165,7 @@ async function run() {
 
     // In game every lifecycle command carries the worker's round and route
     // (executeWorkerLifecycleCommand refuses one without): main hunts the
-    // worker's spot and chooses none (situations.md §8). The worker's safe
+    // worker's spot and chooses none. The worker's safe
     // fallback for a waiting requester is pinned in test_party_wait_fallback,
     // its delevel recovery in test_bot_leveling_recovery.
     SpotProfiles.findById = id => ({ ...fallbackSpot, id, name: String(id) });

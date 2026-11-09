@@ -1141,7 +1141,7 @@ function spotSpawns(spot = {}, npcId) {
 // hunters prefer to fight (exposed: the huntable encounter before an
 // efficiency filter), but a solo hunter judged for survival stands where the
 // spawns it takes are, as on an untargeted hunt (the bot takes only the spawns
-// it can, user 10-29): exposed is then entries, and what comes at it first is
+// it can): exposed is then entries, and what comes at it first is
 // a group at a pull it survives, whatever it targeted (our choice; a C4 player
 // keeps clear of the aggressive packs it cannot take).
 function killDraw(entries, exposed, options = {}) {

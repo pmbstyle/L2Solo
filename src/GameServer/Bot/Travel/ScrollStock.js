@@ -1,5 +1,5 @@
 // A bot carries a Scroll of Escape for its trip back to town when the walk it
-// saves is worth its price (situations.md B2, the kit rule in
+// saves is worth its price (the kit rule in
 // EconomyContext.kitReader: one per outing, no survival line, a broke bot
 // walks): on a town visit it buys the one missing at the local NPC from the
 // money its queue does not hold (a side purchase the writer checks against the

@@ -22,7 +22,7 @@ function stub(object, key, value) {
     const original = object[key]; object[key] = value;
     restores.push(() => { object[key] = original; });
 }
-// Main never chooses a spot (situations.md §8): it walks to the spot its held
+// Main never chooses a spot: it walks to the spot its held
 // decisions name or raises the earning spot's situation. searchCalls: the earning
 // spot searches (none on main).
 let available = [], searchCalls = [], nextId = 972000;
