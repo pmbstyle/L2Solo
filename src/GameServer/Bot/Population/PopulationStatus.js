@@ -125,8 +125,11 @@ const PopulationStatus = {
     workerBusyText() {
         const busy = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').takeBusyWindow();
         const ms = busy.activeMs + busy.idleMs;
-        if (!(ms > 0)) return 'workerElu=- workerEluMax=- workerLag=-';
-        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms`;
+        // workerDue=<p50>/<p99>/<max> ms: how late the steps committed since the last line landed
+        // past their due (StepLateness; the percentiles are bucket bounds).
+        const due = busy.due ? `${busy.due.p50Ms}/${busy.due.p99Ms}/${busy.due.maxMs}ms` : '-';
+        if (!(ms > 0)) return `workerElu=- workerEluMax=- workerLag=- workerDue=${due}`;
+        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms workerDue=${due}`;
     },
 
     goalText(queue = {}, coordinator) {

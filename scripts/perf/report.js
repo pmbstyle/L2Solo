@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const CpuProfile = require('../../src/Perf/CpuProfile');
 const HeapProfile = require('../../src/Perf/HeapProfile');
+const StepLateness = require('../../src/GameServer/Bot/Population/StepLateness');
 
 const MB = 1048576;
 const round = (value, digits = 0) => Math.round(value * 10 ** digits) / 10 ** digits;
@@ -154,6 +155,30 @@ function playerSummary(lines) {
 // cold <-> hot transitions over the window (PopulationMetrics, with developerDiagnostics): how many
 // (the counters, uncapped) and how long one took (the timed samples, at most 200 per 30 s window, so
 // avg is of those; p95 and max are the worst of the 30 s windows).
+// How late the worker's steps committed past their due (StepLateness), over the health lines'
+// windows: boot (before the perf window) and steady (inside it); drainedS: from the first line to
+// the first one whose window's latest step was at most 1 s late (the boot backlog gone).
+function workerDueSummary(lines, start, end) {
+    const part = list => {
+        const counts = StepLateness.empty();
+        let maxMs = 0;
+        for (const line of list) {
+            const window = line.coordinator?.stepLate;
+            if (!window) continue;
+            StepLateness.add(counts, window.counts);
+            maxMs = Math.max(maxMs, Number(window.maxMs) || 0);
+        }
+        return StepLateness.summary(counts, maxMs);
+    };
+    const windows = lines.filter(line => line.coordinator?.stepLate?.steps > 0);
+    const drained = windows.find(line => line.coordinator.stepLate.maxMs <= 1000);
+    return {
+        boot: part(lines.filter(line => Date.parse(line.t) <= start)),
+        steady: part(lines.filter(line => Date.parse(line.t) > start && Date.parse(line.t) <= end)),
+        drainedS: drained && lines.length ? Math.round((Date.parse(drained.t) - Date.parse(lines[0].t)) / 1000) : null
+    };
+}
+
 function transitionsSummary(lines) {
     const metrics = lines.map(line => line.population?.metrics).filter(Boolean);
     if (!metrics.length) return null;
@@ -297,6 +322,7 @@ function summarize(dir) {
         processCores: seconds ? round(cpuMs / 1000 / seconds, 2) : 0,
         recorderMainPct: seconds ? round(100 * recorderMs / 1000 / seconds, 2) : 0,
         coldDueMax: Math.max(0, ...summaries.map(line => line.coldQueue?.overdue || 0)),
+        workerDue: workerDueSummary(data.timeline.filter(line => line.type === 'summary'), start, end),
         player: playerSummary(data.timeline.filter(line => line.type === 'player' && Date.parse(line.t) > start && Date.parse(line.t) <= end)),
         transitions: transitionsSummary(summaries),
         e2e: data.timeline.some(line => line.type === 'e2e' || line.type === 'e2e-done') ? {
@@ -318,6 +344,11 @@ function print(s) {
     console.log(`${r.folder}: ${r.sha}${r.dirty ? ' (uncommitted changes)' : ''}, ${r.scenario}, ${r.save.name}`);
     console.log(`  bots ${JSON.stringify(r.bots)}, ${r.warmupMinutes} min warm-up, window ${s.windowMinutes} min`
         + `; process ${s.processCores} cores, recorder ${s.recorderMainPct} % of main, cold due max ${s.coldDueMax}`);
+    if (s.workerDue) {
+        const due = (x) => `p50 ${x.p50Ms} / p99 ${x.p99Ms} / max ${x.maxMs} ms over ${x.steps} steps`;
+        console.log(`  worker due (commit past due): steady ${due(s.workerDue.steady)}; boot ${due(s.workerDue.boot)}`
+            + `, drained ${s.workerDue.drainedS ?? '-'} s`);
+    }
     if (s.e2e) {
         const failed = s.e2e.steps.filter(row => !row.ok).length;
         console.log(`\ne2e ${s.run.script || ''}: ${s.e2e.steps.length} step(s), ${failed} failed${s.e2e.done ? '' : ', NOT FINISHED in the window'}`);

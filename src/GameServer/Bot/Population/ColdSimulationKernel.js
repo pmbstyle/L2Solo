@@ -64,6 +64,7 @@ const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
+const StepLateness = require('./StepLateness');
 
 class DueHeap {
     constructor() {
@@ -735,6 +736,10 @@ class ColdSimulationKernel {
         // How early a far step starts before its due (STEP_LEAD_*), measured
         // on this thread's own commit acks (onCommitAck); 0 until the first.
         this.stepLeadMs = 0;
+        // Each committed step's lateness (StepLateness: ack minus due), cumulative,
+        // and the longest since the last heartbeat took it (takeStepLateMax).
+        this.stepLate = StepLateness.empty();
+        this.stepLateMaxMs = 0;
         this.partyRuns = new Map();
         this.dirty = new Map();
         this.commanding = new Set();
@@ -1371,7 +1376,7 @@ class ColdSimulationKernel {
                 });
                 candidateMemberIds.forEach((memberId) => {
                     const member = partyMembers.find((entry) => Number(entry.characterId) === memberId);
-                    this.inFlight.set(memberId, { state: member, startedAt, partyId: String(party.partyId) });
+                    this.inFlight.set(memberId, { state: member, startedAt, dueAt: Number(entry.dueAt), partyId: String(party.partyId) });
                     Trace.hold(memberId);
                     candidates.push({ characterId: memberId, purpose });
                 });
@@ -2673,6 +2678,7 @@ class ColdSimulationKernel {
             Trace.settle(id, result.ok);
             // A committed step ends the bot's (its party run's) faults in a row.
             if (result.ok) {
+                this.noteStepLate(active.dueAt);
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
                 // Its grievances are written: counted once.
@@ -2741,6 +2747,21 @@ class ColdSimulationKernel {
             }
         }
         return accepted;
+    }
+
+    // A committed step's lateness: this ack's time past its due (none for a step with no due).
+    noteStepLate(dueAt) {
+        if (!Number.isFinite(dueAt) || dueAt <= 0) return;
+        const lateMs = Math.max(0, this.now() - dueAt);
+        this.stepLate[StepLateness.bucketOf(lateMs)] += 1;
+        this.stepLateMaxMs = Math.max(this.stepLateMaxMs, lateMs);
+    }
+
+    // The longest lateness since the last call (the worker's heartbeat).
+    takeStepLateMax() {
+        const maxMs = this.stepLateMaxMs;
+        this.stepLateMaxMs = 0;
+        return maxMs;
     }
 
     // One-sided average of start -> commit ack, excluding event waits (STEP_LEAD_*).
@@ -2970,6 +2991,7 @@ class ColdSimulationKernel {
             failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts(),
                 ...(swallowed ? { swallowed } : {}) },
             stepLeadMs: Math.round(this.stepLeadMs),
+            stepLate: this.stepLate.slice(),
             soloWindow: this.soloWindowStats,
             nodeCapBuilds: invoke('GameServer/Bot/Economy/WishProviders').nodeCapBuildCount(), // lazy: the kernel's boot order
             asksPastDepth: invoke('GameServer/Bot/Economy/OfferQuery').pastDepthCount(), // lazy: the kernel's boot order

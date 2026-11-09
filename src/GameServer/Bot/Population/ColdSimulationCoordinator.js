@@ -38,6 +38,7 @@ const ColdStateDelta = require('./ColdStateDelta');
 const InventorySummary = require('./InventorySummary');
 const RestartBackoff = require('../../../WorkerRestartBackoff');
 const { ColdCommitQueue } = require('./ColdCommitQueue');
+const StepLateness = require('./StepLateness');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -133,7 +134,7 @@ function heapSnapshotOptions() {
     return { execArgv: ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${HEAP_SNAPSHOT_DIR}`] };
 }
 
-const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0 });
+const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0, lateMaxMs: 0 });
 
 class ColdSimulationCoordinator {
     constructor(options = {}) {
@@ -151,6 +152,10 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
         this.busyWindow = emptyBusyWindow();
+        // The worker's cumulative step lateness counts at the last health line, and that
+        // line's window (StepLateness.summary plus its counts): the perf report reads it.
+        this.stepLateTaken = null;
+        this.stepLateWindow = null;
         this.lastWorkerMessage = null;
         this.terminateCause = null;
         this.lastWatchdogAt = 0;
@@ -469,11 +474,20 @@ class ColdSimulationCoordinator {
         window.idleMs += Number(payload.eluIdleMs) || 0;
         window.maxElu = Math.max(window.maxElu, Number(payload.eventLoopUtilization) || 0);
         window.lagMs = Math.max(window.lagMs, Number(payload.eventLoopLagMaxMs) || 0);
+        window.lateMaxMs = Math.max(window.lateMaxMs, Number(payload.stepLateMaxMs) || 0);
     }
 
+    // Also closes the window of step lateness (stepLateWindow): the steps committed since the last line.
     takeBusyWindow() {
         const window = this.busyWindow;
         this.busyWindow = emptyBusyWindow();
+        const counts = this.lastWorkerSnapshot?.stepLate;
+        if (Array.isArray(counts)) {
+            const since = StepLateness.since(counts, this.stepLateTaken);
+            this.stepLateTaken = counts.slice();
+            this.stepLateWindow = { ...StepLateness.summary(since, window.lateMaxMs), counts: since };
+        }
+        window.due = this.stepLateWindow;
         return window;
     }
 
@@ -2454,6 +2468,7 @@ class ColdSimulationCoordinator {
             failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
+            stepLate: this.stepLateWindow,
             ackState: { ...this.ackState },
             nearDecisions: { ...this.nearDecisions },
             competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,

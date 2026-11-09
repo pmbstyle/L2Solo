@@ -2290,7 +2290,7 @@ function startKernel(config = {}) {
                 competition: { mode: 'addressed', at: frame.at, events: [], frame: { ...frame, events: [] } },
                 tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
                 eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
-                eventLoopLagMaxMs: large
+                eventLoopLagMaxMs: large, stepLateMaxMs: large
             }, 'x'.repeat(160));
             return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, []);
         } });
@@ -2312,7 +2312,7 @@ function startKernel(config = {}) {
             // The beat's busy share and its active / idle ms: main sums the ms into the health line's
             // busy share over its own window (a beat delayed by a long task lasts longer).
             eventLoopUtilization: elu.utilization, eluActiveMs: elu.active, eluIdleMs: elu.idle,
-            eventLoopLagMaxMs: lagMaxMs,
+            eventLoopLagMaxMs: lagMaxMs, stepLateMaxMs: kernel.takeStepLateMax(),
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: outbox.snapshot(),

@@ -3,6 +3,7 @@ require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const StepLateness = require('../src/GameServer/Bot/Population/StepLateness');
 Data.init();
 
 // A far step starts early by its lead, the start -> commit ack time the
@@ -107,6 +108,28 @@ function world() {
         assert.strictEqual(row.timing.nextResolveAt, T + ROUND_MS);
     }
 
+    {
+        // How late a step's commit lands past its due (the heartbeat's stepLate, its longest
+        // since the last beat): 1.5 s for a step started at its due and committed 1.5 s later;
+        // 0 for one started its lead early and committed before its due.
+        const { kernel, tickAt, commit } = world();
+        const T = 100000;
+        kernel.upsert({ state: soloState(2, T) });
+        assert.deepStrictEqual(await tickAt(T), [2]);
+        commit(2, 1500, T);
+        assert.strictEqual(kernel.takeStepLateMax(), 1500);
+        assert.strictEqual(kernel.takeStepLateMax(), 0, 'the longest is taken once');
+        const lead = kernel.stepLeadMs, T3 = T + 100000;
+        assert(lead > 100, 'the slow commit measured a lead');
+        kernel.upsert({ state: soloState(3, T3) });
+        assert.deepStrictEqual(await tickAt(T3 - Math.ceil(lead)), [3]);
+        commit(3, Math.floor(lead) - 50, T3 - Math.ceil(lead));
+        assert.strictEqual(kernel.takeStepLateMax(), 0);
+        const counts = kernel.heartbeatSnapshot().stepLate;
+        assert.strictEqual(counts[StepLateness.bucketOf(1500)], 1);
+        assert.strictEqual(counts[StepLateness.bucketOf(0)], 1);
+        assert.deepStrictEqual(StepLateness.summary(counts, 1500), { steps: 2, p50Ms: 0, p99Ms: 1500, maxMs: 1500 });
+    }
     {
         // Slow commits (1.5 s from start to ack): the lead rises toward them,
         // so a bot due at T starts before T, never more than its slowest step
