@@ -984,10 +984,10 @@ function nearEvents(id, previous, entry, applied) {
     // done here, or the bot would carry it out again once far.
     const held = stats.rebuff;
     if (posted?.done && held && !held.done && posted.at === held.at && posted.via === held.via) stats.rebuff = Rebuff.done(held);
-    // Main detected the body's own facts and named them in the bag; a town arrival there
-    // hears the spots' holds (SpotRecords.heard).
-    if (row.raise?.names?.some(entry => Number(entry.seq || 0) > applied && /^arrived_town/.test(entry.name))) SpotRecords.heard(id);
+    // Main detected the body's own facts and named them in the bag; a town arrival there,
+    // taken, hears the spots' holds (SpotRecords.heard).
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
+    if (row.raise?.names?.some(entry => Number(entry.seq || 0) > applied && /^arrived_town/.test(entry.name))) SpotRecords.heard(id);
 }
 // A near bot's spot post (SpotService.assignSpot's near_spot, leaveSpot's near_left; main
 // raises no moved_by_world for it, Situations.detect's body), heard once by its number
@@ -1000,7 +1000,7 @@ function nearEvents(id, previous, entry, applied) {
 // raises contest_lost with its mark in the near mind, which the near decision answers;
 // the far bots it displaces hear contest_lost at their next step (displace: its post is
 // already stored, no ack to wait for); a PvP dispute is the body's own tactics near the
-// player (no hot contest command, HotResourceCompetition): counted. A body in a party
+// player (no hot contest command, HotResourceCompetition): counted pvp_hot_skipped. A body in a party
 // arrives with its party's tactics (temporary: until the party aggregate meets a party
 // at its arrival): counted.
 function nearArrival(id, previous, row) {
@@ -1020,7 +1020,7 @@ function nearArrival(id, previous, row) {
         return;
     }
     for (const displaced of verdict.displaced) displace(displaced, to, id);
-    if (verdict.event) Situations.note('spot:contest:hot_skipped');
+    if (verdict.event) Situations.note('spot:contest:pvp_hot_skipped');
 }
 tables.watch('board', {
     reset: () => { escrowByRecord.clear(); escrowByOwner.clear(); publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear(); },
@@ -1367,9 +1367,10 @@ function dropRoute(characterId, why) {
 // traveling there is indexed at its destination but does not stand there yet, unless
 // its arrival waits for its ack (SpotContestOutbox.pendingOn: it stands there); a bot
 // displaced from the spot (waiting for that ack, or for its next step: its step wake's
-// contest_lost on the spot) is gone; a far bot in a competition wait or dead stands
-// aside (a near post carries no vitals). untargeted: the standing hunters with no
-// target. A raid boss spot (no room limit) holds no contest: null.
+// contest_lost on the spot; an arrival in flight another one displaced) is gone; a far
+// bot in a competition wait or dead stands aside (a near post carries no vitals).
+// untargeted: the standing hunters with no target. A raid boss spot (no room limit)
+// holds no contest: null.
 // arriving: the arriving states' keys; arrivingKey: its unit's key.
 const unitKeyOf = state => state.party?.partyId || state.partyId || `solo:${state.characterId}`;
 function displacedFrom(id, spotId, pending) {
@@ -1400,7 +1401,9 @@ function standingUnits(spot, arriving, arrivingKey) {
         if (!unit.npcId) untargeted++;
     }
     for (const unit of units.values()) unit.level /= unit.members.length;
-    for (const unit of pending.units) if (unit.key !== arrivingKey && !units.has(unit.key)) units.set(unit.key, unit);
+    for (const unit of pending.units) {
+        if (unit.key !== arrivingKey && !units.has(unit.key) && !pending.displaced.has(Number(unit.id))) units.set(unit.key, unit);
+    }
     return { units: [...units.values()].filter(unit => unit.npcId), untargeted };
 }
 // One arrival's contest (SpotContest.contest) for an arriving unit: members (the
@@ -1433,7 +1436,9 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
 }
 // A displaced bot (SpotContest): contest_lost on the spot at its next step (the kernel's step
 // wake; it hunts out the window its step already credited), if it still stands there far and
-// solo; else counted spot:contest:displaced_left. by: the arriving principal.
+// solo; else counted spot:contest:displaced_left. by: the arriving principal. A bot there on
+// a player's command loses it at that step (Situations' endsCommand); the player who gave it
+// is told now, by main (spot_command command_lost: BotRemoteChat.commandLost).
 function displace(id, spotId, by) {
     const state = kernel.states.get(Number(id))?.state;
     if (state?.phase !== 'cold' || String(state.spotId) !== String(spotId) || state.party?.partyId || state.partyId
@@ -1442,6 +1447,11 @@ function displace(id, spotId, by) {
         return;
     }
     Situations.note('spot:contest:displaced');
+    const earning = state.stats?.earning;
+    if (EquipmentIncomeRoute.isCommanded(earning) && String(earning.spotId) === String(spotId) && earning.by > 0) {
+        send('spot_command', { commands: [{ kind: 'command_lost', botId: Number(id), botName: state.name, playerId: earning.by,
+            spotName: SpotIndex.spotById(planningSpots, spotId)?.name || String(spotId), holder: kernel.states.get(Number(by))?.state?.name || '' }] });
+    }
 }
 // An arriving unit that stays (coexist or stay): it stands on the spot from its step until
 // that step's ack, with the units it displaces (SpotContestOutbox.arrive). proposalId: the
@@ -1451,8 +1461,10 @@ function holdArrival(verdict, spotId, at, proposalId) {
     outbox?.arrive(verdict.unit.id, proposalId, { spotId, at, unit: verdict.unit, displaced: verdict.displaced || [] });
 }
 // An arrival's outcomes that touch other bots wait for the arriving step's commit ack
-// and go to main in the competition frame (SpotContestOutbox).
+// and go to main in the competition frame (SpotContestOutbox); a town arrival's hearing
+// waits for it too (SpotRecords.acked).
 function contestAcked(results) {
+    SpotRecords.acked(results);
     if (outbox?.acked(results)) wakeLoopIfSooner();
 }
 // enemy_met at an arrival (EnemyMet): the arriving bots against
@@ -1792,8 +1804,6 @@ function startKernel(config = {}) {
             const raidPreparing = require('./RaidSupplyPolicy').held(state, timestamp);
             const contested = !raidPreparing && soloArrival(state, result, timestamp);
             if (contested) result = contested;
-            // A town arrival hears the spots' holds (SpotRecords.heard).
-            if (result?.events?.some(event => event.type === 'arrived_town')) SpotRecords.heard(state.characterId);
             // The step's one decision, taken before the round (planLifecycle):
             // the round's consequences run on it, no second ask. A step
             // without one (a party member, karma) decides after the round
@@ -1844,6 +1854,8 @@ function startKernel(config = {}) {
             // Membership is the row's: a plan, request or objective of another
             // clan leaves the proposal here (the same object when none, one
             // compare). The commit writes the proposal as it is, no merge.
+            // A step that raised arrived_town hears the spots' holds at its ack (SpotRecords.heard).
+            if (Situations.arrivesInTown(state, resolved)) SpotRecords.heard(state.characterId, kernel.proposalIdOf(state.characterId));
             const projected = ClanMembershipPolicy.reconcileState(resolved);
             if (stepEconomy) seenEcho = ColdEconomyDecision.stateEcho(projected);
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);

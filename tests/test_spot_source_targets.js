@@ -136,6 +136,15 @@ try {
         const markedCollector = { ...collector, stats: { ...collector.stats, spotMarks: [{ spotId: picked, reason: 'contest_lost', answer: 1 }] } };
         assert.equal(Route.huntSpot(markedCollector, null, { spots: twoSpots, timestamp })?.spotId, picked === first.id ? second.id : first.id,
             'a marked source is never the pick: the other source');
+        // A source camp it heard in town is held by a stronger look (SpotRecords): the other one, as a mark.
+        const Records = invoke('GameServer/Bot/Population/SpotRecords');
+        try {
+            const holder = { members: [{ characterId: 990599, inventory: { 1: { rank: 'a', equippedSlots: [7] }, 2: { rank: 'a', equippedSlots: [10] } } }] };
+            for (let n = 0; n < Records.HELD; n++) Records.note(picked, 1.5, [holder]);
+            Records.heard(collector.characterId);
+            assert.equal(Route.huntSpot(collector, null, { spots: twoSpots, timestamp })?.spotId, picked === first.id ? second.id : first.id,
+                'a source held against it, heard in town, is never the pick: the other source');
+        } finally { Records.clear(); }
         const answered = { ...collector, stats: { ...collector.stats, earning: { spotId: mixed.id, shots: true, income: 100, expected: 100,
             earning: 100, error: 0, at: 2 }, spotMarks: [first.id, second.id].map(spotId => ({ spotId, reason: 'contest_lost', answer: 1 })) } };
         assert.equal(Route.huntSpot(answered, null, { spots: twoSpots, timestamp })?.spotId, mixed.id,

@@ -856,10 +856,14 @@ class ColdSimulationCoordinator {
             break;
         case 'spot_command':
             // Two bodies near a player met on a spot (enemy_met): the holder starts its fight
-            // when its body may (BotRevenge.fromSpot, counted enemy_met:<outcome>).
+            // when its body may (BotRevenge.fromSpot, counted enemy_met:<outcome>); a far bot
+            // displaced off a commanded spot tells its player (command_lost).
             // One failed command never drops the others: counted by site.
             for (const command of payload.commands) {
-                try { invoke('GameServer/Bot/AI/BotRevenge').fromSpot(command); }
+                try {
+                    if (command.kind === 'command_lost') invoke('GameServer/Bot/AI/BotRemoteChat').commandLost(command);
+                    else invoke('GameServer/Bot/AI/BotRevenge').fromSpot(command);
+                }
                 catch (error) { FailureLog.note('cold.spot_command', error); }
             }
             break;

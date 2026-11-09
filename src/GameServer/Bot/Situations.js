@@ -46,6 +46,10 @@ function readsFacts(before, after) {
     return before.activity === 'hunting'
         || gated(place(before)) && (before.activity === 'grouped' || !place(after, before));
 }
+// A far step that raises arrived_town (either kind, detect): it leaves the field for a town
+// visit. Also read by the worker for the step's hearing in town (SpotRecords.heard).
+const arrivesInTown = (before, after) => after.phase === 'cold' && after.activity === 'shopping'
+    && FIELD_ACTIVITIES.has(before.activity) && readsFacts(before, after);
 
 // The planes a far bot hears a situation on (a row's heard): NOW anywhere, STOP at
 // its next stop (a rest or the town), TOWN in town only.
@@ -328,6 +332,11 @@ function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
     counted(name, where, was, was | woken, subject, waiting & ~waited, payload);
     if (bits.taken) took(stats, bits, name, subject, before);
+    // A player's command ended (endsCommand): its lifecycle's end, counted and traced.
+    if (bits.facts.ended) {
+        count(raisedCounts, `command:${bits.facts.ended}`);
+        if (Trace.on()) Trace.record({ kind: 'command', bot: subject, name: 'player_command', reason: bits.facts.ended, spot: String(before) });
+    }
     return stats;
 }
 // The decisions a raise's facts took (player_command: the player decided the earning
@@ -359,14 +368,15 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     // A decision hears its situations only on its subjects (heardBy).
     const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & heardBy(stats);
     return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
-        leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
+        leaf: payload?.impossible === true, taken: facts.earning && !facts.ended ? BITS.earning_spot : 0, facts };
 }
 // The facts a raise writes beside its bits, each owned by its
 // reader: player_command's spot becomes the held earning answer (the player decided:
-// EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken); the spot
+// EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken; a displacement
+// ends it: endsCommand, the bit woken); the spot
 // of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
 // (SpotRiskPolicy.withSpotMark), which a situation of its lifetime forgets (FORGETS).
-// { earning, spotMarks, forgot }, undefined: unchanged. stats: the facts before the raise
+// { earning, spotMarks, forgot, ended }, undefined: unchanged. stats: the facts before the raise
 // (null: none known). dropped: told a mark past the cap.
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
@@ -383,8 +393,17 @@ function forgets(owner, names, forget) {
     }
 }
 const GearMarks = require('./AI/GearMarks');
+// A stronger arrival displaced the bot off the spot a player's command holds (contest_lost,
+// reason displaced): the command ends there (outcome displaced, uncommanded; news on a spot
+// already marked), so its route reads its marks again. Our choice (C4 has no bot command): a
+// player's order yields to a stronger holder, the player is told (the worker's displace).
+function endsCommand(stats, name, payload) {
+    if (name !== 'contest_lost' || payload?.reason !== 'displaced') return false;
+    IncomeRoute ||= invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+    return IncomeRoute.isCommanded(stats?.earning) && String(stats.earning.spotId) === String(payload.spotId);
+}
 function marked(stats, name, payload) {
-    if (!stats || payload?.spotId == null || !MARKS.has(name)) return false;
+    if (!stats || payload?.spotId == null || !MARKS.has(name) || endsCommand(stats, name, payload)) return false;
     Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
     return Risk.isMarked(stats, payload.spotId);
 }
@@ -403,9 +422,10 @@ function raisedFacts(stats, name, payload, dropped = null) {
     }
     if (payload?.spotId == null) return {};
     if (name === 'player_command') return { earning: (IncomeRoute ||=
-        invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at) };
+        invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at, payload.by) };
     if (!MARKS.has(name)) return {};
-    return { spotMarks: Risk.withSpotMark(stats, payload.spotId, name, dropped) };
+    const spotMarks = Risk.withSpotMark(stats, payload.spotId, name, dropped);
+    return endsCommand(stats, name, payload) ? { spotMarks, earning: IncomeRoute.uncommanded(stats.earning), ended: 'displaced' } : { spotMarks };
 }
 // A decision's bits on both waiting planes (STOP the low byte, TOWN the next).
 const planes = bits => bits | bits << 8;
@@ -630,8 +650,7 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     // shopping moment (its stop there wakes what waited for the town). On the trip the
     // held leaf ordered (Sections.leafVisit) the build is not woken: a build in town,
     // where a sale costs no trip, dropped the step the trip came for.
-    if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity))
-        names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
+    if (!body && arrivesInTown(before, after)) names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before))
         ? names.concat(needsOpened(before, previousFact('bag') !== current.bag, view, facts)) : names;
@@ -746,6 +765,6 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
-    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts,
+    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, arrivesInTown,
     DECISIONS, ALL, FIRST, raise, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };

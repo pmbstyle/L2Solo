@@ -26,8 +26,9 @@ const HELD = 5;
 const CLEAR = 0.8;
 // spotId -> { contested, holder: { look, people }, heldSeq (the hold's number, once held) };
 // at most one per catalogue spot. heardAt: botId -> the last hold's number at its last town
-// arrival; at most one per bot. holds: the holds numbered so far.
-const records = new Map(), heardAt = new Map();
+// arrival; arriving: botId -> its town-arriving far step's proposal, until its ack; at most
+// one per bot each. holds: the holds numbered so far.
+const records = new Map(), heardAt = new Map(), arriving = new Map();
 let holds = 0;
 
 // The record after an arrival: pressure (SpotContest's, the arriving species' demand over its
@@ -64,11 +65,27 @@ function note(spotId, pressure, units) {
     if (next?.contested === HELD) Trace.record({ kind: 'raise', name: 'spot_reputation', reason: 'held', spot: id, people: next.holder.people });
     else if (!next && record?.contested >= HELD) Trace.record({ kind: 'raise', name: 'spot_reputation', reason: 'cleared', spot: id, contested: record.contested });
 }
-// A bot's town arrival (the worker's far step take, a near body's bag): it hears the holds so
-// far. Counted spot:heard when any record is held.
-function heard(botId) {
-    heardAt.set(Number(botId), holds);
-    if (records.size) Situations.note('spot:heard');
+// A bot's town arrival (its raised arrived_town, either kind): it hears the holds so far once
+// the arrival is taken: a near body's raise at once (the worker took its post), a far step's
+// at its commit ack (proposalId, acked; a refused step heard nothing). Counted spot:heard when
+// a held record is heard.
+function heard(botId, proposalId = null) {
+    if (proposalId) arriving.set(Number(botId), proposalId);
+    else hear(Number(botId));
+}
+// The commit acks (ColdSimulationKernel.onCommitAck's results): a town-arriving step committed hears.
+function acked(results) {
+    if (!arriving.size) return;
+    for (const result of results || []) {
+        const id = Number(result?.characterId), proposalId = arriving.get(id);
+        if (proposalId === undefined) continue;
+        arriving.delete(id);
+        if (result.ok && result.proposalId === proposalId) hear(id);
+    }
+}
+function hear(id) {
+    heardAt.set(id, holds);
+    for (const record of records.values()) if (record.heldSeq) { Situations.note('spot:heard'); return; }
 }
 // A solo bot's filter for a search (state: the bot; persona: its BotPersona): spotId -> repelled,
 // or null when it has heard of no hold. Counted spot:repelled by the search per candidate it drops.
@@ -82,5 +99,5 @@ function reader(state, persona) {
         return record?.heldSeq <= known && repels(record, unit);
     };
 }
-function clear() { records.clear(); heardAt.clear(); holds = 0; }
-module.exports = { arrived, repels, note, heard, reader, clear, HELD, CLEAR };
+function clear() { records.clear(); heardAt.clear(); arriving.clear(); holds = 0; }
+module.exports = { arrived, repels, note, heard, acked, reader, clear, HELD, CLEAR };

@@ -133,8 +133,21 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
         assert.equal(chosen(cautious, spots), 'next', 'held by an even look: the cautious bot keeps away');
         assert.equal(chosen(assertive, spots), 'best', 'the assertive one goes');
         Records.clear();
-        hold('c', Records.HELD - 1); town(cautious);
+        hold('c', Records.HELD - 1);
+        const heard = () => Situations.counts().raised['spot:heard'] || 0, before = heard();
+        town(cautious);
         assert.equal(chosen(cautious, spots), 'best', 'four contested arrivals hold nothing');
+        assert.equal(heard(), before, 'nothing held is heard: not counted');
+        // A far bot hears at its town-arriving step's commit: a refused step heard nothing.
+        hold('c', 1);
+        Records.heard(cautious.characterId, 'step-1');
+        Records.acked([{ characterId: cautious.characterId, ok: false, proposalId: 'step-1' }]);
+        assert.equal(chosen(cautious, spots), 'best', 'its town arrival refused: it has not heard');
+        Records.heard(cautious.characterId, 'step-2');
+        assert.equal(chosen(cautious, spots), 'best', 'not before the ack');
+        Records.acked([{ characterId: cautious.characterId, ok: true, proposalId: 'step-2' }]);
+        assert.equal(chosen(cautious, spots), 'next', 'committed: heard');
+        assert.equal(heard(), before + 1, 'a held record heard: counted');
     } finally { Records.clear(); }
 }
 

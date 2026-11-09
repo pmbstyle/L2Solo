@@ -129,9 +129,14 @@ commit ack; disputes and meetings are then fenced with that bot's committed revi
 go in the competition frame of the next heartbeat; the frame's receipt frees it. A
 refused ack, another step's ack, the bot leaving the far simulation, the worker's stop or
 an age past 10 s from the arrival drops them, counted (`spot:contest:<why>` on the
-situations= line), never re-fenced. Counters: `spot:arrival:checked/over`,
+situations= line), never re-fenced. A displaced bot standing there on a player's command
+loses the command at its next step (`command:displaced`) and its player is told who pushed
+it out (`spot_command` `command_lost`, main's `command_lost:told/offline`; an offline player
+is told nothing). Counters: `spot:arrival:checked/over`,
 `spot:contest:outmatched/even/crowded/stronger/friendly_share/pvp`,
-`spot:contest:displaced/displaced_left`, `spot:contest:capped/memory/commanded/evacuation/hot_peer/hot_skipped`,
+`spot:contest:displaced/displaced_left`,
+`spot:contest:capped/memory/commanded/evacuation/hot_peer/pvp_hot_skipped` (a near
+arrival's PvP verdict runs no dispute: its body's own tactics),
 `enemy_met:<reason>`, `enemy_met:mixed`, and main's `enemy_met:<outcome>`.
 
 ## First real actions
