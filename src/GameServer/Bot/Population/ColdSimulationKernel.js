@@ -84,7 +84,7 @@ class DueHeap {
     }
 
     // A derived minimum on the SAME heap nodes; normal heads never hide a
-    // player's wait, a meeting's travel or a round that starts its lead early
+    // bot that matters to a player (forPlayer), a meeting's travel or a round that starts its lead early
     // (`lead`) behind an entry held to its due. A node's heads read only its
     // own entry and its two children's heads, so refreshing from the deepest
     // changed node to the root rebuilds every head a sift changed.
@@ -92,7 +92,7 @@ class DueHeap {
         const values = this.values, length = values.length;
         while (index >= 0) {
             const own = values[index];
-            let player = own?.playerWaiting ? own : null;
+            let player = own?.forPlayer ? own : null;
             let meeting = own?.meetingTravel ? own : null;
             let lead = own?.lead ? own : null;
             for (let child = index * 2 + 1; child <= index * 2 + 2 && child < length; child++) {
@@ -221,7 +221,7 @@ function deterministicRandom(state = {}) {
 // meeting point ('meetings'). A caller without a kernel (BotLifeState, a
 // test) reads none.
 const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [],
-    hallNeeded: () => false, playerWaiting: () => false });
+    hallNeeded: () => false, playerWaiting: () => false, withinPlayerRing: () => false });
 
 // party: the party row this bot leads, or null; members: its member states.
 function partyIntegrityInvalid(party, members, partySession = {}) {
@@ -467,6 +467,13 @@ function occupationRound(state, plan, timestamp, record) {
 function playerWaitingTransition(state, kind = null, facts = NO_FACTS) {
     return !!state?.stats?.tradeMeeting && facts.playerWaiting(state.characterId)
         && (kind ?? lifecycleKind(state, facts)) === 'resolver';
+}
+
+// A bot that matters to a player goes first in the due queue (DueHeap's player head,
+// dueCandidates): one the player waits for at a meeting, or one within the activation
+// radius of a real player's last published ring (it may go hot at the next scan).
+function forPlayerEntry(state, kind = null, facts = NO_FACTS) {
+    return playerWaitingTransition(state, kind, facts) || facts.withinPlayerRing(state);
 }
 
 function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
@@ -716,6 +723,8 @@ class ColdSimulationKernel {
         // the player's meeting waits ('meetings') and a raid boss's row ('raids').
         this.hallNeedOf = typeof options.hallNeeded === 'function' ? options.hallNeeded : () => false;
         this.waitingOf = typeof options.playerWaiting === 'function' ? options.playerWaiting : () => false;
+        // The real players' activation rings ('player_rings': [{ locX, locY, radius }], main's scan).
+        this.ringsOf = typeof options.playerRings === 'function' ? options.playerRings : () => null;
         this.raidRowOf = typeof options.raidRow === 'function' ? options.raidRow : () => null;
         // The spot a bot stands at (SpotService.standingSpot over the worker's
         // spot catalog), computed when a step reads it.
@@ -924,6 +933,43 @@ class ColdSimulationKernel {
         return this.waitingOf(Number(characterId)) === true;
     }
 
+    // Whether this bot stands within a real player's activation ring (none: no player online).
+    withinPlayerRing(state) {
+        const rings = this.ringsOf();
+        if (!rings?.size) return false;
+        const x = Number(state?.loc?.locX), y = Number(state?.loc?.locY);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+        for (const ring of rings.values()) {
+            const dx = x - ring.locX, dy = y - ring.locY;
+            if (dx * dx + dy * dy <= ring.radius * ring.radius) return true;
+        }
+        return false;
+    }
+
+    // A real player's ring came, moved or went: the bots inside the old or the new one take
+    // their place in the due queue again (ensureScheduled reads withinPlayerRing).
+    playerRingMoved(...rings) {
+        const seen = new Set();
+        for (const ring of rings) {
+            if (!ring) continue;
+            let records;
+            try {
+                records = this.states.locationIndex.nearSources({ locX: ring.locX, locY: ring.locY, locZ: 0 }, ring.radius,
+                    { view: 'state', kind: 'all' });
+            } catch (error) {
+                FailureLog.note('cold.player_ring', error);
+                continue;
+            }
+            for (const record of records) {
+                const id = Number(record.id);
+                if (seen.has(id)) continue;
+                seen.add(id);
+                this.ensureScheduled(id);
+            }
+        }
+        return seen.size;
+    }
+
     // A raid spot with its boss's live row (instance, authority, engagement,
     // availability); any other spot as it is.
     raidSpot(spot) {
@@ -1112,7 +1158,7 @@ class ColdSimulationKernel {
         if (holdUntil > (lead ? due - this.stepLeadMs : due)) { dueAt = Math.max(due, holdUntil); lead = false; }
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
-            playerWaiting: playerWaitingTransition(current?.state, kind, this),
+            forPlayer: forPlayerEntry(current?.state, kind, this),
             meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
@@ -1196,7 +1242,7 @@ class ColdSimulationKernel {
         if (!current || this.busy(id)) return false;
         if (this.hasNormalCoverage(id)) {
             const scheduled = this.scheduleTokens.get(id);
-            if (scheduled.heapEntry.playerWaiting !== playerWaitingTransition(current.state, kind, this)
+            if (scheduled.heapEntry.forPlayer !== forPlayerEntry(current.state, kind, this)
                 || scheduled.heapEntry.meetingTravel !== meetingTravelTransition(current.state, kind, this)) {
                 this.schedule(id, current.version, scheduled.dueAt, kind, scheduled.heapEntry.lead);
             }
@@ -1239,8 +1285,9 @@ class ColdSimulationKernel {
         while (candidates.length + commandsSelected < limit && this.heap.size > 0) {
             const waiting = this.heap.peekPlayer();
             const transit = !meetingSelected && this.heap.peekMeeting();
-            // One due paid arrival goes ahead of the ordinary hunt backlog;
-            // the rest of this batch keeps its existing deadline order.
+            // Every due bot that matters to a player goes ahead of the ordinary
+            // backlog (forPlayer), then one due meeting traveller; the rest of
+            // this batch keeps its deadline order.
             const head = waiting && this.startAt(waiting) <= timestamp ? waiting
                 : transit && this.startAt(transit) <= timestamp ? transit : this.heap.peek();
             if (Number(head.dueAt || 0) > startBy) break;
