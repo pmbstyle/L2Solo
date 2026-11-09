@@ -63,11 +63,14 @@ const SITUATIONS = Object.freeze({
     // Its own state (detect). A level alone is none (training reads it in its round):
     // what a level opens is. The C4 expertise grade its level allows moved, either way
     // (a death's lost level too: GearGradeRule); the held earning spot's monsters fell
-    // past the deep-blue gap below it (SpotValueTable.outleveled: the search's own cut).
+    // past the deep-blue gap below it (SpotValueTable.outleveled: the search's own cut),
+    // heard at once, a far bot at its next step: a C4 player sees grey cons and the EXP
+    // gone at his next pull, he needs no rest to notice (its 0 -> 1 flip only: once per
+    // spot outgrown). Our choice, not C4's rule.
     // The gear a fight turns on (the worn weapon, the body armour's grade, the armour
     // sets worn whole: not a ring, an enchant, hennas, skills, the craft or karma).
     grade_changed: link(STOP),
-    spot_outleveled: link(STOP),
+    spot_outleveled: link(NOW),
     gear_changed: link(TOWN),
     recipe_learned: link(STOP),
     died: link(NOW),
