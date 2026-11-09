@@ -337,7 +337,7 @@ async function images(ids) {
             1459: { ...cCrafter.inventory[1459], amount: 1 } } };
         const pausedGear = invoke('GameServer/Bot/AI/GearPlanSelection').deferredWishPlan(gearPlan, {}, beforeInputs);
         cCrafter = await Life.upsertState({ ...cCrafter, stats: { ...cCrafter.stats, equipmentPlan: pausedGear } }, 'c_inputs_after_gear_pause');
-        assert.equal(Policy.availableMaterial(cCrafter, 1459), 0, 'the collected gear crystal stays reserved');
+        assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(cCrafter, 1459), 0, 'the collected gear crystal stays reserved');
         const cCandidate = Shots.craftCandidate(cCrafter, cRecipe, Shots.marketSnapshot(now + 120000));
         assert(cCandidate?.batches > 0, 'the learned recipe reaches a finite executable production batch');
         assert.equal(cCandidate.gear.source, 'crystals');

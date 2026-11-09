@@ -97,12 +97,6 @@ function recipeTarget(state, index = null, knownRecipeIds = [], selectedRecipeId
     return best;
 }
 
-function availableMaterial(state, selfId) {
-    const reserved = ItemDisposition.reservedEquipmentAmounts(state);
-    return Math.max(0, Number(state.inventory?.[selfId]?.amount || 0)
-        - Math.max(Number(reserved[selfId] || 0), Number(state.stats?.clanMaterialDemand?.[selfId] || 0)));
-}
-
 function scrapCraftRoutes(state, knownRecipes, index) {
     const routes = [];
     const owned = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
@@ -256,7 +250,9 @@ function craftCandidate(state, recipe, index) {
 
 function batchCount(state, candidate) {
     const mpPerBatch = Number(candidate.recipe.mpCost || 0);
-    const ownCrystals = availableMaterial(state, candidate.crystalId);
+    // The crystals the bot may spend: the native writer's free-units rule (its summary's
+    // protections and every reserve, a luxury exchange's or a clan's among them).
+    const ownCrystals = Wealth.freeOf(state, candidate.crystalId);
     const potential = ownCrystals + Number(candidate.gear?.crystals || 0);
     const availableMp = Number(state.vitals?.mp || 0) - Number(candidate.gear?.recipe?.mpCost || 0);
     return Math.max(0, Math.min(64, Number(candidate.batches || 1),
@@ -609,6 +605,6 @@ function unpackStep(step) {
 }
 
 module.exports = { SHOT_RECIPE_IDS, SHOT_PRODUCT_IDS, SHOT_RECIPE_ITEM_IDS, CRYSTAL_BY_RANK,
-    availableMaterial, fundedDemand, recipeTarget, scrapCraftRoutes, crystalRoute, craftCandidate,
+    fundedDemand, recipeTarget, scrapCraftRoutes, crystalRoute, craftCandidate,
     batchCount, eligible, decide, packKnown, unpackKnown, packStep, unpackStep,
     recipeShotSearch, createShot, stepShot, resultShot, selectionFor, townCode, townForCode };

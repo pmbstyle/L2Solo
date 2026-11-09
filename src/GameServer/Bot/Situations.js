@@ -201,7 +201,8 @@ const SITUATIONS = Object.freeze({
 // own grade, gear and clan (a clan's goal plan dropped with it), and its source
 // failing: a craft route's stall (source_stalled) or a gear errand failed on its item
 // (goal_failed with its mark, GearMarks: delta), as a C4 player whose item was sold
-// looks for another; not a death (PvE costs no gear), a party left, a town arrival or
+// looks for another, and a failed errand's source changing (its mark forgotten: the money,
+// its gear or grade); not a death (PvE costs no gear), a party left, a town arrival or
 // another failed step.
 // workshop: what a crafter offers (its listing on its known book, stats.workshop), taken
 // at the start of a town visit (arrived_town, either kind, one per visit; a craft level
@@ -361,10 +362,12 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     // body that fails the same walk again while it waits).
     if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
-    // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted.
-    const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
-    // A gear errand failed on its item (its mark) is its gear source failing: it wakes
-    // what a stalled source wakes too (source_stalled: the gear plan).
+    // A mark past its owner's cap (SpotRiskPolicy.MAX_SPOT_MARKS, GearMarks.MAX_MARKS) drops
+    // the oldest: counted by owner.
+    const facts = raisedFacts(stats, name, payload, owner => count(raisedCounts, `${owner}:dropped`));
+    // A gear errand failed on its item (its mark) is its gear source failing, and a mark
+    // forgotten its source changing (GearMarks.LIFETIME): either wakes what a stalled source
+    // wakes too (source_stalled: the gear plan, whose excluded items moved).
     // A decision hears its situations only on its subjects (heardBy).
     const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & heardBy(stats);
     return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
@@ -377,14 +380,15 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 // of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
 // (SpotRiskPolicy.withSpotMark), which a situation of its lifetime forgets (FORGETS).
 // { earning, spotMarks, forgot, ended }, undefined: unchanged. stats: the facts before the raise
-// (null: none known). dropped: told a mark past the cap.
+// (null: none known). dropped(owner): told a mark past the owner's cap ('spot_mark', 'gear_mark').
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 // Memory a situation ends, declared once by the memory's owner at its load (forgets):
 // situation name -> [forget(stats, name) -> the facts it rewrites, with forgot: how many
-// entries went]. One owner today: SpotRiskPolicy's spot marks, which last the outing.
-// Applied by every raise beside its bits, on both threads (and main's row raises).
+// entries went]. The owners: SpotRiskPolicy's spot marks, which last the outing, and
+// GearMarks' failed gear errands, which last until their source changed. Applied by every
+// raise beside its bits, on both threads (and main's row raises).
 const FORGETS = new Map();
 function forgets(owner, names, forget) {
     for (const name of names) {
@@ -393,6 +397,8 @@ function forgets(owner, names, forget) {
     }
 }
 const GearMarks = require('./AI/GearMarks');
+// GearMarks loads here (raisedFacts writes its marks): its lifetimes are declared as it loads.
+forgets('gear', GearMarks.LIFETIME, GearMarks.forget);
 // A stronger arrival displaced the bot off the spot a player's command holds (contest_lost,
 // reason displaced): the command ends there (outcome displaced, uncommanded; news on a spot
 // already marked), so its route reads its marks again. Our choice (C4 has no bot command): a
@@ -420,14 +426,14 @@ function raisedFacts(stats, name, payload, dropped = null) {
     }, {});
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
-        const gearMarks = GearMarks.withMark(stats, payload.key, dropped);
+        const gearMarks = GearMarks.withMark(stats, payload.key, dropped && (() => dropped('gear_mark')));
         return gearMarks ? { gearMarks } : {};
     }
     if (payload?.spotId == null) return {};
     if (name === 'player_command') return { earning: (IncomeRoute ||=
         invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at, payload.by) };
     if (!MARKS.has(name)) return {};
-    const spotMarks = Risk.withSpotMark(stats, payload.spotId, name, dropped);
+    const spotMarks = Risk.withSpotMark(stats, payload.spotId, name, dropped && (() => dropped('spot_mark')));
     return endsCommand(stats, name, payload) ? { spotMarks, earning: IncomeRoute.uncommanded(stats.earning), ended: 'displaced' } : { spotMarks };
 }
 // A decision's bits on both waiting planes (STOP the low byte, TOWN the next).

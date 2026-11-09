@@ -77,7 +77,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     await coordinator.onMessage(decided('partial', 7, 11, errandSeq));
     assert(!Events.failureWaits(session), 'the answer that applied it ends the wait');
     assert.deepEqual(session.nearRaise?.names.map(entry => entry.name), ['spot_empty'], 'the later raise still waits');
-    // The answer carries the worker's gear marks (aged by its gear review): they are the body's,
+    // The answer carries the worker's gear marks (forgotten at their situations): they are the body's,
     // and an errand failed after the raise it applied keeps its mark until its own answer.
     const marks = () => (Events.statsFor(session).gearMarks || []).map(mark => mark.key);
     Events.raiseDecision(session, 'goal_failed', { payload: { kind: 'gear_errand', key: 6 } });
@@ -88,7 +88,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     await coordinator.onMessage(answerWith(8, errandSeq, [{ key: 5 }]));
     assert.deepEqual(marks(), [5, 6], 'the worker\'s marks, and the unanswered errand\'s');
     await coordinator.onMessage(answerWith(9, session.raiseSeq, null));
-    assert.deepEqual(marks(), [], 'a review that dropped them drops them on the body');
+    assert.deepEqual(marks(), [], 'a mind that forgot them forgets them on the body');
     Events.raiseDecision(session, 'spot_empty');
     // A body that posts nothing (an arena copy) gets no answer: no wait is set, and its mark,
     // written on its stats, holds the failed errand there.

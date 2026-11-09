@@ -98,7 +98,7 @@ function finishBlockedPurchase(state, reason) {
         marketLead: null
     };
     // The gear plan stays: a blocked gear target reaches it as its mark (GearMarks, raised by the
-    // caller), and its next review plans without it.
+    // caller), which its reviews plan without while the mark lasts.
     const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
     const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
     return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => ({
@@ -660,8 +660,7 @@ async function acquireMaterials(state, requirements) {
             reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(value);
             reservedState = value;
         }
-        return require('./WealthCraftDecision').freeAmount(value,
-            value.inventory?.[id] || { selfId: Number(id), amount: 0 }, reserved);
+        return require('./WealthCraftDecision').freeOf(value, id, reserved);
     };
     for (const requirement of requirements) {
         const missing = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
@@ -740,9 +739,7 @@ async function buyErrand(state, options = {}) {
         const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(job.recipeId));
         const required = recipe && require('./CraftProfitPolicy').requirements(recipe, Number(job.batches));
         if (required?.has(Number(errand.selfId))) {
-            const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
-            const held = require('./WealthCraftDecision').freeAmount(state,
-                state.inventory?.[errand.selfId] || { selfId: Number(errand.selfId), amount: 0 }, reserved);
+            const held = require('./WealthCraftDecision').freeOf(state, errand.selfId);
             amount = Math.min(amount, Math.max(0, Number(required.get(Number(errand.selfId))) - held));
         }
     }
@@ -831,7 +828,7 @@ const ColdMarketService = {
         // A missed step failed where it acts (after any return handling): the bot decides anew.
         // A buy whose source failed here (GEAR_SOURCE_FAILED: a gear piece or a craft material)
         // is a failed errand: its item is marked (GearMarks), so the build it wakes does not
-        // send the bot for it again; a new offer of it wakes the build (offer_posted).
+        // send the bot for it again until the money or its gear moved (GearMarks.LIFETIME).
         const refreshAfter = written => written.then(result => {
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(result?.reason)
@@ -843,14 +840,14 @@ const ColdMarketService = {
         // What the bot may spend (PurchaseFunding.spendable): its wallet above
         // the operating reserve, at the goal root's place in the money queue.
         // A buy ad's escrow is not in the wallet a shop is paid from.
-        let refusedOffer = false;
+        let refusedOffer = false, overPlanPrice = false;
+        const budget = activeMaterialPurchase ? 0 : goal.plan?.weaponBridge ? PurchaseFunding.budget(state)
+            : PurchaseFunding.spendable(state, 0, PurchaseFunding.goalTerms(goal));
         const offer = activeMaterialPurchase ? null : MarketOpportunity.bestOffer(goal.target.itemId, {
-            town: state.currentRegion,
-            budget: goal.plan?.weaponBridge ? PurchaseFunding.budget(state)
-                : PurchaseFunding.spendable(state, 0, PurchaseFunding.goalTerms(goal)),
+            town: state.currentRegion, budget,
             buyerCharacterId: state.characterId,
             accept: candidate => {
-                if (Number(candidate.price) > arrival.unitPrice) return false;
+                if (Number(candidate.price) > arrival.unitPrice) { overPlanPrice = true; return false; }
                 if (priceRefused(state, candidate, 1)) { refusedOffer = true; return false; }
                 return true;
             }
@@ -859,6 +856,11 @@ const ColdMarketService = {
             if (refusedOffer) return refreshAfter(replanAfterPriceRefusal(state));
             // A stale NG/D goal ends here; the worker's next card replaces it.
             if (lowTierGearPurchase) return refreshAfter(finishBlockedPurchase(state, 'low_tier_offer_missing'));
+            // Which side refused (developer counters, market purchase_goal): an offer here above
+            // the card's unit price (the planner priced it lower than the shop), else none within
+            // the funding the buyer reads (or none at all).
+            purchaseObservation(state, goal.target.itemId, 1, budget, 'purchase_goal', overPlanPrice ? 'over_plan_price' : 'none_in_budget',
+                { unitPrice: arrival.unitPrice, town: state.currentRegion });
             return missed('no_affordable_offer');
         }
         if (activeMaterialPurchase) {

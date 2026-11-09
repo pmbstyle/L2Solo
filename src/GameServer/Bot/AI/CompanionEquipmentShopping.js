@@ -149,8 +149,8 @@ function merchantTarget(offer, town) {
     return MarketOpportunity.offerTarget(offer, town.name);
 }
 
-// An errand the bot failed is planned no more until its gear plan's next review
-// (GearMarks): none rather than the same errand again.
+// An errand the bot failed is planned no more while its mark lasts (GearMarks: until its
+// source changed): none rather than the same errand again.
 function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     const errand = errandFor(session, bot, town, purchaseCount, excludedSlots, economy);
     const Marks = require('./GearMarks');

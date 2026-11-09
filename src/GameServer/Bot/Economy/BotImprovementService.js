@@ -9,7 +9,7 @@ const catalog = () => invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const ROLE_OF = Object.freeze({ sa: 'SMITH', crystal_quest: 'SOUL_CRYSTAL', henna: 'SYMBOL_MAKER' });
 const roleOf = kind => ROLE_OF[kind] ? catalog().IMPROVEMENT_ROLES[ROLE_OF[kind]] : null;
 const pendingCold = new Map(), pendingHot = new WeakMap();
-let improvementDeferred = 0;
+let improvementDeferred = 0, improvementRetired = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
     'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'invalid_bot_luxury_exchange', 'soul_crystal_resonance']);
 const rejectedInput = error => INPUT_REJECTIONS.has(error?.message);
@@ -77,10 +77,17 @@ async function reviewCold(state, options = {}) {
         invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);
         return {state:current,changed:true,result};
     }).catch(async error => {
+        const current = Life.cachedState(state.characterId) || state;
+        // Another write moved the bot's row between this review and its transaction: the
+        // held improvement stands (no failed goal) and the next review takes it on the new
+        // row. Counted (developer counters: improvementRetired), not a fault.
+        if (error?.message === 'improvement_source_retired') {
+            if (DiagnosticConfig.developerDiagnostics) improvementRetired++;
+            return { state: current, changed: false, reason: 'source_retired' };
+        }
         // These native refusals describe the selected input, never a stale
         // revision, location, MP or uncertain transaction-delivery retry.
         if (!rejectedInput(error)) throw error;
-        const current = Life.cachedState(state.characterId) || state;
         if (current.phase !== 'cold') return { state: current, changed: false };
         const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${error.message}`);
         return { state: raised || current, changed: false, reason: error.message };
@@ -161,4 +168,4 @@ function stationTarget(actor, improvement) {
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
 module.exports = { reviewCold, reviewHot, chosen, inTown, selfCrystallization, acquisitionTravel, Policy, stationTarget,
-    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred }) : { enabled: false } };
+    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred, improvementRetired }) : { enabled: false } };

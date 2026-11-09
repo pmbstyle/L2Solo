@@ -53,8 +53,8 @@ async function run() {
         'an individual purchase timeout must not cancel a clan-owned objective');
 
     // A gear errand the bot failed where it acts (goal_failed of kind gear_errand) marks its item
-    // and wakes the build and the gear plan (its source failed); that review excludes it and
-    // drops the mark (GearMarks).
+    // and wakes the build and the gear plan (its source failed); the reviews exclude it until a
+    // situation of its lifetime forgets it (GearMarks.LIFETIME), never the review it woke.
     {
         const Marks = require('../src/GameServer/Bot/AI/GearMarks');
         const Situations = invoke('GameServer/Bot/Situations');
@@ -62,7 +62,24 @@ async function run() {
         assert(Marks.marked(failed, 2566), 'the failure marks its item');
         assert(Situations.woken(failed, 'build') && Situations.woken(failed, 'gear_plan'), 'the failure wakes the build and the gear plan');
         assert(Planner.replanContextFor({ ...state, stats: failed }, plan, now).excludedTargetIds.includes(2566), 'the gear plan excludes it');
-        assert.equal(Marks.afterReview(failed), null, 'that review drops the mark: the next one may plan it again');
+        // The next item fails too (the review took it instead): both stay out, so no review
+        // goes back to the first while the town visit lasts.
+        const reviewed = { ...failed, woken: 0 };
+        const second = Situations.raise(reviewed, 'goal_failed', { kind: 'gear_errand', key: 75, impossible: true });
+        assert.deepEqual(Planner.replanContextFor({ ...state, stats: second }, plan, now).excludedTargetIds.filter(id => [2566, 75].includes(id)).sort((a, b) => a - b),
+            [75, 2566], 'the second failure\'s review plans without both');
+        // The money the build waited for, a new grade or new gear forget every mark, and wake the
+        // gear plan (its source changed).
+        for (const name of ['goal_affordable:focus', 'grade_changed', 'gear_changed']) {
+            const freed = Situations.raise({ ...second, woken: 0 }, name);
+            assert.deepEqual(Marks.keys(freed), [], `${name} forgets the marks`);
+            assert(Situations.woken(freed, 'gear_plan'), `${name} wakes the gear plan`);
+        }
+        // A town arrival, a death or a board offer (a marked item is no purchase: no offer of it
+        // is watched) changes neither the shop's answer nor the money: the marks stay.
+        for (const name of ['arrived_town', 'died', 'goal_failed:visit', 'offer_posted']) {
+            assert.deepEqual(Marks.keys(Situations.raise({ ...second, woken: 0 }, name)), [2566, 75], `${name} keeps the marks`);
+        }
     }
     // A craft route stalls after STALL_KILLS kills that collect nothing, whatever the time.
     const killed = (value, kills) => ({ ...value, stats: { ...value.stats, fightsWon: kills } });

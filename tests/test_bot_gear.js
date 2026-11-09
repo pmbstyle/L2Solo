@@ -154,6 +154,14 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 assert.strictEqual(upgrades.length, 1, 'mage should only upgrade to a suitable caster weapon');
 assert.strictEqual(upgrades[0].item.fetchId(), 1103);
 
+// A hot archer wearing nothing wears its dagger rather than fight barehanded; a bow wins.
+const archerDagger = wearable(1104, { kind: 'Weapon.Knife', slot: 7, pAtk: 8, mAtk: 6 });
+const archerBow = wearable(1105, { kind: 'Weapon.Bow', slot: 14, pAtk: 23, mAtk: 6 });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({ classId: 9, level: 10, items: [archerDagger], paperdoll: {} }));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1104], 'an unarmed archer with only a dagger must wear it');
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({ classId: 9, level: 10, items: [archerDagger, archerBow], paperdoll: {} }));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1105], 'an unarmed archer owning a bow must wear the bow');
+
 const demonFangsTemplate = itemTemplate(321);
 assert.strictEqual(demonFangsTemplate.template.name, 'Demon Fangs', 'the regression fixture must use the real C4 caster weapon');
 const healerOldBlunt = wearable(1120, { kind: 'Weapon.Blunt', slot: 7, pAtk: 10, mAtk: 8, equipped: true });
