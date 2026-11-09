@@ -56,7 +56,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, ou
     if (kind === 'wake') return kernel.states.get(id)?.stepWake?.raises?.contest_lost || null;
     if (kind === 'step') {
         // The bot's next step as the kernel runs it, up to its commit proposal (not sent);
-        // ack: main commits it (an ok ack carrying the commit's numbers).
+        // ack: main commits it (an ok ack carrying the committed state).
         const held = kernel.states.get(id), now = Date.now(), flush = kernel.flush, active = { state: held.state, startedAt: now, dueAt: now };
         const counted = () => Catalogue.counts().raised['spot:contest:grievance'] || 0, was = counted();
         kernel.flush = () => {};
@@ -66,20 +66,20 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, ack, ou
         kernel.dirty.delete(id);
         if (ack && proposal) {
             Object.assign(active, { pendingCommitId: proposal.proposalId, proposed: proposal.nextState });
-            kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId: proposal.proposalId }] });
+            kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId: proposal.proposalId, state: proposal.nextState }] });
         }
         kernel.inFlight.delete(id);
         return { proposed: !!proposal, memoryEvents: proposal?.result?.memoryEvents || [], faults: kernel.faults.get(id)?.logged || [],
             counted: counted() - was };
     }
     if (kind === 'command') {
-        // The bot's next step as a command (main's world action): its request as sent, then main's ok.
+        // The bot's next step as a command (main's world action): its request as sent, then main's answer.
         const emit = kernel.emit;
         let request = null;
         kernel.emit = (type, payload) => type === 'command_request' ? (request = payload.requests[0], true) : emit.call(kernel, type, payload);
         const attempt = kernel.beginCommand(id);
         try { await kernel.resolveCommand(id, attempt); } finally { kernel.emit = emit; }
-        kernel.completeCommand({ characterId: id, commandId: attempt.commandId, commandCheckpoint: attempt.checkpoint, ok: true });
+        kernel.completeCommand({ characterId: id, commandId: attempt.commandId, commandCheckpoint: attempt.checkpoint, ok });
         return { sent: !!request, posted: request?.precomputedPlan?.memoryEvents || null,
             wake: kernel.states.get(id)?.stepWake?.raises?.contest_lost || null };
     }
@@ -442,12 +442,14 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual((await probe({ kind: 'step', id: kept })).memoryEvents, [], 'the one that kept its spot remembers nothing');
         const after = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
         assert(!after.seen.standing.includes(`solo:${gone}`), 'until its next step, the displaced bot no longer counts there');
-        // Its next step a command instead (main's commit writes no memory): the grievance waits for the step after.
-        const commanded = await probe({ kind: 'command', id: gone });
-        assert.deepEqual([commanded.sent, commanded.posted, commanded.wake], [true, null, null], 'the command hears the wake and posts no memory');
+        // Its next step a command instead: the command carries the grievance to main's commit
+        // (written there: test_cold_command_inner_admission); main refuses it, so the wake stays.
+        const commanded = await probe({ kind: 'command', id: gone, ok: false });
+        assert.deepEqual([commanded.sent, (commanded.posted || []).map(event => [event.sourceId, event.targetId, event.type]), !!commanded.wake],
+            [true, [[gone, 104, 'mob_contested']], true], 'the command hears the wake and carries the grievance');
         const later = await probe({ kind: 'step', id: gone, ack: true });
         assert.deepEqual([later.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), later.counted],
-            [[[gone, 104, 'mob_contested']], 1], 'the next step commits the grievance, counted once');
+            [[[gone, 104, 'mob_contested']], 1], 'the refused command\'s grievance rides the next step commit, counted once');
         assert.deepEqual((await probe({ kind: 'step', id: gone })).memoryEvents, [], 'and only once');
 
         // One bot stands there and one is on its way: two hunters on two places is no contest.

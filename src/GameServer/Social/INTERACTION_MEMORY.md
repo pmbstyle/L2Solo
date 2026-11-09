@@ -199,6 +199,9 @@ For an
 encounter affecting multiple characters use one complete `atomicGroup` containing
 all participants, with their directed events in their respective proposals.
 The single-owner `Owner.commit` path also accepts `options.memoryEvents`.
+A far step main runs as a lifecycle command posts its plan's `memoryEvents`; main
+writes them once the command's writes landed (`ColdSimulationOwner.commitMemory`,
+checked as a step commit's are; a refused command writes none).
 
 Rejected lifecycle proposals write no memory. Invalid/expired social events
 throw and roll back the transaction, including physical changes. Main runtime

@@ -2075,6 +2075,14 @@ class ColdSimulationCoordinator {
             }
         });
         const result = await this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
+        // The step's memory events (only a displaced bot's grievance) land with its command's
+        // writes, counted as applied: a refused command writes none (its retry plans them again),
+        // a retried step's are duplicates of its key.
+        const memoryEvents = result?.ok ? request.precomputedPlan?.memoryEvents : null;
+        if (memoryEvents?.length) await ColdSimulationOwner.commitMemory(identity.characterId, memoryEvents)
+            .then(snapshots => snapshots.forEach(snapshot => snapshot.appliedEvents
+                .forEach(() => Situations.note('spot:contest:grievance'))))
+            .catch(error => FailureLog.note('cold.command_memory', error));
         if (result?.ok && sourceCurrent() && !this.stopping) {
             const current = LifeState.cachedState(identity.characterId);
             if (current) result.state = await this.step('training', identity.characterId, () => this.reviewCommittedEconomy(current, () => {

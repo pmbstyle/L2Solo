@@ -1481,8 +1481,8 @@ function arrivalEnemies({ arriving, spotId, step, at, proposalOf }) {
     outbox?.add(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
 }
 // A spot contest's loser remembers the stronger unit (SpotContest.grievance), the event enriched
-// with its own state; it rides the loser's own step commit (the kernel counts it committed:
-// spot:contest:grievance).
+// with its own state; it rides the loser's own step commit (counted spot:contest:grievance once
+// written: the kernel at the step's ok ack, main at a command step's write).
 function spotGrievance(state, by, step, at) {
     return RelationshipContext.enrich(SpotContest.grievance({ victim: state.characterId, by, step, at }), state);
 }

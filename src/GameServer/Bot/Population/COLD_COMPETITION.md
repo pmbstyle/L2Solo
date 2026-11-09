@@ -121,10 +121,9 @@ arriving commit is acked (the kernel's step wake: no commit of its own, it finis
 window its step already credited); a near arrival displaces at once. The unit that lost
 remembers the stronger one (`mob_contested`, `SpotContest.grievance`, counted
 `spot:contest:grievance` once its commit lands), written by its own commit: a displaced
-far bot at that next step (a command step, whose commit main writes without memory, holds
-it on the kernel record for the next step's commit; a restart loses it, counted
-`step:memory:lost`), a far solo arrival that shares under a stronger stranger
-(`tolerated`) at its arrival step. The event carries the step's time; main's commit queue
+far bot at that next step (a command step carries it to main, which writes it once the
+command's writes landed, `ColdSimulationOwner.commitMemory`), a far solo arrival that
+shares under a stronger stranger (`tolerated`) at its arrival step. The event carries the step's time; main's commit queue
 writes it once that time has come. Parties and standing units that chose to share write none; bodies near a
 player write theirs per mob (`BotMobCompetition`).
 
