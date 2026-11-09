@@ -116,6 +116,18 @@ const originalBoard = Afk.boardIndex;
     assert(thinBid, 'the native market can price a missing scroll for the lower-priced C series');
     assert(thinBid.price <= thinIntent.worth && thinBid.price > 10000,
         'the scroll gets a viable price within the series investment');
+    const lowerWallet = await probe(thin, { ...thinInput,
+        fundingReview: { adena: 1000000, rivalPrice: 200000 },
+        tables: [...thinInput.tables, ...['personal_warehouse', 'clan_supplies'].map(name => ({ name,
+            from: null, to: 0, full: true, removed: [], rows: [] }))] });
+    assert(lowerWallet.bid?.price > 0 && lowerWallet.moneyPrice > lowerWallet.oldMoneyPrice,
+        'the recipe was biddable before a higher-priority wish raised the price of money');
+    assert.equal(lowerWallet.before[0], lowerWallet.after[0], 'the wallet review reuses the native source graph');
+    assert(lowerWallet.after[3] > lowerWallet.before[3], 'the funding change is tested through a read of the held graph');
+    assert.equal(lowerWallet.spendable, 0, 'the recipe cannot spend the higher-priority reserve');
+    assert.deepEqual(lowerWallet.current, lowerWallet.fresh, 'the held view reprices the recipe against its current money queue');
+    assert(lowerWallet.cardWorth < lowerWallet.bid.price && lowerWallet.review?.withdrawals?.length === 1,
+        'a rival bid cannot promote an unfunded recipe quote through its old exact card cap');
     const pricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const bidLine = { ...thinBid, recordId: 910950, lineId: 9109500, ownerId: thin.characterId,
         storeType: 3, kind: 'buy_ad', custodyPolicy: 1, town: 'Giran', revision: 1 };

@@ -51,6 +51,46 @@ module.exports.nativeMarketPlan = async (id, timestamp) => {
     return { ...plan, statsPacket: economy.statsPacket, warmCache,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
 };
+module.exports.nativeFundingReview = async (id, timestamp, terms) => {
+    const entry = kernel.states.get(Number(id)), E = invoke('GameServer/Bot/Economy/EconomyContext');
+    const D = require('./ColdEconomyDecision'), T = require('../Economy/TradeIntent');
+    const P = require('../Economy/MarketPricing'), B = require('../Economy/BuyAdPolicy');
+    let state = entry.state, economy, routes;
+    for (let pass = 0; pass < 3; pass++) {
+        kernel.states.set(Number(id), { ...entry, state });
+        routes = await occupationFor(state, timestamp, {}, 'wish');
+        economy = E.forState(state, { timestamp, routeRows: routes, caller: 'step' });
+        state = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
+    }
+    const itemId = Number(state.stats.shotRecipeDemand.itemId);
+    const intent = economy.watchList.find(row => row.itemId === itemId);
+    const options = { economy, board: boardReady(), town: 'Giran', npcOffersFor: () => [] };
+    const bid = B.bidFor(state, { type: 'buy_craft_material', target: { itemId, amount: 1 }, intent,
+        plan: { purpose: 'recipe', valueRate: intent.valueRate } }, options);
+    const before = [...(E.buildDoors().meeting_prepare || [0, 0, 0, 0, 0])], oldMoneyPrice = economy.moneyPrice;
+    state = { ...state, adena: terms.adena, inventory: { ...state.inventory,
+        ...(state.inventory[57] ? { 57: { ...state.inventory[57], amount: terms.adena } } : {}) } };
+    kernel.states.set(Number(id), { ...entry, state });
+    economy = E.forState(state, { timestamp, routeRows: routes, caller: 'meeting_prepare' });
+    state = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
+    const current = economy.watchList.find(row => row.itemId === itemId);
+    const fresh = T.project(state, economy.network, economy.projection, id => economy.worth(id), 40,
+        boardReady(), economy.trip.details, economy.survivalReserve).find(row => row.itemId === itemId);
+    if (terms.rivalPrice) boardReady().put({ id: 990190, ownerId: 990191, kind: 'shop', custodyPolicy: 0,
+        storeType: 3, town: 'Giran', revision: 1, lines: [{ id: 990192, lineId: 990192,
+            selfId: itemId, count: 1, price: terms.rivalPrice, enchant: 0 }] });
+    const card = D.capture(economy, state), cardWorth = D.preparedCardWorth(card, itemId, state,
+        economy.moneyPrice, economy.persona.understanding, true);
+    const ctx = P.traderContext(state, { ...options, economy,
+        preparedWorth: id => D.preparedCardWorth(card, id, state, economy.moneyPrice, economy.persona.understanding, true) });
+    ctx.reviewReasons = new Map([[990193, 2]]);
+    const review = P.look(state, [{ ...bid, recordId: 990194, lineId: 990193, ownerId: Number(id),
+        storeType: 3, kind: 'shop', custodyPolicy: 0, town: 'Giran', revision: 1 }], ctx);
+    return { bid, current, fresh, cardWorth, review, before, after: [...E.buildDoors().meeting_prepare],
+        oldMoneyPrice, moneyPrice: economy.moneyPrice,
+        spendable: require('../Economy/PurchaseFunding').spendable(state, 0, { r: intent.valueRate }),
+        forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
+};
 module.exports.nativeMeetingPreparation = async (id, timestamp, request) => {
     const state = kernel.states.get(Number(id)).state;
     const own = request.actorA === Number(id) ? 0 : 1;
@@ -189,13 +229,13 @@ loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.obse
 parentPort.on('message', async message => {
     if (!message.nativeEconomyDecision) return;
     try { parentPort.postMessage({ probeId: message.msgId,
-        value: await loaded.exports[message.craftMp ? 'nativeCraftMpRefresh' : message.plannerReuse ? 'nativePlannerReuse' : message.meetingRequest ? 'nativeMeetingPreparation' : message.marketPlan ? 'nativeMarketPlan' : message.townVisit ? 'nativeTownVisit' : message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp, message.craftMp || message.plannerReuse || message.meetingRequest || (message.recipeEarning ? message.refreshEconomy : message.nativeRoutes)) }); }
+        value: await loaded.exports[message.fundingReview ? 'nativeFundingReview' : message.craftMp ? 'nativeCraftMpRefresh' : message.plannerReuse ? 'nativePlannerReuse' : message.meetingRequest ? 'nativeMeetingPreparation' : message.marketPlan ? 'nativeMarketPlan' : message.townVisit ? 'nativeTownVisit' : message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp, message.fundingReview || message.craftMp || message.plannerReuse || message.meetingRequest || (message.recipeEarning ? message.refreshEconomy : message.nativeRoutes)) }); }
     catch (error) { parentPort.postMessage({ probeId: message.msgId, error: error.stack, meetingTrace: error.meetingTrace }); }
 });`;
 
 // recipes: the bot's row of main's 'recipes' table ({ recipeBook, knownShotRecipes }), if any.
 module.exports = async function workerEconomyDecision(state, { recipes = null, timestamp = Date.now(),
-    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, refreshEconomy = false, nativeRoutes = false, marketPlan = false, marketWarm = null, townVisit = false, meetingRequest = null, duringMeetingMarket = [], plannerReuse = null, craftMp = null } = {}) {
+    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, refreshEconomy = false, nativeRoutes = false, marketPlan = false, marketWarm = null, fundingReview = null, townVisit = false, meetingRequest = null, duringMeetingMarket = [], plannerReuse = null, craftMp = null } = {}) {
     const epoch = `native:economy-decision:${state.characterId}`;
     const messages = [];
     const worker = new Worker(wrapper, { eval: true, workerData: { sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: epoch, duringMeetingMarket, marketWarm,
@@ -237,7 +277,7 @@ module.exports = async function workerEconomyDecision(state, { recipes = null, t
         send('snapshot_page', { rows: [{ state }, ...extraStates], ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'native-economy'), nativeEconomyDecision: true,
-            characterId: state.characterId, timestamp, recipeEarning, refreshEconomy, nativeRoutes, marketPlan, townVisit, meetingRequest, plannerReuse, craftMp });
+            characterId: state.characterId, timestamp, recipeEarning, refreshEconomy, nativeRoutes, marketPlan, fundingReview, townVisit, meetingRequest, plannerReuse, craftMp });
         const response = await wait(message => message.probeId === 'native-economy');
         if (response.error) {
             const error = Error(response.error); error.meetingTrace = response.meetingTrace; throw error;

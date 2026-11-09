@@ -2246,9 +2246,9 @@ function view(state, plan, deps, built = {}) {
     context.horizonHours = plan.horizonHours;
     Object.assign(context, valueReaders(state, network, plan.values, plan.persona, plan.knowledgeEnabled,
         kitCost, () => context.statsPacket.money));
-    // The retained kit can change independently of the cached decision. Its
-    // small list of bids must use today's physical stock, not the old view.
-    if (state.stats?.equipmentPlan?.inputPreparation || state.stats?.equipmentPlan?.clanGoal
+    // Reprice retained craft inputs and recipe investments against this
+    // wallet: the source graph may stand while the money queue changes.
+    if (state.stats?.shotRecipeDemand || state.stats?.equipmentPlan?.inputPreparation || state.stats?.equipmentPlan?.clanGoal
         || state.stats?.equipmentPlan?.strategy === 'craft' && state.stats?.equipmentPlan?.status === 'active'
         || state.stats?.equipmentPlan?.status === 'deferred' && state.stats?.equipmentPlan?.reason === 'wish_focus') {
         const watch = TradeIntent.project(state, network, context.projection,
