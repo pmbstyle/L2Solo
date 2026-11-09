@@ -31,6 +31,12 @@ const state = {
     stats: {},
     vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 }
 };
+// This route test returns to a catalogued camp. A bare saved town position
+// without a hunting spot is recovered separately by the return regression.
+const origin = { id: 'travel-origin', name: 'Dion', center: { ...state.loc } };
+SpotService.spots = [origin];
+SpotProfiles.cache = [origin];
+state.spotId = origin.id;
 const goal = { type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for_weapon' } };
 const started = GoalExecutor.beginMarketTravel(state, goal, Date.now());
 assert.strictEqual(started.activity, 'traveling');

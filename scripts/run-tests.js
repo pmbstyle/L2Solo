@@ -15,6 +15,9 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_bot_buy_shop_free_wallet.js',
+    'tests/test_cold_loot_item_instances.js',
+    'tests/test_cold_missing_spot_occupation.js',
     'tests/test_perf_cpu_profile.js',
     'tests/test_perf_live_recorder.js',
     'tests/test_perf_heap_profile.js',

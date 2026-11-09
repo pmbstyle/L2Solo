@@ -133,16 +133,14 @@ function finishVisit(state, timestamp, options) {
 
     const from = { ...state.loc };
     const savedSpot = destination.spotId ? SpotService.findById(destination.spotId) : null;
-    const returnState = savedSpot
-        ? {
-            ...state,
-            activity: 'hunting',
-            currentRegion: destination.regionName || state.currentRegion,
-            loc: { ...destination.loc },
-            spotId: destination.spotId
-        }
-        : null;
-    const spotBackoff = returnState && !clanReturn
+    const returnState = {
+        ...state,
+        activity: 'hunting',
+        currentRegion: destination.regionName || state.currentRegion,
+        loc: { ...destination.loc },
+        spotId: savedSpot?.id || null
+    };
+    const spotBackoff = savedSpot && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
     // Where the bot hunts next is the worker's decision, read here: the card's
@@ -153,24 +151,23 @@ function finishVisit(state, timestamp, options) {
     // may no longer hunt by the worker's next trip start: one trip there
     // before the worker moves it.
     let selectedSpot = clanReturn ? savedSpot : null;
-    if (returnState && !clanReturn) {
+    if (!clanReturn) {
         const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
         const usable = spotId => spotId != null && !excluded.has(String(spotId));
         // lazy: cycle the coordinator loads PopulationService, which loads this module.
         const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
         const plan = state.stats?.equipmentPlan;
         selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
-            || (usable(savedSpot.id) ? savedSpot : null)
+            || (usable(savedSpot?.id) ? savedSpot : null)
             || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
                 .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
                 ? SpotProfiles.findById(plan.next.spotId) : null)
             || SpotProfiles.findForState(returnState, { timestamp })
             || (spotBackoff ? null : savedSpot);
     }
-    // Remaining in town is safer than silently returning to a spot that is
-    // already over the death threshold. A later lifecycle pass can retry
-    // once another suitable route becomes available.
-    if (spotBackoff && !selectedSpot) return null;
+    // Stay in town when no eligible camp exists. Old return tickets can
+    // remember town coordinates without any hunting spot.
+    if (!clanReturn && !selectedSpot) return null;
     const to = clanReturn ? { ...destination.loc } : selectedSpot
         ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
         : { ...destination.loc };

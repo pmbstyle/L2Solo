@@ -3090,8 +3090,11 @@ const PopulationService = {
             : null;
         const effectiveState = huntingTravelState || travellingState;
         const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
-        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
-            return this.resolveColdMissingSpot(state, plannedState, startedAt);
+        // An occupation round carries no fight: its accepted economy plan can
+        // buy or start a trip even when the bot has no hunting ground yet.
+        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling'
+            && precomputedResult?.debug?.reason !== 'selected_occupation') {
+            return this.resolveColdMissingSpot(state, plannedState, startedAt, workerPlan?.statsPacket);
         }
 
         const result = precomputedResult || BackgroundResolver.resolveSolo({
@@ -3314,16 +3317,19 @@ const PopulationService = {
         }).finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
     },
 
-    resolveColdMissingSpot(state, plannedState, startedAt) {
+    resolveColdMissingSpot(state, plannedState, startedAt, statsPacket = null) {
         Config.developerDiagnostics && Metrics.recordSkippedResolve('missing_spot');
         Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
         const retryAt = startedAt + 30000;
-        const waiting = { ...plannedState, activity: 'resting',
+        const accepted = { ...plannedState, stats: { ...plannedState.stats, ...statsPacket } };
+        const waiting = { ...accepted, activity: 'resting',
             timing: { ...plannedState.timing, nextResolveAt: retryAt },
-            stats: { ...plannedState.stats, restUntil: retryAt,
+            stats: { ...accepted.stats, restUntil: retryAt,
                 routeRecovery: { reason: 'missing_spot', at: startedAt,
                     attempts: Number(state.stats?.routeRecovery?.attempts || 0) + 1 } } };
-        return LifeState.upsertState(waiting, 'missing_spot_recovery').then(saved => ({
+        // The selected step could not run. Retire that exact decision once;
+        // a recovery deadline alone would keep serving the same stale card.
+        return LifeState.upsertState(DecisionEvents.rejectedState(waiting, accepted, 'missing_spot'), 'missing_spot_recovery').then(saved => ({
             ok: !!saved, reason: saved ? 'missing_spot_recovery' : 'state_write_rejected',
             state: saved || state, debug: { fights: 0, wins: 0, reason: 'missing_spot' }
         }));
@@ -3347,7 +3353,8 @@ const PopulationService = {
         // A sale trip's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
         // the author's path (E306).
-        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids
+        const selectedOccupation = result.debug?.reason === 'selected_occupation';
+        if ((updatedState.activity === 'shopping' || selectedOccupation) && workerPlan?.economyPlan && !correctedBids
             && (!saleVisit(updatedState) || updatedState.stats?.forcedMarketCleanup)) {
             const sourceWorker = ColdSimulationCoordinator.worker, sourceEpoch = ColdSimulationCoordinator.workerEpoch;
             const beforeWrite = () => {
@@ -3359,7 +3366,7 @@ const PopulationService = {
                     throw new WorkerCommandAdmissionRefusal('hot_handoff_fenced');
             };
             const board = await BotAfkMarketService.executePlan(updatedState, workerPlan.economyPlan,
-                { reviewGoal: false, beforeWrite });
+                { reviewGoal: selectedOccupation, beforeWrite });
             updatedState = board.state || updatedState;
         }
 

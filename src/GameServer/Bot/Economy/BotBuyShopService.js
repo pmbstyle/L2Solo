@@ -3,7 +3,7 @@
 const Rules = require('../../AfkTrade/BoardRules');
 const Places = require('./ShopPlaces');
 const Funding = require('./PurchaseFunding');
-const { withinCap } = require('./BuyAdPolicy');
+const { withinCap, retainedLines } = require('./BuyAdPolicy');
 const { marketBuyStoreTitle } = require('./MarketStoreTitle');
 const AfkTradeService = invoke('GameServer/AfkTrade/AfkTradeService');
 const BotImprovementService = invoke('GameServer/Bot/Economy/BotImprovementService');
@@ -30,7 +30,8 @@ async function publish(state, wanted, town, { priority = 0, expectedAuthority = 
     const budgetState = { ...state, adena: Funding.budget(state, escrow) };
     const kit = wanted.reduce((sum, line) => sum + Math.max(0, Number(line.survivalCost) || 0), 0);
     let money = Funding.spendable(budgetState, 0, { upperBound: true, survivalCost: kit });
-    const shopLines = [], meetings = [], roots = new Set();
+    let shopLines = [], meetings = [];
+    const roots = new Set();
     const mayUseShop = priority !== Rules.SELL && (!current || current.storeType === Rules.BUY || priority === Rules.BUY);
     const inTown = state.currentRegion === town && BotImprovementService.inTown(state);
     const mayOpen = state.phase === 'cold' && Places.hasPlaza(town) && (current?.town === town || inTown);
@@ -49,14 +50,25 @@ async function publish(state, wanted, town, { priority = 0, expectedAuthority = 
             shopLines.push({ ...line, ...(previous ? { fills: previous.fills, pricing: previous.pricing } : {}) });
             if (line.intent?.key) roots.add(line.intent.key);
             money -= cost;
-        } else if (meetings.length < Rules.BOT_RECORDS.buy_ad) meetings.push(line);
+        } else meetings.push(line);
     }
+    const held = current?.storeType === Rules.BUY ? current.lines.filter(line => Number(line.count) > 0) : null;
+    const shopSame = shopLines.length ? !!held && current.town === town && sameBuyOrder(held, shopLines) : !held;
+    if (shopSame && held) shopLines = shopLines.map(line => {
+        const previous = held.find(old => key(old) === key(line));
+        return { ...line, price: previous.price, fills: previous.fills, pricing: previous.pricing,
+            ...(line.intent ? { intent: { ...line.intent, price: previous.price } } : {}) };
+    });
+    // Only closing a shop releases its escrow. Its retained or new budget is
+    // locked before a meeting can spend, so ads must fit the remaining wallet.
+    const shopBudget = shopSame && held ? escrow : shopLines.reduce((sum, line) => sum + line.count * line.price, 0);
+    const freeWallet = Math.max(0, Funding.budget(state, escrow) - shopBudget);
+    const ownedAds = ads.flatMap(ad => ad.lines.map(line => ({ ...line, kind: ad.kind, storeType: ad.storeType, town: ad.town })));
+    meetings = retainedLines({ ...state, adena: freeWallet }, meetings, ownedAds, town).slice(0, Rules.BOT_RECORDS.buy_ad);
     const center = ColdMarketListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
     try {
         // Unchanged order: no write. A side flip never matches: a sale shop is
         // no BUY shop, and a BUY shop the split left without lines closes.
-        const held = current?.storeType === Rules.BUY ? current.lines.filter(line => Number(line.count) > 0) : null;
-        const shopSame = shopLines.length ? !!held && current.town === town && sameBuyOrder(held, shopLines) : !held;
         if (shopSame && ads.every(ad => ad.town === town) && sameBuyOrder(ads.flatMap(ad => ad.lines), meetings)) {
             return { shop: shopLines.length ? current : ads.find(ad => meetings.length && key(ad.lines[0]) === key(meetings[0])) || null,
                 changed: false };

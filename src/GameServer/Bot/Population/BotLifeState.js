@@ -2802,26 +2802,36 @@ const BotLifeState = {
         }
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
+            const previous = inventory[key] || {};
+            const template = itemTemplate(item.selfId);
             const amount = Number(item.amount || 0);
-            const kind = item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '';
+            const kind = item.kind || previous.kind || template?.template?.kind || '';
             const protectedStarterLoot = Number(item.sourceMobLevel || 0) > 0
                 && Number(item.sourceMobLevel) <= 5
                 && !String(kind).startsWith('Other.Material')
                 ? amount
                 : 0;
-            const nextAmount = Number(inventory[key]?.amount || 0) + amount;
+            const nextAmount = Number(previous.amount || 0) + amount;
             const starterMobLootAmount = Math.min(
                 nextAmount,
-                Number(inventory[key]?.starterMobLootAmount || 0) + protectedStarterLoot
+                Number(previous.starterMobLootAmount || 0) + protectedStarterLoot
             );
-            inventory[key] = {
+            const acquired = {
+                ...previous,
                 selfId: item.selfId,
-                name: item.name || inventory[key]?.name || itemName(item.selfId),
+                name: item.name || previous.name || itemName(item.selfId),
                 amount: nextAmount,
                 kind,
-                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none',
+                rank: item.rank || previous.rank || template?.etc?.rank || 'none',
+                stackable: itemStackable(item.selfId, item),
+                slot: Number(previous.slot || template?.etc?.slot || 0),
                 ...(starterMobLootAmount > 0 ? { starterMobLootAmount } : {})
             };
+            // Loot grows the bag without replacing its physical copies or worn
+            // slots. New gear gets anonymous +0 copies until the native sync.
+            if (acquired.stackable) delete acquired.instances;
+            else acquired.instances = previous.instances || [];
+            inventory[key] = InventorySummary.completeInstances(acquired);
         });
         if (adena > 0) {
             inventory['57'] = {
@@ -2989,6 +2999,12 @@ const BotLifeState = {
             Object.assign(nextState.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
         } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
+        // Ordinary worker steps commit directly, without main's missing-ground
+        // recovery. Drop their impossible decision too, using this round's mind.
+        if (result.debug?.reason === 'missing_spot') {
+            const accepted = { ...state, stats: { ...state.stats, ...options.statsPacket } };
+            nextState.stats = DecisionEvents.rejectedState(nextState, accepted, 'missing_spot').stats;
+        }
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
