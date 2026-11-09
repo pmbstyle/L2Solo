@@ -238,6 +238,38 @@ function onWorker() {
         assert.equal(on({ ...solo, party: { partyId: 'p3' }, stats: { ...solo.stats, stay: second } }), null, 'a party round counts into no solo stay');
         const heard = count(() => Economy.forState(raised(turned, 'spot_disappoints', { stop: Situations.REST }), deps(7)));
         assert.equal(heard.searches, 1, 'a disappointing stay wakes one search at the rest');
+        assert.equal(count(() => Economy.forState(raised(turned, 'spot_disappoints'), deps(7))).searches, 0,
+            'at work it waits for the rest: drops and income are judged over a stay');
+    }
+    // It outgrows its spot mid-hunt (the monsters fell past the deep-blue gap below it): heard at once, no rest
+    // needed. The round ends its window, its next step takes the earning spot alone (no build), once a spot.
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const Window = invoke('GameServer/Bot/Population/ColdSoloWindow');
+        const low = '-16_39', lowLevel = invoke('GameServer/Bot/AI/SpotValueTable').spotLevel(low);
+        const answer = { ...turned.stats.earning, spotId: low };
+        delete answer.facts;
+        const on = { ...turned, level: lowLevel + 9, spotId: low, stats: { ...turned.stats, earning: answer, woken: 0, waiting: 0 } };
+        on.stats.wishSections = { ...Sections.semanticFacts(on), at: 1 };
+        const step = (before, level) => {
+            const after = { ...before, level, stats: { ...before.stats } };
+            for (const name of Situations.detect(before, after)) Situations.raise(after.stats, name, null, Situations.place(after), after.characterId);
+            return after;
+        };
+        assert.deepEqual(Situations.detect(on, { ...on }), [], 'fixture: a spot at the gap still holds');
+        assert(!Situations.anyWoken(on.stats), 'fixture: nothing woken');
+        const grown = step(on, lowLevel + 10);
+        assert(Situations.woken(grown.stats, 'earning_spot') && !Situations.woken(grown.stats, 'build'),
+            'one level past it, on the hunt: the earning spot is woken now, the build is not');
+        const readers = { feasible: () => true, kind: () => 'resolver' };
+        assert.equal(Window.endOf(on, grown, { debug: { attemptedFights: 3 } }, readers), 'event', 'the round ends its window');
+        assert.equal(step(grown, lowLevel + 10).stats.situationSeq, grown.stats.situationSeq, 'a round more while it waits raises nothing');
+        const decided = count(() => Economy.decideEarning(grown, deps(8)));
+        assert.equal(decided.searches, 1, 'its next step searches once');
+        const moved = { ...grown, stats: { ...grown.stats, ...decided.result } };
+        assert(!Situations.woken(moved.stats, 'earning_spot'), 'and takes the decision');
+        const later = step(moved, lowLevel + 11);
+        assert.equal(later.stats.situationSeq, moved.stats.situationSeq, 'levelling on raises it no more');
     }
     // The body's inputs. A spot it could not reach, ground it may not hunt alone, or a
     // spot it lost or found crowded at its arrival is marked: the search passes it by for the outing, whatever

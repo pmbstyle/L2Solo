@@ -194,6 +194,11 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         delete older.outleveled;
         Events.detectNear(before, { ...holding, level: lowLevel + 10, stats: { ...holding.stats, wishSections: older } });
         assert(before.nearRaise?.names.some(({ name }) => name === 'spot_outleveled'), 'an old baseline: outleveled once');
+        // On the hunt the outgrown spot is heard at once (no rest needed), and wakes the earning spot alone.
+        const outMind = { woken: 0, earning: { spotId: low }, wishSections: {} };
+        Events.takePostedRaise(outMind, { seq: 1, names: [{ name: 'spot_outleveled', payload: null, seq: 1 }] }, 0, hunting);
+        assert(Situations.woken(outMind, 'earning_spot') && !Situations.woken(outMind, 'build'),
+            'an outgrown spot on the hunt wakes the earning spot now, not the build');
         // New gear waits for the town; the body's arrival in town is its stop there.
         const town = { woken: 0, earning: { spotId: 'held' } };
         Events.takePostedRaise(town, { seq: 1, names: [{ name: 'gear_changed', payload: null, seq: 1 }] }, 0, hunting);

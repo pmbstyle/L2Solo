@@ -282,7 +282,7 @@ invoke('GameServer/DataCache').init();
         assert.equal(raised('spot:contest:capped'), capped + 1, 'more than four stronger units: counted');
         // The unit that does not hold the spot by look answers by its persona (the old offer or
         // yield of every forced roll): it shares up to its tolerance (sociable, empathic, not
-        // ambitious: 1.3x room), else leaves. room(demand, pressure): the room that puts demand
+        // ambitious: 1.15x room at most), else leaves. room(demand, pressure): the room that puts demand
         // hunters at that pressure.
         const room = (demand, pressure) => () => 2 * demand / pressure;
         const tolerant = { traits: { caution: 0, sociability: 1, empathy: 1, ambition: 0 } };
@@ -292,20 +292,20 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual([kept.action, kept.reason, kept.peer.id], ['stay', 'tolerated', 2],
             'a no-grade bot where a D-grade one hunts at 1.1x stays and takes the leftovers');
         const past = raised('spot:contest:past_tolerance');
-        assert.equal(Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.4) })).reason, 'outmatched',
-            'at 1.4x it moves on');
+        assert.equal(Contest.contest(input([unit(2, 'd')], unit(1), { capacityForSpot: room(2, 1.2) })).reason, 'outmatched',
+            'at 1.2x, past the most tolerant one\'s 1.15x, it moves on');
         assert.equal(raised('spot:contest:past_tolerance'), past + 1, 'past its tolerance: counted');
-        assert.deepEqual([Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason,
-            (personas = { 1: proud }, Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.2) })).reason)],
-        ['shared', 'even'], 'an even arrival at 1.2x: the tolerant one shares, the proud one leaves');
+        assert.deepEqual([Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.1) })).reason,
+            (personas = { 1: proud }, Contest.contest(input([unit(2)], unit(1), { capacityForSpot: room(2, 1.1) })).reason)],
+        ['shared', 'even'], 'an even arrival at 1.1x: the tolerant one shares, the proud one leaves');
         personas = { 2: tolerant };
         const standingShare = raised('spot:contest:tolerated_standing');
-        const stood = Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) }));
+        const stood = Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.1) }));
         assert.deepEqual([stood.action, stood.reason, stood.displaced], ['stay', 'stronger', []],
-            'a tolerant no-grade bot asked to make room at 1.25x stays, and the D-grade arrival hunts beside it');
+            'a tolerant no-grade bot asked to make room at 1.1x stays, and the D-grade arrival hunts beside it');
         assert.equal(raised('spot:contest:tolerated_standing'), standingShare + 1);
         personas = { 2: proud };
-        assert.deepEqual(Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.25) })).displaced, [2],
+        assert.deepEqual(Contest.contest(input([unit(2)], unit(1, 'd'), { capacityForSpot: room(2, 1.1) })).displaced, [2],
             'a proud one moves on');
         // A weaker standing bot that will not give way: its contest with PvP intent is the dispute
         // (it the actor), and main replays its rolls for a participant written since.
