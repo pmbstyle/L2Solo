@@ -639,10 +639,15 @@ function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = nul
     issueWalkRelocation(session, bot, session.spotRelocation);
 }
 
+// A body with no spot (fresh, or after it left one) takes the one it stands on. A body
+// with a spot keeps it while it chases or searches over a cell border: crossing a line
+// is no arrival. Only a walk's or a trip's end moves it (finishWalkRelocation,
+// BotSpotTravel), as a far bot holds its spot for its whole hunt; a body off its spot
+// with no target walks back to its held spot (BotDecisionService move_to_spot).
 function reconcilePhysicalSpot(session, bot) {
-    if (session.spotRelocation) return;
+    if (session.spotRelocation || session.currentSpot) return;
     const physical = SpotService.findCurrentSpot(botLocation(bot));
-    if (physical && session.currentSpot?.id !== physical.id) SpotService.assignSpot(session, physical);
+    if (physical) SpotService.assignSpot(session, physical);
 }
 
 function assignTarget(session, bot, target) {
@@ -1227,15 +1232,6 @@ module.exports = {
                 session.noTargetTicks = 0;
                 assignTarget(session, bot, closestMonster);
 
-                if (!session.currentSpot) {
-                    const spot = SpotService.findCurrentSpot({
-                        locX: bot.fetchLocX(),
-                        locY: bot.fetchLocY(),
-                        locZ: bot.fetchLocZ()
-                    });
-                    SpotService.assignSpot(session, spot);
-                }
-
                 if (Math.random() < 0.15) {
                     BotAI.say(session, BotAI.getRandomPhrase('foundTarget', closestMonster.fetchName()), { ambient: true, key: 'target' });
                 }
@@ -1258,15 +1254,6 @@ module.exports = {
                         spotName: session.currentSpot?.name || null
                     };
                     return;
-                }
-
-                const currentSpot = SpotService.findCurrentSpot({
-                    locX: bot.fetchLocX(),
-                    locY: bot.fetchLocY(),
-                    locZ: bot.fetchLocZ()
-                });
-                if (!session.currentSpot && currentSpot) {
-                    SpotService.assignSpot(session, currentSpot);
                 }
 
                 const decision = huntingDecision || DecisionService.suggest(session.botStatus || BotAI.getStatus(session), session);

@@ -649,6 +649,37 @@ test('a body pushed off its ground with no spot gets ready where it stands, as t
     } finally { while (restores.length > restoreAt) restores.pop()(); }
 });
 
+test('a hunter that crosses a cell border keeps its spot: no arrival there, it walks back; a walk\'s end arrives', () => {
+    // Its spot's held hunt ground and the next cell's spot: a chase over the line is no
+    // arrival on the neighbour (no spot post, no arrival contest there), as a far bot keeps
+    // its spot for its whole hunt. Only a walk's end moves the body's spot.
+    const home = { ...primary, npcNames: [] };
+    const neighbour = { ...home, id: '26_12', name: 'Neighbour field', center: { locX: 159000, locY: 74719, locZ: -3276 } };
+    const restoreAt = restores.length;
+    try {
+        stub(Spots, 'ensureIndexed', () => [home, alternative, neighbour]);
+        const posts = [];
+        stub(invoke('GameServer/Bot/Population/BotLifeState'), 'notifyNearFacts', (_session, reason) => posts.push(reason));
+        const f = fixture({ ...primary.center, locX: 157200 }, leaf, holds(primary));
+        f.session.currentSpot = home;
+        assert.equal(Spots.findCurrentSpot(f.loc)?.id, neighbour.id, 'fixture: it stands on the next cell\'s spot');
+        f.tick();
+        assert.equal(f.session.currentSpot.id, primary.id, 'its spot stays the one it hunts');
+        assert.deepEqual(posts, [], 'no arrival post for the neighbour');
+        assert.equal(f.session.spotRelocation?.spotId, primary.id, 'off its ground with no target, it walks back');
+        Object.assign(f.loc, primary.center);
+        f.tick();
+        assert.equal(f.session.spotRelocation, undefined, 'back on its ground');
+        assert.deepEqual(posts, [], 'and back is no arrival either');
+        f.session.spotRelocation = { mode: 'walk', method: 'walk', spotId: neighbour.id,
+            destination: { ...neighbour.center }, startedAt: Date.now(), lastCommandAt: 0 };
+        Object.assign(f.loc, neighbour.center);
+        f.tick();
+        assert.equal(f.session.currentSpot.id, neighbour.id, 'a walk\'s end on the neighbour is its arrival');
+        assert.deepEqual(posts, ['near_spot'], 'posted once');
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('an errand it cannot start in town does not hold the body there: it walks to its spot', () => {
     // The build answered a visit's end with an errand run in the field (pvp): no ground holds the
     // body in town, so it goes hunting where the worker's route publishes, the errand kept.
