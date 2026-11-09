@@ -13,7 +13,7 @@
 //   time, the reason fields), built per read and never kept.
 // leafChoice: the spot the step's own decision names, when it may go there
 // (leafFitReader: the one fit test, the economy's leaf reads it too). The
-// trip keeps its ground and matchup verdicts on the same record, each keyed
+// trip keeps the leaf's ground and matchup verdict on the same record, keyed
 // on what it reads (heldVerdict).
 // Callers: the worker's trip start (planLifecycle: trip) and publish (huntSpotHeld),
 // the party run (the worker's partyRoute, ColdSimulationKernel: its held spot answer,
@@ -103,17 +103,20 @@ function frameFor(state, party, partyMembers = [], timestamp) {
     return { partyRoute, routedMembers, excludedSpotIds, role, options, solo, unsafe: undefined, owner: null };
 }
 
+// Ground a solo bot may not hunt alone (party-only ground): the one ground rule
+// (LevelingRoutes.groundVerdict), as the hot body's flight asks it (HuntingState).
+// Ground whose spawns admit none of its fights is the round's (spot_empty in the
+// route's ready view), not a flight: a C4 player in a mixed camp hunts the mobs he
+// can and leaves when none is for him.
 function unsafeSoloGround(state, currentSpot, frame) {
     if (frame.unsafe !== undefined) return frame.unsafe;
     const ground = !frame.partyRoute ? groundOf(state, currentSpot) : null;
-    frame.unsafe = !!ground && !heldVerdict(frame, 'ground', ground === currentSpot ? ground : null, state, false,
-        () => LevelingRoutes.isSpotAllowedForState(ground, state, frame.solo()));
+    frame.unsafe = !!ground && !LevelingRoutes.groundVerdict(ground, state, { mode: 'solo' }).allowed;
     return frame.unsafe;
 }
 
-// A solo bot's ground and matchup verdict over one catalog spot (the leaf's
-// spot read ready, slot 'leaf'; the ground it stands on as it is, 'ground'),
-// kept on its kernel record (frame.owner, the trip's: owner.spotFit[slot])
+// A solo bot's ground and matchup verdict over its leaf's catalog spot, read
+// ready, kept on its kernel record (frame.owner, the trip's: owner.spotFit)
 // while what the verdict reads stands: the spot (the catalog's object), the
 // bot's side (BotTargetMatchup.soloVerdictKey: kit, shot kind, servitor) and
 // the matchup's safety target level (LevelingRoutes.safetyOptions: the
@@ -121,23 +124,23 @@ function unsafeSoloGround(state, currentSpot, frame) {
 // (BotHuntingGroundPolicy) also reads the worn gear: there a solo bot is
 // judged each time, a grouped one keeps it. No owner (the economy's read, a
 // party route, main) or no key: judged each time. Counted as
-// route:spot_fit:<slot>_kept|<slot>_judged.
-function heldVerdict(frame, slot, spot, state, ready, judge) {
+// route:spot_fit:leaf_kept|leaf_judged.
+function heldVerdict(frame, spot, state, judge) {
     const owner = frame.owner;
     if (!owner || !spot) return judge();
     const grouped = BotHuntingGroundPolicy.isParty(state, { mode: 'solo' });
     if (!grouped && BotHuntingGroundPolicy.isDangerousSoloGround(spot, { tags: LevelingRoutes.tagsForSpot(spot) })) return judge();
-    const side = BotTargetMatchup.soloVerdictKey(state, frame.options.timestamp, ready);
+    const side = BotTargetMatchup.soloVerdictKey(state, frame.options.timestamp, true);
     if (side === null) return judge();
     const key = `${side}|${LevelingRoutes.safetyOptions(state, { mode: 'solo' }).maxTargetLevel ?? ''}|${grouped ? 1 : 0}`;
-    const held = owner.spotFit?.[slot];
+    const held = owner.spotFit;
     if (held?.spot === spot && held.key === key) {
-        EconomyDiagnostics.count('route', 'spot_fit', `${slot}_kept`);
+        EconomyDiagnostics.count('route', 'spot_fit', 'leaf_kept');
         return held.allowed;
     }
     const allowed = judge();
-    owner.spotFit = { ...owner.spotFit, [slot]: { spot, key, allowed } };
-    EconomyDiagnostics.count('route', 'spot_fit', `${slot}_judged`);
+    owner.spotFit = { spot, key, allowed };
+    EconomyDiagnostics.count('route', 'spot_fit', 'leaf_judged');
     return allowed;
 }
 
@@ -259,7 +262,7 @@ function leafFitReader(state, { spots, timestamp, frame = null }) {
         if (!soloLevelFits(state, spot, level, frame.options)) return 'unfit';
         // The ground and matchup clause, the costly one, last; kept on the
         // trip's record (heldVerdict).
-        return heldVerdict(frame, 'leaf', spot, state, true,
+        return heldVerdict(frame, spot, state,
             () => (allowed ||= LevelingRoutes.readySpotReaderFor(state, frame.solo()))(spot)) ? 'fit' : 'unfit';
     };
 }
@@ -374,8 +377,9 @@ function occupationHolds(leaf, ground) {
 // kept on `owner`, the bot's kernel record), built from where it stands now; null:
 // no trip. What the trip adds is the executor's part: an accepted occupation leaf
 // holds the bot on its ground (occupationHolds: no field trip before the errand
-// runs), ground the bot may not hunt that the choice leaves it on is fled (the
-// search's evacuation, choose, nothing kept), and with no spot it may take and no ground under it the bot asks the
+// runs), ground the bot may not hunt alone (party-only ground, unsafeSoloGround)
+// that the choice leaves it on is fled (the search's evacuation, choose, nothing
+// kept; ground whose spawns admit none of its fights is the round's spot_empty), and with no spot it may take and no ground under it the bot asks the
 // earning decision again once per answer (Situations.spotAsk on the record: the
 // route carries spot_empty to the step, stepTrip; an answer to that ask with none
 // either leaves it where it is, counted earning:no_spot). Counted as

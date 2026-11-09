@@ -377,6 +377,16 @@ function onWorker() {
             const fled = BotRoute.trip(evacuating, onUnsafe, null, { spots: [...spots, unsafe], currentSpot: unsafe, timestamp: time(13) });
             assert(fled?.spotId && fled.spotId !== 'unsafe', 'unsafe held ground: the route evacuates');
             assert.equal(evacuating.route, undefined, 'no held route is kept on the record');
+            // Ground it may hunt alone whose matchup, as it stands now (its pet on its reuse), admits too
+            // few fights while its choice (the ready view) holds it: it stays on its camp, no flight;
+            // the round raises spot_empty when no fight there is for it.
+            const Leveling = invoke('GameServer/Bot/AI/LevelingRoutes'), asIs = Leveling.isSpotAllowedForState;
+            Leveling.isSpotAllowedForState = (spot, ...rest) => spot?.id !== 'rich' && asIs(spot, ...rest);
+            try {
+                const onRich = { ...leveling, spotId: 'rich', loc: spots[1].center };
+                assert.equal(BotRoute.trip({}, onRich, null, { spots, currentSpot: spots[1], timestamp: time(13) }), null,
+                    'on its held camp: no evacuation to another spot');
+            } finally { Leveling.isSpotAllowedForState = asIs; }
             // A far bot in town whose answer names no spot asks the decision once per answer, then stays.
             const stranded = { ...leveling, spotId: null, loc: { locX: 0, locY: 0, locZ: 0 },
                 stats: { ...leveling.stats, earning: { ...leveling.stats.earning, spotId: null, at: 7 } } };

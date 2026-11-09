@@ -161,16 +161,22 @@ try {
     assert.strictEqual(tripTo({ activity: 'hunting', spotId: otherSpot.id }), otherSpot.id, 'the leaf goes first');
     hunter = keptHunter;
     const allowSpot = invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState;
+    const groundVerdict = invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict;
     try {
         invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => true;
         for (const activity of ['shopping', 'crafting', 'selling', 'improving']) {
             assert.strictEqual(tripTo({ activity, itemId: 736, town: 'Oren' }), undefined,
                 `a ${activity} decision reaches its executor instead of starting a hunting detour`);
         }
+        // Ground it may not hunt alone (party-only ground, the ground rule).
+        invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = spot => ({ allowed: String(spot?.id) !== currentSpot.id });
         invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = spot => String(spot?.id) !== currentSpot.id;
         assert(tripTo({ activity: 'shopping', itemId: 736, town: 'Oren' }),
             'an unsafe-ground evacuation still owns safety before an ordinary purchase');
-    } finally { invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = allowSpot; }
+    } finally {
+        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = allowSpot;
+        invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = groundVerdict;
+    }
     SpotProfiles.findForState = () => { throw Error('search failed'); };
     BotRoute.drop(record, 'test');
     assert.strictEqual(tripTo(), undefined, 'a failed search starts no trip');

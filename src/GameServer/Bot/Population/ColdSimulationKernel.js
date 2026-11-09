@@ -1018,8 +1018,8 @@ class ColdSimulationKernel {
         // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute, stayHeld }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the held hunt spot (BotRoute.heldHuntSpot) until its
-        // inputs move or its step drops it, the trip's kept spot verdicts (BotRoute heldVerdict,
-        // each keyed on what it reads), the material memo and the held party
+        // inputs move or its step drops it, the trip's kept leaf verdict (BotRoute heldVerdict,
+        // keyed on what it reads), the material memo and the held party
         // progress ask (partyRequestForPlan), the economy
         // plan sent and its hash, the card it holds and the commit that card
         // rides (cardInFlight), the facts of its last
