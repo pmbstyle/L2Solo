@@ -229,6 +229,11 @@ try {
     try {
         assert.strictEqual(SpotService.standingSpot(raidMembers[0], standingCatalog).id, raidSpot.id,
             'the cold resolver must receive the virtual raid profile instead of its surrounding grid sector');
+        // A raid member left far from the raid (in town after it) stands where its body is, not at the boss.
+        const farFromRaid = { ...raidMembers[0], loc: { locX: 80000, locY: 140000, locZ: -3000 } };
+        assert.strictEqual(SpotService.standingSpot(farFromRaid, standingCatalog).id, fieldSpot.id,
+            'far from its raid: the spot under it');
+        assert.strictEqual(SpotService.standingSpot(farFromRaid, [raidSpot]), null, 'far from its raid on no spot: none');
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id }, standingCatalog).id, fieldSpot.id,
             'an ordinary declared spot yields to the spot under the bot');
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id, loc: null }, standingCatalog).id,
@@ -241,6 +246,17 @@ try {
             declaredSpot, 'a body inside the arrival radius stands on its declared spot');
         assert.strictEqual(SpotService.standingSpot({ spotId: declaredSpot.id, loc: { locX: 30000, locY: 10000, locZ: 0 } }, offCell),
             null, 'a body far from its declared spot stands on none');
+        // A bot rested in town keeps its field as its spot: its held choice of that field
+        // is a trip there, not "already there" (no rest-in-town loop on a missing spot).
+        const restedInTown = { characterId: 11, phase: 'cold', activity: 'hunting', level: 18, spotId: declaredSpot.id,
+            loc: { locX: 30000, locY: 10000, locZ: 0 }, stats: {} };
+        const routeAt = Date.now();
+        assert.strictEqual(BotRoute.record(restedInTown, { spotId: declaredSpot.id }, null, [],
+            { spots: offCell, currentSpot: null, timestamp: routeAt })?.spotId, declaredSpot.id,
+        'a body far from its declared spot starts the trip to it');
+        assert.strictEqual(BotRoute.record({ ...restedInTown, loc: { locX: 10700, locY: 10000, locZ: 0 } },
+            { spotId: declaredSpot.id }, null, [], { spots: offCell, currentSpot: declaredSpot, timestamp: routeAt }), null,
+        'a body that has arrived there takes no trip');
     } finally {
         SpotService.findCurrentSpot = originalFindCurrentSpot;
     }
@@ -327,12 +343,10 @@ try {
         tags: ['dungeon', 'catacomb'],
         tagsAuthoritative: true
     };
-    const unqualifiedCurrentSpot = {
-        id: 'dangerous-room-grid-without-area',
-        name: 'Nearby ordinary fields'
-    };
-    SpotService.findCurrentSpot = () => unqualifiedCurrentSpot;
-    SpotProfiles.findForState = () => unqualifiedCurrentSpot;
+    // The bot stands on party-only ground (the spot under it) and the search answers that
+    // ground again: it flees to the safe spot.
+    SpotService.findCurrentSpot = () => dangerousSpot;
+    SpotProfiles.findForState = () => dangerousSpot;
     const emergencyRoute = routeFor({
         characterId: 24,
         phase: 'cold',
@@ -342,7 +356,7 @@ try {
         currentRegion: dangerousSpot.name,
         loc: { locX: 1, locY: 2, locZ: 3 },
         stats: { routeMode: 'party' }
-    }, unqualifiedCurrentSpot, null, [], [targetSpot]);
+    }, dangerousSpot, null, [], [targetSpot]);
     assert(emergencyRoute, 'a detached solo bot must receive a route out of party-only content');
     assert.strictEqual(emergencyRoute.spotId, targetSpot.id);
     assert.strictEqual(emergencyRoute.reason, 'unsafe_ground_evacuation');
@@ -376,7 +390,7 @@ try {
             spotId: dangerousSpot.id, currentRegion: dangerousSpot.name,
             loc: { locX: 1, locY: 2, locZ: 3 }, stats: { routeMode: 'party' }
         };
-        const routeAgain = () => routeFor(evacuationState, unqualifiedCurrentSpot, null, [], catalog);
+        const routeAgain = () => routeFor(evacuationState, dangerousSpot, null, [], catalog);
         const first = routeAgain();
         assert(first && alternatives.some(spot => spot.id === first.spotId),
             'evacuation must still choose a safe destination');

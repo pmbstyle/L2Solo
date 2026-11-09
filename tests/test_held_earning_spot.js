@@ -377,6 +377,13 @@ function onWorker() {
             const fled = BotRoute.trip(evacuating, onUnsafe, null, { spots: [...spots, unsafe], currentSpot: unsafe, timestamp: time(13) });
             assert(fled?.spotId && fled.spotId !== 'unsafe', 'unsafe held ground: the route evacuates');
             assert.equal(evacuating.route, undefined, 'no held route is kept on the record');
+            // The same answer held by a body left in town after a visit (its spot still declared): it stands on
+            // no ground, so nothing is fled, and it walks into no ground it may not hunt alone; it asks again.
+            const inTownOnUnsafe = { ...onUnsafe, loc: { locX: 0, locY: 0, locZ: 0 } };
+            const refused = BotRoute.trip({}, inTownOnUnsafe, null, { spots: [...spots, unsafe], currentSpot: null, timestamp: time(13) });
+            assert.notEqual(refused?.spotId, 'unsafe', 'in town: no trip into party-only ground');
+            assert.notEqual(refused?.reason, 'unsafe_ground_evacuation', 'and no flight from ground it does not stand on');
+            assert.equal(refused?.ask, 'spot_empty', 'its held answer is refused: it asks the decision again');
             // Ground it may hunt alone whose matchup, as it stands now (its pet on its reuse), admits too
             // few fights while its choice (the ready view) holds it: it stays on its camp, no flight;
             // the round raises spot_empty when no fight there is for it.

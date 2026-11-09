@@ -17,7 +17,7 @@ const World = invoke('GameServer/World/World');
 const destination = { locX: 183244, locY: 51238, locZ: -5122 };
 const start = { locX: 177223, locY: 46613, locZ: -4104 };
 const spot = { id: '30_8', name: 'Test field', center: destination,
-    minLevel: 55, maxLevel: 59, avgLevel: 57, density: 35, levelCounts: { 57: 35 } };
+    minLevel: 55, maxLevel: 59, avgLevel: 57, density: 35, levelCounts: { 57: 35 }, npcNames: [] };
 let scans = 0;
 World.user = { sessions: [] };
 World.npc = { spawns: [] };
@@ -117,6 +117,20 @@ try {
     tick(usable);
     assert(usable.session.spotRelocation, 'valid route retains travel ownership');
     assert.strictEqual(usable.session.decisionStats?.spotMarks, undefined);
+
+    // The walk ends by the arrival rule: a body that reaches its spot's ground short of the
+    // center's radius has finished its walk and stands on that spot (it hunts, no new walk).
+    const containsLocation = Spots.containsLocation;
+    try {
+        Spots.containsLocation = (target, loc) => String(target?.id) === spot.id && loc?.locX === start.locX;
+        const edge = fixture(true);
+        tick(edge);
+        assert.strictEqual(edge.session.spotRelocation, undefined, 'the walk ends on the spot\'s ground');
+        assert.strictEqual(edge.session.lastSpotRelocation?.method, 'walk');
+        assert.strictEqual(edge.bot.moves, 0, 'no step past the ground it reached');
+        assert.notStrictEqual(Decision.suggest(edge.session.botStatus, edge.session).action, 'move_to_spot',
+            'a body that finished its walk is on its spot');
+    } finally { Spots.containsLocation = containsLocation; }
 
     for (const wrongDestination of [false, true]) {
         const stale = fixture(true);

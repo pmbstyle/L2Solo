@@ -413,23 +413,29 @@ test('a deferred errand whose held answer is its own empty ground raises once an
 });
 
 test('unsafe ground raises spot_dangerous once and walks to the held spot, else stands off', () => {
-    const unsafe = { ...alternative, id: 'unsafe-ground', name: 'Party ground', tags: ['party_required'], tagsAuthoritative: true };
-    // The worker publishes the leaf's spot when it may hunt there (BotRoute.huntSpot).
-    const onUnsafe = chosen => {
-        const f = fixture(town, chosen, chosen.spotId === primary.id ? { huntSpot: { spotId: primary.id } } : {});
-        f.session.currentSpot = unsafe;
-        return f;
-    };
-    const leaving = onUnsafe(leaf);
-    leaving.tick();
-    assert(Situations.woken(leaving.session.coldLifeState.stats, 'earning_spot'), 'spot_dangerous wakes the earning spot');
-    assert.deepEqual(leaving.session.trips, [primary.id], 'the held spot is other ground it may hunt: it goes');
-    const waiting = onUnsafe({ activity: 'hunting', spotId: unsafe.id });
-    waiting.tick(); waiting.tick();
-    assert.deepEqual(waiting.session.trips, [], 'no other held spot: it stands off');
-    assert.equal(waiting.session.lastDecision.action, 'avoid_hunting_ground');
-    assert.equal(waiting.session.coldLifeState.stats.situationSeq, 1, 'raised once a ground');
-    assert.equal(searchCalls.length, 0, 'main searches no spot');
+    // The body stands on party ground (inside its arrival radius, on no other spot's cell).
+    const unsafe = { ...alternative, id: 'unsafe-ground', name: 'Party ground', center: { ...town },
+        tags: ['party_required'], tagsAuthoritative: true };
+    const restoreAt = restores.length;
+    stub(Spots, 'ensureIndexed', () => [primary, alternative, unsafe]);
+    try {
+        // The worker publishes the leaf's spot when it may hunt there (BotRoute.huntSpot).
+        const onUnsafe = chosen => {
+            const f = fixture(town, chosen, chosen.spotId === primary.id ? { huntSpot: { spotId: primary.id } } : {});
+            f.session.currentSpot = unsafe;
+            return f;
+        };
+        const leaving = onUnsafe(leaf);
+        leaving.tick();
+        assert(Situations.woken(leaving.session.coldLifeState.stats, 'earning_spot'), 'spot_dangerous wakes the earning spot');
+        assert.deepEqual(leaving.session.trips, [primary.id], 'the held spot is other ground it may hunt: it goes');
+        const waiting = onUnsafe({ activity: 'hunting', spotId: unsafe.id });
+        waiting.tick(); waiting.tick();
+        assert.deepEqual(waiting.session.trips, [], 'no other held spot: it stands off');
+        assert.equal(waiting.session.lastDecision.action, 'avoid_hunting_ground');
+        assert.equal(waiting.session.coldLifeState.stats.situationSeq, 1, 'raised once a ground');
+        assert.equal(searchCalls.length, 0, 'main searches no spot');
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
 });
 
 test('a pending bounded visibility scan keeps ownership until its candidates are checked', () => {

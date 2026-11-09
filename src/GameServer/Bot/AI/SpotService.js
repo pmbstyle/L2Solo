@@ -492,20 +492,21 @@ const SpotService = {
     },
 
     // The spot a bot stands at, one rule for the hot body and the cold worker:
-    // a declared raid profile first (it is virtual and sits inside an ordinary
-    // sector; the party resolver needs the boss profile, not the field around
-    // it), else the spot under its position, else its declared spot when the
-    // body has arrived there (arrivedAt: a walk ends within the arrival radius,
-    // often on a neighbouring cell with no spot) or its position is unknown. A
-    // body far from its declared spot (in town after a visit) stands on none.
+    // its declared spot when its position is unknown, else a declared raid
+    // profile once the body has arrived there (it is virtual and sits inside an
+    // ordinary sector; the party resolver needs the boss profile, not the field
+    // around it), else the spot under its position, else its declared spot when
+    // the body has arrived there (arrivedAt: a walk ends within the arrival
+    // radius, often on a neighbouring cell with no spot). A body far from its
+    // declared spot (in town after a visit or a raid) stands on none.
     // `spots`: the catalogue (the worker's), else the live index.
     standingSpot(state, spots = null) {
         const catalog = spots || this.ensureIndexed();
         const declared = SpotIndex.spotById(catalog, state?.spotId || '');
-        if (declared?.raidBoss === true) return declared;
         const loc = state?.loc;
         const placed = !!loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY));
         if (!placed) return declared;
+        if (declared?.raidBoss === true && this.arrivedAt(declared, loc)) return declared;
         return this.findCurrentSpot(loc, catalog) || (declared && this.arrivedAt(declared, loc) ? declared : null);
     },
 

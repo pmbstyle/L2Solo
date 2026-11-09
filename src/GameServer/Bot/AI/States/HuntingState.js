@@ -53,7 +53,6 @@ const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
 const MAX_WALK_SPOT_DISTANCE = SpotService.MAX_WALK_SPOT_DISTANCE;
-const SPOT_ARRIVAL_RADIUS = SpotService.SPOT_ARRIVAL_RADIUS;
 const MAX_SPOT_RELOCATION_MS = 120000;
 const FULL_TARGET_CANDIDATE_LIMIT = 96;
 const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
@@ -497,15 +496,14 @@ function botLocation(bot) {
     return { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
 }
 
+// The ground the body stands on (SpotService.standingSpot, the cold worker's rule): a body
+// far from its spot (on the road, in town) stands on none and reads no far ground's verdict.
 function currentHuntingGround(session, bot) {
     try {
-        const physical = SpotService.findCurrentSpot(botLocation(bot));
-        if (physical) return physical;
-        if (session.currentSpot?.id) return SpotService.findById(session.currentSpot.id) || session.currentSpot;
-        return session.currentSpot || null;
+        return SpotService.standingSpot({ spotId: session.currentSpot?.id, loc: botLocation(bot) });
     } catch (error) {
         FailureLog.note('ai.hunting_ground', error);
-        return session.currentSpot || null;
+        return null;
     }
 }
 
@@ -585,9 +583,11 @@ function tickSpotRelocation(session, bot) {
     if (relocation.method === 'town_gatekeeper') return BotSpotTravel.tick(session, bot);
     if (relocation.method === 'soe_gatekeeper') return true;
 
-    const distance = SpotService.distance2d(botLocation(bot), relocation.destination);
-    if (distance <= SPOT_ARRIVAL_RADIUS) {
-        finishWalkRelocation(session, bot, SpotService.findById(relocation.spotId) || { id: relocation.spotId, center: relocation.destination });
+    // The walk ends by the arrival rule (SpotService.arrivedAt) that "stands on its spot"
+    // reads, so a body that finished its walk is on its spot for the hold and the hunt.
+    const target = SpotService.findById(relocation.spotId) || { id: relocation.spotId, center: relocation.destination };
+    if (SpotService.arrivedAt(target, botLocation(bot))) {
+        finishWalkRelocation(session, bot, target);
         return false;
     }
     if (bot.state.fetchTowards() || session.moveTimer) return true;

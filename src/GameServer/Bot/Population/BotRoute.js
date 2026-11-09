@@ -54,29 +54,14 @@ function routable(state, party, partyMembers) {
     return !(party && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity)));
 }
 
-// The spot the bot stands on now. Virtual raid profiles share the ordinary
-// world grid with their surrounding field. Once the party has arrived, its
-// persisted raid spot is the semantic destination; preferring the grid id
-// here would schedule another 25-second trip to the same coordinates forever.
-function currentSpotId(state, currentSpot, party, spots) {
-    let physical = null;
-    try { physical = SpotService.findCurrentSpot(state.loc, spots); } catch (error) { FailureLog.note('route.current_spot', error); }
-    const declaredSpotId = party?.spotId || state.spotId || null;
-    const declaredSpot = declaredSpotId ? SpotIndex.spotById(spots, declaredSpotId) : null;
-    return declaredSpot?.raidBoss === true ? declaredSpot.id : physical?.id || currentSpot?.id || declaredSpotId;
-}
-
-// Match the combat resolver: an indexed coordinate sector only describes the
-// current ground when it agrees with the persisted spot. Legacy dungeon
-// sectors can keep their qualified id/name after the rebuilt spawn index
-// exposes the same grid as an ordinary field.
-function groundOf(state, currentSpot) {
-    if (currentSpot && (!state.spotId || String(state.spotId) === String(currentSpot.id))) return currentSpot;
-    return (state.spotId || state.currentRegion) ? {
-        id: state.spotId || null,
-        name: state.currentRegion || null,
-        area: state.area || state.stats?.area || null
-    } : currentSpot;
+// The spot the bot stands on now (SpotService.standingSpot, the one rule), its party's
+// spot declared over its own: an arrived party's raid profile, else the spot under it,
+// else the declared spot once the body has arrived there. A body far from its declared
+// spot (in town after a rest) stands on none, so a trip to that spot starts.
+function currentSpotId(state, party, spots) {
+    try {
+        return SpotService.standingSpot({ spotId: party?.spotId || state.spotId || null, loc: state.loc }, spots)?.id || null;
+    } catch (error) { FailureLog.note('route.current_spot', error); return null; }
 }
 
 // The search options of one routed bot or party at this timestamp. Solo
@@ -104,13 +89,15 @@ function frameFor(state, party, partyMembers = [], timestamp) {
 }
 
 // Ground a solo bot may not hunt alone (party-only ground): the one ground rule
-// (LevelingRoutes.groundVerdict), as the hot body's flight asks it (HuntingState).
+// (LevelingRoutes.groundVerdict), as the hot body's flight asks it (HuntingState),
+// over the ground it stands on (currentSpot: SpotService.standingSpot, the caller's).
+// A body on no ground (in town after a visit) flees nothing.
 // Ground whose spawns admit none of its fights is the round's (spot_empty in the
 // route's ready view), not a flight: a C4 player in a mixed camp hunts the mobs he
 // can and leaves when none is for him.
 function unsafeSoloGround(state, currentSpot, frame) {
     if (frame.unsafe !== undefined) return frame.unsafe;
-    const ground = !frame.partyRoute ? groundOf(state, currentSpot) : null;
+    const ground = !frame.partyRoute ? currentSpot : null;
     frame.unsafe = !!ground && !LevelingRoutes.groundVerdict(ground, state, { mode: 'solo' }).allowed;
     return frame.unsafe;
 }
@@ -153,7 +140,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
     if (!routable(state, party, partyMembers)) return null;
     frame = frame || frameFor(state, party, partyMembers, timestamp);
     const { partyRoute, excludedSpotIds, role, options } = frame;
-    const currentId = currentSpotId(state, currentSpot, party, spots);
+    const currentId = currentSpotId(state, party, spots);
     let fallback = null;
     if (!partyRoute && PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) {
         try {
@@ -301,7 +288,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
     const selected = SpotIndex.spotById(spots, chosen.spotId);
     if (!selected) return null;
     const partyRoute = !!party;
-    const currentId = currentSpotId(state, currentSpot, party, spots);
+    const currentId = currentSpotId(state, party, spots);
     const repairingPartyPosition = partyRoute && String(selected.id) === String(party.spotId || '')
         && partyMembers.every(member => member.phase === 'cold' && member.vitals?.hp > 0
             && !member.stats?.pvpEncounter && !member.stats?.travel)
@@ -400,7 +387,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     }
     let chosen = held;
     if (unsafeSoloGround(state, currentSpot, frame)
-        && (!chosen?.spotId || String(chosen.spotId) === String(currentSpotId(state, currentSpot, null, spots) || ''))) {
+        && (!chosen?.spotId || String(chosen.spotId) === String(currentSpotId(state, null, spots) || ''))) {
         EconomyDiagnostics.count('route', 'trip', 'evacuate');
         chosen = choose(state, currentSpot, null, [], { spots, timestamp, frame });
     } else {
@@ -415,8 +402,9 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
 
 // A solo bot's held earning answer as a choice: the answer's spot, read, never
 // searched (the same after a worker restart: the answer is in the mind). { spotId:
-// null }: none it may take (none found, or its marks exclude it): it stays until a
-// situation re-decides. undefined: no answer yet (its first decision pending), a
+// null }: none it may take (none found, its marks exclude it, or ground it may not
+// hunt alone now, LevelingRoutes.groundVerdict: no walk into a flight): it stays
+// until a situation re-decides. undefined: no answer yet (its first decision pending), a
 // protected starter field or a party waiter: the search decides (choose).
 function heldChoice(state, spots, frame) {
     // A waiter for a required party hunts its safe fallback (PartyWaitFallback, in
@@ -424,7 +412,8 @@ function heldChoice(state, spots, frame) {
     if (state.stats?.earning === undefined || SpotProfiles.isProtectedStarterCohort(state)
         || PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) return undefined;
     const spot = EquipmentIncomeRoute.heldSpot(state, spots);
-    if (!spot || frame.excludedSpotIds.has(String(spot.id))) return { spotId: null };
+    if (!spot || frame.excludedSpotIds.has(String(spot.id))
+        || !LevelingRoutes.groundVerdict(spot, state, { mode: 'solo' }).allowed) return { spotId: null };
     return { spotId: spot.id };
 }
 
