@@ -660,8 +660,7 @@ async function acquireMaterials(state, requirements) {
             reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(value);
             reservedState = value;
         }
-        return require('./WealthCraftDecision').freeAmount(value,
-            value.inventory?.[id] || { selfId: Number(id), amount: 0 }, reserved);
+        return require('./WealthCraftDecision').freeOf(value, id, reserved);
     };
     for (const requirement of requirements) {
         const missing = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
@@ -740,9 +739,7 @@ async function buyErrand(state, options = {}) {
         const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(job.recipeId));
         const required = recipe && require('./CraftProfitPolicy').requirements(recipe, Number(job.batches));
         if (required?.has(Number(errand.selfId))) {
-            const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
-            const held = require('./WealthCraftDecision').freeAmount(state,
-                state.inventory?.[errand.selfId] || { selfId: Number(errand.selfId), amount: 0 }, reserved);
+            const held = require('./WealthCraftDecision').freeOf(state, errand.selfId);
             amount = Math.min(amount, Math.max(0, Number(required.get(Number(errand.selfId))) - held));
         }
     }

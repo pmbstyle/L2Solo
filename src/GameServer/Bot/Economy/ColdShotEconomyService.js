@@ -27,7 +27,8 @@ const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
 const Policy = require('./ShotCraftPolicy');
 const ShotMarketIndex = require('./ShotMarketIndex');
 const { SHOT_RECIPE_IDS, SHOT_PRODUCT_IDS, SHOT_RECIPE_ITEM_IDS, CRYSTAL_BY_RANK,
-    availableMaterial, fundedDemand, recipeTarget, scrapCraftRoutes, craftCandidate } = Policy;
+    fundedDemand, recipeTarget, scrapCraftRoutes, craftCandidate } = Policy;
+const Wealth = require('./WealthCraftDecision');
 const CRYSTAL_SKILL_LEVEL = { d: 1, c: 2, b: 3, a: 4, s: 5 };
 const active = new Set();
 
@@ -266,12 +267,12 @@ const planCap = (plan, price) => plan ? OfferQuery.topPrice(plan) || price : pri
 async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true, r = 0, sourcePlan = null) {
     const hot = hotState(state);
     if (hot) return { state: hot, ready: false, hot: true };
-    const missing = amount - availableMaterial(state, selfId);
+    const missing = amount - Wealth.freeOf(state, selfId);
     if (missing <= 0) return { state, ready: true };
     const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice: planCap(sourcePlan, maxPrice), npc, purpose: 'craft_input',
         r, money: PurchaseFunding.spendable(state, 0, { r }), quoteDepth: 5, refreshSource: true,
         ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) });
-    return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
+    return { state: bought.state, ready: bought.bought && !bought.hot && Wealth.freeOf(bought.state, selfId) >= amount };
 }
 
 // The crystals of a shot craft: the bot's own, else bought on the board, or a
@@ -281,7 +282,7 @@ async function obtainCrystals(state, candidate, batches) {
     const hot = hotState(state);
     if (hot) return { state: hot, ready: false, hot: true };
     const needed = candidate.requiredCrystals * batches;
-    if (availableMaterial(state, candidate.crystalId) >= needed) return { state, ready: true };
+    if (Wealth.freeOf(state, candidate.crystalId) >= needed) return { state, ready: true };
     const gear = candidate.gear;
     if (!gear) return { state, ready: false };
     if (gear.source === 'crystals') return buyMaterial(state, candidate.crystalId, needed, gear.price, false, candidate.r,

@@ -71,6 +71,12 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
 function freeAmount(state, item, reserved = {}) {
     return freeUnits(state, item, reserved, item.equippedCount, item.starterMobLootAmount);
 }
+// freeAmount of an item by id (none in the bag: 0), against the bot's reserves (reserved:
+// ItemDisposition.reservedEquipmentAmounts, read here when not given): what a craft or a
+// purchase for one may count as already held.
+function freeOf(state, selfId, reserved = ItemDisposition.reservedEquipmentAmounts(state)) {
+    return freeAmount(state, state.inventory?.[selfId] || { selfId: Number(selfId), amount: 0 }, reserved);
+}
 // freeAmount with the worn copies and the protected starter loot given beside
 // the row (the sale's own reading of them), not copied onto it.
 function freeUnits(state, item, reserved, equippedCount, starterMobLootAmount) {
@@ -274,4 +280,4 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
     return { known: Number.isFinite(moneyPrice), rows, best, recipeId: Number(recipe.recipeId) };
 }
 module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, createAction, stepAction,
-    resultAction, recipePaths, freeAmount, freeUnits, refused, refusedMark, stepStands };
+    resultAction, recipePaths, freeAmount, freeOf, freeUnits, refused, refusedMark, stepStands };

@@ -129,7 +129,20 @@ async function run() {
     const productionStock = state(1458, { equipmentPlan: pausedCraft });
     productionStock.inventory[1458].amount += 11;
     assert.equal(count(productionStock), 11, 'new production inputs stay free of the paused gear reserve');
-    assert.equal(invoke('GameServer/Bot/Economy/ShotCraftPolicy').availableMaterial(productionStock, 1458), 11);
+    assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(productionStock, 1458), 11);
+    // A dwarf's shot batches spend only the crystals the native craft write lets it spend
+    // (WealthCraftDecision.freeOf, the writer's reserves): beside a luxury exchange's 12, the
+    // units its bag row protects stay out, and a customer's crystals held for an order are none.
+    {
+        const Shots = invoke('GameServer/Bot/Economy/ShotCraftPolicy');
+        const candidate = { recipe: { mpCost: 0 }, crystalId: 1458, requiredCrystals: 1, batches: 64 };
+        const exchanging = state(1458, { equipmentPlan: exchange });
+        assert.equal(Shots.batchCount(exchanging, candidate), 8, 'the luxury exchange keeps its 12 crystals');
+        exchanging.inventory[1458] = { ...exchanging.inventory[1458], protectedAmount: 15 };
+        assert.equal(Shots.batchCount(exchanging, candidate), 5, 'the protected units are not spent on shots');
+        exchanging.inventory[1458] = { ...exchanging.inventory[1458], acceptedCustomer: true };
+        assert.equal(Shots.batchCount(exchanging, candidate), 0, 'a customer\'s crystals are never spent on shots');
+    }
     const productionIterator = invoke('GameServer/Bot/Population/ColdOccupationSources').reservations(productionStock);
     let productionStep; do { productionStep = productionIterator.next(); } while (!productionStep.done);
     assert.equal(productionStep.value[1458], 20, 'the worker and executor protect the same fixed quantity');
@@ -148,7 +161,7 @@ async function run() {
     assert.equal(count(productionTrip), 0, 'the selected production lot cannot return to the market before crafting');
     assert.equal(Disposition.warehouseCandidates(productionTrip).some(row => row.selfId === 1458), false,
         'storage cannot take the selected production input');
-    assert.equal(invoke('GameServer/Bot/Economy/ShotCraftPolicy').availableMaterial(productionTrip, 1458), 11,
+    assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(productionTrip, 1458), 11,
         'the production executor can consume its own retained inputs');
     const expiredProduction = { ...productionTrip, stats: { ...productionTrip.stats,
         shotCraft: { preparing: { ...productionTrip.stats.shotCraft.preparing, at: Date.now() - 31 * 60000 } } } };
