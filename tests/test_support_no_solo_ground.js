@@ -143,6 +143,49 @@ async function run() {
     assert.strictEqual(Request.partyRequestForPlan(young, null, at, { spots }), null, 'no request for a support with solo ground');
     assert.strictEqual(Persona.backgroundIntent(young).reason, 'prefers_solo', 'its persona decides as before');
 
+    // Live regression: 170 level-one Orc Mystics had level-fitting keltirs but no safe solo
+    // pull and no request after 8-13 played hours. The solo gate every spot search reads
+    // refuses the field for the real starter kit, so its earning answer names no spot: no
+    // solo ground, and the stranded starters ask for a party and meet at their home field.
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+    const field = { id: '-9_-19', name: 'Prairie Keltir fields', minLevel: 1, maxLevel: 3, avgLevel: 2,
+        density: 26, center: { locX: -50124, locY: -111341, locZ: -240 },
+        tags: [], tagsAuthoritative: true, localStarterRegions: ['orc'], localUntilLevel: 5,
+        npcSelfIds: [535, 538, 531], npcEntries: [
+            { selfId: 535, count: 11, production: 1980 },
+            { selfId: 538, count: 9, production: 1620 },
+            { selfId: 531, count: 6, production: 1080 }
+        ] };
+    const starter = characterId => {
+        const state = { characterId, name: `Mystic${characterId}`, accountName: `bot_${characterId}`,
+            phase: 'cold', activity: 'hunting', level: 1, exp: 0, adena: 85, spotId: field.id,
+            loc: { ...field.center }, timing: {}, stats: { classId: 49, role: 'buffer',
+                generatedCold: true, populationWave: 1, starterRegion: 'orc',
+                wishFocus: ['power:1129:12', 0, 529], money: [1, 1, 1188, 529],
+                coldCombat: { skillSource: 'database',
+                    skills: Cold.skillSnapshotsFromRecords(Cold.skillRecordsFromTree(49, 1)) } },
+            inventory: Object.fromEntries([[425, 10], [461, 11], [2368, 14]].map(([selfId, slot]) =>
+                [selfId, { selfId, amount: 1, equipped: true, equippedSlots: [slot], slot }])) };
+        const profile = Cold.profileFor(state, at);
+        state.vitals = { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp };
+        return state;
+    };
+    const mystic = starter(910049);
+    assert(Matchup.admitsNone(Matchup.spotShares(Matchup.stateProfiles(mystic, { mode: 'solo' }), field,
+        { soloSafety: true })), 'the real starter kit cannot safely pull even the young keltirs');
+    assert.strictEqual(Routes.isSpotAllowedForState(field, mystic, { mode: 'solo', timestamp: at }), false,
+        'the solo gate of every spot search refuses the level-fitting field');
+    const answered = state => ({ ...state, stats: { ...state.stats,
+        earning: invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerOf(null, at) } });
+    assert.strictEqual(Request.supportWithoutGround(answered(mystic), [field]), true, 'an answer with no safe spot: no solo ground');
+    const starters = [mystic, starter(910050), starter(910051), starter(910052)].map(answered).map(state => ({ ...state,
+        stats: { ...state.stats, partyRequest: Request.partyRequestForPlan(state, null, at, { spots: [field] }) } }));
+    assert(starters.every(state => Request.seeksParty(state)), 'every stranded starter asks for a party');
+    assert.deepStrictEqual(PopulationService.groupPartyCandidatesByObjective(starters)
+        .map(group => group.length), [4], 'stranded mystics can meet each other at their home field');
+
     // Party progress -> a party: a bot that levels sooner in a party of two (itself and a
     // partner of its level) at its earning spot asks for a party there.
     const earner = { ...young, stats: { ...young.stats, earning: { spotId: 'ground46', income: 1000 } } };

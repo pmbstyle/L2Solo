@@ -274,23 +274,21 @@ function stateHasSameClanObjective(state, objective) {
         && sameRosterRequirement(state?.stats?.clanPartyObjective, objective)
         && sameRosterRequirement(state?.stats?.partyRequest, objective)
         && state?.stats?.partyRequest?.status === objective.status
-        && state?.stats?.clanPartyObjective?.status === objective.status
+        && state?.stats?.clanPartyObjective?.status === 'open'
         && state.stats.partyRequest.priority === objective.priority;
 }
 
-function memberObjective(state, objective, timestamp = Date.now()) {
+// The member's own request for the clan's call: the call itself (its clanPartyObjective
+// stays open), carrying the attempts of the same call's earlier request. A request the
+// same call closed (forming found no roster, its assembly gave up: PartyRequestPlanner.closed)
+// stays closed until the member's next build asks again: a clan review does not reopen it.
+function memberObjective(state, objective) {
     if (!objective) return null;
     const prior = state.stats?.partyRequest;
     if (!prior || prior.clanGoalKey !== objective.clanGoalKey || prior.objectiveKey !== objective.objectiveKey) return objective;
-    if (prior.status === 'deferred') {
-        return Number(prior.deferredUntil) > timestamp
-            ? { ...objective, status: 'deferred', requestedAt: prior.requestedAt || objective.requestedAt,
-                deferredUntil: prior.deferredUntil, expiredAt: prior.expiredAt, deferReason: prior.deferReason,
-                attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null }
-            : objective;
-    }
-    return { ...objective, requestedAt: prior.requestedAt || objective.requestedAt,
-        attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null };
+    return { ...objective, status: prior.status === 'closed' ? 'closed' : objective.status,
+        requestedAt: prior.requestedAt || objective.requestedAt, attempts: prior.attempts || 0,
+        lastMatchedAt: prior.lastMatchedAt || null };
 }
 
 async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
@@ -536,11 +534,12 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
         return { ok: !!saved, changed: !!saved, memberId: id };
     }
     if (stateHasSameClanObjective(current, objective)) return { ok: true, changed: false, memberId: id };
-    const nextObjective = { ...objective, clanId: number(clan.id) };
-    const partyRequest = nextObjective;
+    const partyRequest = { ...objective, clanId: number(clan.id) };
+    const nextObjective = { ...partyRequest, status: 'open' };
     const saved = await LifeState.upsertState({
         ...current,
-        activity: current.phase === 'cold' && current.activity === 'hunting' ? 'party_wait' : current.activity,
+        activity: current.phase === 'cold' && current.activity === 'hunting' && partyRequest.status === 'open'
+            ? 'party_wait' : current.activity,
         stats: {
             ...(current.stats || {}),
             clanId: number(clan.id),
@@ -560,9 +559,11 @@ async function assignPlan(member, plan, clan, goal) {
     await LifeState.init();
     const current = await LifeState.findByCharacterId(id);
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
+    // The member's request for this goal closed (its party never formed): the goal's
+    // route waits for the member's next build, no reassignment hands it back meanwhile.
     if (current.stats?.partyRequest?.clanGoalKey === goal.goalKey
-        && require('../Bot/Population/PartyAssemblyRecovery').coolingDown(current)) {
-        return { ok: true, changed: false, coolingDown: true, memberId: id };
+        && require('../Bot/Population/PartyRequestPlanner').closed(current)) {
+        return { ok: true, changed: false, closedRequest: true, memberId: id };
     }
 
     const handoff = await handoffWarehouseMaterials(current, plan, clan, goal);
@@ -603,7 +604,7 @@ async function assignPlan(member, plan, clan, goal) {
             clanId: number(clan.id),
             equipmentPlan: clanPlan(plan, clan, goal),
             clanMaterialDemand: plan.clanMaterialDemand,
-            clanPartyObjective: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id)),
+            clanPartyObjective: clanPartyObjective(plan, goal, 'required', clan.id),
             // A stale personal request must not hide the new clan objective.
             partyRequest: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id))
         }

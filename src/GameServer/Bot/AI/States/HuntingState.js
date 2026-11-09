@@ -60,6 +60,8 @@ const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
 const LOCAL_TARGET_SEARCH_RADIUS = 2500;
 const SHOP_DEPARTURE_RADIUS = 900;
 
+// The square point a bot walks to when it leaves a shop: its identity's offset
+// around the town centre, on the square's reachable floor. Probed once a departure.
 function shopDepartureTarget(town, bot) {
     const center = { ...town.center };
     center.locZ = GeodataEngine.getHeight(center.locX, center.locY, center.locZ);
@@ -91,18 +93,21 @@ function leaveShop(session, bot, now = Date.now()) {
     const point = botLocation(bot);
     const town = TownPathfinder.getTown(point);
     if (!town || SpotService.distance2d(point, town.center) <= SHOP_DEPARTURE_RADIUS) return false;
-    if (Number(session.shopDepartureRetryAt || 0) > now) return false;
     // Choose a farming destination after clearing the shop, even when no
     // suitable hunt is available yet. Do not wander against the counter wall.
-    const destination = shopDepartureTarget(town, bot);
+    // One departure per finished visit (pendingFarmDepartureAnnouncement): its
+    // point is probed once; a walk that cannot reach it ends the departure.
+    let departure = session.shopDeparture;
+    if (departure?.ended && departure.town === town.name) return false;
+    if (departure?.town !== town.name) departure = session.shopDeparture = { town: town.name, destination: shopDepartureTarget(town, bot) };
     TownNpcApproach.reset(session);
-    const navigation = CompanionNavigationRecovery.move(session, bot, destination, 'shop_departure',
+    const navigation = CompanionNavigationRecovery.move(session, bot, departure.destination, 'shop_departure',
         { targetActor: null, arrivalRadius: 160 });
     session.lastDecision = { action: 'leave_shop', reason: navigation.status, town: town.name, at: now };
     if (navigation.status === 'exhausted') {
-        // Clearing the shop is optional. Let hunting choose its actual trip
-        // (including normal gatekeeper recovery) instead of retrying forever.
-        session.shopDepartureRetryAt = now + FAILED_SPOT_RETRY_MS;
+        // Clearing the shop is optional: hunting chooses its actual trip
+        // (including normal gatekeeper recovery).
+        session.shopDeparture = { town: town.name, ended: true };
         CompanionNavigationRecovery.clear(session);
         return false;
     }
@@ -605,6 +610,7 @@ function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = nul
 
     const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
     delete session.pendingFarmDepartureAnnouncement;
+    delete session.shopDeparture;
     if (finishedTownErrands && isSoloHunter(session)) pauseSelling(session, true);
     const destinationName = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot });
     TownChatter.say(session, BotAI, finishedTownErrands ? 'town-to-farm' : 'farm-relocation', finishedTownErrands

@@ -30,7 +30,6 @@ const World = invoke('GameServer/World/World');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const InventoryCleanup = require('../CompanionInventoryCleanup');
 
-const RESTOCK_RETRY_MS = 5000;
 const MAX_RESTOCK_ATTEMPTS = 3;
 
 // The store a shopping target stands for: its stall's, or a board record's
@@ -262,8 +261,8 @@ function clearShoppingServiceState(session) {
     session.shoppingEquipmentPlanChecked = undefined;
     session.shoppingLiveShotStopChecked = undefined;
     session.shoppingLiveBuyerChecked = undefined;
-    session.shoppingRestockRetryAt = undefined;
     session.shoppingRestockFailures = undefined;
+    session.shopDeparture = undefined;
     session.shoppingKit = undefined;
     session.shoppingSale = undefined;
 }
@@ -491,13 +490,6 @@ module.exports = {
         // the counter queue during its delay steals time from real shoppers.
         if (session.shoppingDoneAnnounced) {
             TownNpcApproach.reset(session);
-            // A failed restock schedules a retry after its callback releases
-            // the work promise. Keep the visit closed to sales, but resume
-            // that restock once its delay expires.
-            if (!session.shoppingRestock && Number(session.shoppingRestockRetryAt || 0) > 0
-                && Number(session.shoppingRestockRetryAt) <= Date.now() && !shoppingMeetingPending(session, bot)) {
-                this.scheduleRestock(session, bot, Generics, BotAI);
-            }
             return;
         }
         if (shoppingMeetingPending(session, bot)) {
@@ -1093,8 +1085,7 @@ module.exports = {
     },
 
     scheduleRestock(session, bot, Generics, BotAI) {
-        if (session.shoppingRestock || Number(session.shoppingRestockRetryAt || 0) > Date.now()) return;
-        session.shoppingRestockRetryAt = undefined;
+        if (session.shoppingRestock) return;
         if (!session.shoppingLiveShotStopChecked) {
             session.shoppingLiveShotStopChecked = true;
             const town = TownTransitPolicy.townAt(bot);
@@ -1184,9 +1175,12 @@ module.exports = {
             session.shoppingRestock = undefined;
             if (restockFailure) {
                 session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;
-                if (session.shoppingRestockFailures < MAX_RESTOCK_ATTEMPTS) {
-                    session.shoppingRestockRetryAt = Date.now() + RESTOCK_RETRY_MS;
+                // A failed restock is tried again at once (its purchase waits its own
+                // counter delay), up to its attempts; a meeting that took the bot
+                // meanwhile owns it, so the visit ends instead.
+                if (session.shoppingRestockFailures < MAX_RESTOCK_ATTEMPTS && !shoppingMeetingPending(session, bot)) {
                     session.lastDecision = { action: 'shopping_retry', reason: restockFailure, at: Date.now() };
+                    this.scheduleRestock(session, bot, Generics, BotAI);
                     return;
                 }
             }

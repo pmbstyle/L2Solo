@@ -40,25 +40,28 @@ let failed = true;
         stub(invoke('GameServer/Bot/AI/BotEventJournal'), 'record', async event => { events.push(event); });
         stub(invoke('GameServer/Bot/AI/TownNpcApproach'), 'reset', () => {});
         stub(invoke('GameServer/Bot/AI/CompanionNavigationRecovery'), 'clear', () => {});
-        const attempt = async () => {
-            session.shoppingRestockRetryAt = 0;
-            Shopping.scheduleRestock(session, bot, null, ai);
+        let meeting = false;
+        stub(invoke('GameServer/AfkTrade/TradeMeetingService'), 'hasPreparation', () => meeting);
+        // One restock attempt: its purchase and its end, each on the counter's delay.
+        const run = async () => {
             assert.equal(timers.length, 2);
             await timers.shift()(); await timers.shift()();
         };
+        const attempt = async () => { Shopping.scheduleRestock(session, bot, null, ai); await run(); };
         await attempt();
         assert.equal(session.plan, 'shopping', 'a refused purchase keeps the visit active');
         assert.equal(session.lastDecision.action, 'shopping_retry');
         assert.equal(events.length, 0, 'a failed debit cannot publish shopping_completed');
         assert.deepEqual(raised, [], 'a restock retried within the visit raises nothing');
+        assert.equal(timers.length, 2, 'a refused restock is tried again at once, no clock to poll');
         Shopping.scheduleRestock(session, bot, null, ai);
-        assert.equal(timers.length, 0, 'the retry waits instead of looping each AI tick');
+        assert.equal(timers.length, 2, 'an attempt in flight is not started twice');
         failed = false;
         // A craft refused in the field holds its mark until the bot's next look at the market.
         const Wealth = invoke('GameServer/Bot/Economy/WealthCraftDecision');
         session.decisionStats = { townLook: { n: 3 }, wealthRefused: { look: 3, recipes: [79] } };
         assert(Wealth.refused({ stats: session.decisionStats }, 79));
-        await attempt();
+        await run();
         assert.equal(session.plan, 'hunting');
         assert.equal(events.at(-1).eventType, 'shopping_completed', 'a later successful purchase ends the visit');
         assert.equal(session.decisionStats.townLook.n, 4, 'a near visit\'s end is the bot\'s look at the market');
@@ -66,11 +69,20 @@ let failed = true;
         assert.deepEqual(raised.splice(0), ['goal_done:visit'], 'its end wakes the build once, no second town arrival');
         session.plan = 'shopping'; session.shoppingLiveShotStopChecked = true; session.shoppingTarget = { town: 'Giran' };
         failed = true;
-        await attempt(); await attempt(); await attempt();
+        await attempt(); await run(); await run();
         assert.equal(session.plan, 'hunting', 'persistent failure cannot trap the bot in town forever');
+        assert.equal(timers.length, 0);
         assert.equal(events.at(-1).eventType, 'shopping_deferred');
         assert.equal(events.at(-1).meta.reason, 'npc_seller_changed');
         assert.deepEqual(raised.splice(0), ['goal_failed:visit'], 'a restock given up ends the visit once, failed');
+        // A meeting that took the bot during a refused restock owns it: the visit ends, no retry.
+        session.plan = 'shopping'; session.shoppingLiveShotStopChecked = true; session.shoppingTarget = { town: 'Giran' };
+        meeting = true;
+        await attempt();
+        meeting = false;
+        assert.equal(session.plan, 'hunting', 'a refused restock under a meeting ends the visit');
+        assert.equal(timers.length, 0, 'and tries nothing again');
+        assert.deepEqual(raised.splice(0), ['goal_failed:visit']);
         // The body's arrival in town: once a trip, at its first tick there (its trip's
         // start stamps shopTimer), whatever stages its visit then runs.
         const visit = { actor: bot, plan: 'shopping', shopTimer: 1, shoppingDoneAnnounced: true, heldEconomy: { network: { activity: null } } };
