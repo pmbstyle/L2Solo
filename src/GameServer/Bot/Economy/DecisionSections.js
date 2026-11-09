@@ -338,16 +338,19 @@ function occupationPlanned(state, leaf) {
     if (ownMove(state, where) && Situations.gated(where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';
+    // A hunting leaf's spot: its own (a source it hunts), else the bot's held choice (the
+    // mind key, stats.huntSpot: where the route sends a leaf that names none).
+    const spotId = hunt ? leaf.spotId ?? state.stats?.huntSpot?.spotId ?? null : null;
     if (state.activity === 'traveling') {
         const travel = state.stats?.travel;
         if (!travel) return false;
-        return hunt && leaf.spotId != null ? ownSpot(travel.spotId, leaf)
+        return hunt && spotId != null ? sameSpot(travel.spotId, spotId)
             && travel.arrivalActivity === 'hunting' && travel.townName == null
             : leafVisit(state, leaf);
     }
-    // A hunting leaf without a spot names no arrival: any spot is an event.
-    if (hunt) return leaf.spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
-        && ownSpot(state.spotId, leaf);
+    // A hunting leaf with no spot of its own and no held choice names no arrival: any spot is an event.
+    if (hunt) return spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
+        && sameSpot(state.spotId, spotId);
     return state.activity === leaf.activity;
 }
 // A trip the bot took itself, out or back, the ground it reached and the town visit it
@@ -383,8 +386,8 @@ function leafVisit(state, leaf) {
 function leafTrip(leaf, town, forced) {
     return leaf?.town != null && leaf.activity !== 'hunting' && !forced && String(town) === String(leaf.town);
 }
-function ownSpot(spotId, leaf) {
-    return spotId != null && String(spotId) === String(leaf.spotId);
+function sameSpot(spotId, planned) {
+    return spotId != null && String(spotId) === String(planned);
 }
 // The kit fact each economy build records in its baseline moved between two
 // states of one bot: a party member's kit event. A party member's step raises

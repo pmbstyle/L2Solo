@@ -349,9 +349,9 @@ function onWorker() {
         const solo = Party.soloRoute(published(geared, decided.result), spots, time(12));
         assert.equal(solo?.spotId, 'rich', 'the solo side reads it');
         assert.equal(Party.evaluate({ solo, party: { income: solo.income * 0.9 } }).accept, false, 'a party paying less is refused');
-        // The held answer is a leveling bot's hunting spot too. Its build names it (the hot body walks to the
-        // card's leaf) while its hour stays its own, and its cold route goes there, the same after a worker restart
-        // (the answer is in the mind; no route is kept on the record).
+        // The held answer is a leveling bot's hunting spot too. Its build prices it while its hour stays its own,
+        // and its route goes there (the cold trip, and the hot body by the choice it publishes), the same after a
+        // worker restart (the answer is in the mind; no route is kept on the record).
         const answered = published(geared, decided.result);
         const leveling = { ...answered, stats: { ...answered.stats, wishFocus: geared.stats.wishFocus } };
         assert.equal(Route.earnsOnRoute(leveling, false), false, 'fixture: it levels');
@@ -368,6 +368,26 @@ function onWorker() {
             assert.equal(routeOf(owner), 'rich', 'the cold route goes to the held spot');
             assert.equal(owner.route, undefined, 'and keeps no route of its own');
             assert.equal(routeOf({}), 'rich', 'a restarted worker (a fresh record) routes it the same');
+            // Its hunting leaf names no copy of the answer: a decision taken alone that moves the answer (an
+            // outleveled or disappointing camp wakes the earning spot, not the build) moves the bot at its next
+            // trip with the leaf it holds, cold and hot (the published choice).
+            {
+                const broke = { ...hunter(990405, { complete: true }), adena: 0 };
+                const brokeBuilt = Economy.forState(broke, deps(20));
+                const leaf = brokeBuilt.network.activity;
+                assert.equal(leaf?.activity, 'hunting', `fixture: a broke bot hunts (${JSON.stringify(leaf)})`);
+                const answeredBroke = published(broke, brokeBuilt), answer = answeredBroke.stats.earning.spotId;
+                const ground = spots.find(spot => spot.id === answer), other = spots.find(spot => spot.id !== answer);
+                assert(ground, 'fixture: an answer');
+                const standing = { ...answeredBroke, spotId: ground.id, loc: ground.center };
+                const tripFor = state => BotRoute.trip({}, state, leaf, { spots, currentSpot: ground, timestamp: time(21) });
+                assert.equal(tripFor(standing), null, 'fixture: on its answer\'s camp it stays');
+                const moved = { ...standing, stats: { ...standing.stats,
+                    earning: { ...standing.stats.earning, spotId: other.id, at: time(21) } } };
+                assert.equal(tripFor(moved)?.spotId, other.id, 'the moved answer takes it to the new camp, its leaf held');
+                assert.equal(BotRoute.huntSpotHeld({}, moved, leaf, { spots, timestamp: time(21) })?.huntSpot?.spotId, other.id,
+                    'and the hot body is sent there too');
+            }
             // Ground it may not hunt alone, held as its answer: the route evacuates it (the search's rule),
             // and nothing is kept on the record.
             const unsafe = { ...spots[0], id: 'unsafe', tags: ['party_required'], center: { locX: -78000, locY: 250000, locZ: 0 } };

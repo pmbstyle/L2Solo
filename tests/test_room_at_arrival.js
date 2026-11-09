@@ -177,7 +177,7 @@ parentPort.on('message', message => {
 
 const room = { id: 'room-at-arrival', name: 'Room at arrival', center: { locX: 50000, locY: -176000, locZ: -1000 },
     minLevel: 18, maxLevel: 24, avgLevel: 21, density: 12, capacity: 2, levelCounts: { 20: 6 },
-    npcEntries: [{ selfId: NPC, count: 2, level: 21 }] };
+    npcEntries: [{ selfId: NPC, count: 2, level: 21 }], rewards: { adenaMin: 0, adenaMax: 0 } };
 const away = { ...room, id: 'room-away', name: 'Away field', center: { locX: 20000, locY: -176000, locZ: -1000 }, capacity: 20 };
 
 function bot(characterId, extra = {}) {
@@ -483,7 +483,8 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual({ ...wake, at: wake?.at > 0 }, { spotId: room.id, reason: 'displaced', by: 104, at: true },
             'at the ack the displaced bot hears contest_lost at its next step');
         assert.equal(await probe({ kind: 'wake', id: kept }), null, 'the other keeps its spot');
-        // The displaced bot remembers who took its spot: its next step's own commit carries it.
+        // The displaced bot remembers who took its spot: its next step's own commit carries it (its earning
+        // decision finds no other spot in this world, so it hunts on where it stands: the spots pay nothing).
         const pushed = await probe({ kind: 'step', id: gone });
         assert.deepEqual([pushed.proposed, pushed.faults, pushed.counted], [true, [], 0], 'counted only once committed');
         assert.deepEqual(pushed.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), [[gone, 104, 'mob_contested']],

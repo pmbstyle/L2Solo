@@ -794,13 +794,13 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         const row = incomeRoute.row;
         hunt = { perHour: incomeRoute.earning * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
             expPerHour: row.exp * Hunt.onSpotShare(state), source: 'route', spotId: incomeRoute.spot.id,
-            progressSpotId: incomeRoute.spot.id, useShots: row.useShots };
+            progressSpotId: incomeRoute.spot.id, answer: true, useShots: row.useShots };
     } else {
         hunt = Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp));
         // A leveling bot hunts its held answer too (B12): its hour stays its own, the spot and charge policy the
         // answer's (this build's search, else stats.earning).
         const held = incomeRoute?.spot || IncomeRoute.heldSpot(state, deps.spots || [], deps.mode);
-        if (held) hunt = { ...hunt, spotId: held.id, progressSpotId: held.id,
+        if (held) hunt = { ...hunt, spotId: held.id, progressSpotId: held.id, answer: true,
             useShots: incomeRoute ? incomeRoute.row.useShots !== false : state.stats?.earning?.shots !== false };
     }
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
