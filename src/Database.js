@@ -165,6 +165,9 @@ const metrics = {
     writes: 0,
     transactions: 0,
     failures: 0,
+    // Operations an owner refused with a named code (FailureLog.refusal: the act's facts
+    // moved since its decision): outcomes, apart from the failures above.
+    refusals: 0,
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
@@ -320,21 +323,29 @@ function operationName(sql, fallback = 'raw') {
     return match ? `${fallback}:${match[1].toLowerCase()}` : fallback;
 }
 
-function record(operation, wait, run, read, failed = false) {
+// Named operations: OPERATION_NAMES of any kind, then OPERATION_FAILURE_NAMES more for
+// an operation that fails or is refused, so a failure keeps its name when ordinary
+// names filled the map; past both, 'other'.
+const OPERATION_NAMES = 127, OPERATION_FAILURE_NAMES = 32;
+// outcome: '' (done), 'failed' or 'refused' (a named refusal, FailureLog.refusal).
+function record(operation, wait, run, read, outcome = '') {
     if (!DiagnosticConfig.developerDiagnostics) return;
     metrics.byOperation ||= new Map();
-    if (!metrics.byOperation.has(operation) && metrics.byOperation.size >= 127) operation = 'other';
+    if (!metrics.byOperation.has(operation)
+        && metrics.byOperation.size >= OPERATION_NAMES + (outcome ? OPERATION_FAILURE_NAMES : 0)) operation = 'other';
     metrics.total += 1;
     metrics.waitMs += wait;
     metrics.runMs += run;
     if (read) metrics.reads += 1;
     else metrics.writes += 1;
-    if (failed) metrics.failures += 1;
-    const entry = metrics.byOperation.get(operation) || { count: 0, waitMs: 0, runMs: 0, failures: 0 };
+    if (outcome === 'failed') metrics.failures += 1;
+    if (outcome === 'refused') metrics.refusals += 1;
+    const entry = metrics.byOperation.get(operation) || { count: 0, waitMs: 0, runMs: 0, failures: 0, refusals: 0 };
     entry.count += 1;
     entry.waitMs += wait;
     entry.runMs += run;
-    if (failed) entry.failures += 1;
+    if (outcome === 'failed') entry.failures += 1;
+    if (outcome === 'refused') entry.refusals += 1;
     metrics.byOperation.set(operation, entry);
 }
 
@@ -370,7 +381,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             EconomyJournal.discard();
             if (connection?.isTransaction) ClanReviewInputs.restoreCandidateCheckpoint(candidateCheckpoint);
             else ClanReviewInputs.discardCandidateCommit();
-            if (timed) record(operation, wait, now() - startedAt, read, true);
+            if (timed) record(operation, wait, now() - startedAt, read, FailureLog.refusal(error) ? 'refused' : 'failed');
             throw error;
         } finally {
             metrics.pending -= 1;
@@ -7323,6 +7334,7 @@ const Database = {
             writes: metrics.writes,
             transactions: metrics.transactions,
             failures: metrics.failures,
+            refusals: metrics.refusals,
             snapshots: metrics.snapshots,
             avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
