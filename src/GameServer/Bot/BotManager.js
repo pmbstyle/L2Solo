@@ -612,10 +612,11 @@ const BotManager = {
                         session.currentSpot = botData.currentSpot || null;
                         // A walker shown on its road (HotActivation) walks the rest of its run
                         // as the hot walk to its spot (HuntingState tickSpotRelocation); its
-                        // end is the bot's one arrival there.
+                        // end is the bot's one arrival there; its cold trip (coldTrip) goes on cold
+                        // if the body cools first (BotLifeState.writeColdRow).
                         if (botData.walkTo) session.spotRelocation = { mode: 'walk', method: 'walk',
                             spotId: botData.walkTo.spotId, destination: { ...botData.walkTo.destination },
-                            startedAt: Date.now(), lastCommandAt: 0 };
+                            coldTrip: botData.walkTo.trip || null, startedAt: Date.now(), lastCommandAt: 0 };
                         session.coldLifeState = botData.coldLifeState || null;
                         session.activationEconomyDecision = botData.economyDecision || null;
                         session.populationLocationPolicy = botData.populationLocationPolicy || 'return';

@@ -2292,13 +2292,20 @@ const BotLifeState = {
         if (session.coldLifeState) {
             const physicalLocation = session.populationLocationPolicy === 'physical';
             const preserved = physicalLocation ? session.coldLifeState : recoverOrphanedGiranState(session.coldLifeState);
-            const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
+            const merged = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
                 // The hot time is lived: the first cold step's length starts now (T126).
                 lastResolvedAt: now()
             });
+            // A walker shown on its road (HotActivation) whose body cools before its walk
+            // ends (a failed spawn's rollback, a cooldown) stays a walker: the rest of its
+            // run from where it stands, its arrival raised cold as its trip said.
+            const walk = session.spotRelocation;
+            const nextState = walk?.coldTrip?.run && !walk.arrivalPending
+                ? invoke('GameServer/Bot/Population/ColdTrip').resumeRun({ ...merged, spotId: walk.spotId }, walk.coldTrip, now())
+                : merged;
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
             return this.upsertState(nextState, reason, { releaseHot: true });

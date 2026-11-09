@@ -2,7 +2,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
-const PartyHuntingTarget = require('./PartyHuntingTarget');
+const PartyHuntingTarget = invoke('GameServer/Bot/Population/PartyHuntingTarget');
 
 // A walker shown on its road (HotActivation) stands within ROAD_RADIUS of its road
 // point; a point off the ground is stepped back toward the run's start in at most
@@ -14,14 +14,18 @@ const ROAD_STEPS = 12;
 // by the mobs he farms: MOB_NEAR..MOB_FAR from a live mob of the species its unit
 // competes for, in sight of it, inside its spot, never within BODY_GAP of another
 // body. The mobs: of that species within MOB_SCAN of its cold place and MOB_FLOOR of
-// its floor, the MOB_ANCHORS nearest. Our choice. Temporary: until the territory
-// rework places the cold place and the body by territory.
+// its floor, the MOB_ANCHORS nearest; with none placed, within HUNTER_RADIUS of its cold
+// place. Any other bot (in town, a raid, off its spot) is placed within the wider
+// activationPlacementRadius, which leaves room past activationMinPlayerDistance from a
+// player standing on its anchor. Our choice. Temporary: until the territory rework
+// places the cold place and the body by territory.
 const MOB_NEAR = 150;
 const MOB_FAR = 400;
 const BODY_GAP = 100;
 const MOB_SCAN = 6000;
 const MOB_FLOOR = 500;
 const MOB_ANCHORS = 4;
+const HUNTER_RADIUS = 600;
 
 function finiteLocation(loc) {
     return !!loc && ['locX', 'locY', 'locZ'].every((key) =>
@@ -95,12 +99,16 @@ function roadAnchor(loc, from) {
     return null;
 }
 
+// A bot on its held grid spot; not one off it (in town, on a road).
+function onHeldSpot(state, spot) {
+    return !!spot && spot.raidBoss !== true && Array.isArray(spot.npcEntries)
+        && SpotService.containsLocation(spot, state.loc);
+}
+
 // The live mobs a hunter on its held grid spot is shown by: of the species its unit
 // competes for (PartyHuntingTarget.competitionNpcId, the one the background thread
-// contests on), inside the spot. None for a bot off its spot (in town, on a road).
+// contests on), inside the spot.
 function huntedMobs(state, spot) {
-    if (!spot || spot.raidBoss === true || !Array.isArray(spot.npcEntries)
-        || !SpotService.containsLocation(spot, state.loc)) return [];
     const npcId = PartyHuntingTarget.competitionNpcId(null, state, spot);
     if (!npcId) return [];
     const from = { locX: Number(state.loc.locX), locY: Number(state.loc.locY), locZ: Number(state.loc.locZ) };
@@ -162,7 +170,8 @@ function resolve(state, options = {}) {
     };
     // A solo hunter on its held spot (not a party rally, a raid, a store, a walker or a
     // summoned bot): by a mob it hunts; else around its cold place below.
-    const mobs = !fixed && !summoned && !raid && !road && options.preferAnchor !== true ? huntedMobs(state, savedSpot) : [];
+    const hunter = !fixed && !summoned && !raid && !road && options.preferAnchor !== true && onHeldSpot(state, savedSpot);
+    const mobs = hunter ? huntedMobs(state, savedSpot) : [];
     for (let i = 0; mobs.length && i < Config.activationPlacementAttempts; i++) {
         const mob = grounded(mobs[i % mobs.length].locX, mobs[i % mobs.length].locY, mobs[i % mobs.length].locZ);
         if (!mob) continue;
@@ -196,7 +205,7 @@ function resolve(state, options = {}) {
         if (placement) return placement;
     }
     const placementRadius = Math.max(0, Number(options.placementRadius
-        ?? (road ? ROAD_RADIUS : Config.activationPlacementRadius)) || 0);
+        ?? (road ? ROAD_RADIUS : hunter ? HUNTER_RADIUS : Config.activationPlacementRadius)) || 0);
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {
         const angle = Math.random() * Math.PI * 2;
         const radius = Math.random() * placementRadius;

@@ -146,7 +146,7 @@ const DEFAULTS = {
     cooldownRadius: 11000,
     activationRadius: 9000,
     maxActivationsPerScan: 6,
-    activationPlacementRadius: 600,
+    activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
     activationPlacementAttempts: 8,
     // Ambient activation is still selected by the broad XY envelope, but

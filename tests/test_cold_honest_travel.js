@@ -162,7 +162,7 @@ try {
     const Manager = invoke('GameServer/Bot/BotManager');
     const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
     const real = { near: LifeState.walkersNear, handoff: Owner.handoffToMain, spawn: Manager.loadAndSpawnBot,
-        accept: Coordinator.acceptColdState, hasGeo: Geo.hasGeo, cell: Geo.getCellData, height: Geo.getHeight,
+        accept: Coordinator.acceptColdState, upsert: LifeState.upsertState, hasGeo: Geo.hasGeo, cell: Geo.getCellData, height: Geo.getHeight,
         sight: Geo.hasLineOfSight };
     try {
         Geo.hasGeo = () => true;
@@ -198,13 +198,46 @@ try {
         assert.strictEqual(spawned.length, 1);
         const shown = spawned[0].coldLifeState;
         assert.ok(gap(placedAt(spawned[0]), lastStretch) <= 300, 'it appears by its place on the road');
-        assert.deepStrictEqual(spawned[0].walkTo, { spotId: 'dv', destination: NEAR_DRAGON_VALLEY },
+        assert.deepStrictEqual([spawned[0].walkTo.spotId, spawned[0].walkTo.destination], ['dv', NEAR_DRAGON_VALLEY],
             'the body walks the rest of its run to its spot');
         assert.strictEqual(spawned[0].currentSpot, null, 'it stands on no spot until its walk ends there');
         assert.strictEqual(shown.activity, 'hunting', 'the cold trip is over: the hot walk carries it');
         assert.strictEqual(shown.spotId, 'dv', 'it holds the spot it walks to');
         assert.strictEqual(shown.stats.travel, null, 'no trip is left on the activated row');
         assert.strictEqual(spawned[0].backgroundActivity, 'hunting');
+
+        // Its body cools before the walk ends (a spawn failing after the handoff rolls the
+        // body back; a cooldown): a walker again, the rest of its run on foot from where its
+        // body stands, its arrival at its spot as its trip said, never a hunter on the road.
+        const body = spawned[0];
+        const stands = placedAt(body);
+        let cooled = null;
+        LifeState.upsertState = async (next) => (cooled = next);
+        const cooledAt = Date.now();
+        await LifeState.writeColdRow({ accountId: 'bot_walker_4200', plan: 'hunting', coldLifeState: body.coldLifeState,
+            populationLocationPolicy: body.populationLocationPolicy,
+            // The hot walk as BotManager starts it from walkTo.
+            spotRelocation: { mode: 'walk', method: 'walk', spotId: body.walkTo.spotId,
+                destination: body.walkTo.destination, coldTrip: body.walkTo.trip },
+            actor: { fetchId: () => 4200, fetchName: () => 'Walker4200', fetchLevel: () => 40, fetchExp: () => 0,
+                fetchSp: () => 0, fetchClassId: () => 0, fetchClanId: () => 0, fetchRace: () => 0, fetchKarma: () => 0,
+                fetchLocX: () => stands.locX, fetchLocY: () => stands.locY, fetchLocZ: () => stands.locZ,
+                fetchHp: () => 100, fetchMaxHp: () => 100, fetchMp: () => 50, fetchMaxMp: () => 50,
+                backpack: { fetchItems: () => [] } } }, 'hot_spawn_rollback');
+        LifeState.upsertState = real.upsert;
+        assert.strictEqual(cooled.phase, 'cold');
+        assert.strictEqual(cooled.activity, 'traveling', 'it walks on cold');
+        const rest = cooled.stats.travel;
+        assert.deepStrictEqual([rest.run.from, rest.from, rest.run.to], [stands, stands, NEAR_DRAGON_VALLEY],
+            'from where its body stands to the end of its run');
+        assert.ok(rest.startedAt >= cooledAt && rest.arrivalAt - rest.startedAt === Math.max(1000, ColdTrip.runMs(stands, NEAR_DRAGON_VALLEY)),
+            'the rest of the run on foot');
+        assert.deepStrictEqual([rest.method, rest.spotId, rest.arrivalEvent, rest.arrivalActivity],
+            ['walk', 'dv', 'arrived_hunting_ground', 'hunting'], 'it arrives at its spot as its trip said');
+        assert.strictEqual(cooled.timing.nextResolveAt, rest.arrivalAt, 'its arrival is its next cold step');
+        const list = new LifeStateCache();
+        list.set(4200, cooled);
+        assert.strictEqual(list.walkers.size, 1, 'on the walker list: a player near its road sees it again');
 
         // A long walk (karma: on foot all the way from where it set out). Two walkers of one
         // start at different progress, the player by each: each appears on its own stretch of
@@ -248,6 +281,7 @@ try {
         Owner.handoffToMain = real.handoff;
         Manager.loadAndSpawnBot = real.spawn;
         Coordinator.acceptColdState = real.accept;
+        LifeState.upsertState = real.upsert;
         Object.assign(Geo, { hasGeo: real.hasGeo, getCellData: real.cell, getHeight: real.height, hasLineOfSight: real.sight });
     }
     assert.ok(TravelRoutes.teleportPoints().length > 0);

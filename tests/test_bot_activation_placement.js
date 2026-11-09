@@ -193,6 +193,13 @@ try {
     const town = { locX: 9000, locY: 0, locZ: 0 };
     Math.random = () => 0;
     assert.deepStrictEqual(Placement.resolve({ ...hunter, loc: town }).loc, town);
+    // A shopper off its spot with the player standing on its anchor: the town radius
+    // (1400) leaves room past the 450 a body keeps from the player; the hunter's 600
+    // would not at this roll (300 from the player).
+    Math.random = () => 0.5;
+    const shopper = Placement.resolve({ ...hunter, activity: 'shopping', loc: town }, { playerLoc: town });
+    assert.ok(shopper, 'a shopper by a player at its anchor is still placed');
+    assert.ok(Math.hypot(shopper.loc.locX - town.locX, shopper.loc.locY) >= Config.activationMinPlayerDistance);
     Spots.findById = original.findById;
     Spots.containsLocation = original.containsLocation;
     World.fetchNpcsInRadius = original.npcsInRadius;

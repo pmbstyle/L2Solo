@@ -194,7 +194,9 @@ const HotActivation = {
                 if (walker && onRoad(current)) {
                     const travel = current.stats.travel;
                     const spotId = travel.spotId || SpotService.findCurrentSpot(travel.run.to)?.id || null;
-                    walkTo = spotId ? { spotId, destination: { ...travel.run.to } } : null;
+                    // Its cold trip rides with the walk: a body cooled before the walk ends goes
+                    // on cold from where it stands (BotLifeState.writeColdRow).
+                    walkTo = spotId ? { spotId, destination: { ...travel.run.to }, trip: travel } : null;
                 }
                 if (moved) {
                     placement = ActivationPlacement.resolve(current, placementOptions(current, craftShop?.loc || current.loc));
