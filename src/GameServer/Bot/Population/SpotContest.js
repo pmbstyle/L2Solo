@@ -209,6 +209,13 @@ function answer({ spot, npcId, unit, other, read, pressure, key, at, demand, cap
     Situations.note('spot:contest:past_tolerance');
     return { answer: 'leave' };
 }
+// A unit that lost at a spot contest (displaced off its spot, or sharing it under a stronger
+// unit's kill-stealing at its arrival) remembers who did it: mob_contested toward the stronger
+// unit's principal (by), written by the victim's own commit. step: the victim's step counter;
+// at: the step's time. C4 has no bot memory: our choice (a player remembers who took his camp).
+function grievance({ victim, by, step, at }) {
+    return { key: `spot:${victim}:${by}:${step}`, sourceId: Number(victim), targetId: Number(by), kind: 'character', type: 'mob_contested', at };
+}
 // The contest's outcome counted and traced (subject: the spot; the arriving principal as its bot).
 function settled(spot, arriving, verdict) {
     Situations.note(`spot:contest:${verdict.reason}`);
@@ -217,4 +224,4 @@ function settled(spot, arriving, verdict) {
         ...(verdict.peer ? { target: verdict.peer.id } : {}) });
     return verdict;
 }
-module.exports = { contest, targetPressure, MAX_PEERS, MAX_DISPLACED, EVENT_TTL_MS, CROWDED };
+module.exports = { contest, grievance, targetPressure, MAX_PEERS, MAX_DISPLACED, EVENT_TTL_MS, CROWDED };

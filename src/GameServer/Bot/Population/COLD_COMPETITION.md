@@ -118,8 +118,12 @@ party's leave is a mark on the party (`PartySpotRiskPolicy.withMark`): its next 
 hears `contest_lost` on its held spot and its spot decision (`party_spot`) moves it. A
 displaced bot hears `contest_lost` (reason `displaced`) at its next step once the
 arriving commit is acked (the kernel's step wake: no commit of its own, it finishes the
-window its step already credited); a near arrival displaces at once. No grievance is
-written for a displacement.
+window its step already credited); a near arrival displaces at once. The unit that lost
+remembers the stronger one (`mob_contested`, `SpotContest.grievance`, counted
+`spot:contest:grievance`), written by its own commit: a displaced far bot at that next
+step, a far solo arrival that shares under a stronger stranger (`tolerated`) at its
+arrival step. Parties and standing units that chose to share write none; bodies near a
+player write theirs per mob (`BotMobCompetition`).
 
 The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
 room it is held (the holder's best look and largest unit), until an arrival finds it at
@@ -146,7 +150,7 @@ refused ack, another step's ack, the bot leaving the far simulation, the worker'
 an age past 10 s from the arrival drops them, counted (`spot:contest:<why>` on the
 situations= line), never re-fenced. Counters: `spot:arrival:checked/over`,
 `spot:contest:outmatched/even/crowded/stronger/friendly_share/tolerated/shared/pvp`,
-`spot:contest:tolerated_standing/past_tolerance`,
+`spot:contest:tolerated_standing/past_tolerance/grievance`,
 `spot:contest:displaced/displaced_left`, `spot:contest:capped/memory/commanded/evacuation/hot_peer/hot_skipped`,
 `enemy_met:<reason>`, `enemy_met:mixed`, and main's `enemy_met:<outcome>`.
 

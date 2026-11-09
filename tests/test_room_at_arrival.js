@@ -43,6 +43,7 @@ Contest.contest = input => {
     const peer = input.standing.find(unit => !unit.hot);
     if (!forced || !(verdict.pressure > 1) || !peer) return verdict;
     if (forced === 'coexist') return { action: 'coexist', pressure: verdict.pressure };
+    if (forced === 'tolerated') return { action: 'stay', reason: 'tolerated', displaced: [], pressure: verdict.pressure, peer };
     if (forced !== 'pvp') return { action: 'avoid', reason: forced, pressure: verdict.pressure, spotId: String(input.spot.id) };
     return { action: 'stay', reason: 'pvp', displaced: [], pressure: verdict.pressure, peer, event: { at: input.at, key: 'forced:' + input.arriving.key,
         spotId: input.spot.id, npcId: input.npcId, actor: { id: input.arriving.id }, peer: { id: peer.id }, action: 'contest', pvpIntent: true } };
@@ -53,6 +54,16 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     forced = outcome; seen = null;
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
     if (kind === 'wake') return kernel.states.get(id)?.stepWake?.raises?.contest_lost || null;
+    if (kind === 'step') {
+        // The bot's next step as the kernel runs it, up to its commit proposal (not sent).
+        const held = kernel.states.get(id), now = Date.now(), flush = kernel.flush;
+        kernel.flush = () => {};
+        kernel.inFlight.set(id, { state: held.state, startedAt: now, dueAt: now });
+        try { await kernel.resolveStep(id); } finally { kernel.flush = flush; kernel.inFlight.delete(id); }
+        const proposal = kernel.dirty.get(id);
+        kernel.dirty.delete(id);
+        return { proposed: !!proposal, memoryEvents: proposal?.result?.memoryEvents || [], faults: kernel.faults.get(id)?.logged || [] };
+    }
     // Their relationships loaded (a stranger unread is never displaced).
     if (kind === 'memory') { for (const m of remove) kernel.interactionMemory.accept(require('../../Social/InteractionMemoryPolicy').empty(m)); return true; }
     if (kind === 'near') return { marks: marksOf(kernel.states.get(id)?.state.stats), seen };
@@ -99,7 +110,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     if (!keep) outbox.pending.delete(id);
     return { standingAfter: arrival ? arrival.unit.key : null, displaced: arrival?.displaced || [], arrived: result.patch.activity === 'hunting' && result.patch.spotId === spotId, changed: !!contested,
         marks: marksOf({ ...traveling.stats, ...stats }), woken: Catalogue.woken({ ...traveling.stats, ...stats }, 'earning_spot'),
-        wait: stats.coldCompetition?.wait || null, outbox: queued, proposalId, seen };
+        wait: stats.coldCompetition?.wait || null, outbox: queued, proposalId, seen, grievance: contested?.spotGrievance || null };
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -373,6 +384,10 @@ invoke('GameServer/DataCache').init();
             'an ack of another step drops it as stale, never re-fenced');
         const evacuating = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'unsafe_ground_evacuation' });
         assert.deepEqual([evacuating.seen.holds, evacuating.marks], ['evacuation', []], 'a safety evacuation holds its new ground: it never avoids');
+        // One that stays under a stronger stranger's kill-stealing remembers him too (its arrival's commit).
+        const tolerated = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'tolerated' });
+        assert.deepEqual([tolerated.marks, tolerated.grievance?.sourceId, tolerated.grievance?.targetId, tolerated.grievance?.type],
+            [[], 104, 101, 'mob_contested'], 'a tolerated arrival stays, unmarked, with a grievance toward the holder');
         const coexist = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'coexist' });
         assert.equal(coexist.changed, false, 'coexist changes nothing');
 
@@ -396,6 +411,15 @@ invoke('GameServer/DataCache').init();
         assert.deepEqual(await probe({ kind: 'wake', id: gone }), { spotId: room.id, reason: 'displaced', by: 104 },
             'at the ack the displaced bot hears contest_lost at its next step');
         assert.equal(await probe({ kind: 'wake', id: kept }), null, 'the other keeps its spot');
+        // The displaced bot remembers who took its spot: its next step's own commit carries it.
+        const pushed = await probe({ kind: 'step', id: gone });
+        assert.deepEqual([pushed.proposed, pushed.faults], [true, []]);
+        assert.deepEqual(pushed.memoryEvents.map(event => [event.sourceId, event.targetId, event.type]), [[gone, 104, 'mob_contested']],
+            'a grievance toward the bot that displaced it');
+        const remembered = Policy.apply(Policy.empty(gone), Policy.event(pushed.memoryEvents[0]), Date.now() + 1000);
+        assert.equal(remembered.status, 'applied', 'its memory takes it');
+        assert(remembered.snapshot.relations.find(row => row.targetId === 104).hostility > 0, 'and holds a grudge against him');
+        assert.deepEqual((await probe({ kind: 'step', id: kept })).memoryEvents, [], 'the one that kept its spot remembers nothing');
         const after = await probe({ kind: 'solo', id: 105, spotId: room.id, reason: 'level_replan' });
         assert(!after.seen.standing.includes(`solo:${gone}`), 'until its next step, the displaced bot no longer counts there');
 

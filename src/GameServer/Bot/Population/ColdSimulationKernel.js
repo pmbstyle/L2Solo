@@ -475,13 +475,14 @@ function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
 
 // A lifecycle plan as main receives it: the step's economy object stays in
 // the worker (it carries functions and is never posted).
-// economy and route are worker-local (the request carries the route's spot).
+// economy, route and memoryEvents are worker-local (the request carries the route's spot).
 function postedPlan(plan) {
     if (!plan?.economy && !plan?.route && !plan?.stepWakeSeq) return plan;
     const posted = { ...plan };
     delete posted.economy;
     delete posted.route;
     delete posted.stepWakeSeq;
+    delete posted.memoryEvents;
     return posted;
 }
 
@@ -2402,7 +2403,9 @@ class ColdSimulationKernel {
                 ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 ...(projection?.buffOffer ? { buffOffer: projection.buffOffer } : {}),
                 ...(cleanupNeed ? { cleanupNeed } : {}),
-                result: proposalResult({ ...round.result, ...round.posted }),
+                // The projection's memory events (a spot contest's grievance) ride the step's own commit.
+                result: proposalResult({ ...round.result, ...round.posted, ...(projection?.memoryEvents
+                    ? { memoryEvents: [...(round.result.memoryEvents || []), ...projection.memoryEvents] } : {}) }),
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
