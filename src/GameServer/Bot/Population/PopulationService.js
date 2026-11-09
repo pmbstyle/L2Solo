@@ -3201,27 +3201,6 @@ const PopulationService = {
         }
     },
 
-    async formCompetitionParty(members, event, options = {}) {
-        if (!Config.backgroundPartyEnabled || members.length !== 2) return { rejected: 'party_disabled_or_invalid' };
-        if (members.some(state => CraftMaterialParty.requestOf(state)))
-            return { rejected: 'material_party_requires_review' };
-        if (members.some(s => s.party?.partyId || s.partyId)) {
-            const result = await invoke('GameServer/Bot/Population/ColdCompetitionRecruitment').recruit({ participants: members, event,
-                parties: BackgroundPartyState, life: LifeState, memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
-                composition: PartyComposition, limitsFor: partyLimitsForObjective, clanReserved: requiresClanEquipmentParty,
-                commit: commitPartyMembership, participantAllowed: options.participantAllowed });
-            if (result.recruited) Config.developerDiagnostics && Metrics.recordPartyRecruit(result.recruited);
-            return result;
-        }
-        if (members.some(state => requiresClanEquipmentParty(state))) return { rejected: 'clan_objective' };
-        if (occupiedPartySlots() >= partyCapacityLimit()) { Situations.note('party:cap:hit'); return { rejected: 'party_capacity' }; }
-        return createAndCommitBackgroundParty(members, {
-                status: 'open', priority: 'preferred', reason: 'shared_target',
-                objectiveKey: `competition:${event.spotId}:${event.npcId}`,
-                spotId: event.spotId, npcId: event.npcId
-        });
-    },
-
     applyPartyStayTrips(party, trips, timestamp = Date.now()) {
         return applyPartyStayTrips(party, trips, timestamp);
     },

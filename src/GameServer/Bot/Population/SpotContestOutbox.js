@@ -1,16 +1,22 @@
 'use strict';
-// The spot aggregate's outcomes that touch other bots, on their way to main (worker only). An
-// arrival's contest (SpotContest: offer_party, contest, a PvP intent) or meeting (EnemyMet: revenge,
-// clan_war) waits for the arriving step's own commit ack (keyed per arriving bot on its proposal), is
-// fenced with that bot's committed revisions (its own, its party row's: table changes reach the worker
-// before the ack), and goes in the competition frame of the next heartbeat (main's
-// ColdCompetitionActions executes it, fencing both sides; its receipt frees the frame). A refused
-// arriving commit drops it (the arrival did not happen: arrival_refused; the next step arrives
-// anew); any other ack, the bot leaving the far simulation, the worker's stop or an age past the
-// event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops it (stale), never re-fenced.
-// An outcome with no step to wait for (unsent) is a caller's bug: expected 0. Bounds:
-// QUEUE events waiting for a frame, FRAME_EVENTS a frame, the message size
-// (ColdCompetitionFrameSizer). Every drop is counted on the situations= line (spot:contest:<why>).
+// The spot aggregate's outcomes that touch other bots, on their way (worker only). An
+// arrival's contest (SpotContest: the units it displaces, a PvP dispute) or meeting
+// (EnemyMet: revenge, clan_war) waits for the arriving step's own commit ack (keyed per
+// arriving bot on its proposal). The arriving unit itself stands on the spot from its
+// arrival, not from its ack: until the ack its entry counts it as standing there, and the
+// units it displaces as gone (pendingOn), so two arrivals in one commit round trip meet
+// each other. At the ack a displaced bot hears contest_lost at its next step (displace,
+// the kernel's step wake: no commit of its own); a dispute or meeting is fenced with the
+// arriving bot's committed revisions (its own, its party row's: table changes reach the
+// worker before the ack) and goes in the competition frame of the next heartbeat (main's
+// ColdCompetitionActions executes it, fencing both sides; its receipt frees the frame). A
+// refused arriving commit drops it (the arrival did not happen: arrival_refused; the next
+// step arrives anew); any other ack, the bot leaving the far simulation, the worker's stop
+// or an age past the event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops
+// it (stale), never re-fenced. An outcome with no step to wait for (unsent) is a caller's
+// bug: expected 0. Bounds: QUEUE events waiting for a frame, FRAME_EVENTS a frame, the
+// message size (ColdCompetitionFrameSizer). Every drop is counted on the situations= line
+// (spot:contest:<why>; a displacement dropped counts once per displaced unit).
 const Situations = require('../Situations');
 const FailureLog = require('../../../FailureLog');
 const { EVENT_TTL_MS } = require('./SpotContest');
@@ -26,25 +32,50 @@ function freeze(value) {
 
 class SpotContestOutbox {
     // stateOf(id): the bot's state in the kernel; partyOf(id): its party row; memoryRevision(id);
+    // displace(id, spotId, by, at): a displaced bot told at the arrival's ack (the worker's step wake; at: the arrival's);
     // frameSizing({ frameId, at }): the sizer of a frame (ColdCompetitionFrameSizer) or null.
-    constructor({ stateOf, partyOf, memoryRevision, frameSizing = null }) {
-        Object.assign(this, { stateOf, partyOf, memoryRevision, frameSizing });
+    constructor({ stateOf, partyOf, memoryRevision, displace = () => {}, frameSizing = null }) {
+        Object.assign(this, { stateOf, partyOf, memoryRevision, displace, frameSizing });
+        // id -> { proposalId, events, arrival: { spotId, at, unit (as SpotContest reads a standing
+        // unit), displaced: [ids] } | null }.
         this.pending = new Map(); this.queue = []; this.frame = null; this.nextFrame = 0; this.stopped = false;
     }
     note(why, count = 1) { for (let i = 0; i < count; i++) Situations.note(`spot:contest:${why}`); }
+    entry(id, proposalId) {
+        const entry = this.pending.get(Number(id));
+        if (entry?.proposalId === proposalId) return entry;
+        if (entry) this.drop(id, 'stale');
+        const fresh = { proposalId, events: [], arrival: null };
+        this.pending.set(Number(id), fresh);
+        return fresh;
+    }
     // An arrival's outcome for the arriving bot id, sent after its step's commit (proposalId).
     add(id, proposalId, event) {
         if (this.stopped || !proposalId) { this.note('unsent'); return; }
-        const entry = this.pending.get(Number(id));
-        if (entry?.proposalId === proposalId) { entry.events.push(event); return; }
-        if (entry) this.drop(id, 'stale');
-        this.pending.set(Number(id), { proposalId, events: [event] });
+        this.entry(id, proposalId).events.push(event);
+    }
+    // The arriving unit standing on spotId from its step (proposalId) until its ack, with the
+    // standing units it displaces (displaced: solo bot ids). at: the arrival's time.
+    arrive(id, proposalId, { spotId, at, unit, displaced = [] }) {
+        if (this.stopped || !proposalId) { this.note('unsent', displaced.length); return; }
+        this.entry(id, proposalId).arrival = { spotId: String(spotId), at, unit, displaced };
+    }
+    // The arrivals in flight on spotId: { units (standing there until their ack), displaced
+    // (the ids they displace: no longer standing there) }.
+    pendingOn(spotId) {
+        const units = [], displaced = new Set(), spot = String(spotId);
+        for (const { arrival } of this.pending.values()) {
+            if (arrival?.spotId !== spot) continue;
+            units.push(arrival.unit);
+            for (const id of arrival.displaced) displaced.add(Number(id));
+        }
+        return { units, displaced };
     }
     drop(id, why) {
         const entry = this.pending.get(Number(id));
         if (!entry) return;
         this.pending.delete(Number(id));
-        this.note(why, entry.events.length);
+        this.note(why, entry.events.length + (entry.arrival?.displaced.length || 0));
     }
     // The commit acks (ColdSimulationKernel.onCommitAck's results). Returns whether any queued.
     acked(results, now = Date.now()) {
@@ -56,6 +87,7 @@ class SpotContestOutbox {
             const committed = this.stateOf(id);
             if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold') { this.drop(id, 'stale'); continue; }
             this.pending.delete(id);
+            for (const displaced of entry.arrival?.displaced || []) this.displace(displaced, entry.arrival.spotId, id, entry.arrival.at);
             const party = partyIdOf(committed) ? this.partyOf(id) : null;
             const fenced = side => Number(side.id) !== id ? side : { ...side, revision: Number(committed.simulation?.revision || 0),
                 memoryRevision: this.memoryRevision(id),
@@ -71,7 +103,9 @@ class SpotContestOutbox {
     }
     // Entries whose ack never came, past their freshness from the arrival. Each heartbeat.
     sweep(now = Date.now()) {
-        for (const [id, entry] of this.pending) if (entry.events.every(event => now - event.at > EVENT_TTL_MS)) this.drop(id, 'stale');
+        for (const [id, entry] of this.pending) {
+            if (entry.events.every(event => now - event.at > EVENT_TTL_MS) && !(now - entry.arrival?.at <= EVENT_TTL_MS)) this.drop(id, 'stale');
+        }
     }
     // The next frame (one at a time, until main's receipt): the queued events restamped at its time
     // while fresh from their arrival (a stale one goes, counted, never restamped); one a full frame

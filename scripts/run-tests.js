@@ -182,7 +182,6 @@ const tests = [
     'tests/test_party_stay.js',
     'tests/test_party_assembly_recovery.js',
     'tests/test_cold_competition_actions.js',
-    'tests/test_cold_competition_retreat.js',
     'tests/test_hot_resource_competition.js',
     'tests/test_cold_party_conflicts.js',
     'tests/test_cold_pvp.js',

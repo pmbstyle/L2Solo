@@ -95,8 +95,8 @@ function distribution(c, memory, reverse) {
     return { counts, decisions, disposition: towardPeer.disposition };
 }
 
-// The real arrival contest (SpotContest): the victim's side arrives where the other stands,
-// one arrival a step, over room; the outcome of each.
+// The real arrival contest (SpotContest, PvP on): the victim's side arrives where the other
+// stands, one arrival a step, over room; the outcome of each (who holds, a PvP dispute).
 function contestReplay(c, memory) {
     invoke('GameServer/DataCache').init();
     const spot = { id: c.spotId, npcEntries: [{ selfId: c.npcId, count: 1 }] };
@@ -110,8 +110,8 @@ function contestReplay(c, memory) {
     const decisions = new Map();
     for (let step = 0; step <= 1440; step++) {
         const verdict = SpotContest.contest({ spot, npcId: c.npcId, arriving, standing, at: timestamp, step, memory,
-            personaFor: Persona.generate, capacityForSpot: () => c.states.length / 3 });
-        decisions.set(step, { action: verdict.action, accepted: verdict.event?.accepted });
+            personaFor: Persona.generate, capacityForSpot: () => c.states.length / 3, pvp: true });
+        decisions.set(step, { action: verdict.action, reason: verdict.reason });
     }
     return decisions;
 }

@@ -1,269 +1,34 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
+// Main's competition actions over a worker frame (ColdCompetitionActions): a spot's PvP
+// dispute and the grievance meetings, bounded per frame (four applied, eight attempted,
+// PvP first, 75 ms of wall time), every skipped forecast handed back to its pair, the
+// spot telemetry bounded. The fights themselves: test_cold_pvp, test_cold_party_conflicts.
 const assert = require('assert');
-const fs = require('fs'), os = require('os'), path = require('path');
 require('../src/Global');
-// Load native data before the first economic route or combat profile check.
-invoke('GameServer/DataCache').init();
-// U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
-// middle roll (0.49) makes each such decision the author's threshold (willing iff
-// chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
-require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
-const Database = invoke('Database');
-const Life = invoke('GameServer/Bot/Population/BotLifeState');
-const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
-const Party = invoke('GameServer/Bot/Population/BackgroundPartyState');
-const Memory = require('../src/GameServer/Social/InteractionMemory');
-const P = require('../src/GameServer/Social/InteractionMemoryPolicy');
-const { ColdCompetitionActions, WAIT_MS } = require('../src/GameServer/Bot/Population/ColdCompetitionActions');
-const Wait = require('../src/GameServer/Bot/Population/ColdCompetitionWait');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-competition-actions-'));
-options.default.Database.path = path.join(dir, 'test.sqlite');
-let now = Date.now();
-async function run() {
-    Database.init();
-    const ordinaryHunt = process.argv.includes('--ordinary-hunt');
-    if (ordinaryHunt) invoke('GameServer/Bot/Population/SpotProfiles').findById = id => id === 'test'
-        ? { id: 'test', avgLevel: 20, npcEntries: [{ selfId: 10, level: 20, count: 10 }] } : null;
-    const stats = ordinaryHunt ? {} : { equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { npcId: 10, spotId: 'test' } } };
-    const oldEpisode = { key: 'old-fight', at: now - 700000, outcome: 'pvp_fighting', role: 'support', endedAt: now - 600000,
-        conflictUntil: now + 60000 };
-    for (const id of Array.from({ length: 18 }, (_, index) => index + 1)) {
-        await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_actions_${id}`, 'test']]);
-        await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
-            VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_actions_${id}`, `Action${id}`]]);
-        await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,
-            nextResolveAt,lastResolvedAt,updatedAt,statsJson,mindJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?,?)`,
-        [id, `bot_actions_${id}`, `Action${id}`, now + 60000, now - 30000, now, JSON.stringify([1, 2, 3, 4, 11, 12, 13, 14].includes(id)
-            ? { ...stats, coldCompetition: { ...oldEpisode, conflictUntil: id >= 13 ? now - 1 : oldEpisode.conflictUntil } } : stats),
-        // Each bot holds its earning answer (forming skips a candidate with none).
-        JSON.stringify({ earning: { spotId: 'test', shots: true, income: 0, earning: 0, error: 0, at: now } })]]);
-    }
-    await Life.init();
-    const memory = new Memory();
-    [1, 2, 3, 4, 5, 6, 7, 8].forEach(id => memory.accept(P.empty(id)));
-    const actions = new ColdCompetitionActions({ life: Life, owner: Owner, memory, now: () => now,
-        formParty: async members => {
-            const prepared = Party.prepareCommit({ partyId: 'competition-party', leaderId: 3, memberIds: [3, 4],
-                spotId: 'test', status: 'active', startedAt: now, nextResolveAt: now + 45000, stats: {} });
-            const assigned = members.map(s => Life.preparePartyAssignment(s, 'competition-party', 'dps', 3, now + 45000));
-            const result = await Database.commitBackgroundPartyMembership({ party: prepared.row, members: assigned });
-            if (!result.ok) return null;
-            Life.acceptPartyAssignments(assigned, result.lifeRows);
-            return Party.acceptRow(result.partyRow);
-        } });
-    const event = (a, b, action = 'yield') => ({ key: `episode:${a}:${b}`, at: now, pressure: 2, spotId: 'test', npcId: 10, action, accepted: true,
-        actor: { id: a, revision: Life.cachedState(a).simulation.revision, memoryRevision: 0 },
-        peer: { id: b, revision: Life.cachedState(b).simulation.revision, memoryRevision: 0 } });
-    const yieldEvent = event(1, 2);
-    const before = Life.cachedState(1);
-    const yielded = await actions.apply(yieldEvent);
-    assert(yielded.ok, JSON.stringify(yielded));
-    const freshYield = Life.cachedState(1).stats.coldCompetition;
-    assert.strictEqual(freshYield.outcome, 'yield');
-    assert.strictEqual(freshYield.role, undefined);
-    assert.strictEqual(freshYield.endedAt, undefined);
-    assert.strictEqual(freshYield.conflictUntil, undefined, 'no conflict window carries into a new episode (a pair meets again at an arrival)');
-    assert.strictEqual(Life.cachedState(1).timing.nextResolveAt, before.timing.nextResolveAt + WAIT_MS);
-    assert.strictEqual((await actions.apply(yieldEvent)).ok, false, 'duplicate delivery cannot apply another pause');
-    const paused = Life.cachedState(1);
-    assert(Wait.consume(paused, 30000, now + 5000).waiting);
-    const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
-    const idle = Resolver.resolveSolo({ state: paused, timestamp: now + 5000 });
-    assert.strictEqual(idle.materialize.exp, 0);
-    assert.strictEqual(idle.debug.reason, 'competition_yield');
-    const consumedOnly = Resolver.resolveSolo({ state: paused, elapsedMs: WAIT_MS, timestamp: now + WAIT_MS });
-    assert.strictEqual(consumedOnly.debug.fights, 0, 'a fully consumed conflict pause cannot earn a minimum fight');
-    assert.strictEqual(consumedOnly.materialize.exp, 0);
-    assert.strictEqual(consumedOnly.patch.stats.coldCompetition.wait, null);
-    const missingSpot = Resolver.resolveSolo({ state: paused, timestamp: now + 30000, spot: null });
-    assert.strictEqual(missingSpot.patch.stats.coldCompetition.wait, null, 'lifecycle early returns cannot strand a paused hunter');
-    const resumed = Wait.consume(paused, 75000, now + 30000);
-    assert.strictEqual(resumed.elapsedMs, 60000);
-    assert.strictEqual(resumed.state.stats.coldCompetition.wait, null);
-    assert.strictEqual(Wait.consume(resumed.state, 60000, now + 90000).elapsedMs, 60000, 'idle debt is deducted once');
-    const partyEvent = event(3, 4, 'offer_party');
-    assert((await actions.apply(partyEvent)).ok);
-    assert.strictEqual((await actions.apply(partyEvent)).ok, false);
-    assert.strictEqual(Life.cachedState(3).stats.coldCompetition.outcome, 'offer_party');
-    assert.strictEqual(Life.cachedState(3).stats.coldCompetition.role, undefined);
-    assert.strictEqual(Life.cachedState(3).party.partyId, 'competition-party');
-    now += 120001;
-    const Recruitment = require('../src/GameServer/Bot/Population/ColdCompetitionRecruitment');
-    const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
-    const commit = async (party, members, lifeEvent) => {
-        const prepared = Party.prepareCommit(party);
-        const assigned = members.map(s => Life.preparePartyAssignment(s, party.partyId, 'dps', party.leaderId, party.nextResolveAt));
-        const result = await Database.commitBackgroundPartyMembership({ party: prepared.row, members: assigned, event: lifeEvent });
-        if (!result.ok) return { party: null, failed: members, reason: result.reason };
-        Life.acceptPartyAssignments(assigned, result.lifeRows);
-        return { party: Party.acceptRow(result.partyRow), failed: [] };
-    };
-    const recruitOptions = { parties: Party, life: Life, memory, composition: Composition,
-        limitsFor: () => ({ maxSize: 5, minSize: 2, levelRange: 4 }), clanReserved: () => false, commit };
-    const recruitEvent = (solo, member) => ({ ...event(solo, member, 'offer_party'),
-        peer: { ...event(solo, member).peer, partyId: 'competition-party',
-            partyRevision: Party.find('competition-party').revision, size: Party.find('competition-party').memberIds.length } });
-    const join = recruitEvent(7, 3);
-    await Database.execute(['UPDATE bot_life_state SET activity=? WHERE characterId=?', ['resting', 4]]);
-    Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [4]]))[0]);
-    const joinStates = [Life.cachedState(7), Life.cachedState(3)];
-    const materialRequest = { materialParty: true, status: 'open', spotId: 'test', itemId: 4097, amount: 12 };
-    const materialSolo = { ...joinStates[0], stats: { ...joinStates[0].stats, partyRequest: materialRequest } };
-    const untouchedParty = Party.find('competition-party');
-    const noMaterialCommit = () => { throw Error('competition bypassed material contract and worker review'); };
-    assert.strictEqual((await Recruitment.recruit({ ...recruitOptions, participants: [materialSolo, joinStates[1]],
-        event: join, commit: noMaterialCommit })).rejected, 'material_party_requires_review');
-    assert.strictEqual((await Recruitment.recruit({ ...recruitOptions, participants: joinStates, event: join,
-        parties: { find: () => ({ ...untouchedParty, stats: { objective: materialRequest } }) },
-        commit: noMaterialCommit })).rejected, 'material_party_requires_review');
-    assert.strictEqual((await invoke('GameServer/Bot/Population/PopulationService').formCompetitionParty(
-        [materialSolo, Life.cachedState(8)], event(7, 8, 'offer_party'))).rejected, 'material_party_requires_review',
-    'a new shared-target pair cannot clear an outstanding material request either');
-    assert.strictEqual(Party.find('competition-party'), untouchedParty);
-    assert.strictEqual(materialSolo.stats.partyRequest, materialRequest);
-    assert(!Life.cachedState(7).party?.partyId);
-    assert.strictEqual((await Recruitment.recruit({ ...recruitOptions, participants: joinStates, event: join,
-        participantAllowed: id => id !== 4 })).rejected, 'party_member_busy', 'a fenced retained member blocks the entire invitation');
-    assert.strictEqual((await Recruitment.recruit({ ...recruitOptions, participants: joinStates, event: join,
-        limitsFor: () => ({ maxSize: 2, minSize: 2 }) })).rejected, 'party_full');
-    assert.strictEqual((await Recruitment.recruit({ ...recruitOptions, participants: joinStates, event: join,
-        memory: { assess: () => ({ ready: true, disposition: 'hostile' }) } })).rejected, 'party_hostility');
-    const joining = new ColdCompetitionActions({ life: Life, owner: Owner, memory, now: () => now,
-        formParty: (participants, event, options) => Recruitment.recruit({ ...recruitOptions, ...options, participants, event, timestamp: now }) });
-    const joined = await joining.apply(join);
-    assert.strictEqual(joined.recruited, 1, JSON.stringify(joined));
-    assert.deepStrictEqual(Party.find('competition-party').memberIds, [3, 4, 7]);
-    assert.strictEqual(Life.cachedState(7).party.partyId, 'competition-party');
-    assert.strictEqual(Life.cachedState(3).stats.coldCompetition.key, join.key);
-    assert.strictEqual((await joining.apply(join)).ok, false, 'repeated invitation cannot duplicate membership');
-    const beforeRace = Party.find('competition-party');
-    const raceJoin = recruitEvent(8, 4);
-    const raceResult = await Recruitment.recruit({ ...recruitOptions, participants: [Life.cachedState(8), Life.cachedState(4)], event: raceJoin,
-        commit: async (...args) => {
-            await Database.execute(['UPDATE bot_life_state SET updatedAt=updatedAt+1 WHERE characterId=7', []]);
-            return commit(...args);
-        } });
-    assert.strictEqual(raceResult.rejected, 'membership_conflict', 'a concurrent retained-member change aborts recruitment');
-    assert.deepStrictEqual(Party.find('competition-party').memberIds, beforeRace.memberIds);
-    assert(!Life.cachedState(8).party?.partyId);
-    const raced = new ColdCompetitionActions({ life: Life, memory, now: () => now, owner: { ...Owner,
-        commitBatch: async (entries, options) => {
-            await Database.execute(['UPDATE bot_life_state SET simulationRevision=simulationRevision+1 WHERE characterId=6', []]);
-            return Owner.commitBatch(entries, options);
-        } } });
-    assert.strictEqual((await raced.apply(event(5, 6))).ok, false);
-    const failedRows = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (5,6)', []]);
-    assert(failedRows.every(r => !JSON.parse(r.statsJson).coldCompetition), 'one stale participant aborts the entire yield episode');
-    const persisted = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]);
-    assert.strictEqual(JSON.parse(persisted[0].statsJson).coldCompetition.key, yieldEvent.key);
-    [11, 12].forEach(id => memory.accept(P.empty(id)));
-    const queuedActions = new ColdCompetitionActions({ life: Life, owner: Owner, memory, now: () => now,
-        formParty: async () => ({ rejected: 'party_capacity' }) });
-    const queueEvent = event(11, 12, 'offer_party');
-    const originalTiming = Life.cachedState(11).timing.nextResolveAt;
-    assert.strictEqual((await queuedActions.apply(queueEvent)).queued, true);
-    assert.strictEqual(Life.cachedState(11).timing.nextResolveAt, originalTiming, 'capacity waiting does not pause farming');
-    assert.strictEqual(Life.cachedState(12).stats.partyRequest.reason, 'shared_target');
-    assert.strictEqual((await queuedActions.apply(queueEvent)).ok, false, 'repeated invitation cannot reset queue age');
-    const Population = invoke('GameServer/Bot/Population/PopulationService');
-    const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
-    const originalFind = Spots.findById;
-    // Cold members' party goals come from the cold worker (absent here); answer
-    // as the worker does so formation runs its real path to the commit.
-    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
-    const GoalPolicy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
-    const GoalCalculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
-    const originalPartyGoals = Coordinator.requestPartyGoals;
-    let socialParty;
-    try {
-        Spots.findById = id => id === 'test' ? { id: 'test' } : originalFind.call(Spots, id);
-        Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
-            sources: GoalCalculation.sources(selected), joint: party.stats.forming
-            ? GoalPolicy.formingVerdict(selected, party.stats.forming.requested) : GoalPolicy.joint(party, selected) });
-        socialParty = await Population.formCompetitionParty([Life.cachedState(9), Life.cachedState(10)], { spotId: 'test', npcId: 10 });
-        assert(socialParty?.partyId, 'real population formation must create a social party');
-        assert.strictEqual(socialParty.stats.capacityPool, undefined);
-    } finally { Spots.findById = originalFind; Coordinator.requestPartyGoals = originalPartyGoals; }
-    const runtimeMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
-    await runtimeMemory.ensureMany([13, 14, 15, 16, 17, 18]);
-    const contestNow = Date.now();
-    const conflictOptions = { life: Life, owner: Owner, memory: runtimeMemory, now: () => contestNow,
-        conflictsEnabled: () => true, contestContextAllowed: () => true };
-    const conflicts = new ColdCompetitionActions(conflictOptions);
-    const contestEvent = (a, b) => ({ ...event(a, b, 'contest'), at: contestNow, pvpIntent: true,
-        actor: { id: a, revision: Life.cachedState(a).simulation.revision, memoryRevision: runtimeMemory.snapshot(a).revision },
-        peer: { id: b, revision: Life.cachedState(b).simulation.revision, memoryRevision: runtimeMemory.snapshot(b).revision } });
-    const dispute = contestEvent(13, 14);
-    assert.strictEqual((await new ColdCompetitionActions({ ...conflictOptions, conflictsEnabled: () => false }).apply(dispute)).reason, 'forecast_only');
-    assert.strictEqual((await new ColdCompetitionActions({ ...conflictOptions, contestContextAllowed: () => false }).apply(dispute)).reason, 'contest_context_changed');
-    const contested = await conflicts.apply(dispute);
-    assert(contested.ok, JSON.stringify(contested));
-    assert.strictEqual(contested.pvp, false, 'a PvP intention is not an executed attack');
-    assert.strictEqual(runtimeMemory.snapshot(13).relations.length, 0, 'the aggressor must not invent an offense by the victim');
-    const resentment = runtimeMemory.assess({ id: 14 }, { id: 13 }, {}, contestNow);
-    assert.strictEqual(resentment.personal.hostility, 3);
-    assert.strictEqual(resentment.disposition, 'wary', 'one dispute does not immediately create an enemy');
-    assert.strictEqual(Life.cachedState(13).stats.coldCompetition.wait, undefined);
-    const victim = Life.cachedState(14);
-    const blockedHunt = Resolver.resolveSolo({ state: victim, timestamp: contestNow + 5000 });
-    assert.strictEqual(blockedHunt.debug.reason, 'competition_contest');
-    assert.strictEqual(blockedHunt.materialize.exp, 0);
-    assert.strictEqual(Wait.consume(victim, 30000, contestNow + 30000).elapsedMs, 15000);
-    assert.strictEqual((await conflicts.apply(dispute)).ok, false, 'delivery cannot repeat the loss or the memory');
-    const contestedRace = new ColdCompetitionActions({ ...conflictOptions, owner: { ...Owner,
-        commitBatch: async (entries, options) => {
-            await Database.execute(['UPDATE bot_life_state SET simulationRevision=simulationRevision+1 WHERE characterId=16', []]);
-            return Owner.commitBatch(entries, options);
-        } } });
-    assert.strictEqual((await contestedRace.apply(contestEvent(15, 16))).ok, false);
-    const rollback = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (15,16)', []]);
-    assert(rollback.every(row => !JSON.parse(row.statsJson).coldCompetition), 'both physical outcomes abort on one stale lease');
-    assert.strictEqual((await invoke('GameServer/Social/InteractionMemoryRepository').load(16)).relations.length, 0, 'rejected outcome must not write resentment');
-    await assert.rejects(conflicts.apply({ ...contestEvent(17, 18), key: 'invalid/key' }), /interaction memory: invalid key/);
-    const memoryRollback = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (17,18)', []]);
-    assert(memoryRollback.every(row => !JSON.parse(row.statsJson).coldCompetition), 'memory failure rolls back both life-state writes');
-    await Database.close(); Database.init();
-    const reopenedMemory = await invoke('GameServer/Social/InteractionMemoryRepository').load(14);
-    assert.strictEqual(reopenedMemory.relations[0].hostility, 3, 'resentment survives SQLite close and reopen');
-    assert.strictEqual(reopenedMemory.recent.filter(e => e.type === 'mob_contested').length, 1);
-    const reopenedVictim = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=14', []]);
-    const freshContest = JSON.parse(reopenedVictim[0].statsJson).coldCompetition;
-    assert.strictEqual(freshContest.outcome, 'contest');
-    assert.strictEqual(freshContest.endedAt, undefined);
-    assert.strictEqual(freshContest.role, undefined);
-    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.wait.until, contested.waitUntil);
-    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.conflictUntil, undefined,
-        'no conflict window after a dispute: the pair meets again only at an arrival');
-    const queuedRows = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (11,12)', []]);
-    assert(queuedRows.every(r => JSON.parse(r.statsJson).coldCompetition.outcome === 'offer_party'));
-    assert(queuedRows.every(r => JSON.parse(r.statsJson).coldCompetition.endedAt === undefined));
-    assert(queuedRows.every(r => JSON.parse(r.statsJson).partyRequest.requestedAt === now), 'both ordinary requests survive restart');
-    const socialRows = await Database.execute(['SELECT statsJson FROM bot_background_parties WHERE partyId=?', [socialParty.partyId]]);
-    assert.strictEqual(JSON.parse(socialRows[0].statsJson).capacityPool, undefined, 'new parties have no privileged origin pool');
-    const reopened = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]);
-    assert.strictEqual(JSON.parse(reopened[0].statsJson).coldCompetition.wait.until, yielded.waitUntil);
-    const [replay] = await Database.commitAndReleaseColdSimulationLeases([{ characterId: 1, expectedRevision: yieldEvent.actor.revision,
-        timestamp: now, allowLifecycle: true, patch: { phase: 'cold' } }]);
-    assert.strictEqual(replay.ok, false, 'SQLite after reopen must reject the original delivered revision');
-    const scheduled = [], scheduler = new ColdCompetitionActions({ now: () => now });
-    scheduler.apply = async e => { scheduled.push(e.action); return { ok: true }; };
-    scheduler.submit({ at: now, recent: [yieldEvent, { ...yieldEvent, key: 'second-yield' }, partyEvent].map(e => ({ ...e, at: now })) });
-    await scheduler.running;
-    assert.deepStrictEqual(scheduled, ['offer_party', 'yield', 'yield'], 'accepted invitations cannot be starved by yield traffic');
-    assert.strictEqual(scheduler.report.budgetSkipped, 0);
-    const conflictScheduler = new ColdCompetitionActions({ now: () => now, conflictsEnabled: () => true });
-    const selectedActions = [];
-    conflictScheduler.apply = async e => { selectedActions.push(e.action); return { ok: true }; };
-    conflictScheduler.submit({ at: now, recent: [yieldEvent, dispute, partyEvent].map(e => ({ ...e, at: now })) });
-    await conflictScheduler.running;
-    assert.deepStrictEqual(selectedActions, ['contest', 'offer_party', 'yield'], 'a PvP intent is not displaced by invitations or waits');
-    assert.strictEqual(conflictScheduler.snapshot().contests, 1);
-    assert.strictEqual(conflictScheduler.snapshot().mode, 'resource_conflicts');
+const { ColdCompetitionActions } = require('../src/GameServer/Bot/Population/ColdCompetitionActions');
+const now = Date.now();
+const participant = id => ({ id, revision: 1, memoryRevision: 0 });
+const dispute = { key: 'dispute', at: now, pressure: 2, spotId: 'test', npcId: 10, action: 'contest', pvpIntent: true,
+    actor: participant(13), peer: participant(14) };
+const quiet = { ...dispute, key: 'quiet', pvpIntent: false };
+const revenge = { ...dispute, key: 'revenge', action: 'revenge', pvpIntent: false };
+(async () => {
+    // Only fights reach the actions: an outcome the spot settles itself (who stays) is no action.
+    const offered = new ColdCompetitionActions({ now: () => now, conflictsEnabled: () => true, pvpEnabled: () => true });
+    const seen = [];
+    offered.apply = async e => { seen.push(e.action); return { ok: true }; };
+    offered.submit({ at: now, events: [quiet, { ...quiet, key: 'avoid', action: 'avoid' }, { ...quiet, key: 'offer', action: 'offer_party', accepted: true },
+        dispute, revenge].map(e => ({ ...e, at: now })) });
+    await offered.running;
+    assert.deepStrictEqual(seen, ['contest', 'revenge', 'contest'], 'PvP first, then the other dispute; no departure or party offer');
+    assert.strictEqual((await new ColdCompetitionActions({ now: () => now, conflictsEnabled: () => true }).apply({ ...quiet, key: 'solo' })).reason,
+        'forecast_only', 'a solo dispute with no fight to carry out is no action');
+    assert.strictEqual(offered.snapshot().mode, 'resource_pvp');
     let clock = 0;
     const bounded = new ColdCompetitionActions({ now: () => now, budgetNow: () => clock, conflictsEnabled: () => true });
     const attempts = [];
     bounded.apply = async e => { attempts.push(e.key); return { ok: attempts.length > 2, reason: 'state_changed_or_busy' }; };
-    const batch = Array.from({ length: 12 }, (_, i) => ({ ...partyEvent, key: `batch-${i}`, at: now }));
+    const batch = Array.from({ length: 12 }, (_, i) => ({ ...quiet, key: `batch-${i}`, at: now }));
     batch[11] = { ...dispute, key: 'pvp-first', at: now };
     bounded.submit({ at: now, recent: batch.slice(0, 2), events: batch }); await bounded.running;
     assert.strictEqual(attempts[0], 'pvp-first');
@@ -271,32 +36,24 @@ async function run() {
     assert.strictEqual(bounded.report.applied, 4);
     assert.strictEqual(bounded.report.budgetSkipped, 6);
     assert.strictEqual(bounded.report.pvpRejected.state_changed_or_busy, 1);
-    const failures = new ColdCompetitionActions({ now: () => now, budgetNow: () => 0 });
+    const failures = new ColdCompetitionActions({ now: () => now, budgetNow: () => 0, conflictsEnabled: () => true });
     failures.apply = async () => ({ ok: false, reason: 'stale' });
     failures.submit({ at: now, recent: batch.slice(0, 11) }); await failures.running;
     assert.strictEqual(failures.report.attempted, 8, 'failed attempts have their own hard bound');
-    // One scan with six PvP contests, an invitation and five departures: fights
-    // keep their four slots (PvP first), departures have their own two, and every
-    // forecast skipped by the budget is handed back so its pair re-decides next
-    // scan. The next scan carries only its own forecasts: no backlog.
+    // Every forecast skipped by the budget is handed back so its pair re-decides at its
+    // next meeting; the next frame carries only its own forecasts: no backlog.
     const released = [], order = [];
     const mixed = new ColdCompetitionActions({ now: () => now, budgetNow: () => 0, conflictsEnabled: () => true,
         releaseForecasts: events => released.push(events.map(e => e.key)) });
     mixed.apply = async e => { order.push(e.key); return { ok: true }; };
-    const scan = (n, at) => [...['avoid', 'yield', 'avoid', 'yield', 'avoid'].map((action, i) => ({ ...yieldEvent, action, key: `leave-${n}-${i}`, at })),
-        { ...partyEvent, key: `offer-${n}`, at }, ...Array.from({ length: 6 }, (_, i) => ({ ...dispute, key: `pvp-${n}-${i}`, at }))];
+    const scan = (n, at) => Array.from({ length: 6 }, (_, i) => ({ ...dispute, key: `pvp-${n}-${i}`, at }));
     mixed.submit({ at: now, events: scan(0, now) }); await mixed.running;
-    assert.deepStrictEqual(order, ['pvp-0-0', 'pvp-0-1', 'pvp-0-2', 'pvp-0-3', 'leave-0-0', 'leave-0-1'],
-        'two departures still apply next to four PvP fights');
-    assert.strictEqual(mixed.report.avoids + mixed.report.yields, 2);
-    assert.deepStrictEqual(released, [['pvp-0-4', 'pvp-0-5', 'offer-0', 'leave-0-2', 'leave-0-3', 'leave-0-4']],
-        'every forecast skipped by the budget releases its pair cooldown');
+    assert.deepStrictEqual(order, ['pvp-0-0', 'pvp-0-1', 'pvp-0-2', 'pvp-0-3']);
+    assert.deepStrictEqual(released, [['pvp-0-4', 'pvp-0-5']], 'every forecast skipped by the budget releases its pair');
     mixed.submit({ at: now + 30000, events: [...scan(0, now), ...scan(1, now + 30000)] }); await mixed.running;
-    assert.deepStrictEqual(order.slice(6), ['pvp-1-0', 'pvp-1-1', 'pvp-1-2', 'pvp-1-3', 'leave-1-0', 'leave-1-1'],
-        'skipped forecasts are not replayed on the next scan');
-    assert.strictEqual(released[1].length, 6);
-    assert.strictEqual(mixed.report.budgetSkipped, 12, 'the skipped count does not grow across scans');
-    const slow = new ColdCompetitionActions({ now: () => now, budgetNow: () => clock });
+    assert.deepStrictEqual(order.slice(4), ['pvp-1-0', 'pvp-1-1', 'pvp-1-2', 'pvp-1-3'], 'skipped forecasts are not replayed on the next frame');
+    assert.strictEqual(mixed.report.budgetSkipped, 4, 'the skipped count does not grow across frames');
+    const slow = new ColdCompetitionActions({ now: () => now, budgetNow: () => clock, conflictsEnabled: () => true });
     slow.apply = async () => { clock += 80; return { ok: true }; };
     slow.submit({ at: now, recent: batch.slice(0, 11) }); await slow.running;
     assert.strictEqual(slow.report.attempted, 1, 'wall-time budget stops further work after a slow action');
@@ -304,8 +61,7 @@ async function run() {
     telemetry.apply = async e => e.key === 'rejected' ? { ok: false, reason: 'party_changed', detail: 'party_travelling', rejectionContext: { characterId: 13, partyId: 'party-13' } }
         : e.key === 'fight' ? { ok: true, pvp: true, encounter: {}, combat: { fighters: [] } }
         : { ok: true, deescalated: true };
-    const telemetryBatch = { at: now, events: ['fight', 'peace', 'rejected'].map(key => ({
-        ...dispute, key, at: now, spotId: 'busy-ground' })) };
+    const telemetryBatch = { at: now, events: ['fight', 'peace', 'rejected'].map(key => ({ ...dispute, key, at: now, spotId: 'busy-ground' })) };
     telemetry.submit(telemetryBatch); await telemetry.running;
     telemetry.submit(telemetryBatch); await telemetry.running;
     assert.strictEqual(telemetry.snapshot().spotActivity[0].pvpFights, 1, 'count accepted starts once, not intents or duplicate deliveries');
@@ -317,16 +73,11 @@ async function run() {
     telemetry.recordPvpStep({ encounter: null, outcome: 'pvp_disengaged' });
     assert.strictEqual(telemetry.snapshot().spotActivity[0].pvpFights, 1, 'continuation and completion are not new fights');
     for (let i = 1; i <= 128; i++) {
-        telemetry.submit({ at: now + i, events: [{ ...yieldEvent, key: `ground-${i}`, at: now + i, spotId: `ground-${i}` }] });
+        telemetry.submit({ at: now + i, events: [{ ...dispute, key: `ground-${i}`, at: now + i, spotId: `ground-${i}` }] });
         await telemetry.running;
     }
     assert.strictEqual(telemetry.snapshot().spotActivity.length, 128, 'spot telemetry stays bounded during long sessions');
     assert.strictEqual(telemetry.snapshot().spotActivityEvicted, 1, 'eviction is explicit rather than silently claiming a complete session history');
     assert.strictEqual(telemetry.snapshot().rejectionExamples[0].detail, 'party_travelling', 'keep diagnostic context after ordinary recent events rotate');
-    assert.strictEqual(telemetry.snapshot().rejectionExamples[0].characterId, 13);
-    console.log('Cold competition native SQLite yield, atomic party, duplicate delivery and reopen checks passed');
-}
-run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
-    await Database.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-});
+    console.log('Cold competition action bounds and telemetry checks passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

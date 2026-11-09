@@ -196,7 +196,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // route carries its solo profiles: the same build's source route reader
     // (GearAcquisitionPlanner.sourceRouteReader) reads the same ones.
     // The crowd is no input: a C4 player picks a camp by what he knows of it and
-    // meets the crowd on arrival (SpotContest turns it away from one found crowded).
+    // meets the crowd on arrival (SpotContest); what he knows includes a camp known
+    // held against him, heard in town (SpotRecords: repelled).
     const allowed = Routes.spotAllowedReaderFor(state, options);
     // Each spot's verdict, asked once (the two charge policies share it).
     const verdicts = new Map();
@@ -207,7 +208,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     };
     const { pick, ranked } = Search.rank(state, { candidates: [true, false].flatMap(candidates), fits, value,
         tie: (a, b) => Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1) || String(a.spot.id).localeCompare(String(b.spot.id)) },
-    { excluded, allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
+    { excluded, repelled: invoke('GameServer/Bot/Population/SpotRecords').reader(state, invoke('GameServer/Bot/AI/BotPersona').of(state)),
+        allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
     if (pick) {
         pick.matchupProfiles = options.matchupProfiles;
         // The bot's hour (hourAdena, the unit of every value) stays what it could
@@ -257,15 +259,23 @@ function answerOf(route, at, error = 0, state = null) {
 // bot's hour, charge policy and error kept from the answer it replaces (held: null for none); no income expected
 // there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
 // situation re-decides the spot. command: the player decided it (isCommanded: a spot contest never makes it
-// avoid, B14).
+// avoid, B14; a stronger arrival displacing it ends it, uncommanded); by: the player's character id (0: unknown),
+// told when it ends so.
 // It carries no kit use of its own: spotUseOf reads the spot table there (no table read here); the shot
 // kind the replaced answer chose stays (ShotStock.decidedKind).
-function commanded(held, spotId, at = 0) {
+function commanded(held, spotId, at = 0, by = 0) {
     return { spotId: String(spotId), shots: held?.shots !== false, income: 0, expected: 0, earning: Number(held?.earning) || 0,
         error: Number(held?.error) || 0, at: Number(at) || 0, command: true, drinks: false,
-        ...(held?.shotKind ? { shotKind: held.shotKind } : {}) };
+        ...(Number(by) > 0 ? { by: Number(by) } : {}), ...(held?.shotKind ? { shotKind: held.shotKind } : {}) };
 }
 const isCommanded = held => held?.command === true;
+// The command's answer once the command ended: the same spot as the bot's own answer, which its marks
+// now refuse (BotRoute.heldChoice) until the earning decision it woke answers.
+function uncommanded(held) {
+    const answer = { ...held };
+    delete answer.command; delete answer.by;
+    return answer;
+}
 // The held answer's spot id (no search). null: no answer, none held (spotId null), or a bot in a party: its
 // hunt is the party's (the party comparison reads its solo copy).
 function answerSpotId(state, mode = null) {
@@ -289,4 +299,4 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, isCommanded, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };
+    answerOf, commanded, isCommanded, uncommanded, heldSpot, heldRoute, valuesFor, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };

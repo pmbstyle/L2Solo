@@ -16,7 +16,7 @@ async function main() {
         resolveSolo: () => ({ patch: {}, events: [], materialize: { items: [] }, nextResolveAt: now + 60000 }),
         emit: () => true });
     let capped = 0;
-    const waiters = new MarketBuyerWaiters({ wake: (id, offer) => kernel.boardWake(id, 'offer_posted', offer), capped: () => capped++ });
+    const waiters = new MarketBuyerWaiters({ wake: (id, offer) => kernel.stepWake(id, 'offer_posted', offer), capped: () => capped++ });
     kernel.buyerEvents = waiters;
     const state = (id, overrides = {}) => ({ characterId: id, phase: 'cold', activity: 'hunting', level: 1,
         adena: 2000, inventory: {}, vitals: { hp: 100 }, stats: {},
@@ -35,7 +35,7 @@ async function main() {
         for (let id = 100; id < 104; id++) { kernel.upsert(state(id)); waiters.register(id, [{ itemId: 1000 + id, budget: 1500 }]); }
         kernel.upsert(state(21, { phase: 'hot' })); waiters.register(21, [{ itemId: 99, budget: 1500 }]);
         assert.deepEqual(publish(record(1)), [1, 2, 3, 4, 5], 'a new offer wakes five buyers of its item');
-        assert.deepEqual(kernel.states.get(1).boardWake, { seq: 1, raises: { offer_posted: { itemId: 99, price: 100 } },
+        assert.deepEqual(kernel.states.get(1).stepWake, { seq: 1, raises: { offer_posted: { itemId: 99, price: 100 } },
             heard: { offer_posted: 1 } }, 'raised at the next step: the offer');
         assert.equal(kernel.inFlight.size + kernel.commanding.size, 0, 'a wake starts no step: the bot hears it at its next one');
         assert.deepEqual(publish(record(1)), [], 'a metadata refresh is not a new offer');
@@ -55,25 +55,25 @@ async function main() {
         assert.deepEqual(publish(record(5, 80, 10)), [], 'woken wants left the index until the next build');
         waiters.register(1, [{ itemId: 99, budget: 1500 }]);
         assert.deepEqual(publish(record(5, 70, 10)), [1], 'the next build registers its wants again');
-        assert.equal(kernel.states.get(1).boardWake.seq, 2, 'a newer wake replaces the pending one');
+        assert.equal(kernel.states.get(1).stepWake.seq, 2, 'a newer wake replaces the pending one');
         // A step that raised it commits: answered; a newer one waits.
-        kernel.boardWakeAnswered(kernel.states.get(1), 1);
-        assert(kernel.states.get(1).boardWake, 'an older step does not answer a newer wake');
-        kernel.boardWakeAnswered(kernel.states.get(1), 2);
-        assert.equal(kernel.states.get(1).boardWake, null);
+        kernel.stepWakeAnswered(kernel.states.get(1), 1);
+        assert(kernel.states.get(1).stepWake, 'an older step does not answer a newer wake');
+        kernel.stepWakeAnswered(kernel.states.get(1), 2);
+        assert.equal(kernel.states.get(1).stepWake, null);
         // Name by name: one heard again while a step ran stays for the next step, with
         // the cheapest offer heard.
-        kernel.boardWake(1, 'offer_posted', { itemId: 99, price: 100 });
-        kernel.boardWake(1, 'line_undercut');
-        const read = kernel.states.get(1).boardWake.seq;
-        kernel.boardWake(1, 'offer_posted', { itemId: 99, price: 150 });
-        kernel.boardWakeAnswered(kernel.states.get(1), read);
-        assert.deepEqual(kernel.states.get(1).boardWake.raises, { offer_posted: { itemId: 99, price: 100 } },
+        kernel.stepWake(1, 'offer_posted', { itemId: 99, price: 100 });
+        kernel.stepWake(1, 'line_undercut');
+        const read = kernel.states.get(1).stepWake.seq;
+        kernel.stepWake(1, 'offer_posted', { itemId: 99, price: 150 });
+        kernel.stepWakeAnswered(kernel.states.get(1), read);
+        assert.deepEqual(kernel.states.get(1).stepWake.raises, { offer_posted: { itemId: 99, price: 100 } },
             'the answered name goes, the one heard after the step read stays with the cheapest offer');
         // A party member's wake waits for its solo step.
         kernel.upsert(state(30, { party: { partyId: 'p1' } }));
-        assert.equal(kernel.boardWake(30, 'offer_posted', { itemId: 99, price: 100 }), true, 'a party member keeps the wake');
-        assert(kernel.states.get(30).boardWake);
+        assert.equal(kernel.stepWake(30, 'offer_posted', { itemId: 99, price: 100 }), true, 'a party member keeps the wake');
+        assert(kernel.states.get(30).stepWake);
         // At most MAX_WANTS a bot, the rest counted.
         waiters.register(200, Array.from({ length: MAX_WANTS + 2 }, (_, at) => ({ itemId: 500 + at, budget: 10 })));
         assert.equal(waiters.owners.get(200).length, MAX_WANTS);

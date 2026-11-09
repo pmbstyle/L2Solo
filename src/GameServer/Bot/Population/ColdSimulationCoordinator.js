@@ -200,7 +200,6 @@ class ColdSimulationCoordinator {
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             releaseForecasts: events => this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
                 actor: { id: e.actor.id, partyId: e.actor.partyId || null }, peer: { id: e.peer.id, partyId: e.peer.partyId || null } })) }),
-            formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
             onState: id => {
                 const state = LifeState.cachedState(id);
                 if (state) this.markDirty(state, { critical: true, reason: 'competition_action' });
@@ -857,10 +856,14 @@ class ColdSimulationCoordinator {
             break;
         case 'spot_command':
             // Two bodies near a player met on a spot (enemy_met): the holder starts its fight
-            // when its body may (BotRevenge.fromSpot, counted enemy_met:<outcome>).
+            // when its body may (BotRevenge.fromSpot, counted enemy_met:<outcome>); a far bot
+            // displaced off a commanded spot tells its player (command_lost).
             // One failed command never drops the others: counted by site.
             for (const command of payload.commands) {
-                try { invoke('GameServer/Bot/AI/BotRevenge').fromSpot(command); }
+                try {
+                    if (command.kind === 'command_lost') invoke('GameServer/Bot/AI/BotRemoteChat').commandLost(command);
+                    else invoke('GameServer/Bot/AI/BotRevenge').fromSpot(command);
+                }
                 catch (error) { FailureLog.note('cold.spot_command', error); }
             }
             break;
@@ -927,6 +930,9 @@ class ColdSimulationCoordinator {
             developerDiagnostics: Config.developerDiagnostics === true,
             decisionTrace: Trace.on(),
             pvpAggression: Config.pvpAggression,
+            // A spot's PvP dispute is carried out here (competition actions, conflicts and PvP on).
+            coldCompetitionPvp: Config.coldCompetitionActionsEnabled === true && Config.coldCompetitionConflictsEnabled === true
+                && Config.coldCompetitionPvpEnabled === true,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
             // Normal ambient parties keep their configured cap, while a clan

@@ -2,7 +2,7 @@
 // The one solo spot search: where a bot hunts under its goal. Worker-safe (no World): every spot is read
 // from the catalogue the caller passes, the spot it stands on is the caller's. rank owns the one filter
 // (the catalogue, no raid unless the goal's candidates carry one, the bot's exclusions: marks, death marks,
-// death pressure; then the goal's level window and cheap clauses), the order by the goal's value and the
+// death pressure, a camp held against it (SpotRecords); then the goal's level window and cheap clauses), the order by the goal's value and the
 // one pick (the habit, below); the costly verdict (ground and matchup) is asked lazily, in that order.
 // Goals and their callers:
 // - income: the earning decision's search (EquipmentIncomeRoute.find, worker): the bot's hour at a spot
@@ -36,7 +36,8 @@ const spotIdOf = spot => spot.id;
 //   better; read once for every admitted candidate unless `sorted`, then only for the best and the band),
 //   sorted (the candidates come in value order), tie(a, b) (the order of equal values), raid (raid
 //   profiles are candidates: the goal's own list decided it) }.
-// ctx: { excluded (spot ids), allowed(candidate, spot) (the costly verdict), maxChecks (the first n of the
+// ctx: { excluded (spot ids), repelled(spotId) (a camp known held against the bot: SpotRecords.reader, on the
+//   worker; counted spot:repelled per candidate it drops), allowed(candidate, spot) (the costly verdict), maxChecks (the first n of the
 //   order are asked), verdicts (a Map shared by the ranks of one search), habit (default: a solo bot's;
 //   off for a party's ground, a clan's operation), mode, count (the pick is the bot's answer: the earning
 //   decision's, the route's; a check that only asks whether a source exists, or a plan-time comparison,
@@ -44,7 +45,7 @@ const spotIdOf = spot => spot.id;
 // The pick: the best passing candidate, then among the band's the highest roll; verdicts are asked in
 // value order until one passes, then in roll order only for the band's candidates rolling above it,
 // stopping at the first that passes. A counted pick not the best is situations spot:habit:other.
-function rank(state, goal, { excluded = null, allowed = null, maxChecks = Infinity, verdicts = new Map(),
+function rank(state, goal, { excluded = null, repelled = null, allowed = null, maxChecks = Infinity, verdicts = new Map(),
     habit = undefined, mode = undefined, count = false } = {}) {
     const spotOf = goal.spot || spotOfCandidate, idOf = goal.id || spotIdOf;
     const spots = new Map(), values = new Map();
@@ -54,6 +55,7 @@ function rank(state, goal, { excluded = null, allowed = null, maxChecks = Infini
         if (!spot || spot.raidBoss === true && !goal.raid) continue;
         if (excluded && (excluded.has(String(idOf(spot))) || excluded.has(idOf(spot)))) continue;
         if (goal.fits && !goal.fits(candidate, spot)) continue;
+        if (repelled?.(idOf(spot))) { noteRepelled(); continue; }
         spots.set(candidate, spot);
         if (!goal.sorted) {
             const value = Number(goal.value(candidate, spot));
@@ -97,6 +99,7 @@ function rank(state, goal, { excluded = null, allowed = null, maxChecks = Infini
 }
 
 const noteHabit = () => invoke('GameServer/Bot/Situations').note('spot:habit:other');
+const noteRepelled = () => invoke('GameServer/Bot/Situations').note('spot:repelled');
 
 // A bot's raid ground it is sent to (a clan raid objective or its clan-owned raid plan's spot).
 function explicitClanRaidSpot(state = {}, profile = null) {
@@ -113,8 +116,8 @@ function explicitClanRaidSpot(state = {}, profile = null) {
 
 // The leveling goal: the spot a bot hunts when no held answer names one (options: the route options of the
 // caller, as SpotProfiles.findForState builds them: profiles (the catalogue), currentSpot (the spot it
-// stands on, null: none), excludedSpotIds, matchupProfiles, spotEconomics, list (the game table's list of
-// the bot, EquipmentIncomeRoute.spotList), and the level fit's own options). In order: the spot it stands
+// stands on, null: none), excludedSpotIds, repelled (SpotRecords.reader), matchupProfiles, spotEconomics, list
+// (the game table's list of the bot, EquipmentIncomeRoute.spotList), and the level fit's own options). In order: the spot it stands
 // on while it fits (its level, or a protected starter's field) and it need not leave it; the game table's
 // list for its role and level (with shots, then without), a suitable spot first, else an allowed one (a
 // solo bot keeps its current one when the list holds it: comparable camps must not become a travel loop);
@@ -159,8 +162,8 @@ function leveling(state, options = {}) {
         return passed;
     };
     // countHabit: the pick is the route's answer (BotRoute.choose); the list's `any` is counted only when taken.
-    const ctx = { excluded, allowed: (candidate, spot) => allowed(spot), habit: soloSearch, mode: options.mode,
-        count: options.countHabit === true };
+    const ctx = { excluded, repelled: options.repelled || null, allowed: (candidate, spot) => allowed(spot), habit: soloSearch,
+        mode: options.mode, count: options.countHabit === true };
     for (const shots of [true, false]) {
         const candidates = list.values(shots, targetLevel).map(row => ({ spot: SpotIndex.spotById(profiles, row.spotId), value: row.value }));
         const goal = fits => ({ candidates, sorted: true, value: candidate => candidate.value,

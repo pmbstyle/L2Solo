@@ -49,7 +49,7 @@ const units = Array.from({ length: 8 }, (_, i) => {
 });
 function forecast(persona) {
     return Array.from({ length: 60 }, (_, step) => SpotContest.contest({ spot, npcId: 10, arriving: units[0], standing: units.slice(1),
-        at, step, memory, personaFor: () => persona, capacityForSpot: () => 1 })).map(v => [v.action, v.event?.key]);
+        at, step, memory, personaFor: () => persona, capacityForSpot: () => 1, pvp: true })).map(v => [v.action, v.reason, v.event?.key]);
 }
 const expected = forecast(neutral);
 assert(expected.some(([action]) => action !== 'coexist'), 'test must reach an actual resource competition decision');

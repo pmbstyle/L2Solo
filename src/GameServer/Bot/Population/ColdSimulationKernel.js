@@ -477,11 +477,11 @@ function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
 // the worker (it carries functions and is never posted).
 // economy and route are worker-local (the request carries the route's spot).
 function postedPlan(plan) {
-    if (!plan?.economy && !plan?.route && !plan?.boardWakeSeq) return plan;
+    if (!plan?.economy && !plan?.route && !plan?.stepWakeSeq) return plan;
     const posted = { ...plan };
     delete posted.economy;
     delete posted.route;
-    delete posted.boardWakeSeq;
+    delete posted.stepWakeSeq;
     return posted;
 }
 
@@ -1150,34 +1150,35 @@ class ColdSimulationKernel {
         return !!entry && isSchedulableKind(lifecycleKind(entry.state, this));
     }
 
-    // A board situation of a far bot (the worker's board diff: offer_posted from
-    // MarketBuyerWaiters, line_undercut and goal_done:line on its own lines): raised at
-    // the bot's next solo step (planLifecycle reads record.boardWake.raises; a party
+    // A situation raised on a far bot by another owner at its next step: the board's
+    // (the worker's board diff: offer_posted from MarketBuyerWaiters, line_undercut and
+    // goal_done:line on its own lines) and the spot aggregate's (contest_lost: displaced
+    // by a stronger arrival, SpotContest). Raised at the bot's next solo step (planLifecycle reads record.stepWake.raises; a party
     // member's waits for the step its own decisions are taken on again) and kept until a
     // step that raised it commits (onCommitAck, completeCommand: its seq), name by name:
     // one heard again after that step read it (heard: its seq) stays. An offer keeps the
     // cheapest heard. A bot with no step coming (a craft shop) takes one command step for
-    // it. A worker restart loses a wake not yet committed (counted board:wake:lost by
+    // it. A worker restart loses a wake not yet committed (counted step:wake:lost by
     // shutdown). payload: plain data ({ itemId, price } for an offer). True when taken.
-    boardWake(characterId, name, payload = null) {
+    stepWake(characterId, name, payload = null) {
         const id = Number(characterId), record = this.states.get(id), state = record?.state;
         if (this.stopping || state?.phase !== 'cold' || this.checkpointErrors.has(id)) return false;
-        const wake = record.boardWake, seq = (Number(wake?.seq) || 0) + 1, held = wake?.raises?.[name];
+        const wake = record.stepWake, seq = (Number(wake?.seq) || 0) + 1, held = wake?.raises?.[name];
         const kept = held && !(Number(payload?.price) < Number(held.price)) ? held : payload;
-        record.boardWake = { seq, raises: { ...wake?.raises, [name]: kept }, heard: { ...wake?.heard, [name]: seq } };
+        record.stepWake = { seq, raises: { ...wake?.raises, [name]: kept }, heard: { ...wake?.heard, [name]: seq } };
         if (!state.party?.partyId && !state.partyId && lifecycleKind(state, this) === 'event_driven') {
             this.raiseWakeups.add(id);
             if (!this.busy(id)) this.requeue(id, this.now());
         }
         return true;
     }
-    // The board wake a committed step raised is answered (its seq): the names heard
+    // The step wake a committed step raised is answered (its seq): the names heard
     // after it wait for the next step.
-    boardWakeAnswered(record, seq) {
-        const wake = record?.boardWake;
+    stepWakeAnswered(record, seq) {
+        const wake = record?.stepWake;
         if (!wake || !seq) return;
         const left = Object.keys(wake.heard).filter(name => wake.heard[name] > seq);
-        record.boardWake = left.length ? { seq: wake.seq, raises: Object.fromEntries(left.map(name => [name, wake.raises[name]])),
+        record.stepWake = left.length ? { seq: wake.seq, raises: Object.fromEntries(left.map(name => [name, wake.raises[name]])),
             heard: Object.fromEntries(left.map(name => [name, wake.heard[name]])) } : null;
     }
 
@@ -1515,7 +1516,7 @@ class ColdSimulationKernel {
         console.info('ColdWorker :: overdue trace %s', JSON.stringify({ id, main, worker: { at: timestamp, activity: state.activity, phase: state.phase,
             kind: lifecycleKind(state, this), nextResolveAt: state.timing?.nextResolveAt, lastResolvedAt: state.timing?.lastResolvedAt,
             updatedAt: state.updatedAt, revision: state.simulation?.revision, kernelDueInMs: Math.round(this.dueAt(state, timestamp) - timestamp), version,
-            covered: this.hasNormalCoverage(id), busy: this.busy(id), dirty: this.dirty.has(id), wake: !!record.boardWake,
+            covered: this.hasNormalCoverage(id), busy: this.busy(id), dirty: this.dirty.has(id), wake: !!record.stepWake,
             token: token ? { dueInMs: Math.round(token.dueAt - timestamp), version: token.version, inHeap: this.heap.positions.has(entry),
                 lead: entry?.lead, startInMs: entry ? Math.round(this.startAt(entry) - timestamp) : null } : null,
             step: step ? { ageMs: timestamp - step.startedAt, sent: !!step.pendingCommitId, dueAt: step.dueAt } : null,
@@ -1612,7 +1613,7 @@ class ColdSimulationKernel {
             if (!this.currentCommand(id, attempt)) return;
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
-            attempt.boardWakeSeq = Number(lifecyclePlan?.boardWakeSeq) || 0;
+            attempt.stepWakeSeq = Number(lifecyclePlan?.stepWakeSeq) || 0;
             const sent = this.emit('command_request', {
                 requests: [{
                     characterId: id,
@@ -2405,7 +2406,7 @@ class ColdSimulationKernel {
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
-            active.boardWakeSeq = Number(lifecyclePlan?.boardWakeSeq) || 0;
+            active.stepWakeSeq = Number(lifecyclePlan?.stepWakeSeq) || 0;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
@@ -2676,7 +2677,7 @@ class ColdSimulationKernel {
             // cache is the proposal's state with them.
             const committed = result.ok ? result.state || Protocol.committedState(active.proposed, result) : null;
             if (committed) {
-                this.boardWakeAnswered(this.states.get(id), active.boardWakeSeq);
+                this.stepWakeAnswered(this.states.get(id), active.stepWakeSeq);
                 // Without result.state main changed nothing: the held state is
                 // the step's own output, not news for its economy (ownOutput).
                 this.upsert({ state: committed, ownOutput: result.state ? null : 'commit' });
@@ -2787,7 +2788,7 @@ class ColdSimulationKernel {
         // A command that threw on main (payload.fault, its stack) is held off as
         // a throw here is (fault); before the upsert, so its schedule keeps the hold.
         if (payload.ok) this.clearFault(id);
-        if (payload.ok) this.boardWakeAnswered(current, attempt.boardWakeSeq);
+        if (payload.ok) this.stepWakeAnswered(current, attempt.stepWakeSeq);
         const retryAt = payload.fault && payload.ok === false
             ? this.fault(id, { message: payload.reason, stack: payload.fault.stack }, 'main_command')
             : this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000);
@@ -2903,7 +2904,7 @@ class ColdSimulationKernel {
         this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
         // A board wake no step committed is lost with this worker (a restart re-plans).
-        for (const record of this.states.values()) if (record.boardWake) (Situations ||= require('../Situations')).note('board:wake:lost');
+        for (const record of this.states.values()) if (record.stepWake) (Situations ||= require('../Situations')).note('step:wake:lost');
         this.commanding.clear();
         this.commandStartedAt.clear();
         await this.resolveChain.catch(() => null);

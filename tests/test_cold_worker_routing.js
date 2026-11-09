@@ -261,7 +261,7 @@ try {
         SpotService.findCurrentSpot = originalFindCurrentSpot;
     }
 
-    // A competition avoid only marks the spot (ColdCompetitionRetreat): the
+    // A contest lost (turned away or displaced at an arrival) only marks the spot: the
     // route the worker searches excludes it and moves the bot off it.
     const retreatAt = Date.now();
     const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
@@ -297,8 +297,9 @@ try {
     assert.strictEqual(batchRouteFor(22)?.spotId, targetSpot.id,
         'a third decision is not refused at planning: the room is checked at arrival');
 
-    // A contest lost at the arrival (SpotContest; the contest itself: test_room_at_arrival.js):
-    // the spot is marked for the outing, and the next search takes another.
+    // A contest lost at an arrival (SpotContest; the contest itself: test_room_at_arrival.js),
+    // here a standing bot displaced by a stronger one (its step wake's payload): the spot is
+    // marked for the outing, and the next search takes another.
     const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
     const Situations = invoke('GameServer/Bot/Situations');
     const markedState = {
@@ -308,7 +309,7 @@ try {
         spotId: targetSpot.id,
         loc: { locX: 1, locY: 2, locZ: 3 },
         stats: Situations.raise({ equipmentPlan: { status: 'active', strategy: 'direct_drop' } }, 'contest_lost',
-            { spotId: targetSpot.id, reason: 'contest_lost' }, Situations.OPEN, 23)
+            { spotId: targetSpot.id, reason: 'displaced', by: 99 }, Situations.OPEN, 23)
     };
     assert(Risk.excludedSpotIdsForStates([markedState]).has(String(targetSpot.id)), 'the spot of a lost contest is excluded');
     assert(Situations.woken(markedState.stats, 'earning_spot'), 'a lost contest wakes the earning spot');

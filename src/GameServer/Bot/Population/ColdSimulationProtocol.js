@@ -51,7 +51,12 @@ const WORKER_TYPES = new Set([
 // One spot command (spot_command; validSpotCommand). At most SPOT_COMMANDS a message.
 const SPOT_COMMANDS = 16;
 const unit = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+// A spot outcome main carries out: enemy_met (two bodies near a player met), or command_lost
+// (a far bot displaced off a spot a player commanded tells that player: names <= 240 chars).
+const shortText = (value, empty = false) => typeof value === 'string' && value.length <= 240 && (empty || value.length > 0);
 function validSpotCommand(row) {
+    if (row?.kind === 'command_lost') return Number.isSafeInteger(row.botId) && row.botId > 0 && Number.isSafeInteger(row.playerId)
+        && row.playerId > 0 && shortText(row.botName) && shortText(row.spotName) && shortText(row.holder, true);
     return !!row && typeof row === 'object' && row.kind === 'enemy_met' && typeof row.key === 'string' && row.key.length > 0
         && row.key.length <= 240 && Number.isSafeInteger(row.at) && row.at > 0 && ['revenge', 'clan_war'].includes(row.reason)
         && Number.isSafeInteger(row.actorId) && row.actorId > 0 && Number.isSafeInteger(row.peerId) && row.peerId > 0

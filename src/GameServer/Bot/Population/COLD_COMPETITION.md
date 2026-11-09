@@ -63,33 +63,55 @@ read. `/observer/api/world/status` exposes `hotCompetitionActions` separately
 from cold forecasts and actions; recent results distinguish executed outcomes
 and failed invitations.
 
-## The spot aggregate: meetings at arrivals (worker)
+## The spot aggregate: who holds a spot (worker)
 
 Cold competition and cold revenge are situations of a spot, decided once when a unit
-arrives there; there is no periodic scan, no pair or unit
-cooldown and no revenge or conflict window. A pair meets again only at a later arrival.
+arrives there; there is no periodic scan, no pair or unit cooldown and no revenge or
+conflict window. A pair meets again only at a later arrival.
 
 `SpotContest` (pure) meets the arriving unit (a solo bot; a party through its leader
 until the party aggregate) with the units standing on the spot, read from the worker's
-occupancy index (bots on their way do not stand there). Over room is per-target
-pressure: the hunters on the arriving unit's target species, the untargeted by spawn
-share, against that species' share of the spot's room (`LevelingRoutes.capacityForSpot`
-times the spawn share, at least one place). Over room, at most four standing units are
-met, picked and ordered by a seeded roll of (spot, arriving unit, arrival step, peer), and
-decided by `ResourceCompetitionPolicy.decide` in that order; the first outcome other than
-coexist and yield wins, else yield when any yielded, else coexist. A unit on a player's
-command or a safety evacuation never avoids (read as coexist, counted). Bodies near a
-player standing there are not met (their own tactics, below). Ordinary hunters with no
-active equipment target use a stable representative NPC drawn from level-appropriate
-spawns weighted by count (`PartyHuntingTarget.competitionNpcId`); this is competition
-context only, not the PvE target.
+occupancy index (bots on their way do not stand there; an arrival whose commit is not
+acked yet does, and the units it displaces do not). Over room is per-target pressure:
+the hunters on the arriving unit's target species, the untargeted by spawn share,
+against that species' share of the spot's room (`LevelingRoutes.capacityForSpot` times
+the spawn share, at least one place). Over room the arriving unit compares itself with
+each standing unit by what a player sees (`VisibleStrength`: weapon grade and glow, body
+armour grade, people with servitors; no level):
 
-The arriving unit's own outcome rides its arrival step: `avoid` raises `contest_lost`
-with the spot as its mark (it wakes the earning spot; the mark holds until that decision
-is taken), `yield` pauses it 15 s (`coldCompetition.wait`, the resolver deducts the
-pause), `coexist` changes nothing. A party's avoid is a mark on the party
-(`PartySpotRiskPolicy.withMark`): its next step hears `contest_lost` on its held spot and
-its spot decision (`party_spot`) moves it.
+1. a stranger that looks stronger stands there: the arriving unit leaves (`outmatched`);
+2. else it displaces the weakest strangers it looks stronger than, each by its
+   can-I-win roll, until the species is back to its room (at most eight units; standing
+   parties are not displaced): it stays when it displaced at least its own hunters or the
+   species is in room after, else it leaves (`outmatched`);
+3. else (an even look) a clanmate or friend there lets it share under twice the room
+   (`friendly_share`); a stranger may dispute the spot by PvP (`decide`'s contest with
+   PvP intent, PvP on); otherwise the first come holds it and the arriving unit leaves
+   (`even`, or `crowded` at twice the room).
+
+Relationships are read for at most four met units and eight displacement candidates; an
+unread unit counts as a stranger, so a capped read only makes the arrival leave. A unit
+on a player's command or a safety evacuation never leaves (counted). Bodies near a player
+standing there are neither met nor displaced (their own tactics, below). Ordinary hunters
+with no active equipment target use a stable representative NPC drawn from
+level-appropriate spawns weighted by count (`PartyHuntingTarget.competitionNpcId`); this
+is competition context only, not the PvE target.
+
+The arriving unit's own outcome rides its arrival step: leaving raises `contest_lost`
+with the spot as its mark (it wakes the earning spot; the mark lasts the outing). A
+party's leave is a mark on the party (`PartySpotRiskPolicy.withMark`): its next step
+hears `contest_lost` on its held spot and its spot decision (`party_spot`) moves it. A
+displaced bot hears `contest_lost` (reason `displaced`) at its next step once the
+arriving commit is acked (the kernel's step wake: no commit of its own, it finishes the
+window its step already credited); a near arrival displaces at once. No grievance is
+written for a displacement.
+
+The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
+room it is held (the holder's best look and largest unit), until an arrival finds it at
+0.8 of its room or less. A bot hears of a hold at its town arrival; once heard, its solo
+spot search skips the camp when it looks weaker than the holder, has fewer people, or
+looks even and is more cautious than assertive (`spot:repelled`). A clearing is known at
+once; the bot's own sight is its outing mark.
 
 `EnemyMet` (pure, both threads) meets the arriving bots with the standing ones, both
 ways, where the holder remembers the peer or their clans are in a mutual war; the shared
@@ -101,84 +123,40 @@ and the 900-unit notice radius); a far and a near bot are only counted (`enemy_m
 A player's client first receiving a bot's CharInfo is a meeting too
 (`BotRevenge.playerSeen`, rolled per bot, player and the bot's stay).
 
-Outcomes touching other bots (a contest's offer, contest or PvP intent; a far
+Outcomes touching other bots (the units an arrival displaces, a PvP dispute; a far
 `revenge` or `clan_war` meeting) wait in `SpotContestOutbox` for the arriving step's own
-commit ack, are fenced with that bot's committed revisions, and go in the competition
-frame of the next heartbeat; the frame's receipt frees it. A refused ack, another step's
-ack, the bot leaving the far simulation, the worker's stop or an age past 10 s from the
-arrival drops them, counted (`spot:contest:<why>` on the situations= line), never
-re-fenced. Counters: `spot:arrival:checked/over`, `spot:contest:<action>`,
-`spot:contest:capped/commanded/evacuation/hot_peer/hot_skipped`, `enemy_met:<reason>`,
-`enemy_met:mixed`, and main's `enemy_met:<outcome>`.
+commit ack; disputes and meetings are then fenced with that bot's committed revisions and
+go in the competition frame of the next heartbeat; the frame's receipt frees it. A
+refused ack, another step's ack, the bot leaving the far simulation, the worker's stop or
+an age past 10 s from the arrival drops them, counted (`spot:contest:<why>` on the
+situations= line), never re-fenced. A displaced bot standing there on a player's command
+loses the command at its next step (`command:displaced`) and its player is told who pushed
+it out (`spot_command` `command_lost`, main's `command_lost:told/offline`; an offline player
+is told nothing). Counters: `spot:arrival:checked/over`,
+`spot:contest:outmatched/even/crowded/stronger/friendly_share/pvp`,
+`spot:contest:displaced/displaced_left`,
+`spot:contest:capped/memory/commanded/evacuation/hot_peer/pvp_hot_skipped` (a near
+arrival's PvP verdict runs no dispute: its body's own tactics),
+`enemy_met:<reason>`, `enemy_met:mixed`, and main's `enemy_met:<outcome>`.
 
 ## First real actions
 
 `coldCompetitionActionsEnabled` lets the main process apply at most four fresh
-PvP/revenge/clan-war/accepted-offer/contest outcomes (eight attempts) and, in a separate
-budget, two yield/avoid departures (four attempts) from a frame, PvP first, within
+PvP-dispute/revenge/clan-war outcomes (eight attempts) from a frame, PvP first, within
 one 75 ms wall-time budget; `budgetSkipped` counts excess candidates, which are not
-carried out (the worker counts them, `spot:contest:skipped`). Capacity and clan-objective refusals have explicit result reasons.
-Actual results are exported separately
-as `coldCompetitionActions` in the observer. PvP requires its separate enable flag.
-Resource disputes can execute under the separate conflicts flag described below.
-Two living solo hunters with the same active target can form a party.
-An accepted offer between a solo hunter and an existing party can instead recruit
-that hunter without consuming a new party slot. Party-to-party mergers and clan
-equipment operations are excluded.
-
-The action checks both lifecycle and memory revisions, target, presence, ownership
-and hot-handoff fences. Outcomes expire ten seconds after their arrival.
-Main-process backlog/lag defers admission; there is no catch-up queue. A frame is
-consumed once, including rejections.
-
-A yield claims both hunting units and atomically records the episode with a
-15-second delay for the actor's unit (solo or full party). No relationship event is written. The resolver
-deducts the idle interval once from subsequent farming time and clears the wait.
-Party selection excludes pending waits. CAS validation rejects duplicate delivery
-even after restart, and a stale participant aborts both writes.
-
-An avoid decision marks the current spot on each holder (a member's
-`contest_lost`, the party's mark), makes the actor's unit due now; main searches
-no spot. The unit's next decision (a solo bot's earning spot, the party's spot)
-searches with the spot excluded and its trip moves it off, with the ordinary
-suitable-spot selector and capacity check and normal travel with its arrival time
-and zero farming rewards during transit; with no other suitable spot the unit
-stays. All party members and the party's schedule commit together; the other unit
-keeps hunting. The mark survives restart, the next answer retires it, it does not
-escalate PvE death backoff or create resentment.
-`coldCompetitionActions.avoids` counts committed avoids; recent results include
-the affected members.
-
-Party yields and all avoids validate the complete rosters (at most 18 hunters),
-physical presence, targets, memory versions and hot-handoff fences. The checks
-are repeated after claiming ownership, and SQLite validates party versions in
-the same transaction as all member writes. Partial claims are released.
-
-An accepted offer uses the existing atomic party-membership transaction for both
-solo hunters, with the episode marker in their persisted stats. Population limits
-and the ordinary party creation path still apply. Only a successful membership
-commit counts as a created party; shared-hunt memories still require later wins.
-
-Recruitment validates the forecast party version, full roster, common target,
-physical spot, capacity and ordinary composition rules. Every retained member
-must be alive, cold, present and free of worker ownership or hot-handoff fences.
-Unloaded memory or hostility between the recruit and any member rejects admission.
-All members and the recruit commit atomically. Actual recruitment is counted under
-`coldCompetitionActions.recruits`, separately from new parties.
+carried out (the worker counts them, `spot:contest:skipped`). Actual results are
+exported separately as `coldCompetitionActions` in the observer. PvP requires its
+separate enable flag; the worker hears the combined flag at start and sends no PvP
+dispute without it. The action checks both lifecycle and memory revisions, target,
+presence, ownership and hot-handoff fences. Outcomes expire ten seconds after their
+arrival. Main-process backlog/lag defers admission; there is no catch-up queue. A
+frame is consumed once, including rejections.
 
 Every new background party uses one shared safety ceiling (60 by default).
 All creation paths reserve capacity through PartyAdmission while their SQLite
 commit is in flight. Historical `capacityPool` metadata grants no privileges;
 new parties do not write it. Existing parties are never evicted merely to make
 room for queued candidates. Normal objective review and session expiry remain.
-
-At capacity, an accepted solo-to-solo invitation atomically creates ordinary
-preferred party requests for both hunters, preserving existing required requests.
-They continue farming; this is no longer a replayable invitation. Later candidate
-selection rechecks goals and composition, and may select different companions.
-Current shared-target intent survives replanning only while the target matches;
-ordinary request expiry/cooldown applies. `coldCompetitionActions.queued` counts
-these deferred encounters, separately from actual formations.
 
 Idle candidate groups rank by current need and capped waiting age, with existing
 spot occupancy and compatible demand as tie-breakers. Clan origin grants no
@@ -188,27 +166,11 @@ the existing runtime lag/work budgets remain in force.
 
 ## Accepted resource disputes
 
-`coldCompetitionConflictsEnabled` adds solo/party `contest` outcomes to the
-existing action budget of a frame. Accepted invitations rank first,
-contests second, and voluntary yields last.
-Main revalidates both active target plans, physical spot, target spawn presence,
-memory revisions, cold ownership and hot-handoff fences. A forecast alone never
-writes an offense.
-
-An accepted contest interrupts the peer's hunting for fifteen seconds. The same
-bounded wait accounting used by yielding prevents later catch-up farming for that
-interval. This is a coarse cold resource interruption, not a live NPC kill or a
-transfer of already awarded loot. The initiator receives no invented rewards.
-The victim alone records `mob_contested` against the initiator, atomically with
-both life states through the existing lease/CAS transaction. A rejected outcome
-writes neither the interruption nor the memory. Accepted snapshots reach the
-main memory cache and the cold worker through the normal state notification.
-
-No conflict window follows: the pair meets again only at a later arrival. One encounter
-adds three hostility points: a neutral victim becomes wary, not immediately
-hostile. `pvpIntent` remains diagnostic; no attack, death, flag or karma change
-is inferred. Observer `contests` counts committed interruptions separately from
-forecast disputes, and recent results identify the victim and memory event.
+`coldCompetitionConflictsEnabled` lets a frame's `contest` outcomes (a PvP dispute,
+or a dispute with a party on a side) run through the party conflict below. Main
+revalidates both active target plans, physical spot, target spawn presence, memory
+revisions, cold ownership and hot-handoff fences. A forecast alone never writes an
+offense. No conflict window follows: the pair meets again only at a later arrival.
 
 Party encounters expand at most two complete rosters (18 bots). Every member must
 be present, living, cold, ready for hunting and have loaded memory. The party
