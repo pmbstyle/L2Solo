@@ -62,6 +62,16 @@ async function run() {
             'no tranche: the shot ad is refused on main');
         assert.equal(Market.planBidRefused().economy_plan_bid_unfunded, 1, 'the refusal is counted in the status');
         assert.equal((await records()).length, 0);
+        // The writer's own allowance check finds the bid's money gone (an earlier step
+        // spent it): an outcome, the plan's bids stale for the next build, never a fault.
+        const Shop = invoke('GameServer/Bot/Economy/BotBuyShopService'), publish = Shop.publish;
+        Shop.publish = async () => { throw Error('economy_funding_changed'); };
+        try {
+            assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[OTHER, 1, 300]] })).stale, true,
+                'a bid the writer finds unfunded is refused');
+        } finally { Shop.publish = publish; }
+        assert.equal(Market.planBidRefused().economy_funding_changed, 1);
+        assert.equal((await records()).length, 0);
         await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7], [OTHER, 1, 300]], buyKit: [1000, 0] });
         ads = await records();
         assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count]).sort((a, b) => a[0] - b[0]),

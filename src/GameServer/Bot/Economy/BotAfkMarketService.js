@@ -621,8 +621,10 @@ async function reconcileSellShop(state, goal) {
 // move is refused (its idempotency key) and the next review starts afresh.
 // The refusals of a plan's buy step that are outcomes, not faults, and their counts
 // since start (always counted; the set bounds the keys).
+// economy_funding_changed: the writer's own allowance check (Database
+// reconcileBotPurchasesUnsafe, reconcileBotBuyAdsUnsafe) finds the money gone.
 const PLAN_BID_REFUSALS = new Set(['economy_plan_bid_unfunded', 'economy_plan_need_changed', 'afk_trade_shop_changed',
-    'board_cap_reached', 'not_enough_adena']);
+    'board_cap_reached', 'not_enough_adena', 'economy_funding_changed']);
 const planBidRefused = {};
 // A plan's town trip main does not start, since start: goal_moved (main's goal no longer
 // names the planned wish), refused (GoalExecutor.beginMarketTravel: remote trade, a sale

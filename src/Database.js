@@ -165,7 +165,7 @@ const metrics = {
     writes: 0,
     transactions: 0,
     failures: 0,
-    // Operations an owner refused with a named code (FailureLog.refusal: the act's facts
+    // Operations the writer refused with a named code (REFUSALS: the act's facts
     // moved since its decision): outcomes, apart from the failures above.
     refusals: 0,
     waitMs: 0,
@@ -323,11 +323,25 @@ function operationName(sql, fallback = 'raw') {
     return match ? `${fallback}:${match[1].toLowerCase()}` : fallback;
 }
 
+// The writer's named refusals: it refuses an act whose facts moved since its decision (a
+// unit the bot's reserves keep, money an earlier step spent, the economy step's sequence,
+// owner or intent, a recipe, an improvement's source, a board record or a bag line). An
+// outcome: counted apart from failures here, a refused decision at the cold command
+// boundary (ColdSimulationCoordinator). Any other throw, a bare code included (a missing
+// row or template, a broken invariant), is a failure with its stack.
+const REFUSALS = new Set(['economy_material_protected', 'economy_funding_changed', 'economy_sequence_changed',
+    'economy_owner_changed', 'economy_intent_changed', 'economy_plan_need_changed',
+    'craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed', 'craft_product_template_changed',
+    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_missing_materials',
+    'soul_crystal_resonance', 'afk_trade_shop_changed', 'afk_trade_stock_changed', 'inventory_item_changed',
+    'board_cap_reached', 'not_enough_adena']);
+const refused = error => FailureLog.refusal(error) && REFUSALS.has(error.message);
+
 // Named operations: OPERATION_NAMES of any kind, then OPERATION_FAILURE_NAMES more for
 // an operation that fails or is refused, so a failure keeps its name when ordinary
 // names filled the map; past both, 'other'.
 const OPERATION_NAMES = 127, OPERATION_FAILURE_NAMES = 32;
-// outcome: '' (done), 'failed' or 'refused' (a named refusal, FailureLog.refusal).
+// outcome: '' (done), 'failed' or 'refused' (a named refusal, REFUSALS).
 function record(operation, wait, run, read, outcome = '') {
     if (!DiagnosticConfig.developerDiagnostics) return;
     metrics.byOperation ||= new Map();
@@ -381,7 +395,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             EconomyJournal.discard();
             if (connection?.isTransaction) ClanReviewInputs.restoreCandidateCheckpoint(candidateCheckpoint);
             else ClanReviewInputs.discardCandidateCommit();
-            if (timed) record(operation, wait, now() - startedAt, read, FailureLog.refusal(error) ? 'refused' : 'failed');
+            if (timed) record(operation, wait, now() - startedAt, read, refused(error) ? 'refused' : 'failed');
             throw error;
         } finally {
             metrics.pending -= 1;
@@ -4999,6 +5013,7 @@ function publishClanMembership(result) {
 
 
 const Database = {
+    refused,
     // BotLifeState.save builds its upsert with them.
     MOVE_FAR_REVISION,
     HELD_ROW_SET,
