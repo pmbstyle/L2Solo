@@ -159,18 +159,20 @@ const BotDecisionService = {
             if (DecisionEvents.commandPending(session)) return { action: 'search_locally', reason: 'awaiting_command_answer' };
             const loc = physicalLocation(status, session);
             const physical = SpotService.findCurrentSpot(loc);
-            // An errand holds the body only on its ground (BotRoute.occupationHolds, the cold
-            // trip's rule); with none under it (a town after a visit) it goes hunting as a
-            // finished visit does (completedVisit below), the errand kept for the field.
+            // An errand holds the body only on its ground (BotRoute.occupationHolds over
+            // SpotService.standingSpot, the cold trip's rule and reads); with none under it
+            // (a town after a visit) it goes hunting as a finished visit does (completedVisit
+            // below), the errand kept for the field.
             const occupied = !!leaf?.activity && leaf.activity !== 'hunting';
-            if (Route().occupationHolds(leaf, physical)) {
+            const standing = occupied ? SpotService.standingSpot({ spotId: session.currentSpot?.id, loc }) : null;
+            if (Route().occupationHolds(leaf, standing)) {
                 // A deferred errand keeps its wish, but cannot pin a hunter
                 // forever to ground that admits none of its fights: the same
                 // look as a hunt's (groundLook: spot_empty once a stay, or it
                 // gets ready), and once the ground is empty for it, it walks to
                 // the spot it goes to when sent to hunt when that is another spot.
                 if (session.deferredOccupation === occupationKey(leaf) && session.huntingTargetScan) {
-                    const ground = physical;
+                    const ground = standing;
                     const look = groundLook(session, ground);
                     if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
                     if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };

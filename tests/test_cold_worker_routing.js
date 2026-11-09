@@ -160,21 +160,17 @@ try {
     flipSearch();
     assert.strictEqual(tripTo({ activity: 'hunting', spotId: otherSpot.id }), otherSpot.id, 'the leaf goes first');
     hunter = keptHunter;
-    const allowSpot = invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState;
     const groundVerdict = invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict;
     try {
-        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => true;
         for (const activity of ['shopping', 'crafting', 'selling', 'improving']) {
             assert.strictEqual(tripTo({ activity, itemId: 736, town: 'Oren' }), undefined,
                 `a ${activity} decision reaches its executor instead of starting a hunting detour`);
         }
         // Ground it may not hunt alone (party-only ground, the ground rule).
         invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = spot => ({ allowed: String(spot?.id) !== currentSpot.id });
-        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = spot => String(spot?.id) !== currentSpot.id;
         assert(tripTo({ activity: 'shopping', itemId: 736, town: 'Oren' }),
             'an unsafe-ground evacuation still owns safety before an ordinary purchase');
     } finally {
-        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = allowSpot;
         invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = groundVerdict;
     }
     SpotProfiles.findForState = () => { throw Error('search failed'); };
@@ -236,7 +232,15 @@ try {
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id }, standingCatalog).id, fieldSpot.id,
             'an ordinary declared spot yields to the spot under the bot');
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id, loc: null }, standingCatalog).id,
-            currentSpot.id, 'with no spot under the bot its declared spot stands');
+            currentSpot.id, 'with no position known its declared spot stands');
+        // Off any spot's cell, the declared spot stands only once the body has arrived there
+        // (the arrival radius): a body in town after a visit stands on none.
+        const declaredSpot = { id: 'declared-field', name: 'Declared field', center: { locX: 10000, locY: 10000, locZ: 0 } };
+        const offCell = [declaredSpot];
+        assert.strictEqual(SpotService.standingSpot({ spotId: declaredSpot.id, loc: { locX: 10700, locY: 10000, locZ: 0 } }, offCell),
+            declaredSpot, 'a body inside the arrival radius stands on its declared spot');
+        assert.strictEqual(SpotService.standingSpot({ spotId: declaredSpot.id, loc: { locX: 30000, locY: 10000, locZ: 0 } }, offCell),
+            null, 'a body far from its declared spot stands on none');
     } finally {
         SpotService.findCurrentSpot = originalFindCurrentSpot;
     }

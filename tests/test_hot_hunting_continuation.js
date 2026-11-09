@@ -345,6 +345,22 @@ test('a body that arrived on a neighbouring cell of its spot does not walk again
     } finally { while (restores.length > restoreAt) restores.pop()(); }
 });
 
+test('an errand holds a body that arrived off its spot\'s cell: it does not walk again', () => {
+    // A walk ends within the arrival radius of the spot's center, here on a neighbouring cell with no
+    // spot: the body stands on its spot (SpotService.standingSpot, the cold worker's rule) and its errand runs.
+    const edge = { ...primary, id: '27_12', name: 'Edge field', center: { locX: 162300, locY: 74719, locZ: -3276 } };
+    const pvp = { activity: 'pvp', targetId: 7, rootKey: 'scores:7' };
+    const restoreAt = restores.length;
+    try {
+        stub(Spots, 'ensureIndexed', () => [primary, alternative, edge]);
+        const f = fixture({ ...edge.center, locX: 161600 }, pvp, { huntSpot: { spotId: edge.id } });
+        f.session.currentSpot = edge;
+        assert.equal(Spots.findCurrentSpot(f.loc), null, 'fixture: no spot on its cell');
+        const decision = Decision.suggest(f.session.botStatus, f.session);
+        assert.equal(decision.action, 'continue_occupation', 'no walk to the spot it stands on');
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('a deferred purchase recovers from an empty field without losing its wish or cancelling the trip', () => {
     const purchase = { activity: 'shopping', rootKey: 'power:148:7', itemId: 1459,
         amount: 24, town: 'Aden', kind: 'buy', sourceType: 'afk' };
