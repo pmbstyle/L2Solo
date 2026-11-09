@@ -437,6 +437,11 @@ function onWorker() {
             const onCamp = { ...leveling, spotId: 'poor', loc: spots[0].center };
             assert.equal(BotRoute.trip({}, onCamp, selling, { spots, currentSpot: spots[0], timestamp: time(13) }), null,
                 'on its camp the errand holds it');
+            // Pushed off its camp (a stronger arrival displaced it: the contest's mark on the camp), the errand
+            // holds it no more: it walks to its held spot and the errand starts from the new field.
+            const pushed = raisedWith(onCamp, 'contest_lost', { spotId: 'poor', reason: 'displaced', by: 1, at: time(13) });
+            assert.equal(BotRoute.trip({}, pushed, selling, { spots, currentSpot: spots[0], timestamp: time(13) })?.spotId, 'rich',
+                'displaced off its camp, the errand no longer holds it there');
         } finally { Service.arrivalPointForState = arrive; }
     }
     // A party member hunts with its party: its foundation does not price the held solo spot.

@@ -354,13 +354,15 @@ function route(state, currentSpot, party, partyMembers = [], { spots, timestamp,
 }
 
 // Does the bot's accepted non-hunting leaf hold it where it stands: only on its
-// ground (the catalogue spot under it), where its errand starts at the fight's edge.
-// A bot with no ground under it (a town after a visit) goes hunting at its held
-// choice and the errand starts from the field, as a C4 player done in town walks
-// to his camp. One rule for the cold trip (trip) and the hot body
-// (BotDecisionService).
-function occupationHolds(leaf, ground) {
-    return !!leaf?.activity && leaf.activity !== 'hunting' && !!ground;
+// ground (the catalogue spot under it) while it may still hunt there, where its
+// errand starts at the fight's edge. A bot with no ground under it (a town after a
+// visit), or on ground its marks exclude (excludedSpotIds: SpotRiskPolicy, a contest
+// lost or displaced, a dangerous or unreachable spot), goes hunting at its held
+// choice and the errand starts from the field, as a C4 player pushed off his camp,
+// or done in town, walks to his camp. One rule for the cold trip (trip) and the hot
+// body (BotDecisionService).
+function occupationHolds(leaf, ground, excludedSpotIds) {
+    return !!leaf?.activity && leaf.activity !== 'hunting' && !!ground && !excludedSpotIds.has(String(ground.id));
 }
 
 // The solo trip of a step: to the spot the bot's one choice names (heldHuntSpot,
@@ -384,7 +386,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     // The accepted occupation owns this round on the bot's camp. A routine hunting
     // replan must not turn a pending purchase/craft/sale into another field trip
     // before the native economy executor gets to carry it out (occupationHolds).
-    if (occupationHolds(leaf, currentSpot) && !unsafeSoloGround(state, currentSpot, frame)) {
+    if (occupationHolds(leaf, currentSpot, frame.excludedSpotIds) && !unsafeSoloGround(state, currentSpot, frame)) {
         EconomyDiagnostics.count('route', 'trip', 'occupation');
         return null;
     }

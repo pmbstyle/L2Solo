@@ -594,6 +594,21 @@ test('an unreachable mark, a pending command, survival and explicit non-hunting 
     assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'continue_occupation');
 });
 
+test('an errand does not hold a body pushed off its ground: it walks to its spot', () => {
+    // A stronger arrival displaced it (the contest's mark on the ground it stands on): it may not
+    // hunt there, so the errand starts from the spot the worker publishes, as a far bot's does.
+    const selling = { activity: 'selling', rootKey: 'money:liquidate' };
+    const f = fixture(alternative.center, selling, holds(primary));
+    f.session.currentSpot = alternative;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'continue_occupation', 'fixture: its ground holds it');
+    f.session.coldLifeState.stats.spotMarks = [{ spotId: alternative.id, reason: 'contest_lost' }];
+    const decision = Decision.suggest(f.session.botStatus, f.session);
+    assert.equal(decision.action, 'move_to_spot', 'pushed off: the errand no longer holds it');
+    assert.equal(decision.spot?.id, primary.id, 'to the published spot');
+    assert.equal(decision.deferredOccupation, Decision.occupationKey(selling), 'the errand kept for the field');
+    assert.equal(searchCalls.length, 0, 'main searches no spot');
+});
+
 test('an errand it cannot start in town does not hold the body there: it walks to its spot', () => {
     // The build answered a visit's end with an errand run in the field (pvp): no ground holds the
     // body in town, so it goes hunting where the worker's route publishes, the errand kept.

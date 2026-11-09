@@ -405,7 +405,11 @@ function heldSpotOf(state = {}, near = false) {
 // body waits for the answer rather than walk to the old spot and turn; a raise for
 // its buffs or its board lines does not stop it).
 const heldSpotId = session => session.nearRaise?.names?.some(entry => Situations.movesSpot(entry.name)) ? 'pending'
-    : heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session), stats: statsFor(session) }, true);
+    : heldSpotOf(bodyView(session), true);
+// A body's row: its life row with its own place and party (Economy.bodyPlace) and its stats.
+const bodyView = session => ({ ...session.coldLifeState, ...Economy.bodyPlace(session), stats: statsFor(session) });
+// The spots a body's marks exclude (SpotRiskPolicy), as a far bot's trip reads them.
+const excludedSpotIds = session => Risk.excludedSpotIdsForStates([bodyView(session)]);
 // A body that needs a spot (BotDecisionService, HuntingState) while its held answer
 // names none it may take asks again once per answer (Situations.spotAsk over the
 // session: spot_empty raised on 'ask'); 'none' when the answer to its ask names none
@@ -431,5 +435,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, excludedSpotIds, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

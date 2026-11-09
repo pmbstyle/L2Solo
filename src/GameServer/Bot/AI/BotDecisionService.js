@@ -159,13 +159,14 @@ const BotDecisionService = {
             if (DecisionEvents.commandPending(session)) return { action: 'search_locally', reason: 'awaiting_command_answer' };
             const loc = physicalLocation(status, session);
             const physical = SpotService.findCurrentSpot(loc);
-            // An errand holds the body only on its ground (BotRoute.occupationHolds over
-            // SpotService.standingSpot, the cold trip's rule and reads); with none under it
-            // (a town after a visit) it goes hunting as a finished visit does (completedVisit
-            // below), the errand kept for the field.
+            // An errand holds the body only on its ground while it may hunt there
+            // (BotRoute.occupationHolds over SpotService.standingSpot and its marks, the cold
+            // trip's rule and reads); with none under it (a town after a visit) or pushed off
+            // it it goes hunting as a finished visit does (completedVisit below), the errand
+            // kept for the field.
             const occupied = !!leaf?.activity && leaf.activity !== 'hunting';
             const standing = occupied ? SpotService.standingSpot({ spotId: session.currentSpot?.id, loc }) : null;
-            if (Route().occupationHolds(leaf, standing)) {
+            if (standing && Route().occupationHolds(leaf, standing, DecisionEvents.excludedSpotIds(session))) {
                 // A deferred errand keeps its wish, but cannot pin a hunter
                 // forever to ground that admits none of its fights: the same
                 // look as a hunt's (groundLook: spot_empty once a stay, or it
