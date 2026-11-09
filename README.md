@@ -35,6 +35,7 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-11-09** Shot production and recipe supply, bot recovery, inventory and cross-floor combat fixes, Windows launcher updates
 - **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
 - **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
 - **2026-10-30** Clan wars, geodata, bug fixes

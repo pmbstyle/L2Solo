@@ -1,25 +1,18 @@
-🌊 **Garden of Eva**
+🛠️ **Shot production & supply**
 
-- Added all 24 timed C4 water walls. They start closed and alternate between seven minutes closed and seven minutes open.
-- Wall states are visible in the client and respected by movement and pathfinding, including when entering the area or logging in nearby.
+- Improved dwarven Soulshot, Spiritshot and Blessed Spiritshot production. Crafters now evaluate repeat batches against funded demand, travel costs and available capital instead of rejecting a profitable production run based on its first batch alone.
+- Fixed shot recipe procurement and learning after market trips. Hunters and spoilers can supply requested shot recipes, and crafters adjust recipe bids when their funds change while keeping money for production materials.
+- Equipment bought for crystals stays reserved for production instead of being equipped or sold during market handoffs. Crystal sourcing also respects the dwarf's Crystallize skill grade.
+- Shot costs and the choice between Spiritshots and Blessed Spiritshots now reflect available market offers and recent paid trades, with a crafting-cost estimate when neither is available.
 
-🤖 **Bot travel & starter progression**
+🤖 **Bot recovery, inventory & trade**
 
-- Fixed bots getting stuck while shopping in towns such as Gludio or trying to leave town afterward. Interrupted shopping and hunting trips now recover their navigation more reliably.
-- Starter bots such as Orc Mystics now recognize when their equipment cannot support safe solo hunting and can form a safe melee party instead of waiting indefinitely.
+- Fixed background bots getting stuck without a valid hunting spot. They can complete economic tasks and select a suitable hunting ground again, including after market visits.
+- Background loot now preserves individual equipment copies, enchantments and equipped slots. Improved repair of affected inventories in older saves.
+- Bot buy shops and purchase advertisements now share the actual available budget, so money reserved in a shop cannot also fund a separate purchase.
 
-🛠️ **Trade & economy**
+⚔️ **Combat & loot**
 
-- Fixed player-to-bot Adena payments being limited to 10,000. Trades now accept the client's normal Adena range, including larger purchases and buff payments.
-- Permanent resource buyers now purchase raw materials only. Crafted materials need actual buyer demand, removing guaranteed buyback that was drawing crafters away from shot production.
-
-🛡️ **Clan progression**
-
-- Clan tasks now take turns more fairly, so one busy clan cannot monopolize progression work.
-- Removed duplicate background review chains from saved queues in player-managed clans while preserving player orders.
-- Fixed stalled equipment-gathering parties. When a party cannot assemble, bots are released from the wait and the clan can reconsider its plan.
-
-💾 **Backups & update recovery**
-
-- Fixed Windows world backups failing with a file-lock error while copying the world and history databases.
-- Improved recovery after a failed server update and startup with copied or moved world databases.
+- Area attacks now check height and line of sight, preventing damage and aggression through floors or blocked geometry.
+- Bots and parties stop retaining combat targets on distant floors, allowing them to resume hunting and collect ground loot.
+- Quest Monsters are excluded from routine bot hunting. Monsters with explicitly empty drop tables no longer receive fallback loot in background combat.
