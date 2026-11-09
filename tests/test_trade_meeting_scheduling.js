@@ -35,6 +35,25 @@ const player = playerKernel(waits);
 waits.add(31);
 player.ensureScheduled(31);
 assert.equal(player.dueCandidates(100000, 1)[0].characterId, 31, 'a waiting player keeps first priority');
+// A bot within a real player's activation ring ('player_rings') goes ahead of an older
+// backlog: it may go hot at the next scan. The ring's arrival reschedules the bots inside
+// it (playerRingMoved); a ring that goes leaves them in plain due order again.
+function ringKernel(rings) {
+    const built = new ColdSimulationKernel({ now: () => 100000, resolveSolo: () => null, playerRings: () => rings });
+    built.upsert({ state: { ...state(1, 1000), loc: { locX: 90000, locY: 90000, locZ: 0 } } });
+    built.upsert({ state: { ...state(2, 99000), loc: { locX: 1000, locY: 1000, locZ: 0 } } });
+    return built;
+}
+const rings = new Map(), ring = { characterId: 9, locX: 0, locY: 0, radius: 9000 };
+assert.equal(ringKernel(rings).dueCandidates(100000, 1)[0].characterId, 1, 'no player: the oldest due goes first');
+const ringed = ringKernel(rings);
+rings.set(9, ring);
+assert.equal(ringed.playerRingMoved(ring), 1, 'the ring reschedules the bot inside it');
+assert.equal(ringed.dueCandidates(100000, 1)[0].characterId, 2, 'a bot near a player goes ahead of the older backlog');
+const left = ringKernel(rings);
+rings.delete(9);
+left.playerRingMoved(ring);
+assert.equal(left.dueCandidates(100000, 1)[0].characterId, 1, 'a ring that goes leaves plain due order');
 const changed = kernel(), travelling = state(30, 99000, true);
 changed.upsert({ state: travelling });
 changed.upsert({ state: { ...travelling, stats: { ...travelling.stats, tradeMeeting: null } } });
@@ -53,7 +72,7 @@ const mixed = new DueHeap(), live = new Set();
 const brute = flag => [...live].filter(row => row[flag]).sort((a, b) => mixed.compare(a, b))[0] || null;
 const checkHeads = label => {
     assert.equal(mixed.peek(), [...live].sort((a, b) => mixed.compare(a, b))[0] || null, `${label}: due head`);
-    assert.equal(mixed.peekPlayer(), brute('playerWaiting'), `${label}: player head`);
+    assert.equal(mixed.peekPlayer(), brute('forPlayer'), `${label}: player head`);
     assert.equal(mixed.peekMeeting(), brute('meetingTravel'), `${label}: meeting head`);
     assert.equal(mixed.peekLead(), brute('lead'), `${label}: lead head`);
 };
@@ -64,7 +83,7 @@ for (let round = 0; round < 600; round++) {
         const entry = [...live][roll(live.size)];
         live.delete(entry); mixed.remove(entry);
     } else {
-        const entry = { characterId: round + 1, dueAt: roll(500), playerWaiting: roll(9) === 0,
+        const entry = { characterId: round + 1, dueAt: roll(500), forPlayer: roll(9) === 0,
             meetingTravel: roll(7) === 0, lead: roll(5) === 0 };
         live.add(entry); mixed.push(entry);
     }
@@ -88,4 +107,4 @@ assert.deepEqual(Trip.meetingTownPlan(returning, giran), expected,
 assert.deepEqual(returning, captured, 'quoting the next route pays neither fare nor another scroll');
 assert.deepEqual(Trip.meetingTownPlan({ ...returning, activity: 'shopping' }, giran),
     Trip.townPlan(returning, giran), 'a stale travel field cannot change a stationary departure');
-console.log('Meeting scheduling: paid arrival, ordinary progress, future deadline, player priority and prompt commit passed');
+console.log('Meeting scheduling: paid arrival, player ring, ordinary progress, future deadline, player priority and prompt commit passed');

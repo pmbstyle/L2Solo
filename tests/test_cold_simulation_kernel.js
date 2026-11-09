@@ -1285,6 +1285,24 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
 
+    // The worker asks main to commit at once only when every slot of its full window waits on
+    // main: a step still running can join the batch, so its finished neighbours wait for it.
+    const windowMessages = [];
+    const windowKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 2,
+        emit: (type, payload) => windowMessages.push({ type, payload }) });
+    const pendingOf = id => ({ ...oversizedProposal, characterId: id, enqueuedAt: now,
+        proposalId: `${id}:${now}`, revision: 3, nextState: state(id), result: { events: [], debug: {} } });
+    for (const id of [700, 701]) {
+        windowKernel.upsert({ state: state(id) });
+        windowKernel.inFlight.set(id, { state: state(id), startedAt: now });
+    }
+    windowKernel.dirty.set(700, pendingOf(700));
+    windowKernel.flush(null, false, { reason: 'capacity' });
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, false, 'a running step can still join: main keeps batching');
+    windowKernel.dirty.set(701, pendingOf(701));
+    windowKernel.flush(null, false, { reason: 'capacity' });
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, true, 'every slot waits on main: it commits at once');
+
     // An atomic clan party needs the entire small player window. A few free
     // slots must not leave the completed owners waiting for the ordinary timer.
     const partialMessages = [];

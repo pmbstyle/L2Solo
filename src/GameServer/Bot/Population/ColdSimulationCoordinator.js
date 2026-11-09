@@ -37,7 +37,8 @@ const { STEP_MS: PVP_STEP_MS } = require('./PvpEncounterBudget');
 const ColdStateDelta = require('./ColdStateDelta');
 const InventorySummary = require('./InventorySummary');
 const RestartBackoff = require('../../../WorkerRestartBackoff');
-const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
+const { ColdCommitQueue } = require('./ColdCommitQueue');
+const StepLateness = require('./StepLateness');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -133,7 +134,7 @@ function heapSnapshotOptions() {
     return { execArgv: ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${HEAP_SNAPSHOT_DIR}`] };
 }
 
-const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0 });
+const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0, lateMaxMs: 0 });
 
 class ColdSimulationCoordinator {
     constructor(options = {}) {
@@ -151,6 +152,10 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
         this.busyWindow = emptyBusyWindow();
+        // The worker's cumulative step lateness counts at the last health line, and that
+        // line's window (StepLateness.summary plus its counts): the perf report reads it.
+        this.stepLateTaken = null;
+        this.stepLateWindow = null;
         this.lastWorkerMessage = null;
         this.terminateCause = null;
         this.lastWatchdogAt = 0;
@@ -316,19 +321,22 @@ class ColdSimulationCoordinator {
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
-            admitEarlyFlush: () => {
+            // A full worker window commits at once only within the governor's budget (with a
+            // player 50 ms/s): about 1.85 ms of main per row, so 40-50 steps/s would take 75-90 ms/s
+            // of main. Asks one DB slice, admitted while a third of it is left, charged what it took.
+            admitWindowFlush: () => {
                 const pressure = this.desiredWorkerPressure();
                 if (pressure.lagMs >= Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)) return null;
                 const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+                const requestedBudgetMs = Math.max(8, Number(Config.schedulerSliceMs) || 12);
                 const admission = governor.admit({
-                    job: 'cold_commit_early', resource: 'sqlite-heavy',
-                    requestedBudgetMs: Math.max(8, Number(Config.schedulerSliceMs) || 12),
-                    minimumBudgetMs: EARLY_COMMIT_ROW_BUDGET_MS,
+                    job: 'cold_commit_window', resource: 'sqlite-heavy',
+                    requestedBudgetMs, minimumBudgetMs: Math.ceil(requestedBudgetMs / 3),
                     playerProtected: pressure.player, lagMs: pressure.lagMs
                 });
                 return admission.ok ? admission.lease : null;
             },
-            completeEarlyFlush: (lease, durationMs) => {
+            completeWindowFlush: (lease, durationMs) => {
                 invoke('GameServer/Bot/Population/BackgroundWorkGovernor').complete(lease, { durationMs });
             }
         });
@@ -466,11 +474,20 @@ class ColdSimulationCoordinator {
         window.idleMs += Number(payload.eluIdleMs) || 0;
         window.maxElu = Math.max(window.maxElu, Number(payload.eventLoopUtilization) || 0);
         window.lagMs = Math.max(window.lagMs, Number(payload.eventLoopLagMaxMs) || 0);
+        window.lateMaxMs = Math.max(window.lateMaxMs, Number(payload.stepLateMaxMs) || 0);
     }
 
+    // Also closes the window of step lateness (stepLateWindow): the steps committed since the last line.
     takeBusyWindow() {
         const window = this.busyWindow;
         this.busyWindow = emptyBusyWindow();
+        const counts = this.lastWorkerSnapshot?.stepLate;
+        if (Array.isArray(counts)) {
+            const since = StepLateness.since(counts, this.stepLateTaken);
+            this.stepLateTaken = counts.slice();
+            this.stepLateWindow = { ...StepLateness.summary(since, window.lateMaxMs), counts: since };
+        }
+        window.due = this.stepLateWindow;
         return window;
     }
 
@@ -2451,6 +2468,7 @@ class ColdSimulationCoordinator {
             failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
+            stepLate: this.stepLateWindow,
             ackState: { ...this.ackState },
             nearDecisions: { ...this.nearDecisions },
             competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,

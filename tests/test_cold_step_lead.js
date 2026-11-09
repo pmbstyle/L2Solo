@@ -3,6 +3,7 @@ require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const StepLateness = require('../src/GameServer/Bot/Population/StepLateness');
 Data.init();
 
 // A far step starts early by its lead, the start -> commit ack time the
@@ -108,6 +109,46 @@ function world() {
     }
 
     {
+        // How late a step's commit lands past its due (the heartbeat's stepLate, its longest
+        // since the last beat): 1.5 s for a step started at its due and committed 1.5 s later;
+        // 0 for one started its lead early and committed before its due.
+        const { kernel, tickAt, commit } = world();
+        const T = 100000;
+        kernel.upsert({ state: soloState(2, T) });
+        assert.deepStrictEqual(await tickAt(T), [2]);
+        commit(2, 1500, T);
+        assert.strictEqual(kernel.takeStepLateMax(), 1500);
+        assert.strictEqual(kernel.takeStepLateMax(), 0, 'the longest is taken once');
+        const lead = kernel.stepLeadMs, T3 = T + 100000;
+        assert(lead > 100, 'the slow commit measured a lead');
+        kernel.upsert({ state: soloState(3, T3) });
+        assert.deepStrictEqual(await tickAt(T3 - Math.ceil(lead)), [3]);
+        commit(3, Math.floor(lead) - 50, T3 - Math.ceil(lead));
+        assert.strictEqual(kernel.takeStepLateMax(), 0);
+        const counts = kernel.heartbeatSnapshot().stepLate;
+        assert.strictEqual(counts[StepLateness.bucketOf(1500)], 1);
+        assert.strictEqual(counts[StepLateness.bucketOf(0)], 1);
+        assert.deepStrictEqual(StepLateness.summary(counts, 1500), { steps: 2, p50Ms: 0, p99Ms: 1500, maxMs: 1500 });
+    }
+    {
+        // A bot queued long after its stored due (a save from days ago, a bot back cold)
+        // is late only from when it entered the queue: 1.5 s, not the save's age; a bot
+        // due when it is queued and committed 2 s later is 2 s late.
+        const { kernel, clock, tickAt, commit } = world();
+        const T = 100000, DAY = 24 * 3600 * 1000;
+        clock.at = T + 6 * DAY;
+        kernel.upsert({ state: soloState(4, T) });
+        assert.deepStrictEqual(await tickAt(T + 6 * DAY), [4]);
+        commit(4, 1500, T + 6 * DAY);
+        assert.strictEqual(kernel.takeStepLateMax(), 1500);
+        const T5 = T + 6 * DAY + 60000;
+        clock.at = T5;
+        kernel.upsert({ state: soloState(5, T5) });
+        assert.deepStrictEqual(await tickAt(T5), [5]);
+        commit(5, 2000, T5);
+        assert.strictEqual(kernel.takeStepLateMax(), 2000);
+    }
+    {
         // Slow commits (1.5 s from start to ack): the lead rises toward them,
         // so a bot due at T starts before T, never more than its slowest step
         // early, and its round is resolved and committed as of T.
@@ -210,6 +251,45 @@ function world() {
         clock.at = T - 3000;
         assert(kernel.stepLeadMs > 1000, 'slow commits measured a lead');
         assert.strictEqual(kernel.nextWakeAt(), T - kernel.stepLeadMs, 'a retry at the top does not hide an earlier lead start');
+    }
+
+    {
+        // A step's phases run in their own turns: what arrives between its plan and its round
+        // (a message, a timer) is handled there, and a fence arriving then ends the step:
+        // its round is never resolved and nothing is sent.
+        for (const fenced of [false, true]) {
+            const clock = { at: 100000 }, order = [], sent = [];
+            const kernel = new ColdSimulationKernel({
+                now: () => clock.at,
+                flushTargetMs: FLUSH_MS,
+                planLifecycle: ({ state }) => {
+                    setImmediate(() => { order.push('message'); if (fenced) kernel.fence(1); });
+                    return { plannedState: state };
+                },
+                resolveSolo: ({ timestamp }) => {
+                    order.push('round');
+                    return { patch: {}, events: [], nextResolveAt: timestamp + ROUND_MS,
+                        materialize: { exp: 0, sp: 0, adena: 0, items: [] }, debug: {} };
+                },
+                projectResolve: (state, result, timestamp, lifecyclePlan, writtenAt) => Life.prepareResolve(state, result,
+                    { timestamp, writtenAt, persist: false, projectClassProgression: true }),
+                emit: (type, payload) => { if (type === 'proposal_batch') sent.push(...payload.proposals); return true; }
+            });
+            kernel.upsert({ state: soloState(1, clock.at) });
+            kernel.tick();
+            await kernel.resolveChain;
+            clock.at += FLUSH_MS;
+            kernel.flushDue();
+            assert.strictEqual(order[0], 'message', 'a message waits one phase, not the whole step');
+            if (fenced) {
+                assert.deepStrictEqual(order, ['message'], 'a fence between the phases ends the step before its round');
+                assert.strictEqual(sent.length, 0);
+                assert.strictEqual(kernel.inFlight.size, 0);
+            } else {
+                assert.deepStrictEqual(order, ['message', 'round']);
+                assert.strictEqual(sent.length, 1, 'the step goes on and sends its proposal');
+            }
+        }
     }
 
     console.log('Cold step lead: a step starts its measured lead early, is resolved and committed as of its due; its row keeps the real write stamp; a retry at the top does not hide a lead start; commands keep their due passed');

@@ -1104,6 +1104,27 @@ tables.watch('meetings', {
     put: key => { playerWaits.add(Number(key)); kernel?.ensureScheduled(Number(key)); },
     remove: key => { playerWaits.delete(Number(key)); kernel?.ensureScheduled(Number(key)); }
 }, { retain: false });
+// The real players' activation rings ('player_rings', PlayerRings on main): a bot inside
+// one goes first in the due queue (the kernel's withinPlayerRing); a ring that comes,
+// moves or goes reschedules the bots inside the old and the new one.
+const playerRings = new Map();
+tables.watch('player_rings', {
+    reset: () => {
+        const previous = [...playerRings.values()];
+        playerRings.clear();
+        kernel?.playerRingMoved(...previous);
+    },
+    put: (key, row) => {
+        const previous = playerRings.get(Number(key));
+        playerRings.set(Number(key), row);
+        kernel?.playerRingMoved(previous, row);
+    },
+    remove: key => {
+        const previous = playerRings.get(Number(key));
+        playerRings.delete(Number(key));
+        kernel?.playerRingMoved(previous);
+    }
+}, { retain: false });
 // A player's meeting anchor ('player_anchors', TradeMeetingService): offer
 // admission reads it for a counterparty with no life state (PartyAdmission).
 const playerAnchors = new Map();
@@ -1771,6 +1792,7 @@ function startKernel(config = {}) {
         partyMinSize: Config.partyMinSize,
         hallNeeded,
         playerWaiting: id => playerWaits.has(id),
+        playerRings: () => playerRings,
         raidRow: id => tables.rows('raids').get(id) || null,
         spotOf: standingSpot,
         equipmentBridgeReason: bridgeReason,
@@ -2290,7 +2312,7 @@ function startKernel(config = {}) {
                 competition: { mode: 'addressed', at: frame.at, events: [], frame: { ...frame, events: [] } },
                 tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
                 eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
-                eventLoopLagMaxMs: large
+                eventLoopLagMaxMs: large, stepLateMaxMs: large
             }, 'x'.repeat(160));
             return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, []);
         } });
@@ -2312,7 +2334,7 @@ function startKernel(config = {}) {
             // The beat's busy share and its active / idle ms: main sums the ms into the health line's
             // busy share over its own window (a beat delayed by a long task lasts longer).
             eventLoopUtilization: elu.utilization, eluActiveMs: elu.active, eluIdleMs: elu.idle,
-            eventLoopLagMaxMs: lagMaxMs,
+            eventLoopLagMaxMs: lagMaxMs, stepLateMaxMs: kernel.takeStepLateMax(),
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: outbox.snapshot(),

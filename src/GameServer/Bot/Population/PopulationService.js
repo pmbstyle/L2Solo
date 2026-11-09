@@ -34,6 +34,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const DecisionEvents = require('../AI/DecisionEvents');
+const PlayerRings = require('./PlayerRings');
 const DecisionSections = require('../Economy/DecisionSections');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdShotEconomyService = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
@@ -1723,6 +1724,9 @@ const PopulationService = {
     activateNearPlayers() {
         this.activationRowsLeft = false;
         const players = this.realPlayerSessions();
+        // Where the players stand for this scan: the cold worker steps the bots inside first.
+        PlayerRings.publish(players.map(session => ({ characterId: session.actor?.fetchId?.(),
+            locX: session.actor?.fetchLocX?.(), locY: session.actor?.fetchLocY?.() })), Number(Config.activationRadius) || 9000);
         if (players.length === 0) return Promise.resolve([]);
 
         const activated = [];

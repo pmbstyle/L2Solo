@@ -4,9 +4,6 @@ const Protocol = require('./ColdSimulationProtocol');
 const InventorySummary = require('./InventorySummary');
 const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
-// Admission and batch sizing must agree on the cost of one ordinary row.
-const EARLY_COMMIT_ROW_BUDGET_MS = 4;
-
 // The queue used to poll every 25 ms. It now sleeps until an entry is due, but
 // wakes only on that same 25 ms grid, so entries that fall due between two
 // ticks are still taken together in one batch (the commit batching is kept).
@@ -58,10 +55,10 @@ class ColdCommitQueue {
         this.onResults = options.onResults || (() => {});
         this.onPause = options.onPause || (() => {});
         this.onResume = options.onResume || (() => {});
-        this.admitEarlyFlush = options.admitEarlyFlush || (() => null);
-        this.completeEarlyFlush = options.completeEarlyFlush || (() => {});
+        // The governor's lease for a full-window commit (null: not now) and its charge.
+        this.admitWindowFlush = options.admitWindowFlush || (() => null);
+        this.completeWindowFlush = options.completeWindowFlush || (() => {});
         this.capacityPressure = false;
-        this.nextEarlyAttemptAt = 0;
         this.now = options.now || Date.now;
         this.targetMs = Math.max(100, Number(options.targetMs) || 2000);
         this.hardMs = Math.max(this.targetMs, Number(options.hardMs) || 5000);
@@ -107,9 +104,8 @@ class ColdCommitQueue {
             pauses: 0,
             resumes: 0,
             highWaterHits: 0,
-            earlyAttempts: 0,
-            earlyDenied: 0,
-            earlyEmpty: 0,
+            windowFlushes: 0,
+            windowDenied: 0,
             timerArms: 0,
             timerFires: 0,
             timerIdle: 0,
@@ -117,8 +113,12 @@ class ColdCommitQueue {
         };
     }
 
-    // Set by the coordinator when the worker reports a full inventory or
-    // clan-hall capacity: the early flush then needs a wake-up of its own.
+    // Set by the coordinator when the worker reports that every one of its step
+    // slots waits on main (or a party waits for slots): no row can join the
+    // queued ones before an ack frees a slot, so waiting for a fuller batch buys
+    // nothing. The ready rows commit at the next tick, admitted by the governor;
+    // a refused admission leaves them to their own age (overdueMs). Held until
+    // the queue is empty.
     get capacityBlocked() { return this.capacityPressure; }
 
     set capacityBlocked(value) {
@@ -167,7 +167,7 @@ class ColdCommitQueue {
         const { lanes, overdueAt, readyAt } = this.scheduleState();
         if (force) return readyAt;
         return Math.min(lanes.P0.dueAt, lanes.P1.dueAt, lanes.P2.dueAt, overdueAt,
-            this.capacityPressure ? Math.max(readyAt, this.nextEarlyAttemptAt) : Infinity);
+            this.capacityPressure ? readyAt : Infinity);
     }
 
     // Sleeps until the next due entry. Called wherever the due set can change:
@@ -392,35 +392,30 @@ class ColdCommitQueue {
     async flushDue(force = false) {
         if (this.flushing) return false;
         let batch = this.takeBatch(force);
-        let earlyLease = null;
-        if (!batch.length && this.capacityBlocked && this.size()
-            && this.now() >= Math.max(this.nextEarlyAttemptAt, this.nextDueAt(true))) {
-            DiagnosticConfig.developerDiagnostics && (this.counters.earlyAttempts += 1);
-            this.nextEarlyAttemptAt = this.now() + 100;
-            earlyLease = this.admitEarlyFlush();
-            if (earlyLease) {
-                // Free a few ownership slots without introducing a full idle
-                // batch into a player window. Atomic groups are never split.
-                const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / EARLY_COMMIT_ROW_BUDGET_MS)));
-                batch = this.takeBatch(true, rowLimit);
-                if (batch.length) this.lastBatchReason = 'capacity';
-                else DiagnosticConfig.developerDiagnostics && (this.counters.earlyEmpty += 1);
+        let windowLease = null;
+        if (!batch.length && this.capacityPressure && this.size() && this.nextDueAt(true) <= this.now()) {
+            windowLease = this.admitWindowFlush();
+            if (windowLease) {
+                batch = this.takeBatch(true);
+                if (batch.length) this.lastBatchReason = 'window';
             } else {
-                DiagnosticConfig.developerDiagnostics && (this.counters.earlyDenied += 1);
+                DiagnosticConfig.developerDiagnostics && (this.counters.windowDenied += 1);
+                this.capacityPressure = false;
             }
         }
         if (!batch.length) {
-            if (earlyLease) this.completeEarlyFlush(earlyLease, 0);
+            if (windowLease) this.completeWindowFlush(windowLease, 0);
             this.arm();
             return false;
         }
-        await this.flushBatch(batch, earlyLease);
+        DiagnosticConfig.developerDiagnostics && windowLease && (this.counters.windowFlushes += 1);
+        await this.flushBatch(batch, windowLease);
         if (this.size() && (force || this.p0.length) && this.nextDueAt(true) <= this.now())
             setImmediate(() => this.flushDue(force));
         return true;
     }
 
-    async flushBatch(batch, earlyLease = null, settleDeferred = false) {
+    async flushBatch(batch, windowLease = null, settleDeferred = false) {
         this.flushing = true;
         const reason = this.lastBatchReason || 'unknown';
         if (DiagnosticConfig.developerDiagnostics) this.flushReasons[reason] = Number(this.flushReasons[reason] || 0) + 1;
@@ -499,7 +494,7 @@ class ColdCommitQueue {
         } finally {
             DiagnosticConfig.developerDiagnostics && this.recordStage('afterCommit', afterCommitMs);
             if (stepMs) for (const [step, ms] of Object.entries(stepMs)) this.recordStep(step, ms);
-            if (earlyLease) this.completeEarlyFlush(earlyLease, this.now() - startedAt);
+            if (windowLease) this.completeWindowFlush(windowLease, this.now() - startedAt);
             if (!this.size()) this.capacityBlocked = false;
             if (DiagnosticConfig.developerDiagnostics) {
             this.samples.commit.push(this.now() - startedAt);
@@ -597,4 +592,4 @@ class ColdCommitQueue {
     }
 }
 
-module.exports = { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS };
+module.exports = { ColdCommitQueue };

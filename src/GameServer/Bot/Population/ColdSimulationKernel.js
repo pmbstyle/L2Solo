@@ -64,6 +64,7 @@ const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
+const StepLateness = require('./StepLateness');
 
 class DueHeap {
     constructor() {
@@ -83,7 +84,7 @@ class DueHeap {
     }
 
     // A derived minimum on the SAME heap nodes; normal heads never hide a
-    // player's wait, a meeting's travel or a round that starts its lead early
+    // bot that matters to a player (forPlayer), a meeting's travel or a round that starts its lead early
     // (`lead`) behind an entry held to its due. A node's heads read only its
     // own entry and its two children's heads, so refreshing from the deepest
     // changed node to the root rebuilds every head a sift changed.
@@ -91,7 +92,7 @@ class DueHeap {
         const values = this.values, length = values.length;
         while (index >= 0) {
             const own = values[index];
-            let player = own?.playerWaiting ? own : null;
+            let player = own?.forPlayer ? own : null;
             let meeting = own?.meetingTravel ? own : null;
             let lead = own?.lead ? own : null;
             for (let child = index * 2 + 1; child <= index * 2 + 2 && child < length; child++) {
@@ -220,7 +221,7 @@ function deterministicRandom(state = {}) {
 // meeting point ('meetings'). A caller without a kernel (BotLifeState, a
 // test) reads none.
 const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [],
-    hallNeeded: () => false, playerWaiting: () => false });
+    hallNeeded: () => false, playerWaiting: () => false, withinPlayerRing: () => false });
 
 // party: the party row this bot leads, or null; members: its member states.
 function partyIntegrityInvalid(party, members, partySession = {}) {
@@ -466,6 +467,20 @@ function occupationRound(state, plan, timestamp, record) {
 function playerWaitingTransition(state, kind = null, facts = NO_FACTS) {
     return !!state?.stats?.tradeMeeting && facts.playerWaiting(state.characterId)
         && (kind ?? lifecycleKind(state, facts)) === 'resolver';
+}
+
+// From when a step counts as late: its due, or the time its bot entered the queue
+// when that came later (a stored due from before boot, or before the bot went cold
+// or left a busy state, is not lateness of the queue).
+function lateFrom(entry) {
+    return Math.max(Number(entry.dueAt || 0), Number(entry.queuedAt || 0));
+}
+
+// A bot that matters to a player goes first in the due queue (DueHeap's player head,
+// dueCandidates): one the player waits for at a meeting, or one within the activation
+// radius of a real player's last published ring (it may go hot at the next scan).
+function forPlayerEntry(state, kind = null, facts = NO_FACTS) {
+    return playerWaitingTransition(state, kind, facts) || facts.withinPlayerRing(state);
 }
 
 function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
@@ -715,6 +730,8 @@ class ColdSimulationKernel {
         // the player's meeting waits ('meetings') and a raid boss's row ('raids').
         this.hallNeedOf = typeof options.hallNeeded === 'function' ? options.hallNeeded : () => false;
         this.waitingOf = typeof options.playerWaiting === 'function' ? options.playerWaiting : () => false;
+        // The real players' activation rings ('player_rings': [{ locX, locY, radius }], main's scan).
+        this.ringsOf = typeof options.playerRings === 'function' ? options.playerRings : () => null;
         this.raidRowOf = typeof options.raidRow === 'function' ? options.raidRow : () => null;
         // The spot a bot stands at (SpotService.standingSpot over the worker's
         // spot catalog), computed when a step reads it.
@@ -735,6 +752,10 @@ class ColdSimulationKernel {
         // How early a far step starts before its due (STEP_LEAD_*), measured
         // on this thread's own commit acks (onCommitAck); 0 until the first.
         this.stepLeadMs = 0;
+        // Each committed step's lateness (StepLateness: ack minus due), cumulative,
+        // and the longest since the last heartbeat took it (takeStepLateMax).
+        this.stepLate = StepLateness.empty();
+        this.stepLateMaxMs = 0;
         this.partyRuns = new Map();
         this.dirty = new Map();
         this.commanding = new Set();
@@ -919,6 +940,43 @@ class ColdSimulationKernel {
         return this.waitingOf(Number(characterId)) === true;
     }
 
+    // Whether this bot stands within a real player's activation ring (none: no player online).
+    withinPlayerRing(state) {
+        const rings = this.ringsOf();
+        if (!rings?.size) return false;
+        const x = Number(state?.loc?.locX), y = Number(state?.loc?.locY);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+        for (const ring of rings.values()) {
+            const dx = x - ring.locX, dy = y - ring.locY;
+            if (dx * dx + dy * dy <= ring.radius * ring.radius) return true;
+        }
+        return false;
+    }
+
+    // A real player's ring came, moved or went: the bots inside the old or the new one take
+    // their place in the due queue again (ensureScheduled reads withinPlayerRing).
+    playerRingMoved(...rings) {
+        const seen = new Set();
+        for (const ring of rings) {
+            if (!ring) continue;
+            let records;
+            try {
+                records = this.states.locationIndex.nearSources({ locX: ring.locX, locY: ring.locY, locZ: 0 }, ring.radius,
+                    { view: 'state', kind: 'all' });
+            } catch (error) {
+                FailureLog.note('cold.player_ring', error);
+                continue;
+            }
+            for (const record of records) {
+                const id = Number(record.id);
+                if (seen.has(id)) continue;
+                seen.add(id);
+                this.ensureScheduled(id);
+            }
+        }
+        return seen.size;
+    }
+
     // A raid spot with its boss's live row (instance, authority, engagement,
     // availability); any other spot as it is.
     raidSpot(spot) {
@@ -1096,7 +1154,10 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         // Replacing a token also removes its actual indexed node; otherwise a
         // long future deadline keeps every superseded token until it is due.
-        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
+        const previous = this.scheduleTokens.get(id)?.heapEntry;
+        // Since when the bot waits in the queue: a replaced token keeps it.
+        const queuedAt = previous && this.heap.positions.has(previous) ? previous.queuedAt : this.now();
+        this.heap.remove(previous);
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
         // A failing bot's hold (fault) wins over every other wake: a catalog
@@ -1107,8 +1168,8 @@ class ColdSimulationKernel {
         if (holdUntil > (lead ? due - this.stepLeadMs : due)) { dueAt = Math.max(due, holdUntil); lead = false; }
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
-            playerWaiting: playerWaitingTransition(current?.state, kind, this),
-            meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
+            forPlayer: forPlayerEntry(current?.state, kind, this),
+            meetingTravel: meetingTravelTransition(current?.state, kind, this), lead, queuedAt };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
     }
@@ -1191,7 +1252,7 @@ class ColdSimulationKernel {
         if (!current || this.busy(id)) return false;
         if (this.hasNormalCoverage(id)) {
             const scheduled = this.scheduleTokens.get(id);
-            if (scheduled.heapEntry.playerWaiting !== playerWaitingTransition(current.state, kind, this)
+            if (scheduled.heapEntry.forPlayer !== forPlayerEntry(current.state, kind, this)
                 || scheduled.heapEntry.meetingTravel !== meetingTravelTransition(current.state, kind, this)) {
                 this.schedule(id, current.version, scheduled.dueAt, kind, scheduled.heapEntry.lead);
             }
@@ -1234,8 +1295,9 @@ class ColdSimulationKernel {
         while (candidates.length + commandsSelected < limit && this.heap.size > 0) {
             const waiting = this.heap.peekPlayer();
             const transit = !meetingSelected && this.heap.peekMeeting();
-            // One due paid arrival goes ahead of the ordinary hunt backlog;
-            // the rest of this batch keeps its existing deadline order.
+            // Every due bot that matters to a player goes ahead of the ordinary
+            // backlog (forPlayer), then one due meeting traveller; the rest of
+            // this batch keeps its deadline order.
             const head = waiting && this.startAt(waiting) <= timestamp ? waiting
                 : transit && this.startAt(transit) <= timestamp ? transit : this.heap.peek();
             if (Number(head.dueAt || 0) > startBy) break;
@@ -1269,7 +1331,7 @@ class ColdSimulationKernel {
                 ? 'command' : lifecycleKind(current.state, this);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
-                this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt) });
+                this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt), lateFrom: lateFrom(entry) });
                 Trace.hold(id);
                 candidates.push({ characterId: id, purpose: { kind: 'resolver' } });
             } else if (kind === 'party') {
@@ -1371,7 +1433,8 @@ class ColdSimulationKernel {
                 });
                 candidateMemberIds.forEach((memberId) => {
                     const member = partyMembers.find((entry) => Number(entry.characterId) === memberId);
-                    this.inFlight.set(memberId, { state: member, startedAt, partyId: String(party.partyId) });
+                    this.inFlight.set(memberId, { state: member, startedAt, dueAt: Number(entry.dueAt), lateFrom: lateFrom(entry),
+                        partyId: String(party.partyId) });
                     Trace.hold(memberId);
                     candidates.push({ characterId: memberId, purpose });
                 });
@@ -2189,6 +2252,9 @@ class ColdSimulationKernel {
             if (run.requirementRefresh) openRequirements('event');
             const Refresh = require('./PartyRequirementRefresh'), planned = new Map();
             for (const { state, result } of resolution.memberResults || []) {
+                // One member's projection per turn (resolveStep: phases).
+                await nextTurn();
+                if (!current()) return;
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
                     ? await this.projectResolve(state, result, startedAt, null, resolveStartedAt)
@@ -2350,6 +2416,12 @@ class ColdSimulationKernel {
             const lifecyclePlan = !raidPreparing && !guide && this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, timestamp })
                 : null;
+            // Each phase (plan, round, projection) is its own turn: acks, near asks and
+            // pages wait one phase, not the whole step. The step reads only its own copy
+            // (active.state), a fence or remove in between ends it here, and a row main
+            // moved meanwhile refuses its commit (the revision it started from); the world
+            // it reads (spot hunters, the board) is the world as it stands at each phase.
+            await nextTurn();
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
@@ -2372,7 +2444,9 @@ class ColdSimulationKernel {
             const first = { state: resolveState, result, timestamp };
             const round = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
                 startedAt + STEP_LEAD_MAX_MS) ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;
-            if (!round || !this.resolverSourceCurrent(source)) return;
+            if (!round) return;
+            await nextTurn();
+            if (!this.resolverSourceCurrent(source)) return;
             // The step's one decision (its economy, worker-local) travels
             // through the round: the projection asks no second one.
             const projection = this.projectResolve
@@ -2457,6 +2531,9 @@ class ColdSimulationKernel {
             // when it is the last; a round's own clock (lastResolvedAt) is the same.
             const stamped = { ...round.result, patch: { ...round.result.patch,
                 stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
+            // A round's projection is its own turn, as its fight is (resolveStep: phases).
+            await nextTurn();
+            if (!this.resolverSourceCurrent(source)) return null;
             const after = await projectRound(round.state, stamped, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
             // Three guards bound the loop whatever endOf decides: a round cap, the
@@ -2586,18 +2663,6 @@ class ColdSimulationKernel {
         // to 32 characters, so off need only preserve the original shape.
         if (!Object.hasOwn(this.stats.flushReasons, reason)) this.stats.flushReasons[reason] = 0;
         DiagnosticConfig.developerDiagnostics && (this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1);
-        // Sent proposals keep their in-flight slots until the commit ACK.
-        // Priority and party flushes can fill that window just like a timer flush.
-        const capacityBlocked = this.partyCapacityBlocked === true
-            || this.inFlight.size + this.commanding.size >= this.maxInFlight;
-        // Each proposal's measured size travels with it, so the main commit
-        // queue need not serialise it again (the list fits the 16 KiB left
-        // between the payload limit and the message limit).
-        // The payload's JSON size follows from the sizes already counted:
-        // { proposals } and { proposalBytes, capacityBlocked } joined by a
-        // comma, less the brace each drops. send() need not serialise it again.
-        const tail = { proposalBytes, capacityBlocked };
-        const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
         for (const proposal of proposals) {
             const active = this.inFlight.get(Number(proposal.characterId));
             if (active && stepProposalId(proposal.characterId, active.startedAt) === proposal.proposalId) {
@@ -2611,6 +2676,20 @@ class ColdSimulationKernel {
                 active.proposed = proposed.get(Number(proposal.characterId));
             }
         }
+        // Sent proposals keep their in-flight slots until the commit ACK. With
+        // the window full and every step in it sent (a command waits on main
+        // too), nothing more comes before an ack: main commits what it holds at
+        // once. A party waiting for slots asks the same.
+        const capacityBlocked = this.partyCapacityBlocked === true
+            || this.inFlight.size + this.commanding.size >= this.maxInFlight && this.everyStepSent();
+        // Each proposal's measured size travels with it, so the main commit
+        // queue need not serialise it again (the list fits the 16 KiB left
+        // between the payload limit and the message limit).
+        // The payload's JSON size follows from the sizes already counted:
+        // { proposals } and { proposalBytes, capacityBlocked } joined by a
+        // comma, less the brace each drops. send() need not serialise it again.
+        const tail = { proposalBytes, capacityBlocked };
+        const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
         if (this.emit('proposal_batch', { proposals, ...tail }, null, payloadBytes) === false) {
             // Never sent: no ack comes, the stall recovery frees these steps.
             for (const proposal of proposals) {
@@ -2619,6 +2698,12 @@ class ColdSimulationKernel {
             }
         }
         return proposals.length;
+    }
+
+    // No step in the window is still running or unsent (at most maxInFlight entries).
+    everyStepSent() {
+        for (const active of this.inFlight.values()) if (!active.pendingCommitId) return false;
+        return true;
     }
 
     flushDue() {
@@ -2665,6 +2750,7 @@ class ColdSimulationKernel {
             Trace.settle(id, result.ok);
             // A committed step ends the bot's (its party run's) faults in a row.
             if (result.ok) {
+                this.noteStepLate(active.lateFrom);
                 this.clearFault(id);
                 if (active.partyId) this.clearFault(`party:${active.partyId}`);
                 // Its grievances are written: counted once.
@@ -2733,6 +2819,21 @@ class ColdSimulationKernel {
             }
         }
         return accepted;
+    }
+
+    // A committed step's lateness: this ack's time past lateFrom (none for a step with no due).
+    noteStepLate(from) {
+        if (!Number.isFinite(from) || from <= 0) return;
+        const lateMs = Math.max(0, this.now() - from);
+        this.stepLate[StepLateness.bucketOf(lateMs)] += 1;
+        this.stepLateMaxMs = Math.max(this.stepLateMaxMs, lateMs);
+    }
+
+    // The longest lateness since the last call (the worker's heartbeat).
+    takeStepLateMax() {
+        const maxMs = this.stepLateMaxMs;
+        this.stepLateMaxMs = 0;
+        return maxMs;
     }
 
     // One-sided average of start -> commit ack, excluding event waits (STEP_LEAD_*).
@@ -2962,6 +3063,7 @@ class ColdSimulationKernel {
             failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts(),
                 ...(swallowed ? { swallowed } : {}) },
             stepLeadMs: Math.round(this.stepLeadMs),
+            stepLate: this.stepLate.slice(),
             soloWindow: this.soloWindowStats,
             nodeCapBuilds: invoke('GameServer/Bot/Economy/WishProviders').nodeCapBuildCount(), // lazy: the kernel's boot order
             asksPastDepth: invoke('GameServer/Bot/Economy/OfferQuery').pastDepthCount(), // lazy: the kernel's boot order

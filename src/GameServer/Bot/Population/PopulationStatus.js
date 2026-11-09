@@ -125,8 +125,11 @@ const PopulationStatus = {
     workerBusyText() {
         const busy = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').takeBusyWindow();
         const ms = busy.activeMs + busy.idleMs;
-        if (!(ms > 0)) return 'workerElu=- workerEluMax=- workerLag=-';
-        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms`;
+        // workerDue=<p50>/<p99>/<max> ms: how late the steps committed since the last line landed
+        // past their due (StepLateness; the percentiles are bucket bounds).
+        const due = busy.due ? `${busy.due.p50Ms}/${busy.due.p99Ms}/${busy.due.maxMs}ms` : '-';
+        if (!(ms > 0)) return `workerElu=- workerEluMax=- workerLag=- workerDue=${due}`;
+        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms workerDue=${due}`;
     },
 
     goalText(queue = {}, coordinator) {
@@ -478,7 +481,7 @@ const PopulationStatus = {
         const commitTriggers = Object.entries(commitQueue.flushReasons || {})
             .map(([reason, count]) => `${reason}:${count}`).join('|') || 'none';
         summary.line += ` heaps=${heapsLine(PopulationStatus.heaps({ coldWorker: worker, history: database.history, checkpoint, pathWorkers }))}`;
-        summary.line += ` commitStages=${commitStages} afterCommitSteps=${afterCommitSteps} commitTriggers=${commitTriggers} commitEarly=${commitQueue.earlyAttempts || 0}/${commitQueue.earlyDenied || 0}/${commitQueue.earlyEmpty || 0}`;
+        summary.line += ` commitStages=${commitStages} afterCommitSteps=${afterCommitSteps} commitTriggers=${commitTriggers} commitWindow=${commitQueue.windowFlushes || 0}/${commitQueue.windowDenied || 0}`;
         // workerFlight=inFlight/dirty/commanding:<oldest command age>/<oldest step age>; workerRecovery=stalled/orphan;
         // workerNearHeld=hot rows older than their near record, kept out (ColdSimulationKernel nearHeld).
         summary.line += ` coldWorker=${coldWorker.ready ? 'ready' : coldWorker.started ? 'starting' : 'stopped'}/${coldWorker.heartbeatAgeMs ?? -1}ms workerState=${worker.paused ? 'paused' : 'running'}/${worker.stopping ? 'stopping' : 'active'}/${worker.heap || 0}h workerLimit=${worker.maxInFlight || 0} workerFlow=${worker.selected || 0}/${worker.resolved || 0}/${worker.proposals || 0} workerQueueHead=${workerQueueHead} workerFlight=${worker.inFlight || 0}/${worker.dirty || 0}/${worker.commanding || 0}:${Math.round(Number(worker.commandingAgeMs || 0) / 1000)}s/${Math.round(Number(worker.inFlightAgeMs || 0) / 1000)}s workerPartyCapacity=${worker.partyCapacityBursts || 0}/${worker.partyCapacityDeferrals || 0} workerFlush=${worker.flushes || 0}/${worker.flushRows || 0}/${worker.lastFlushRows || 0}/${worker.maxFlushRows || 0}:${workerFlushReasons} workerRecovery=${worker.stallRecoveries || 0}/${worker.orphanRecoveries || 0} workerNearHeld=${worker.nearHeld || 0} heldAcks=${coldWorker.heldAcks || 0}/${worker.lateAcks || 0} ackState=${coldWorker.ackState?.with || 0}/${coldWorker.ackState?.without || 0}/${worker.ackUnbuilt || 0} workerPayload=${worker.proposalCompactions || 0}/${worker.proposalOversize || 0}/${worker.proposalOversizeRejected || 0} workerLoop=${Math.round(Number(worker.eventLoopLagP95Ms || 0))}/${Math.round(Number(worker.eventLoopLagMaxMs || 0))}ms ${this.workerBusyText()} commitRefused=${commitRefused} staleCommand=${refusals.staleCommand || 0} reviews=${reviews} workerHeap=${Math.round(Number(worker.heapUsed || 0) / 1024 / 1024)}MB workerHeapGc=${worker.heapAfterGc ? Math.round(worker.heapAfterGc / 1024 / 1024) : '-'}/${worker.heapAfterGcMax10 ? Math.round(worker.heapAfterGcMax10 / 1024 / 1024) : '-'}MB workerRestarts=${coldWorker.workerRestarts || 0} economyDecisions=${coldWorker.economyDecisions?.hits || 0}/${coldWorker.economyDecisions?.misses || 0}/${coldWorker.economyDecisions?.held || 0} ipc=${coldWorker.messagesIn || 0}/${coldWorker.messagesOut || 0}/${coldWorker.invalidMessages || 0}/${coldWorker.duplicateMessages || 0} ipcRejects=${invalidIpcReasons} commitQueue=${commitQueue.depth || 0}/${commitQueue.p0 || 0}/${commitQueue.p1 || 0}/${commitQueue.p2 || 0} commitFlow=${commitQueue.committed || 0}/${commitQueue.stale || 0}/${commitQueue.rejected || 0} commitLag=${commitQueue.queueP95Ms || 0}/${commitQueue.oldestMs || 0}ms commitP95=${commitQueue.commitP95Ms || 0}ms commitBusy=${commitQueue.busy || 0}/${commitQueue.retries || 0}`;

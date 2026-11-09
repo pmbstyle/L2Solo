@@ -53,36 +53,34 @@ async function main() {
     }
 
     try {
+        // A full window commits whole while a third of a DB slice (4 of 12 ms) is left, charged what it took.
         for (const available of [4, 5, 6, 7, 8, 11, 12]) {
             const { queue } = create(available);
-            assert.strictEqual(await queue.flushDue(), true, `${available} ms must admit useful work`);
-            assert.strictEqual(queue.size(), 4 - Math.floor(available / 4), 'batch size must follow the granted budget');
-            assert.strictEqual(Governor.snapshot().jobs.cold_commit_early.grantedMs, available);
+            assert.strictEqual(await queue.flushDue(), true, `${available} ms must admit the window`);
+            assert.strictEqual(queue.size(), 0, 'the whole window commits as one batch');
+            assert.strictEqual(Governor.snapshot().jobs.cold_commit_window.grantedMs, available);
             assert.strictEqual(Governor.snapshot().usedMs, 50 - available + 3, 'charge actual work and return unused reservation');
         }
         for (const available of [0, 1, 2, 3]) {
             const { queue } = create(available);
             assert.strictEqual(await queue.flushDue(), false, 'never bypass an exhausted budget');
             assert.strictEqual(queue.size(), 4);
-            assert.strictEqual(Governor.snapshot().jobs.cold_commit_early.reasons.budget_exhausted, 1);
+            assert.strictEqual(queue.capacityBlocked, false, 'a refused window waits for its own age');
+            assert.strictEqual(Governor.snapshot().jobs.cold_commit_window.reasons.budget_exhausted, 1);
         }
-        const atomic = create(7, true).queue;
-        assert.strictEqual(await atomic.flushDue(), false, 'one-row admission must not split a two-member party');
-        assert.strictEqual(atomic.size(), 2);
-        assert.strictEqual(Governor.snapshot().usedMs, 43, 'an empty atomic selection returns its entire reservation');
-        now += 100;
-        assert.strictEqual(await atomic.flushDue(), true, 'the ordinary critical deadline still commits the whole party');
+        const atomic = create(4, true).queue;
+        assert.strictEqual(await atomic.flushDue(), true, 'a party in a full window commits whole');
         assert.strictEqual(atomic.size(), 0);
 
         const pressured = create(7);
         pressured.coordinator.desiredWorkerPressure = () => ({ player: true, lagMs: 40 });
-        assert.strictEqual(await pressured.queue.flushDue(), false, 'lag protection still rejects early work');
-        now += 100;
+        assert.strictEqual(await pressured.queue.flushDue(), false, 'lag protection still rejects the window');
+        pressured.queue.capacityBlocked = true;
         pressured.coordinator.desiredWorkerPressure = () => ({ player: true, lagMs: 0 });
         Database.stats = () => ({ pending: 1 });
         Database.pending = () => 1;
-        assert.strictEqual(await pressured.queue.flushDue(), false, 'database queue protection still rejects early work');
-        assert.strictEqual(Governor.snapshot().jobs.cold_commit_early.reasons.database_queue, 1);
+        assert.strictEqual(await pressured.queue.flushDue(), false, 'database queue protection still rejects the window');
+        assert.strictEqual(Governor.snapshot().jobs.cold_commit_window.reasons.database_queue, 1);
     } finally {
         Date.now = originalNow;
         Metrics.currentEventLoopLag = originalLag;
@@ -91,7 +89,7 @@ async function main() {
         Object.assign(Config, saved);
         Governor.reset();
     }
-    console.log('Cold commit partial-budget admission and protection checks passed');
+    console.log('Cold commit full-window admission and protection checks passed');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
