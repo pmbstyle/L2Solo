@@ -625,6 +625,30 @@ test('a body pushed off its ground with no spot published asks once, as the far 
     assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 
+test('a body pushed off its ground with no spot gets ready where it stands, as the cold round does', () => {
+    // A summoner short of its summon's MP after a streak of empty scans: the ground admits its fights
+    // only with its pet up (the route's view), so it sits rather than search on with nothing to fight.
+    const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup'), Tactics = invoke('GameServer/Bot/AI/SummonerTactics');
+    const restoreAt = restores.length, asIs = [{ as: 'is' }], ready = [{ as: 'ready' }];
+    try {
+        stub(Matchup, 'actorProfiles', () => asIs);
+        stub(Matchup, 'actorReadyProfiles', () => ready);
+        stub(Matchup, 'spotShares', profiles => profiles);
+        stub(Matchup, 'admitsNone', shares => shares === asIs);
+        stub(Tactics, 'petRestView', () => null);
+        stub(Tactics, 'summonSkills', () => [{ fetchConsumedMp: () => 700 }]);
+        stub(Tactics, 'summonSkill', () => null);
+        stub(invoke('GameServer/Bot/AI/RestPolicy'), 'restWaitsForMana', () => true);
+        const empty = { woken: 0, earning: { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at: 1 } };
+        const f = fixture(primary.center, leaf, { ...empty, spotMarks: [{ spotId: primary.id, reason: 'contest_lost' }] });
+        f.session.noTargetTicks = 3;
+        const decision = Decision.suggest(f.session.botStatus, f.session);
+        assert.deepEqual([decision.action, decision.reason], ['rest', 'ground_needs_rest'], 'it sits for its MP');
+        assert(Situations.woken(f.session.coldLifeState.stats, 'earning_spot'), 'and still asks the decision again (spot_empty)');
+        assert.equal(searchCalls.length, 0, 'main searches no spot');
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('an errand it cannot start in town does not hold the body there: it walks to its spot', () => {
     // The build answered a visit's end with an errand run in the field (pvp): no ground holds the
     // body in town, so it goes hunting where the worker's route publishes, the errand kept.

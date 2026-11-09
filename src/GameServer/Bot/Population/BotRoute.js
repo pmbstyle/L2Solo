@@ -404,7 +404,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     } else {
         EconomyDiagnostics.count('route', 'trip', 'held_choice');
         if (chosen?.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
-        // Ground its marks exclude (pushed off it: a contest lost) is no ground to stay on: it asks as a bot on none.
+        // Ground its marks exclude (a contest lost, danger, deaths there) is no ground to stay on: it asks as a bot on none.
         else if ((!currentSpot || frame.excludedSpotIds.has(String(currentSpot.id)))
             && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
             return { needed: false, ask: 'spot_empty' };
@@ -494,9 +494,9 @@ function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
         ? null : planSource(hunter, spots, frame);
     if (source) return { spotId: String(source.id) };
     let chosen = heldChoice(hunter, spots, frame);
-    // Pushed off its spot (its marks exclude it) while its earning answer names none: the
-    // leveling goal decides (choose, which never keeps excluded ground), as for a bot with no
-    // answer; a C4 player who lost his camp and knows no better one goes to level elsewhere,
+    // On a spot its marks exclude (a contest lost, danger, deaths there) while its earning answer
+    // names none: the leveling goal decides (choose, which never keeps excluded ground), as for a
+    // bot with no answer; a C4 player who left his camp and knows no better one goes to level elsewhere,
     // not back to it. Its reads are in the held key (the answer's spot, the exclusions, the spot).
     if (chosen === undefined || chosen.spotId == null && hunter.stats.earning?.spotId == null
         && hunter.spotId != null && frame.excludedSpotIds.has(String(hunter.spotId))) {
