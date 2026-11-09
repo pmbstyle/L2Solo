@@ -17,7 +17,10 @@ function entries(actor, at) {
                 && ['aggression', 'provoked'].includes(row.aggressionRole)
                 && typeof row.episode === 'string' && row.episode.length <= 96
                 && Number.isSafeInteger(row.at) && Number.isSafeInteger(row.startedAt) && row.startedAt <= row.at) {
-                session.pvpIncidents.set(row.opponentId, { ...row });
+                const { openerId, why, ...kept } = row;
+                session.pvpIncidents.set(row.opponentId, { ...kept,
+                    ...(Number.isSafeInteger(openerId) && openerId > 0 ? { openerId } : {}),
+                    ...(typeof why === 'string' && why.length <= 32 ? { why } : {}) });
             }
         }
     }
@@ -72,8 +75,10 @@ function record(attacker, victim, defenders = [], at = Date.now()) {
         // provocation objective, a PK, else nothing that provoked it), which a death or
         // a kill names (Die's trace, the kill's journal row).
         const revenge = attacker.session?.pvpRevenge?.target === victim ? attacker.session.pvpRevenge : null;
-        const why = revenge?.reason || (attacker.session?.plan === 'pk_hunting' || Number(attacker.fetchKarma?.()) > 0
-            ? 'pk' : 'unprovoked');
+        // Striking a red (karma) or flagged victim is no PK: it hunts a PK or answers a fighter.
+        const victimMarked = Number(victim.fetchKarma?.()) > 0 || Number(victim.fetchPvpFlag?.()) > 0;
+        const why = revenge?.reason || (victimMarked ? 'pk_victim'
+            : attacker.session?.plan === 'pk_hunting' || Number(attacker.fetchKarma?.()) > 0 ? 'pk' : 'unprovoked');
         fact = { episode: `native:${id(attacker)}:${id(victim)}:${at}`, startedAt: at, openerId: id(attacker), why,
             responsibility: revenge?.reason === 'mob_competition' ? 'provoked' : 'aggression' };
         fact.aggressionRole = fact.responsibility;
