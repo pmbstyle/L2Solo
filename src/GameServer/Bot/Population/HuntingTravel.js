@@ -39,9 +39,7 @@ function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {
             : route.reason || (state.stats?.equipmentPlan?.status === 'active'
                 ? 'equipment_source_replan'
                 : 'level_replan'),
-        ...(route.cause ? { cause: route.cause } : {}),
-        // The held leaf's spot this trip stands in for (BotRoute.trip).
-        ...(route.leafSpotId != null ? { leafSpotId: route.leafSpotId } : {})
+        ...(route.cause ? { cause: route.cause } : {})
     }, timestamp, {
         // A party travels as one: every member arrives at the party's time.
         sharedMs: isPartyRoute ? Number(route.travelMs) || 0 : 0,

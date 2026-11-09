@@ -16,7 +16,6 @@ const WalkBack = require('../Economy/WalkBack');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const PartyRisk = require('./PartySpotRiskPolicy');
-const { occupiedSpotId } = require('./SpotOccupancyIndex');
 const HOUR_MS = 3600000;
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
@@ -278,15 +277,12 @@ function prepare(members, { objective, party, spots, timestamp } = {}) {
     const gross = Table.value(spot.id, 'dps', level, true) || Table.value(spot.id, 'mage', level, true);
     const safe = Match.spotMatchup(spot, Match.stateProfiles(buffed[0],
         { timestamp, capacityStates: buffed, mode: 'party', buffed: true }), { soloSafety: true }).eligible;
-    // The party's share of the spot (SpotEconomics' crowd, the party taking one share a
-    // member): the spawns its members may fight give back (the highest production of
-    // their rows) over the spot's hunters (those this thread indexes there, the
-    // members not yet there among them); its kills are cut to it. Counted as
-    // party_value:crowd:cut (developer diagnostics).
-    let hunters = invoke('GameServer/Bot/Population/SpotProfiles').spotHunters(spot, members[0]);
-    for (const member of members.slice(1)) if (String(occupiedSpotId(member)) !== String(spot.id)) hunters += 1;
+    // The party's share of the spot: what the spawns its members may fight give back (the
+    // highest production of their rows), the party alone on it, as a solo bot's value shares
+    // a spot only with its own party (SpotEconomics); its kills are cut to it. The live crowd
+    // is met at arrival, never valued. Counted as party_value:crowd:cut (developer diagnostics).
     const forecast = partyKills(cycles);
-    const crowd = Table.huntShare(Math.max(0, ...values.map(row => positive(row?.production))), hunters / members.length, forecast);
+    const crowd = Table.huntShare(Math.max(0, ...values.map(row => positive(row?.production))), 1, forecast);
     if (crowd < 1) invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_value', 'crowd', 'cut');
     const kills = forecast * crowd;
     // A member's share of the party's kills: its share of their damage.

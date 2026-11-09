@@ -45,7 +45,8 @@ function fixture(result = false) {
             session.lastPathfinding = { requestedTo: { ...destination }, at: Date.now(), routeUsable: result };
         }
     };
-    const session = { actor: bot, plan: 'hunting', noTargetTicks: 5,
+    // The spot the worker's one choice names, published in the body's mind.
+    const session = { actor: bot, plan: 'hunting', noTargetTicks: 5, decisionStats: { huntSpot: { spotId: spot.id } },
         heldEconomy: { network: { activity: { activity: 'hunting', spotId: spot.id } },
             stock: () => ({ itemId: 0, usePerHour: 0 }), statsPacket: {} },
         botStatus: { available: true, mode: 'hunting', level: 57, loc: start, blockers: ['no_targets_nearby'],
@@ -73,7 +74,7 @@ try {
     // The walk that could not reach its spot is the earning spot's situation (situations.md B6): its mark keeps
     // the body off that spot, whatever time passes, until the bot's next own situation re-decides it.
     const failedStats = failed.session.decisionStats;
-    assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'walk_route_unavailable', answer: null }]);
+    assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'spot_unreachable' }]);
     assert(Situations.woken(failedStats, 'earning_spot'), 'spot_unreachable wakes the earning spot');
     // and the build: the spot walked to is the hunting leaf's (a material hunt's source spot too), which the build chose.
     assert(Situations.woken(failedStats, 'build'), 'spot_unreachable wakes the build that named the spot');
@@ -81,18 +82,19 @@ try {
     const seq = failedStats.situationSeq;
     const again = { spotId: spot.id, reason: failedStats.spotMarks[0].reason };
     Situations.raise(failedStats, 'spot_unreachable', again, Situations.OPEN);
-    assert.strictEqual(failedStats.situationSeq, seq, 'a spot already marked under the held answer raises nothing new');
+    assert.strictEqual(failedStats.situationSeq, seq, 'a spot already marked raises nothing new');
     assert(scans > 0, 'local target search must resume in the same tick after a failed retry');
     const status = failed.session.botStatus;
-    assert.strictEqual(Decision.suggest(status, failed.session).reason, 'planned_route_unavailable');
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'the marked spot is not walked to');
     status.nearby.attackableNpcs = 0;
     status.nearby.eligibleAttackableNpcs = 0;
     assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings keep the mark');
-    Situations.raise(failedStats, 'grade_changed', null, Situations.OPEN);
-    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake does not drop the mark');
-    // The build taken (its answer received) clears it; a new card naming the spot again sends the body there.
+    Situations.raise(failedStats, 'spot_empty', null, Situations.OPEN);
     failedStats.earning = { spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 5 };
-    failedStats.spotMarks = null;
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake or a new answer does not drop the mark');
+    // The outing ends (a new grade, a town trip, a death): the mark is forgotten, and the worker's choice
+    // naming the spot again sends the body there.
+    Situations.raise(failedStats, 'grade_changed', null, Situations.OPEN);
     assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'and the held spot is walked to again');
 
     const initial = fixture();
@@ -127,9 +129,10 @@ try {
     }
     const expired = fixture();
     expired.session.spotRelocation.startedAt = Date.now() - 121000;
+    expired.session.decisionStats = {}; // no next walk after the timeout: only the timeout is read
     tick(expired);
     assert.strictEqual(expired.session.spotRelocation, undefined);
-    assert(!(expired.session.decisionStats?.spotMarks || []).some(mark => mark.reason === 'walk_timeout'),
+    assert(!(expired.session.decisionStats?.spotMarks || []).length,
         'a timeout (fights on the way) marks nothing: an execution retry, bounded by the relocation timeout');
 
     // A hot bot with karma never uses SoE or a gatekeeper: it walks to its chosen spot.
@@ -140,7 +143,10 @@ try {
     const white = fixture(true);
     const red = fixture(true);
     red.bot.fetchKarma = () => 500;
-    for (const f of [white, red]) f.session.heldEconomy.network.activity.spotId = farSpot.id;
+    for (const f of [white, red]) {
+        f.session.heldEconomy.network.activity.spotId = farSpot.id;
+        f.session.decisionStats = { huntSpot: { spotId: farSpot.id } };
+    }
     assert.strictEqual(Decision.suggest(redStatus, white.session).spot?.id, farSpot.id, 'a white bot executes the selected far hunt');
     assert.strictEqual(Decision.suggest(redStatus, red.session).spot?.id, farSpot.id, 'karma changes how the chosen hunt is reached, not the occupation');
 

@@ -5,8 +5,8 @@ const PartyRisk = require('./PartySpotRiskPolicy');
 const Situations = require('../Situations');
 // Voluntary decisions affect the actor's whole hunting unit, without blame.
 // An avoid is a contest lost: each member raises contest_lost with the spot as its
-// mark (it wakes the earning spot at once; the mark holds until that decision is
-// taken, SpotRiskPolicy.spotMarks): the worker's next step routes it off the spot,
+// mark (it wakes the earning spot at once; the mark lasts the outing,
+// SpotRiskPolicy.LIFETIME): the worker's next step routes it off the spot,
 // as any trip (BotRoute); main searches no spot. A party's avoid is a mark on the
 // party (PartySpotRiskPolicy.withMark): its next step hears contest_lost on its held
 // spot (Situations.detectParty) and its spot decision moves it.

@@ -1,3 +1,4 @@
+const Situations = require('../Situations');
 const MIN_DEATHS_AT_SPOT = 2;
 const MIN_DEATH_RATE = 0.2;
 const RISK_WINDOW_VERSION = 2;
@@ -13,12 +14,18 @@ const MAX_FAILED_HUNTS = 3;
 const FAILED_HUNT_RECOVERY_WINS = 3;
 // Spots a bot's situation ruled out (situations.md B6: spot_unreachable, a walk or
 // gatekeeper relocation that failed; spot_dangerous on ground it may not hunt alone;
-// contest_lost, a spot contest it lost at its arrival, SpotContest):
-// stats.spotMarks [{ spotId, reason, answer }], the latest MAX_SPOT_MARKS kept
-// (limits.md). answer: the held earning answer's time when it was raised (null: none);
-// a mark holds against the search that answer's successor comes from, and lapses when
-// a new answer is held: the bot's next own situation that re-decides the spot. No clock.
+// contest_lost, a spot contest it lost or a spot it found crowded at its arrival,
+// SpotContest): stats.spotMarks [{ spotId, reason: the situation's name }], the latest
+// MAX_SPOT_MARKS kept (the oldest dropped, counted). A mark lasts the bot's outing, whatever answers the
+// earning decision takes meanwhile: forgotten at the situations its reason's LIFETIME
+// lists (Situations' raise applies them, both threads), never by a clock. Our choice: a
+// C4 player who found a camp packed, out of reach or too dangerous does not go back to
+// it until his next trip from town, his death or new gear; a ground too dangerous alone
+// also when he leaves his party. A mark saved with another reason lasts the outing.
 const MAX_SPOT_MARKS = 8;
+const OUTING = Object.freeze(['arrived_town', 'arrived_town:own', 'died', 'gear_changed', 'grade_changed']);
+const LIFETIME = Object.freeze({ contest_lost: OUTING, spot_unreachable: OUTING,
+    spot_dangerous: Object.freeze([...OUTING, 'party_left']) });
 
 function normalizedSpotId(value) {
     const spotId = String(value || '').trim();
@@ -275,7 +282,7 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
 // party's on its held spot answer, PartySpotRiskPolicy).
 // Returns the holder's step at which the first
 // of those marks ends (Infinity: none ends by itself; death pressure ends only by
-// a resolve, a spot mark only by a new earning answer).
+// a resolve, a spot mark only by a situation of its lifetime).
 function addExclusions(state, excluded) {
     let untilStep = Infinity;
     const mark = (spotId, entry) => { excluded.add(spotId); untilStep = Math.min(untilStep, Number(entry.untilStep)); };
@@ -286,24 +293,35 @@ function addExclusions(state, excluded) {
     return untilStep;
 }
 
-// The held answer a mark is tied to: its time (EquipmentIncomeRoute.answerOf's at), null for none.
-const answerKey = stats => stats?.earning ? Number(stats.earning.at) || 0 : null;
-// The spot marks of a stats object that hold (written only through Situations' raise).
+// The spot marks of a stats object (written only through Situations' raise; a mark saved
+// with the answer it once lapsed with reads as a mark).
 function spotMarks(stats) {
     if (!Array.isArray(stats?.spotMarks) || !stats.spotMarks.length) return [];
-    const answer = answerKey(stats);
-    return stats.spotMarks.filter(entry => normalizedSpotId(entry?.spotId) && (entry.answer ?? null) === answer);
+    return stats.spotMarks.filter(entry => normalizedSpotId(entry?.spotId));
 }
-// The marks with one more (the ones that hold): the spot's earlier mark replaced, the oldest past MAX_SPOT_MARKS
-// dropped (dropped: told the count, limits.md).
+// The marks with one more: the spot's earlier mark replaced, the oldest past MAX_SPOT_MARKS
+// dropped (dropped: told the count). reason: the situation that marked it.
 function withSpotMark(stats, spotId, reason = 'excluded', dropped = null) {
     const id = normalizedSpotId(spotId);
     const kept = spotMarks(stats).filter(entry => String(entry.spotId) !== id);
     if (!id) return kept;
     if (kept.length >= MAX_SPOT_MARKS) dropped?.();
-    return [...kept, { spotId: id, reason: String(reason || 'excluded'), answer: answerKey(stats) }].slice(-MAX_SPOT_MARKS);
+    return [...kept, { spotId: id, reason: String(reason || 'excluded') }].slice(-MAX_SPOT_MARKS);
 }
 const isMarked = (stats, spotId) => spotMarks(stats).some(entry => String(entry.spotId) === String(spotId));
+// The marks situation `name` leaves (those whose reason's lifetime does not list it), or
+// null when it forgets none.
+function forget(stats, name) {
+    const marks = spotMarks(stats);
+    const kept = marks.filter(entry => !(LIFETIME[entry.reason] || OUTING).includes(name));
+    return kept.length === marks.length ? null : kept;
+}
+// The lifetimes declared where raises apply them (Situations.forgets): the facts a
+// forgetting raise writes, with what it dropped for the trace.
+Situations.forgets('spot', [...new Set(Object.values(LIFETIME).flat())], (stats, name) => {
+    const kept = forget(stats, name);
+    return kept ? { spotMarks: kept, forgot: spotMarks(stats).length - kept.length } : {};
+});
 
 // Callers still pass a time as the second argument; marks no longer read it.
 function excludedSpotIdsForStates(states = []) {
@@ -377,7 +395,9 @@ module.exports = {
     MAX_BACKOFF_STEPS,
     MAX_BACKOFFS,
     MAX_SPOT_MARKS,
+    LIFETIME,
     spotMarks,
+    forget,
     withSpotMark,
     isMarked,
     marksInSteps,

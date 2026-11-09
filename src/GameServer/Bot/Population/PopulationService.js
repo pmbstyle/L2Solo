@@ -113,7 +113,7 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
 // road is open work): at the spot edge it runs to when that is within the
 // activation radius of the player, else at the teleport point it ran from when
 // that is; the author's hot movement takes over from there. Either way the trip
-// is done (resolveTravel's arrival: activity, spot, region, a detour's standIn);
+// is done (resolveTravel's arrival: activity, spot, region);
 // at the teleport point only its place differs, where the bot hunts or walks on
 // as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
 // run longer than twice the radius, a player by its middle), it stays cold.

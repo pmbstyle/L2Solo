@@ -226,6 +226,13 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
             scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
+    // A solo rest that ends with no ground under it (a town visit's end hands the bot
+    // back with no spot) is due now: the worker's next step routes it to the spot it is
+    // sent to hunt (BotRoute.huntSpot), not half a minute later. Only a resting bot
+    // reaches it, and the state it leaves hunts. A respawn keeps the spot it died at, so
+    // it is not one. A party's rest ends on its party's step.
+    const routeNow = !resting && state.activity === 'resting' && state.spotId == null
+        && !options.party && !state.party?.partyId && !state.partyId;
     // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
     // and a potion's ms are fractions; ceil the deadline so a rest never ends early.
     const restUntil = resting ? Math.ceil(timestamp + remainingMs) : null;
@@ -245,7 +252,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         // Sleeping is not an active simulation state.  Persist the exact
         // recovery deadline so the scheduler can leave this bot alone until
         // HP/MP should have changed.
-        nextResolveAt: resting ? restUntil : timestamp + 30000,
+        nextResolveAt: resting ? restUntil : routeNow ? timestamp : timestamp + 30000,
         debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs, requireMana }
     };
 }
@@ -286,14 +293,6 @@ function resolveTravel(state, timestamp = Date.now()) {
     const arrivalActivity = travel.arrivalActivity || 'shopping';
     const nextStats = { ...(state.stats || {}), travel: arrived ? null : travel };
     if (arrived && travel.clearMarketReturn) nextStats.marketReturn = null;
-    // A detour's stand-in pair (BotRoute.trip, HuntingTravel): the held leaf's
-    // spot and the ground reached, kept until the next arrival;
-    // DecisionSections.occupationPlanned reads it while the bot stands there.
-    // Cleared to null, not deleted: the projection merges the patch over the
-    // state's stats (BotLifeState.applyResolve).
-    if (arrived && (travel.leafSpotId != null || nextStats.standIn != null)) {
-        nextStats.standIn = travel.leafSpotId != null ? { leaf: travel.leafSpotId, ground: travel.spotId ?? null } : null;
-    }
     return {
         patch: {
             activity: arrived ? arrivalActivity : 'traveling',

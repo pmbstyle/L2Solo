@@ -19,18 +19,12 @@ function waiting(state, plan, partyRequest) {
 
 // Where it hunts meanwhile: the plan's own safe fallback, with the NPC to farm
 // there, when the bot may hunt it; otherwise ordinary level ground chosen
-// without the plan (a fitting current spot is kept). hasRoom (ROUTE-ROOM-3):
-// a planned spot other than the bot's own with no room for it is no fallback,
-// and the level search takes the filter too. The worker passes its own; main
-// passes none and reads main's world index (SpotProfiles.defaultRoomFilter,
-// ROUTE-ROOM-4). Null when neither exists.
-function spotFor(state, plan, profiles, { excludedSpotIds, timestamp, hasRoom: given = null, spotHunters = null } = {}) {
-    const hasRoom = given ?? SpotProfiles.defaultRoomFilter(state, profiles);
+// without the plan (a fitting current spot is kept). The crowd is met at
+// arrival. Null when neither exists.
+function spotFor(state, plan, profiles, { excludedSpotIds, timestamp } = {}) {
     const planned = GearAcquisitionPlanner.safeFallbackForPlan(state, plan, profiles, { excludedSpotIds });
     const plannedSpot = planned ? SpotIndex.spotById(profiles, planned.spotId) : null;
-    const refused = !!plannedSpot && !!hasRoom && String(plannedSpot.id) !== String(state.spotId || '')
-        && !hasRoom(plannedSpot.id);
-    if (plannedSpot && !refused && LevelingRoutes.isSpotAllowedForState(plannedSpot, state)) {
+    if (plannedSpot && LevelingRoutes.isSpotAllowedForState(plannedSpot, state)) {
         return { spot: plannedSpot, npcId: Number(planned.npcId || 0) };
     }
     const spot = SpotProfiles.findForState({
@@ -38,7 +32,7 @@ function spotFor(state, plan, profiles, { excludedSpotIds, timestamp, hasRoom: g
         spotId: null,
         stats: Object.fromEntries(Object.entries(state.stats || {})
             .filter(([key]) => key !== 'equipmentPlan'))
-    }, { profiles, excludedSpotIds, timestamp, ...(hasRoom ? { hasRoom } : {}), ...(spotHunters ? { spotHunters } : {}) });
+    }, { profiles, excludedSpotIds, timestamp });
     return spot ? { spot, npcId: 0 } : null;
 }
 

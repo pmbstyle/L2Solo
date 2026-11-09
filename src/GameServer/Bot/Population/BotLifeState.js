@@ -2978,12 +2978,6 @@ const BotLifeState = {
         // dirty bits after it (seen by the next decision point).
         const beforeResolvePacket = options.statsPacketBeforeResolve === true && options.statsPacket;
         if (beforeResolvePacket) Object.assign(nextState.stats, beforeResolvePacket);
-        // A detour's stand-in pair (BackgroundResolver.resolveTravel) holds only
-        // on the ground it names: any other spot write (a party arrival, the
-        // party-wait fallback, a pull) ends it here, each step on both threads,
-        // so a later return to that ground without the detour is an event.
-        const standIn = nextState.stats.standIn;
-        if (standIn && String(standIn.ground) !== String(nextState.spotId)) nextState.stats.standIn = null;
         let hard = [];
         if (Situations.readsFacts(state, nextState)) {
             // A round records its rewards/resources/sample immediately. It
@@ -4172,9 +4166,7 @@ const BotLifeState = {
 
     // Main's spot occupancy, a mirror of where the bots stand, kept up to date at
     // every state write: the status line's per-spot count, the hot body's kill
-    // share (SpotProfiles.spotHunters, its tactics) and a party search's room on
-    // main (SpotProfiles.defaultRoomFilter, temporary until step 8). No decision
-    // reads it: the spot aggregate is the worker's (SpotContest, EnemyMet).
+    // share (SpotProfiles.spotHunters, its tactics). No decision reads it: the spot aggregate is the worker's (SpotContest, EnemyMet).
     occupancyIndex() {
         return cache.occupancy;
     },

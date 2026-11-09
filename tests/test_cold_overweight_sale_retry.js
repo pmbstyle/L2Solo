@@ -84,8 +84,7 @@ const ids = [731501, 731502];
                 assert.equal(await world.amount(id, 57), before + value(21) * 8 + value(28) * 7, 'the unload pays exact NPC buyback once');
                 assert.equal(Floor.bagFor(result.state, now), null, 'the bot can resume hunting after the visit');
                 assert.deepEqual(result.state.stats.marketSellSeen, retry, 'the ordinary market retry remains in force');
-                assert.equal(result.state.activity, 'traveling', 'the whole visit resumes the original outing after unloading');
-                assert.equal(result.state.stats.travel.reason, 'return_after_market');
+                assert.equal(result.state.activity, 'resting', 'the whole visit ends after unloading: the worker resumes the outing');
                 await Listing.open({ ...result.state, activity: 'shopping' }, { now: now + 1000 });
                 assert.equal(await world.amount(id, 57), result.state.adena, 'a second visit cannot pay for the removed items again');
             } else {

@@ -67,7 +67,7 @@ Runtime.applyRows([hallRow]);
 // The held earning answer, and the spot the worker's route publishes on it, which the hall's
 // departure reads (main never chooses a spot): the field it hunts.
 const heldReturn = { spotId: 'hall-return-test', shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at };
-const heldHunt = { spotId: 'hall-return-test', plan: null, earning: 'hall-return-test' };
+const heldHunt = { spotId: 'hall-return-test' };
 function stateFor(id, classId = 88) {
     return {
         characterId: id,
@@ -339,25 +339,37 @@ async function main() {
         assert.equal(Departure.plan(state, Runtime.owned(1))?.spot.id, returnSpot.id, 'the hall sends the bot to its held spot');
         assert.equal(Departure.plan({ ...state, stats: { ...state.stats,
             spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1)), null, 'never to one it died at');
-        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1)), null,
-            'with no held answer no teleport: main never chooses a spot');
-        // The far bot's departure is the spot the worker's route publishes for it (huntSpot),
-        // served while what it was chosen on stands: a gear plan's source the route takes, the
-        // card's hunting leaf, as published.
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: undefined } }, Runtime.owned(1)), null,
+            'with no published spot no teleport: main never chooses a spot');
+        // A player's command raised on the far row (BotLifeState.raiseOnRow writes its held
+        // answer) and not yet answered: the published spot predates it, so no teleport to
+        // the old spot; it leaves the hall as it came and the worker routes it. Answered (the
+        // worker publishes the commanded spot), the hall sends it there.
+        {
+            const Situations = invoke('GameServer/Bot/Situations');
+            const command = spotId => ({ ...state, stats: { ...state.stats,
+                ...Situations.delta('player_command', { spotId, at: at + 1 }, Situations.OPEN, state.stats).facts } });
+            const raised = command('hall-command-test');
+            assert.equal(raised.stats.huntSpot.spotId, returnSpot.id, 'fixture: the worker published the old spot');
+            assert.equal(Departure.plan(raised, Runtime.owned(1)), null, 'a command unanswered: no teleport to the old spot');
+            assert.equal(Departure.plan(command(returnSpot.id), Runtime.owned(1))?.spot.id, returnSpot.id,
+                'the commanded spot published: the hall sends it there');
+        }
+        // The far bot's departure is the spot the worker's route publishes for it (huntSpot), as
+        // published: a gear plan's source the route takes, the card's hunting leaf.
         {
             const leafSpot = { ...returnSpot, id: 'hall-leaf-test' }, sourceSpot = { ...returnSpot, id: 'hall-source-test' };
             const byId = { [returnSpot.id]: returnSpot, [leafSpot.id]: leafSpot, [sourceSpot.id]: sourceSpot };
             Spots.findById = id => byId[id] || originalFindById.call(Spots, id);
             const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: sourceSpot.id } };
-            const toSource = { spotId: sourceSpot.id, plan: sourceSpot.id, earning: returnSpot.id };
-            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan, huntSpot: toSource } };
+            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan, huntSpot: { spotId: sourceSpot.id } } };
             assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, sourceSpot.id,
                 'a collector leaves the hall for the source its route takes');
             assert.equal(Departure.plan({ ...collecting, stats: { ...collecting.stats, equipmentPlan: { ...plan, next: { spotId: leafSpot.id } } } },
-                Runtime.owned(1)), null, 'a spot chosen on another source is not served: no teleport');
+                Runtime.owned(1))?.spot.id, sourceSpot.id, 'the published spot is served as it stands: main judges no basis');
             assert.equal(Departure.plan({ ...collecting, party: { partyId: 'bgp-hall' } }, Runtime.owned(1)), null,
                 'a party member\'s hunt is its party\'s');
-            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: { ...heldHunt, spotId: leafSpot.id } } },
+            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: { spotId: leafSpot.id } } },
                 Runtime.owned(1))?.spot.id, leafSpot.id, 'the published leaf spot names the hall\'s departure spot');
             Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
         }

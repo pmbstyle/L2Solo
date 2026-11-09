@@ -242,10 +242,11 @@ try {
             spotRisk: { spotId: 'peer', windowFights: 10, windowDeaths: 2 } } } };
         const lived = Income.prepare([fighter, cleric], { spots, timestamp: at, objective, party }).rows.get(990140);
         assert(Math.abs(lived.deaths - 18) < 1e-9, 'its share of the deaths its party had a fight, at the party\'s kills');
-        // The party shares the spot's spawns as a solo hunter does: its kills are cut to its share.
+        // The party shares the spot's spawns only among its members, as a solo hunter's value does (no live
+        // crowd): its kills are cut to what the spawns give back.
         Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1, production: 60 });
-        assert.equal(Income.prepare([fighter, other], { spots, timestamp: at, objective }).rows.get(990140).kills, 120,
-            'a party kills no more than the spawns give back to its share of the spot');
+        assert.equal(Income.prepare([fighter, other], { spots, timestamp: at, objective }).rows.get(990140).kills, 60,
+            'a party kills no more than the spawns give back');
         // One reader values both sides: a party of one on its earning spot takes as long as its solo hunt,
         // its deaths at its time on the spot on both sides.
         Table.value = () => ({ kills: 100, exp: 1000, adena: 100, loot: 0, shots: 0, potions: 0, deaths: 1 });

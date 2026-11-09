@@ -79,7 +79,7 @@ invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search = () => { throw Err
         // A later worker answer is allowed to change the occupation. The
         // activation advice does not pin it forever or override a new answer.
         Events.receive(session, card(spawned.coldLifeState, { activity: 'hunting', spotId: 'other' }),
-            { nearSeq: 1, statsPacket: { ...spawned.coldLifeState.stats, decisionSeq: 6 } });
+            { nearSeq: 1, statsPacket: { ...spawned.coldLifeState.stats, decisionSeq: 6, huntSpot: { spotId: 'other' } } });
         assert.equal(Decision.suggest(status, session).spot.id, 'other');
     }
 

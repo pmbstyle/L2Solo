@@ -86,15 +86,29 @@ try {
     assert.equal(refused.routedSpotId, undefined, 'a source the route refuses is published as none');
     const routed = Selection.withRoutedSource(hunting, retargeted, routeSpots, timestamp);
     assert.equal(routed.routedSpotId, alternative.id, 'the source the route takes is published by its spot');
-    const options = { profiles: routeSpots, timestamp, hasRoom: () => true };
-    assert.equal(Spots.findForState(hunting, options)?.id, alternative.id,
+    const Route = invoke('GameServer/Bot/Population/BotRoute');
+    assert.equal(Route.huntSpot(hunting, null, { spots: routeSpots, timestamp })?.spotId, alternative.id,
         'the next executable source is chosen before the ordinary hunting fallback');
-    assert.notEqual(Spots.findForState(hunting, { ...options, hasRoom: id => id !== alternative.id })?.id, alternative.id,
-        'a full alternative source is skipped too');
-    assert.equal(Spots.findForState(hunting, { ...options, excludedSpotIds: [mixed.id, unsafe.id] })?.id, alternative.id,
-        'excluded sources do not hide the safe alternative');
-    assert.equal(Planner.bestSourceForPlan(hunting, plan, routeSpots,
-        { timestamp, hasRoom: () => false }), null, 'the native owner also skips full remote sources');
+    const marked = { ...hunting, stats: { ...hunting.stats, spotMarks: [{ spotId: mixed.id, reason: 'contest_lost', answer: 1 },
+        { spotId: unsafe.id, reason: 'contest_lost', answer: 1 }] } };
+    assert.equal(Route.huntSpot(marked, null, { spots: routeSpots, timestamp })?.spotId, alternative.id,
+        'marked sources do not hide the safe alternative');
+    // A plan it may not farm now sends it nowhere near its source: a bot that lost a level since the
+    // plan (leveling recovery: it hunts for the level, until it regains it) and a craft plan whose
+    // material is already in the bag both hunt where a bot without the plan would.
+    const withoutPlan = Route.huntSpot({ ...hunting, stats: { ...state.stats } }, null, { spots: routeSpots, timestamp })?.spotId;
+    assert.notEqual(withoutPlan, alternative.id, 'fixture: the leveling pick is not the source');
+    const deleveled = { ...hunting, stats: { ...hunting.stats, equipmentPlan: { ...retargeted, plannedForLevel: 32 } } };
+    assert(Planner.levelingRecoveryFor(deleveled, deleveled.stats.equipmentPlan, timestamp), 'fixture: in leveling recovery');
+    assert.equal(Route.huntSpot(deleveled, null, { spots: routeSpots, timestamp })?.spotId, withoutPlan,
+        'a deleveled bot hunts its leveling pick, not the plan\'s source');
+    const material = { ...retargeted, strategy: 'craft', next: { ...retargeted.next, itemId: 45, requiredTotal: 2 } };
+    const stocked = { ...hunting, inventory: { ...inventory, 45: { selfId: 45, amount: 2 } },
+        stats: { ...hunting.stats, equipmentPlan: material } };
+    assert.equal(Route.huntSpot({ ...stocked, inventory }, null, { spots: routeSpots, timestamp })?.spotId, alternative.id,
+        'fixture: the material still missing, the source is the spot');
+    assert.equal(Route.huntSpot(stocked, null, { spots: routeSpots, timestamp })?.spotId, withoutPlan,
+        'its material in the bag: no source to farm');
     const waiting = { ...hunting, stats: { ...hunting.stats, equipmentPlan: { ...plan, requiresParty: true, partyNeed: 'required' } } };
     assert.equal(Planner.bestSourceForPlan(waiting, waiting.stats.equipmentPlan, [unsafe], { timestamp })?.spotId,
         unsafe.id, 'a party-required plan keeps its separate recruitment admission');
@@ -103,32 +117,9 @@ try {
     const savedService = Service.spots, pending = Errands.pending;
     try {
         Service.spots = routeSpots; Errands.pending = () => [];
-        const shopping = { ...hunting, spotId: mixed.id, activity: 'shopping', currentRegion: 'Gludin',
-            loc: { locX: -80752, locY: 149776, locZ: -3000 }, stats: { ...hunting.stats,
-                equipmentPlan: { ...plan, next: { ...plan.next, spotId: mixed.id } },
-                townVisit: { completed: true }, marketReturn: { spotId: mixed.id, loc: mixed.center, regionName: mixed.name } } };
-        const Goals = invoke('GameServer/Bot/Goals/GoalExecutor');
-        assert.equal(Goals.finishMarketVisit(shopping, timestamp).stats.travel.spotId,
-            mixed.id, 'the return goes to the spot it hunted; the worker\'s trip start retargets it (above)');
-        // A visit's end reads the spot the worker's route publishes (huntSpot), never the
-        // bare source: with none published it goes back where it hunted.
-        const fromHome = { ...shopping, stats: { ...shopping.stats,
-            marketReturn: { spotId: home.id, loc: home.center, regionName: home.name } } };
-        assert.equal(Goals.finishMarketVisit(fromHome, timestamp).stats.travel.spotId, home.id,
-            'none published: the spot it hunted');
-        const Route = invoke('GameServer/Bot/Population/BotRoute');
-        // The mind key as the worker writes it: the spot and what it was chosen on.
-        const published = (row, spotId) => ({ ...row, stats: { ...row.stats, huntSpot: { spotId,
-            plan: String(row.stats.equipmentPlan.next.spotId), earning: null } } });
-        const routedRow = { ...fromHome, stats: { ...fromHome.stats, equipmentPlan: routed } };
-        assert.equal(Goals.finishMarketVisit(published(routedRow, alternative.id), timestamp).stats.travel.spotId,
-            alternative.id, 'the published source is the return\'s destination');
-        assert.equal(Goals.finishMarketVisit({ ...published(routedRow, alternative.id), stats: {
-            ...published(routedRow, alternative.id).stats, equipmentPlan: plan } }, timestamp).stats.travel.spotId, home.id,
-        'a spot chosen on another plan source is not served: the spot it hunted');
-        // One chooser: with two sources of one species the route takes the first in its
-        // order (BotRoute.trip), not the plan's own source although that one is viable; a
-        // visit's end with no saved return sends the bot where the trip would.
+        // One chooser: with two sources of one species (one value: both in the habit band)
+        // the route takes the one search's pick, the plan's own pick of a source
+        // (bestSourceForPlan), not the plan's stored source although that one is viable.
         const species = { selfId: 1099, level: 25, count: 5, pulls: [[1, 1]] };
         const first = field('source-first', [species]), second = field('source-second', [species]);
         const twoSpots = [unsafe, mixed, first, second, home];
@@ -137,31 +128,55 @@ try {
         const collector = { ...hunting, spotId: home.id, stats: { ...hunting.stats,
             equipmentPlan: Selection.withRoutedSource(hunting, onSecond, twoSpots, timestamp) } };
         assert.equal(collector.stats.equipmentPlan.routedSpotId, second.id, 'fixture: the plan\'s own source is viable');
+        const picked = Planner.bestSourceForPlan(collector, collector.stats.equipmentPlan, twoSpots, { timestamp })?.spotId;
+        assert([first.id, second.id].includes(picked), 'fixture: the plan picks one of the two sources');
         const tripSpot = Route.trip({}, collector, null, { spots: twoSpots, timestamp })?.spotId;
-        assert.equal(tripSpot, first.id, 'fixture: the trip takes the first source');
-        const lost = { ...collector, activity: 'shopping', currentRegion: 'Gludin', loc: shopping.loc,
-            stats: { ...collector.stats, townVisit: { completed: true }, marketReturn: null } };
-        assert.equal(Goals.finishMarketVisit(published(lost, tripSpot), timestamp, { recoverMissingReturn: true })
-            .stats.travel.spotId, first.id, 'the visit\'s end goes where the trip goes');
-        assert.equal(Route.huntSpot(collector, null, { spots: twoSpots, timestamp }), tripSpot,
+        assert.equal(tripSpot, picked, 'the trip takes the plan\'s pick');
+        // A source the bot's marks refuse: the other one, through the one filter.
+        const markedCollector = { ...collector, stats: { ...collector.stats, spotMarks: [{ spotId: picked, reason: 'contest_lost', answer: 1 }] } };
+        assert.equal(Route.huntSpot(markedCollector, null, { spots: twoSpots, timestamp })?.spotId, picked === first.id ? second.id : first.id,
+            'a marked source is never the pick: the other source');
+        const answered = { ...collector, stats: { ...collector.stats, earning: { spotId: mixed.id, shots: true, income: 100, expected: 100,
+            earning: 100, error: 0, at: 2 }, spotMarks: [first.id, second.id].map(spotId => ({ spotId, reason: 'contest_lost', answer: 1 })) } };
+        assert.equal(Route.huntSpot(answered, null, { spots: twoSpots, timestamp })?.spotId, mixed.id,
+            'refused sources fall to the held earning answer, not to a list walk');
+        // A player's command goes first: the trip and the published spot are the commanded
+        // spot, not the plan's source, and the bot's own mark on it does not hold it back.
+        const Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+        const command = Income.commanded(null, mixed.id, 1);
+        const commandedRow = { ...collector, stats: { ...collector.stats, earning: command,
+            spotMarks: [{ spotId: mixed.id, reason: 'contest_lost', answer: 1 }] } };
+        assert.equal(Route.trip({}, commandedRow, null, { spots: twoSpots, timestamp })?.spotId, mixed.id,
+            'the trip goes where the player sent it');
+        assert.deepEqual(Route.huntSpotHeld({}, commandedRow, null, { spots: twoSpots, timestamp }), { huntSpot: { spotId: mixed.id } },
+            'the published spot is the commanded one');
+        // One chooser: the trip goes where the published choice names, for each kind of choice.
+        const earningRow = spotId => ({ ...state, spotId: home.id, stats: { ...state.stats,
+            earning: { spotId, shots: true, income: 100, expected: 100, earning: 100, error: 0, at: 2 } } });
+        for (const [row, leaf, why] of [[collector, null, 'the plan\'s source'], [earningRow(mixed.id), null, 'the earning answer'],
+            [{ ...state, spotId: home.id }, { activity: 'hunting', spotId: mixed.id }, 'the leaf'], [earningRow(null), null, 'none']]) {
+            const chosen = Route.huntSpot(row, leaf, { spots: twoSpots, timestamp })?.spotId ?? null;
+            assert.equal(Route.trip({}, row, leaf, { spots: twoSpots, timestamp })?.spotId ?? null, chosen,
+                `the trip goes to the one choice (${why})`);
+            assert.equal(chosen === null, why === 'none', `fixture: ${why} names a spot or none (${chosen})`);
+        }
+        assert.equal(Route.huntSpot(collector, null, { spots: twoSpots, timestamp })?.spotId, tripSpot,
             'the published spot is the trip\'s own choice');
         assert.equal(Route.huntSpot({ ...collector, party: { partyId: 'bgp-source' } }, null, { spots: twoSpots, timestamp }), null,
             'a party member\'s hunt is its party\'s');
-        // The worker's step publishes it in the mind with its basis, writes it again on a
-        // row that lacks it (a refused commit), and nothing on a row that holds it.
+        // The worker's step publishes it in the mind, writes it again on a row that lacks it
+        // (a refused commit), and nothing on a row that holds it.
         const record = {}, options = { spots: twoSpots, timestamp };
         const keys = Route.huntSpotHeld(record, collector, null, options);
-        assert.deepEqual(keys, { huntSpot: { spotId: first.id, plan: second.id, earning: null } });
+        assert.deepEqual(keys, { huntSpot: { spotId: picked } });
         assert.equal(Route.huntSpotHeld(record, { ...collector, stats: { ...collector.stats, ...keys } }, null, options), null);
         assert.deepEqual(Route.huntSpotHeld(record, collector, null, options), keys);
-        assert.equal(Goals.finishMarketVisit({ ...lost, stats: { ...lost.stats, ...keys } }, timestamp, { recoverMissingReturn: true })
-            .stats.travel.spotId, first.id, 'main serves what the worker published');
-        // One search: with the first source full, the trip's room filter takes another, and
-        // the published spot is that same choice, not the full source.
-        const roomRecord = {}, hasRoom = id => String(id) !== first.id;
-        const roomTrip = Route.trip(roomRecord, collector, null, { spots: twoSpots, timestamp, hasRoom })?.spotId;
-        assert(roomTrip && roomTrip !== first.id, 'fixture: the trip skips the full source');
-        assert.equal(Route.huntSpotHeld(roomRecord, collector, null, options)?.huntSpot.spotId, roomTrip,
+        // One choice: the trip's held choice is the published spot, full or not (met at arrival).
+        const tripRecord = {};
+        const tripOut = {};
+        assert.equal(Route.trip(tripRecord, collector, null, { spots: twoSpots, timestamp, out: tripOut })?.spotId, picked);
+        assert.deepEqual(Route.huntSpotKeyOf(collector, tripOut.held), keys, 'the trip gives the step the key it publishes');
+        assert.equal(Route.huntSpotHeld(tripRecord, collector, null, options)?.huntSpot.spotId, picked,
             'the published spot is where the trip goes');
         // A step the route may not take the bot on (a clan party wait) publishes nothing: the
         // spot it holds stands, and the next step asks again.
@@ -182,7 +197,7 @@ try {
         const published2 = Route.huntSpotHeld(gearRecord, kitted, leafOf, leafOptions);
         assert.equal(published2?.huntSpot.spotId, leafSpot.id, `fixture: the leaf's spot is published (${why})`);
         const stripped = { ...naked, stats: { ...naked.stats, ...published2 } };
-        assert.notEqual(Route.huntSpot(stripped, leafOf, leafOptions), leafSpot.id, `fixture: without its kit it may not hunt there (${why})`);
+        assert.notEqual(Route.huntSpot(stripped, leafOf, leafOptions)?.spotId, leafSpot.id, `fixture: without its kit it may not hunt there (${why})`);
         Route.drop(gearRecord, 'sections');
         const chosenAgain = Route.huntSpotHeld(gearRecord, stripped, leafOf, leafOptions);
         assert(chosenAgain && chosenAgain.huntSpot.spotId !== leafSpot.id, 'the route facts moved: the published spot is chosen again');

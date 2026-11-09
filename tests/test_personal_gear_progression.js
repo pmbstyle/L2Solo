@@ -208,8 +208,7 @@ function verify() {
     const clanFunding = { ...earning, clanId: 1, clanLevel: 1, stats: clanStats };
     // The route reads the held earning answer (the worker's decision), never a search of its own.
     clanStats.earning = Route.answerOf(Route.search(clanFunding, { spots, timestamp, required: true }).route, timestamp);
-    assert.equal(invoke('GameServer/Bot/Population/SpotProfiles').findForState(clanFunding,
-        { profiles: spots, occupancy: {}, timestamp })?.id, 'rich',
+    assert.equal(invoke('GameServer/Bot/Population/BotRoute').huntSpot(clanFunding, null, { spots, timestamp })?.spotId, 'rich',
         'a clan-owned purchase plan without a hunting assignment still uses its held earning answer');
 
     const item = { key: 'item:1', price: 1000, paths: [

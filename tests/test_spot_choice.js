@@ -81,7 +81,8 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
     assert.equal(chosen(state, spots), 'far', 'the trip by gatekeeper is short');
 }
 
-// The best spot is full of other bots: the next best, and no refused trip.
+// The best spot is full of other bots: still the best (a C4 player sees the crowd on arrival,
+// where a crowded spot turns it away: SpotContest).
 {
     const spots = [at('home', -80000), at('next', -79000), at('best', -78000)];
     const samples = [['home', 0.5, 0.15], ['next', 0.75, 0.225], ['best', 1, 0.3]];
@@ -91,9 +92,8 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
     for (let n = 0; n < 9; n++) index.update({ characterId: 990400 + n, spotId: 'best', activity: 'hunting' });
     Spots.useOccupancy(() => index);
     try {
-        assert.equal(chosen(state, spots), 'next', 'nine bots fill it');
-        assert.equal(chosen({ ...state, spotId: 'best', loc: spots[2].center }, spots), 'best', 'a bot on it keeps its own place');
+        assert.equal(chosen(state, spots), 'best', 'nine bots on it: the choice does not read them');
     } finally { Spots.useOccupancy(null); }
 }
 
-console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, the room');
+console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, no crowd');

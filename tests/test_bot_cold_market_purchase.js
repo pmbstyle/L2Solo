@@ -332,7 +332,7 @@ async function run() {
     });
     assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_offer_missing');
     assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D gear must replan instead of opening a WTB store');
-    assert.strictEqual(missingLowTierNpcGear.state.activity, 'traveling');
+    assert.strictEqual(missingLowTierNpcGear.state.activity, 'resting', 'the visit ends: the worker routes it from town');
     MarketOpportunity.npcOffers = originals.npcOffers;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
@@ -421,8 +421,8 @@ async function run() {
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(noOffer.purchased, false);
-    assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
-    assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
+    assert.strictEqual(noOffer.state.activity, 'resting', 'a buyer with no offer ends its visit: the worker sends it back to farming');
+    assert.strictEqual(noOffer.state.timing.nextResolveAt <= Date.now(), true, 'at its next step, due now');
     assert.equal(noOffer.state.stats.marketWanted?.itemId, 999999, 'a buyer with no offer waits for a new one (offer_posted), no retry window');
 
     MarketOpportunity.bestOffer = () => null;
@@ -445,7 +445,7 @@ async function run() {
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
     assert.strictEqual(changedOffer.reason, 'offer_changed');
-    assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
+    assert.strictEqual(changedOffer.state.activity, 'resting', 'a stale offer ends the visit: the worker returns the buyer to farming');
     assert.equal(changedOffer.state.stats.marketWanted?.itemId, 2, 'a stale offer: the want waits for a new offer');
 
     const duplicateArmorPurchase = await BotLifeState.applyMarketPurchase({

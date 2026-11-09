@@ -214,27 +214,24 @@ try {
         assert.strictEqual(spawned[0].backgroundActivity, 'hunting');
 
         // 45% of its run, the player by the teleport point it ran from: the spot edge is
-        // in sight too, so it appears there; a detour keeps its stand-in pair.
+        // in sight too, so it appears there.
         spawned = [];
         const runStartMs = TripPayment.SCROLL_CAST_MS + 2 * ColdTrip.HOP_MS;
         const shortRunMs = ColdTrip.runMs(DRAGON_VALLEY, NEAR_DRAGON_VALLEY);
-        cachedWalker(4201, {}, { ...spotTravel(NEAR_DRAGON_VALLEY), leafSpotId: 'leaf' },
+        cachedWalker(4201, {}, spotTravel(NEAR_DRAGON_VALLEY),
             Date.now() - runStartMs - Math.round(shortRunMs * 0.45));
         assert.strictEqual((await PopulationService.showWalkersNear(aside(DRAGON_VALLEY), [], [], Date.now())).length, 1);
         assert.deepStrictEqual(placedAt(spawned[0]), NEAR_DRAGON_VALLEY, 'the arrival in sight: it appears there');
         assert.strictEqual(spawned[0].coldLifeState.activity, 'hunting');
-        assert.deepStrictEqual(spawned[0].coldLifeState.stats.standIn, { leaf: 'leaf', ground: 'dv' },
-            'a detour walker stands in for its leaf, as on arrival');
 
         // A long walk on foot, 10% done, the player where it set out: the spot edge is
-        // out of reach, so it appears at its start, still standing in for its leaf.
+        // out of reach, so it appears at its start.
         spawned = [];
         const longMs = ColdTrip.runMs(DION_FIELD, NEAR_DRAGON_VALLEY);
-        cachedWalker(4204, { stats: { karma: 100 } }, { ...spotTravel(NEAR_DRAGON_VALLEY), leafSpotId: 'leaf' },
+        cachedWalker(4204, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY),
             Date.now() - Math.round(longMs * 0.1));
         assert.strictEqual((await PopulationService.showWalkersNear(aside(DION_FIELD), [], [], Date.now())).length, 1);
         assert.deepStrictEqual(placedAt(spawned[0]), DION_FIELD, 'at the point it set out from');
-        assert.deepStrictEqual(spawned[0].coldLifeState.stats.standIn, { leaf: 'leaf', ground: 'dv' });
 
         // The same long walk half done, the player by the middle of its road: within the
         // activation radius of the walker, both endpoints farther. It walks on cold.

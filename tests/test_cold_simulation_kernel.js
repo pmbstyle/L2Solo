@@ -1117,14 +1117,9 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     partyRouteKernel.upsert(standOn(partyRouteKernel, { state: partyRouteMembers[0] }, { id: 'starter-field' }));
     partyRouteKernel.upsert({ state: partyRouteMembers[1] });
     partyRouteKernel.partyPut(partyRouteParty.partyId, partyRouteParty);
-    // A member's kept solo route: a new state keeps it, the party run's
-    // step takes the member and drops it.
-    partyRouteKernel.states.get(31).route = { spotId: 'solo-kept' };
     partyRouteKernel.upsert({ state: { ...partyRouteMembers[1], level: 17,
         simulation: { ...partyRouteMembers[1].simulation, revision: Number(partyRouteMembers[1].simulation?.revision || 0) + 1 } } });
-    assert.deepStrictEqual(partyRouteKernel.states.get(31).route, { spotId: 'solo-kept' }, 'a committed state keeps the bot\'s route');
     partyRouteKernel.tick();
-    assert.strictEqual(partyRouteKernel.states.get(31).route, null, 'the party step drops the member\'s solo route');
     assert.deepStrictEqual(lastSteps(partyRouteKernel), [30, 31]);
     await partyRouteKernel.resolveChain;
     const partyRouteProposal = partyRouteMessages.find((entry) => entry.type === 'proposal_batch');

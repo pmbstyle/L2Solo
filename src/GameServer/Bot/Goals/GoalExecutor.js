@@ -1,5 +1,4 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -120,26 +119,34 @@ function finishVisit(state, timestamp, options) {
         : solo ? purchaseElsewhere(state, timestamp) : null;
     const onward = next && beginMarketTravel({ ...state, activity: 'hunting' }, next, timestamp);
     if (onward) return { ...onward, stats: { ...onward.stats, marketReturn: state.stats?.marketReturn || onward.stats.marketReturn } };
-    let destination = state.stats?.marketReturn;
     const returningParty = state.stats?.partyMarketReturn
         ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.stats.partyMarketReturn.partyId) : null;
+    // A solo bot's visit (its party return gone with its party, too) hands it back to the
+    // worker: it rests in town, due now; the worker's next step ends the rest, due now again
+    // (BackgroundResolver.resolveRest), and the one after sends it to the spot of its one
+    // choice (BotRoute.huntSpot). Main never picks where it hunts. It stands on no
+    // spot in town (a town trip keeps the field it left as its spot: read as standing
+    // there, the worker would start no trip).
+    // A visit with no way back saved ends only where its caller asks (recoverMissingReturn).
+    if (!state.party?.partyId && !state.partyId && !returningParty) return !state.stats?.marketReturn?.loc && !options.recoverMissingReturn ? null : {
+        ...state, activity: 'resting', spotId: null,
+        stats: { ...state.stats, marketReturn: null, partyMarketReturn: null, shopTown: null, restUntil: timestamp },
+        timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp }
+    };
+    let destination = state.stats?.marketReturn;
     let clanReturn = !!state.stats?.partyMarketReturn;
     if (returningParty?.status === 'active') {
         const leader = BotLifeState.cachedState(returningParty.leaderId);
         if (leader?.loc) destination = { loc: leader.loc, spotId: returningParty.spotId, regionName: leader.currentRegion };
     }
     if (!destination?.loc && options.recoverMissingReturn) {
-        // No saved return: the spot it goes to when sent to hunt (the worker's
-        // choice, DecisionEvents.heldSpotOf; main never chooses one). A party
-        // member's is its party's (temporary: until the party holds its spot as a
-        // decision; the party's objective spot, else the spot it hunts), when its
-        // marks allow it. With none it rests in town: its next step publishes the
-        // choice (no earning answer yet: woken, Situations.woken, decided there)
-        // and the worker routes it (BotRoute).
+        // No saved return: a party member's is its party's (temporary: until the party
+        // holds its spot as a decision; the party's objective spot, else the spot it
+        // hunts), when its marks allow it. With none it rests in town until the worker's
+        // next step.
         const party = state.party?.partyId ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.party.partyId) : null;
         const partySpot = party?.stats?.objective?.spotId ?? party?.spotId ?? null;
-        const heldId = !state.party?.partyId ? DecisionEvents.heldSpotOf(state)
-            : partySpot != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(partySpot)) ? partySpot : null;
+        const heldId = partySpot != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(partySpot)) ? partySpot : null;
         const fallback = heldId != null ? SpotProfiles.findById(heldId) : null;
         const loc = fallback && SpotService.arrivalPointForState(state, fallback);
         if (loc) {
@@ -156,54 +163,21 @@ function finishVisit(state, timestamp, options) {
 
     const from = { ...state.loc };
     const savedSpot = destination.spotId ? SpotService.findById(destination.spotId) : null;
-    const returnState = savedSpot
-        ? {
-            ...state,
-            activity: 'hunting',
-            currentRegion: destination.regionName || state.currentRegion,
-            loc: { ...destination.loc },
-            spotId: destination.spotId
-        }
-        : null;
-    const spotBackoff = returnState && !clanReturn
-        ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
-        : null;
-    // Where the bot hunts next is the worker's decision, read here: the spot it goes
-    // to when sent to hunt (DecisionEvents.heldSpotOf: the worker's route choice, none
-    // its exclusions rule out),
-    // else only then the spot it hunted before the trip, unless it died there
-    // (spotBackoff). Main never searches. A full spot is met at arrival
-    // (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the worker's next
-    // trip start: one trip there before the worker moves it.
-    let selectedSpot = clanReturn ? savedSpot : null;
-    if (returnState && !clanReturn) {
-        const heldId = DecisionEvents.heldSpotOf(returnState);
-        selectedSpot = (heldId != null ? SpotProfiles.findById(heldId) : null) || (spotBackoff ? null : savedSpot);
-    }
-    // Remaining in town is safer than silently returning to a spot that is
-    // already over the death threshold. A later lifecycle pass can retry
-    // once another suitable route becomes available.
-    if (spotBackoff && !selectedSpot) return null;
-    const to = clanReturn ? { ...destination.loc } : selectedSpot
-        ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
-        : { ...destination.loc };
-    const regionName = selectedSpot?.name || destination.regionName;
-    const spotId = selectedSpot?.id || destination.spotId;
+    // A party member goes back to its party: the clan's waiting point, else its party's spot.
+    const to = clanReturn || !savedSpot ? { ...destination.loc }
+        : SpotService.arrivalPointForState(state, savedSpot) || { ...destination.loc };
+    const regionName = savedSpot?.name || destination.regionName;
     const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY, to.locZ);
-    const routedState = spotBackoff
-        ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
-        : state;
-    return ColdTrip.toSpot(routedState, {
-        reason: spotBackoff ? 'death_pressure_replan' : 'return_after_market',
+    return ColdTrip.toSpot(state, {
+        reason: 'return_after_market',
         from,
         to,
         regionName,
-        spotId,
+        spotId: savedSpot?.id || destination.spotId,
         townName: destinationTown?.name || regionName || 'Hunting Ground',
         viaTown: destinationTown?.name || null,
         arrivalActivity: clanReturn ? 'party_wait' : 'hunting',
-        arrivalEvent: spotBackoff ? 'arrived_hunting_ground' : 'returned_to_spot',
-        ...(spotBackoff ? { cause: 'death_pressure' } : {}),
+        arrivalEvent: 'returned_to_spot',
         clearMarketReturn: true
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }

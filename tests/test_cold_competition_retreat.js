@@ -86,7 +86,9 @@ async function run() {
             const later = { ...s, stats: { ...s.stats, stepCount: Risk.stepCount(s) + 1000 } };
             assert(Risk.excludedSpotIdsForStates([later]).has('test'), 'no clock ends the mark');
             const decided = { ...s, stats: { ...s.stats, earning: { spotId: 'elsewhere', at: at + 1 } } };
-            assert(!Risk.excludedSpotIdsForStates([decided]).has('test'), 'the next earning answer retires it, no death backoff');
+            assert(Risk.excludedSpotIdsForStates([decided]).has('test'), 'the next earning answer keeps it for the outing');
+            const home = { ...s, stats: Catalogue.raise({ ...s.stats }, 'arrived_town', null, Catalogue.OPEN, id) };
+            assert(!Risk.excludedSpotIdsForStates([home]).has('test'), 'its next trip from town forgets it, no death backoff');
             assert.strictEqual(Memory.snapshot(id).relations.length, 0);
         }
         if (actorIds.length > 1) {
@@ -102,7 +104,9 @@ async function run() {
             const marked = PartyRisk.withMark(held, 'test', 'contest_lost');
             assert.deepStrictEqual(Catalogue.detectParty(marked, Catalogue.partyHeld(marked), { marks: PartyRisk.marks(marked) }), ['contest_lost']);
             const decided = { ...marked, stats: { ...marked.stats, partySpot: { ...marked.stats.partySpot, at: at + 1 } } };
-            assert(!PartyRisk.excludedSpotIds(decided).has('test'), 'the party\'s next spot answer retires it');
+            assert(PartyRisk.excludedSpotIds(decided).has('test'), 'the party\'s next spot answer keeps it');
+            assert(!PartyRisk.excludedSpotIds({ ...decided, memberIds: [...decided.memberIds, 999] }).has('test'),
+                'a member joined: another party, the mark goes');
         }
         assert.strictEqual((await actions.apply(forecast)).ok, false, 'delivery cannot replay a departure');
     }
@@ -164,7 +168,7 @@ async function run() {
     const saved = JSON.parse(persisted[0].mindJson);
     assert(saved.spotMarks.some(mark => mark.spotId === 'test' && mark.reason === 'contest_lost'), 'the mark persists in the mind');
     const parties = await Database.execute(['SELECT spotId, statsJson FROM bot_background_parties WHERE partyId=?', ['p9']]);
-    assert(JSON.parse(parties[0].statsJson).spotMarks.some(mark => mark.spotId === 'test' && mark.reason === 'contest_lost'),
+    assert(JSON.parse(parties[0].statsJson).partySpotRisk.spotMarks.some(mark => mark.spotId === 'test' && mark.reason === 'contest_lost'),
         'the party\'s mark and its members persist together');
     assert.strictEqual((await invoke('GameServer/Social/InteractionMemoryRepository').load(9)).relations.length, 0);
     console.log('Cold voluntary retreat: all matchups, avoid raised for the worker route, party yield, CAS races, no blame and SQLite reopen passed');

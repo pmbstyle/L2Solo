@@ -20,15 +20,16 @@ function economicHunt(state) {
 // search serves the income route and the spot search: spoiler() and the
 // costs are read once, at their first use. ids(shots, level, minGap, cuts):
 // spot ids of the band level+minGap..level+8, best income first, ties to the
-// spot closest to level.
+// spot closest to level; values(...): the same as { spotId, value } (the income
+// each is ranked by: SpotSearch's leveling goal).
 function spotList(state, { price } = {}) {
     let spoiler, costs = null;
     const spoilerOf = () => spoiler !== undefined ? spoiler
         : (spoiler = ColdKillRewards.spoilerFor(state, { skills: ColdCombatProfile.skillsFor(state) }) || null);
-    return { spoiler: spoilerOf, ids: (shots, level = state.level, minGap = -7) => SpotValueTable.rankedSpotIds(
-        SpotValueTable.roleFor(state), level,
+    const ranked = read => (shots, level = state.level, minGap = -7) => read(SpotValueTable.roleFor(state), level,
         costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, shots,
-        { spoilSkillLevel: spoilerOf()?.skillLevel || 0 }) };
+        { spoilSkillLevel: spoilerOf()?.skillLevel || 0 });
+    return { spoiler: spoilerOf, ids: ranked(SpotValueTable.rankedSpotIds), values: ranked(SpotValueTable.rankedSpotValues) };
 }
 
 // The solo matchup the search reads.
@@ -150,72 +151,69 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     const origin = Index.spotById(spots, state.spotId)?.center || state.loc;
     const sampled = BotHuntEfficiency.sampledRows(state, timestamp).map(row => row.spotId);
     const ids = new Set([state.spotId, ...sampled]);
-    // Search-local: null rejects a spot; undefined awaits its first walk factor.
-    const spotFactors = new Map();
-    // A spot the bot may earn at, whatever the prices.
-    const admitted = spot => {
-        if (!spot) return false;
-        if (spotFactors.has(spot)) return spotFactors.get(spot) !== null;
-        const allowed = !spot.raidBoss
-            && Number(spot.avgLevel || spot.minLevel || 1) - state.level >= minGap
-            && !excluded.has(String(spot.id)) && survives(spot)
-            && !Routes.localityPenaltyForSpot(spot, state, { level: state.level }, Routes.tagsForSpot(spot));
-        spotFactors.set(spot, allowed ? undefined : null);
-        return allowed;
+    // The goal's own window (SpotSearch.rank holds the catalogue, raid and exclusion clauses): monsters at
+    // most 15 levels below the bot, a kit that may survive them, no foreign starter field. Search-local,
+    // one answer per spot.
+    const fitting = new Map();
+    const fits = (candidate, spot) => {
+        let fit = fitting.get(spot);
+        if (fit === undefined) fitting.set(spot, fit = Number(spot.avgLevel || spot.minLevel || 1) - state.level >= minGap
+            && survives(spot) && !Routes.localityPenaltyForSpot(spot, state, { level: state.level }, Routes.tagsForSpot(spot)));
+        return fit;
     };
     // lazy: cycle SpotProfiles' search reads this module's held answer.
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+    const Search = invoke('GameServer/Bot/AI/SpotSearch');
     // A fresh racial cohort stays on its level-one field until it advances (SpotProfiles.isProtectedStarterCohort):
     // that field is its answer while it may hunt there.
     const own = Spots.isProtectedStarterCohort(state) ? Index.spotById(spots, state.spotId) : null;
-    if (own && admitted(own)) return { route: fixedRoute(own, evaluate), error: evaluate.incomeError };
-    // Every spot the bot may earn at with this charge policy, each with its
-    // score; those earning nothing at the prices read stay out.
+    if (own && Search.rank(state, { candidates: [{ spot: own }], fits, value: () => 1 }, { excluded, habit: false }).pick) {
+        return { route: fixedRoute(own, evaluate), error: evaluate.incomeError };
+    }
+    // Every spot the bot may earn at with this charge policy, as the search's candidates; the value its hour
+    // there over the walk (search-local walk factors, one per spot); those earning nothing at the prices
+    // read, or needing drinks of a broke bot, are worth nothing.
+    const walkFactors = new Map();
+    const value = candidate => {
+        const { spot, shots } = candidate, row = candidate.row = evaluate(spot, shots);
+        if (!(row?.income > 0) || broke && needsDrinks(state, spot, shots)) return 0;
+        let walkFactor = walkFactors.get(spot);
+        if (walkFactor === undefined) walkFactors.set(spot, walkFactor = 1 + WalkBack.tripHours(origin, spot, state, spots) / 0.5);
+        // Amortize relocation over a half-hour earning visit. Actual
+        // town fees/time are still charged by the common wish paths.
+        candidate.walkFactor = walkFactor;
+        return candidate.score = (row.valueHours || 0) / walkFactor;
+    };
+    // costs are the bot's own price beliefs: the id view, not the shared shortlist rows.
     const candidates = shots => {
-        // costs are the bot's own price beliefs: the id view, not the shared shortlist rows.
         for (const spotId of list.ids(shots, state.level, minGap)) ids.add(spotId);
-        return [...ids].map(id => Index.spotById(spots, id)).filter(admitted)
-            .map(spot => {
-                const row = evaluate(spot, shots);
-                let walkFactor = spotFactors.get(spot);
-                if (walkFactor === undefined) {
-                    walkFactor = 1 + WalkBack.tripHours(origin, spot, state, spots) / 0.5;
-                    spotFactors.set(spot, walkFactor);
-                }
-                // Amortize relocation over a half-hour earning visit. Actual
-                // town fees/time are still charged by the common wish paths.
-                return { spot, row, walkFactor, score: (row?.valueHours || 0) / walkFactor };
-            }).filter(row => row.row?.income > 0 && !(broke && needsDrinks(state, row.spot, shots)));
+        return [...ids].map(id => ({ spot: Index.spotById(spots, id), shots }));
     };
     // Compare both charge policies and the entire earning band together.
     // Returning the first charged/near-level camp hid cheaper easier hunts.
     // The same spot under both policies ties on all keys: the charged one first.
-    const pool = [true, false].flatMap(candidates);
-    const shortlist = pool.filter(row => row.score > 0).sort((a, b) => b.score - a.score
-        || Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1)
-        || String(a.spot.id).localeCompare(String(b.spot.id)));
-    // One profile and safety read for the whole shortlist (L131). The chosen
+    // One profile and safety read for the whole search (L131). The chosen
     // route carries its solo profiles: the same build's source route reader
     // (GearAcquisitionPlanner.sourceRouteReader) reads the same ones.
+    // The crowd is no input: a C4 player picks a camp by what he knows of it and
+    // meets the crowd on arrival (SpotContest turns it away from one found crowded).
     const allowed = Routes.spotAllowedReaderFor(state, options);
-    // A spot full of other bots is no pick (the search's room rule): the bot
-    // takes its next best now, not a refused trip.
-    const open = shortlist.filter(candidate => Spots.roomFor(candidate.spot, state) || !(candidate.closed = true));
-    const checks = Math.max(1, maxChecks);
-    // Each spot's verdict, asked once.
+    // Each spot's verdict, asked once (the two charge policies share it).
     const verdicts = new Map();
     const asked = spot => {
         let verdict = verdicts.get(spot);
         if (verdict === undefined) verdicts.set(spot, verdict = !!allowed(spot));
         return verdict;
     };
-    const pick = open.slice(0, checks).find(candidate => asked(candidate.spot)) || null;
+    const { pick, ranked } = Search.rank(state, { candidates: [true, false].flatMap(candidates), fits, value,
+        tie: (a, b) => Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1) || String(a.spot.id).localeCompare(String(b.spot.id)) },
+    { excluded, allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
     if (pick) {
         pick.matchupProfiles = options.matchupProfiles;
         // The bot's hour (hourAdena, the unit of every value) stays what it could
         // earn: its best income among the spots it may hunt, wherever it levels.
         pick.earning = pick.row.income;
-        for (const candidate of open.toSorted((a, b) => b.row.income - a.row.income).slice(0, checks)) {
+        for (const candidate of ranked.toSorted((a, b) => b.row.income - a.row.income).slice(0, Math.max(1, maxChecks))) {
             if (candidate.row.income <= pick.earning) break;
             if (asked(candidate.spot)) { pick.earning = candidate.row.income; break; }
         }

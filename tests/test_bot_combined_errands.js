@@ -205,8 +205,8 @@ async function run() {
     assert.deepEqual(onward.stats.marketReturn, originalReturn, 'the way back stays the field it left');
     const done = { ...finished, stats: Errands.complete(finished, Errands.pending(finished)[0], Date.now()).stats };
     const returning = Goals.finishMarketVisit(done);
-    assert(returning && returning.activity === 'traveling' && returning.stats.travel.townName !== 'Giran');
-    assert.equal(held(returning, 736), held(finished, 736), 'return consumes no second departure scroll');
+    assert(returning && returning.activity === 'resting', 'with no errand left it is handed back to the worker in town');
+    assert.equal(held(returning, 736), held(finished, 736), 'the visit\'s end consumes no second departure scroll');
     // The held step's purchase the visit deferred to another town is its next stop too:
     // town to town, the way back still the field it left.
     const heldGoal = Needs.goal;
@@ -218,7 +218,7 @@ async function run() {
         assert.deepEqual(deferred.stats.marketReturn, originalReturn);
         Needs.goal = () => ({ type: 'upgrade_gear', target: { itemId: 2386, amount: 1 },
             plan: { expectedBenefit: 'market_search_for_gear', marketTown: done.currentRegion } });
-        assert.notEqual(Goals.finishMarketVisit(done)?.stats.travel.townName, 'Giran', 'one of this town goes back');
+        assert.equal(Goals.finishMarketVisit(done)?.activity, 'resting', 'one of this town ends the visit here');
     } finally { Needs.goal = heldGoal; }
     console.log('PASS native one-town queue, changed quote, supplies, onward errand and one return');
 }

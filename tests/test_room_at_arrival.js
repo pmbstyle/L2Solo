@@ -3,10 +3,10 @@
 // once, by per-target pressure (the hunters on its target species against that
 // species' share of the room); bots still on their way do not count. Over room it
 // contests at most four standing units: avoid marks the spot (contest_lost wakes the
-// earning spot, the mark holds until that decision is taken), yield waits, an outcome
+// earning spot, the mark lasts the outing), yield waits, an outcome
 // touching a standing unit waits for the arriving commit's ack; a party is met as a
 // whole through its leader, except at its own objective spot; a unit that arrives on
-// a player's command never avoids; a run's spot search still skips a spot with no room;
+// a player's command never avoids;
 // a near bot's spot assignment on main (its near post) reaches the worker, counts as
 // standing and is itself an arrival there.
 const assert = require('node:assert/strict');
@@ -40,6 +40,8 @@ Contest.contest = input => {
         npcId: input.npcId, holds: input.arriving.holds, arriving: input.arriving.key };
     const peer = input.standing.find(unit => !unit.hot);
     if (!forced || !(verdict.pressure > 1) || !peer) return verdict;
+    // An avoid by crowding touches no standing unit: no event, the spot on the verdict.
+    if (forced === 'crowded') return { action: 'avoid', reason: 'crowded', pressure: verdict.pressure, spotId: String(input.spot.id) };
     return { action: forced, pressure: verdict.pressure, peer, event: { at: input.at, key: 'forced:' + input.arriving.key,
         spotId: input.spot.id, npcId: input.npcId, actor: { id: input.arriving.id }, peer: { id: peer.id }, action: forced } };
 };
@@ -59,34 +61,6 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
         if (frame) outbox.receipt({ frameId: frame.frameId, at: frame.at, status: 'accepted' });
         return { before, after: outbox.pending.has(id), sent,
             ...Object.fromEntries(drops.map((why, i) => [why, (counts()['spot:contest:' + why] || 0) - was[i]])) };
-    }
-    if (kind === 'search') {
-        // The step's solo trip searches (routeTrip): the room its search may read.
-        const Spots = invoke('GameServer/Bot/Population/SpotProfiles'), find = Spots.findForState;
-        let hasRoom = null;
-        Spots.findForState = (state, options) => { hasRoom = options.hasRoom || null; return null; };
-        try {
-            const entry = kernel.states.get(id);
-            entry.route = null;
-            // The step's planned state: hunting on the other spot (as a wait
-            // fallback plans it), while the index still holds the bot's own entry.
-            routeTrip({ ...entry.state, activity: 'hunting', spotId: party, stats: { ...entry.state.stats, travel: null, earning: undefined } },
-                { spot: null }, null, Date.now());
-            entry.route = null;
-        } finally { Spots.findForState = find; }
-        return hasRoom && { [spotId]: hasRoom(spotId), [party]: hasRoom(party) };
-    }
-    if (kind === 'partySearch') {
-        // The party run's search (the kernel's partyRoute): the room its
-        // search may read, for the whole party.
-        const Spots = invoke('GameServer/Bot/Population/SpotProfiles'), find = Spots.findForState;
-        let hasRoom = null;
-        Spots.findForState = (state, options) => { hasRoom = options.hasRoom || null; return null; };
-        try {
-            const members = party.memberIds.map(member => kernel.states.get(member).state);
-            kernel.partyRoute({ leader: members[0], party, members, spot: null, timestamp: Date.now() });
-        } finally { Spots.findForState = find; }
-        return hasRoom && hasRoom(spotId);
     }
     if (kind === 'party') {
         const members = party.memberIds.map(member => kernel.states.get(member).state);
@@ -188,6 +162,22 @@ invoke('GameServer/DataCache').init();
         const capped = raised('spot:contest:capped');
         Contest.contest(input([2, 3, 4, 5, 6, 7].map(id => unit(id, 20))));
         assert.equal(raised('spot:contest:capped'), capped + 1, 'more than four standing units: four are met, counted');
+        // Twice the room (CROWDED): a contest the peers settle by letting it stay (yield, or none met) is an
+        // avoid by crowding, touching no standing unit; under it a yield stays a yield; one who holds its
+        // ground coexists; a contest stays a contest. Rolls past every chance: the peers yield.
+        Tendency.roll = () => 0.99;
+        const four = [2, 3, 4, 5].map(id => unit(id, 20));
+        assert.equal(Contest.targetPressure(spot, NPC, 5, 0, () => 4).pressure, 2.5, 'fixture: four standing and one arriving');
+        const crowd = raised('spot:contest:crowded');
+        const packed = Contest.contest(input(four));
+        assert.deepEqual([packed.action, packed.reason, packed.spotId, packed.event], ['avoid', 'crowded', 'pure-spot', undefined],
+            'a crowded spot: the arriving unit leaves and marks it, no event for the standing units');
+        assert.equal(raised('spot:contest:crowded'), crowd + 1, 'counted');
+        assert.equal(Contest.contest(input(four.map(peer => ({ ...peer, hot: true })))).action, 'avoid', 'none met: crowded too');
+        assert.equal(Contest.contest(input([unit(2, 20), unit(3, 20)])).action, 'yield', 'under twice the room: the yield stands');
+        assert.equal(Contest.contest(input(four, unit(1, 30, { holds: 'commanded' }))).action, 'coexist', 'a commanded unit stays');
+        Tendency.roll = (kind, key, i) => kind === 'spot_contest_decision' ? (i === 0 ? 0.99 : 0) : 0;
+        assert.equal(Contest.contest(input(four)).action, 'contest', 'a contest stays a contest');
     } finally { Tendency.roll = roll; }
 }
 // The outbox's way to main (SpotContestOutbox): an arrival's outcome after its step's own
@@ -272,6 +262,9 @@ invoke('GameServer/DataCache').init();
         const lost = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'avoid' });
         assert.deepEqual(lost.marks, [`${room.id}:contest_lost`], 'a lost contest marks the spot');
         assert.equal(lost.woken, true, 'and wakes the earning spot at once');
+        const packed = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'crowded' });
+        assert.deepEqual([packed.marks, packed.woken, packed.outbox], [[`${room.id}:contest_lost`], true, null],
+            'a spot found crowded marks it and wakes the earning spot, sending nothing to the standing units');
         const yielded = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'yield' });
         assert.deepEqual(yielded.marks, [], 'a yield marks nothing');
         assert(yielded.wait && yielded.wait.until > yielded.wait.start, 'a yield waits on the spot');
@@ -299,31 +292,13 @@ invoke('GameServer/DataCache').init();
         assert.equal(free.seen.pressure, 1, 'a bot on its way to the spot does not count against it');
         assert.equal(free.changed, false, 'an arrival into room meets no one');
 
-        // ROUTE-ROOM: the step's spot search skips a spot with no room for
-        // the bot, those on their way counted (one stands there, one comes).
-        const search = id => probe({ kind: 'search', id, spotId: room.id, party: away.id });
-        assert.deepEqual(await search(104), { [room.id]: false, [away.id]: true },
-            'the search counts the bots on their way: no room left for one more');
-        assert.deepEqual(await search(103), { [room.id]: true, [away.id]: true },
-            'the bot\'s own index entry is not counted against it');
-
-        // The party run's search skips a spot with no room for the whole
-        // party: one stands there, one comes (101, 103), the spot holds two.
-        const roaming = memberIds => ({ partyId: 'room-search', leaderId: memberIds[0], memberIds, spotId: away.id, stats: {} });
-        const partySearch = (memberIds, remove) => probe({ kind: 'partySearch', spotId: room.id, party: roaming(memberIds), remove });
-        assert.equal(await partySearch([110, 111]), false, 'a party of two finds no room where two bots are counted');
-        assert.equal(await partySearch([101, 110], [103]), true,
-            'the party\'s own member standing there is not counted against it: 0 + 2 fit');
-        assert.equal(await partySearch([110, 111]), false, 'one bot stands there: no room for a party of two');
-        assert.deepEqual(await search(104), { [room.id]: true, [away.id]: true }, 'a solo bot still takes the one free place');
-
         // A party of two arrives where one bot stands: over room, met as one unit through its leader.
         const party = { partyId: 'room-party', leaderId: 110, memberIds: [110, 111], spotId: room.id, stats: {} };
         const avoided = await probe({ kind: 'party', spotId: room.id, party, outcome: 'avoid' });
         assert.equal(avoided.seen.arriving, 'room-party', 'a party is met as a whole');
         assert.equal(avoided.seen.pressure, 1.5);
         assert(avoided.excluded.includes(room.id), 'the party\'s next spot search skips the spot it lost');
-        assert(!avoided.lapsed.includes(room.id), 'the party\'s next spot answer retires the mark');
+        assert(avoided.lapsed.includes(room.id), 'the party\'s next spot answer keeps the mark: no return to the packed spot');
         assert.deepEqual(avoided.leaderMarks, [`${room.id}:contest_lost`], 'the leader lost the contest');
         assert.deepEqual(avoided.memberMarks, [], 'a member\'s own arrival is not met');
         const waiting = await probe({ kind: 'party', spotId: room.id, party, outcome: 'yield' });

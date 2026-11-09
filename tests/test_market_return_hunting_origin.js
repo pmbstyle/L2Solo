@@ -11,7 +11,7 @@ const Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const Errands = invoke('GameServer/Bot/Population/CombinedErrandPolicy');
 const Executor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
-const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const timestamp = 1793485080000;
 const inventory = {};
 // A Falchion, not the starter Broadsword: a level 24 knight with the latter does not
@@ -56,43 +56,40 @@ try {
     Spots.cache = Service.spots = spots;
     Errands.pending = () => [];
     assert.equal(Income.heldSpot(shopper, spots)?.id, source.id, 'fixture: the held earning answer is its source');
-    const returned = Executor.finishMarketVisit(shopper, timestamp);
-    assert.equal(returned.stats.travel.spotId, source.id,
-        'a shopping visit returns directly to the valid material source');
-    const arrived = { ...returned, activity: 'hunting', spotId: source.id, loc: returned.stats.travel.to,
-        stats: { ...returned.stats, travel: null } };
+    // A solo visit's end hands the bot back to the worker: it rests in town, due now, with no
+    // trip of main's choosing, whatever spot it hunted before (marketReturn) or the worker holds.
+    const back = row => {
+        const next = Executor.finishMarketVisit(row, timestamp);
+        assert.equal(next.activity, 'resting', 'the visit ends in town');
+        assert.equal(next.stats.travel ?? null, null, 'main starts no trip');
+        assert.equal(next.timing.nextResolveAt, timestamp, 'the worker\'s next step is due now');
+        assert.equal(next.stats.marketReturn, null);
+        assert.equal(next.spotId, null, 'it stands on no spot in town');
+        // The worker's next step ends its rest, due now again: the step after it starts the
+        // trip (BotRoute.trip), not half a minute later.
+        const rest = Resolver.resolveSolo({ state: next, spot: null, elapsedMs: 0, timestamp });
+        assert.equal(rest.patch.activity, 'hunting', 'its rest is over');
+        assert.equal(rest.nextResolveAt, timestamp, 'with no ground under it, it is routed at once');
+        return { ...next, activity: rest.patch.activity, stats: { ...next.stats, ...rest.patch.stats } };
+    };
+    const tripOf = (row, leaf = null) => BotRoute.trip({}, row, leaf, { spots, timestamp: timestamp + 1000 })?.spotId;
+    const returned = back(published(shopper));
+    assert.equal(tripOf(returned), source.id, 'the worker sends it to the valid material source it holds');
+    const arrived = { ...returned, spotId: source.id, loc: source.center, currentRegion: source.name };
     assert.equal(BotRoute.trip({}, arrived, leaf, { spots, timestamp: timestamp + 30000,
-        currentSpot: source, hasRoom: () => true }), null, 'the worker needs no second trip to its source');
+        currentSpot: source }), null, 'the worker needs no second trip to its source');
 
     // The plan as its review publishes it: with the route's verdict on its source.
     const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: invoke('GameServer/Bot/AI/GearPlanSelection')
         .withRoutedSource(shopper, { status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
             next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
-    // A gear plan's source the route takes comes before the held answer, as on the route
-    // (BotRoute: an active plan's source is the search's own rule).
-    assert.equal(Executor.finishMarketVisit(published(changed), timestamp).stats.travel.spotId, money.id,
-        'an active plan\'s viable source is the return, as the route takes it');
+    // A gear plan's source the route takes comes before the held answer (BotRoute.huntSpot).
+    assert.equal(tripOf(back(published(changed))), money.id, 'an active plan\'s viable source, as the route takes it');
     // The held answer comes before the spot it hunted before the trip (B12).
     const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
-    assert.equal(Executor.finishMarketVisit(published(heldElsewhere), timestamp).stats.travel.spotId, money.id,
-        'the held earning answer goes first, the saved spot only without one');
-    const away = { ...changed, stats: { ...changed.stats, spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(published(away), timestamp).stats.travel.spotId, money.id,
-        'with that spot excluded, the viable plan source');
-
-    const excluded = { ...shopper, stats: { ...shopper.stats, earning: holding(money),
-        spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(published(excluded), timestamp).stats.travel.spotId, money.id,
-        'an excluded (marked full) source is not chosen: the held earning answer is');
-    // A spot that filled during the visit, with no mark yet, is met by the
-    // worker (the room at arrival), one trip after the return.
-    for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,
-        characterName: 'SourceHunter', level: 24, phase: 'cold', activity: 'hunting', spotId: source.id,
-        statsJson: '{}', inventorySummary: '{}' });
-    assert.equal(Executor.finishMarketVisit(published(shopper), timestamp).stats.travel.spotId, source.id,
-        'a source that filled during the visit: the return goes home, the room is read at arrival');
-    assert.equal(Executor.finishMarketVisit(published(shopper, { activity: 'hunting', spotId: money.id }), timestamp)
-        .stats.travel.spotId, money.id, 'the worker\'s hunting leaf names the return spot');
+    assert.equal(tripOf(back(published(heldElsewhere))), money.id, 'the held earning answer, not the saved spot');
+    assert.equal(tripOf(back(published(shopper)), { activity: 'hunting', spotId: money.id }), money.id,
+        'the worker\'s hunting leaf names the spot');
 } finally {
     Spots.cache = saved.spots; Service.spots = saved.service;
     Errands.pending = saved.pending;

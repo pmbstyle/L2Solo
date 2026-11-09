@@ -1010,6 +1010,14 @@ function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -
     DiagnosticConfig.developerDiagnostics && (stats.spotIdRanks += 1);
     return rankIncome(t, rates, role, level, costs, minGap, shots, skill).map(({ index }) => t.spots[index][0]);
 }
+// rankedSpotIds with the value each is ranked by (rankIncome's held income): [{ spotId, value }], for a
+// search that compares values (SpotSearch's leveling goal: its habit band).
+function rankedSpotValues(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}) {
+    const { t, rates } = incomeSource();
+    const skill = rewardOptions.spoilSkillLevel ?? roleSpoilLevel(role, level);
+    DiagnosticConfig.developerDiagnostics && (stats.spotIdRanks += 1);
+    return rankIncome(t, rates, role, level, costs, minGap, shots, skill).map(({ index, held }) => ({ spotId: t.spots[index][0], value: held }));
+}
 // The positive incomes of the role/level band at these consumable prices,
 // best first, ties to the spot whose level is closest to the bot's, then by
 // spot id; the first 64: [{ index, income }]. Best by what one bot gets on
@@ -1123,4 +1131,4 @@ function useFile(next = DEFAULT_FILE) {
     clearIncomeBases();
 }
 
-module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, outleveled, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, outleveled, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, rankedSpotValues, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };

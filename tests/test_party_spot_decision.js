@@ -79,7 +79,8 @@ async function step(party, level, { answer = { spotId: ground }, round = {} } = 
     assert.strictEqual(empty.searches, 0, 'a round with no fight it may take is no search yet');
     const emptied = await step({ ...partyFor(null), stats: empty.party.stats }, 5);
     assert.strictEqual(emptied.searches, 1, 'its next step hears spot_empty on the held ground');
-    assert.strictEqual((await step({ ...partyFor(null), stats: emptied.party.stats }, 5)).searches, 0, 'once');
+    assert(require('../src/GameServer/Bot/Population/PartySpotRiskPolicy').excludedSpotIds(emptied.party).has(ground),
+        'the empty ground stays marked over the answer: the search passes it by');
     const left = await step({ ...partyFor(null, holding), memberIds: [1, 3] }, 5);
     assert.strictEqual(left.searches, 1, 'a roster change (a member left, one joined) wakes the decision');
     const died = await step(partyFor(null, { ...holding, deaths: 1 }), 5);

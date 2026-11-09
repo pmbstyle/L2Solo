@@ -120,7 +120,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             const coldFailed = await ColdMarketService.tryPurchase(cold, goal);
             assert.strictEqual(coldFailed.reason, 'offer_changed');
             assert.strictEqual(BotLifeState.snapshot(78).phase, 'cold');
-            assert.strictEqual(BotLifeState.snapshot(78).activity, 'traveling', 'a cold bot without its purchase returns to farming');
+            assert.strictEqual(BotLifeState.snapshot(78).activity, 'resting', 'a cold bot without its purchase ends its visit: the worker returns it to farming');
             assert.strictEqual(BotLifeState.snapshot(78).stats.lastReason, 'market_no_offer_return');
 
             console.log('Cold purchase failure with a hot bot checks passed');

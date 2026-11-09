@@ -1,22 +1,24 @@
 'use strict';
 // The bot's hunting route (docs/architecture.md §2 route): where a far bot
-// hunts and the trip there. Two parts:
-// - choose: the spot search, the bot's computed value over its route facts
-//   (EconomyContext PIECE_FACTS.route: kit, party, clan, spot, risk). trip keeps
-//   its result in the bot's kernel record; the worker's step drops it (drop,
-//   dropReason) when its build's route facts moved, it wrote other plan / request fields the
-//   search reads, a leaf trip starts, or the trip finds the kept spot full
-//   (ROUTE-ROOM-3); it reads no leaf and no focus.
+// hunts and the trip there. Three parts:
+// - huntSpot: where a solo bot hunts next, the one choice (command, leaf,
+//   plan source, held earning answer, search: the solo ones SpotSearch's), held on the bot's kernel record
+//   (heldHuntSpot) by its named inputs; the worker's step drops it (drop) when
+//   its build's route facts moved. Published in the mind (huntSpotHeld) for main.
+// - choose: the spot search with no held answer (a party's ground, a party
+//   waiter's fallback, SpotSearch's leveling goal through SpotProfiles.findForState,
+//   an evacuation), the bot's computed value over its route facts
+//   (EconomyContext PIECE_FACTS.route: kit, party, clan, spot, risk).
 // - record: the trip from where the bot stands now (destinations, travel
 //   time, the reason fields), built per read and never kept.
 // leafChoice: the spot the step's own decision names, when it may go there
 // (leafFitReader: the one fit test, the economy's leaf reads it too). The
 // trip keeps its ground and matchup verdicts on the same record, each keyed
 // on what it reads (heldVerdict).
-// Callers: the worker's trip start (planLifecycle: trip), the party run (the
-// worker's partyRoute, ColdSimulationKernel: its held spot answer, searched only
-// when the party's spot decision is woken). Worker-safe: every spot lookup
-// reads the catalog the caller passes (`spots`, the spot profile array: the
+// Callers: the worker's trip start (planLifecycle: trip) and publish (huntSpotHeld),
+// the party run (the worker's partyRoute, ColdSimulationKernel: its held spot answer,
+// searched only when the party's spot decision is woken). Worker-safe: every spot
+// lookup reads the catalog the caller passes (`spots`, the spot profile array: the
 // worker's planning catalog, SpotProfiles.ensure() on main).
 const FailureLog = invoke('FailureLog');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
@@ -26,13 +28,14 @@ const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Situations = require('../Situations');
+const Trace = require('../DecisionTrace');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const ClanPartyDuty = invoke('GameServer/Bot/Population/ClanPartyDuty');
 const BotCrystallization = invoke('GameServer/Bot/Economy/BotCrystallization');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
-const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
 const PartyHuntingAssembly = require('./PartyHuntingAssembly');
 const CraftMaterialParty = require('./CraftMaterialParty');
@@ -81,20 +84,16 @@ function groundOf(state, currentSpot) {
 // depend on the bot, not the spot: built once per frame (solo()), as is the
 // unsafe-ground verdict. One frame serves one trip start (leafChoice or
 // choose, then record): the caller builds it once and passes it to each.
-// hasRoom: the worker's room filter for the spot search (ROUTE-ROOM): the
-// solo trip's for the bot, the party run's for the whole party; main passes
-// none (a search on main reads main's world index for the routed members in
-// SpotProfiles.findForState, ROUTE-ROOM-4). spotHunters: the worker's hunters
-// count for the search's spot values (ColdSimulationKernel.spotHunters; main
-// passes none: SpotEconomics reads main's).
-function frameFor(state, party, partyMembers = [], timestamp, hasRoom = null, spotHunters = null) {
+// No search reads the crowd: a spot is chosen by fit and met at arrival
+// (SpotContest).
+function frameFor(state, party, partyMembers = [], timestamp) {
     const partyRoute = !!party;
     const routedMembers = partyRoute ? partyMembers : [state];
     const excludedSpotIds = partyRoute ? PartySpotRiskPolicy.excludedSpotIds(party, timestamp)
         : SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
     const role = partyRoute ? PartyComposition.roleForState(state) : null;
     const options = { capacityStates: routedMembers, excludedSpotIds, timestamp,
-        ...(partyRoute ? { mode: 'party', role } : {}), ...(hasRoom ? { hasRoom } : {}), ...(spotHunters ? { spotHunters } : {}) };
+        ...(partyRoute ? { mode: 'party', role } : {}) };
     let soloProfiles = null;
     const solo = () => {
         soloProfiles = soloProfiles || BotTargetMatchup.stateProfiles(state, { ...options, mode: 'solo' });
@@ -156,7 +155,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
     if (!partyRoute && PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) {
         try {
             fallback = PartyWaitFallback.spotFor(state, state.stats?.equipmentPlan, spots,
-                { excludedSpotIds, timestamp, hasRoom: options.hasRoom, spotHunters: options.spotHunters });
+                { excludedSpotIds, timestamp });
         } catch (error) { FailureLog.note('route.wait_fallback', error); fallback = null; }
     }
     const fallbackSpot = fallback?.spot || null;
@@ -186,10 +185,11 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
         selected = materialRoute?.spot || null;
     }
     try {
-        // A party-mode search of a lone member builds no profiles at all.
+        // A party-mode search of a lone member builds no profiles at all. A solo pick is the route's
+        // answer: its habit counted (countHabit).
         if (!selected) selected = SpotProfiles.findForState(routeState, !partyRoute
             && LevelingRoutes.modeForState(routeState, options) !== 'party'
-            ? { ...options, profiles: spots, matchupProfiles: frame.solo().matchupProfiles }
+            ? { ...options, profiles: spots, matchupProfiles: frame.solo().matchupProfiles, countHabit: true }
             : { ...options, profiles: spots });
     } catch (error) { FailureLog.note('route.search', error); return null; }
     if (unsafe && selected) {
@@ -197,9 +197,8 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
         if (repeatsCurrentGround || !LevelingRoutes.isSpotAllowedForState(selected, state, frame.solo())) selected = null;
     }
     if (!selected && unsafe) selected = evacuationSpot(state, currentId, spots, frame);
-    // A party search with no spot elsewhere (no room for the whole party, or none
-    // allowed or matched) keeps the party on its current ground while that ground
-    // stands for it (partyGround): no room elsewhere is no reason to break up. None:
+    // A party search with no spot elsewhere (none allowed or matched) keeps the party
+    // on its current ground while that ground stands for it (partyGround). None:
     // the ground itself no longer stands for it (the party dissolves).
     if (partyRoute && !selected) {
         const ground = currentId ? SpotIndex.spotById(spots, currentId) : null;
@@ -275,11 +274,8 @@ function soloLevelFits(state, spot, level, options = {}) {
 }
 
 // The spot a solo bot's own hunting leaf names, as a choice for record, when
-// the bot may hunt there (leafFitReader). With the worker's room filter
-// (frame.options.hasRoom, ROUTE-ROOM-2) a fitting spot other than the bot's
-// own with no room for it is no leaf trip either: returned with full: true
-// (counted as route:trip:leaf_full), the kept route decides and its trip
-// stands in for it (trip); the room is checked again at arrival. Null: the
+// the bot may hunt there (leafFitReader), full or not (the crowd is met at
+// arrival). Null: the
 // kept route decides. owner: the bot's kernel record, where the verdict is
 // kept (heldVerdict; the trip's frame carries it).
 function leafChoice(state, leaf, { spots, timestamp, frame = null, owner = null }) {
@@ -289,13 +285,7 @@ function leafChoice(state, leaf, { spots, timestamp, frame = null, owner = null 
     if (verdict === 'missing') { EconomyDiagnostics.count('route', 'trip', 'leaf_missing'); return null; }
     if (verdict === 'unfit') { EconomyDiagnostics.count('route', 'trip', 'leaf_unfit'); return null; }
     if (verdict !== 'fit') return null;
-    const wished = SpotIndex.spotById(spots, leaf.spotId);
-    const hasRoom = frame.options.hasRoom;
-    if (hasRoom && String(wished.id) !== String(state.spotId || '') && !hasRoom(wished.id)) {
-        EconomyDiagnostics.count('route', 'trip', 'leaf_full');
-        return { spotId: wished.id, full: true };
-    }
-    return { spotId: wished.id };
+    return { spotId: SpotIndex.spotById(spots, leaf.spotId).id };
 }
 
 // The trip to a chosen spot from where the bot stands now, in the shape
@@ -357,39 +347,35 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
     };
 }
 
-// The party run's trip (the worker's room filter in hasRoom): to its held spot answer
+// The party run's trip: to its held spot answer
 // (held: { spotId }, Situations.partyHeld), else one search, its answer given to
 // out.answer ({ spotId (null: none) , materialRoute, materialSources }: the party
 // spot decision the run takes; none given when the party may not be routed now).
-function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, hasRoom = null, spotHunters = null, held = null, out = null }) {
+function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, held = null, out = null }) {
     if (!routable(state, party, partyMembers)) return null;
     // A held answer searches nothing: its frame is built by record, only for a trip.
-    const frame = held ? null : frameFor(state, party, partyMembers, timestamp, hasRoom, spotHunters);
+    const frame = held ? null : frameFor(state, party, partyMembers, timestamp);
     const chosen = held ? { spotId: held.spotId } : choose(state, currentSpot, party, partyMembers, { spots, timestamp, frame });
     if (!held && chosen && out) out.answer = chosen;
     return record(state, chosen, party, partyMembers, { spots, currentSpot, timestamp, frame });
 }
 
-// The solo trip of a step: to the spot the step's own leaf names when the
-// bot may hunt there (a trip there drops the kept route: it was searched
-// from the ground the bot leaves), else to the route kept on `owner` (the
-// bot's kernel record), searched here when it holds none (null: dropped or
-// never computed; not saved, so the first read after a restart searches).
-// A kept route to a spot other than the bot's own that hasRoom (the search's
-// room filter, ROUTE-ROOM-3) refuses is dropped first (route:drop:full): the
-// room-filtered search decides, as it does for a leaf trip. The trip is
-// built from where the bot stands now; null: no trip. Counted as
-// route:trip:leaf|kept|search. When the leaf's hunting spot is full now
-// (leafChoice), a kept or searched level / gear trip stands in for it and
-// names it (leafSpotId, read by DecisionSections.occupationPlanned; counted
-// as route:trip:detour); a flight (death pressure, unsafe ground) names none:
-// it stays an event, as does a trip away from a spot the bot may not hunt
-// and the detour of a leaf that hunts a material at its monster (only that
-// monster brings the material in).
-const DETOUR_REASONS = new Set(['level_replan', 'equipment_source_replan']);
-function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoom = null, spotHunters = null }) {
+// The solo trip of a step: to the spot the bot's one choice names (heldHuntSpot,
+// kept on `owner`, the bot's kernel record), built from where it stands now; null:
+// no trip. What the trip adds is the executor's part: an accepted occupation leaf
+// holds the bot (no field trip before the errand runs), ground the bot may not hunt
+// that the choice leaves it on is fled (the search's evacuation, choose, nothing
+// kept), and with no spot it may take and no ground under it the bot asks the
+// earning decision again once per answer (Situations.spotAsk on the record: the
+// route carries spot_empty to the step, stepTrip; an answer to that ask with none
+// either leaves it where it is, counted earning:no_spot). Counted as
+// route:trip:held_choice|evacuate|occupation. The held choice is read first, whatever
+// the trip does, and given to out.held (the step publishes it: huntSpotKeyOf).
+function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = null }) {
+    const held = heldHuntSpot(owner, state, leaf, { spots, timestamp });
+    if (out) out.held = held;
     if (!routable(state, null, [])) return null;
-    const frame = frameFor(state, null, [], timestamp, hasRoom, spotHunters);
+    const frame = frameFor(state, null, [], timestamp);
     frame.owner = owner || null;
     // The accepted occupation owns this round. A routine hunting replan
     // must not turn a pending purchase/craft/sale into another field trip
@@ -398,137 +384,151 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoo
         EconomyDiagnostics.count('route', 'trip', 'occupation');
         return null;
     }
-    const wished = leafChoice(state, leaf, { spots, timestamp, frame });
-    if (wished && !wished.full) {
-        EconomyDiagnostics.count('route', 'trip', 'leaf');
-        const started = record(state, wished, null, [], { spots, currentSpot, timestamp, frame });
-        if (started) drop(owner, 'leaf');
-        return started;
-    }
-    // A solo bot holding an earning answer goes to its spot (heldChoice), unless its
-    // own ground is unsafe and the answer leaves it there: the search's evacuation
-    // (choose, nothing kept). With no spot it may take and no ground under it, it
-    // asks the decision again once per answer (Situations.spotAsk on the record:
-    // the route carries spot_empty to the step, stepTrip); an answer to that ask
-    // with none either leaves it where it is (counted earning:no_spot).
-    let chosen = heldChoice(state, spots, frame);
-    if (chosen && unsafeSoloGround(state, currentSpot, frame)
-        && (!chosen.spotId || String(chosen.spotId) === String(currentSpotId(state, currentSpot, null, spots) || ''))) {
+    let chosen = held;
+    if (unsafeSoloGround(state, currentSpot, frame)
+        && (!chosen?.spotId || String(chosen.spotId) === String(currentSpotId(state, currentSpot, null, spots) || ''))) {
         EconomyDiagnostics.count('route', 'trip', 'evacuate');
         chosen = choose(state, currentSpot, null, [], { spots, timestamp, frame });
-    } else if (chosen !== undefined) {
-        EconomyDiagnostics.count('route', 'trip', 'held');
-        if (chosen.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
+    } else {
+        EconomyDiagnostics.count('route', 'trip', 'held_choice');
+        if (chosen?.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
         else if (!currentSpot && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
             return { needed: false, ask: 'spot_empty' };
         }
-    } else {
-        const kept = owner?.route;
-        if (hasRoom && kept?.spotId && String(kept.spotId) !== String(state.spotId || '') && !hasRoom(kept.spotId)) {
-            drop(owner, 'full');
-        }
-        EconomyDiagnostics.count('route', 'trip', owner?.route ? 'kept' : 'search');
-        chosen = owner?.route || choose(state, currentSpot, null, [], { spots, timestamp, frame });
-        if (owner && !owner.route) owner.route = chosen;
     }
-    const started = record(state, chosen, null, [], { spots, currentSpot, timestamp, frame });
-    if (!started || !wished?.full || !DETOUR_REASONS.has(started.reason) || ColdEconomyDecision.materialHunt(leaf)) return started;
-    EconomyDiagnostics.count('route', 'trip', 'detour');
-    return { ...started, leafSpotId: wished.spotId };
+    return record(state, chosen, null, [], { spots, currentSpot, timestamp, frame });
 }
 
-// A solo bot's route while it holds an earning answer (situations.md B12): the
-// answer's spot, read, never searched and kept nowhere (the same after a worker
-// restart: the answer is in the mind). { spotId: null }: none it may take (none
-// found, its marks exclude it, or no room: ROUTE-ROOM-2): it stays until a
+// A solo bot's held earning answer as a choice: the answer's spot, read, never
+// searched (the same after a worker restart: the answer is in the mind). { spotId:
+// null }: none it may take (none found, or its marks exclude it): it stays until a
 // situation re-decides. undefined: no answer yet (its first decision pending), a
-// gear plan's source, a protected starter field or a party waiter: the search
-// decides (choose).
+// protected starter field or a party waiter: the search decides (choose).
 function heldChoice(state, spots, frame) {
-    const plan = state.stats?.equipmentPlan;
     // A waiter for a required party hunts its safe fallback (PartyWaitFallback, in
-    // choose) before its answer: temporary until the party aggregate (step 8, debt.md).
+    // choose) before its answer: temporary until the party aggregate.
     if (state.stats?.earning === undefined || SpotProfiles.isProtectedStarterCohort(state)
-        || plan?.status === 'active' && plan.next?.spotId
-        || PartyWaitFallback.waiting(state, plan, state.stats?.partyRequest)) return undefined;
+        || PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) return undefined;
     const spot = EquipmentIncomeRoute.heldSpot(state, spots);
     if (!spot || frame.excludedSpotIds.has(String(spot.id))) return { spotId: null };
-    const hasRoom = frame.options.hasRoom;
-    if (hasRoom && String(spot.id) !== String(state.spotId || '') && !hasRoom(spot.id)) return { spotId: null };
     return { spotId: spot.id };
 }
 
-// The spot this bot goes to when it is sent to hunt from wherever it stands (a town
-// or hall visit's end, a body that must leave its ground): the solo trip's own choice
-// (trip) for the bot as if it hunted now, in its order: the spot its leaf names when
-// it fits (leafChoice), else its held earning answer (heldChoice), else the search
-// (choose), each under the bot's exclusions as the trip applies them. The search is
-// the trip's own: the route kept on `owner` (the bot's kernel record) when one is kept
-// (searched with the trip's room filter, or here; the trip drops a kept route that has
-// no room for the bot, ROUTE-ROOM-3), else searched here without a room filter and kept
-// there for the trip. A leaf or held answer's room is met at arrival. The worker
-// publishes it in the mind (huntSpotHeld); main reads it (DecisionEvents.heldSpotOf),
-// never chooses one. A spot id, null (none found, none it may take, or a party member:
-// its hunt is its party's), or undefined: the route may not take the bot now (a clan
-// party wait, a crystal exchange ready), asked again at its next step. Worker-only:
-// the catalogue (spots) and the hunters count (spotHunters) are the trip's.
-function huntSpot(state, leaf, { spots, timestamp, spotHunters = null, owner = null }) {
+// The gear plan's source as the bot's spot: the one search's source goal over the plan's item
+// (GearAcquisitionPlanner.bestSourceForPlan: its sources by value, the habit band), under the
+// bot's exclusions, each source judged as the bot would hunt it solo (the source route reader: its
+// ground, level and kit against the source's species; a clan raid plan's raid ground by the ground and
+// matchup verdict); with none picked, the plan's own source only when the item's list misses it (unlisted).
+// None for a plan in leveling recovery (the leveling pick routes it) or a craft plan whose material is in
+// the bag. Null: no active plan source the bot may take (its held answer decides).
+function planSource(state, spots, frame) {
+    const plan = state.stats?.equipmentPlan;
+    if (plan?.status !== 'active' || !plan.next?.spotId) return null;
+    const timestamp = frame.options.timestamp, solo = frame.solo();
+    const route = GearAcquisitionPlanner.sourceRouteReader(state, { timestamp, spots, matchupProfiles: solo.matchupProfiles });
+    let ready = null;
+    const allowed = source => {
+        const spot = SpotIndex.spotById(spots, source.spotId);
+        if (!spot) return false;
+        return spot.raidBoss === true ? (ready ||= LevelingRoutes.readySpotReaderFor(state, solo))(spot) : route(spot, source.npcId);
+    };
+    // The pick is the route's answer: its habit counted (countHabit).
+    const source = GearAcquisitionPlanner.bestSourceForPlan(state, plan, spots, { excludedSpotIds: frame.excludedSpotIds, timestamp,
+        mode: 'solo', matchupProfiles: solo.matchupProfiles, sourceAllowed: allowed, unlisted: true, countHabit: true,
+        allowRaidSources: plan.next.sourceKind === 'raid' && GearAcquisitionPlanner.isClanOwnedPlan(plan) });
+    return source ? SpotIndex.spotById(spots, source.spotId) : null;
+}
+
+// Where this solo bot hunts next: the one choice, for its trip (trip) and for every
+// reader that sends it to hunt from wherever it stands (a town or hall visit's end, a
+// body that must leave its ground: the mind key, huntSpotHeld). In order: a player's
+// command (its spot whatever the bot's own marks: only a spot the catalogue lost or a
+// raid refuses it), the spot its hunting leaf names when it fits (leafChoice), the gear
+// plan's source (planSource; not for a protected starter or a party waiter), its held earning answer (heldChoice),
+// else the search (choose: a party waiter's fallback, a protected starter's field, the
+// leveling goal). The bot is judged as
+// if it hunted now, under its exclusions (marks, death marks, death pressure). Our
+// choice, as a C4 player picks a camp: by level, gear goal and income he knows, the
+// crowd met only on arrival. { spotId (null: none found or none it may take), npcId (a
+// party waiter's planned fallback: the NPC its plan farms there, PartyWaitFallback.spotFor) },
+// null for a party member (its hunt is its party's), undefined when the route may not
+// take the bot now (a clan party wait, a crystal exchange ready) or its search threw
+// (nothing kept: asked again at the next read). Worker-only: the catalogue
+// (spots) is the trip's.
+function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
     if (!state || state.party?.partyId || state.partyId) return null;
     const hunter = { ...state, phase: 'cold', activity: 'hunting', stats: { ...state.stats, travel: null } };
     if (!routable(hunter, null, [])) return undefined;
-    const frame = frameFor(hunter, null, [], timestamp, null, spotHunters);
-    let chosen = leafChoice(hunter, leaf, { spots, timestamp, frame }) || heldChoice(hunter, spots, frame);
-    if (chosen === undefined) {
-        chosen = owner?.route || choose(hunter, null, null, [], { spots, timestamp, frame });
-        if (owner && !owner.route) owner.route = chosen;
+    const earning = hunter.stats.earning;
+    if (EquipmentIncomeRoute.isCommanded(earning)) {
+        const spot = SpotIndex.spotById(spots, earning.spotId);
+        return { spotId: spot && spot.raidBoss !== true ? String(spot.id) : null };
     }
-    return chosen?.spotId != null ? String(chosen.spotId) : null;
+    const frame = frameFor(hunter, null, [], timestamp);
+    frame.owner = owner;
+    const wished = leafChoice(hunter, leaf, { spots, timestamp, frame });
+    if (wished) return { spotId: String(wished.spotId) };
+    // A protected starter keeps its field and a party waiter its fallback before a plan's source (choose).
+    const plan = hunter.stats.equipmentPlan;
+    const source = SpotProfiles.isProtectedStarterCohort(hunter) || PartyWaitFallback.waiting(hunter, plan, hunter.stats.partyRequest)
+        ? null : planSource(hunter, spots, frame);
+    if (source) return { spotId: String(source.id) };
+    let chosen = heldChoice(hunter, spots, frame);
+    if (chosen === undefined) chosen = choose(hunter, null, null, [], { spots, timestamp, frame });
+    // A search that threw keeps nothing: asked again at the next read.
+    if (!chosen) return undefined;
+    return { spotId: chosen.spotId != null ? String(chosen.spotId) : null, ...(chosen.npcId ? { npcId: chosen.npcId } : {}) };
 }
-// What a published hunt spot was chosen on, as main's row holds it too: the gear plan's
-// source spot while the plan is active, and the earning answer's spot (null for none).
-function huntBasis(stats = {}) {
-    const plan = stats.equipmentPlan;
-    return { plan: plan?.status === 'active' && plan.next?.spotId != null ? String(plan.next.spotId) : null,
-        earning: stats.earning?.spotId != null ? String(stats.earning.spotId) : null };
+// The choice (huntSpot) held on the bot's kernel record (owner.huntSpot = { key, value },
+// worker-only), chosen again only when one of its inputs on the row moves: the leaf
+// (activity, spot), the plan and party request fields the search reads (planKey: the
+// gear plan's source and party need, the request's status, priority, material party and
+// suspension), the earning answer's spot and command, the level, the party, the
+// exclusions' revision and the spot it stands on (the search keeps the current spot).
+// The rest it reads (the kit, shots and servitor of the ground and matchup verdicts,
+// relations, risk deaths, recovery) moves the build's route facts, whose drop (drop)
+// clears it; the catalogue's crowd is read when it chooses and wakes nothing. A changed
+// choice is traced as hunt_spot decided by the route. The value, or null / undefined as
+// huntSpot (neither kept).
+function heldHuntSpot(owner, state, leaf, { spots, timestamp }) {
+    const stats = state.stats || {};
+    const key = `${leaf?.activity || ''}|${leaf?.spotId ?? ''}|${planKey(stats.equipmentPlan, stats.partyRequest)}`
+        + `|${stats.earning?.spotId ?? ''}|${EquipmentIncomeRoute.isCommanded(stats.earning) ? 1 : 0}`
+        + `|${Number(state.level) || 0}|${state.party?.partyId || state.partyId || ''}`
+        + `|${SpotRiskPolicy.exclusionVersion(state).revision}|${state.spotId ?? ''}`;
+    const held = owner?.huntSpot;
+    if (held?.key === key) return held.value;
+    const value = huntSpot(state, leaf, { spots, timestamp, owner });
+    if (!value) return value;
+    const was = held?.value?.spotId ?? stats.huntSpot?.spotId ?? null;
+    if (Trace.on() && was !== value.spotId) {
+        Trace.record({ kind: 'decided', bot: state.characterId, decision: 'hunt_spot', caller: 'route', how: 'taken',
+            ...(value.spotId == null ? {} : { answer: value.spotId }), ...(was == null ? {} : { was: String(was) }) });
+    }
+    if (owner) owner.huntSpot = { key, value };
+    return value;
 }
 // The mind key a worker step or near decision publishes (null: unchanged): stats.huntSpot
-// = { spotId: huntSpot's answer (null: none), plan, earning: its basis (huntBasis) }, ~40 bytes
-// per row, kept on the bot's kernel record (owner.huntSpot). Written whenever the row's
-// value differs from the one chosen (a refused commit, a restart: written again at the
-// next step). Undefined (the route may not take the bot now) is neither kept nor
-// written: the next step asks again.
-function huntSpotHeld(owner, state, leaf, { spots, timestamp, spotHunters = null }) {
-    const stats = state.stats || {};
-    // Chosen again when one of its inputs on the row moves: the leaf (activity, spot), the
-    // plan and party request fields the search reads (planKey: the gear plan's source and
-    // party need, the request's status, priority, material party and suspension), the
-    // earning answer's spot, the level, the party and the exclusions' revision. The rest
-    // it reads (the kit, shots and servitor of the ground and matchup verdicts, relations,
-    // risk deaths, recovery, the spot it stands on) moves the build's route facts, whose
-    // drop (drop) clears it; the catalogue's crowd is read when it chooses and wakes nothing.
-    const key = `${leaf?.activity || ''}|${leaf?.spotId ?? ''}|${planKey(stats.equipmentPlan, stats.partyRequest)}`
-        + `|${stats.earning?.spotId ?? ''}|${Number(state.level) || 0}|${state.party?.partyId || state.partyId || ''}`
-        + `|${SpotRiskPolicy.exclusionVersion(state).revision}`;
-    let held = owner?.huntSpot;
-    if (held?.key !== key) {
-        const spotId = huntSpot(state, leaf, { spots, timestamp, spotHunters, owner });
-        if (spotId === undefined) return null;
-        held = { key, value: { spotId, ...huntBasis(stats) } };
-        if (owner) owner.huntSpot = held;
-    }
-    const was = stats.huntSpot, value = held.value;
-    return was?.spotId === value.spotId && was.plan === value.plan && was.earning === value.earning ? null : { huntSpot: value };
+// = { spotId: the held choice's spot (null: none) }, ~20 bytes per row, read by main
+// (DecisionEvents.heldSpotOf). Written whenever the row's value differs from the one
+// chosen (a refused commit, a restart: written again at the next step). A party member
+// (null) or a step the route may not take the bot on (undefined) writes nothing: the
+// next step asks again.
+function huntSpotHeld(owner, state, leaf, options) {
+    return huntSpotKeyOf(state, heldHuntSpot(owner, state, leaf, options));
+}
+// The mind key of a held choice already read (trip's out.held): huntSpotHeld without a second read.
+function huntSpotKeyOf(state, value) {
+    if (!value) return null;
+    return state.stats?.huntSpot?.spotId === value.spotId ? null : { huntSpot: { spotId: value.spotId } };
 }
 
-// The kept route goes; the next trip start searches again, and the published hunt spot
-// (huntSpotHeld) is chosen again at the next step, kept route or none. Counted as
-// route:drop:<why> when a route was kept.
+// The held choice goes: chosen again at the next read. Counted as route:drop:<why> when
+// one was held.
 function drop(owner, why) {
-    if (!owner) return;
-    owner.huntSpot = null;
-    if (!owner.route) return;
+    if (!owner?.huntSpot) return;
     EconomyDiagnostics.count('route', 'drop', why);
-    owner.route = null;
+    owner.huntSpot = null;
 }
 
 // The plan and party request fields the search reads (the party wait,
@@ -538,12 +538,4 @@ function planKey(plan, request) {
         + `${plan?.requiresParty}|${request?.status}|${request?.priority}|${!!request?.materialParty}|${!!request?.suspendedFor}`;
 }
 
-// Why a step drops the kept route, read at the writer of the step's plan:
-// its build's route facts moved (EconomyContext.forState routeMoved), or it
-// wrote other plan / party request fields the search reads. '': kept.
-function dropReason(routeMoved, before = {}, after = {}) {
-    if (routeMoved) return 'sections';
-    return planKey(before.plan, before.request) !== planKey(after.plan, after.request) ? 'plan' : '';
-}
-
-module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, huntSpot, huntBasis, huntSpotHeld, drop, dropReason };
+module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, huntSpot, heldHuntSpot, huntSpotHeld, huntSpotKeyOf, drop };

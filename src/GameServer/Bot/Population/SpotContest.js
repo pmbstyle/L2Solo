@@ -9,7 +9,11 @@
 // spot:contest:capped), each decided by the shared ResourceCompetitionPolicy.decide in that order: the
 // first outcome other than coexist and yield wins; with none, yield when any yielded, else coexist. A
 // unit that holds its ground never gets avoid, read as coexist and counted spot:contest:<why>: one on
-// a player's command (B14, commanded), a safety evacuation off unsafe ground (evacuation). A standing unit near a player is not met here (its body's own tactics,
+// a player's command (B14, commanded), a safety evacuation off unsafe ground (evacuation). At CROWDED
+// pressure or more a settled coexist or yield (no peer took the spot from it, or none was met) is an
+// avoid by crowding: the arriving unit leaves and marks the spot, touching no standing unit (no event),
+// counted spot:contest:crowded; offer_party and contest stand, and a unit that holds its ground
+// coexists. A standing unit near a player is not met here (its body's own tactics,
 // HotResourceCompetition): skipped, counted. Callers: the worker's solo and party arrivals and its hot
 // arrival hook (ColdSimulationWorker); their outcomes for other bots go through SpotContestOutbox.
 // Counts go on the situations= line (Situations.note); the contest is traced with the spot as subject.
@@ -28,6 +32,9 @@ const WAIT_MS = 15000;
 // How long a contest's outcome stays fresh from the arrival (its event's at), the worker's outbox and
 // queue and main's competition actions alike (ColdCompetitionActions.TTL_MS).
 const EVENT_TTL_MS = 10000;
+// Twice the room for the arriving unit's species. Our choice: a C4
+// player stays to share or fight over a busy camp, but leaves one holding twice the players its mobs feed.
+const CROWDED = 2;
 
 // spot: its catalogue profile (npcEntries: [{ selfId, count }]); npcId: the target species; demand: the
 // hunters on it (the arriving ones included); untargeted: the hunters on the spot with no target.
@@ -55,8 +62,9 @@ function participant(unit, relation) {
 // the hunters there with no target; at: the arrival's time; step: its step (the arriving principal's own
 // counter); memory: the interaction memory (assess); personaFor(state); ownSide(states, at): how a side knows
 // itself (ColdPvpResolver.ownSide); capacityForSpot(spot).
-// Returns { action: 'coexist' | 'yield' | 'avoid' | 'offer_party' | 'contest', pressure, peer?, event? }: event,
-// the outcome as main's competition actions take it (ColdCompetitionActions), for one touching a standing unit.
+// Returns { action: 'coexist' | 'yield' | 'avoid' | 'offer_party' | 'contest', pressure, peer?, event?, reason?,
+// spotId? }: event, the outcome as main's competition actions take it (ColdCompetitionActions), for one touching
+// a standing unit; an avoid by crowding carries reason 'crowded' and the spot (spotId) instead.
 function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, step, memory, personaFor, ownSide = Visible.stateSide,
     capacityForSpot }) {
     const peers = standing.filter(unit => Number(unit.npcId) === Number(npcId) && unit.key !== arriving.key);
@@ -102,13 +110,22 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         if (outcome.action === 'yield') { yielded ||= { action: 'yield', pressure, peer, event }; continue; }
         return settled(spot, arriving, { action: outcome.action, pressure, peer, event });
     }
-    return settled(spot, arriving, yielded || { action: 'coexist', pressure });
+    return settled(spot, arriving, crowded(spot, arriving, yielded || { action: 'coexist', pressure }));
+}
+// A settled coexist or yield at CROWDED pressure or more: an avoid by crowding, unless the arriving unit
+// holds its ground (it coexists, counted spot:contest:<why>).
+function crowded(spot, arriving, verdict) {
+    if (!(verdict.pressure >= CROWDED)) return verdict;
+    if (!arriving.holds) return { action: 'avoid', reason: 'crowded', pressure: verdict.pressure, spotId: String(spot.id) };
+    Situations.note(`spot:contest:${arriving.holds}`);
+    return { action: 'coexist', pressure: verdict.pressure };
 }
 // The contest's outcome counted and traced (subject: the spot; the arriving principal as its bot).
 function settled(spot, arriving, verdict) {
-    Situations.note(`spot:contest:${verdict.action}`);
+    Situations.note(`spot:contest:${verdict.reason === 'crowded' ? 'crowded' : verdict.action}`);
     if (Trace.on()) Trace.record({ kind: 'raise', name: 'spot_contested', spot: String(spot.id), bot: arriving.id,
-        outcome: verdict.action, ...(verdict.event?.pvpIntent ? { reason: 'pvp' } : {}), ...(verdict.peer ? { target: verdict.peer.id } : {}) });
+        outcome: verdict.action, ...(verdict.event?.pvpIntent ? { reason: 'pvp' } : verdict.reason === 'crowded' ? { reason: 'crowded' } : {}),
+        ...(verdict.peer ? { target: verdict.peer.id } : {}) });
     return verdict;
 }
-module.exports = { contest, targetPressure, MAX_PEERS, WAIT_MS, EVENT_TTL_MS };
+module.exports = { contest, targetPressure, MAX_PEERS, WAIT_MS, EVENT_TTL_MS, CROWDED };

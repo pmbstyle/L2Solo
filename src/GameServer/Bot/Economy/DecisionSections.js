@@ -325,11 +325,6 @@ function decisionRefusal(state, decisionSeq, activityLeaf, focus) {
 // outputs are not inputs): the trip the leaf ordered under way (to its
 // hunting spot arriving to hunt, or to its town), or the arrival where it
 // led (its hunting spot, hunting or resting there; else its own activity).
-// The route's detour around the leaf's full hunting spot stands in for it
-// (BotRoute.trip decides which trip is one): the trip names the leaf's spot
-// (travel.leafSpotId), the arrival keeps the pair leaf spot + ground reached
-// (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
-// while the bot stands on that ground.
 // A far bot (a gated place, Situations) owns more: hunting or resting on any ground,
 // any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
 // pushed-out spot, a party's call) and its town visit, so a pull to another spot,
@@ -346,13 +341,13 @@ function occupationPlanned(state, leaf) {
     if (state.activity === 'traveling') {
         const travel = state.stats?.travel;
         if (!travel) return false;
-        return hunt && leaf.spotId != null ? (ownSpot(travel.spotId, leaf) || ownSpot(travel.leafSpotId, leaf))
+        return hunt && leaf.spotId != null ? ownSpot(travel.spotId, leaf)
             && travel.arrivalActivity === 'hunting' && travel.townName == null
             : leafVisit(state, leaf);
     }
     // A hunting leaf without a spot names no arrival: any spot is an event.
     if (hunt) return leaf.spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
-        && (ownSpot(state.spotId, leaf) || standsIn(state, leaf));
+        && ownSpot(state.spotId, leaf);
     return state.activity === leaf.activity;
 }
 // A trip the bot took itself, out or back, the ground it reached and the town visit it
@@ -390,11 +385,6 @@ function leafTrip(leaf, town, forced) {
 }
 function ownSpot(spotId, leaf) {
     return spotId != null && String(spotId) === String(leaf.spotId);
-}
-// The bot stands on the ground its detour for the leaf's spot reached.
-function standsIn(state, leaf) {
-    const pair = state.stats?.standIn;
-    return pair?.ground != null && String(pair.ground) === String(state.spotId) && ownSpot(pair.leaf, leaf);
 }
 // The kit fact each economy build records in its baseline moved between two
 // states of one bot: a party member's kit event. A party member's step raises

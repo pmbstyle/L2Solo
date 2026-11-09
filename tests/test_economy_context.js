@@ -787,10 +787,9 @@ async function run() {
             assert.equal(same.walks, 0, 'the same inputs walk no source fact');
             assert.equal(answer(same), answer(walkedOn(bot, contextOf(bot))), 'kept facts answer as walked ones');
             assert.equal(answer(same), answer(first), 'and as the build that kept them');
-            // Anything a fact does not read keeps it: the wallet, a field no fact read.
-            const unread = keptSpots.find(spot => !read.has(spot));
+            // Anything a fact does not read keeps it: the wallet, the crowd on a spot it read (no spot value reads it).
             for (const [name, state, ctx] of [['wallet', { ...bot, adena: bot.adena + 1e6 }, contextOf(bot, { wallet: 1e6 })],
-                ['crowd elsewhere', bot, contextOf(bot, {}, { spotHunters: (spot, who) => SpotProfiles.spotHunters(spot, who) + (spot === unread ? 5 : 0) })]])
+                ['crowd', bot, contextOf(bot, {}, { spotHunters: (spot, who) => SpotProfiles.spotHunters(spot, who) + (spot === near ? 5 : 0) })]])
                 assert.equal(project(state, ctx, held()).walks, 0, `${name}: kept`);
             // Every input a fact reads walks it again, to the walked answer.
             const moved = {
@@ -807,8 +806,7 @@ async function run() {
                 money_weight: [{ ...bot, stats: { ...bot.stats, money: Packet.money({ hourAdena: 5000, moneyPrice: 3, refillReserve: 0, firstUnfundedPrice: 0 }) } }],
                 samples: [{ ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: far.id, timestamp: T, cycleMs: 30000, adena: 900, costs: 50, exp: 300, kills: 10 }) } }],
                 risk: [{ ...bot, stats: { ...bot.stats, frustration: 1 } }],
-                spot_risk: [{ ...bot, stats: { ...bot.stats, spotRisk: { spotId: near.id, windowFights: 10, windowDeaths: 5 } } }],
-                crowd: [bot, {}, { spotHunters: (spot, who) => SpotProfiles.spotHunters(spot, who) + (spot === near ? 5 : 0) }]
+                spot_risk: [{ ...bot, stats: { ...bot.stats, spotRisk: { spotId: near.id, windowFights: 10, windowDeaths: 5 } } }]
             };
             for (const [name, [state, extra = {}, options = {}]] of Object.entries(moved)) {
                 const rebuilt = project(state, contextOf(state, extra, options), held());

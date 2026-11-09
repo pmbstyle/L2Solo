@@ -94,8 +94,9 @@ async function cases() {
     }, T));
 
     const giranCenter = { locX: 83396, locY: 147904, locZ: -3400 };
+    // A party member's market return (a solo bot's visit end starts no trip: the worker routes it).
     const shopping = hunter({
-        activity: 'shopping', currentRegion: 'Giran', loc: giranCenter, spotId: null,
+        activity: 'shopping', currentRegion: 'Giran', loc: giranCenter, spotId: null, party: { partyId: 'pinned-party' },
         stats: { classId: 2, marketReturn: { loc: { ...SPOT.center }, regionName: SPOT.name, spotId: SPOT.id } }
     });
     out.market_return = withStubs([

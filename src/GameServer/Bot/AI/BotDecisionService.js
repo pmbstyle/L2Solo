@@ -3,7 +3,6 @@ const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
-const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 const EMPTY_HUNT_SCANS = 3;
 
@@ -146,8 +145,8 @@ const BotDecisionService = {
             };
         }
 
-        // Main never chooses a spot (situations.md §8): the body walks to the spot its
-        // held decisions name (DecisionEvents.heldSpotId) or raises the earning spot's
+        // Main never chooses a spot: the body walks to the spot the
+        // worker's one choice names (DecisionEvents.heldSpotId) or raises the earning spot's
         // situation and waits for the background thread's answer.
         if (status.mode === 'hunting') {
             const economy = DecisionEvents.held(session);
@@ -169,7 +168,7 @@ const BotDecisionService = {
                     // groundLook replaces the stats it writes: read them after it.
                     const heldId = ground && String(DecisionEvents.statsFor(session).emptyGround ?? '') === String(ground.id)
                         ? DecisionEvents.heldSpotId(session) : null;
-                    const spot = heldId && heldId !== String(ground.id) ? SpotService.findById(heldId) : null;
+                    const spot = heldId && heldId !== 'pending' && heldId !== String(ground.id) ? SpotService.findById(heldId) : null;
                     if (spot) return { action: 'move_to_spot', reason: 'deferred_occupation_hunt',
                         spot, deferredOccupation: session.deferredOccupation };
                 }
@@ -178,34 +177,29 @@ const BotDecisionService = {
             const loc = physicalLocation(status, session);
             const physical = SpotService.findCurrentSpot(loc);
             const plannedOn = spotId => DecisionSections.occupationPlanned({ activity: 'hunting', spotId, stats }, leaf);
-            // The cold planner may already have accepted a capacity detour.
-            // Both arrival and a later return from town use that same ground;
-            // a remembered currentSpot or an old status location is no arrival.
-            // On the planned spot by the arrival rule (SpotService.arrivedAt: its ground or the
-            // arrival radius), not an exact cell: a body that arrived on a neighbouring cell stays.
-            const planned = leaf?.activity === 'hunting' && leaf.spotId != null && !plannedOn(physical?.id ?? null)
-                ? SpotService.findById(leaf.spotId) : null;
-            const arrived = planned && SpotService.arrivedAt(planned, loc) && plannedOn(planned.id) ? planned : null;
-            if (leaf?.activity === 'hunting' && (arrived || plannedOn(physical?.id ?? null))) {
+            // An accepted empty decision is different from awaiting the first
+            // worker answer. Once a town visit has ended, the bot returns to the
+            // spot it goes to when sent to hunt; an empty target scan in the field stays local.
+            const completedVisit = !leaf && economy?.decided === true
+                && (session.pendingFarmDepartureAnnouncement || TownTransitPolicy.townAt(loc));
+            const hunt = leaf?.activity === 'hunting';
+            // Where it hunts is the worker's one choice (its leaf's spot when it may hunt
+            // there), published in its mind; a raise the worker has not answered yet may
+            // choose another spot: it waits for the answer rather than walk and turn.
+            const heldId = hunt || completedVisit ? DecisionEvents.heldSpotId(session) : null;
+            if (heldId === 'pending') return { action: 'search_locally', reason: 'awaiting_hunt_answer' };
+            const spot = heldId ? SpotService.findById(heldId) : null;
+            // On its spot by the arrival rule (SpotService.arrivedAt: its ground or the arrival
+            // radius), not an exact cell: a body that arrived on a neighbouring cell stays.
+            // With none published, the ground its leaf plans holds it.
+            const arrived = spot && SpotService.arrivedAt(spot, loc) ? spot : null;
+            if (hunt && (arrived || (spot ? String(physical?.id ?? '') === String(spot.id) : plannedOn(physical?.id ?? null)))) {
                 const look = groundLook(session, arrived || physical);
                 if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
                 if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
                 return { action: 'search_locally', reason: look === 'raised' ? 'ground_unhuntable' : 'selected_hunting_ground' };
             }
-            const standIn = stats.standIn;
-            let spot = leaf?.activity === 'hunting' && standIn?.ground != null && plannedOn(standIn.ground)
-                ? SpotService.findById(standIn.ground) : null;
-            spot ||= leaf?.spotId ? SpotService.findById(leaf.spotId) : null;
-            let reason = 'selected_hunting_ground';
-            // An accepted empty decision is different from awaiting the first
-            // worker answer. Once a town visit has ended, the bot returns to its
-            // held earning answer; an empty target scan in the field stays local.
-            const completedVisit = !leaf && economy?.decided === true
-                && (session.pendingFarmDepartureAnnouncement || TownTransitPolicy.townAt(loc));
             if (completedVisit) {
-                const heldId = DecisionEvents.heldSpotId(session);
-                spot = heldId ? SpotService.findById(heldId) : null;
-                reason = 'return_to_hunting';
                 // Its answer names no spot it may take: it asks once more (spot_empty), and
                 // if that answer names none either it rests in town until a situation brings one.
                 if (!spot) return DecisionEvents.needSpot(session) === 'none' ? { action: 'rest', reason: 'no_hunting_spot' }
@@ -216,9 +210,7 @@ const BotDecisionService = {
                 return { action: 'search_locally', reason: economy?.decided === false
                     ? 'awaiting_occupation_decision' : 'selected_hunting_ground' };
             }
-            // A spot its situations ruled out (unreachable, unsafe ground) waits for the answer they woke.
-            if (SpotRiskPolicy.isMarked(stats, spot.id)) return { action: 'search_locally', reason: 'planned_route_unavailable' };
-            return { action: 'move_to_spot', reason, spot };
+            return { action: 'move_to_spot', reason: completedVisit ? 'return_to_hunting' : 'selected_hunting_ground', spot };
         }
 
         return {

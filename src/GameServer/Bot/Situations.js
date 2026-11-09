@@ -73,8 +73,9 @@ const SITUATIONS = Object.freeze({
     // Its party left (BackgroundPartyLifecycle.releaseMember, the one leave rule: raised
     // where the leave is written; a hot body's by its lifecycle).
     party_left: link(NOW),
-    // A contest lost at its arrival on a spot (SpotContest: it avoids the units standing
-    // there; payload { spotId, reason: 'contest_lost' }: its spot mark, raisedFacts).
+    // A contest lost at its arrival on a spot, or the spot found crowded there (SpotContest:
+    // it avoids the units standing there; payload { spotId, reason: 'contest_lost' |
+    // 'crowded' }: its spot mark, raisedFacts).
     contest_lost: link(NOW),
     // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
     // arrival (SpotContest), a grievance pair met there (step 2 S4).
@@ -236,6 +237,12 @@ const SHIFT = { [STOP]: 0, [TOWN]: 8 };
 // The decisions each situation wakes.
 const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name => [name,
     Object.entries(DECISIONS).reduce((bits, [decision, names]) => names.includes(name) ? bits | BITS[decision] : bits, 0)])));
+// The decisions the spot a bot is sent to hunt reads (BotRoute.huntSpot: the earning
+// answer, the build's hunting leaf, a gear plan's source; a player's command reaches it
+// through the build): a situation that wakes one may move that spot, so a body whose
+// bag holds it waits for the answer before it walks (DecisionEvents.heldSpotId).
+const SPOT_READS = BITS.earning_spot | BITS.build | BITS.gear_plan;
+const movesSpot = name => !!((WAKES[name] || 0) & SPOT_READS);
 // The planes a place hears: work (and a body in the field) only what is heard
 // anywhere; a rest its stop; the town, a stall, a meeting, the arrival in town and
 // a body near a player elsewhere all of them.
@@ -313,6 +320,9 @@ function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     const stored = storedBits(stats), was = stored | unheld(stats), waited = Number(stats.waiting) || 0;
     const before = stats.earning?.spotId ?? null, wrote = writeFacts(stats, bits.facts);
     const woken = stored | bits.woken, waiting = waited | bits.waiting;
+    if (bits.facts.forgot && Trace.on()) {
+        for (const [owner, n] of bits.facts.forgot) Trace.record({ kind: 'forget', bot: subject, name, owner, n });
+    }
     if (!wrote && woken === stored && waiting === waited) return stats;
     stats.woken = woken; stats.waiting = waiting;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
@@ -338,8 +348,8 @@ function took(stats, bits, caller, subject = 0, was = null) {
 function delta(name, payload = null, where = OPEN, stats = null) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
-    // A spot already marked under the held answer is no news: the decisions its first
-    // mark woke answer it (a body that fails the same walk again while it waits).
+    // A spot already marked is no news: the decisions its first mark woke answer it (a
+    // body that fails the same walk again while it waits).
     if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
     // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
@@ -355,12 +365,23 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 // reader: player_command's spot becomes the held earning answer (the player decided:
 // EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken); the spot
 // of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
-// (SpotRiskPolicy.withSpotMark), which the next held answer retires.
-// { earning, spotMarks }, undefined: unchanged. stats: the facts before the raise
+// (SpotRiskPolicy.withSpotMark), which a situation of its lifetime forgets (FORGETS).
+// { earning, spotMarks, forgot }, undefined: unchanged. stats: the facts before the raise
 // (null: none known). dropped: told a mark past the cap.
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
+// Memory a situation ends, declared once by the memory's owner at its load (forgets):
+// situation name -> [forget(stats, name) -> the facts it rewrites, with forgot: how many
+// entries went]. One owner today: SpotRiskPolicy's spot marks, which last the outing.
+// Applied by every raise beside its bits, on both threads (and main's row raises).
+const FORGETS = new Map();
+function forgets(owner, names, forget) {
+    for (const name of names) {
+        if (!SITUATIONS[name]) throw new TypeError(`forgets: unknown ${name}`);
+        FORGETS.set(name, [...(FORGETS.get(name) || []), { owner, forget }]);
+    }
+}
 const GearMarks = require('./AI/GearMarks');
 function marked(stats, name, payload) {
     if (!stats || payload?.spotId == null || !MARKS.has(name)) return false;
@@ -368,6 +389,13 @@ function marked(stats, name, payload) {
     return Risk.isMarked(stats, payload.spotId);
 }
 function raisedFacts(stats, name, payload, dropped = null) {
+    // The owners declare their lifetimes when they load.
+    Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    const forgetting = FORGETS.get(name);
+    if (forgetting) return forgetting.reduce((facts, { owner, forget }) => {
+        const wrote = forget(stats, name);
+        return wrote.forgot ? { ...facts, ...wrote, forgot: [...(facts.forgot || []), [owner, wrote.forgot]] } : facts;
+    }, {});
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
         const gearMarks = GearMarks.withMark(stats, payload.key, dropped);
@@ -377,8 +405,7 @@ function raisedFacts(stats, name, payload, dropped = null) {
     if (name === 'player_command') return { earning: (IncomeRoute ||=
         invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at) };
     if (!MARKS.has(name)) return {};
-    Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
-    return { spotMarks: Risk.withSpotMark(stats, payload.spotId, payload.reason || name, dropped) };
+    return { spotMarks: Risk.withSpotMark(stats, payload.spotId, name, dropped) };
 }
 // A decision's bits on both waiting planes (STOP the low byte, TOWN the next).
 const planes = bits => bits | bits << 8;
@@ -719,5 +746,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts,
-    DECISIONS, ALL, FIRST, raise, delta, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
-    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };
+    DECISIONS, ALL, FIRST, raise, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
+    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };

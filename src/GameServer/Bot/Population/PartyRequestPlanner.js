@@ -36,15 +36,13 @@ function seeksParty(state) {
 // (meetingKey), and joins parties that hunt there. The
 // spot holds while the request is open; a reopened request searches again.
 // Null: no such seeker, or no spot.
-function seekObjective(state, previous, { spots, timestamp, search = null, economy = null, plan }) {
+function seekObjective(state, previous, { spots, timestamp, economy = null, plan }) {
     if (state?.party?.partyId || !supportWithoutGround(state, spots, economy?.statsPacket?.earning || state?.stats?.earning, plan)) return null;
     const held = previous?.reason === NO_SOLO_GROUND && previous.status === 'open' ? previous.spotId : null;
     // lazy: cycle SpotProfiles' chain loads this planner
     const searched = held ? null : invoke('GameServer/Bot/Population/SpotProfiles').findForState({ ...state, spotId: null,
         stats: Object.fromEntries(Object.entries(state.stats || {}).filter(([key]) => key !== 'equipmentPlan')) },
-    { profiles: spots, mode: 'party', timestamp, ...(search?.spotHunters ? { spotHunters: search.spotHunters } : {}),
-        // A party search on main reads main's index (temporary until step 8); none on the worker.
-        hasRoom: invoke('GameServer/Bot/Population/SpotProfiles').defaultRoomFilter(state, spots) });
+    { profiles: spots, mode: 'party', timestamp });
     const spotId = held || searched?.id || null;
     if (!spotId) return null;
     return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: NO_SOLO_GROUND,
@@ -215,8 +213,7 @@ function clanPartyObjectiveForState(state) {
 }
 
 // options: spots, economy (the bot's own economy, built in the background
-// thread; required, no build here), memo (the bot's worker record) and search
-// (the worker's route search inputs, supportWithoutGround).
+// thread; required, no build here) and memo (the bot's worker record).
 function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) {
     const previous = state?.stats?.partyRequest;
     const supplyPause = Material.supplyPause(state, plan, { ...options, timestamp });
@@ -230,7 +227,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
         ? { ...previous, status: 'open' } : null;
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan)
         || Material.request(state, plan, { ...options, timestamp }) || sharedTarget
-        || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search, economy: options.economy, plan })
+        || seekObjective(state, previous, { spots: options.spots, timestamp, economy: options.economy, plan })
         || progressObjective(state, { spots: options.spots, timestamp, economy: options.economy, memo: options.memo });
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;

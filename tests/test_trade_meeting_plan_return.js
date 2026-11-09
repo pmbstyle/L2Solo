@@ -70,16 +70,17 @@ const arrive = async id => {
             const state = Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
             checkPlan(state, side);
             assert(!state.stats.tradeMeeting, 'terminal receipt releases the meeting');
+            // Both resume hunting: the visit's end hands each back to the worker (rest in
+            // town, due now), which routes it to the spot of its one choice.
             const returning = Goals.finishMarketVisit(state, Date.now());
-            assert(returning, 'both buyer and seller can resume their original outing');
-            assert.equal(returning.stats.travel.reason, 'return_after_market');
-            assert.deepEqual(returning.stats.travel.to, origins[side]);
-            await Life.upsertState(returning, 'fixture_return_start');
-            const returned = await arrive(id);
-            assert.equal(returned.activity, 'hunting');
-            assert.deepEqual(returned.loc, origins[side]);
-            assert.equal(returned.stats.marketReturn, null);
+            assert(returning, 'both buyer and seller can resume their outing');
+            assert.equal(returning.activity, 'resting');
+            assert.equal(returning.stats.marketReturn, null);
+            const returned = await Life.upsertState(returning, 'fixture_return_start');
             checkPlan(returned, side);
+            // The worker's next step takes it back to its field (BotRoute.trip).
+            await Life.upsertState({ ...returned, activity: 'hunting', loc: origins[side], currentRegion: `Field${side}` },
+                'fixture_worker_trip');
             await Database.acknowledgeTradeMeeting(meeting, id);
         }
         // A second appointment must keep the existing outing rather than
@@ -94,7 +95,7 @@ const arrive = async id => {
         await arrive(ids[0]);
         adopt(await Database.cancelTradeMeeting(cancelled, 'fixture_cancel'));
         const recovered = Goals.finishMarketVisit(Life.cachedState(ids[0]), Date.now());
-        assert.deepEqual(recovered.stats.travel.to, existing.loc, 'cancelled detour also resumes the original outing');
+        assert.equal(recovered.activity, 'resting', 'a cancelled detour also hands the bot back to hunt');
         checkPlan(recovered, 0);
         for (const id of ids) {
             await Database.settleBoardOwner(id);
@@ -139,8 +140,7 @@ const arrive = async id => {
         assert.deepEqual(atMeeting.stats.marketReturn, existing, 'the meeting keeps the outing the return trip was going to');
         adopt(await Database.cancelTradeMeeting(overtaking, 'fixture_cancel'));
         const back = Goals.finishMarketVisit(Life.cachedState(ids[0]), Date.now());
-        assert.equal(back?.stats.travel.reason, 'return_after_market', 'the visit after the meeting returns to the field');
-        assert.deepEqual(back.stats.travel.to, existing.loc);
+        assert.equal(back?.activity, 'resting', 'the visit after the meeting hands the bot back to hunt');
         for (const id of ids) {
             await Database.settleBoardOwner(id);
             Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);

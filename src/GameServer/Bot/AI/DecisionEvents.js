@@ -377,31 +377,35 @@ function held(session) {
     return session.heldEconomy = view;
 }
 // The spot a bot goes to when it is sent to hunt without a search (a town or hall
-// visit's end, a body that must leave its ground): the worker's route choice published
-// in its mind (stats.huntSpot, BotRoute.huntSpotHeld), read, never judged here. Served
-// while what it was chosen on stands on the row (its gear plan's source and its earning
-// answer's spot, BotRoute.huntBasis) and the bot is solo (a party member's hunt is its
-// party's); a spot its exclusions rule out (spot marks, death marks, death pressure at
-// the spot it stands on: SpotRiskPolicy) is none. A player's command the worker has not
-// published a spot for yet (the earning answer it wrote on the row, on either thread:
-// EquipmentIncomeRoute.commanded) is served as its spot, under the same exclusions.
-// null: none served, the caller's fallback runs; the worker's next step publishes it
-// anew. Room is met at arrival. state: a far row, or a body's view in the same fields
-// (heldSpotId).
-function heldSpotOf(state = {}) {
-    const stats = state.stats || {}, held = stats.huntSpot;
-    if (Sections.partyIdOf(state)) return null;
-    // lazy: BotRoute loads the spot modules that load this one.
-    const basis = invoke('GameServer/Bot/Population/BotRoute').huntBasis(stats);
-    const commanded = held?.earning !== basis.earning
-        && invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').isCommanded(stats.earning);
-    const spotId = commanded ? basis.earning
-        : held?.spotId != null && held.plan === basis.plan && held.earning === basis.earning ? String(held.spotId) : null;
-    return spotId == null || Risk.excludedSpotIdsForStates([state]).has(spotId) ? null : spotId;
+// visit's end, a body that must leave its ground): the worker's one choice published
+// in its mind (stats.huntSpot, BotRoute.huntSpotHeld), read, never judged here, for a
+// solo bot (a party member's hunt is its party's). A spot its exclusions rule out
+// (spot marks, death marks, death pressure at the spot it stands on: SpotRiskPolicy) is
+// none, unless the player commanded it (a command goes whatever the bot's own marks).
+// null: none, the caller's fallback runs; 'pending' on a far row while a player's command
+// (the held answer main wrote on the row at its raise, which the worker reads with the
+// row) names another spot than the published one: the worker publishes a commanded spot
+// as it stands (BotRoute.huntSpot), so the published spot predates the command. A body
+// (near) waits for its command through its bag (heldSpotId, commandPending); one lost or
+// dropped never reaches the worker, so the command its stats still name is no answer to
+// wait for: the published spot, judged as any other. Room is met at arrival. state: a far
+// row, or a body's view in the same fields (heldSpotId).
+function heldSpotOf(state = {}, near = false) {
+    const stats = state.stats || {}, spotId = stats.huntSpot?.spotId;
+    if (Sections.partyIdOf(state) || spotId == null) return null;
+    // lazy: EquipmentIncomeRoute loads the spot modules that load this one.
+    const command = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').isCommanded(stats.earning)
+        ? String(stats.earning.spotId) : null;
+    if (!near && command !== null && command !== String(spotId)) return 'pending';
+    return command !== String(spotId) && Risk.excludedSpotIdsForStates([state]).has(String(spotId)) ? null : String(spotId);
 }
 // The same for a near body: its row with its own place and party (Economy.bodyPlace,
-// the shape stateForActor gives it) and its stats.
-const heldSpotId = session => heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session), stats: statsFor(session) });
+// the shape stateForActor gives it) and its stats; 'pending' while its bag holds a
+// raise the worker has not answered that may move the spot (Situations.movesSpot: the
+// body waits for the answer rather than walk to the old spot and turn; a raise for
+// its buffs or its board lines does not stop it).
+const heldSpotId = session => session.nearRaise?.names?.some(entry => Situations.movesSpot(entry.name)) ? 'pending'
+    : heldSpotOf({ ...session.coldLifeState, ...Economy.bodyPlace(session), stats: statsFor(session) }, true);
 // A body that needs a spot (BotDecisionService, HuntingState) while its held answer
 // names none it may take asks again once per answer (Situations.spotAsk over the
 // session: spot_empty raised on 'ask'); 'none' when the answer to its ask names none

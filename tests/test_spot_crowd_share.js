@@ -1,8 +1,9 @@
 'use strict';
-// Crowded spots (user 10-29, T106 audit): a bot choosing a spot shares the
-// production of the spawns it may fight with the bots already there, as the
-// fight does (BackgroundResolver.soloShareMobs): kills at most production
-// over the hunters with it, the hour's fields following the kills.
+// Spot values: a table row's kills are at most the production of
+// the spawns the bot may fight over its party's hunters, the hour's fields
+// following the kills; the live crowd on the spot is read by no value (a C4
+// player knows a camp's yield from his own trips and meets the crowd on
+// arrival), only by the fight's share (BackgroundResolver.soloShareMobs).
 const assert = require('node:assert/strict');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
@@ -20,24 +21,15 @@ const [, entries, adenaMin, adenaMax] = offline.rows.find(row => row[0] === spot
 // 6 mobs per hour per spawn: a small spot one bot could empty.
 const spot = { id: spotId, npcEntries: entries.map(([selfId, count]) => ({ selfId, count, production: count * 6 })), rewards: { adenaMin, adenaMax } };
 Table.useSpots([spot]);
-// The thread's hunters count (SpotOccupancyIndex.huntersOn): n others plus the bot.
-const hunters = n => ({ spotHunters: () => n + 1 });
 const near = (actual, expected, message) => assert(Math.abs(actual - expected) <= 1e-6 * Math.max(1, Math.abs(expected)),
     `${message}: ${actual} != ${expected}`);
 try {
-    const alone = Economics.create(state, hunters(0))(spot, true);
+    const alone = Economics.create(state)(spot, true);
     const production = Table.production(spotId, role, 30, true);
     assert(alone && production > 0, 'the spot has its row and its production');
     assert(alone.kills <= production + 1e-9, 'one hunter: at most the production');
-    const crowd = Economics.create(state, hunters(3))(spot, true);
-    const expected = Math.min(alone.kills, production / 4);
-    assert(Math.abs(crowd.kills - expected) < 1e-6 * expected, `four hunters share it: ${crowd.kills} vs ${expected}`);
-    assert(Math.abs(crowd.exp / crowd.kills - alone.exp / alone.kills) < 1e-6 * alone.exp / alone.kills, 'exp follows the kills');
-    assert(crowd.valueHours < alone.valueHours, 'a crowded spot is worth less');
-    assert(crowd.crowdFactor < 1, 'the crowd cuts the row');
     // A bot whose own hunts gave twice the table's exp (calibration 2) still
-    // keeps at most its share of the production: the crowd is cut once, after
-    // the calibration.
+    // keeps at most the production: the cap comes after the calibration.
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
     const sampled = Table.rankedSpotIds(role, 30, { shots: 0, potions: 0 }).find(id => id !== spotId);
@@ -45,17 +37,14 @@ try {
     const now = Date.now();
     const keen = { ...state, stats: { ...state.stats, huntEfficiency: [{ spotId: sampled, signature: Hunt.signature(state),
         samples: 3, at: now, exp: 2 * sampleBase.exp, cycleMs: 3600000, kills: sampleBase.kills, adena: 0, loot: 0, costs: 0 }] } };
-    const keenAlone = Economics.create(keen, { timestamp: now, ...hunters(0) })(spot, true);
+    const keenAlone = Economics.create(keen, { timestamp: now })(spot, true);
     near(keenAlone.kills, Math.min(2 * alone.kills, production), 'alone: the calibrated kills');
-    const keenCrowd = Economics.create(keen, { timestamp: now, ...hunters(3) })(spot, true);
-    near(keenCrowd.kills, Math.min(2 * alone.kills, production / 4), 'four hunters: at most a quarter of the production');
-    // A party search: each routed member takes its own share; a member
-    // indexed on the spot is among the hunters already.
+    // A party search: each routed member takes its own share, wherever it stands.
     const member = (characterId, spotId) => ({ characterId, activity: 'hunting', spotId, level: 30 });
-    const party = Economics.create(state, { ...hunters(0), members: [state, member(91, 'elsewhere'), member(92, 'elsewhere')] })(spot, true);
+    const party = Economics.create(state, { members: [state, member(91, 'elsewhere'), member(92, 'elsewhere')] })(spot, true);
     near(party.kills, Math.min(alone.kills, production / 3), 'a party of three away: three hunters');
     assert(party.kills < alone.kills, 'the party\'s own members crowd the spot');
-    const arrived = Economics.create(state, { ...hunters(1), members: [state, member(91, spotId), member(92, 'elsewhere')] })(spot, true);
+    const arrived = Economics.create(state, { members: [state, member(91, spotId), member(92, 'elsewhere')] })(spot, true);
     near(arrived.kills, Math.min(alone.kills, production / 3), 'one member there already: still three');
     // The route search passes its party (capacityStates) to the same count.
     const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -91,19 +80,17 @@ try {
     assert(index.spotVersion(spotId) > removed, 'a revision never comes back to an earlier count\'s');
     index.update(on(3, 'elsewhere'));
     index.update(on(2, spotId));
-    // A caller that passes no count (EquipmentIncomeRoute, PartyProgressComparison)
-    // reads the thread's occupancy: a cold worker's kernel index once registered.
+    // A spot value reads no occupancy: four others on the spot in the thread's index, ten
+    // more, the value is the one of an empty spot.
     index.update(on(4, spotId)); index.update(on(5, spotId));
     SpotProfiles.useOccupancy(() => index);
-    assert.equal(SpotProfiles.spotVersion(spotId), index.spotVersion(spotId), 'the thread reader reads the registered index');
-    const fromThread = Economics.create(state)(spot, true);
-    assert(Math.abs(fromThread.kills - Math.min(alone.kills, production / 5)) < 1e-6 * alone.kills,
-        `the thread's four others share it with a caller that passes no count: ${fromThread.kills}`);
+    near(Economics.create(state)(spot, true).valueHours, alone.valueHours, 'four others on it: the same value');
+    for (let n = 0; n < 10; n++) index.update(on(500 + n, spotId));
+    near(Economics.create(state)(spot, true).valueHours, alone.valueHours, 'fourteen others on it: the same value');
 
-    // The earning spot search reads its candidates' hunters when it decides (situations step 1: the crowd wakes
-    // nothing, it is read). The bot stands on the band's best table spot, whose spawns its hunters share; its next
-    // best it knows by its own samples. With bots joining its spot one by one a search there takes it to the other
-    // spot once the share left is worth less.
+    // The earning spot search reads no crowd: the bot stands on the band's best table spot; its next best it
+    // knows by its own samples. However many bots join its spot, its search keeps it (the crowd is met at the
+    // arrival, SpotContest).
     {
         const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
         const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -120,20 +107,15 @@ try {
         SpotProfiles.useOccupancy(() => crowd);
         let bot = { ...state, characterId: 990777, spotId: held, loc: catalog[0].center, stats: { ...state.stats, huntEfficiency: [] } };
         const own = Economics.create(bot, { timestamp: now })(catalog[0], true);
-        assert(own.crowd?.value, 'fixture: the held spot\'s row follows its hunters\' share');
         for (let n = 0; n < 3; n++) bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: other, timestamp: now,
             cycleMs: 3600000, exp: 0.6 * own.exp, adena: 0.6 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
         const options = { spots: catalog, timestamp: now, required: true };
         assert.equal(Route.search(bot, options).route?.spot.id, held, 'fixture: alone the bot keeps its spot');
-        let next = 992000, crowdedOff = 0;
-        for (let n = 1; n <= 200 && !crowdedOff; n++) {
-            crowd.update({ characterId: next++, activity: 'hunting', spotId: held });
-            if (Route.search(bot, options).route?.spot.id === other) crowdedOff = n;
-        }
-        assert(crowdedOff > 1, 'the crowd at its spot takes a deciding bot to the other spot, not the first joiner');
+        for (let n = 0; n < 200; n++) crowd.update({ characterId: 992000 + n, activity: 'hunting', spotId: held });
+        assert.equal(Route.search(bot, options).route?.spot.id, held, 'two hundred bots on its spot: the search keeps it');
     }
 } finally {
     SpotProfiles.useOccupancy(null);
     Table.useSpots([]);
 }
-console.log('PASS spot crowd share');
+console.log('PASS spot values without the live crowd');

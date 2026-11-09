@@ -161,7 +161,7 @@ async function bodyMoney(id) {
         // move woke and one waiting for a stop both cleared.
         await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: { spotId: 'far', reason: 'walk_timeout' } }]);
         let factMind = JSON.parse((await row(raisedId)).mindJson);
-        assert.deepEqual(factMind.spotMarks.map(mark => [mark.spotId, mark.reason]), [['far', 'walk_timeout']],
+        assert.deepEqual(factMind.spotMarks.map(mark => [mark.spotId, mark.reason]), [['far', 'spot_unreachable']],
             'the unreachable spot is marked on the row');
         assert(factMind.woken & 1, 'and it woke the earning spot');
         // A raise that adds no bit writes nothing (the same walk failed again on a spot

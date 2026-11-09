@@ -5,7 +5,6 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Decision = invoke('GameServer/Bot/AI/BotDecisionService');
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
@@ -48,9 +47,9 @@ stub(SpotTravel, 'start', (session, _bot, spot) => {
     session.trips.push(spot.id); return true;
 });
 // The held earning answer naming a spot (EquipmentIncomeRoute.answerOf's layout), its decision not woken,
-// and the spot the worker's route publishes for it (huntSpot: the spot and what it was chosen on).
+// and the spot the worker's route publishes for it (huntSpot: its one choice).
 const holds = spot => ({ woken: 0, earning: { spotId: spot.id, shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at: 1 },
-    huntSpot: { spotId: spot.id, plan: null, earning: spot.id } });
+    huntSpot: { spotId: spot.id } });
 function fixture(location, chosen = leaf, stats = {}) {
     const loc = { ...location }, id = ++nextId;
     const bot = { fetchId: () => id, fetchName: () => `HuntContinuation${id}`,
@@ -89,16 +88,15 @@ function npcNear(point) {
 const tests = [];
 function test(name, work) { tests.push({ name, work }); }
 
-test('an accepted cold detour continues native local combat', () => {
-    const f = fixture(alternative.center, leaf, { standIn: { leaf: primary.id, ground: alternative.id } });
+test('a body on the spot the worker chose, not its leaf\'s, continues native local combat', () => {
+    const f = fixture(alternative.center, leaf, { huntSpot: { spotId: alternative.id } });
     f.session.currentSpot = alternative;
     f.session.coldLifeState.spotId = alternative.id;
     available = [npcNear(alternative.center)];
     f.session.botStatus.nearby = { attackableNpcs: 1, eligibleAttackableNpcs: 1 };
-    assert(Sections.occupationPlanned(f.session.coldLifeState, leaf));
     assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
     f.tick();
-    assert.deepEqual(f.session.trips, [], 'an accepted detour must not start a new field trip');
+    assert.deepEqual(f.session.trips, [], 'the chosen spot starts no new field trip');
     assert.deepEqual(f.session.attacks, [990101], 'the early hunting decision must allow the local fight');
     assert.equal(f.session.currentSpot.id, alternative.id);
     assert.equal(searchCalls.length, 0, 'an accepted occupation needs no independent spot search');
@@ -141,7 +139,7 @@ test('an expanded search does not chase distant mobs on another spot', () => {
 });
 
 test('a stale field and stale status coordinates cannot strand the body in town', () => {
-    const f = fixture(town);
+    const f = fixture(town, leaf, { huntSpot: { spotId: primary.id } });
     assert.equal(Spots.findCurrentSpot(town), null, 'the town has no hunting sector in this catalogue');
     f.session.botStatus.loc = { ...primary.center };
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, primary.id);
@@ -150,16 +148,16 @@ test('a stale field and stale status coordinates cannot strand the body in town'
     assert.equal(searchCalls.length, 0, 'a selected hunt keeps its destination');
 });
 
-test('returning from town resumes the accepted detour rather than the full primary field', () => {
-    const f = fixture(town, leaf, { standIn: { leaf: primary.id, ground: alternative.id } });
+test('returning from town goes where the worker\'s choice names, not the leaf\'s field', () => {
+    const f = fixture(town, leaf, { huntSpot: { spotId: alternative.id } });
     f.session.currentSpot = alternative;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id);
     f.tick();
     assert.deepEqual(f.session.trips, [alternative.id]);
 });
 
-test('an unrelated old detour cannot override a newly selected hunt', () => {
-    const f = fixture(alternative.center, leaf, { standIn: { leaf: 'old_goal', ground: alternative.id } });
+test('the ground it stands on cannot override a newly chosen hunt', () => {
+    const f = fixture(alternative.center, leaf, { huntSpot: { spotId: primary.id } });
     f.session.currentSpot = alternative;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, primary.id);
 });
@@ -172,18 +170,28 @@ test('a first worker answer is awaited separately from an accepted empty occupat
     assert.equal(searchCalls.length, 0);
 });
 
-test('a visit\'s end sends a collector where the worker\'s route publishes, while its basis stands', () => {
+test('a visit\'s end sends a collector where the worker\'s route publishes, and waits while its raise is unanswered', () => {
     const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id } };
-    const toSource = { spotId: alternative.id, plan: alternative.id, earning: primary.id };
-    const f = fixture(town, null, { ...holds(primary), equipmentPlan: plan, huntSpot: toSource });
+    const f = fixture(town, null, { ...holds(primary), equipmentPlan: plan, huntSpot: { spotId: alternative.id } });
     f.session.pendingFarmDepartureAnnouncement = true;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id,
         'the published spot: the source the route takes');
-    // The plan moved on since (another source): the spot chosen on the old one is not served.
-    const moved = fixture(town, null, { ...holds(primary), equipmentPlan: { ...plan, next: { spotId: primary.id } }, huntSpot: toSource });
-    moved.session.pendingFarmDepartureAnnouncement = true;
-    assert.equal(Decision.suggest(moved.session.botStatus, moved.session).action, 'search_locally',
-        'a spot chosen on another plan source waits for the next answer');
+    // The visit's end raised in its bag (goal_done:visit) and the worker has not answered: the
+    // answer may name another spot, so it does not walk to the old one and turn.
+    f.session.nearRaise = { seq: 1, names: [{ name: 'goal_done:visit', payload: null, seq: 1 }], impossible: false };
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_hunt_answer');
+    Events.settle(f.session, { raiseSeq: 1 });
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id, 'the answer came: it goes');
+    // Only a raise that may move the spot stops it: its buffs ended or a board line's look
+    // failed wake no decision the spot reads, its gear changed does.
+    f.session.nearRaise = { seq: 2, names: [{ name: 'buffs_expired', payload: null, seq: 2 },
+        { name: 'goal_failed:line', payload: null, seq: 2 }], impossible: false };
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id,
+        'its buffs ended: it keeps walking to its spot');
+    f.session.nearRaise.names.push({ name: 'gear_changed', payload: null, seq: 2 });
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_hunt_answer',
+        'its gear changed: it waits for the answer');
+    f.session.nearRaise = null;
     assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 
@@ -202,8 +210,7 @@ test('a body\'s visit end reads its place and party as a far row\'s does', () =>
         'a party member is not sent to its solo answer');
     // Nor to its own gear plan's source the route took for it alone.
     const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: alternative.id } };
-    const collector = fixture(town, null, { ...holds(primary), equipmentPlan: plan,
-        huntSpot: { spotId: alternative.id, plan: alternative.id, earning: primary.id } });
+    const collector = fixture(town, null, { ...holds(primary), equipmentPlan: plan, huntSpot: { spotId: alternative.id } });
     collector.session.pendingFarmDepartureAnnouncement = true;
     collector.session.hotBackgroundPartyId = 'hunt-continuation-party';
     assert.equal(Events.heldSpotId(collector.session), null, 'a party member\'s hunt is its party\'s, not its plan\'s source');
@@ -393,7 +400,7 @@ test('unsafe ground raises spot_dangerous once and walks to the held spot, else 
     const unsafe = { ...alternative, id: 'unsafe-ground', name: 'Party ground', tags: ['party_required'], tagsAuthoritative: true };
     // The worker publishes the leaf's spot when it may hunt there (BotRoute.huntSpot).
     const onUnsafe = chosen => {
-        const f = fixture(town, chosen, chosen.spotId === primary.id ? { huntSpot: { spotId: primary.id, plan: null, earning: null } } : {});
+        const f = fixture(town, chosen, chosen.spotId === primary.id ? { huntSpot: { spotId: primary.id } } : {});
         f.session.currentSpot = unsafe;
         return f;
     };
@@ -474,8 +481,8 @@ test('a player\'s spot command is the body\'s held answer at once, raised for th
         Events.raiseDecision(f.session, 'player_command', { payload: { spotId: alternative.id, at: 1 } });
         assert.equal(f.session.coldLifeState.stats.earning.spotId, alternative.id, 'the commanded spot is held');
         assert.equal(f.session.coldLifeState.stats.earning.earning, 1000, 'with the bot\'s hour kept');
-        assert.equal(Events.heldSpotId(f.session), alternative.id,
-            'a visit\'s end or a body leaving its ground goes to the commanded spot before the worker publishes it');
+        assert.equal(Events.heldSpotId(f.session), 'pending',
+            'a visit\'s end or a body leaving its ground waits for the worker to publish the commanded spot');
         assert.deepEqual(f.session.nearRaise.names.map(entry => entry.name), ['player_command'], 'it rides the body\'s bag');
         assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_command_answer',
             'the card naming the old spot does not pull it back while the answer is pending');
@@ -517,11 +524,37 @@ test('a body never waits for a command answer that will not come', () => {
     } finally { while (restores.length > restoreAt) restores.pop()(); }
 });
 
+test('a body whose command was lost walks to its published spot instead of waiting for it', () => {
+    const restoreAt = restores.length;
+    try {
+        const Life = invoke('GameServer/Bot/Population/BotLifeState');
+        stub(Life, 'cachedState', () => ({ phase: 'hot' }));
+        stub(Life, 'notifyNearFacts', () => {});
+        let posts = true;
+        stub(Life, 'nearPosts', () => posts);
+        // Lost on the way: the answer to its post came without it. Or never posted: a body that posts nothing.
+        for (const lose of ['answered', 'never_posted']) {
+            const f = fixture(alternative.center, leaf, holds(primary));
+            f.session.currentSpot = alternative;
+            posts = lose === 'answered';
+            Events.raiseDecision(f.session, 'player_command', { payload: { spotId: alternative.id, at: 1 } });
+            if (lose === 'answered') {
+                f.session.nearRaise.commandPost = 7;
+                Events.settle(f.session, { raiseSeq: f.session.nearRaise.commandSeq - 1, nearSeq: 7 });
+            }
+            assert.equal(f.session.coldLifeState.stats.earning.command, true, `fixture (${lose}): its stats still name the command`);
+            const decision = Decision.suggest(f.session.botStatus, f.session);
+            assert.equal(decision.action, 'move_to_spot', `${lose}: it does not wait for a spot the worker never heard of`);
+            assert.equal(decision.spot?.id, primary.id, `${lose}: the worker's published spot`);
+        }
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('an unreachable mark, a pending command, survival and explicit non-hunting work keep their priority', () => {
-    const f = fixture(town);
+    const f = fixture(town, leaf, { huntSpot: { spotId: primary.id } });
     const stats = f.session.coldLifeState.stats;
     stats.spotMarks = [{ spotId: primary.id, reason: 'walk_route_unavailable', answer: null }];
-    assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'planned_route_unavailable');
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally', 'a spot it could not reach is not walked to');
     stats.spotMarks = null;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'move_to_spot');
     const restoreAt = restores.length;

@@ -14,7 +14,6 @@ invoke('GameServer/DataCache').init();
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 
 const state = {
     characterId: 7,
@@ -93,18 +92,26 @@ const shoppingState = {
         townVisit: { ...unfinishedShoppingState.stats.townVisit, completed: true }
     }
 };
-const returning = GoalExecutor.finishMarketVisit(shoppingState, Date.now());
+// A solo visit's end hands the bot back to the worker: it rests in town on no spot, due
+// now, and the worker's next step routes it (BotRoute); main starts no trip of its own.
+const handedBack = GoalExecutor.finishMarketVisit(shoppingState, 1000);
+assert.strictEqual(handedBack.activity, 'resting');
+assert.strictEqual(handedBack.stats.travel ?? null, null, 'main starts no return trip for a solo bot');
+assert.strictEqual(handedBack.spotId, null);
+assert.strictEqual(handedBack.timing.nextResolveAt, 1000, 'the worker\'s next step is due now');
+const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
+    ...shoppingState,
+    stats: { ...shoppingState.stats, marketLead: { town: 'Oren', itemId: 354 } }
+}, Date.now());
+assert.strictEqual(ignoringRemoteLead.activity, 'resting', 'a remote lead does not hold the visit\'s end');
+// A party member goes back to its party's ground (its saved return).
+const member = { ...shoppingState, party: { partyId: 'cold-travel-party' } };
+const returning = GoalExecutor.finishMarketVisit(member, Date.now());
 assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 assert.strictEqual(returning.stats.travel.method, 'gatekeeper_spot', 'returning from Giran must use the destination gatekeeper instead of walking across the world');
 assert.strictEqual(returning.timing.nextResolveAt, returning.stats.travel.arrivalAt, 'return travel must sleep until its arrival event');
-
-const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
-    ...shoppingState,
-    stats: { ...shoppingState.stats, marketLead: { town: 'Oren', itemId: 354 } }
-}, Date.now());
-assert.strictEqual(ignoringRemoteLead.stats.travel.reason, 'return_after_market');
 
 const returnedState = {
     ...returning,
@@ -121,31 +128,22 @@ assert.strictEqual(returned.events[0].type, 'returned_to_spot');
 
 const originalFindById = SpotService.findById;
 const originalArrivalPointForState = SpotService.arrivalPointForState;
-const originalEnsure = SpotProfiles.ensure;
 const legacyMineSpot = {
     id: '29_-30',
     name: 'Mithril Mines',
     center: { locX: 176673, locY: -177656, locZ: 801 }
 };
-const availableSpot = {
-    id: '19_-19',
-    name: 'Dwarven Village hunting grounds',
-    center: { locX: 116000, locY: -180000, locZ: -900 }
-};
 try {
     SpotService.findById = (id) => id === legacyMineSpot.id ? legacyMineSpot : null;
-    // The held earning answer (the worker's decision; main reads it, never searches).
-    SpotProfiles.ensure = () => [legacyMineSpot, availableSpot];
-    const holding = { spotId: availableSpot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
     SpotService.arrivalPointForState = (bot, spot) => ({
         locX: spot.center.locX + 137,
         locY: spot.center.locY - 91,
         locZ: spot.center.locZ
     });
-    const rerouted = GoalExecutor.finishMarketVisit({
-        ...shoppingState,
+    const rejoining = GoalExecutor.finishMarketVisit({
+        ...member,
         stats: {
-            ...shoppingState.stats,
+            ...member.stats,
             marketReturn: {
                 spotId: legacyMineSpot.id,
                 regionName: 'Akaste Bone Soldier fields',
@@ -153,60 +151,16 @@ try {
             }
         }
     }, Date.now());
-    // Main searches no spot for a return: the worker re-routes the bot at its
-    // next trip start and meets a full spot at arrival.
-    assert.strictEqual(rerouted.stats.travel.spotId, legacyMineSpot.id,
-        'a market return goes back to the spot it left, never a spot main searched');
-    assert.strictEqual(rerouted.stats.travel.regionName, legacyMineSpot.name);
-    assert.deepStrictEqual(rerouted.stats.travel.to, {
+    assert.strictEqual(rejoining.stats.travel.spotId, legacyMineSpot.id, 'a party member goes back to the spot it left');
+    assert.strictEqual(rejoining.stats.travel.regionName, legacyMineSpot.name);
+    assert.deepStrictEqual(rejoining.stats.travel.to, {
         locX: legacyMineSpot.center.locX + 137,
         locY: legacyMineSpot.center.locY - 91,
         locZ: legacyMineSpot.center.locZ
     }, 'market returns must use a distributed spawn-aware arrival point');
-
-    const deathRerouted = GoalExecutor.finishMarketVisit({
-        ...shoppingState,
-        spotId: legacyMineSpot.id,
-        stats: {
-            ...shoppingState.stats,
-            deaths: 3,
-            fightsResolved: 8,
-            earning: holding,
-            // The spot the worker's route publishes on that answer.
-            huntSpot: { spotId: availableSpot.id, plan: null, earning: availableSpot.id },
-            spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 1, fightsAtEntry: 0 },
-            marketReturn: {
-                spotId: legacyMineSpot.id,
-                regionName: legacyMineSpot.name,
-                loc: { ...legacyMineSpot.center }
-            }
-        }
-    }, 1000);
-    assert.strictEqual(deathRerouted.stats.travel.reason, 'death_pressure_replan');
-    assert.strictEqual(deathRerouted.stats.travel.arrivalEvent, 'arrived_hunting_ground');
-    assert.strictEqual(deathRerouted.stats.spotBackoffs[0].spotId, legacyMineSpot.id,
-        'a market return must persist the death cooldown before resetting the spot baseline');
-
-    assert.strictEqual(deathRerouted.stats.travel.spotId, availableSpot.id, 'the held earning answer replaces the risky spot');
-    assert.strictEqual(GoalExecutor.finishMarketVisit({
-        ...shoppingState,
-        spotId: legacyMineSpot.id,
-        stats: {
-            ...shoppingState.stats,
-            deaths: 2,
-            fightsResolved: 5,
-            spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 0, fightsAtEntry: 0 },
-            marketReturn: {
-                spotId: legacyMineSpot.id,
-                regionName: legacyMineSpot.name,
-                loc: { ...legacyMineSpot.center }
-            }
-        }
-    }, 1000), null, 'a bot must wait in town when no safe replacement spot is held');
 } finally {
     SpotService.findById = originalFindById;
     SpotService.arrivalPointForState = originalArrivalPointForState;
-    SpotProfiles.ensure = originalEnsure;
 }
 
 const boundaryArrival = SpotService.arrivalPointForState({ characterId: 2 }, {

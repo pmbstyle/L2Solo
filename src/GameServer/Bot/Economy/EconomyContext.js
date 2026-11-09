@@ -746,14 +746,14 @@ function earningDue(state, deps = {}) {
 // wakes no dependant (where the bot hunts changes no purchase or trip its build holds):
 // the held build serves on, its hunting leaf reads the held answer's spot and so
 // does the spot it goes to when sent to hunt (BotRoute.huntSpotHeld). Far steps and near posts alike. Returns the mind keys it writes (the
-// answer, its read marks cleared, the bits left), or null when it is not due here (main, a party member, an incoming projection waiting).
+// answer and the bits left; the spot marks stay, they last the outing), or null when it is not due here (main, a party member, an incoming projection waiting).
 function decideEarning(state, deps = {}) {
     if (!earningDue(state, deps) || state.incomingPending) return null;
     deps = resolved(state, deps, false);
     const { price, timestamp } = personal(state, deps);
     const found = IncomeRoute.search(state, { ...deps, timestamp, required: true, price });
     const earning = Situations.withOwnFacts(state, IncomeRoute.answerOf(found.route, timestamp, found.error, state));
-    return { earning, spotMarks: null, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
+    return { earning, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
         subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
 }
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
@@ -973,7 +973,7 @@ function heldReadsFor(state, deps) {
 // names is in the kit fact), spot, party and clan, and the held earning answer it
 // hunts: its spot and time), the source walk's ground verdict (the kit) and the quiet
 // build's followed gear (the kit and a death); the route search's (the kit, party,
-// clan, spot, risk) drops the kept route when it moves.
+// clan, spot, risk) drops the held hunt spot when it moves.
 const PIECE_FACTS = Object.freeze({
     foundation: ['build', 'dead', 'recovery', 'riskDeaths', 'lines', 'occupation', 'relations', 'party', 'earning'],
     ground: ['build'], gear: ['build', 'dead'], route: ['build', 'relations', 'party', 'occupation', 'riskDeaths', 'recovery']
@@ -1319,15 +1319,15 @@ function buildForState(state, deps) {
         money: Funding.packetFor(network, context.hourAdena, base.refillReserve), kitRates: kitRates(base, context.gapHorizonHours),
         dangerPrice: dangerPrice(base) };
     // The decisions this build took (only this build's result carries them, never a plan served later): the build,
-    // and the earning spot when it searched (its held answer published, the spot marks it read cleared: they hold
-    // only until the earning decision is taken, SpotRiskPolicy.spotMarks; a mark raised meanwhile is a body's
-    // pending raise, applied again over this answer: DecisionEvents.receive, the worker's next bag).
+    // and the earning spot when it searched (its held answer published; the spot marks it read stay, they last the
+    // outing, SpotRiskPolicy.LIFETIME; a mark raised meanwhile is a body's pending raise, applied again over this
+    // answer: DecisionEvents.receive, the worker's next bag).
     // The bag's town trip too (situations step 4 C4, the build bag_full wakes): its need, or
     // none (PartyMarketBreak.cleanupDecision), held in stats.cleanupDue until the trip starts.
     // Temporary until step 6: the town plan's sell stop (an unload root).
     // A reader's build takes no decision of the bot's: it clears nothing (counted).
     if (!decide) Situations.note(`build:reader:${deps.caller || 'economy_context'}`);
-    const decided = !decide ? {} : { ...(earningDecided ? { earning: base.earning, spotMarks: null } : {}),
+    const decided = !decide ? {} : { ...(earningDecided ? { earning: base.earning } : {}),
         cleanupDue: invoke('GameServer/Bot/Population/PartyMarketBreak').cleanupDecision(state, Number(context.timestamp) || Date.now()),
         woken: Situations.decided(state.stats, earningDecided ? ['earning_spot', 'build'] : 'build', { caller: deps.caller || 'economy_context',
             subject: state.characterId, answer: !Trace.on() ? null : { earning_spot: [base.earning?.spotId ?? 'none', state.stats?.earning?.spotId ?? 'none'],
@@ -1416,7 +1416,7 @@ function buildForState(state, deps) {
     const built = view(state, plan, deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip, projection });
     Object.assign(built.statsPacket, decided);
     // The route search's facts moved since the held build (worker-local, never
-    // posted): the worker drops the kept route (BotRoute.dropReason).
+    // posted): the worker drops the held hunt spot (BotRoute.drop).
     built.routeMoved = !held || held.pieces?.route !== pieces.route;
     return built;
 }

@@ -239,24 +239,62 @@ function onWorker() {
         const heard = count(() => Economy.forState(raised(turned, 'spot_disappoints', { stop: Situations.REST }), deps(7)));
         assert.equal(heard.searches, 1, 'a disappointing stay wakes one search at the rest');
     }
-    // The body's inputs (situations.md B6, §14). A spot it could not reach, or ground it may not hunt alone, is
-    // marked: the search passes it by; a situation raised after it before the search keeps it; the earning
-    // decision taken clears it (no clock, never a wake).
+    // The body's inputs. A spot it could not reach, ground it may not hunt alone, or a
+    // spot it lost or found crowded at its arrival is marked: the search passes it by for the outing, whatever
+    // answers it takes meanwhile (no A -> B -> A); its next trip from town, its death or new gear forgets it
+    // (no clock, never a wake).
     const raisedWith = (state, name, payload) => ({ ...state,
         stats: Situations.raise({ ...state.stats }, name, payload, Situations.place(state), state.characterId) });
     {
         const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-        const failed = raised(raisedWith(turned, 'spot_unreachable', { spotId: 'poor', reason: 'walk_timeout' }), 'died');
+        const failed = raised(raisedWith(turned, 'spot_unreachable', { spotId: 'poor', reason: 'walk_timeout' }), 'spot_empty');
         assert(Risk.isMarked(failed.stats, 'poor'), 'a wake raised after the mark keeps it');
         const read = count(() => Economy.forState(failed, deps(15)));
         assert.equal(read.searches, 1, 'spot_unreachable wakes one search');
         assert.equal(read.result.statsPacket.earning.spotId, 'rich', 'which passes the unreachable spot by');
         const after = published(failed, read.result);
-        assert.equal(Risk.isMarked(after.stats, 'poor'), false, 'the decision taken clears the mark');
+        assert(Risk.isMarked(after.stats, 'poor'), 'the decision taken keeps the mark: it lasts the outing');
         assert.equal(Economy.forState(raised(after, 'died'), deps(16)).statsPacket.earning.spotId, 'poor',
-            'and the next decision may choose the spot again');
+            'its death forgets it: the next decision may choose the spot again');
         const unsafe = raisedWith(turned, 'spot_dangerous', { spotId: 'poor', reason: 'party_required_hunting_ground' });
         assert.equal(Economy.forState(unsafe, deps(16)).statsPacket.earning.spotId, 'rich', 'unsafe ground is passed by too');
+        assert(Risk.isMarked(raised(unsafe, 'party_left').stats, 'poor') === false, 'leaving a party forgets ground too dangerous alone');
+        // A contest lost at its arrival: the new answer goes elsewhere and the next one does not come back.
+        const lost = raisedWith(turned, 'contest_lost', { spotId: 'poor', reason: 'contest_lost' });
+        const moved = { ...lost, stats: { ...lost.stats, ...Economy.decideEarning(lost, deps(17)) } };
+        assert.equal(moved.stats.earning.spotId, 'rich', 'fixture: the lost spot is passed by');
+        assert(Risk.isMarked(moved.stats, 'poor'), 'the packed spot stays marked over the new answer');
+        const again = raised(moved, 'spot_empty');
+        assert.equal(Economy.decideEarning(again, deps(18)).earning.spotId, 'rich', 'not back to the packed spot this outing');
+        assert(Risk.isMarked(raised(moved, 'party_left').stats, 'poor'), 'leaving a party keeps a lost contest\'s mark');
+        assert.equal(Risk.isMarked(raised(moved, 'arrived_town').stats, 'poor'), false, 'its next trip from town forgets it');
+    }
+    // Favourite camps (SpotSearch.HABIT_BAND): two spots within the band of the best score, bots of
+    // one band take their own picks by their seeded rolls and keep them at every search; a marked spot in the
+    // band is never picked.
+    {
+        const even = state => {
+            let next = { ...state, stats: { ...state.stats, huntEfficiency: [] } };
+            for (let n = 0; n < 3; n++) for (const spot of spots) next = { ...next, stats: { ...next.stats,
+                huntEfficiency: Hunt.record(next, { spotId: spot.id, timestamp: started, cycleMs: 60000,
+                    adena: spot.id === 'rich' ? 1060 : 1000, costs: 100, loot: 0, exp: 150, kills: 10 }) } };
+            return next;
+        };
+        const pickOf = (bot, minutes) => Route.search(bot, { ...deps(minutes), required: true }).route?.spot.id ?? null;
+        const Config = invoke('GameServer/Bot/Population/PopulationConfig'), knowledge = Config.knowledgeErrorsEnabled;
+        Config.knowledgeErrorsEnabled = false; // no belief errors: the scores alone part the bots
+        const picks = new Map();
+        for (let id = 991000; id < 991040 && picks.size < 2; id++) {
+            const bot = even(hunter(id)), spotId = pickOf(bot, 30);
+            if (spotId && !picks.has(spotId)) picks.set(spotId, bot);
+        }
+        assert.deepEqual([...picks.keys()].sort(), ['poor', 'rich'], 'bots of one band take different camps');
+        for (const [spotId, bot] of picks) {
+            assert.equal(pickOf(bot, 31), spotId, 'each keeps its own pick');
+            const marked = raisedWith(bot, 'contest_lost', { spotId, reason: 'contest_lost' });
+            assert.notEqual(pickOf(marked, 32), spotId, 'a marked spot in the band is never picked');
+        }
+        Config.knowledgeErrorsEnabled = knowledge;
     }
     // A player's command naming a spot is the held answer itself (no search), and takes the bit its move woke.
     {

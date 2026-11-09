@@ -794,8 +794,8 @@ function occupationWork(input, iterator) {
 function* nearDecision(input, iterator) {
     yield* iterator;
     const fields = DecisionEvents.nearFields(input.economy, input.state);
-    // The build's route facts moved (a gear change, a karma step): the kept route and
-    // the published hunt spot are chosen again, as on a far step.
+    // The build's route facts moved (a gear change, a karma step): the held hunt spot is
+    // chosen again, as on a far step.
     if (input.economy?.routeMoved === true) dropRoute(input.state.characterId, 'sections');
     // The workshop's keys under the build's packet: a build taken after it keeps its bits.
     const statsPacket = { ...input.workshopTaken, ...fields.statsPacket, ...input.nearMind,
@@ -1012,7 +1012,7 @@ function nearArrival(id, previous, row) {
         at: Number(row.updatedAt) || Date.now() });
     if (!verdict || verdict.action === 'coexist') return;
     if (verdict.action === 'avoid') {
-        Situations.raise(row.stats ||= {}, 'contest_lost', { spotId: String(to), reason: 'contest_lost' }, Situations.bodyPlace(row), id);
+        Situations.raise(row.stats ||= {}, 'contest_lost', { spotId: String(to), reason: verdict.reason || 'contest_lost' }, Situations.bodyPlace(row), id);
     } else Situations.note('spot:contest:hot_skipped');
 }
 tables.watch('board', {
@@ -1317,7 +1317,7 @@ function lookOwnLines(state, timestamp, economy, visit) {
 }
 
 // The step's trip begins, or waits for the engaged fight (PveEncounter.holdsTrip):
-// the round then ends that fight with no new one, and the kept route waits on
+// the round then ends that fight with no new one, and the held choice waits on
 // the record for the next step.
 // A route that asks the decision again (BotRoute.trip: no spot it may take, none
 // under it) raises its situation on the step's state, which the step carries.
@@ -1329,31 +1329,25 @@ function stepTrip(state, route, timestamp) {
     if (PveEncounter.holdsTrip(state, route, timestamp)) return { routedState: state, route: null, lastFight: true };
     return { routedState: beginHuntingTrip(state, route, timestamp) || state, route, lastFight: false };
 }
-// The step's solo trip and the kept route's drop (BotRoute.trip / drop): the
-// route lives in the bot's kernel record. The search skips a spot with no
-// room for the bot (SpotProfiles.roomFilterFor over this worker's index).
+// The step's solo trip (BotRoute.trip): to the bot's one held choice, kept in its
+// kernel record; the crowd is met at arrival (SpotContest). { route, huntKeys: the
+// mind key of the held choice the trip read (huntSpotKeys without a second read) }.
 // currentSpot: the spot the step's input state stands at.
 function routeTrip(state, currentSpot, leaf, timestamp) {
-    const search = routeSearch(state, timestamp);
-    return BotRoute.trip(search.owner, state, leaf, { spots: planningSpots, currentSpot, ...search });
+    const search = routeSearch(state, timestamp), out = {};
+    const route = BotRoute.trip(search.owner, state, leaf, { spots: planningSpots, currentSpot, ...search, out });
+    return { route, huntKeys: BotRoute.huntSpotKeyOf(state, out.held) };
 }
-// The hunters on a spot in this worker's occupancy (SpotEconomics' crowd
-// share, the search's spot values; the fight reads kernel.spotHunters too).
-function kernelHunters(spot, state) {
-    return kernel.spotHunters(spot, state);
-}
-// A solo bot's route search inputs here: its kernel record (the kept route),
-// this worker's room filter and hunters count (BotRoute.trip, soloGroundMissing).
+// A solo bot's route search inputs here: its kernel record (the held choice).
 function routeSearch(state, timestamp) {
-    return { owner: kernel.states.get(Number(state.characterId)), timestamp,
-        hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]), spotHunters: kernelHunters };
+    return { owner: kernel.states.get(Number(state.characterId)), timestamp };
 }
 // The spot the bot goes to when sent to hunt (BotRoute.huntSpotHeld on its kernel record):
-// the mind key a far step's or a near decision's packet carries when it changed. leaf: the
-// decision's hunting leaf.
+// the mind key a near decision's packet carries when it changed (a far step's comes with
+// its trip, routeTrip). leaf: the decision's hunting leaf.
 function huntSpotKeys(state, leaf, timestamp) {
-    return BotRoute.huntSpotHeld(kernel.states.get(Number(state.characterId)), state, leaf,
-        { spots: planningSpots, timestamp, spotHunters: kernelHunters });
+    const search = routeSearch(state, timestamp);
+    return BotRoute.huntSpotHeld(search.owner, state, leaf, { spots: planningSpots, ...search });
 }
 function dropRoute(characterId, why) {
     BotRoute.drop(kernel.states.get(Number(characterId)), why);
@@ -1443,15 +1437,17 @@ function arrivalEnemies({ arriving, spotId, step, at, proposalOf }) {
     const arrived = keys.has(stateKey(found.meeting.holder)) ? found.meeting.holder : found.meeting.peer;
     outbox?.add(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
 }
-// The arriving unit's own outcome on its states (its step's patch): avoid raises
-// contest_lost with the spot as its mark (it wakes the earning spot at once); yield
+// The arriving unit's own outcome on its states (its step's patch): avoid (a contest
+// lost, or a spot found crowded) raises contest_lost with the spot as its mark (it
+// wakes the earning spot at once); yield
 // waits (ColdCompetitionWait, the resolver deducts the wait from its hunt); coexist
 // changes nothing; one touching a standing unit goes to the outbox, keyed by the arriving
 // step's proposal (proposalId). stats: a copy the caller owns, written and returned.
 function contestOutcome(verdict, stats, principal, at, proposalId = null) {
     if (!verdict || verdict.action === 'coexist') return stats;
     if (verdict.action === 'avoid') {
-        return Situations.raise(stats, 'contest_lost', { spotId: verdict.event.spotId, reason: 'contest_lost' }, Situations.OPEN, principal.characterId);
+        return Situations.raise(stats, 'contest_lost', { spotId: verdict.event?.spotId ?? verdict.spotId, reason: verdict.reason || 'contest_lost' },
+            Situations.OPEN, principal.characterId);
     }
     if (verdict.action === 'yield') {
         stats.coldCompetition = ColdCompetitionEpisode.begin(stats.coldCompetition, { outcome: 'yield', key: verdict.event.key, at,
@@ -1750,8 +1746,8 @@ function startKernel(config = {}) {
             return reason === 'solo_sooner' || reason === 'party_at_loss';
         },
         // The party's trip: its held spot answer, else its spot decision's one search
-        // (held null), which skips a spot with no room for the whole party (its own
-        // members not counted against it). { route, answer (the decision taken) }.
+        // (held null), by fit: the crowd is met at its arrival (partyArrival).
+        // { route, answer (the decision taken) }.
         // A clan war party follows its war's movement each step (temporary: until the
         // clan planners' pass moves war movement onto the war's events).
         partyRoute: ({ leader, party, members, spot, timestamp, held }) => {
@@ -1760,8 +1756,7 @@ function startKernel(config = {}) {
                 spots: planningSpots, wars: kernel.interactionMemory.clanWars });
             if (war.active) return { route: war.route };
             const out = {};
-            const route = BotRoute.route(leader, spot, party, members, { spots: planningSpots, timestamp, held, out,
-                spotHunters: kernelHunters, hasRoom: held ? null : SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
+            const route = BotRoute.route(leader, spot, party, members, { spots: planningSpots, timestamp, held, out });
             return { route, answer: out.answer };
         },
         // writtenAt: the row's write stamp, the real now (timestamp is the
@@ -2000,7 +1995,8 @@ function startKernel(config = {}) {
             if (refreshed && !nullReuse) {
                 if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
                 const leaf = refreshed.economy.network.activity;
-                const { routedState, route, lastFight } = stepTrip(state, routeTrip(state, standingSpot(state), leaf, timestamp), timestamp);
+                const trip = routeTrip(state, standingSpot(state), leaf, timestamp);
+                const { routedState, route, lastFight } = stepTrip(state, trip.route, timestamp);
                 // A town visit's plan from the card: its listings and bids (ColdEconomyPlan,
                 // visit); in the field the card's town leaf starts (no plan is asked).
                 const occupation = routedState.activity === 'shopping'
@@ -2013,7 +2009,7 @@ function startKernel(config = {}) {
                 // The workshop taken on this step rides the step's packet, as in a build: a
                 // step main executes (a town visit) reads the packet, not this state.
                 return { ...boardWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...rebuffKeys, ...earningKeys,
-                    ...huntSpotKeys(state, leaf, timestamp) }, economy: refreshed.economy,
+                    ...trip.huntKeys }, economy: refreshed.economy,
                     ...(occupation?.economyPlan ? { economyPlan: occupation.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
@@ -2041,15 +2037,12 @@ function startKernel(config = {}) {
             // second bare wish plan drops that retained chain on every switch.
             const acquisitionPlan = selectedAcquisition.acquisitionPlan;
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
-                { spots, economy, memo: kernel.states.get(Number(state.characterId)), search: routeSearch(state, timestamp),
+                { spots, economy, memo: kernel.states.get(Number(state.characterId)),
                     planKey: selectedAcquisition.planKey });
-            // The build's route facts moved (EconomyContext.forState routeMoved), or a
-            // new plan destination the search reads (the gear branch, the party wait):
-            // the kept route drops before the trip start, so the search below runs
-            // on the planned state.
-            const routeDrop = BotRoute.dropReason(!nullReuse && economy.routeMoved === true,
-                { plan: previousPlan, request: state.stats?.partyRequest }, { plan: acquisitionPlan, request: partyRequest });
-            if (routeDrop) dropRoute(state.characterId, routeDrop);
+            // The build's route facts moved (EconomyContext.forState routeMoved): the held
+            // choice drops before the trip start, so it is chosen again on the planned state
+            // (a new plan destination is in its key).
+            if (!nullReuse && economy.routeMoved === true) dropRoute(state.characterId, 'sections');
             const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
             // A new packet, never the build's own (stepStatsPacket may return economy.statsPacket,
             // which the card shares). The gear plan's full review taken with the build (gear_plan):
@@ -2067,11 +2060,10 @@ function startKernel(config = {}) {
             // BotRoute.choose): the trip sets its activity and its spot on arrival; with no trip
             // it stays as it stands (a rest goes on, a clan wait holds).
             const plannedState = { ...state, stats: plannedStats };
-            const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
-            // The spot it goes to when sent to hunt, chosen on the planned state after the
-            // trip: a search reads the route the trip kept (its room filter's answer).
-            const huntKeys = huntSpotKeys(plannedState, economy.network?.activity, timestamp);
-            if (huntKeys) statsPacket = { ...statsPacket, ...huntKeys };
+            const trip = routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp);
+            const { routedState, route, lastFight } = stepTrip(plannedState, trip.route, timestamp);
+            // The spot it goes to when sent to hunt: the trip's own held choice on the planned state.
+            if (trip.huntKeys) statsPacket = { ...statsPacket, ...trip.huntKeys };
             // A town visit plans its listings, bids and craft (showcase); a build taken in the
             // field posts the bids of the wants it registers once and starts its leaf (action);
             // a held card in the field only starts its town leaf.
@@ -2103,9 +2095,9 @@ function startKernel(config = {}) {
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
-                // A waiter farms where its trip took it: its planned fallback's NPC, held on the
-                // route the search chose (BotRoute.choose), else its hunting leaf's.
-                targetNpcId: partyRouteWaiting ? Number(kernel.states.get(Number(state.characterId))?.route?.npcId
+                // A waiter farms where its trip took it: its planned fallback's NPC, held on its
+                // hunt spot choice (BotRoute.huntSpot), else its hunting leaf's.
+                targetNpcId: partyRouteWaiting ? Number(kernel.states.get(Number(state.characterId))?.huntSpot?.value?.npcId
                     || (economy.network.activity?.activity === 'hunting' ? economy.network.activity.npcId : 0) || 0)
                     : Number(acquisitionPlan?.next?.npcId || 0),
                 reusablePartyRequest,
@@ -2123,7 +2115,7 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
-    // Every spot value's crowd share without its own count reads this kernel's occupancy (SpotProfiles.spotHunters).
+    // A kill share read without its own count reads this kernel's occupancy (SpotProfiles.spotHunters).
     SpotProfiles.useOccupancy(() => kernel?.occupancy);
     // Keep dependencies tied to the kernel's native lifetime. In-flight
     // scratch is cancelled on a newer canonical owner; it is never LRU-evicted.
@@ -2221,8 +2213,6 @@ function startKernel(config = {}) {
         npcOffersFor: OccupationSources.npcOffersFor,
         buyOrderEscrow: escrowFor,
         spots: () => planningSpots,
-        // SpotEconomics' crowd share in a build (deps.spotHunters).
-        spotHunters: kernelHunters,
         // The bot's memory rows for its relations fact, bond and threat (read
         // only), without the deep copy snapshot() makes; as main passes them.
         memory: characterId => kernel.interactionMemory.relationRows(Number(characterId)),

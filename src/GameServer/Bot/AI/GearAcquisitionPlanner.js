@@ -37,6 +37,7 @@ const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const OfferOrder = require('../Economy/OfferOrder');
 const SpotIndex = require('./SpotIndex');
+const SpotSearch = require('./SpotSearch');
 const SpotEconomics = require('../Economy/SpotEconomics');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
@@ -1936,25 +1937,29 @@ function targetHasAvailableRoute(target, state = {}, options = {}) {
     );
 }
 
-function sourceIsExcluded(source, options = {}) {
-    if (Number.isFinite(options.maxSourceLevel) && !(source?.sourceKind === 'raid' || source?.raidBoss)
-        && sourceTargetLevel(source) > options.maxSourceLevel) return true;
-    const excluded = options.excludedSpotIds;
-    if (!excluded || !source?.spotId) return false;
-    return excluded instanceof Set
-        ? excluded.has(String(source.spotId)) || excluded.has(source.spotId)
-        : Array.isArray(excluded) && excluded.map(String).includes(String(source.spotId));
-}
-
+// An item's source for the bot: the one spot search's source goal (SpotSearch.rank) over the item's sources,
+// ranked by this bot's value: the list's order (sourceForItem) is the effort of the bot that filled its
+// shared cache, whose key holds no readiness (sourceEffort's solo-safe factor), nor a raid's estimate.
+// The goal's window: a clan operation's level cap (maxSourceLevel), the bot's voluntary hunt band; a
+// source the bot holds solo first, else one that needs a party (a clan's crafting takes either). The
+// value: yield per effort, so the habit band (a solo bot's favourite camp among sources within it) holds
+// the pick across searches while the sources stay in it; a clan's operation has no habit.
+// options.sourceAllowed: the caller's verdict (a route's ground, target and kit), asked in value order.
+// The excluded spots (options.excludedSpotIds) are the search's exclusions. options.countHabit: the pick
+// is the route's answer (SpotSearch.rank count).
 function bestSourceForState(sources = [], state = {}, options = {}) {
-    const allowedSources = sources
-        .filter((source) => !sourceIsExcluded(source, options))
-        .filter((source) => sourceWithinVoluntaryHuntBand(state, source));
-    const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
-    // A route caller can refuse ground, targets or full camps before choosing
-    // the first source. Keep walking the ordered sources after a refusal.
-    const pick = rows => options.sourceAllowed ? rows.find(options.sourceAllowed) || null : rows[0] || null;
-    return options.clanCrafting ? pick(allowedSources) : pick(safeSources) || pick(allowedSources);
+    const listed = options.excludedSpotIds;
+    const excluded = listed instanceof Set ? listed : Array.isArray(listed) ? new Set(listed.map(String)) : null;
+    const capped = Number.isFinite(options.maxSourceLevel);
+    const goal = safe => ({ candidates: sources, raid: true, spot: source => source, id: source => source.spotId,
+        fits: source => !(capped && !(source?.sourceKind === 'raid' || source?.raidBoss)
+            && sourceTargetLevel(source) > options.maxSourceLevel)
+            && sourceWithinVoluntaryHuntBand(state, source) && (!safe || soloSafeForSource(state, source)),
+        value: source => 1 / sourceEffort(source, state, options) });
+    const ctx = { excluded, allowed: options.sourceAllowed || null, verdicts: new Map(), mode: options.mode,
+        count: options.countHabit === true, ...(options.clanCrafting ? { habit: false } : {}) };
+    return options.clanCrafting ? SpotSearch.rank(state, goal(false), ctx).pick
+        : SpotSearch.rank(state, goal(true), ctx).pick || SpotSearch.rank(state, goal(false), ctx).pick;
 }
 
 function itemIdForPlan(plan = {}) {
@@ -1978,24 +1983,33 @@ function soloPlanSourceReader(state, plan, spots, options = {}) {
         || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
         || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
     const allowed = sourceRouteReader(state, { ...options, spots });
-    // The crowd is read at arrival (design rules): only the spot search asks for room.
-    return (spot, npcId) => !!spot && allowed(spot, npcId)
-        && (!options.hasRoom || String(state.spotId) === String(spot.id)
-            && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
-            || options.hasRoom(spot.id));
+    // The crowd is read at arrival (design rules), never at the choice.
+    return (spot, npcId) => !!spot && allowed(spot, npcId);
 }
 
+// The plan's source now: none for a plan in leveling recovery (the bot hunts for its lost level), a craft
+// plan whose material is in the bag, or a target the bot may not acquire; else the item's best source
+// (bestSourceForState). options.unlisted (the solo route, BotRoute.huntSpot): with no source picked, the
+// plan's own source when the item's list misses it (another level's yield, a spoil source picked with a
+// partner), under the same verdict and exclusions; one the list holds was refused by the search (its
+// window, the verdict, the marks): none.
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
     if (!acquisitionTargetAllowed(state, plan)) return null;
     if (levelingRecoveryFor(state, plan, options.timestamp)) return null;
     if (plan?.status !== 'active' || plannedMaterialAcquired(state, plan)) return null;
     const itemId = itemIdForPlan(plan);
     if (!itemId) return null;
-    const allowed = soloPlanSourceReader(state, plan, spots, options);
-    const sourceAllowed = options.sourceAllowed;
-    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, allowed ? { ...options,
-        sourceAllowed: source => allowed(SpotIndex.spotById(spots, source.spotId), source.npcId)
-            && (!sourceAllowed || sourceAllowed(source)) } : options);
+    // A caller's own verdict (a solo bot's route, BotRoute.huntSpot: the same source route reader; a party's
+    // ground) stands in for the solo plan's.
+    const reader = options.sourceAllowed ? null : soloPlanSourceReader(state, plan, spots, options);
+    const allowed = reader ? source => reader(SpotIndex.spotById(spots, source.spotId), source.npcId) : options.sourceAllowed;
+    const sources = sourceForItem(itemId, spots, state, options);
+    const best = bestSourceForState(sources, state, reader ? { ...options, sourceAllowed: allowed } : options);
+    const next = plan.next;
+    if (best || !options.unlisted || next?.spotId == null
+        || sources.some(source => String(source.spotId) === String(next.spotId) && Number(source.npcId) === Number(next.npcId))) return best;
+    if (new Set([...(options.excludedSpotIds || [])].map(String)).has(String(next.spotId))) return null;
+    return !allowed || allowed({ spotId: next.spotId, npcId: next.npcId }) ? next : null;
 }
 
 function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -2176,6 +2190,9 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const sourceCache = options.sourceCache;
     const spoilCapable = options.spoilCapable === true || roleFor(state) === 'spoiler';
     const allowRaidSources = options.allowRaidSources === true;
+    // The list's members and yields read the item, the killer's level, spoil and raid admission (and the
+    // rates: resolvedKey). Its order (effort) also reads the filling bot's readiness and a raid's estimate,
+    // not keyed: a reader that needs its own best ranks by its own value (bestSourceForState).
     const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}:${spoilCapable ? 1 : 0}:${allowRaidSources ? 1 : 0}`;
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);

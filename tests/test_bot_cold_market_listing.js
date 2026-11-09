@@ -381,33 +381,17 @@ async function run() {
     const previousEnsure = SpotProfiles.ensure;
     const previousArrival = SpotService.arrivalPointForState;
     try {
-        // No saved return: the held earning answer, else rest (main never searches a spot).
+        // A solo visit's end with no saved return hands it back to the worker: it rests in
+        // town, due now (main never searches a spot); a stale party return token goes with it.
         SpotProfiles.ensure = () => [{ id: 'recovery', name: 'Recovery field', center: { locX: 100, locY: 100, locZ: 0 } }];
-        const holding = { spotId: 'recovery', shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
-        const stranded = { ...state, stats: { ...state.stats, marketReturn: null } };
+        const stranded = { ...state, stats: { ...state.stats, marketReturn: null, huntSpot: { spotId: 'recovery' } } };
         const recovery = GoalExecutor.finishMarketVisit(stranded, 62000, { recoverMissingReturn: true });
-        assert.strictEqual(recovery.activity, 'resting', 'a missing return route must leave shopping and schedule a retry');
-        assert.strictEqual(recovery.timing.nextResolveAt, 92000);
-        SpotService.arrivalPointForState = () => ({ locX: 100, locY: 100, locZ: 0 });
-        // The held answer and the spot the worker's route publishes on it (huntSpot).
-        const held = { ...stranded, stats: { ...stranded.stats, earning: holding,
-            huntSpot: { spotId: 'recovery', plan: null, earning: 'recovery' } } };
-        const routed = GoalExecutor.finishMarketVisit(held, 62000, { recoverMissingReturn: true });
-        assert.strictEqual(routed.activity, 'traveling');
-        assert.strictEqual(routed.stats.travel.spotId, 'recovery');
-        const stalePartyReturn = { ...held, stats: {
-            ...held.stats, partyMarketReturn: { partyId: 'dissolved-party' }
-        } };
-        const soloReturn = GoalExecutor.finishMarketVisit(stalePartyReturn, 62000, { recoverMissingReturn: true });
-        assert.strictEqual(soloReturn.stats.travel.arrivalActivity, 'hunting',
-            'a fallback route must not wait for a dissolved party');
-        assert.strictEqual(soloReturn.stats.partyMarketReturn, null,
-            'solo recovery must discard the obsolete party return token');
-        const soloRest = GoalExecutor.finishMarketVisit({ ...stalePartyReturn,
-            stats: { ...stalePartyReturn.stats, earning: undefined } }, 62000, { recoverMissingReturn: true });
-        assert.strictEqual(soloRest.activity, 'resting');
-        assert.strictEqual(soloRest.stats.partyMarketReturn, null,
-            'resting recovery must also discard the obsolete party return token');
+        assert.strictEqual(recovery.activity, 'resting', 'a missing return route must leave shopping');
+        assert.strictEqual(recovery.timing.nextResolveAt, 62000, 'the worker routes it at its next step');
+        const soloRest = GoalExecutor.finishMarketVisit({ ...stranded, stats: {
+            ...stranded.stats, partyMarketReturn: { partyId: 'dissolved-party' } } }, 62000, { recoverMissingReturn: true });
+        assert.strictEqual(soloRest.activity, 'resting', 'a fallback must not wait for a dissolved party');
+        assert.strictEqual(soloRest.stats.partyMarketReturn, null, 'the obsolete party return token is discarded');
     } finally {
         SpotProfiles.ensure = previousEnsure;
         SpotService.arrivalPointForState = previousArrival;

@@ -1014,11 +1014,11 @@ class ColdSimulationKernel {
         }
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
-        // The bot's one record: { state, version, route, spotFit, materialMemo, progressAsk,
+        // The bot's one record: { state, version, huntSpot, spotFit, materialMemo, progressAsk,
         // economyPending, economyPlanHash, wishAdvisory, cardCommit, raiseSeq, nearRoute, stayHeld }.
         // Every field but the state and version is this thread's own and
-        // survives a new state: the kept route (BotRoute.trip) until its
-        // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
+        // survives a new state: the held hunt spot (BotRoute.heldHuntSpot) until its
+        // inputs move or its step drops it, the trip's kept spot verdicts (BotRoute heldVerdict,
         // each keyed on what it reads), the material memo and the held party
         // progress ask (partyRequestForPlan), the economy
         // plan sent and its hash, the card it holds and the commit that card
@@ -1039,7 +1039,7 @@ class ColdSimulationKernel {
         const raised = !!current && !state.stats?.tradeMeeting && newlyWoken(current.state, state)
             && lifecycleKind(state, this) === 'event_driven';
         if (raised) this.raiseWakeups.add(characterId);
-        this.states.set(characterId, { route: null, ...current, state, version }, ownOutput);
+        this.states.set(characterId, { ...current, state, version }, ownOutput);
         this.occupancy.update(state);
         DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
@@ -1369,9 +1369,6 @@ class ColdSimulationKernel {
                 });
                 candidateMemberIds.forEach((memberId) => {
                     const member = partyMembers.find((entry) => Number(entry.characterId) === memberId);
-                    // The party run takes the member: its solo route is dropped.
-                    const record = this.states.get(memberId);
-                    if (record) record.route = null;
                     this.inFlight.set(memberId, { state: member, startedAt, partyId: String(party.partyId) });
                     Trace.hold(memberId);
                     candidates.push({ characterId: memberId, purpose });
@@ -1575,9 +1572,9 @@ class ColdSimulationKernel {
             && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint);
     }
 
-    // The bots on a spot for its kill share (E69), from this kernel's
+    // The bots on a spot for a fight's kill share (E69), from this kernel's
     // occupancy index (SpotOccupancyIndex.huntersOn); with a state, that bot
-    // counted once (SpotEconomics' crowd share, deps.spotHunters).
+    // counted once. No spot value reads it: a crowd is met at arrival.
     spotHunters(spot, state = null) {
         return huntersOn(this.occupancy, spot?.id, state);
     }

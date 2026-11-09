@@ -6,6 +6,9 @@ invoke('GameServer/DataCache').init();
 
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
+// The one choice of a solo bot (BotRoute.huntSpot) over the test's catalogue.
+const huntSpot = (state, timestamp = 1000) => BotRoute.huntSpot(state, null, { spots: SpotProfiles.cache, timestamp })?.spotId;
 
 const originalCache = SpotProfiles.cache;
 const originalBestSourceForPlan = GearAcquisitionPlanner.bestSourceForPlan;
@@ -33,16 +36,18 @@ try {
         status: 'active',
         next: { spotId: 'gear_source_01' }
     };
-    const atStarter = SpotProfiles.findForState({
+    GearAcquisitionPlanner.bestSourceForPlan = () => ({ spotId: 'gear_source_01' });
+    const atStarter = huntSpot({
+        characterId: 10,
         level: 1,
         spotId: 'starter_human_01',
         stats: { equipmentPlan, populationWave: 1, starterRegion: 'human' }
     });
-    assert.strictEqual(atStarter.id, 'starter_human_01',
+    assert.strictEqual(atStarter, 'starter_human_01',
         'an active equipment plan must not replace a persisted physical starter spot');
 
-    const unplaced = SpotProfiles.findForState({ level: 1, stats: { equipmentPlan } });
-    assert.strictEqual(unplaced.id, 'gear_source_01',
+    const unplaced = huntSpot({ characterId: 11, level: 1, stats: { equipmentPlan } });
+    assert.strictEqual(unplaced, 'gear_source_01',
         'a state without a physical spot may still select its equipment source');
 
     const dangerous = {
@@ -67,11 +72,11 @@ try {
             deaths: 2,
             fightsResolved: 6,
             spotRisk: { spotId: dangerous.id, deathsAtEntry: 0, fightsAtEntry: 0 },
-            equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 1 } }
+            equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 1 }, next: { spotId: dangerous.id } }
         }
     };
     assert.strictEqual(
-        SpotProfiles.findForState(deathPressured, { timestamp: 1000 }).id,
+        huntSpot(deathPressured, 1000),
         safer.id,
         'death pressure must override an active equipment source and choose another available source'
     );
@@ -85,13 +90,13 @@ try {
         }
     };
     assert.strictEqual(
-        SpotProfiles.findForState(persistedBackoff, { timestamp: 2000 }).id,
+        huntSpot(persistedBackoff, 2000),
         safer.id,
         'a persisted backoff must stop the equipment plan from immediately pulling the bot back'
     );
     const expiredBackoff = { ...persistedBackoff, stats: { ...persistedBackoff.stats, stepCount: 60 } };
     assert.strictEqual(
-        SpotProfiles.findForState(expiredBackoff, { timestamp: 5001 }).id,
+        huntSpot(expiredBackoff, 5001),
         dangerous.id,
         'the original equipment source may be reconsidered after its cooldown expires'
     );

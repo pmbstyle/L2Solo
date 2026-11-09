@@ -5,8 +5,9 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 // The hall's departure teleports the bot to the spot it goes to when sent to hunt (the
 // worker's choice; main never chooses one): spotId, a hot body's
 // (DecisionEvents.heldSpotId), else a far bot's (DecisionEvents.heldSpotOf: its row).
-// None (none served, or its exclusions rule it out: died, was full, unreachable): no
-// teleport, it leaves the hall as it came.
+// None (none published, its exclusions rule it out: died, was full, unreachable) or
+// pending (a raise the worker has not answered may move it: a player's command): no
+// teleport, it leaves the hall as it came and the worker routes it.
 function plan(state, hall, options = {}) {
     if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Karma.closesTowns(state.stats?.karma))
         return null;
@@ -18,7 +19,7 @@ function plan(state, hall, options = {}) {
     if (!require('./Runtime').Policy.inside(hall, point) && !Services.near(point, Services.manager(hall)))
         return null;
     const spotId = options.spotId !== undefined ? options.spotId : invoke('GameServer/Bot/AI/DecisionEvents').heldSpotOf(state);
-    if (spotId == null) return null;
+    if (spotId == null || spotId === 'pending') return null;
     const spot = SpotService.findById(spotId);
     if (!spot) return null;
     const destination = SpotService.arrivalPointForState(state, spot);
