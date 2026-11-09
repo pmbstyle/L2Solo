@@ -17,26 +17,25 @@ global.invoke = (module) => {
     return exports;
 };
 
-// Town peace zones as circles (center, radius), static game data.
-const PEACE_ZONES = Object.freeze([
-    { x: -84318, y: 244579, r: 8000 }, // TI
-    { x: -80752, y: 149776, r: 6000 }, // Gludin
-    { x: -12672, y: 122776, r: 6000 }, // Gludio
-    { x: 15664,  y: 142979, r: 6000 }, // Dion
-    { x: 83400,  y: 147943, r: 8000 }, // Giran
-    { x: 82960,  y: 53177,  r: 6000 }, // Oren
-    // Remaining C4 town centers match World/TownRespawn.
-    { x: 146737, y: 25807, r: 8000 }, // Aden
-    { x: 111386, y: 219413, r: 6000 }, // Heine
-    { x: 117129, y: 76917, r: 6000 }, // Hunter's Village
-    { x: 147966, y: -55228, r: 6000 }, // Goddard
-    { x: 43824, y: -47664, r: 8000 }, // Rune
-    { x: 17144, y: 170156, r: 3000 }, // Floran Village
-    { x: 46926, y: 51511, r: 6000 }, // Elven Village
-    { x: 9670, y: 15537, r: 6000 }, // Dark Elven Village
-    { x: -45264, y: -112512, r: 6000 }, // Orc Village
-    { x: 115072, y: -178176, r: 6000 } // Dwarven Village
-]);
+// Town peace zones: the C4 town outlines (Lisvus townZones.xml, imported by
+// scripts/generate-c4-town-zones.js), each with its bounding box. Heights are
+// not checked: callers pass a map point, and no town lies over or under a
+// hunting ground.
+const PEACE_ZONES = require('../data/World/c4_town_peace_zones.json').towns.map(({ outline }) => ({
+    outline,
+    minX: Math.min(...outline.map(node => node.x)), maxX: Math.max(...outline.map(node => node.x)),
+    minY: Math.min(...outline.map(node => node.y)), maxY: Math.max(...outline.map(node => node.y))
+}));
+
+// Inside an outline: a ray from the point crosses its edges an odd number of times.
+function insideOutline(outline, x, y) {
+    let inside = false;
+    for (let at = 0, prev = outline.length - 1; at < outline.length; prev = at++) {
+        const a = outline[at], b = outline[prev];
+        if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+}
 
 global.utils = {
     infoSuccess(prefix, ...params) {
@@ -120,11 +119,12 @@ global.utils = {
     },
 
     isInPeaceZone(locX, locY) {
-        return PEACE_ZONES.some(zone => {
-            const dx = zone.x - locX;
-            const dy = zone.y - locY;
-            return (dx * dx + dy * dy) <= (zone.r * zone.r);
-        });
+        const x = Number(locX), y = Number(locY);
+        for (let at = 0; at < PEACE_ZONES.length; at++) {
+            const zone = PEACE_ZONES[at];
+            if (x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY && insideOutline(zone.outline, x, y)) return true;
+        }
+        return false;
     },
 
     totalMemUsed() {

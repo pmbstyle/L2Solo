@@ -197,4 +197,20 @@ assert.deepStrictEqual(
     'the Floran town centre stays in the village'
 );
 
+// C4 town peace zones are the town outlines: a town square is peace, the
+// hunting fields around a town are not, and Floran Village is no peace zone.
+for (const [key, town] of Object.entries(TownRespawn.towns)) {
+    assert.strictEqual(utils.isInPeaceZone(town.locX, town.locY), key !== 'floran_village',
+        `${town.name} square ${key === 'floran_village' ? 'stays open to PvP' : 'is a peace zone'}`);
+}
+for (const [label, locX, locY] of [['Pobby fields 5.6k east of Oren', 87696, 56090],
+    ['Ghost of Rebellion Soldier fields 7k from Rune', 50323, -44993], ['Elder Keltir fields beside Talking Island', -81832, 247712]]) {
+    assert.strictEqual(utils.isInPeaceZone(locX, locY), false, `${label} is a hunting ground, not a peace zone`);
+}
+for (const [group, points] of Object.entries(TownRespawn.CHAOTIC_RESPAWNS)) {
+    for (const [locX, locY] of points) {
+        assert.strictEqual(utils.isInPeaceZone(locX, locY), false, `the ${group} red-name restart ${locX},${locY} lies outside the town`);
+    }
+}
+
 console.log('Town respawn regression checks passed');
