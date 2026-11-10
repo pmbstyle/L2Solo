@@ -201,7 +201,10 @@ async function sell(state, id, price, count = 1) {
             await Afk.buyFromShop(buyer.characterId, offer.store, itemId, purchased,
                 { lineId: offer.lineId, expectedPrice: offer.price, expectedRevision: offer.expectedRevision, coldState: buyer });
             assert.equal(held(await Database.fetchItems(buyer.characterId), itemId), purchased);
-            assert.equal(held(await Database.fetchItems(state.characterId), 57), cashBefore - inputCost + purchased * offer.price);
+            // A cold seller's proceeds wait on the board until its own step commit takes them.
+            const [owed] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 57', [state.characterId]]);
+            assert.equal(held(await Database.fetchItems(state.characterId), 57) + Number(owed.amount),
+                cashBefore - inputCost + purchased * offer.price, 'the seller is paid the full price of the sold shots');
             assert.equal(Afk.offers(itemId, Afk.SELL).find(o => o.sourceId === state.characterId).count, units - purchased);
             if (recipeId === 21) withdrawnStep = learning;
             console.log('PASS C shot lifecycle', JSON.stringify({ recipeId, itemId, batches: lot.batches, units,
