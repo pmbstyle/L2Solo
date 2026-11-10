@@ -87,15 +87,17 @@ function spotRates(state, spot, shots) {
 // its held earning answer's when the answer carries it and the bot hunts
 // that spot solo (or stands on none: the town, the road); else the spot table's
 // at the bot's spot and level (a party member, an answer saved before it carried
-// the use, none held, another spot), the band's best row without a spot. A pure
-// table read, no search. earning: the answer to read (a build's own, else held).
+// the use, none held, another spot), without a spot the income row its hour is
+// priced on (BotHuntEfficiency.incomeRow). A pure table read, no search.
+// earning: the answer to read (a build's own, else held).
 function spotUseOf(state, earning = state?.stats?.earning) {
     const party = state?.party?.partyId || state?.partyId;
     if (!party && earning && Number.isFinite(earning.shotsPerHour) && Number.isFinite(earning.potionsPerHour)
         && (!state?.spotId || String(state.spotId) === String(earning.spotId))) return earning;
     const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const role = SpotValueTable.roleFor(state), level = Number(state?.level) || 1;
-    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true)) || SpotValueTable.best(role, level, true);
+    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true))
+        || invoke('GameServer/Bot/AI/BotHuntEfficiency').incomeRow(state);
     return { shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)) };
 }
@@ -288,15 +290,15 @@ function uncommanded(held) {
     delete answer.command; delete answer.by;
     return answer;
 }
-// The held answer's spot id (no search). null: no answer, none held (spotId null), or a bot in a party: its
-// hunt is the party's (the party comparison reads its solo copy).
-function answerSpotId(state, mode = null) {
+// The answer's spot id (no search; earning: the answer to read, a build's own, else the held one). null: no
+// answer, none held (spotId null), or a bot in a party: its hunt is the party's (the party comparison reads its solo copy).
+function answerSpotId(state, mode = null, earning = state.stats?.earning) {
     if (state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return null;
-    return state.stats?.earning?.spotId || null;
+    return earning?.spotId || null;
 }
 // The same spot in a catalogue (spots: the catalogue's profiles); null too for a spot the catalogue lost.
-function heldSpot(state, spots = [], mode = null) {
-    const spotId = answerSpotId(state, mode);
+function heldSpot(state, spots = [], mode = null, earning = state.stats?.earning) {
+    const spotId = answerSpotId(state, mode, earning);
     return spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId) || null : null;
 }
 // The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices

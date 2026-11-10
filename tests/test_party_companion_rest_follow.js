@@ -125,10 +125,10 @@ function authoredKitInputs(actor, session) {
     const hourAdena = Hunt.huntHour(hunt, state);
     // Rates at the precision the kit keeps them (StatsPacket.roundRate).
     const roundRate = invoke('GameServer/Bot/Economy/StatsPacket').roundRate;
-    // The use per hour is the table's at the spot the bot stands on (the band's best row without one): the
-    // fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
+    // The use per hour is the table's at the spot the bot stands on (the income row its hour is priced on
+    // without one): the fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
     const useRow = (state.spotId && Table.value(state.spotId, Table.roleFor(state), state.level, true))
-        || Table.best(Table.roleFor(state), state.level, true);
+        || Hunt.incomeRow(state);
     const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : plan.perAction > 0 ? positive(useRow.shots) : 0);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
     const potionUse = roundRate(positive(useRow.potions));

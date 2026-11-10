@@ -63,8 +63,9 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
     'own escrow adds exactly the physically posted quote to the native available funds');
     // Derive the scarce boundary from the native reserve and higher-priority
     // commitments, rather than choosing an amount until the test passes.
+    // The published packet holds the reserve rounded to the adena: the build's own may lie up to half above.
     const mandatory = accepted.adena - available;
-    const wallet = Math.ceil(price + mandatory), afterPosting = wallet - price;
+    const wallet = Math.ceil(price + mandatory + 0.5), afterPosting = wallet - price;
     assert(price > 0 && afterPosting >= 0);
     const beforePosting = { ...native.member, adena: wallet,
         inventory: { ...native.member.inventory, 57: { ...native.member.inventory[57], amount: wallet } } };

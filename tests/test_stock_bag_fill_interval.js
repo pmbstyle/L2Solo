@@ -4,7 +4,7 @@ require('../src/Global'); invoke('GameServer/DataCache').init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-const saved = { value: Table.value, best: Table.best, hunt: Hunt.huntIncome };
+const saved = { value: Table.value, best: Table.best, hunt: Hunt.huntIncome, incomeRow: Hunt.incomeRow };
 let stacks = 10, rowPresent = true, spotPresent = true, potions = 2, income = 100000;
 // Bag filler no sale takes (a quest item): it stays in the bag the kit's outing starts with.
 const kept = amount => ({ selfId: 1, amount, stackable: false, kind: 'Other.Quest' });
@@ -17,6 +17,8 @@ const row = withShots => ({ exp: withShots ? 1e6 : 5e5, shots: 1000, potions, de
 Table.value = (id, role, level, withShots) => rowPresent ? row(withShots) : null;
 // ShotStock.usePolicy weighs the best row with shots against the best without.
 Table.best = (role, level, withShots) => row(withShots);
+// A bot on no spot uses the row its hour is priced on (EquipmentIncomeRoute.spotUseOf).
+Hunt.incomeRow = () => ({ ...row(true), spotId: 'stack-fixture', useShots: true });
 const target = (state = fixture) => Economy.basics(state, { spots: [] }).stock('potions').targetHours;
 try {
     assert.equal(target(), 4, '80 slots - 40 physical slots with an existing kit, 10 new slots/h -> 4h');
@@ -131,4 +133,4 @@ try {
         }
     }
     console.log('test_stock_bag_fill_interval: ok');
-} finally { Table.value = saved.value; Table.best = saved.best; Hunt.huntIncome = saved.hunt; }
+} finally { Table.value = saved.value; Table.best = saved.best; Hunt.huntIncome = saved.hunt; Hunt.incomeRow = saved.incomeRow; }

@@ -1279,12 +1279,12 @@ function buildProjection(state, ctx, deps) {
             price: price(rare.item.selfId), valueHours: rare.value * statusWeight,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
-    // The hunting paths name the hunt's own spot only when the build picked it (a party's
-    // table row, a solo bot with no earning answer); a solo bot's earning answer is not
-    // copied into its leaf: the route reads the answer when the bot goes (BotRoute.huntSpot),
-    // so an answer moved by a decision taken alone (an outleveled or disappointing spot)
-    // moves the bot without a build.
-    const huntSpot = spotId => ctx.hunt.answer ? {} : { spotId };
+    // The money and experience paths name the hunt's spot only for a party (its table row);
+    // a solo bot's hunt is its route's (BotRoute.huntSpot: the earning answer, none, or the
+    // search with no answer), never copied into its leaf, so an answer moved by a decision
+    // taken alone (an outleveled or disappointing spot) moves the bot without a build, and
+    // an answer naming none sends it to no table row its decision passed over.
+    const huntSpot = spotId => ctx.hunt.solo ? {} : { spotId };
     if (!progression.required && ctx.hunt.expPerHour > 0 && state.level < invoke('GameServer/Progression/ProgressionCap').effectiveLevelCap()) {
         root({ key: `level:${state.level + 1}`, need: 'power', object: { level: state.level + 1 },
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',

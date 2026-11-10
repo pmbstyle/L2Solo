@@ -268,8 +268,9 @@ function onWorker() {
         assert.equal(decided.searches, 1, 'its next step searches once');
         const moved = { ...grown, stats: { ...grown.stats, ...decided.result } };
         assert(!Situations.woken(moved.stats, 'earning_spot'), 'and takes the decision');
-        const later = step(moved, lowLevel + 11);
-        assert.equal(later.stats.situationSeq, moved.stats.situationSeq, 'levelling on raises it no more');
+        // (Its kit line may move with the level: off its answer's spot it reads that spot's row, else the income row.)
+        assert(!Situations.detect(moved, { ...moved, level: lowLevel + 11, stats: { ...moved.stats } }).includes('spot_outleveled'),
+            'levelling on raises it no more');
     }
     // The body's inputs. A spot it could not reach, ground it may not hunt alone, or a
     // spot it lost or found crowded at its arrival is marked: the search passes it by for the outing, whatever
@@ -525,6 +526,17 @@ function onWorker() {
         assert.equal(none.result.statsPacket.earning.spotId, null, 'a search with no spot holds none');
         const after = published(raised(turned, 'died'), none.result);
         assert.equal(count(() => Economy.forState(after, { spots: raidOnly, timestamp: time(11), caller: 'step' })).searches, 0, 'and is not repeated');
+        // None is where it goes: no hunting leaf names a spot (not its old answer, not a table or sample row
+        // its decision passed over) and its route sends it nowhere, as on a catalogue that lost its old spot.
+        const lost = [{ ...spots[0], id: 'raid-only', raidBoss: true }];
+        for (const catalogue of [raidOnly, lost]) {
+            const built = Economy.forState(raised(turned, 'died'), { spots: catalogue, timestamp: time(10), caller: 'step' });
+            const leaf = built.network.activity;
+            assert.equal(built.bestSpotId, turned.spotId, 'its build prices the ground it stands on, not its old answer');
+            assert.equal(leaf?.activity === 'hunting' ? leaf.spotId ?? null : null, null, 'no hunting leaf names a spot');
+            assert.deepEqual(invoke('GameServer/Bot/Population/BotRoute').huntSpot(published(raised(turned, 'died'), built), leaf,
+                { spots: catalogue, timestamp: time(10) }), { spotId: null }, 'and it is sent nowhere');
+        }
     }
     assert.deepEqual(unwoken(), [], 'the earning spot is never decided unwoken');
     Economy.reset();

@@ -791,27 +791,32 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const tableRole = Table.roleFor(state);
     const income = incomeRouteFor(state, deps, timestamp, price, keepRoute), incomeRoute = income.route;
+    // solo: where the bot hunts is its route's (BotRoute.huntSpot: the earning answer), never a spot its leaf names.
+    const solo = !Sections.partyIdOf(state) && !['party', 'duo'].includes(deps.mode);
     let hunt;
     if (incomeRoute && income.earns) {
         // The search already passed this spot through the same ground and matchup reader.
         const row = incomeRoute.row;
         hunt = { perHour: incomeRoute.earning * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
             expPerHour: row.exp * Hunt.onSpotShare(state), source: 'route', spotId: incomeRoute.spot.id,
-            progressSpotId: incomeRoute.spot.id, answer: true, useShots: row.useShots };
+            progressSpotId: incomeRoute.spot.id, solo: true, useShots: row.useShots };
     } else {
-        hunt = Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp));
-        // A leveling bot hunts its held answer too (B12): its hour stays its own, the spot and charge policy the
-        // answer's (this build's search, else stats.earning).
-        const held = incomeRoute?.spot || IncomeRoute.heldSpot(state, deps.spots || [], deps.mode);
-        if (held) hunt = { ...hunt, spotId: held.id, progressSpotId: held.id, answer: true,
-            useShots: incomeRoute ? incomeRoute.row.useShots !== false : state.stats?.earning?.shots !== false };
+        hunt = { ...Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp)), solo };
+        // A leveling bot hunts its earning answer too (B12): its hour stays its own, the spot and charge policy the
+        // answer's (this build's search, else the held one). An answer naming none sends a solo bot to no table
+        // row's spot (one its decision passed over): its spot reads are where it stands.
+        const held = incomeRoute?.spot || IncomeRoute.heldSpot(state, deps.spots || [], deps.mode, income.earning);
+        if (held) hunt = { ...hunt, spotId: held.id, progressSpotId: held.id,
+            useShots: incomeRoute ? incomeRoute.row.useShots !== false : income.earning?.shots !== false };
+        else if (solo && income.earning && income.earning.spotId == null) hunt = { ...hunt, spotId: null, progressSpotId: null };
     }
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
     const bestSpotId = hunt.spotId || state.spotId;
     const walkBackHours = WalkBack.hours(bestSpotId, state, deps.spots || SpotService.spots);
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, hunt.useShots !== false) : null;
-    const bestTable = spotTable || Table.best(tableRole, state.level, hunt.useShots !== false);
+    // With no spot: the income row the bot's hour is priced on (BotHuntEfficiency.incomeRow).
+    const bestTable = spotTable || Hunt.incomeRow(state);
     const ShotStock = invoke('GameServer/Inventory/ShotStock');
     // The shot kind of this build's own earning answer when it took the decision (its search).
     const shotPlan = ShotStock.planForState(income.searched ? { ...state, stats: { ...state.stats, earning: income.earning } } : state);
