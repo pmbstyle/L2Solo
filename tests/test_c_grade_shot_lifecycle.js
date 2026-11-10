@@ -309,6 +309,46 @@ async function sell(state, id, price, count = 1) {
                 'gear abandoned by production becomes available to the ordinary equipment optimizer');
             console.log('PASS crystal gear held by the shot kit',JSON.stringify({alreadyWorn}));
         }
+
+        // A smith in the town where the shield is sold buys it for its shot kit beside the
+        // shield it wears (or with another shield worn), crystallizes only the bought copy
+        // and crafts C shots; the worn shield stays worn.
+        for (const alreadyWorn of [false,true]) {
+            Market.reset();
+            const stamp = Date.now(), owners = [];
+            const supplier = await seed([cash(1000000),{selfId:2495,amount:1}],
+                {name:'TownCrystalShield',town:'Gludio',loc:GLUDIO});
+            const source = (await Database.fetchItems(supplier.characterId)).find(row=>row.selfId===2495);
+            await Afk.publishBot(supplier.characterId,{kind:'shop',storeType:Afk.SELL,town:'Gludio',
+                lines:[{objectId:source.id,selfId:2495,count:1,price:150000,stackable:false,slot:8}]});
+            const consumer = await seed([cash(10000000)],{name:'TownShotConsumer'});
+            await Afk.publishBot(consumer.characterId,{kind:'shop',storeType:Afk.BUY,town:'Giran',
+                lines:[{selfId:3949,count:4000,price:2000,stackable:true}]});
+            owners.push(supplier.characterId,consumer.characterId);
+            const wornId = alreadyWorn ? 2495 : 18;
+            let smith = await seed([cash(3000000),{selfId:wornId,amount:1,equipped:true,slot:8},
+                {selfId:3954,amount:1},{selfId:3031,amount:500}],
+            {classId:57,level:40,name:'TownShieldSmith',town:'Gludio',loc:GLUDIO});
+            await Persona.ensure(smith);
+            await Database.setSkill({selfId:248,name:'Crystallize',level:2,passive:false},smith.characterId);
+            smith = await Life.learnCraftableRecipes(smith,{recipeIds:[324]});
+            smith = await Life.upsertState({...smith,vitals:{...smith.vitals,mp:424,maxMp:424},
+                stats:{...smith.stats,money:[500000,.000002,0,0]}},'town_crystal_input_start');
+            const oldWorn = (await Database.fetchItems(smith.characterId)).find(row=>row.equipped && row.selfId===wornId).id;
+            const selected = Policy.unpackStep(Policy.packStep((await probe({...smith,persona:Persona.of(smith)},
+                {timestamp:stamp,recipeEarning:true,recipes:{recipeBook:Codec.pack([324]),knownShotRecipes:[324]},
+                    boardRows:owners.flatMap(id=>Afk.ownerRecords(id)).map(row=>[row.id,rowOf(row)])})).selected));
+            assert.equal(selected?.craft?.recipeId,324);
+            assert.equal(selected.craft.gear[0],2495,'the shield sold in this town is the crystal source');
+            smith = await Shots.execute(smith,selected,stamp);
+            assert.equal(smith.stats.marketErrand ?? null,null,'the smith buys where it stands, no errand');
+            const finished = await Database.fetchItems(smith.characterId);
+            assert(held(finished,3949)>0,'the shield bought in town reaches real C-shot crafting');
+            assert.equal(held(finished,2495),alreadyWorn?1:0,'only the bought copy is crystallized');
+            assert(finished.some(row=>row.id===oldWorn && row.equipped),'the worn shield stays worn');
+            for (const id of owners) for (const row of Afk.ownerRecords(id)) await Afk.closeBotRecord(id,row.id);
+            console.log('PASS town crystal gear purchase',JSON.stringify({alreadyWorn,units:held(finished,3949)}));
+        }
     } finally {
         await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true });
     }

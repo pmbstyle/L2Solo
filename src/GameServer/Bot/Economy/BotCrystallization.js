@@ -99,12 +99,17 @@ function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
         ? [{ inputs: bundle, net: bundleNet, batchLimit: 1,
             free: Object.fromEntries(bundle.map(row => [row.selfId, readFree(row.selfId)])) }, ...selected] : selected;
 }
+// Copies of gear `id` the bot buys or holds to crystallize: the gear plan's
+// crystal inputs, or the one piece a shot kit holds (ItemDisposition.kitGear).
+// Such a copy is bought beside a worn one and never worn (purchase checks, hot and cold).
 function inputAmount(state, id) {
-    const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const kit = Disposition.kitGear(state) === Number(id) ? 1 : 0;
+    const plan = Disposition.equipmentInputPlan(state);
     if (!(plan?.strategy === 'luxury_exchange' || plan?.crystalPreparation) || plan.status !== 'active'
-        || !reward(Index.find(invoke('GameServer/DataCache').items, id))) return 0;
-    return Math.min(BATCH_LIMIT, Number((plan.crystalPreparation?.materials || plan.materials)
-        ?.find(row => Number(row.selfId) === Number(id))?.amount || 0));
+        || !reward(Index.find(invoke('GameServer/DataCache').items, id))) return kit;
+    return Math.max(kit, Math.min(BATCH_LIMIT, Number((plan.crystalPreparation?.materials || plan.materials)
+        ?.find(row => Number(row.selfId) === Number(id))?.amount || 0)));
 }
 // Paid physical inputs can finish their conversion while another ingredient
 // of the final B recipe has no current route. That gap cannot release them
