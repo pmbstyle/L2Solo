@@ -17,6 +17,8 @@ const MAX_DEPTH = 6;
 // (EconomicValuation.OUTCOME_LIMIT); a larger composition is unresolved.
 const MAX_BRANCHES = 8;
 const nonnegative = value => Math.max(0, Number(value) || 0);
+// Paths that make the root's item out of other goods rather than buy it.
+const TRANSFORMATIONS = new Set(['luxury_exchange', 'craft']);
 // Native commands for `batches`: a path without perCommand runs one batch each.
 const commands = (batches, perCommand) => Math.ceil(batches / (Number(perCommand) >= 1 ? Number(perCommand) : 1));
 // A trip is one row per town: a quoted seller or workshop, or a farm spot
@@ -111,32 +113,39 @@ function choose(rows, weight, roll) {
     return rows[rows.length - 1];
 }
 
+// A required piece (progression priority) is worth at least its price at the money
+// price, so its own small benefit never holds it back; no more than its item's worth
+// (wish.worth, set where a transformation brings the item): an exchange or a craft
+// dearer than the item it yields is below the floor like any other wish. Our choice:
+// a C4 player buys the piece he needs, not a recipe that costs a multiple of it.
 function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
     let available = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
         .map(wish => {
-            const valueHours = wish.progressionPriority > 0 ? Math.max(wish.valueHours, wish.price * floor) : wish.valueHours;
+            const valueHours = wish.progressionPriority > 0
+                ? Math.max(wish.valueHours, Math.min(wish.price, wish.worth ?? Infinity) * floor) : wish.valueHours;
             return { ...wish, valueHours, ratio: valueHours / wish.price };
         })
         .sort((a, b) => nonnegative(b.progressionPriority) - nonnegative(a.progressionPriority)
             || b.ratio - a.ratio || a.key.localeCompare(b.key));
+    // Read on the floored value itself, not on the ratio: a required piece at its own
+    // price passes exactly.
+    const paysFloor = wish => wish.ratio >= floor || wish.progressionPriority > 0 && wish.valueHours >= wish.price * floor;
     let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null, awaitingKit = null;
     for (const wish of queue) {
-        // An unsupported wish keeps its place and interest, never the money.
-        if (!fundable(wish)) {
+        // An unsupported wish keeps its place and interest, never the money; one below
+        // the floor neither, nor does the money wait for it.
+        if (!fundable(wish) || !paysFloor(wish)) {
             wish.funded = false;
             // Kit before stock: stock nobody can supply is not what the money waits for (T178).
-            if (wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
+            if (paysFloor(wish) && wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
             continue;
         }
         // The first gap holds the marginal price of money. Smaller desires
         // do not spend the money earmarked toward that first missing goal.
-        wish.funded = !cutoffFound && (wish.progressionPriority > 0 || wish.ratio >= floor) && cashCharge(wish) <= available;
+        wish.funded = !cutoffFound && cashCharge(wish) <= available;
         if (wish.funded) available -= cashCharge(wish);
-        else if (!cutoffFound) {
-            if (wish.progressionPriority > 0 || wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
-            cutoffFound = true;
-        }
+        else if (!cutoffFound) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; cutoffFound = true; }
     }
     return { queue, moneyPrice, available, gap: gap || awaitingKit };
 }
@@ -582,6 +591,14 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         wish.valueHours = plan ? base * Number(plan.successProbability ?? 1) : 0;
     };
+    // The worth of a root's item when a transformation (an exchange, a craft) brings it:
+    // its node's price, the price the build quotes the item at. A bought item, or a root
+    // that names none (stock, a resale, a clan supply), has none.
+    const worthOf = (key, node, plan) => {
+        const acquisition = plan?.requirements?.length === 1 ? plan.requirements[0] : null;
+        return acquisition?.key === `item:${rootItem(key)}` && TRANSFORMATIONS.has(acquisition.plan?.kind)
+            && nonnegative(node.price) > 0 ? nonnegative(node.price) : null;
+    };
     // The author's priority value: full benefit, before its ready delay.
     const fullValue = (wish, node) => wish.plan ? nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress)))
         * Number(wish.plan.successProbability ?? 1) : 0;
@@ -592,7 +609,8 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         plans.set(key, plan);
         const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false, reserved: nonnegative(node.reserved),
             progressionPriority: nonnegative(node.progressionPriority), progressionFunding: !!node.progressionFunding,
-            price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
+            price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity,
+            worth: worthOf(key, node, plan) };
         value(wish, node, plan);
         wish.fullValueHours = fullValue(wish, node);
         if (wish.progressionPriority && plan) wish.effort = Math.max(wish.effort,
@@ -608,6 +626,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         wish.progressionPriority = nonnegative(byKey.get(wish.key).progressionPriority);
         wish.progressionFunding = !!byKey.get(wish.key).progressionFunding;
         wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
+        wish.worth = worthOf(wish.key, byKey.get(wish.key), plan);
         wish.supported = plan?.supported !== false;
         value(wish, byKey.get(wish.key), plan);
         wish.fullValueHours = fullValue(wish, byKey.get(wish.key));

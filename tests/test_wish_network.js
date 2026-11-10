@@ -98,6 +98,24 @@ const overpriced = moneyQueue([{ key: 'luxury', valueHours: .5, price: 1000 }], 
 assert.equal(overpriced.queue[0].funded, false);
 assert.equal(overpriced.gap, null);
 assert.equal(overpriced.moneyPrice, .001);
+// A required earring is worth what the item is worth: an exchange that costs several
+// times that is not bought, however rich the bot; one within its worth is, and so is
+// the earring at a shop a little above its worth.
+{
+    const earring = (kind, price, stockFor = null) => new WishNetwork().build({ ...input, characterId: 7, wallet: 1e7, refillReserve: 0,
+        hourAdena: 20000, inputKey: `earring:${kind}:${price}:${!!stockFor}`, stockFor, previous: { focus: null, dormant: [] }, roots: ['power:852:1'],
+        nodes: [{ key: 'power:852:1', need: 'power', object: { itemId: 852, slot: 1 }, valueHours: 1, price: 1.1e6,
+            progressionPriority: 3, paths: [{ requirements: [{ key: 'item:852', amount: 1 }] }] },
+        { key: 'item:852', object: { itemId: 852 }, price: 1.1e6, paths: [{ kind, activity: kind === 'buy' ? 'shopping' : 'improving',
+            executable: true, quoted: true, town: 'Giran', itemId: 852, price, unitPrice: price, costHours: .01,
+            availableUnits: 1, tripHours: 0, tripFees: 0 }] }] }).queue.find(wish => wish.key === 'power:852:1').funded;
+    assert.equal(earring('luxury_exchange', 4.16e6), false, 'an exchange at four times the earring is not funded');
+    assert.equal(earring('luxury_exchange', 1e6), true, 'an exchange within its worth is');
+    assert.equal(earring('buy', 1.21e6), true, 'a shop a tenth above its worth still sells the piece');
+    const none = () => ({ owned: 0, incoming: 0 });
+    assert.deepEqual([earring('luxury_exchange', 4.16e6, none), earring('luxury_exchange', 1e6, none), earring('buy', 1.21e6, none)],
+        [false, true, true], 'the same against the bag');
+}
 const wealthy = network.build({ ...input, inputKey: 'wealthy-hour', wallet: 1e8, hourAdena: 1000 });
 assert.equal(wealthy.hourAdena, 1000);
 assert.equal(wealthy.moneyPrice, .001);

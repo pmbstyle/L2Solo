@@ -1477,7 +1477,7 @@ function planTrimmer(unresolved = new Set()) {
 function compactNetwork(network) {
     const unresolved = new Set(), trim = planTrimmer(unresolved);
     const facts = wish => ({ key: wish.key, need: wish.need, object: wish.object, price: wish.price, reserved: wish.reserved,
-        valueHours: wish.valueHours, ratio: wish.ratio, funded: wish.funded,
+        valueHours: wish.valueHours, ratio: wish.ratio, funded: wish.funded, worth: wish.worth,
         supported: wish.supported, resolved: wish.resolved, progressionPriority: wish.progressionPriority });
     const row = wish => ({ ...facts(wish), plan: trim(wish.plan) });
     const queue = (network.queue || []).map(row);

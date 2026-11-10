@@ -21,7 +21,12 @@ async function run() {
     const state = shift(fixture.state), boardRows = structuredClone(fixture.boardRows);
     // T43 table: shots now pay for this level-53 archer; it holds its shot stock, so the gear source decides.
     state.inventory[1463] = { selfId: 1463, name: 'Soulshot: D-grade', amount: 1000, stackable: true };
-    const crystalSupply = await native(state, { timestamp, boardRows, nativeRoutes: true });
+    // A buyer's bid puts the piece above what its crystal supply costs: an exchange is
+    // funded only within its item's worth.
+    const bid = [8101, [8101, 'buy_ad', 3, 2004571, 'Dion', 1, [[8102, 233, 0, 1, 12000000, null, 0]], 1, 0, 12000000]];
+    const crystalSupply = await native(state, { timestamp, boardRows: [...boardRows, bid], nativeRoutes: true });
+    const unbid = await native(state, { timestamp, boardRows, nativeRoutes: true });
+    assert.equal(Decision.compact(unbid.decision).activity, null, 'without it the supply costs more than the piece is worth: no step');
     const crystalLeaf = Decision.compact(crystalSupply.decision).activity;
     assert.equal(crystalLeaf.sourceType, 'npc', 'a small crystal lot must not replace the reliable full equipment supply');
     const input = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, crystalLeaf.itemId);
