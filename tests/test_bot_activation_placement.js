@@ -91,6 +91,24 @@ try {
         }
         assert(randomCalls <= 16 * 9 * Config.activationPlacementAttempts * 2,
             'recovery does not expand the random placement budget');
+
+        // A walker that just landed at Hunter's Village (gatekeeper Esmeralda) whose straight
+        // road crosses a walled yard east of the landing: shown where it can walk back to the
+        // landing, never inside the yard, which no path leaves.
+        const landingPoint = { locX: 117129, locY: 76917, locZ: -2689 };
+        const yard = { locX: 117600, locY: 77000, locZ: -2696 };
+        const stepBacks = Metrics.counters.walkerRoadStepBacks;
+        const startTownPlacements = Metrics.counters.walkerStartTownPlacements;
+        for (let round = 0; round < 8; round++) {
+            const walker = Placement.resolve({ loc: yard }, { roadFrom: landingPoint, roadFromLanding: true });
+            assert(walker, 'a walker in the landing town is shown');
+            const p = walker.loc;
+            assert(Geo.findPath(p.locX, p.locY, p.locZ, landingPoint.locX, landingPoint.locY, landingPoint.locZ, 30000,
+                { goalRadius: 64, goalZTolerance: 64 }), 'its body can walk to the landing');
+        }
+        assert.strictEqual(Metrics.counters.walkerStartTownPlacements, startTownPlacements + 8,
+            'each walker shown at its run start in the landing town is counted');
+        assert.strictEqual(Metrics.counters.walkerRoadStepBacks, stepBacks, 'none is counted as a road step back');
     }
 
     const flat = { locX: 0, locY: 0, locZ: 0 };

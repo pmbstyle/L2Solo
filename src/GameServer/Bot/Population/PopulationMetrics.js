@@ -44,6 +44,14 @@ function emptyCounters() {
         // at one of the spot's spawn points or its centre.
         walkerRoadStepBacks: 0,
         spotPlaceRecoveries: 0,
+        // Walkers whose road point was still in the town their run began in, shown at the
+        // run's start instead (ActivationPlacement).
+        walkerStartTownPlacements: 0,
+        // Hot bots' walks to their town's gatekeeper that failed (BotSpotTravel.recoverOrDefer),
+        // and the Scrolls of Escape a bot stuck in a town began after repeated failures
+        // (BotSpotTravel.startEmergencyScroll: an unreachable or a missing gatekeeper).
+        townDepartureRouteFailures: 0,
+        townStuckEscapes: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -294,6 +302,18 @@ const PopulationMetrics = {
 
     recordSpotPlaceRecovery() {
         this.counters.spotPlaceRecoveries += 1;
+    },
+
+    recordWalkerStartTownPlacement() {
+        this.counters.walkerStartTownPlacements += 1;
+    },
+
+    recordTownDepartureRouteFailure() {
+        this.counters.townDepartureRouteFailures += 1;
+    },
+
+    recordTownStuckEscape() {
+        this.counters.townStuckEscapes += 1;
     },
 
     recordCooldown(durationMs) {
