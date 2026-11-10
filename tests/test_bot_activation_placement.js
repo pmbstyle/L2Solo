@@ -5,6 +5,7 @@ const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const World = invoke('GameServer/World/World');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 const original = {
     random: Math.random, findCurrentSpot: Spots.findCurrentSpot, findById: Spots.findById,
@@ -200,6 +201,45 @@ try {
     const shopper = Placement.resolve({ ...hunter, activity: 'shopping', loc: town }, { playerLoc: town });
     assert.ok(shopper, 'a shopper by a player at its anchor is still placed');
     assert.ok(Math.hypot(shopper.loc.locX - town.locX, shopper.loc.locY) >= Config.activationMinPlayerDistance);
+    // A hunter's cold place 112 above its floor (a stored height over the terrain): shown
+    // on the floor under it, never refused at every scan.
+    World.fetchNpcsInRadius = () => [];
+    Geo.getCellData = () => ({ z: -112, nswe: 15 });
+    Geo.getHeight = () => -112;
+    Math.random = () => 0;
+    assert.strictEqual(Placement.resolve(hunter).loc.locZ, -112, 'on the floor under its place');
+    // A roof 70 over its cold place, the floor 80 under it and a lower floor 400 under it:
+    // shown on the floor right under, never on the lower one.
+    Geo.getCellData = (x, y, z) => ({ z: [70, -80, -400].reduce((a, b) => Math.abs(b - z) < Math.abs(a - z) ? b : a), nswe: 15 });
+    assert.strictEqual(Placement.resolve(hunter).loc.locZ, -80, 'on the floor right under its place');
+    // A hunter's cold place on ground with no room (pressed into rock, nothing roomy around
+    // it): shown at its spot's spawn point that has room, and the recovery is counted.
+    Geo.getHeight = () => 0;
+    Geo.getCellData = (x, y) => ({ z: 0, nswe: (x === 0 && y === 0) || Math.hypot(x, y) > 700 ? 15 : 0 });
+    const spawnPoint = { locX: 1500, locY: 0, locZ: 0 };
+    Spots.findById = () => ({ ...field, arrivalPoints: [{ locX: 300, locY: 300, locZ: 0 }, spawnPoint] });
+    const recoveries = Metrics.counters.spotPlaceRecoveries;
+    Math.random = () => 0.5;
+    const rallied = Placement.resolve(hunter);
+    assert.ok(rallied, 'a hunter in rock is shown');
+    assert.ok(Math.hypot(rallied.loc.locX - spawnPoint.locX, rallied.loc.locY - spawnPoint.locY) <= 600, 'by its spot\'s spawn point');
+    assert.strictEqual(Metrics.counters.spotPlaceRecoveries, recoveries + 1);
+    // The spawn point nearest it lies outside its spot's cells: shown by the nearest one inside.
+    const inside = { locX: -2000, locY: 0, locZ: 0 };
+    const inField = Spots.containsLocation;
+    Spots.findById = () => ({ ...field, arrivalPoints: [spawnPoint, inside] });
+    Spots.containsLocation = (spot, loc) => loc.locX < 1000 && inField(spot, loc);
+    const inSpot = Placement.resolve(hunter);
+    assert.ok(Math.hypot(inSpot.loc.locX - inside.locX, inSpot.loc.locY - inside.locY) <= 600, 'by its spot\'s spawn point inside the spot');
+    Spots.containsLocation = inField;
+    Spots.findById = () => field;
+    // A party whose leader's place a player stands on: the leader steps aside past the 450 a
+    // body keeps from him, the others around it, rather than the whole party refused.
+    Geo.getCellData = () => ({ z: 0, nswe: 15 });
+    const party = Placement.resolveGroup([{ characterId: 1, loc: flat }, { characterId: 2, loc: flat }], 0,
+        { playerLoc: flat }, 1800);
+    assert.ok(party, 'the party is shown');
+    for (const placed of party) assert.ok(Math.hypot(placed.loc.locX, placed.loc.locY) >= Config.activationMinPlayerDistance);
     Spots.findById = original.findById;
     Spots.containsLocation = original.containsLocation;
     World.fetchNpcsInRadius = original.npcsInRadius;

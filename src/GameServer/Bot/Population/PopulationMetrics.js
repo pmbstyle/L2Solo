@@ -33,9 +33,11 @@ function emptyCounters() {
         // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
         // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
-        // Walkers whose road point stood off the ground and were placed by a step back
-        // toward the run's start (ActivationPlacement.roadAnchor).
+        // Bodies placed by a recovery of a place off the ground (ActivationPlacement), by kind:
+        // a walker by a step back toward its run's start, a bot on its spot (a raid included)
+        // at one of the spot's spawn points or its centre.
         walkerRoadStepBacks: 0,
+        spotPlaceRecoveries: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -278,6 +280,10 @@ const PopulationMetrics = {
 
     recordWalkerRoadStepBack() {
         this.counters.walkerRoadStepBacks += 1;
+    },
+
+    recordSpotPlaceRecovery() {
+        this.counters.spotPlaceRecoveries += 1;
     },
 
     recordCooldown(durationMs) {

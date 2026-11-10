@@ -269,7 +269,53 @@ try {
         assert.ok(gap(placed, road) >= 2000 && gap(placed, road) <= Config.activationRadius, 'on ground, still near the player');
         assert.ok(gap(placed, DION_FIELD) < gap(road, DION_FIELD), 'stepped back toward where it set out');
         assert.strictEqual(Metrics.counters.walkerRoadStepBacks, stepBacks + 1);
+
+        // Its road point on ground with no room around it (walls on both sides): stepped back
+        // the same way, never refused on the spot.
+        spawned = [];
+        const midway = (id) => ColdTrip.positionAt(cachedWalker(id, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY),
+            Date.now() - Math.round(longMs * 0.5)), Date.now());
+        const cramped = midway(4207);
+        Geo.getCellData = (x, y, z) => ({ nswe: x !== cramped.locX && Math.abs(x - cramped.locX) < 2000 ? 0 : 15, z: Number(z) });
+        assert.strictEqual((await PopulationService.showWalkersNear(cramped, [], [], Date.now())).length, 1,
+            'a walker on a cramped road point is shown');
+        assert.ok(gap(placedAt(spawned[0]), cramped) >= 2000, 'on the first roomy ground stepped back');
+        assert.strictEqual(Metrics.counters.walkerRoadStepBacks, stepBacks + 2);
+
+        // The ground 3000 above its straight line (a hill the line runs through): never shown
+        // on the hilltop, but on the ground stepped back, within 500 of its line's height.
+        spawned = [];
+        const line = midway(4208);
+        const hill = (x, y) => Math.hypot(x - line.locX, y - line.locY) < 3000;
+        Geo.getCellData = (x, y, z) => ({ nswe: 15, z: hill(x, y) ? line.locZ + 3000 : Number(z) });
+        Geo.getHeight = (x, y, z) => hill(x, y) ? line.locZ + 3000 : Number(z);
+        assert.strictEqual((await PopulationService.showWalkersNear(aside(line), [], [], Date.now())).length, 1);
+        assert.ok(Math.abs(placedAt(spawned[0]).locZ - line.locZ) <= 500, 'not on the hilltop');
+        assert.strictEqual(Metrics.counters.walkerRoadStepBacks, stepBacks + 3);
         Geo.getCellData = (x, y, z) => ({ nswe: 15, z: Number(z) });
+        Geo.getHeight = (x, y, z) => Number(z);
+
+        // Just landed by a gatekeeper teleport, its run beginning at the landing, a player
+        // standing there: it is shown at the landing beside him, as C4 shows a teleport arrival.
+        spawned = [];
+        const gatekeeperTrip = ColdTrip.toSpot(bot(), spotTravel(NEAR_DRAGON_VALLEY), T).stats.travel;
+        assert.strictEqual(gatekeeperTrip.method, 'gatekeeper_spot');
+        const landed = cachedWalker(4206, {}, spotTravel(NEAR_DRAGON_VALLEY),
+            Date.now() - (gatekeeperTrip.run.startAt - T) - 500);
+        const landingPoint = ColdTrip.positionAt(landed, Date.now());
+        assert.ok(gap(landingPoint, landed.stats.travel.run.from) < 100, 'it stands by its landing');
+        assert.strictEqual((await PopulationService.showWalkersNear(landingPoint, [], [], Date.now())).length, 1,
+            'a teleport arrival is shown though the player stands on its landing');
+        assert.ok(gap(placedAt(spawned[0]), landingPoint) <= 300, 'at its landing');
+        // A walker that set out on foot, a player standing by the start of its run: kept cold,
+        // never shown beside him (only a teleport arrival is).
+        spawned = [];
+        const setOut = cachedWalker(4209, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - 500);
+        assert.strictEqual(setOut.stats.travel.method, 'walk');
+        const start = ColdTrip.positionAt(setOut, Date.now());
+        assert.ok(gap(start, setOut.stats.travel.run.from) < 100, 'it stands by where it set out');
+        await PopulationService.showWalkersNear(start, [], [], Date.now());
+        assert.strictEqual(spawned.length, 0, 'a walker on foot is not shown beside the player');
 
         cachedWalker(4203, {}, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - tripMs + 1500);
         spawned = [];

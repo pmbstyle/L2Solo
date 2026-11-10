@@ -135,7 +135,7 @@ const HotActivation = {
             // hot body: it arrives once, at the walk's end. A walker bound for
             // anything but a hunt (a clan's waiting point) stays cold until it
             // arrives. A bot no longer a walker (it arrived while fenced) is taken
-            // as it is.
+            // as it is. A gatekeeper trip's run begins at its teleport landing.
             const shownAt = Date.now();
             const onRoad = (s) => s?.activity === 'traveling' && !!s.stats?.travel?.run
                 && (s.stats.travel.arrivalActivity || 'hunting') === 'hunting';
@@ -145,7 +145,8 @@ const HotActivation = {
                 ...options,
                 keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
                 storeLoc,
-                ...(walker && onRoad(s) ? { roadFrom: s.stats.travel.run.from } : {})
+                ...(walker && onRoad(s) ? { roadFrom: s.stats.travel.run.from,
+                    roadFromLanding: s.stats.travel.method === 'gatekeeper_spot' } : {})
             });
             const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
