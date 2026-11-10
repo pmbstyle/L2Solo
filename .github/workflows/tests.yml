@@ -80,3 +80,5 @@ jobs:
           name: raw-geodata-${{ matrix.shard }}
           path: tmp/raw-geodata-receipt.json
           retention-days: 14
+          # A re-run shard replaces its receipt.
+          overwrite: true

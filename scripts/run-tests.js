@@ -1594,16 +1594,16 @@ if (onlyArg) {
         if (raw) rawRequested.add(file);
         return file;
     });
-    const notOptional = [...rawRequested].filter((testFile) => !optionalGeodataTests.has(testFile));
-    if (notOptional.length) {
-        console.error(`--only: + marks an optional-geodata file only:\n${notOptional.map((f) => `  ${f}`).join('\n')}`);
-        process.exit(2);
-    }
     const listed = new Set(tests);
     const unknown = names.filter((testFile) => !listed.has(testFile));
     if (!names.length || unknown.length) {
         console.error(names.length ? `--only: not in the suite:\n${unknown.map((f) => `  ${f}${notRunTests.has(f) ? ` (notRunTests: ${notRunTests.get(f)})` : ''}`).join('\n')}`
             : '--only: no test files given');
+        process.exit(2);
+    }
+    const notOptional = [...rawRequested].filter((testFile) => !optionalGeodataTests.has(testFile));
+    if (notOptional.length) {
+        console.error(`--only: + marks an optional-geodata file only:\n${notOptional.map((f) => `  ${f}`).join('\n')}`);
         process.exit(2);
     }
     onlyTests = [...new Set(names)];
@@ -1644,7 +1644,7 @@ const RAW_RECEIPT = process.env.L2NODE_RAW_GEODATA_RECEIPT;
 const rawReceipt = [];
 const geodataFiles = () => {
     const dir = process.env.L2NODE_GEODATA_DIR || path.resolve(__dirname, '../data/Geodata');
-    try { return fs.readdirSync(dir).filter((f) => !f.startsWith('.')).length; } catch { return 0; }
+    try { return fs.readdirSync(dir).filter((f) => f.endsWith('.l2j')).length; } catch { return 0; }
 };
 // A test that leaves a worker or timer alive never exits; without a bound one
 // such file holds the whole run until the CI job limit. A timeout is a failure.
