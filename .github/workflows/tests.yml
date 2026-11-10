@@ -5,7 +5,9 @@ name: Picked tests
 # geodata when a picked file needs it). Started by a push to
 # tests/<name>/<a,b,c> (names as --only takes them: x for tests/test_x.js),
 # or to tests/<name> whose commit holds ci-tests.txt (names by line or comma).
-# Up to 8 files a shard, at most 12 shards.
+# Up to 8 files a shard, at most 12 shards. A name prefixed with + (tests/<name>/+x,
+# or a +x line) runs an optional-geodata file on the raw map; each shard uploads the
+# receipt of such runs (artifact raw-geodata-<shard>).
 
 on:
   push:
@@ -70,4 +72,11 @@ jobs:
         env:
           L2NODE_TEST_TIMEOUT_MS: 180000
           ONLY: ${{ needs.plan.outputs.only }}
+          L2NODE_RAW_GEODATA_RECEIPT: tmp/raw-geodata-receipt.json
         run: node scripts/run-tests.js --keep-going --only="$ONLY" --shard=${{ matrix.shard }}/${{ needs.plan.outputs.count }}
+      - if: always() && hashFiles('tmp/raw-geodata-receipt.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-geodata-${{ matrix.shard }}
+          path: tmp/raw-geodata-receipt.json
+          retention-days: 14

@@ -1579,13 +1579,26 @@ const defaultConfigTests = new Set([
 // --only=a,b (or --only=@list.txt: names by comma, space or line, # comments)
 // runs just those files, in that order, each as the suite runs it; a name is
 // tests/test_x.js, test_x.js, test_x or x (.github/workflows/tests.yml).
+// A name prefixed with + runs an optional-geodata file on the raw map (its map block,
+// which the suite and a plain --only skip); --list prints it with the + so the CI plan
+// hands the mode to the test jobs.
 const onlyArg = process.argv.find((arg) => arg.startsWith('--only='));
 let onlyTests = null;
+const rawRequested = new Set();
 if (onlyArg) {
     let text = onlyArg.slice('--only='.length);
     if (text.startsWith('@')) text = fs.readFileSync(text.slice(1), 'utf8').replace(/#.*$/gm, '');
-    const names = text.split(/[\s,]+/).filter(Boolean)
-        .map((name) => `tests/${path.basename(name).replace(/^(test_)?/, 'test_').replace(/(\.js)?$/, '.js')}`);
+    const names = text.split(/[\s,]+/).filter(Boolean).map((name) => {
+        const raw = name.startsWith('+');
+        const file = `tests/${path.basename(raw ? name.slice(1) : name).replace(/^(test_)?/, 'test_').replace(/(\.js)?$/, '.js')}`;
+        if (raw) rawRequested.add(file);
+        return file;
+    });
+    const notOptional = [...rawRequested].filter((testFile) => !optionalGeodataTests.has(testFile));
+    if (notOptional.length) {
+        console.error(`--only: + marks an optional-geodata file only:\n${notOptional.map((f) => `  ${f}`).join('\n')}`);
+        process.exit(2);
+    }
     const listed = new Set(tests);
     const unknown = names.filter((testFile) => !listed.has(testFile));
     if (!names.length || unknown.length) {
@@ -1600,7 +1613,7 @@ const selectedTests = onlyTests || tests.filter((testFile) => geodataOnly
     : !geodataTests.has(testFile));
 // A geodata test always runs on the raw map (only --only picks one without
 // --geodata); the optional ones read it with --geodata.
-const rawGeodata = (testFile) => geodataOnly || geodataTests.has(testFile);
+const rawGeodata = (testFile) => geodataOnly || geodataTests.has(testFile) || rawRequested.has(testFile);
 // --shard=K/N keeps every N-th file starting at K, so CI can run N parts on
 // separate machines at once; the interleave spreads the slow files evenly.
 const shardArg = process.argv.find((arg) => arg.startsWith('--shard='));
@@ -1614,7 +1627,7 @@ if (shardArg) {
     selectedTests.splice(0, selectedTests.length, ...kept);
 }
 if (process.argv.includes('--list')) {
-    selectedTests.forEach((testFile) => console.log(testFile));
+    selectedTests.forEach((testFile) => console.log(rawRequested.has(testFile) ? `+${testFile}` : testFile));
     process.exit(0);
 }
 // --needs-geodata: whether a selected file reads the raw map (CI fetches it then).
@@ -1625,6 +1638,14 @@ if (process.argv.includes('--needs-geodata')) {
 
 fs.mkdirSync('tmp', { recursive: true });
 const keepGoing = process.argv.includes('--keep-going');
+// A raw-map run of an optional-geodata file leaves a receipt (CI uploads it): the file, the
+// map files present and its outcome. A green run without the map is no such receipt.
+const RAW_RECEIPT = process.env.L2NODE_RAW_GEODATA_RECEIPT;
+const rawReceipt = [];
+const geodataFiles = () => {
+    const dir = process.env.L2NODE_GEODATA_DIR || path.resolve(__dirname, '../data/Geodata');
+    try { return fs.readdirSync(dir).filter((f) => !f.startsWith('.')).length; } catch { return 0; }
+};
 // A test that leaves a worker or timer alive never exits; without a bound one
 // such file holds the whole run until the CI job limit. A timeout is a failure.
 const timeoutMs = Number(process.env.L2NODE_TEST_TIMEOUT_MS) > 0 ? Number(process.env.L2NODE_TEST_TIMEOUT_MS) : 10 * 60 * 1000;
@@ -1643,6 +1664,9 @@ for (const testFile of selectedTests) {
         timeout: timeoutMs,
         killSignal: 'SIGKILL'
     });
+    if (rawRequested.has(testFile)) rawReceipt.push({ test: testFile, skipRaw: env.L2NODE_SKIP_RAW_GEODATA_TESTS,
+        geodataFiles: geodataFiles(), status: result.status === 0 && !result.signal && !result.error ? 'passed' : 'failed' });
+    if (RAW_RECEIPT && rawReceipt.length) fs.writeFileSync(RAW_RECEIPT, JSON.stringify({ sha: process.env.GITHUB_SHA || null, files: rawReceipt }, null, 2));
     if (result.error?.code === 'ETIMEDOUT' || result.signal) {
         console.log(`\nTIMEOUT after ${Math.round(timeoutMs / 1000)} s or killed (${result.signal || result.error.code}): ${testFile}`);
         if (!keepGoing) process.exit(1);
