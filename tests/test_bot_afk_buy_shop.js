@@ -122,13 +122,13 @@ async function heldPurchaseVisit() {
     Events.raiseOn = async (who, name, payload) => { raised.push([who, name, payload]); return null; };
     Pricing.bid = selfId => { const unit = selfId === 854 ? JEWEL_PRICE : STOCK_PRICE;
         return { price: unit, count: 1, purchaseCap: unit, pricing: { price: unit } }; };
-    const visit = async (id, bag) => {
+    const visit = async (id, bag, money = packet, watchList = watch) => {
         await bot(id);
         const cash = (await DB.fetchItems(id)).find(item => Number(item.selfId) === 57);
         await DB.updateItemAmount(id, cash.id, bag);
         const state = await Life.upsertState({ ...await Life.refreshInventory(Life.snapshot(id)), adena: bag,
-            stats: { ...Life.snapshot(id).stats, money: packet } }, 'held_purchase_fixture');
-        const lines = Policy.linesFor(state, goal, { watchList: watch, board: Afk.boardIndex(), townFor: () => 'Giran',
+            stats: { ...Life.snapshot(id).stats, money } }, 'held_purchase_fixture');
+        const lines = Policy.linesFor(state, goal, { watchList, board: Afk.boardIndex(), townFor: () => 'Giran',
             npcOffersFor: () => [], economy: { moneyPrice: 1e-6, hourAdena: 36000, worth: () => STOCK_PRICE, trip,
                 persona: { traits: {} }, network: { moneyPrice: 1e-6 } } });
         await Market.executePlan(state, { ...Plan.buyBatch(lines), buyShop: Afk.BUY }, { reviewGoal: false });
@@ -144,18 +144,43 @@ async function heldPurchaseVisit() {
         assert.equal(bought.purchased, true, 'the input is bought in the visit that posted the bids');
         assert.equal(Native.amount(await DB.fetchItems(9114), INPUT), 1);
 
-        // A bag short of the input: refused for money, the visit ends, the input marked.
+        // Bot 2001024's visit (traced): the jewel root, a higher tier whose funded row stands first
+        // in the queue, buys its input; a lower-tier root that values its own item more per Adena
+        // is not funded. Its bid at the visit spent the money the queue held for the input
+        // (3,158,709 of a 7,026,224 bag, the input refused for money, its weapon never bought):
+        // a root the queue does not fund bids only with what the funded rows leave, and the input
+        // is bought in the visit that posted the bids.
+        const LOW = 852, LOW_WORTH = price, RESERVE = 570509;
+        const tiers = [36000, 1e-6, RESERVE, 0, 1, price, 854];
+        const lowTier = [{ itemId: LOW, amount: 1, worth: LOW_WORTH, key: `power:${LOW}:2`, recipeId: 0, valueHours: 2, valueRate: 2 }];
+        const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+        const traced = { adena: 7026224, stats: { money: [36000, 4.65e-7, RESERVE, 0, 1e-6, 4165614, 854] } };
+        assert.equal(Funding.spendable(traced, 0, { r: 1e-6 }), 7026224 - RESERVE, 'fixture: the funded root reads the whole queue');
+        assert.equal(Funding.spendable(traced, 0, { r: 2e-6 }), 7026224 - RESERVE - 4165614,
+            'a root the queue does not fund reads what the funded row ahead of it leaves');
+        Pricing.bid = selfId => { const unit = selfId === LOW ? LOW_WORTH : STOCK_PRICE;
+            return { price: unit, count: 1, purchaseCap: unit, pricing: { price: unit } }; };
+        const tracedVisit = await visit(9119, price + RESERVE + Math.floor(price / 2), tiers, lowTier);
+        assert(await wallet(9119) >= price, 'the lower tier\'s bid leaves the bag the input\'s price');
+        const tracedBuy = await ColdMarket.tryPurchase(tracedVisit.state, goal);
+        assert.equal(tracedBuy.purchased, true, 'the input is bought in the visit that posted the bids');
+        assert.equal(Native.amount(await DB.fetchItems(9119), INPUT), 1);
+        Pricing.bid = selfId => { const unit = selfId === 854 ? JEWEL_PRICE : STOCK_PRICE;
+            return { price: unit, count: 1, purchaseCap: unit, pricing: { price: unit } }; };
+
+        // A bag short of the input: refused for money, the visit ends, the step fails once and
+        // marks nothing (the build admits no step its bag cannot pay: test_wish_network).
         raised.length = 0;
         const short = await visit(9115, price / 2);
         const refused = await ColdMarket.tryPurchase(short.state, goal);
         assert.equal(refused.purchased, false);
         assert.equal(refused.reason, 'funding_short');
         await new Promise(resolve => setImmediate(resolve));
-        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind, payload?.key]), [['goal_failed', 'gear_errand', INPUT]],
-            'the step fails once and marks its input');
+        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind, payload?.key]), [['goal_failed', undefined, undefined]],
+            'the step fails once and marks nothing');
 
         // The root ranks above a stock bid whose escrow the purse counts: bag and escrow cover
-        // the input, the bag alone does not. The buyer refuses it for money and marks it
+        // the input, the bag alone does not. The buyer refuses it for money and marks nothing
         // (the build takes no shop step the bag cannot pay: test_wish_network).
         await bot(9116);
         const purse = (await DB.fetchItems(9116)).find(item => Number(item.selfId) === 57);
@@ -171,12 +196,11 @@ async function heldPurchaseVisit() {
         raised.length = 0;
         assert.equal((await ColdMarket.tryPurchase(held, goal)).reason, 'funding_short', 'the buyer refuses it for money');
         await new Promise(resolve => setImmediate(resolve));
-        assert.deepEqual(raised.map(([, , payload]) => payload?.key), [INPUT], 'and marks it');
+        assert.deepEqual(raised.map(([, , payload]) => payload?.key), [undefined], 'and marks nothing');
         // The build that took no step for it waits on the bag (bagShort): a bid taken back moves
         // its money from the escrow to the bag, the wallet stays, and that wait wakes the build.
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const Situations = invoke('GameServer/Bot/Situations');
-        const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
         const waiting = Life.snapshot(9116);
         const baseline = Sections.snapshot(waiting, { timestamp: Date.now(), statsPacket: {}, network: { bagShort: price }, persona: {} },
             { buyOrderEscrow: Market.buyOrderEscrow(9116) }, {});
@@ -215,7 +239,7 @@ async function heldPurchaseVisit() {
         assert.equal(unsold.purchased, false, 'fixture: no seller at the card\'s price');
         assert.equal(Market.buyOrderEscrow(9118), price, 'no seller, the root\'s bid stays on the board');
     } finally { Events.raiseOn = raiseOn; Pricing.bid = previousBid; Towns.buyAdTown = buyAdTown; }
-    console.log('PASS held purchase visit: no root bid beside its input buy, one purse for planner and buyer, funding_short marks nothing, the bag\'s wait wakes, the root\'s own bid pays its step, no seller takes no bid back');
+    console.log('PASS held purchase visit: no root bid beside its input buy, a lower tier\'s bid leaves the funded input its money, one purse for planner and buyer, funding_short marks nothing, the bag\'s wait wakes, the root\'s own bid pays its step, no seller takes no bid back');
 }
 
 async function run() {

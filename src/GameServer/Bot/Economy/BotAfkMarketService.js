@@ -546,7 +546,7 @@ async function openBuyAd(state, goal) {
 // The money the bot's own backed bids on a shop step's `bids` hold (its card's: its root's
 // bids, WishNetwork), as the network counted it.
 function stepBidMoney(ownerId, bids) {
-    return bids?.length ? PurchaseFunding.bidMoney(PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId))), bids) : 0;
+    return bids?.length ? PurchaseFunding.stepBids(PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId))), bids) : 0;
 }
 // A shop step may spend its root's own bids: when the bag alone is short of its cost and
 // those bids cover the rest, its buyer takes them back before it pays (their escrow returns
@@ -559,7 +559,7 @@ function stepBidMoney(ownerId, bids) {
 function freeStepBids(ownerId, bids, cost, bag) {
     if (!bids?.length || !(Number(cost) > Number(bag))) return null;
     const own = PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId)));
-    const held = [...new Set(bids.map(Number))].filter(id => own.has(id)).sort((a, b) => own.get(b) - own.get(a) || a - b);
+    const held = [...new Set(bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number))].filter(id => own.has(id)).sort((a, b) => own.get(b) - own.get(a) || a - b);
     const taken = [];
     let money = Number(bag);
     for (const id of held) {

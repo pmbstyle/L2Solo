@@ -1,8 +1,8 @@
 'use strict';
-// The gear errands a bot failed where it acts (hot: a refused gear purchase, a failed
-// dual sword combination or unseal, ShoppingState; cold: a gear buy that failed on the
-// item, ColdMarketService.tryPurchase; both: a buy the purse could not pay, funding_short,
-// temporary until a shop step is admitted only at the terms its buyer pays): each raises goal_failed { kind: 'gear_errand', key },
+// The gear errands a bot failed where it acts (hot: a failed dual sword combination or
+// unseal, a town route that failed, ShoppingState; cold: a gear buy that failed on the item,
+// ColdMarketService.tryPurchase; a purchase refused for money or for no seller marks nothing):
+// each raises goal_failed { kind: 'gear_errand', key, reason },
 // its key (the item, else the product or recipe) kept in stats.gearMarks, owned here,
 // written by Situations' raise (raisedFacts), which wakes the gear plan with the build
 // (its source failed, Situations.delta). Read by the gear plan
@@ -12,12 +12,12 @@
 // (CompanionEquipmentShopping.planErrand plans none of them).
 // A mark lives until a situation that changes what the same errand would meet (LIFETIME,
 // declared on Situations' forgets, applied by every raise on both threads): the wallet
-// reaching the build's threshold (goal_affordable:focus: the money a refused buy lacked), the
+// reaching the build's threshold (goal_affordable:focus), the
 // bot's own gear or grade moving (gear_changed, grade_changed: what it wants and what its gear
 // rules admit). Not a board offer of the item: a marked item is no purchase, so the bot watches
 // no offer of it. Not the gear plan review its failure woke: that review plans without it, and
 // the next failure's review would take it again, a loop while the town visit lasts. No clock.
-// Our choice after C4 play: a player refused at a shop does not walk back for the same item
+// Our choice after C4 play: a player whose gear rules refused the item does not walk back for it
 // until he has the money or his gear moved.
 // [{ key }], at most MAX_MARKS (the oldest dropped, counted by the caller).
 const MAX_MARKS = 8;

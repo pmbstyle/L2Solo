@@ -3,7 +3,7 @@ const Tendency = require('../AI/TendencyRoll');
 const Valuation = require('./EconomicValuation');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('./EconomyDiagnostics');
-const { packetRowWishes } = require('./PurchaseFunding');
+const { packetRowWishes, stepBids, STEP_BIDS } = require('./PurchaseFunding');
 const Trace = require('../DecisionTrace');
 // Lazy, once: TradeIntent requires this module at its load.
 let TradeIntent = null;
@@ -913,12 +913,9 @@ class WishNetwork {
         // place funds it, the bag pays it. Money the bot's bids hold buys nothing at a shop,
         // save its root's own bids (on its item or an item of its paths): the step names them
         // (`bids`) and its buyer takes them back before it pays when the bag alone is short
-        // (BotAfkMarketService.freeStepBids). A step the bag and those bids cannot pay is no
-        // step: the least bag such a step needs is its wait (bagShort, goal_affordable:focus).
-        // The buyer's terms (escrow, refill reserve, earlier rows) can still be shorter than
-        // this bag test: its funding_short marks the item (GearMarks) so the next build does
-        // not take it again. Temporary: until a shop step is admitted only at the terms its
-        // buyer pays. The board holds one bid
+        // (BotAfkMarketService.freeStepBids); its price holds the trip's fees, which the bag pays on
+        // the way. A step the bag and those bids cannot pay is no step: the least bag such a step
+        // needs is its wait (bagShort, goal_affordable:focus). The board holds one bid
         // per item, the first root's in the queue whose watch rows need it
         // (TradeIntent.watchRows): another root's bid on an item of this root's paths is not
         // this root's money. A bid no watch row needs (its root's own item, a bid the next
@@ -940,7 +937,9 @@ class WishNetwork {
                     }
                 };
                 walk(plans.get(key) || wishes.find(wish => wish.key === key)?.plan, 0);
-                items = [...tree].filter(id => ownBids.has(id) && (ownerOf(id) ?? key) === key);
+                // The most money first: the card keeps STEP_BIDS of them, the buyer reads those.
+                items = [...tree].filter(id => ownBids.has(id) && (ownerOf(id) ?? key) === key)
+                    .sort((a, b) => ownBids.get(b) - ownBids.get(a) || a - b).slice(0, STEP_BIDS);
                 bidsOf.set(key, items);
             }
             return items;
@@ -948,8 +947,7 @@ class WishNetwork {
         const bagPaid = leaf => {
             if (leaf.kind !== 'buy') return leaf;
             const bids = ownBids?.size ? rootBids(leaf.rootKey) : [];
-            let needed = nonnegative(leaf.price);
-            for (const id of bids) needed -= ownBids.get(id);
+            const needed = nonnegative(leaf.price) - stepBids(ownBids, bids);
             if (needed <= nonnegative(bag)) return bids.length ? { ...leaf, bids } : leaf;
             bagShort = bagShort ? Math.min(bagShort, needed) : needed;
             return null;

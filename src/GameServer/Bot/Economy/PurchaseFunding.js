@@ -4,7 +4,8 @@ const CombinedErrands = require('../Population/CombinedErrandPolicy');
 const Packet = require('./StatsPacket');
 const BoardRules = require('../../AfkTrade/BoardRules');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
-// higher-valued funded wishes keep their cumulative costs before a spend.
+// every funded row ahead of a spend in queue order keeps its cost; a spend that is no funded
+// row gets only the money above every funded row (budgetFor).
 const nonnegative = value => Math.max(0, Number(value) || 0);
 let moneyPacketMissing = 0;
 function budget(state = {}, escrow = 0) {
@@ -23,16 +24,33 @@ function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
 function surplus(state = {}, price = 0, reserve = 0) {
     return Math.max(0, budget(state) - nonnegative(price) - nonnegative(reserve));
 }
+// The funded row a rank r names: its ratio as given (a rank read from the packet) or as the
+// packet rounds it (significant), else -1.
+function fundedRow(packet, r) {
+    if (!(Number(r) > 0) || !Number.isFinite(Number(r))) return -1;
+    const exact = Number(r), rank = significant(exact);
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
+        const ratio = Packet.fundedRatio(packet, row);
+        if (ratio === exact || ratio === rank) return row;
+    }
+    return -1;
+}
 // The rank r when it is one of the packet's funded rows (its ratio as the packet keeps it), else null.
 function fundedRank(packet, r) {
-    if (!(Number(r) > 0) || !Number.isFinite(Number(r))) return null;
-    const rank = significant(Number(r));
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) === rank) return rank;
-    return null;
+    const row = fundedRow(packet, r);
+    return row < 0 ? null : Packet.fundedRatio(packet, row);
 }
+// The money a spend at rank r may take: the wallet above the reserve and the money the
+// queue holds for the funded rows ahead of it. The rows stand in queue order, tier first,
+// then value per Adena, so a row of a higher tier may hold a lower ratio: a funded root's
+// own row reads the money above the rows before it, any other rank (an unfunded root, a
+// later tier, a side purchase: -Infinity) the money above every funded row, as the network
+// funds a root only from what the roots ahead of it leave. Infinity (a companion's errand)
+// stands ahead of the whole queue.
 function budgetFor(packet, wallet, escrow, r, capture = null) {
-    let prior = 0;
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) > r) prior = Packet.fundedCumulative(packet, row);
+    const rows = r === Infinity ? 0 : Packet.fundedRows(packet), own = r === Infinity ? -1 : fundedRow(packet, r);
+    const ahead = own < 0 ? rows : own;
+    const prior = ahead > 0 ? Packet.fundedCumulative(packet, ahead - 1) : 0;
     if (capture) capture.priorityReserve = nonnegative(prior);
     return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.refillReserve(packet)) - prior);
 }
@@ -140,7 +158,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     if (Packet.hasMoney(packet) && !options.upperBound && options.valueHours !== undefined) {
         reason = 'finite_value';
         queueBudget = Math.min(worth(packet, options.valueHours),
-            budgetFor(packet, wallet, 0, fundedRank(packet, options.r) ?? Packet.moneyPrice(packet), capture));
+            budgetFor(packet, wallet, 0, fundedRank(packet, options.r) ?? -Infinity, capture));
     }
     // A side purchase (T177) carries its own value per Adena and takes only the
     // money no queue row holds.
@@ -167,7 +185,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
 // What a purchase may pay now: the planner's rule (spendable over the bag and the money
 // the bot's own buy orders hold, escrow) paid from the bag. One rule for the planner and
 // every buyer: hot and cold, main and the native writer. stepBids: the money of the bids
-// the step's buyer takes back before it pays (bidMoney of the card's `bids`).
+// the step's buyer takes back before it pays (the card's `bids`, at most STEP_BIDS).
 function payable(state = {}, escrow = 0, options = {}, captureOutput = null, stepBids = 0) {
     return Math.min(budget(state) + nonnegative(stepBids), spendable(state, escrow, options, captureOutput));
 }
@@ -188,6 +206,15 @@ function bidMoney(own, items) {
     let money = 0;
     for (const id of items || []) money += own.get(Number(id)) || 0;
     return money;
+}
+// A shop step names at most this many of its root's bids (the card keeps them).
+const STEP_BIDS = 8;
+// The money a shop step's buyer takes back to pay it (BotAfkMarketService.freeStepBids):
+// what the bot's own bids (own: ownBids) on the step's named bids hold, the first STEP_BIDS
+// of them. One reading for the build that admits the step (WishNetwork), the held step's
+// check (EconomyContext) and every buyer (payable's stepBids), hot and cold.
+function stepBids(own, bids) {
+    return own?.size && bids?.length ? bidMoney(own, bids.slice(0, STEP_BIDS)) : 0;
 }
 // Finite action utility supplies a funding ratio, never an extra purse.
 // Native writers still reread the current money packet and physical wallet.
@@ -291,5 +318,5 @@ function packetFor(network, hour, reserve) {
     }
     return packet;
 }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, payable, ownBids, bidMoney, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, payable, ownBids, STEP_BIDS, stepBids, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

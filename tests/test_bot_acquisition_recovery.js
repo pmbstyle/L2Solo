@@ -58,8 +58,11 @@ async function run() {
     {
         const Marks = require('../src/GameServer/Bot/AI/GearMarks');
         const Situations = invoke('GameServer/Bot/Situations');
-        const failed = Situations.raise({ ...state.stats, woken: 0 }, 'goal_failed', { kind: 'gear_errand', key: 2566, impossible: true });
+        const markedFor = () => Number(Situations.counts().raised['gear_mark:incompatible_loadout'] || 0);
+        const before = markedFor();
+        const failed = Situations.raise({ ...state.stats, woken: 0 }, 'goal_failed', { kind: 'gear_errand', key: 2566, impossible: true, reason: 'incompatible_loadout' });
         assert(Marks.marked(failed, 2566), 'the failure marks its item');
+        assert.strictEqual(markedFor(), before + 1, 'each mark is counted by what failed');
         assert(Situations.woken(failed, 'build') && Situations.woken(failed, 'gear_plan'), 'the failure wakes the build and the gear plan');
         assert(Planner.replanContextFor({ ...state, stats: failed }, plan, now).excludedTargetIds.includes(2566), 'the gear plan excludes it');
         // The next item fails too (the review took it instead): both stay out, so no review

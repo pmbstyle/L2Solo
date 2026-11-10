@@ -451,9 +451,11 @@ function raisedFacts(stats, name, payload, dropped = null) {
         const wrote = forget(stats, name);
         return wrote.forgot ? { ...facts, ...wrote, forgot: [...(facts.forgot || []), [owner, wrote.forgot]] } : facts;
     }, {});
-    // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
+    // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks),
+    // each mark counted by what failed (gear_mark:<reason>).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
         const gearMarks = GearMarks.withMark(stats, payload.key, dropped && (() => dropped('gear_mark')));
+        if (gearMarks) note(`gear_mark:${payload.reason || 'unnamed'}`);
         return gearMarks ? { gearMarks } : {};
     }
     if (payload?.spotId == null) return {};

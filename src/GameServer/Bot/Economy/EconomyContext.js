@@ -326,7 +326,7 @@ const LEAF_CHECKS = Object.freeze({
         // stops a dearer seller, not a tight purse. The buyer's own rule (payable: its
         // bids' escrow counted, paid from the bag and the step's own bids it takes back),
         // so a step funded here is paid there.
-        const stepBids = leaf.bids?.length ? Funding.bidMoney(Funding.ownBids(deps.board?.ownerLines?.(Number(state.characterId))), leaf.bids) : 0;
+        const stepBids = leaf.bids?.length ? Funding.stepBids(Funding.ownBids(deps.board?.ownerLines?.(Number(state.characterId))), leaf.bids) : 0;
         return Funding.payable(state, deps.buyOrderEscrow, Funding.nativeTerms(holds ? { ...held, valueHours: undefined } : held, leaf.itemId),
             null, stepBids) >= remaining * offer.unitPrice + trade.route.fees ? '' : SHORT;
     },

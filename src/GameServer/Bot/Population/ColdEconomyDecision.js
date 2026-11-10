@@ -47,7 +47,7 @@ class CompactActivity {
         if (leaf.items) this.items = leaf.items.slice(0, 8).map(Number);
         if (leaf.craftReservations?.length) this.craftReservations = leaf.craftReservations;
         // A shop step's own root bids its buyer may take back to pay it (WishNetwork).
-        if (leaf.bids?.length) this.bids = leaf.bids.slice(0, 8).map(Number);
+        if (leaf.bids?.length) this.bids = leaf.bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number);
         if (leaf.activity === 'improving' && leaf.improvement) this.improvement = { ...leaf.improvement };
     }
 }

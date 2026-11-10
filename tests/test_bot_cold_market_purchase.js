@@ -285,14 +285,13 @@ async function run() {
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
-    // A purse short of the card's price is refused for money: no seller is looked up. The item
-    // is marked, so the build it wakes does not send the bot for it again at once (the build
-    // funds a shop step from the bag, the buyer at the root's queue place): 871 refusals in
-    // 73 s for one bot without it.
+    // A purse short of the card's price is refused for money: no seller is looked up, the step
+    // fails and the item is not marked (the build admits no shop step its buyer cannot pay, so
+    // the item stays a purchase it takes again once the bag pays it).
     assert.strictEqual(lowTierPlayerPurchase.reason, 'funding_short');
     await new Promise(resolve => setImmediate(resolve));
-    assert(invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(88)?.stats, 2),
-        'the item refused for money is marked: the build does not send the bot for it again');
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(88)?.stats, 2),
+        'the item refused for money is not marked');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 0,
@@ -338,6 +337,23 @@ async function run() {
     assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_offer_missing');
     assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D gear must replan instead of opening a WTB store');
     assert.strictEqual(missingLowTierNpcGear.state.activity, 'resting', 'the visit ends: the worker routes it from town');
+    // No seller is the contest at the seller lost (the single unit sold first), not the item
+    // failing: no mark, the purchase stays. The build it wakes reads the board as it is: with no
+    // seller there is no step to go back for (no refusal burst); once a seller posts one (the
+    // build hears offer_posted) it reads the offer and the bot buys it.
+    await new Promise(resolve => setImmediate(resolve));
+    const refusedFor = BotLifeState.cachedState(87);
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(refusedFor?.stats, 945), 'a refusal for no seller marks nothing');
+    const { SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const posted = [];
+    const board = { heads: (id, side, options = {}) => posted.filter(line => line.selfId === id && line.storeType === side
+        && (!options.accept || options.accept(line))) };
+    const trip = () => 0; trip.details = () => ({ known: true, hours: 0, fees: 0 });
+    const evidence = () => invoke('GameServer/Bot/Economy/WishPurchaseEvidence').reader(refusedFor, { board, trip }, { tripCost: trip })(945);
+    assert.strictEqual(evidence(), null, 'no seller: the build has no step to send the bot back for');
+    posted.push({ storeType: SELL, selfId: 945, price: 1000, count: 1, enchant: 0, town: 'Giran', ownerId: 9002,
+        recordId: 1, lineId: 1, revision: 1, kind: 'shop', custodyPolicy: 0 });
+    assert.strictEqual(evidence()?.price, 1000, 'a posted offer is a purchase the build takes again');
     MarketOpportunity.npcOffers = originals.npcOffers;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
@@ -431,6 +447,9 @@ async function run() {
     assert.strictEqual(noOffer.state.activity, 'resting', 'a buyer with no offer ends its visit: the worker sends it back to farming');
     assert.strictEqual(noOffer.state.timing.nextResolveAt <= Date.now(), true, 'at its next step, due now');
     assert.equal(noOffer.state.stats.marketWanted?.itemId, 999999, 'a buyer with no offer waits for a new one (offer_posted), no retry window');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(79)?.stats, 999999),
+        'a material with no seller stays a purchase: no mark');
 
     MarketOpportunity.bestOffer = () => null;
     BuyStoreService.open = () => Promise.reject(new Error('forced buy-store persistence failure'));

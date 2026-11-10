@@ -211,22 +211,24 @@ function alternateTownNpcErrand(session, bot, town) {
 
 // A gear errand that failed where the body acts: its step failed (goal_failed, the
 // held step dropped) and the errand's key is marked (GearMarks: no gear plan or errand
-// takes it again until its source changed).
-function deferEquipmentRetry(session) {
+// takes it again until its source changed). reason: what failed (counted per mark).
+function deferEquipmentRetry(session, reason) {
     if (!['npc_equipment_purchase', 'market_purchase', 'dual_component_withdrawal', 'dual_sword_combine', 'mammon_unseal'].includes(session.companionShopping?.kind)) return;
     raiseDecision(session, 'goal_failed', { impossible: true,
-        payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping) } });
+        payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping), reason } });
 }
 
 // A purchase refused for money (the purse short of the step), counted as a cold buyer's
-// funding_short. Its errand is marked as a cold buyer's funding_short is, temporary: until
-// the wish network admits a shop step only at the terms its buyer pays.
+// funding_short: the build admits no step its buyer cannot pay, so each one is a disagreement.
 const FUNDING_REFUSALS = new Set(['Not enough Adena.', 'not_enough_adena', 'insufficient_adena', 'economy_funding_changed', 'npc_line_not_funded']);
 
-// A refused gear purchase names its cause: the bot only says it could not buy.
+// A refused gear purchase names its cause: the bot only says it could not buy. The step failed
+// where it acts (the build decides anew) and marks nothing, as a cold buyer's: no seller at the
+// step's price (the line taken or changed, the NPC gone, a meeting cancelled) is the contest at
+// the seller lost and the purchase stays in the bot's wants; a purse short of it is the money's.
 function equipmentPurchaseFailed(session, bot, errand, error) {
     if (FUNDING_REFUSALS.has(error?.message)) invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
-    deferEquipmentRetry(session);
+    raiseDecision(session, 'goal_failed', { impossible: true });
     session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
     utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
 }
@@ -693,7 +695,7 @@ module.exports = {
                     return;
                 }
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
-                deferEquipmentRetry(session);
+                deferEquipmentRetry(session, 'route_unreachable');
                 // A failed sale/restock route needs the same pause as an
                 // equipment errand. Otherwise forced cleanup restarts it on
                 // the next hunting tick, before any local fight can begin.
@@ -855,7 +857,7 @@ module.exports = {
                 if (session.actor !== bot || session.companionShopping !== companionErrand || session.plan !== 'shopping') return;
                 if (continueEquipmentShopping(session,bot,BotAI,companionErrand)) return;
             } catch (error) {
-                deferEquipmentRetry(session);
+                deferEquipmentRetry(session, 'unseal_failed');
                 session.lastTradeSummary = `unsealing failed: ${error.message}`;
             }
             if (session.actor === bot && session.companionShopping === companionErrand && session.plan === 'shopping') {
@@ -871,9 +873,9 @@ module.exports = {
                     : result.reason === 'components_withdrawn' ? 'collected my swords from the warehouse' : 'equipment needs another attempt';
                 if (session.actor !== bot || session.companionShopping !== companionErrand || session.plan !== 'shopping') return;
                 if (result.reason === 'components_withdrawn' && continueEquipmentShopping(session,bot,BotAI,companionErrand)) return;
-                if (!result.completed) deferEquipmentRetry(session);
+                if (!result.completed) deferEquipmentRetry(session, 'combine_failed');
             } catch (error) {
-                deferEquipmentRetry(session);
+                deferEquipmentRetry(session, 'combine_failed');
                 session.lastTradeSummary = `equipment errand failed: ${error.message}`;
             }
             if (session.actor === bot && session.companionShopping === companionErrand && session.plan === 'shopping') {

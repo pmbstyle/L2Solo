@@ -35,16 +35,17 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
 // A bound on an errand the bot has not carried out (no route, a party that
 // keeps it): after it the job that sent it plans again.
 const ERRAND_MS = CombinedErrands.ERRAND_MS;
-// The reasons a gear buy fails on the item itself: no offer at the step's price, the line
-// gone, the supply retired, the bot's gear rules refusing it (already held, a shield under
-// a two-hander). A price change, an arrow or war-ticket limit, a full bag or weight and a
-// failed write are not the item failing: they mark nothing (their facts have other owners).
-// A purse short of the step's price (funding_short) marks its item too, temporary: until the
-// wish network admits a shop step only at the terms its buyer pays. Until then the build that
-// funded the step from the bag takes it again at once; the mark holds it until the money or
-// the gear moved (GearMarks.LIFETIME).
-const GEAR_SOURCE_FAILED = new Set(['no_affordable_offer', 'low_tier_offer_missing', 'offer_changed',
-    'configured_supply_retired', 'already_owned', 'incompatible_loadout', 'funding_short']);
+// The reasons a gear buy fails on the item itself: the supply retired, the bot's gear rules
+// refusing it (already held, a shield under a two-hander). They mark it (GearMarks). No seller
+// at the step's price (none, the line taken or changed) is the contest at the seller lost, not
+// the item failing: the purchase stays in the bot's wants, the build it wakes reads the board
+// as it is now and takes the step again only where a seller stands (a posted offer wakes it,
+// offer_posted). Our choice after C4 play: the board is trade chat, a player who finds the
+// item sold keeps asking for it. A purse short of the step's price (funding_short) marks
+// nothing: the build admits a shop step only where its buyer pays it. A price change, an arrow
+// or war-ticket limit, a full bag or weight and a failed write mark nothing either (their
+// facts have other owners).
+const GEAR_SOURCE_FAILED = new Set(['configured_supply_retired', 'already_owned', 'incompatible_loadout']);
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
 // job awaited the trade the bot may have been activated: its row is hot and
@@ -101,8 +102,8 @@ function finishBlockedPurchase(state, reason) {
         marketWanted: null,
         marketLead: null
     };
-    // The gear plan stays: a blocked gear target reaches it as its mark (GearMarks, raised by the
-    // caller), which its reviews plan without while the mark lasts.
+    // The gear plan stays: a gear target that failed on the item reaches it as its mark
+    // (GearMarks, raised by the caller), which its reviews plan without while the mark lasts.
     const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
     const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
     return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => ({
@@ -836,13 +837,13 @@ const ColdMarketService = {
         // the worker decides anew and the bot waits for it.
         const arrival = arrivalStep(goal);
         // A missed step failed where it acts (after any return handling): the bot decides anew.
-        // A buy whose source failed here (GEAR_SOURCE_FAILED: a gear piece or a craft material)
-        // is a failed errand: its item is marked (GearMarks), so the build it wakes does not
-        // send the bot for it again until the money or its gear moved (GearMarks.LIFETIME).
+        // A buy that failed on its item here (GEAR_SOURCE_FAILED: a gear piece or a craft
+        // material) is a failed errand: its item is marked (GearMarks), so the build it wakes does
+        // not send the bot for it again until its source changed (GearMarks.LIFETIME).
         const refreshAfter = written => written.then(result => {
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(result?.reason)
-                    ? { impossible: true, kind: 'gear_errand', key: Number(goal.target.itemId) } : { impossible: true });
+                    ? { impossible: true, kind: 'gear_errand', key: Number(goal.target.itemId), reason: result.reason } : { impossible: true });
             return result;
         });
         const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));
@@ -863,8 +864,8 @@ const ColdMarketService = {
         const budget = activeMaterialPurchase ? 0 : goal.plan?.weaponBridge ? PurchaseFunding.budget(state) + stepBids
             : PurchaseFunding.payable(state, ownEscrow(state), PurchaseFunding.goalTerms(goal), null, stepBids);
         // A purse short of one unit at the card's price is refused for money, not for a
-        // missing seller: the visit ends and its item is marked (GEAR_SOURCE_FAILED, temporary:
-        // the build funds a shop step from the bag, this buyer at the root's queue place).
+        // missing seller: the visit ends, the bot decides anew (the build admits no step its
+        // buyer cannot pay, so a refusal here is counted: the build and this buyer disagree).
         const fundingShort = money => {
             if (money >= arrival.unitPrice) return null;
             MarketTelemetry.fundingShort();

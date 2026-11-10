@@ -85,12 +85,15 @@ async function buyWithStepBids(bids) {
     return order;
 }
 
-// A purchase refused for money is counted as a cold buyer's funding_short, and its item is
-// marked: the bot does not walk back to the same shop for it until its money or gear moved.
+// A purchase refused for money is counted as a cold buyer's funding_short; refused for money or
+// for no seller (the NPC's line gone) the step fails, the bot decides anew and the item is not
+// marked: it stays a purchase the next plan takes once the bag pays it or a seller stands.
 async function refusedForMoney() {
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
-    const diagnostics = Config.developerDiagnostics;
+    const Situations = invoke('GameServer/Bot/Situations');
+    const Marks = invoke('GameServer/Bot/AI/GearMarks');
+    const diagnostics = Config.developerDiagnostics, offers = MarketOpportunity.npcOffers;
     Config.developerDiagnostics = true;
     try {
         AfkTrade.ownerRecords = () => [];
@@ -99,10 +102,15 @@ async function refusedForMoney() {
         const session = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
         await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
         assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'a hot refusal for money is counted');
-        // The mark every errand planner and the build's purchase reader skip (GearMarks).
-        assert(invoke('GameServer/Bot/AI/GearMarks').marked(session.coldLifeState.stats, SHORT_SWORD),
-            'the refused item is marked: the next plan does not send the bot for it again');
-    } finally { Config.developerDiagnostics = diagnostics; }
+        assert(Situations.woken(session.coldLifeState.stats, 'build'), 'the step failed: the bot decides anew');
+        assert(!Marks.marked(session.coldLifeState.stats, SHORT_SWORD), 'the item refused for money is not marked');
+        MarketOpportunity.npcOffers = () => [];
+        const gone = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+        await ShoppingState.sellAndRestock(gone, bot, null, { getClosestTown: () => null, say() {} });
+        assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'no seller is no refusal for money');
+        assert(Situations.woken(gone.coldLifeState.stats, 'build'), 'no seller: the step failed, the bot decides anew');
+        assert(!Marks.marked(gone.coldLifeState.stats, SHORT_SWORD), 'the item with no seller is not marked: it stays a purchase');
+    } finally { Config.developerDiagnostics = diagnostics; MarketOpportunity.npcOffers = offers; }
 }
 
 async function run() {

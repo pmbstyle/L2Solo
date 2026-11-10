@@ -46,7 +46,9 @@ async function run() {
     const cold = await Life.upsertState({ characterId: 1, accountName: 'bot_b5_hotcold', name: 'Native1', level: 30,
         exp: 0, sp: 0, adena: 100000, phase: 'cold', activity: 'hunting', homeRegion: 'Giran', currentRegion: 'Giran',
         loc: { locX: 83000, locY: 148000, locZ: -3400 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 0, shopTown: { town: 'Giran', at: 1 }, money: [10000, .0001, 0, 0, .001, 100000, itemId] },
+        stats: { generatedCold: true, classId: 0, shopTown: { town: 'Giran', at: 1 },
+            // The material's row stands at its funded root's place in the money queue.
+            money: [10000, .0001, 0, 0, invoke('GameServer/Bot/Economy/PurchaseFunding').rootRatio(network.queue[0]), 100000, itemId] },
         inventory: { 57: { selfId: 57, amount: 100000 }, [itemId]: { selfId: itemId, amount: 4 } },
         simulation: { revision: 0 }, timing: {}, updatedAt: Date.now() }, 'native_fixture');
 
