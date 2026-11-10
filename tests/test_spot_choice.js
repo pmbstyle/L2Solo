@@ -3,7 +3,8 @@
 // a spot gives in exp and in money by its own money price, in an hour that does
 // not depend on the spot it stands on, keeps its best income as its hour, prices
 // a far spot by the trip it makes (not a run across the world), does not read the
-// crowd, and takes its next best when it has heard in town that the best is held against it.
+// crowd, takes its next best when it has heard in town that the best is held against it, and
+// hunts easier ground when no camp of its level takes it.
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -151,4 +152,20 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
     } finally { Records.clear(); }
 }
 
-console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, no crowd, held camps');
+// No camp of its window it may take (here: none it knows an hour of): the bot hunts easier
+// ground alone, the lower spot closest to its level, past one its marks exclude, with no
+// income expected there; with no lower ground either the answer names none.
+{
+    const low = (id, level, locX) => ({ ...at(id, locX), avgLevel: level, minLevel: level, maxLevel: level });
+    const spots = [at('home', -80000), low('grey5', 5, -79000), low('grey2', 2, -78000)];
+    const state = hunter(990307, spots, [], [36000, 1 / 36000, 0, 0]);
+    const found = search(state, spots);
+    assert.equal(found?.spot.id, 'grey5', 'no camp of its level: the closest easier ground');
+    assert.equal(found.row.income, 0, 'no income expected there');
+    const SpotRisk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    const marked = { ...state, stats: { ...state.stats, spotMarks: SpotRisk.withSpotMark(state.stats, 'grey5', 'contest_lost') } };
+    assert.equal(chosen(marked, spots), 'grey2', 'a lower spot its marks exclude is no answer');
+    assert.equal(search(state, [spots[0]]), null, 'no lower ground: none');
+}
+
+console.log('PASS spot choice: exp and money by the own price, one answer from any spot, the hour, the real trip, no crowd, held camps, easier ground');

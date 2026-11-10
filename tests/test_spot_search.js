@@ -120,4 +120,20 @@ function twoBots(ids, pick) {
     }
 }
 
+// The checks cap (maxChecks): a bot's search that asked its first candidates, none passing, while
+// more wait unasked finds none by the cap, counted apart from a search that ran out of candidates.
+{
+    const Situations = invoke('GameServer/Bot/Situations');
+    const capped = () => Situations.counts().raised['spot:search:capped'] || 0;
+    const candidates = Array.from({ length: 4 }, (_, at) => ({ spot: { id: `capped-${at}` }, value: 10 - at }));
+    const search = (maxChecks, allowed = () => false) => Search.rank({ characterId: 994100 }, { candidates, sorted: true,
+        value: candidate => candidate.value }, { allowed, maxChecks, count: true }).pick;
+    const before = capped();
+    assert.equal(search(2), null, 'none of the two asked passes');
+    assert.equal(capped(), before + 1, 'the cap left two unasked: counted');
+    assert.equal(search(4), null, 'every candidate asked, none passes');
+    assert.equal(search(2, candidate => candidate.spot.id === 'capped-1')?.spot.id, 'capped-1', 'a pick inside the cap');
+    assert.equal(capped(), before + 1, 'neither counts the cap');
+}
+
 console.log('spot search tests passed');

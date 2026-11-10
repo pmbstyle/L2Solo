@@ -155,10 +155,11 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // most 15 levels below the bot, a kit that may survive them, no foreign starter field. Search-local,
     // one answer per spot.
     const fitting = new Map();
+    const foreign = spot => Routes.localityPenaltyForSpot(spot, state, { level: state.level }, Routes.tagsForSpot(spot));
     const fits = (candidate, spot) => {
         let fit = fitting.get(spot);
         if (fit === undefined) fitting.set(spot, fit = Number(spot.avgLevel || spot.minLevel || 1) - state.level >= minGap
-            && survives(spot) && !Routes.localityPenaltyForSpot(spot, state, { level: state.level }, Routes.tagsForSpot(spot)));
+            && survives(spot) && !foreign(spot));
         return fit;
     };
     // lazy: cycle SpotProfiles' search reads this module's held answer.
@@ -210,15 +211,26 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
         tie: (a, b) => Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1) || String(a.spot.id).localeCompare(String(b.spot.id)) },
     { excluded, repelled: invoke('GameServer/Bot/Population/SpotRecords').reader(state, invoke('GameServer/Bot/AI/BotPersona').of(state)),
         allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
-    if (pick) {
-        pick.matchupProfiles = options.matchupProfiles;
-        // The bot's hour (hourAdena, the unit of every value) stays what it could
-        // earn: its best income among the spots it may hunt, wherever it levels.
-        pick.earning = pick.row.income;
-        for (const candidate of ranked.toSorted((a, b) => b.row.income - a.row.income).slice(0, Math.max(1, maxChecks))) {
-            if (candidate.row.income <= pick.earning) break;
-            if (asked(candidate.spot)) { pick.earning = candidate.row.income; break; }
-        }
+    if (!pick) {
+        // No camp of its window it may take (a healer's kit refused by every camp near its level): easier
+        // ground, the leveling goal's own rule (SpotSearch.easierGround), under the window's clauses but its
+        // level gap; the spot's row is the answer's (none past the deep-blue gap: no income expected there,
+        // fixedRoute). A support there still seeks a party (PartyRequestPlanner.supportWithoutGround: grey
+        // ground is no solo ground) and hunts it meanwhile, whatever forming answers. None: earning:no_spot.
+        const lower = Search.easierGround(state, { profiles: spots, targetLevel: state.level, excluded, survives,
+            accept: spot => !foreign(spot) && !(broke && needsDrinks(state, spot, true)), value: spot => evaluate(spot),
+            allowed: asked, mode: 'solo', count: true });
+        const route = lower && fixedRoute(lower.spot, evaluate);
+        if (route) route.matchupProfiles = options.matchupProfiles;
+        return { route, error: evaluate.incomeError };
+    }
+    pick.matchupProfiles = options.matchupProfiles;
+    // The bot's hour (hourAdena, the unit of every value) stays what it could
+    // earn: its best income among the spots it may hunt, wherever it levels.
+    pick.earning = pick.row.income;
+    for (const candidate of ranked.toSorted((a, b) => b.row.income - a.row.income).slice(0, Math.max(1, maxChecks))) {
+        if (candidate.row.income <= pick.earning) break;
+        if (asked(candidate.spot)) { pick.earning = candidate.row.income; break; }
     }
     return { route: pick, error: evaluate.incomeError };
 }

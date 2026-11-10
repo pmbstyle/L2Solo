@@ -414,10 +414,14 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
 }
 
 // A solo bot's held earning answer as a choice: the answer's spot, read, never
-// searched (the same after a worker restart: the answer is in the mind). { spotId:
-// null }: none it may take (none found, its marks exclude it, or ground it may not
-// hunt alone now, LevelingRoutes.groundVerdict: no walk into a flight): it stays
-// until a situation re-decides (pushed off its ground with none: huntSpot's leveling goal). undefined: no answer yet (its first decision pending), a
+// searched (the same after a worker restart: the answer is in the mind). It names
+// grey ground when no camp near the bot's level takes its kit (EquipmentIncomeRoute.find:
+// easier ground); a support hunts it alone while it asks for a party, whatever forming
+// answers. { spotId: null }: none it may take (no ground its kit may hunt even below its
+// level, its marks exclude it, or ground it may not hunt alone now,
+// LevelingRoutes.groundVerdict: no walk into a flight): it stays until a situation
+// re-decides (trip asks once per answer, Situations.spotAsk; pushed off its ground with
+// none: huntSpot's leveling goal). undefined: no answer yet (its first decision pending), a
 // protected starter field or a party waiter: the search decides (choose).
 function heldChoice(state, spots, frame) {
     // A waiter for a required party hunts its safe fallback (PartyWaitFallback, in

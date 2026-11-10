@@ -4,15 +4,19 @@ const Diagnostics = require('../Economy/EconomyDiagnostics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Trace = require('../DecisionTrace');
 
-// No solo ground -> a party (decision 10-30, T106): a healer or buffer (BotRoles)
+// No solo ground -> a party: a healer or buffer (BotRoles)
 // with no gear plan source to hunt (an active plan's next spot is its solo hunt) whose
 // held earning answer (the solo spot it hunts, EquipmentIncomeRoute) names no spot, or
 // ground its level does not fit (BotRoute.soloLevelFits at its solo target level: grey
-// ground, unless it hunts for gain there), has no solo ground: it seeks a party instead
-// of farming grey ground alone, and its solo side counts as none wherever a party is
-// weighed against its solo hunt (PartyProgressComparison.heldSoloRoute: forming's verdict,
-// its stay). earning, plan: the ones to read (the build's when it took them); no
-// answer held yet: not known.
+// ground, the easier ground the earning search names when no camp near its level takes
+// its kit, unless it hunts for gain there), has no solo ground: it asks for a party,
+// as a C4 healer who can kill little alone looks for one, and hunts that grey
+// ground alone meanwhile (BotRoute.huntSpot reads the answer, the request does not):
+// forming's no closes the request and leaves it hunting there; its next build, at its
+// own situations, asks again. Its solo side counts as none wherever a party is weighed
+// against its solo hunt (PartyProgressComparison.heldSoloRoute: forming's verdict, its
+// stay). earning, plan: the ones to read (the build's when it took them); no answer
+// held yet: not known.
 const NO_SOLO_GROUND = 'no_solo_ground';
 function supportWithoutGround(state, spots, earning = state?.stats?.earning, plan = state?.stats?.equipmentPlan) {
     if (!earning || !(Roles.isHealer(state) || Roles.canBuff(state))) return false;

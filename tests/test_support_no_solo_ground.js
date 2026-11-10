@@ -137,6 +137,24 @@ async function run() {
     const Income = invoke('GameServer/Bot/Population/PartyProgressComparison'), compare = Income.compare;
     assert.strictEqual(Income.heldSoloRoute(answering('grey65'), spots, at), null, 'grey ground is no solo side for forming or its stay');
 
+    // A support whose kit no camp of its level takes hunts grey ground and asks for a party
+    // besides: its earning decision names the grey ground (the window holds nothing it may take),
+    // forming's no closes the request, and its route still sends it there; its next build asks
+    // again. A refused party search never leaves it without a spot.
+    const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+    const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
+    const lone = { ...bot(9007, 17, 76, 'grey65', 'buffer'), stats: { classId: 17, role: 'buffer' } };
+    const found = Route.search(lone, { spots, timestamp: at, required: true });
+    assert.strictEqual(found.route?.spot.id, 'grey65', 'its earning answer names the grey ground');
+    const greyAnswer = { ...lone, stats: { ...lone.stats, earning: Route.answerOf(found.route, at, found.error, lone) } };
+    const asked = Request.partyRequestForPlan(greyAnswer, null, at, { spots });
+    assert.strictEqual(asked?.reason, 'no_solo_ground', 'grey ground is no solo ground: it asks for a party');
+    const refused = { ...greyAnswer, stats: { ...greyAnswer.stats, partyRequest: { ...asked, status: 'closed',
+        attempts: 1, lastReason: 'forming_refused' } } };
+    assert.deepStrictEqual(BotRoute.huntSpot(refused, null, { spots, timestamp: at }), { spotId: 'grey65' },
+        'forming refused: it hunts the grey ground alone');
+    assert.strictEqual(Request.partyRequestForPlan(refused, null, at + 60000, { spots }).status, 'open', 'its next build asks again');
+
     // Rule 3: a Prophet 46 with ground of its level plays as today.
     const young = bot(9005, 17, 46, 'ground46', 'buffer');
     assert.strictEqual(Request.supportWithoutGround(young, spots), false);

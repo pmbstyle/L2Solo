@@ -192,9 +192,16 @@ function verify() {
             `ordinary earning band is independent of clan level ${clanLevel} and target grade ${grade}`);
         assert.equal(Route.search(member, { spots, timestamp, required: true }).route?.spot.id, 'rich',
             `clan level ${clanLevel} and target grade ${grade} preserve the better net-income camp`);
+        // A camp more than fifteen levels below is no camp of its band: a band camp is the answer
+        // over a richer one below; with none in the band it is easier ground, never no spot.
         const tooLow = spots.map(spot => ({ ...spot, minLevel: 9, maxLevel: 9, avgLevel: 9 }));
-        assert.equal(Route.search(member, { spots: tooLow, timestamp, required: true }).route, null,
+        let banded = member;
+        for (let at = 0; at < 3; at++) banded = { ...banded, stats: { ...banded.stats, huntEfficiency: Hunt.record(banded,
+            { spotId: 'poor', timestamp, cycleMs: 60000, adena: 800, costs: 400, loot: 0, exp: 10, kills: 10 }) } };
+        assert.equal(Route.search(banded, { spots: [spots[0], tooLow[1]], timestamp, required: true }).route?.spot.id, 'poor',
             'economic hunts still reject a camp more than fifteen levels below the character');
+        assert.equal(Route.search(member, { spots: tooLow, timestamp, required: true }).route?.spot.id, 'rich',
+            'with no camp in its band the camp below is its easier ground');
     }
     for (const service of [{ stats: { ...weak.stats, craftStationId: 1 } },
         { activity: 'crafting', stats: { ...weak.stats, craftShop: {}, generatedIndex: 10000 } }]) {

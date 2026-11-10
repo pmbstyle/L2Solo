@@ -1992,6 +1992,9 @@ function startKernel(config = {}) {
             { spots: planningSpots, timestamp, bridgeReason }),
         planLifecycle: async ({ state, timestamp }) => {
             if (state.stats?.tradeMeeting) return null;
+            // The mind the step read: its packet carries its bits as their change from it
+            // (Situations.stepMind), a raise after a decision (its trip's ask) included.
+            const received = state.stats;
             // The bot's record as the kernel handed the step over (its card).
             const record = kernel.states.get(Number(state.characterId));
             // A karma step executes the held earning answer (the wash's spot, decided
@@ -2103,8 +2106,8 @@ function startKernel(config = {}) {
                 // projection after the round reads it (never posted).
                 // The workshop taken on this step rides the step's packet, as in a build: a
                 // step main executes (a town visit) reads the packet, not this state.
-                return { ...stepWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...rebuffKeys, ...earningKeys,
-                    ...trip.huntKeys }, economy: refreshed.economy,
+                return { ...stepWakeSeq, statsPacket: Situations.stepMind({ ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys,
+                    ...rebuffKeys, ...earningKeys, ...trip.huntKeys }, received, routedState.stats), economy: refreshed.economy,
                     ...(occupation?.economyPlan ? { economyPlan: occupation.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
@@ -2177,7 +2180,7 @@ function startKernel(config = {}) {
             const stepPlan = {
                 ...stepWakeSeq,
                 ...(preparedOccupation?.economyPlan ? { economyPlan: preparedOccupation.economyPlan } : {}),
-                statsPacket,
+                statsPacket: Situations.stepMind(statsPacket, received, routedState.stats),
                 economy,
                 // The step took the build: main runs the side errands (a Mammon visit,
                 // the warehouse craft return, a moved clan crafter asked again) only then; a

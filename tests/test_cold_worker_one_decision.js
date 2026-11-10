@@ -46,9 +46,14 @@ module.exports.stepProbe = async (id) => {
     let builds = 0;
     Economy.forState = (...args) => { builds++; return original(...args); };
     try {
-        const plan = await kernel.planLifecycle({ state: entry.state, timestamp });
+        // It hunts on a camp of its level (its ground under it: with no earning answer its trip
+        // keeps it there, asking nothing).
+        const ground = planningSpots.find(spot => Number(spot.minLevel) <= 20 && Number(spot.maxLevel) >= 20) || planningSpots[0];
+        const hunting = { ...entry.state, spotId: ground.id, loc: { ...ground.center } };
+        kernel.states.set(id, { ...entry, state: hunting });
+        const plan = await kernel.planLifecycle({ state: hunting, timestamp });
         const decided = builds;
-        const state = plan.plannedState || entry.state;
+        const state = plan.plannedState || hunting;
         const projection = await kernel.projectResolve(state, { patch: {}, debug: {}, events: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 736, amount: 1 }] },
             nextResolveAt: timestamp + 60000 }, timestamp, plan);
@@ -63,9 +68,6 @@ module.exports.stepProbe = async (id) => {
         // field rounds, once at the arrival in town, its bit cleared on the state committed.
         const looks = () => Situations.counts().decided.own_lines?.[0] || 0;
         const looked = looks();
-        // (The rounds reuse the step's packet, made before its look: as the next step's
-        // plan would be, made on the committed state, it carries the look's bit cleared.)
-        if (plan.statsPacket.woken !== undefined) plan.statsPacket = { ...plan.statsPacket, woken: plan.statsPacket.woken & ~Situations.BITS.own_lines };
         const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
         const back = await round(rest.state, { activity: 'hunting' }, timestamp + 1500);
         const fieldLooks = looks() - looked;
@@ -238,6 +240,12 @@ module.exports.workshopProbe = async (id) => {
         return { counts };
     } finally { CraftEligibility.isServiceCrafter = service; kernel.states.set(id, saved); }
 };
+// Main's row with a step's packet applied over it, as BotLifeState.prepareResolve lands it
+// (a round that raised nothing): its keys, and its bits as their change (Situations.landMind).
+const mainRow = (row, plan) => {
+    const { mind, ...keys } = plan.statsPacket;
+    return Situations.landMind({ ...row.stats, ...keys }, mind, row.stats);
+};
 // A newbie's rebuff taken at a town arrival, on the step that takes the build the arrival
 // woke: the guide answer reaches main in the step's packet (main applies the packet over
 // its own row), held there until main's guide visit carries it out.
@@ -246,12 +254,58 @@ module.exports.rebuffProbe = async (id) => {
     try {
         const state = { ...saved.state, loc: { locX: guide.locX + 1000, locY: guide.locY, locZ: guide.locZ },
             stats: Situations.raise({ ...saved.state.stats }, 'arrived_town', null, Situations.OPEN, id) };
-        kernel.states.set(id, { ...saved, wishAdvisory: null, state });
+        // (No camp in this world takes its kit: its earning answer names none, and its ask for one
+        // was answered so before, Situations.spotAsk: in town it asks no spot again.)
+        kernel.states.set(id, { ...saved, wishAdvisory: null, spotAsk: { at: -1, none: true }, state });
         const plan = await kernel.planLifecycle({ state, timestamp: Date.now() });
-        const main = { ...state.stats, ...plan.statsPacket };
+        const main = mainRow(state, plan);
         return { built: plan.buildTaken === true, via: main.rebuff?.via ?? null, done: !!main.rebuff?.done,
             woken: [Situations.woken(main, 'rebuff'), Situations.woken(main, 'build')] };
     } finally { kernel.states.set(id, saved); }
+};
+// A far bot in town whose held earning answer names no spot (a save from before easier ground)
+// asks the decision again from its trip, on the step that takes the build a situation woke: the
+// ask's raise (spot_empty) reaches main with the step's packet, which main applies over the
+// round's stats, so its next step searches the spot again instead of waiting forever.
+module.exports.askProbe = async (id) => {
+    const saved = kernel.states.get(id), guide = BotBuffs.GUIDES[0];
+    const asks = () => Object.entries(Situations.counts().raised).filter(([key]) => key.startsWith('spot_empty@'))
+        .reduce((sum, [, n]) => sum + n, 0);
+    try {
+        const none = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerOf(null, 1);
+        const stats = Situations.raise({ ...saved.state.stats, woken: 0, waiting: 0, earning: none, equipmentPlan: null },
+            'goal_failed', null, Situations.OPEN, id);
+        const state = { ...saved.state, phase: 'cold', activity: 'hunting', spotId: null,
+            loc: { locX: guide.locX + 1000, locY: guide.locY, locZ: guide.locZ }, stats };
+        kernel.states.set(id, { ...saved, wishAdvisory: null, huntSpot: null, spotAsk: null, state });
+        const before = asks();
+        const plan = await kernel.planLifecycle({ state, timestamp: Date.now() });
+        const main = mainRow(state, plan);
+        return { built: plan.buildTaken === true, asked: asks() - before, woken: [Situations.woken(main, 'earning_spot'), Situations.woken(main, 'build')] };
+    } finally { kernel.states.set(id, saved); }
+};
+// A far bot's trip ends on its spot on the step that takes the decisions a situation woke, its
+// earning spot among them, and the units holding the spot turn it away (contest_lost, raised
+// by its round after the decision): the state it commits keeps its earning spot woken and the
+// spot marked, so its next step searches another camp instead of hunting where it was refused.
+module.exports.arrivalProbe = async (id) => {
+    const saved = kernel.states.get(id), contest = arrivalContest, Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    const spot = planningSpots.find(row => Number(row.minLevel) <= 20 && Number(row.maxLevel) >= 20) || planningSpots[0];
+    arrivalContest = ({ spotId }) => ({ action: 'avoid', reason: 'even', spotId: String(spotId) });
+    try {
+        const timestamp = Date.now() + 30000;
+        const travel = { spotId: spot.id, reason: 'level_replan', to: { ...spot.center }, arrivalAt: timestamp };
+        const stats = Situations.raise({ ...saved.state.stats, woken: 0, waiting: 0, travel }, 'party_left', null, Situations.OPEN, id);
+        const state = { ...saved.state, phase: 'cold', activity: 'traveling', spotId: null, stats };
+        kernel.states.set(id, { ...saved, wishAdvisory: null, state });
+        const plan = await kernel.planLifecycle({ state, timestamp });
+        // The round's arrival on the step's planned state (its patch: the whole stats copy, as a trip's end writes it).
+        const planned = plan.plannedState || state, arriving = { ...planned, activity: 'traveling', stats: { ...planned.stats, travel } };
+        const projection = await kernel.projectResolve(arriving, { patch: { activity: 'hunting', spotId: spot.id, stats: { ...arriving.stats } },
+            debug: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000 }, timestamp, plan);
+        return { built: plan.buildTaken === true, decided: !Situations.woken(planned.stats, 'earning_spot'),
+            woken: Situations.woken(projection.state.stats, 'earning_spot'), marked: Risk.isMarked(projection.state.stats, spot.id) };
+    } finally { arrivalContest = contest; kernel.states.set(id, saved); }
 };
 // A situation raised where the bot stands wakes the decisions that declare it, and its next
 // decision point takes them: a far bot's step (raised at its place in the field), a near body's
@@ -270,9 +324,11 @@ module.exports.cellsProbe = async (id) => {
     let at = Date.now() + 20000;
     const out = [];
     try {
-        // An Artisan (a class line that crafts hears its workshop), its workshop held.
+        // An Artisan (a class line that crafts hears its workshop), its workshop held; its ask for a
+        // spot answered before (no camp here takes its kit, Situations.spotAsk): a spot it is refused
+        // leaves it asking nothing again.
         const start = saved.state;
-        kernel.states.set(id, { ...saved, wishAdvisory: null, state: { ...start, phase: 'cold', activity: 'hunting',
+        kernel.states.set(id, { ...saved, wishAdvisory: null, spotAsk: { at: -1, none: true }, state: { ...start, phase: 'cold', activity: 'hunting',
             stats: { ...start.stats, classId: 56, woken: (Number(start.stats.woken) || 0) & ~Situations.BITS.workshop } } });
         for (const [name, payload] of [['spot_unreachable', { spotId: marked, reason: 'route_unavailable' }],
             ['goal_affordable:potions'], ['karma_changed'], ['source_stalled'], ['player_command', { spotId: commanded, at }]]) {
@@ -331,7 +387,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'askProbe', 'arrivalProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -446,6 +502,16 @@ parentPort.on('message', message => {
         if (rebuffResponse.error) throw Error(rebuffResponse.error);
         assert.deepEqual(rebuffResponse.value, { built: true, via: 'guide', done: false, woken: [false, false] },
             'a newbie reaching a town with a guide holds the guide answer on main\'s row, taken with the build it woke');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'ask'), askProbe: id });
+        const askResponse = await wait(message => message.probeId === 'ask');
+        if (askResponse.error) throw Error(askResponse.error);
+        assert.deepEqual(askResponse.value, { built: true, asked: 1, woken: [true, true] },
+            'a bot whose answer names no spot asks again on its build\'s step, and main\'s row keeps the ask woken');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'arrival'), arrivalProbe: id });
+        const arrivalResponse = await wait(message => message.probeId === 'arrival');
+        if (arrivalResponse.error) throw Error(arrivalResponse.error);
+        assert.deepEqual(arrivalResponse.value, { built: true, decided: true, woken: true, marked: true },
+            'a bot turned away at the spot it arrives at on the step that took its earning spot keeps that decision woken, the spot marked');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'page'), pageProbe: id });
         const pageResponse = await wait(message => message.probeId === 'page'); if (pageResponse.error) throw Error(pageResponse.error);
         assert.deepEqual(pageResponse.value, { own: false, main: true, none: false },

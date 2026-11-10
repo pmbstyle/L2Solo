@@ -343,6 +343,30 @@ function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     }
     return stats;
 }
+// A far step's packet (ColdSimulationWorker.planLifecycle) as it lands on another copy of the
+// bot's mind: main's row, the round's projection. Its bits travel as their change from the
+// mind the step read (before) to the one it ended with (after: its decisions' clears, its own
+// raises, one after a decision too), never as their values, so a raise that copy took
+// meanwhile, or that the round raised after the decision, stands (landMind). packet.mind:
+// { cleared, woken, waitCleared, waiting } (the bits gone and added, woken and waiting).
+function stepMind(packet, before, after) {
+    const keys = { ...packet };
+    delete keys.woken; delete keys.waiting;
+    const from = storedBits(before), to = storedBits(after), fromWait = Number(before?.waiting) || 0, toWait = Number(after?.waiting) || 0;
+    return { ...keys, mind: { cleared: from & ~to, woken: to & ~from, waitCleared: fromWait & ~toWait, waiting: toWait & ~fromWait } };
+}
+// A packet's mind (stepMind) on stats, a copy the caller owns (BotLifeState.prepareResolve):
+// over base, the mind its round started from (the planned state on the worker, main's row),
+// then what the round raised over base (round: the stats after the round's patch: an arrival's
+// contest_lost on its whole stats copy). Written on stats; returns it.
+function landMind(stats, mind, base, round = stats) {
+    const from = storedBits(base), fromWait = Number(base?.waiting) || 0;
+    const woken = (from & ~mind.cleared) | mind.woken | (storedBits(round) & ~from);
+    const waiting = (fromWait & ~mind.waitCleared) | mind.waiting | ((Number(round?.waiting) || 0) & ~fromWait);
+    if (woken !== storedBits(stats)) stats.woken = woken;
+    if (waiting !== (Number(stats.waiting) || 0)) stats.waiting = waiting;
+    return stats;
+}
 // The decisions a raise's facts took (player_command: the player decided the earning
 // spot): decided as that caller (counted, traced; one taken while it slept counts as
 // unwoken under that caller), their bits cleared woken and waiting on every plane.
@@ -779,5 +803,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, arrivesInTown,
-    DECISIONS, ALL, FIRST, raise, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, FIRST, raise, stepMind, landMind, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };
