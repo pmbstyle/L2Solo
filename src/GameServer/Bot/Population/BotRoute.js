@@ -52,7 +52,9 @@ function routable(state, party, partyMembers) {
     if (!state || state.phase !== 'cold' || state.stats?.travel) return false;
     if (!party && ClanPartyDuty.waiting(state)) return false;
     if (!(state.activity === 'hunting' || (party && state.activity === 'grouped'))) return false;
-    if (!party && BotCrystallization.ready(state)) return false;
+    // Prepared crystal inputs must not pin a bot with no hunting ground in
+    // town. A chosen improvement still owns the round in trip's leaf gate.
+    if (!party && state.spotId && BotCrystallization.ready(state)) return false;
     return !(party && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity)));
 }
 

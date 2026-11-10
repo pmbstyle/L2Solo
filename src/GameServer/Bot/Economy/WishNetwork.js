@@ -555,7 +555,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     };
     const finiteProduction = key => {
         const node = byKey.get(key);
-        return node?.object?.kind === 'resale' && node.paths?.some(path => ['craft', 'spoil_sale'].includes(path.kind)
+        return node?.object?.kind === 'resale' && node.paths?.some(path => ['craft', 'spoil_sale', 'drop_sale'].includes(path.kind)
             && path.trial === true && path.repeatable === false);
     };
     // A direct production root is itself the craft path. Its finite output

@@ -2699,7 +2699,10 @@ const PopulationService = {
         const selectedSpot = passiveActivity ? null : commandSpot(workerRequest?.route);
         const effectiveState = travellingState;
         const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
-        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
+        // An occupation round carries no fight: its accepted economy plan can
+        // buy or start a trip even when the bot has no hunting ground yet.
+        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling'
+            && precomputedResult?.debug?.reason !== 'selected_occupation') {
             return this.resolveColdMissingSpot(state, plannedState, startedAt);
         }
 
@@ -2968,10 +2971,11 @@ const PopulationService = {
         // A selling visit's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
         // the author's path (E306).
-        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids
+        const selectedOccupation = result.debug?.reason === 'selected_occupation';
+        if ((updatedState.activity === 'shopping' || selectedOccupation) && workerPlan?.economyPlan && !correctedBids
             && (!visitSells(updatedState) || updatedState.stats?.forcedMarketCleanup)) {
             const board = await BotAfkMarketService.executePlan(updatedState, workerPlan.economyPlan,
-                { reviewGoal: false, beforeWrite });
+                { reviewGoal: selectedOccupation, beforeWrite });
             updatedState = board.state || updatedState;
             // A deal of the plan staged a meeting preparation the bot pays in: the visit stops
             // at the staging point with no write of its own (its write voids its consent, read at

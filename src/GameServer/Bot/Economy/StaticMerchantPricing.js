@@ -9,8 +9,10 @@ const OfferQuery = require('./OfferQuery');
 // Loaded once: a require() per cheapestPurchase resolved the path on disk each call (~55% of it).
 const production = require('./ProductionPolicy');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
+const { isMainThread } = require('node:worker_threads');
 
 const BUYBACK_RATIO = 0.9;
+let boardSource = null;
 
 function basePrice(selfId) {
     return Number(ItemTemplateIndex.find(DataCache.items, selfId)?.template?.price || 0);
@@ -136,12 +138,30 @@ function botNpcListPrice(selfId) {
     return require('./ProductionPolicy').allowsNpcShot(id) ? npcPriceOf(id) : Infinity;
 }
 
-// What a bot pays an NPC for an item at the current rate, else (no NPC sells
-// it) its template price: the baseline consumable price of the hunt model.
+// A graded shot's replacement cost is the public stock price, else recent
+// paid trades, else the native materials-and-labour estimate. These are
+// valuations, not an unlimited supply or permission to buy from a fixed shop.
+function shotPrice(id, npc) {
+    const board = boardSource ? boardSource()
+        : isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null;
+    const ask = board?.first(id, SELL, { enchant: 0,
+        accept: row => ['shop', 'sell_ad'].includes(row.kind) && Number(row.count) > 0
+            && Number(row.price) > 0 && Number.isFinite(Number(row.price)) });
+    const quoted = Math.min(npc, Number(ask?.price || Infinity));
+    if (Number.isFinite(quoted)) return quoted;
+    const counters = require('./MarketCounters');
+    const evidence = counters.itemPriceEvidence(id);
+    if (Number.isFinite(evidence.logMedian)) return Math.max(1, Math.round(Math.exp(evidence.logMedian)));
+    const made = counters.firstPrice(id);
+    return Number.isFinite(made) && made > 0 ? made : BotEconomyPricing.scalePrice(basePrice(id));
+}
+
+// The common consumable valuation of the hunt model, stock and shot-use policy.
 function botBuyPrice(id) {
     const npc = cheapestPurchase(id, { forBot: true });
+    if (require('./ProductionPolicy').GRADED_SHOTS.has(Number(id))) return shotPrice(Number(id), npc);
     return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
 }
 
 module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
-    priceFor, sellersOf };
+    priceFor, sellersOf, useBoard: source => { boardSource = source; } };

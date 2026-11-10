@@ -92,6 +92,14 @@ async function main() {
         assert.equal(attacks.at(-1), available[0].fetchId(), 'an actual attacker still owns self-defense despite lost visibility');
 
         session.testIncoming = null;
+        available = [{ ...npc(98, 100), fetchLocZ: () => -1689, fetchDestId: () => bot.fetchId() }];
+        session.currentTargetId = 98;
+        bot.moving = false;
+        tick();
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(session.currentTargetId, undefined, 'a retained underground attacker cannot pin a surface hunter');
+        assert.equal(session.lastDecision.reason, 'vertical_gap');
+
         session.currentTargetId = undefined;
         session.targetRetryAfter = {};
         available = [npc(99, 100)];
@@ -99,6 +107,18 @@ async function main() {
         tick();
         assert.equal(session.currentTargetId, 99, 'ordinary visible hunting resumes');
         assert.equal(attacks.at(-1), 99);
+
+        session.currentTargetId = undefined;
+        const questMonster = { ...npc(100, 50), fetchTitle: () => 'Quest Monster' };
+        available = [questMonster, npc(101, 100)];
+        tick();
+        assert.equal(session.currentTargetId, 101, 'ordinary hunting skips the closer quest monster');
+        assert.equal(attacks.at(-1), 101);
+        session.currentTargetId = undefined;
+        session.testIncoming = questMonster;
+        tick();
+        assert.equal(attacks.at(-1), 100, 'the hunting restriction must still permit defense against a quest monster');
+        session.testIncoming = null;
 
         session.currentTargetId = undefined;
         available = [];

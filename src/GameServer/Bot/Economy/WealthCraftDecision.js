@@ -245,7 +245,7 @@ function resultAction(cursor) { return cursor.done ? cursor.value : null; }
 // The same finite route value also decides whether consuming/acquiring the
 // physical scroll beats sale/holding/clan alternatives. No lifetime multiplier.
 function recipePaths(state, recipe, { known = false, route = null, acquisition = null,
-    sale = null, clan = null, commission = null, ownUse = null, context = {} } = {}) {
+    sale = null, clan = null, commission = null, ownUse = null, context = {}, fundingFor = null } = {}) {
     const moneyPrice = Number(context.moneyPrice ?? (context.hourAdena > 0 ? 1 / context.hourAdena : NaN));
     const rows = [{ kind: 'hold', valueHours: 0, cashNow: 0, available: true }];
     const owned = Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0;
@@ -264,13 +264,19 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
     if (Number.isFinite(value) && value > 0 && CraftShopService.canCraft(state, recipe)) {
         const acquireCash = known || owned ? 0 : Number(acquisition?.cashNow ?? acquisition?.price);
         const acquisitionHours = known || owned ? 0 : Number(acquisition?.hours || 0);
+        const acquisitionFees = known || owned ? 0 : Number(acquisition?.fees || 0);
         const cash = Number(route?.basket?.cashCost || 0) + acquireCash;
         const scrollValue = !known && owned ? Number(sale?.price || context.independentPrice?.(recipe.recipeItemId) || 0) : 0;
+        const funding = fundingFor ? fundingFor({ route, acquireCash, scrollValue, acquisitionHours, acquisitionFees, context })
+            : { cash, terms: { valueHours: value } };
         if ((known || owned || acquisition?.available === true) && Number.isFinite(acquireCash) && acquireCash >= 0
-            && cash <= PurchaseFunding.spendable(state, 0, { valueHours: value })) {
+            && funding && funding.cash <= PurchaseFunding.spendable(state, 0, funding.terms)) {
             evaluate(known ? 'use' : owned ? 'learn' : 'acquire', { ownBenefitHours: value,
                 cashNow: acquireCash, ownInputOpportunityValue: scrollValue,
-                foregoneBenefitHours: acquisitionHours + Number(context.learningHours || 0) }, { recipeId: recipe.recipeId, route });
+                actualCashFees: acquisitionFees,
+                foregoneBenefitHours: acquisitionHours + Number(context.learningHours || 0) },
+            { recipeId: recipe.recipeId, route,
+                ...(fundingFor ? { funding: funding.terms, purchaseCap: funding.maxPrice } : {}) });
         }
     }
     if (commission?.available === true && commission.contract) evaluate('commission', commission.outcome || {}, { contract: commission.contract });

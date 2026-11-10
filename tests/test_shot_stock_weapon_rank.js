@@ -43,12 +43,15 @@ assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 1, slot: 7 }, { selfId
 const equippedSword = stateShot({ [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: true, equippedCount: 1, slot: 7 } });
 assert.deepStrictEqual([equippedSword.selfId, equippedSword.perAction], [1463, 3]);
 const staff = stateShot({ [BONE_STAFF_D]: { selfId: BONE_STAFF_D, amount: 1, equipped: true, equippedCount: 1, slot: 14 } }, MYSTIC);
-assert.deepStrictEqual([staff.selfId, staff.perAction], [2510, 2]);
+// The economic state may select ordinary or blessed spiritshots at the
+// current replacement price; either must retain the equipped weapon's grade.
+assert([2510,3948].includes(staff.selfId), 'D staff: D spiritshot variant');
+assert.strictEqual(staff.perAction, 2);
 const unequipped = stateShot({ [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: false, equippedCount: 0, slot: 7 } });
 assert.deepStrictEqual([unequipped.selfId, unequipped.perAction], [1835, 0], 'no weapon: no shot loads');
 assert.strictEqual(stateShot({ [SHIELD]: { selfId: SHIELD, amount: 1, equipped: true, slot: 8 } }).selfId, 1835);
-assert.strictEqual(ShotStock.planForState({ classId: MYSTIC, inventory: { [BONE_STAFF_D]:
-    { selfId: BONE_STAFF_D, equipped: true, slot: 14 } } }).selfId, 2510, 'classId from the state when stats has none');
+assert([2510,3948].includes(ShotStock.planForState({ classId: MYSTIC, inventory: { [BONE_STAFF_D]:
+    { selfId: BONE_STAFF_D, equipped: true, slot: 14 } } }).selfId), 'classId from the state when stats has none');
 // equippedCount alone counts as equipped.
 assert.strictEqual(stateShot({ [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: false, equippedCount: 1, slot: 7 } }).selfId, 1463,
     'state: equippedCount alone counts as equipped');

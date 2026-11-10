@@ -332,18 +332,18 @@ useRate('x10');
 const keltirX10 = Table.value('-15_42', 'dps', 5, true);
 near(keltirX10.exp, keltir.exp * 10, 'the committed table scales exp with the rate');
 useRate('x1');
-// Spot 20_-30 (level 13): at gap 8 the gate opens to every spawn and the walk
+// Spot -18_35 (level 13): at gap 8 the gate opens to every spawn and the walk
 // to the next mob falls to nothing (cap 3600000); the bot still kills, at
 // most what the spawns give back (T106 review: the old walk swap went
 // negative there and dropped the spot).
 {
     const offline = require('../data/Bots/spot-reward-npcs.json');
-    const [, entries] = offline.rows.find(row => row[0] === '20_-30');
-    Table.useSpots([{ id: '20_-30', npcEntries: entries.map(([selfId, count]) => ({ selfId, count, production: count * 6 })) }]);
+    const [, entries] = offline.rows.find(row => row[0] === '-18_35');
+    Table.useSpots([{ id: '-18_35', npcEntries: entries.map(([selfId, count]) => ({ selfId, count, production: count * 6 })) }]);
     try {
         for (const line of ['9', '24', '37']) for (const level of [21, 22]) {
-            const row = Table.value('20_-30', line, level, true), production = Table.production('20_-30', line, level, true);
-            assert(row && row.kills > 0 && Number.isFinite(row.kills), `line ${line} at ${level} hunts 20_-30`);
+            const row = Table.value('-18_35', line, level, true), production = Table.production('-18_35', line, level, true);
+            assert(row && row.kills > 0 && Number.isFinite(row.kills), `line ${line} at ${level} hunts -18_35`);
             assert(row.kills <= production + 1e-9, `line ${line} at ${level}: at most the production`);
         }
     } finally { Table.useSpots([]); }

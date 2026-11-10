@@ -22,6 +22,25 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
 DataCache.init();
 
+const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
+const emptyDropSpot = { avgLevel: 11, npcEntries: [{ selfId: 5070, count: 7 }],
+    npcNames: ['Tumran Orc Brigand'], rewards: { exp: 143, sp: 24, adenaMin: 26, adenaMax: 91 } };
+for (const rate of ['x1', 'x50']) {
+    useRate(rate);
+    // A kill already in progress still resolves its native rewards even when
+    // new ordinary hunting no longer admits this quest monster.
+    const kill = ColdKillRewards.roll({ spot: emptyDropSpot, kills: [{ npcSelfId: 5070 }], killerLevel: 19, rng: () => 0.5 });
+    assert.strictEqual(kill.adena, 0, 'a known empty drop table must never trigger fallback Adena');
+    assert.strictEqual(kill.progression[0].exp, 0);
+    assert.strictEqual(kill.progression[0].sp, 0);
+    assert.deepStrictEqual(kill.loot[0].drops, []);
+    const updatedSpot = { ...emptyDropSpot, npcEntries: [{ selfId: 380, count: 4 }], npcNames: ['Stone Guardian'] };
+    const pendingKill = ColdKillRewards.roll({ spot: updatedSpot, kills: [{ npcSelfId: 5070 }], killerLevel: 19, rng: () => 0.5 });
+    assert.strictEqual(pendingKill.adena, 0,
+        'a pending kill retains its explicit empty drop after its NPC disappears from the hunting catalogue');
+}
+useRate('x10');
+
 // Pure cold outcome controls use an already-owned original object id; this
 // does not manufacture inventory, award training or initialize a database.
 const ColdSoulCrystal = invoke('GameServer/Bot/Population/ColdSoulCrystal');

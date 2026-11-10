@@ -188,6 +188,7 @@ invoke('GameServer/Bot/AI/SpotValueTable').useSpots(() => planningSpots);
 invoke('GameServer/Bot/Economy/ItemDisposition').useBoard(() => boardReady());
 // The bots' claimed board lines: main's 'board_claims' table (BoardClaims).
 require('../Economy/BoardClaims').useRows(() => tables.rows('board_claims'));
+invoke('GameServer/Bot/Economy/StaticMerchantPricing').useBoard(() => boardReady());
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 // Planning producers import this same collector; its worker cap is64 rows.

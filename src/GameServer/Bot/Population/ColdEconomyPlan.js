@@ -165,7 +165,7 @@ function* prepareNative(state, economy, options) {
     // The bids (buy ads: the goal's and the build's watch rows, the standing craft bids
     // still needed) are posted on a town visit too, as a C4 player opens a buy store in
     // town; the field plan adds the held leaf's trip.
-    let goal, money;
+    let goal, money, recipeBidId = 0;
     {
         const needs = NeedsEvaluator.evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
         goal = needs[0];
@@ -203,8 +203,15 @@ function* prepareNative(state, economy, options) {
         }
         // A town visit's plan carries the craft step the visit selected (a crafter crafts
         // in town from what it brought), else the one its held decision prepared.
+        const selected = options.visit && !Object.hasOwn(options, 'preparedCraft') ? heldCraft(economy) : options.preparedCraft;
         const shot = options.build ? null : options.visit && !Object.hasOwn(options, 'preparedCraft') ? heldCraft(economy) && economy.shot
             : decideShot(state, economy, { ...options, ownLines: own });
+        // A prepared recipe bid already performs this seek. Rewriting its
+        // durable series first would move the native revision and discard
+        // the same command's publication every time the batch count changes.
+        recipeBidId = lines.find(line => line.intent?.shotRecipeInvestment === true
+            && Number(line.intent.recipeId) === Number(selected?.recipeTarget)
+            && Number(line.selfId) === Number(state.stats?.shotRecipeDemand?.itemId))?.selfId || 0;
         if (shot) plan.shot = shot;
     }
     // A complete buy batch is indivisible. Optional work is retained by the
@@ -215,6 +222,7 @@ function* prepareNative(state, economy, options) {
         if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', 'bytes');
     }
     fit(plan, showcaseRows);
+    if (recipeBidId && plan.buyAds?.some(row => row[0] === recipeBidId)) delete plan.shot;
     if (plan.d > 1 && Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', `bytes_${plan.d & ~1}`);
     if (Trace.detailed(state.characterId)) {
         const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',

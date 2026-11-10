@@ -736,7 +736,7 @@ class Attack {
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && targetKind === 'enemy') {
             return this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
-                .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.distance2d(actor, target) <= radius);
+                .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.isWithinSkillArea(actor, target, radius));
         }
 
         if (
@@ -763,7 +763,7 @@ class Attack {
             seen.add(id);
 
             if (!this.isValidSkillTarget(target, victimSkill, actor)) return false;
-            if (this.distance2d(center, target) > radius) return false;
+            if (!this.isWithinSkillArea(center, target, radius)) return false;
             if (sourceTarget === 'front_area' && !this.isFacing(actor, target, 120)) return false;
             return true;
         });
@@ -897,6 +897,16 @@ class Attack {
         const dx = (Number(src?.fetchLocX?.()) || 0) - (Number(dst?.fetchLocX?.()) || 0);
         const dy = (Number(src?.fetchLocY?.()) || 0) - (Number(dst?.fetchLocY?.()) || 0);
         return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    isWithinSkillArea(center, target, radius) {
+        const from = [center.fetchLocX?.(), center.fetchLocY?.(), center.fetchLocZ?.()].map(value => Number(value) || 0);
+        const to = [target.fetchLocX?.(), target.fetchLocY?.(), target.fetchLocZ?.()].map(value => Number(value) || 0);
+        // The spatial query is only a horizontal shortlist. Check height and
+        // geodata before an area effect can deal damage or create hate on a
+        // different floor, including close overlapping dungeon layers.
+        if (Math.hypot(...from.map((value, index) => value - to[index])) > radius) return false;
+        return invoke('GameServer/Geodata/GeodataEngine').hasLineOfSight(...from, ...to);
     }
 
     isNpcCombatant(actor) {

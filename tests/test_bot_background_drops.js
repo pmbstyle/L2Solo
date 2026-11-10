@@ -95,12 +95,24 @@ const originalRewards = DataCache.npcRewards, originalNpcs = DataCache.npcs;
 try {
     const first = { selfId: 910001, template: { name: ' Shared ' }, rewards: [{}] };
     const second = { selfId: 910002, template: { name: 'SHARED' }, spoils: [{}] };
-    DataCache.npcRewards = [{ selfId: 910000, template: { name: 'shared' }, rewards: [] }, first, second, first];
+    const empty = { selfId: 910000, template: { name: 'shared' }, rewards: [], spoils: [] };
+    DataCache.npcRewards = [empty, first, second, first];
     DataCache.npcs = [{ selfId: 910010, template: { name: 'Shared' } }];
     const named = { npcNames: ['shared', ' SHARED '] };
+    assert.strictEqual(BackgroundDropResolver.rewardDataForSpot({ ...named,
+        npcEntries: [{ selfId: empty.selfId, count: 1 }] }, () => 0, empty.selfId), empty,
+        'an exact empty row must take precedence over nonempty same-name alternatives');
+    assert.deepStrictEqual(BackgroundDropResolver.rollRewardsForFight({ spot: { ...named,
+        npcSelfIds: [empty.selfId] }, npcSelfId: empty.selfId, killerLevel: 1, rng: () => 0 }), { adena: 0, items: [] });
+    const weightedEmpty = { npcEntries: [{ selfId: empty.selfId, count: 3 }, { selfId: first.selfId, count: 1 }] };
+    assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(weightedEmpty, () => 0.74), empty,
+        'known empty rows retain their spawn weight when the killed NPC is not specified');
+    assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(weightedEmpty, () => 0.76), first);
+    assert.strictEqual(BackgroundDropResolver.rewardDataForSpot({ npcSelfIds: [919999] }, () => 0, 919999), null,
+        'missing data must remain distinct from a known empty drop table');
     assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(named, () => 0), first);
     assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(named, () => 0.5), second,
-        'empty rows do not enter cold candidates; duplicate source rows retain their ordinal weight');
+        'empty name aliases do not enter cold candidates; duplicate source rows retain their ordinal weight');
     assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(named, () => 0.9), first,
         'a repeated reward reference still contributes a separate cold candidate');
     assert.strictEqual(BackgroundDropResolver.rewardDataForSpot(named, () => { throw Error('unexpected roll'); }, 910010), first,

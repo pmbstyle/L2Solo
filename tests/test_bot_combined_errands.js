@@ -36,7 +36,7 @@ async function seed(items) {
         locX: 22000, locY: 140000, locZ: -3000 })).insertId);
     for (const item of items) await Database.setItem(id, { equipped: false, slot: 0, enchant: 0, ...item });
     return Life.upsertState({ characterId: id, accountName: account, name: `Combined${serial}`, level: 20,
-        phase: 'cold', activity: 'hunting', loc: { locX: 22000, locY: 140000, locZ: -3000 },
+        phase: 'cold', activity: 'hunting', spotId: 'combined-field', loc: { locX: 22000, locY: 140000, locZ: -3000 },
         currentRegion: 'Dion fields', inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         adena: Number(items.find(item => item.selfId === 57)?.amount || 0),
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { generatedCold: true, classId: 0 }, timing: {} }, 'combined_seed');
@@ -45,6 +45,7 @@ function held(state, id) { return Number(state.inventory?.[id]?.amount || 0); }
 function physical(rows, id) { return rows.filter(row => Number(row.selfId) === id).reduce((n, row) => n + Number(row.amount), 0); }
 async function run() {
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init(); await Afk.init();
+    require('./helpers/huntingReturnFixture')('combined-field', { locX: 22000, locY: 140000, locZ: -3000 }, 'Dion fields');
     // The mandatory floor has no economic/HP percentage threshold.
     assert.equal(Floor.evaluate({ hp: 1, mp: 1, slots: 79, load: 499, maxLoad: 1000 }), null);
     assert.equal(Floor.evaluate({ hp: 0 }).action, 'revive');

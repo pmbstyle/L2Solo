@@ -37,6 +37,9 @@ try {
     assert.deepStrictEqual(spot.missing, [], 'every listed input exists');
     assert.deepStrictEqual(TableFingerprint.compute('spot', root), spot, 'unchanged files: the same fingerprint');
     assert(spot.files['data/Npcs/a.json'] && spot.files['src/GameServer/Formulas.js'], 'a directory counts every file under it');
+    assert(spot.files['src/GameServer/Bot/Population/BackgroundDropResolver.js']
+        && TableFingerprint.compute('hunt', root).files['src/GameServer/Bot/Population/BackgroundDropResolver.js'],
+    'native drop resolution must invalidate both families of measured hunt tables');
     assert(!spot.files['data/Bots/spot-reward-npcs.json'] && TableFingerprint.compute('hunt', root).files['data/Bots/spot-reward-npcs.json'],
         'the reward catalogue is an input of the hunt tables only');
     put('data/Npcs/.DS_Store', 'x');

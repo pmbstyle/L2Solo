@@ -1036,15 +1036,33 @@ test('startup timeout and process interruption offer world recovery', async () =
     assert.ok(query(second.root, process.execPath, 'SELECT summary FROM bot_life_events', true).every(row => row.summary === 'original'));
 });
 
-test('developer checkout can run but archive installation never overwrites it', async () => {
-    const root = directory('developer');
+test('release updates replace local code in Git working copies after an explicit install', async () => {
     const initial = await serverFixture(oldScript);
-    await applyRelease(root, initial.stage, initial.manifest); put(root, '.git', 'gitdir: elsewhere');
-    const controller = new Controller({ userData: directory('developer-profile'), nodePath: process.execPath,
-        fetcher: async () => { throw new Error('Must not fetch or install'); } });
-    await controller.choose(root);
-    await assert.rejects(controller.install(), /developer Git checkout/);
-    assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), oldScript);
+    const nextScript = `${oldScript}\n// new release`;
+    const next = await serverFixture(nextScript, 'server-v0.2.0');
+    for (const gitType of ['directory', 'file']) {
+        const root = directory(`git-${gitType}`);
+        await applyRelease(root, initial.stage, initial.manifest);
+        if (gitType === 'directory') fs.unlinkSync(markerPath(root));
+        const gitFile = gitType === 'directory' ? '.git/HEAD' : '.git';
+        const gitContents = gitType === 'directory' ? 'ref: refs/heads/local-branch\n' : 'gitdir: elsewhere\n';
+        put(root, gitFile, gitContents);
+        const localScript = `${oldScript}\n// local edits`;
+        put(root, 'scripts/run-server.js', localScript);
+        const controller = new Controller({ userData: directory('git-profile'), nodePath: process.execPath, fetcher: next.fetcher });
+        await controller.choose(root);
+        await controller.checkUpdates();
+        assert.equal(controller.state.latest.updateAvailable, true);
+        assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), localScript);
+        await controller.downloadServerUpdate(); await controller.preparePromise;
+        assert.equal(controller.state.serverDownload.status, 'ready');
+        assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), localScript);
+        await controller.install();
+        assert.equal(controller.state.version, next.manifest.tag);
+        assert.equal((await readJson(markerPath(root))).tag, next.manifest.tag);
+        assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), nextScript);
+        assert.equal(fs.readFileSync(path.join(root, gitFile), 'utf8'), gitContents);
+    }
 });
 
 test('server archive downloads while the old world runs and is reused when applying offline', async () => {

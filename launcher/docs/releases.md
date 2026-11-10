@@ -4,16 +4,16 @@
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The next stable versions are launcher `0.2.2` and server `0.1.1`. Schema-2 server packages still require launcher `0.2.0` or newer; this update does not raise the updater protocol requirement. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable versions are launcher `0.2.3` and server `0.1.2`. Schema-2 server packages still require launcher `0.2.0` or newer; this update does not raise the updater protocol requirement. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
 # After review, commit and integration of the intended release source:
-git tag launcher-v0.2.2
-git push origin launcher-v0.2.2
+git tag launcher-v0.2.3
+git push origin launcher-v0.2.3
 
 # Wait for the launcher release workflow and all platform artifacts.
-git tag server-v0.1.1
-git push origin server-v0.1.1
+git tag server-v0.1.2
+git push origin server-v0.1.2
 ```
 
 Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI requires the tagged commit to be in `main`. Future server-only releases reuse the same launcher binaries until a new launcher version is published. PRs never publish releases. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases, but no longer trigger new publications.
@@ -80,6 +80,12 @@ For an offline macOS development build with an existing Electron distribution, `
 
 Runtime binaries are private, versioned application-profile files, not global Node.js installations. A new application seeds its tested runtime from the installer. A server requiring another supported version causes a verified official Node.js download into a separate cache entry. Existing versions are retained for other installations and rollback; application replacement never deletes them. The server ZIP carries its dependencies, so no Git checkout or npm installation is performed on the user's machine. If native dependencies are introduced, replace the portable server ZIP with platform/architecture-specific artifacts and native package tests before shipping them.
 
+Windows Setup checks create/write/delete access to the destination and any previous installation directories before running the old uninstaller. Access denied requests UAC elevation; the elevated installer rechecks access and retains the chosen folder and installation scope. Cancelling elevation, a locked or read-only file, and persistent access denial stop installation before removing the old version and report the affected path. A per-user installation rejects elevation using a different Windows account, which would otherwise register the update under that account's profile.
+
+`npm --prefix launcher run test:installer` compiles a disposable NSIS installer, its uninstaller and an access-check driver. On Windows it also tests denied directory/file ACLs, file locks, preservation of the installed version on failure and a successful retry. The fixture has a separate application ID, package name and installation folder. Other platforms perform compilation only; setting `L2SOLO_NSIS_WINE` to a Wine executable additionally exercises file operations in an isolated temporary prefix. Wine does not validate Windows ACLs or UAC. Interactive consent, cancellation and same-account elevation remain part of the native Windows release walkthrough.
+
+Installer includes use NSIS's include directory search so Windows and POSIX compilers resolve paths with their native separators. Installer check failures retain a nonzero exit status after Electron Builder's asynchronous cleanup. A launcher unit test injects a build failure with that cleanup hook active, preventing a failed compilation from producing a green CI result.
+
 The server directory owns `config/local.ini`, world/history databases, `tmp/saves`, logs and separate geodata. A running world is protected by the same database access lock used by backups and the server. Applying code requires a stopped world. Before file replacement a service snapshot checkpoints and checks both databases, then a journal binds old code and old data to the same update operation.
 
 The selected release object is fixed for the entire installation even when an informational check discovers a newer release. After installation, update availability is compared against the actual installed version.
@@ -90,7 +96,7 @@ A trial remains pending until initialization and both TCP listeners report readi
 
 The answer is persisted before recovery changes code or data. An interrupted recovery resumes the saved choice without asking again. Older journals also pin recovery destinations before the question, so later configuration changes or partial code recovery cannot redirect a confirmed restore. A confirmed restore records `recovering` before replacement and verifies backup checksums and database integrity before replacing either member of the pair. Legacy interrupted startups follow the same explicit choice. A crash after commit does not restore old gameplay data. If code or database recovery fails, the journal remains for a later recovery attempt. Old snapshots remain in `.l2solo/backups`; do not delete that directory or start an unverified installation through another entry point.
 
-Manual world backups remain separate. The updater snapshot is not an autosave schedule and does not change the existing restore/wipe confirmation behavior. Pending verification blocks restore/wipe and database path changes through the settings UI. Source checkouts containing `.git` are explicitly excluded from archive replacement.
+Manual world backups remain separate. The updater snapshot is not an autosave schedule and does not change the existing restore/wipe confirmation behavior. Pending verification blocks restore/wipe and database path changes through the settings UI. Archive updates also apply to existing Git working copies, independently of the current branch.
 
 Manual saves checkpoint and check both stopped databases, then close both SQLite connections before copying either file. The separate world access lock covers preparation, copying, validation and publication. Keeping an exclusive SQLite transaction open during `copyFileSync` makes Windows reject the copy with `EBUSY`; retrying the copy cannot release that lock. The history database contains finished events and analytics and belongs to the world/history pair; it is not a disposable temporary file.
 

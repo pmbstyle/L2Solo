@@ -6,6 +6,7 @@ require('./helpers/databaseIsolation');
 const fixture = isMainThread ? require('./helpers/isolatedSocialDatabase')('b-grade-craft-progression') : null;
 if (isMainThread) require('../src/Global');
 else require(workerData.workerPath);
+if (!isMainThread) invoke('GameServer/Bot/Economy/BotMarketPricing').useNpcOfferSnapshot(workerData.npcPriceRows);
 const Geodata = require('../src/GameServer/Geodata/GeodataEngine');
 const Data = invoke('GameServer/DataCache');
 if (isMainThread) Data.init();
@@ -472,6 +473,7 @@ console.log(`PASS B recipe variants and native craft/material goals (${isMainThr
 if (isMainThread) {
     const workerCheck = new Promise((resolve, reject) => {
         const worker = new Worker(__filename, { workerData: {
+            npcPriceRows: invoke('GameServer/Bot/Economy/BotMarketPricing').npcPriceRows(),
             workerPath: path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js'),
             sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: 'b-grade-craft-test' } });
         const timer = setTimeout(() => { worker.terminate(); reject(Error('B craft worker timed out')); }, 60000);

@@ -7,6 +7,9 @@ const path = require('node:path');
 const notRunTests = new Map([]);
 
 const tests = [
+    'tests/test_bot_buy_shop_free_wallet.js',
+    'tests/test_cold_loot_item_instances.js',
+    'tests/test_cold_missing_spot_occupation.js',
     'tests/test_perf_cpu_profile.js',
     'tests/test_perf_live_recorder.js',
     'tests/test_perf_heap_profile.js',
@@ -1103,6 +1106,11 @@ const tests = [
     'tests/test_shot_trade_demand.js',
     'tests/test_shot_setup_purchase.js',
     'tests/test_shot_crystal_residual.js',
+    'tests/test_shot_production_funding.js',
+    'tests/test_shot_production_horizon.js',
+    'tests/test_shot_recipe_supply.js',
+    'tests/test_shot_hunt_prices.js',
+    'tests/test_c_grade_shot_lifecycle.js',
     'tests/test_production_bid_quotes.js',
     'tests/test_backed_production_bids.js',
     'tests/test_buy_interest_index.js',

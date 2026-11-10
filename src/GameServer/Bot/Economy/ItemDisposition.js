@@ -499,10 +499,16 @@ function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
     const setup = shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? shot : wealth;
-    if (!setup || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)) return {};
-    const kit = recipeInputAmounts(setup.recipeId, setup.batches), gear = Number(setup.crystalGear || 0);
-    if (gear > 0) kit[gear] = Number(kit[gear] || 0) + 1;
-    return kit;
+    const inputs = setup && Number(setup.at) + 30 * 60 * 1000 > timestamp
+        ? recipeInputAmounts(setup.recipeId, setup.batches) : {};
+    if (state?.stats?.shotCraft?.series) {
+        const batches = require('./ShotProductionHorizon').retainedBatches(state,boardSource(),timestamp);
+        for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
+            inputs[id] = Math.max(Number(inputs[id] || 0),amount);
+    }
+    const gear = setup && Number(setup.at) + 30 * 60 * 1000 > timestamp ? Number(setup.crystalGear || 0) : 0;
+    if (gear > 0) inputs[gear] = Number(inputs[gear] || 0) + 1;
+    return inputs;
 }
 // A production kit: the recipe's materials for its batches.
 function recipeInputAmounts(recipeId, batches) {

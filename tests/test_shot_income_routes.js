@@ -1,6 +1,9 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('../src/Global');
+// At x50 the crafter's hunt can pay the public replacement price used below,
+// so the personal-reserve case exercises both own use and commercial output.
+require('./helpers/progressionRate').useRate('x50');
 invoke('GameServer/DataCache').init();
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const { BoardIndex, rowOf } = require('../src/GameServer/AfkTrade/BoardIndex');
@@ -115,10 +118,10 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
         assert.equal(native.exit.type, 'listing');
         assert.equal(native.exit.repeatable, false, 'observed demand is a forecast, never perpetual funding');
         if (recipeId === 20) {
-            // T43 table: buying D shots does not pay for this crafter, so its personal target is
-            // the stock it holds; it holds some, and only the rest of the output is for sale.
+            // Replacement prices now fund a larger personal stock. Give this
+            // fixture enough MP to refill it and still serve public customers.
             const held = 500;
-            const producer = { ...state, level: 52, inventory: {
+            const producer = { ...state, level: 52, vitals: { ...state.vitals, mp: 3000, maxMp: 3000 }, inventory: {
                 ...Object.fromEntries(recipe.materials.map(row => [row.selfId,
                     { selfId: row.selfId, amount: row.amount * 64, stackable: true }])),
                 [recipe.productId]: { selfId: recipe.productId, amount: held, stackable: true },

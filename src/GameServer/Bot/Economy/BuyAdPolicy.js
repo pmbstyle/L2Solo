@@ -1,7 +1,7 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const { isNativeSource, purchaseWorth } = require('./TradeIntent');
+const { isNativeSource, purchaseWorth, shotRecipeCap } = require('./TradeIntent');
 const Diagnostics = require('./EconomyDiagnostics');
 const BoardRules = require('../../AfkTrade/BoardRules');
 const ArrowStock = require('../../Inventory/ArrowStock');
@@ -132,15 +132,16 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     let worth = goal.intent?.key && ctx.economy.moneyPrice > 0
         ? purchaseWorth(goal.intent, ctx.economy.moneyPrice)
         : ctx.economy.worth(selfId) ?? requestedPrice;
+    if (goal.intent?.shotRecipeInvestment === true && (!(worth > 0) || !Number.isFinite(worth))) return null;
     if (!(worth > 0)) {
         const belief = PriceBelief.prior(selfId, ctx);
         if (!belief) return null;
         worth = Math.exp(belief.mu);
     }
-    const cap = Math.floor(Math.min(worth, spendable));
+    const cap = Math.floor(Math.min(worth, spendable, shotRecipeCap(state, selfId, spendable)));
     const town = options.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, [{ selfId }]);
     const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
-        preferProvidedWorth: goal.intent?.retainedProject === true,
+        preferProvidedWorth: goal.intent?.retainedProject === true || goal.intent?.shotRecipeInvestment === true,
         money: spendable, town,
         // The bid's roll: one per bot and item (a goal has no identity of its own).
         rollKey: ['bid', Number(state.characterId || 0), selfId] });

@@ -429,7 +429,7 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
     if (!target || target.fetchAttackable?.() !== true || target.isDead?.() === true || target.state?.fetchDead?.() === true) {
         return null;
     }
-    return targetDistance(bot, target) <= radius ? target : null;
+    return PartyAwareness.withinCombatHeight(bot, target) && targetDistance(bot, target) <= radius ? target : null;
 }
 
 // What the bot has now, once per scan; a pet keeps its own HP (actorProfiles).
@@ -1184,6 +1184,12 @@ module.exports = {
                         }
                         clearTarget(session, bot, targetId);
                     } else {
+                        if (!PartyAwareness.withinCombatHeight(bot, npc)) {
+                            bot.automation?.abortAll?.(bot);
+                            clearTarget(session, bot, targetId, true);
+                            session.lastDecision = { action: 'abandon_target', reason: 'vertical_gap', targetId };
+                            return;
+                        }
                         const npcAggroedOnBot = Number(npc.fetchDestId?.() || 0) === Number(bot.fetchId());
                         if (!npcAggroedOnBot && !bot.state.fetchHits() && !bot.state.fetchCasts()
                             && !HuntingVisibility.canSee(bot, npc)) {

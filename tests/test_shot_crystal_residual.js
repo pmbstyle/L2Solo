@@ -53,6 +53,12 @@ const originalBoard = Afk.boardIndex;
     assert.equal(route.basket.cashCost, 121162 + 15, 'the whole physical shield and ore must still be funded');
     assert.equal(route.basket.residualValue, 52 * 1500, 'only unused crystals retain their NPC liquidation value');
     assert(route.profit > 30000, 'the finite production route covers its one-time recipe purchase');
+    const junior = { ...state, level: 37, stats: { ...state.stats, classId: 56,
+        coldCombat: { skillSource: 'database', skills: [{ selfId: 248, level: 1 }] } } };
+    assert.equal((await probe(junior, input)).selected, null,
+        'a C recipe cannot fund breaking C gear without Crystallize 2');
+    assert.equal(Shots.recheck(junior, selected.recipeRoute), null,
+        'the native recheck also rejects a lost crystallization capability');
     assert.equal(Market.itemDeals(recipe.productId).deals, 0, 'valuation invents no shot trade history');
     assert.equal(Shots.recheck({ ...state, adena: route.basket.cashCost - 1 }, selected.recipeRoute), null,
         'retained crystals cannot pay the up-front input purchase');
@@ -63,6 +69,10 @@ const originalBoard = Afk.boardIndex;
         town: 'Giran', status: 'active', revision: 1,
         lines: [{ id: 9108800, lineId: 9108800, selfId: 1459, count: 1, price: 1000 }] };
     board.put(crystals);
+    const juniorDirect = await probe(junior, { ...input,
+        boardRows: [...records, crystals].map(record => [record.id, rowOf(record)]) });
+    assert.equal(Policy.unpackStep(Policy.packStep(juniorDirect.selected))?.recipeTarget, 21,
+        'an Artisan can still craft C shots by buying ready C crystals');
     const direct = await probe(state, { ...input, boardRows: [...records, crystals].map(record => [record.id, rowOf(record)]) });
     const directRoute = Shots.recheck(state, Policy.unpackStep(Policy.packStep(direct.selected)).recipeRoute);
     assert(directRoute);

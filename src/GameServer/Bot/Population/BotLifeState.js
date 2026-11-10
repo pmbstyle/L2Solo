@@ -438,7 +438,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
 }
 
 function reconcileEquipmentInventory(state = {}) {
-    const inventory = GearAcquisitionPlanner.equipInventoryUpgrades(state, state.inventory || {});
+    const inventory = require('../Economy/ShotCrystalInput').equip(state,state.inventory || {},GearAcquisitionPlanner.equipInventoryUpgrades);
     return reconcileFulfilledEquipmentPlan({
         ...state,
         inventory,
@@ -2869,29 +2869,38 @@ const BotLifeState = {
         }
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
+            const previous = inventory[key] || {};
+            const template = itemTemplate(item.selfId);
             const amount = Number(item.amount || 0);
-            const kind = item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '';
+            const kind = item.kind || previous.kind || template?.template?.kind || '';
             const protectedStarterLoot = Number(item.sourceMobLevel || 0) > 0
                 && Number(item.sourceMobLevel) <= 5
                 && !String(kind).startsWith('Other.Material')
                 ? amount
                 : 0;
-            const nextAmount = Number(inventory[key]?.amount || 0) + amount;
+            const nextAmount = Number(previous.amount || 0) + amount;
             const starterMobLootAmount = Math.min(
                 nextAmount,
-                Number(inventory[key]?.starterMobLootAmount || 0) + protectedStarterLoot
+                Number(previous.starterMobLootAmount || 0) + protectedStarterLoot
             );
             // Loot adds to the stack the bag holds: its worn copies, instances and
             // reserves stay (a looted second dagger must not unequip the first).
-            inventory[key] = {
-                ...inventory[key],
+            const acquired = {
+                ...previous,
                 selfId: item.selfId,
-                name: item.name || inventory[key]?.name || itemName(item.selfId),
+                name: item.name || previous.name || itemName(item.selfId),
                 amount: nextAmount,
                 kind,
-                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none',
+                rank: item.rank || previous.rank || template?.etc?.rank || 'none',
+                stackable: itemStackable(item.selfId, item),
+                slot: Number(previous.slot || template?.etc?.slot || 0),
                 ...(starterMobLootAmount > 0 ? { starterMobLootAmount } : {})
             };
+            // Loot grows the bag without replacing its physical copies or worn
+            // slots. New gear gets anonymous +0 copies until the native sync.
+            if (acquired.stackable) delete acquired.instances;
+            else acquired.instances = previous.instances || [];
+            inventory[key] = InventorySummary.completeInstances(acquired);
         });
         if (adena > 0) {
             inventory['57'] = {
@@ -2939,11 +2948,11 @@ const BotLifeState = {
         }
 
         if (consumeFacts) Consumption.attach(result, consumeFacts);
-        const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+        const equippedInventory = require('../Economy/ShotCrystalInput').equip({
             ...state,
             level,
             stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
-        }, inventory);
+        }, inventory,GearAcquisitionPlanner.equipInventoryUpgrades);
         const nextActivity = result.patch?.activity || state.activity;
         const nextState = {
             ...state,
@@ -3479,7 +3488,7 @@ const BotLifeState = {
                 };
             });
             const equipped = options.equip === true
-                ? GearAcquisitionPlanner.equipInventoryUpgrades(state, inventory)
+                ? require('../Economy/ShotCrystalInput').equip(state,inventory,GearAcquisitionPlanner.equipInventoryUpgrades)
                 : inventory;
             const refreshed = {
                 ...state,
@@ -3854,6 +3863,15 @@ const BotLifeState = {
         if (!recipeIds) {
             const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state)?.activity;
             recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+            // A remote shot scroll arrives through the common market errand.
+            // Keep its accepted learning target through that handoff, before
+            // the visit's cleanup can publish the paid scroll as surplus.
+            const wanted = state.stats?.shotRecipeDemand;
+            const shot = wanted && invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+            if (shot && Number(shot.recipeItemId) === Number(wanted.itemId)
+                && require('../Economy/ProductionPolicy').GRADED_SHOTS.has(Number(shot.productId))) {
+                recipeIds = [...new Set([...recipeIds, Number(shot.recipeId)])];
+            }
         }
         if (!recipeIds.length) return Promise.resolve(state);
         const candidates = Object.values(state.inventory || {})
@@ -3869,7 +3887,7 @@ const BotLifeState = {
                     ? [{ ...decision.recipe, name: item.name }] : [];
             });
             if (!recipes.length) return state;
-            let saved = state, changed = false;
+            let saved = state, changed = false, learnedShotTarget = false;
             for (const recipe of recipes) {
                 const admitted = await EconomyCommit.admit(saved, EconomyCommit.KINDS.learn);
                 let learned;
@@ -3877,6 +3895,9 @@ const BotLifeState = {
                     { economyCommand: admitted.command }); }
                 finally { EconomyCommit.finish(state.characterId, admitted.command); }
                 if (learned.learned?.length) changed = true;
+                if (learned.learned?.some(entry => Number(entry.recipeId) === Number(state.stats?.shotRecipeDemand?.recipeId))) {
+                    learnedShotTarget = true;
+                }
                 if (learned.coldLifeRow) saved = EconomyCommit.acceptRow(learned.coldLifeRow);
                 if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
             }
@@ -3884,6 +3905,10 @@ const BotLifeState = {
             // on the revision it moved), or after the bot's command: built on its row.
             const raised = changed ? await invoke('GameServer/Bot/Economy/CraftWorkshopService').recipeLearned(state.characterId) : null;
             if (raised) saved = DecisionEvents.withRaise(saved, raised);
+            if (learnedShotTarget && saved.phase === 'cold' && !this.hotRow(saved.characterId)) {
+                saved = await this.upsertState({ ...saved, stats: { ...saved.stats, shotRecipeDemand: null } },
+                    'shot_recipe_acquired') || saved;
+            }
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });
             return saved;
         }).catch(error => {

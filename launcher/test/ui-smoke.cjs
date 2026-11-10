@@ -33,6 +33,7 @@ module.exports = async function smoke({ window, controller, directory }) {
     };
     const rendererErrors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') rendererErrors.push(event.message); });
+    await put('.git/HEAD', 'ref: refs/heads/local-branch\n');
     await put('package.json', JSON.stringify({ version: '0.1.0' }));
     await put('config/default.ini', await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8'));
     await put('config/local.ini', '[OpenRouter]\nreasoningEffort = legacy-test-value\n[GameServer]\nadvertisedHostname = 100.92.15.42\n');
@@ -42,6 +43,7 @@ module.exports = async function smoke({ window, controller, directory }) {
     prepareWorld(root, controller.nodePath);
     await controller.choose(root);
     await wait("document.getElementById('primary-label').textContent === 'Start server'");
+    assert.equal(await js("document.getElementById('server-subtitle').textContent"), 'Local server · Chronicle 4');
     assert.equal(await js("document.getElementById('channel-label').textContent"), controller.channel === 'preview' ? 'PREVIEW' : 'BETA');
     assert.equal(await js("document.getElementById('preview-notice').hidden"), controller.channel !== 'preview');
     assert.equal(await js("document.querySelector('.brand > div').firstChild.textContent"), 'L2Solo');
@@ -202,6 +204,8 @@ module.exports = async function smoke({ window, controller, directory }) {
         notes, url: 'https://github.com/pmbstyle/L2Solo/releases/tag/launcher-v0.2.0-preview.4' };
     controller.publish();
     await wait("document.querySelector('#release-notes h2')?.textContent === 'What changed'");
+    assert.equal(await js("document.getElementById('install-update').disabled"), false);
+    assert.equal(await js("document.getElementById('update-description').textContent"), 'Installed: v0.1.0. Your database and settings will be preserved.');
     assert.equal(await js("document.querySelectorAll('#release-notes').length"), 1);
     assert.equal(await js("document.querySelectorAll('#release-notes li').length"), 2);
     assert.equal(await js("document.querySelectorAll('#release-notes pre code').length"), 1);

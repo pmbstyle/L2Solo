@@ -28,11 +28,18 @@ function isCastleUtility(npc) {
     return CASTLE_ROYAL_GATEKEEPER.test(npcName(npc));
 }
 
+function isQuestMonster(npc) {
+    const title = typeof npc?.fetchTitle === 'function' ? npc.fetchTitle()
+        : npc?.title || npc?.template?.title || npc?.model?.title || npc?.model?.template?.title;
+    return String(title || '').trim().toLowerCase() === 'quest monster';
+}
+
 function canHunt(npc) {
     return !!npc
         && !BotRaidSafety.isProtectedRaidEntity(npc)
+        && !isQuestMonster(npc)
         && !isSiegeGuard(npc)
         && !isCastleUtility(npc);
 }
 
-module.exports = { npcName, clanName, isSiegeGuard, isCastleUtility, canHunt };
+module.exports = { npcName, clanName, isSiegeGuard, isCastleUtility, isQuestMonster, canHunt };

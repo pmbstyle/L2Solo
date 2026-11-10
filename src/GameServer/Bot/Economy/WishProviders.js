@@ -851,37 +851,41 @@ function buildProjection(state, ctx, deps) {
             paths: [{ ...path, trial: true, repeatable: false, quoted: true,
                 town: row.town, tripHours: row.trip.hours, tripFees: row.trip.fees }] });
     }
-    // A spoiler can earn the kit by supplying finite public demand for
-    // recipes, parts and resources. No buyer means no speculative spoil goal.
+    // Supply finite public demand: spoilers can gather their usual goods;
+    // shot scrolls with drop-only sources can also be collected by a hunter.
     if (sourceIndex && ctx.board?.itemIds && Progression.personal(state)) {
-        if (spoilerOf() && ctx.hourAdena > 0) {
+        const spoils = spoilerOf();
+        if (ctx.hourAdena > 0) {
             const demand = [];
             for (const id of ctx.board.itemIds(3)) {
-                if (!sourceIndex.get(Number(id))?.some(entry => entry.kind === 'spoil')) continue;
+                const shotScroll = need('./ShotCraftPolicy').SHOT_RECIPE_ITEM_IDS.has(Number(id));
+                const spoilOnly = !!spoils && sourceIndex.get(Number(id))?.some(entry => entry.kind === 'spoil');
+                if (!sourceIndex.get(Number(id))?.some(entry => spoils && entry.kind === 'spoil'
+                    || shotScroll && entry.kind === 'drop')) continue;
                 if (present(id) || nodeKeys.has(`resale:${id}`)) continue;
                 const offer = ctx.board.first(id, 3, { excludeOwner: state.characterId, enchant: 0 });
                 if (!offer || !(offer.price > ctx.buyback(id))) continue;
                 const units = Math.max(1, Math.min(50, Math.floor(offer.count)));
-                demand.push({ id, offer, units, ceiling: units * (offer.price - ctx.buyback(id)) });
+                demand.push({ id, offer, units, shotScroll, spoilOnly, ceiling: units * (offer.price - ctx.buyback(id)) });
                 demand.sort((a, b) => b.ceiling - a.ceiling || a.id - b.id);
                 if (demand.length > 8) demand.pop();
             }
             let admitted = 0;
-            for (const { id, offer, units } of demand) {
+            for (const { id, offer, units, shotScroll, spoilOnly } of demand) {
                 if (admitted >= 3) break;
                 const trip = ctx.trip?.details?.(offer.town);
                 if (!trip?.known) continue;
                 const sale = need('./PriceDecision').bidSale(state, offer, { board: ctx.board, persona: ctx.persona,
                     timestamp, asks: ctx.board.list(id, SELL), units, oldUnits: 0, residualUnitValue: ctx.buyback(id) });
                 if (sale.status !== 'ready' || !(sale.gross > 0)) continue;
-                const source = sourcePath(id, true);
-                if (!source || source.kind !== 'spoil') continue;
-                const key = `spoil:${id}`;
+                const source = sourcePath(id, spoilOnly);
+                if (!source || source.kind !== 'spoil' && !(shotScroll && source.kind === 'drop')) continue;
+                const key = `${source.kind}:${id}`;
                 if (!add({ key, object: Number(id), price: 0, paths: [source] })) continue;
                 root({ key: `resale:${id}`, need: 'power', object: { itemId: Number(id), amount: units, kind: 'resale' },
                     progressionFunding: progression.required,
                     valueHours: Math.max(0, sale.gross - units * ctx.buyback(id)) / ctx.hourAdena,
-                    paths: [{ kind: 'spoil_sale', trial: true, repeatable: false, quoted: true,
+                    paths: [{ kind: source.kind === 'spoil' ? 'spoil_sale' : 'drop_sale', trial: true, repeatable: false, quoted: true,
                         town: offer.town, tripHours: trip.hours, tripFees: trip.fees,
                         requirements: [{ key, amount: units }] }] });
                 admitted++;

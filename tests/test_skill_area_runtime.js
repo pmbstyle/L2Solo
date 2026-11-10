@@ -8,6 +8,7 @@ invoke('GameServer/Actor/PvpFlag').mark = () => {};
 const Attack = invoke('GameServer/Actor/Attack');
 const SkillModel = invoke('GameServer/Model/Skill');
 const World = invoke('GameServer/World/World');
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
 
 function actor() {
     return {
@@ -170,6 +171,13 @@ const primary = npc(1004078, 100, 0);
 const nearby = npc(1004079, 240, 0);
 const outside = npc(1004080, 500, 0);
 const deadNearby = npc(1004081, 120, 0, true);
+const underground = npc(1004082, 110, 0);
+underground.fetchLocZ = () => -1689;
+const closeFloor = npc(1004083, 120, 0);
+closeFloor.fetchLocZ = () => 64;
+const behindWall = npc(1004084, 130, 0);
+const originalVisibility = Geo.hasLineOfSight;
+Geo.hasLineOfSight = (_x, _y, _z, x, _toY, z) => z !== 64 && x !== behindWall.fetchLocX();
 const testSession = session(caster);
 const attack = new Attack();
 const originalWorldUser = World.user;
@@ -183,7 +191,7 @@ World.fetchNpcsInRadius = (x, y, radius) => {
     assert.strictEqual(x, primary.fetchLocX(), 'TARGET_AREA lookup should be centered on selected target X');
     assert.strictEqual(y, primary.fetchLocY(), 'TARGET_AREA lookup should be centered on selected target Y');
     assert.strictEqual(radius, 200, 'TARGET_AREA lookup should use sourced skill radius');
-    return [primary, nearby, outside, deadNearby];
+    return [primary, nearby, outside, deadNearby, underground, closeFloor, behindWall];
 };
 Math.random = () => 0;
 caster.setDestId(primary.fetchId());
@@ -198,6 +206,7 @@ try {
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
     World.user = originalWorldUser;
     Math.random = originalRandom;
+    Geo.hasLineOfSight = originalVisibility;
 }
 
 assert.strictEqual(primary.fetchHp(), 967, 'runtime TARGET_AREA skill should damage the primary NPC');
@@ -206,12 +215,46 @@ assert.strictEqual(outside.fetchHp(), 1000, 'runtime TARGET_AREA skill should no
 assert.strictEqual(deadNearby.fetchHp(), 0, 'runtime TARGET_AREA skill should ignore dead non-corpse targets');
 assert.strictEqual(primary.enteredCombat, 1, 'primary NPC should enter combat after taking area damage');
 assert.strictEqual(nearby.enteredCombat, 1, 'secondary NPC should enter combat because it took area damage, not only social aggro');
+for (const target of [underground, closeFloor, behindWall]) {
+    assert.strictEqual(target.fetchHp(), 1000, 'area damage must not cross floors or walls');
+    assert.strictEqual(target.enteredCombat, 0, 'an excluded area target must receive no aggression');
+}
 
 const launched = testSession.packets.find((packet) => packet?.[0] === 0x76);
 assert(launched, 'magic area skill should broadcast MagicSkillLaunched');
 assert.strictEqual(launched.readInt32LE(13), 2, 'MagicSkillLaunched should include every affected target');
 assert.strictEqual(launched.readInt32LE(17), primary.fetchId(), 'MagicSkillLaunched should include primary target first');
 assert.strictEqual(launched.readInt32LE(21), nearby.fetchId(), 'MagicSkillLaunched should include secondary target');
+
+// The same native impact path for a self-centered physical aura: this is
+// the Whirlwind that used to hit a dungeon mob under a surface hunter.
+{
+    const auraCaster = actor(), auraSession = session(auraCaster);
+    auraCaster.backpack.fetchTotalWeaponKind = () => 'Weapon.Pole';
+    const surface = npc(1004085, 80, 0), deep = npc(1004086, 90, 0), close = npc(1004087, 100, 0);
+    deep.fetchLocZ = () => -1689;
+    close.fetchLocZ = () => 64;
+    const data = require('../data/Skills/Active/active.json').find(row => row.selfId === 36);
+    const whirlwind = new SkillModel({ selfId: 36, ...data.template, ...data.time, ...data.levels[2], level: 3 });
+    const fetchNpcs = World.fetchNpcsInRadius;
+    World.fetchNpcsInRadius = () => [surface, deep, close];
+    Geo.hasLineOfSight = (_x, _y, _z, _toX, _toY, z) => z !== 64;
+    Math.random = () => 0;
+    try {
+        attack.remoteHit(auraSession, auraCaster, whirlwind);
+        assert.strictEqual(surface.fetchHp(), 967, 'Whirlwind still damages a nearby enemy on its floor');
+        for (const target of [deep, close]) {
+            assert.strictEqual(target.fetchHp(), 1000, 'Whirlwind cannot damage another floor');
+            assert.strictEqual(target.enteredCombat, 0, 'Whirlwind cannot pull another floor into combat');
+        }
+        assert.strictEqual(surface.enteredCombat, 1, 'Whirlwind still provokes the reachable victim');
+    } finally {
+        World.fetchNpcsInRadius = fetchNpcs;
+        Geo.hasLineOfSight = originalVisibility;
+        Math.random = originalRandom;
+        invoke('GameServer/Actor/CombatStance').clear(auraCaster);
+    }
+}
 assert.deepStrictEqual(caster.statusUpdates.map((entry) => entry.id), [caster.fetchId()],
     'the caster updates its own vitals after paying the cast');
 assert.deepStrictEqual(

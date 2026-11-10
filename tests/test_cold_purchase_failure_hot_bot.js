@@ -42,6 +42,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
         DataCache.init();
+        require('./helpers/huntingReturnFixture')('field', { locX: 100, locY: 200, locZ: -10 }, 'Field');
 
         const originals = {
             execute: Database.execute,
