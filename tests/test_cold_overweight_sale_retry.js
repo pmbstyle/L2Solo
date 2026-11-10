@@ -9,7 +9,7 @@ const Rules = invoke('GameServer/Items/NpcSellRules');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Errands = invoke('GameServer/Bot/Economy/ColdMarketService');
-const Goals = invoke('GameServer/Bot/Goals/GoalService');
+const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const ids = [731501, 731502];
 
@@ -19,8 +19,8 @@ const ids = [731501, 731502];
         await Database.createAccount('bot_loaded_shaman', 'fixture');
         await Database.execute(["UPDATE characters SET username='bot_loaded_shaman' WHERE id IN (?,?)", ids]);
         await Life.init();
-        const returnTo = require('./helpers/huntingReturnFixture')('shaman-field',
-            { locX: -29133, locY: -100191, locZ: -2728 }, 'Hunting ground');
+        // The board's init subscribes the owner-bag trim of conditional ads (reconcileOwnStock).
+        Life.subscribePublications(Afk.reconcileOwnStock);
         for (const id of ids) {
             await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 361 });
             if (id === ids[0]) {
@@ -48,30 +48,33 @@ const ids = [731501, 731502];
                 loc: { locX: -44600, locY: -112400, locZ: -240 }, inventory,
                 vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
                 stats: { classId: 49, generatedCold: true, marketSellSeen: retry,
-                    marketReturn: returnTo,
+                    marketReturn: { loc: { locX: -29133, locY: -100191, locZ: -2728 }, regionName: 'Hunting ground' },
                     townVisit: { town: 'Orc Village', reason: 'sell_inventory', completed: true, startedAt: now - 25000 } }, timing: {} }, 'shaman_sale_fixture');
             if (id === ids[0]) {
                 assert.equal(Floor.bagFor(state, now)?.action, 'unload', 'surplus armor requires a physical unload');
                 const before = await world.amount(id, 57);
                 const intent = Population.marketListingIntent(state);
                 assert(intent.cleanup, 'a completed visit with a prepared board plan still requires the native unload');
-                const saved = { errands: Errands.finishTownErrands, review: Goals.review, reconcile: Market.reconcile };
+                const saved = { errands: Errands.finishTownErrands, needs: Needs.needs, reconcile: Market.reconcile };
                 // Restocking and choosing the next economic goal are separate
                 // boundaries; the complete visit still uses real NPC mutation,
                 // persistence and return travel below.
                 Errands.finishTownErrands = async row => row;
-                Goals.review = async () => null;
+                Needs.needs = () => null;
                 Market.reconcile = async row => ({ state: row });
                 let result;
                 try {
                     result = { state: await Population.finishColdMarketStep(state, { economyPlan: {} }, null, true,
                         { state, closed: false }, { state, purchased: false }, null) };
                 } finally {
-                    Errands.finishTownErrands = saved.errands; Goals.review = saved.review; Market.reconcile = saved.reconcile;
+                    Errands.finishTownErrands = saved.errands; Needs.needs = saved.needs; Market.reconcile = saved.reconcile;
                 }
                 assert.equal(await world.amount(id, 21), 0, 'a current weight floor bypasses the sale retry without a departure marker');
                 assert.equal(await world.amount(id, 28), 0);
                 assert.equal(await world.amount(id, 2368), 1, 'the equipped weapon stays owned');
+                for (let turn = 0; turn < 50 && Afk.boardIndex().ownerLines(id).some(line => [21, 28].includes(line.selfId)); turn++) {
+                    await new Promise(resolve => setImmediate(resolve));
+                }
                 for (const ad of ads) assert.notEqual((await Database.fetchAfkTradeShop(ad))?.status, 'active',
                     'an NPC liquidation retires the conditional offer backed by those goods');
                 assert(!Afk.boardIndex().ownerLines(id).some(line => [21, 28].includes(line.selfId)),
@@ -81,8 +84,7 @@ const ids = [731501, 731502];
                 assert.equal(await world.amount(id, 57), before + value(21) * 8 + value(28) * 7, 'the unload pays exact NPC buyback once');
                 assert.equal(Floor.bagFor(result.state, now), null, 'the bot can resume hunting after the visit');
                 assert.deepEqual(result.state.stats.marketSellSeen, retry, 'the ordinary market retry remains in force');
-                assert.equal(result.state.activity, 'traveling', 'the whole visit resumes the original outing after unloading');
-                assert.equal(result.state.stats.travel.reason, 'return_after_market');
+                assert.equal(result.state.activity, 'resting', 'the whole visit ends after unloading: the worker resumes the outing');
                 await Listing.open({ ...result.state, activity: 'shopping' }, { now: now + 1000 });
                 assert.equal(await world.amount(id, 57), result.state.adena, 'a second visit cannot pay for the removed items again');
             } else {

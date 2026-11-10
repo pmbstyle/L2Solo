@@ -1,5 +1,5 @@
 'use strict';
-// T107 (docs/game-decisions.md "Solo self-heal"): a solo bot on mobs heals
+// Solo self-heal (our choice): a solo bot on mobs heals
 // itself by one rule, hot and cold: in a fight only when it would not outlive
 // the mob otherwise, between fights when the heal beats sitting.
 const assert = require('node:assert/strict');

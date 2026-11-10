@@ -257,6 +257,9 @@ const DataCache = {
         // append whole rows); strict-mode writers into a row now throw.
         DataCache.npcs.forEach(deepFreeze);
         DataCache.npcSpawns.forEach(deepFreeze);
+        // The newbie table is read by identity (StarterItemCatalog); a creation
+        // writes copies of its rows (starterRows).
+        DataCache.newbieItems.forEach(deepFreeze);
         utils.infoSuccess('Datapack', 'cached');
     },
 

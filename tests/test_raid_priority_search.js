@@ -55,7 +55,7 @@ async function run() {
     const forecasts = [];
     const targets = catalog.all().filter(s => s.avgLevel >= 43 && s.avgLevel <= 48);
     const dependencies = {
-        config: { opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidIntervalMs: 900000,
+        config: { opportunisticRaidIntervalMs: 900000,
             opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidAliveFraction: .5,
             opportunisticRaidMaxParties: 2, opportunisticRaidExpeditionMs: 2700000 },
         database: { execute: async () => [] },
@@ -89,7 +89,7 @@ async function run() {
         assert(report.lastSearch.rosterAttempts <= 8 && report.lastSearch.hydratedBots <= 72
             && report.lastSearch.socialChecks <= 288 && report.lastSearch.forecasts <= 12);
         assert.equal(report.cpuBudget.debtMs, 18, 'the priority forecast pays the same 12 ms token budget, including overrun debt');
-        assert.deepEqual(LIMITS, { rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12 });
+        assert.deepEqual(LIMITS, { rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12, forecastRefillMs: 60000 });
     } finally { service.stop(); }
     // These bosses have identical boss-only hints. The native forecast rejects
     // Kraven's guards (their damage outruns the healers' mana) but admits the

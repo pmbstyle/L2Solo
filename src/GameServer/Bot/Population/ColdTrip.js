@@ -55,21 +55,25 @@ function begin(state, travel, timestamp, durationMs, extraStats = {}) {
 // gatekeeper; otherwise it reads a scroll, or walks there without one. Then
 // the gatekeeper route to the destination town. Null without a route. A bot
 // with karma enters no town but Floran, on foot (design 5.6-5.8, E48).
+// here: the bot stands in that town already (within TOWN_RADIUS of it): a
+// caller that acts in the town does so where the bot stands, with no trip.
 function townPlan(state, to) {
     const from = state.loc || {};
     const { start, destination, gate, route } = TravelRoutes.between(from, to);
+    const inStart = distance(from, start) <= TOWN_RADIUS;
+    const here = inStart && !!start && !!destination && TravelRoutes.townKey(start) === TravelRoutes.townKey(destination);
     if (Karma.closesTowns(state.stats?.karma)) {
         if (destination?.name !== Karma.TOWN_NAME) return null;
-        return { route: { fee: 0, hops: 0 }, scroll: false, method: 'walk', durationMs: runMs(from, to) };
+        return { route: { fee: 0, hops: 0 }, scroll: false, method: 'walk', durationMs: runMs(from, to), here };
     }
     if (!route) return null;
-    const inStart = distance(from, start) <= TOWN_RADIUS;
     const scroll = !inStart && TripPayment.hasColdScroll(state);
     return {
         route,
         scroll,
         method: !inStart && !scroll ? 'walk_gatekeeper' : 'soe_gatekeeper',
-        durationMs: (scroll ? TripPayment.SCROLL_CAST_MS : runMs(from, start)) + route.hops * HOP_MS + runMs(gate, to)
+        durationMs: (scroll ? TripPayment.SCROLL_CAST_MS : runMs(from, start)) + route.hops * HOP_MS + runMs(gate, to),
+        here
     };
 }
 
@@ -137,6 +141,15 @@ function toSpot(state, travel, timestamp = Date.now(), { sharedMs = 0, extraStat
     return begin(state, { ...travel, method: plan.method, run }, timestamp, arrivalAt - timestamp, extraStats);
 }
 
+// The rest of a walker's run from where it stands (`state.loc`): its body, shown on
+// the road, cooled before its hot walk ended. On foot to the run's end; the trip's
+// destination, spot and arrival stay as they were, so it arrives cold as planned.
+function resumeRun(state, travel, timestamp = Date.now()) {
+    const durationMs = Math.max(1000, runMs(state.loc, travel.run.to));
+    const run = { from: point(state.loc), to: { ...travel.run.to }, startAt: timestamp, endAt: timestamp + durationMs };
+    return begin(state, { ...travel, from: point(state.loc), method: 'walk', run }, timestamp, durationMs);
+}
+
 // Where a cold traveller is at `timestamp`, computed only when asked: on its
 // run, the straight-line estimate (used to judge distance, never to place
 // the bot); before it, where it set out; after it, the destination.
@@ -155,5 +168,5 @@ function positionAt(state, timestamp = Date.now()) {
 
 module.exports = {
     FALLBACK_TRIP_MS, RUN_SPEED, TOWN_RADIUS, HOP_MS,
-    runMs, point, townPlan, meetingTownPlan, toTown, toSpot, spotPlan, positionAt
+    runMs, point, townPlan, meetingTownPlan, toTown, toSpot, spotPlan, resumeRun, positionAt
 };

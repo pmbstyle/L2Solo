@@ -1,7 +1,7 @@
 'use strict';
 const TendencyRoll = require('./TendencyRoll');
 
-// Persona types (market-sim step 3.1, N6a): a fixed table, pure functions, no
+// Persona types: a fixed table, pure functions, no
 // game state. Each type has a drive, a share of the world, a circle of class
 // families it fits (a weight, not a ban), trait centres and inclination
 // centres. A bot's traits and inclinations are its type's centres plus a

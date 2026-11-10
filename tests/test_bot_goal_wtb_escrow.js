@@ -74,7 +74,6 @@ try {
         const native = await NativeChoice.capture(gearState(walletAfterPosting), { spot, now: timestamp }, 'escrow_original_' + kind);
         assert.strictEqual(native.read.activity.activity, 'hunting', 'the original chest plan cannot force a shopping leaf');
         assert.strictEqual(native.goals.length, 1);
-        assert.strictEqual(native.goals[0].priority, 50);
         assert.strictEqual(native.goals.find(row => row.type === 'upgrade_gear'), undefined);
         assert.strictEqual(Funding.spendable(native.state, expectedEscrow, { itemId: item.selfId }), 0,
             'escrow enlarges the wallet but cannot fund an unselected old chest');

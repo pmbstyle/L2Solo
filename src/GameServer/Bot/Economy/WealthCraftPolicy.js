@@ -16,7 +16,7 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
     const required = facts.gross;
     const purchases = [], owned = [], trips = new Map(), allocated = new Map();
     let cashCost = 0, ownedValue = 0, actualCashFees = 0, travelHours = 0, processingHours = 0,
-        extraMp = 0, residualValue = 0, unknownTrip = false, repeatableInputs = true;
+        extraMp = 0, residualValue = 0, unknownTrip = false;
     for (const [selfId, needed] of required) {
         let missing = needed;
         const stock = (selfId === entry ? context.recipeStock : ownedFor(selfId)) || {};
@@ -31,7 +31,6 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
             allocated.set(selfId, Number(allocated.get(selfId) || 0) + ownCount);
             ownedValue += ownCount * unitValue;
             missing -= ownCount;
-            if (stock.repeatableReplacement !== true) repeatableInputs = false;
         }
         yield 'owned';
         if (!missing) continue;
@@ -54,7 +53,6 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
         processingHours += Number(plan.processingHours || 0);
         extraMp += Number(plan.extraMp || 0);
         residualValue += Number(plan.residualValue || 0);
-        if (plan.repeatable !== true && Number(plan.npc || 0) < missing) repeatableInputs = false;
         const details = plan.tripDetails || context.trip?.details?.(plan.town);
         const key = plan.routeKey ?? plan.town ?? `input:${selfId}`;
         const trip = Math.max(0, Number(plan.landed) - Number(plan.cost));
@@ -76,7 +74,7 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
     if (entry) processingHours += Number(context.learningHours || 0);
     const cost = cashCost + ownedValue + tripEquivalent;
     return Number.isFinite(cost) ? { purchases, owned, cashCost, ownedValue, actualCashFees, travelHours,
-        processingHours, extraMp, residualValue, tripTowns: trips, unknownTrip, repeatableInputs, cost: Math.ceil(cost), batches, facts } : null;
+        processingHours, extraMp, residualValue, tripTowns: trips, unknownTrip, cost: Math.ceil(cost), batches, facts } : null;
 }
 function drain(iterator) { let step; do { step = iterator.next(); } while (!step.done); return step.value; }
 function basketFor(recipe, planFor, ownedFor = () => null, batches = 1, context = {}) {
@@ -180,16 +178,14 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
         expectedProfit, successRate, hours: cycleHours, valueHours: value.valueHours, valuation: value,
         expectedSold: successRate * (full.sold - without.sold),
         margin: { expectedRevenue, inputs: basket.cost, labour, hours: cycleHours, profit: expectedProfit,
-            netCash, cycleHours, repeatable: exit.repeatable === true && basket.repeatableInputs && !basket.unknownTrip },
-        repeatable: exit.repeatable === true && basket.repeatableInputs && !basket.unknownTrip,
-        incomePerHour: exit.repeatable === true && basket.repeatableInputs && !basket.unknownTrip && cycleHours > 0 ? netCash / cycleHours : NaN };
+            netCash, cycleHours } };
 }
 function evaluateBasket(args, recipe, planFor, exit, ownedFor, context, batches = 1) {
     const input = arguments.length === 1 ? args : { state: args, recipe, planFor, exit, ownedFor, context, batches };
     const basket = input.basket || basketFor(input.recipe, input.planFor, input.ownedFor, input.batches ?? 1, input.context);
     return drain(evaluatePrepared({ ...input, basket }));
 }
-function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, mode = 'action', refusal = null }) {
+function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, refusal = null }) {
     let best = null;
     // Complete bounded search also handles discontinuous quote/fee breakpoints.
     // Zero is the without-case; never force production when every value is <=0.
@@ -200,17 +196,12 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
     const end = context.fixedBatches === undefined ? limit : Math.min(limit, first);
     if (!Number.isSafeInteger(first) || first < 1 || first > MAX_BATCHES) return null;
     for (let batches = first; batches <= end; batches++) {
-        // A repeated occupation needs a supported replenishment route. The
-        // finite owned bag may fund today's action, but cannot make its future
-        // input supply infinite. Price the actual replenished cycle separately.
-        const inputsFor = mode === 'occupation' ? () => null : ownedFor;
-        const basket = yield* prepareBasket(recipe, planFor, inputsFor, batches, context);
+        const basket = yield* prepareBasket(recipe, planFor, ownedFor, batches, context);
         if (!basket) { if (refusal) refusal.reason = 'no_basket'; continue; }
         for (const exit of exits) {
             yield 'exit';
             const pricedExit = typeof exit.forQuantity === 'function' ? exit.forQuantity(batches) : exit;
             if (!pricedExit) continue;
-            if (mode === 'occupation' && pricedExit.repeatable !== true) continue;
             // Unsupported external demand permits only an explicitly valued
             // minimum trial, never a speculative larger production command.
             if (pricedExit.trial === true && batches > 1) continue;
@@ -218,9 +209,8 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
             const candidate = evaluated && context.prepareCandidate ? yield* context.prepareCandidate(evaluated)
                 : evaluated && context.valueCandidate ? context.valueCandidate(evaluated) : evaluated;
             if (candidate && context.acceptCandidate && !context.acceptCandidate(candidate)) continue;
-            const score = mode === 'occupation' ? candidate?.incomePerHour : candidate?.valueHours;
-            if (candidate && Number.isFinite(score) && score > (context.minimumValueHours ?? 0)
-                && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = candidate;
+            if (candidate && Number.isFinite(candidate.valueHours) && candidate.valueHours > (context.minimumValueHours ?? 0)
+                && (!best || candidate.valueHours > best.valueHours)) best = candidate;
             else if (refusal) refusal.reason = candidate ? 'no_value' : 'no_outcome';
         }
         yield 'candidate';

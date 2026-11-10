@@ -2,7 +2,7 @@ const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 
 // Line-of-sight checks per idle tick, and how far the actor may move before a
-// blocked scan restarts at its first candidate (limits.md).
+// blocked scan restarts at its first candidate.
 const CHECKS_PER_SCAN = 4;
 const RESUME_RANGE = 128;
 

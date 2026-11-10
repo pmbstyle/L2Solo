@@ -3,7 +3,7 @@
 // Owner: when a summoner heals its pet, hot (SummonerTactics) and cold
 // (BackgroundResolver) alike, and what those heals hold off (the solo gate,
 // BotTargetMatchup.sideLifetime; the offline hunt model). The summoner keeps
-// its pet alive as a party member (docs/game-decisions.md, 10-30): it heals
+// its pet alive as a party member: it heals
 // the pet below the party heal line (PartyHealPolicy.HEAL_BELOW), in a fight
 // and between fights, solo and in a party.
 

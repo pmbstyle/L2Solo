@@ -73,7 +73,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
             const board = Afk.boardIndex();
             const npcOffersFor = invoke('GameServer/Bot/Population/ColdOccupationSources').npcOffersFor;
             const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(probe, { board, routeRows: step.value,
-                timestamp: now, npcOffersFor, workshop: { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 },
+                timestamp: now, npcOffersFor,
                 caller: 'meeting_prepare', trigger: 'e311-probe' });
             const decision = invoke('GameServer/Bot/Economy/MarketListingPolicy').evaluate(probe, { economy, board, npcOffersFor,
                 findSpot: id => invoke('GameServer/Bot/Population/SpotProfiles').findById(id),

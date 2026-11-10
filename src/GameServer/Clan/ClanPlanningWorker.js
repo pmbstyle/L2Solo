@@ -17,6 +17,8 @@ const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieIte
 // once per epoch; full native planning previously failed at missing craftLevelFor
 // and then FirstPrice's eager BackgroundResolver/ChargeLifecycle import.
 Object.assign(invoke('GameServer/DataCache'), catalogs);
+// Main's spot table rows (one SharedArrayBuffer per process).
+if (workerData?.spotTable) invoke('GameServer/Bot/AI/SpotValueTable').attachShared(workerData.spotTable);
 let context = {};
 let planner;
 // The admitted planning job (ClanPlanningCoordinator.withJob): its readiness
@@ -50,10 +52,10 @@ const boardIndex = new BoardIndex();
 // The index keeps its own record per row; the mirror keeps only the version.
 tables.watch('board', boardIndex.follower(), { retain: false });
 // The channel sends every table to every worker; this one reads none of the
-// cold worker's tables (memory ~one row per bot, parties, goals,
+// cold worker's tables (memory ~one row per bot, parties,
 // raids, meetings, player anchors, clan halls, recipes),
 // so it keeps no rows of them.
-for (const name of ['memory', 'parties', 'goals', 'raids', 'meetings', 'player_anchors', 'clan_halls', 'recipes']) {
+for (const name of ['memory', 'parties', 'raids', 'meetings', 'player_anchors', 'clan_halls', 'recipes']) {
     tables.watch(name, { reset() {}, put() {}, remove() {} }, { retain: false });
 }
 const originalInvoke = global.invoke;

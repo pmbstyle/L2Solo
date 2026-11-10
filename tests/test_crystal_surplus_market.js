@@ -129,7 +129,20 @@ async function run() {
     const productionStock = state(1458, { equipmentPlan: pausedCraft });
     productionStock.inventory[1458].amount += 11;
     assert.equal(count(productionStock), 11, 'new production inputs stay free of the paused gear reserve');
-    assert.equal(invoke('GameServer/Bot/Economy/ShotCraftPolicy').availableMaterial(productionStock, 1458), 11);
+    assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(productionStock, 1458), 11);
+    // A dwarf's shot batches spend only the crystals the native craft write lets it spend
+    // (WealthCraftDecision.freeOf, the writer's reserves): beside a luxury exchange's 12, the
+    // units its bag row protects stay out, and a customer's crystals held for an order are none.
+    {
+        const Shots = invoke('GameServer/Bot/Economy/ShotCraftPolicy');
+        const candidate = { recipe: { mpCost: 0 }, crystalId: 1458, requiredCrystals: 1, batches: 64 };
+        const exchanging = state(1458, { equipmentPlan: exchange });
+        assert.equal(Shots.batchCount(exchanging, candidate), 8, 'the luxury exchange keeps its 12 crystals');
+        exchanging.inventory[1458] = { ...exchanging.inventory[1458], protectedAmount: 15 };
+        assert.equal(Shots.batchCount(exchanging, candidate), 5, 'the protected units are not spent on shots');
+        exchanging.inventory[1458] = { ...exchanging.inventory[1458], acceptedCustomer: true };
+        assert.equal(Shots.batchCount(exchanging, candidate), 0, 'a customer\'s crystals are never spent on shots');
+    }
     const productionIterator = invoke('GameServer/Bot/Population/ColdOccupationSources').reservations(productionStock);
     let productionStep; do { productionStep = productionIterator.next(); } while (!productionStep.done);
     assert.equal(productionStep.value[1458], 20, 'the worker and executor protect the same fixed quantity');
@@ -148,7 +161,7 @@ async function run() {
     assert.equal(count(productionTrip), 0, 'the selected production lot cannot return to the market before crafting');
     assert.equal(Disposition.warehouseCandidates(productionTrip).some(row => row.selfId === 1458), false,
         'storage cannot take the selected production input');
-    assert.equal(invoke('GameServer/Bot/Economy/ShotCraftPolicy').availableMaterial(productionTrip, 1458), 11,
+    assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(productionTrip, 1458), 11,
         'the production executor can consume its own retained inputs');
     const expiredProduction = { ...productionTrip, stats: { ...productionTrip.stats,
         shotCraft: { preparing: { ...productionTrip.stats.shotCraft.preparing, at: Date.now() - 31 * 60000 } } } };
@@ -196,6 +209,25 @@ async function run() {
     const selectedReserve = Disposition.selectedCraftAmounts(state(), network);
     assert.equal(selectedReserve[1458], 12, 'selected wish DAG protects the physical luxury input');
     assert.equal(count(state(), { reserved: selectedReserve }), 8);
+    // Gear bought to be crystallized waits for its conversion, never on the board or at the
+    // NPC: a shot kit's source gear and the selected exchange's crystallization input are
+    // held from every sale pass while their plan holds them (this step and the next), the
+    // unit the plan converts only. Level 40: a level 20-39 bot keeps the C gear it wears at 40.
+    const shield = 2495, now = Date.now();
+    const gearBag = { ...state(), inventory: { [shield]: { selfId: shield, amount: 2, equipped: false, slot: 0 } } };
+    const listed = (s, extra = {}) => Disposition.saleCandidates(s, { ...saleOptions, ...extra })
+        .find(row => row.selfId === shield)?.count || 0;
+    assert.equal(listed(gearBag), 2, 'spare shields are sold');
+    const kit = { ...gearBag, stats: { ...gearBag.stats, shotCraft: { preparing: { recipeId: 21, batches: 1,
+        productId: 1464, gearTarget: 0, gearInputs: {}, crystalGear: shield, at: now } } } };
+    for (const at of [now, now + 60000]) assert.equal(listed(kit, { now: at }), 1, 'the shot kit keeps one shield to crystallize');
+    assert.equal(Disposition.productionInputAmounts(kit)[shield], 1);
+    const crystallize = { kind: 'crystallize', grossRequirements: [{ key: `item:${shield}`, amount: 1 }] };
+    const exchangeNetwork = { activity: { rootKey: 'power:95:14' }, queue: [{ key: 'power:95:14', plan: { kind: 'luxury_exchange',
+        grossRequirements: [{ key: 'item:1458', amount: 12 }], requirements: [{ key: 'item:1458', plan: crystallize }] } }] };
+    const crystallizeReserve = Disposition.selectedCraftAmounts(gearBag, exchangeNetwork);
+    assert.equal(crystallizeReserve[shield], 1, 'the selected crystallization holds its source gear');
+    assert.equal(listed(gearBag, { reserved: crystallizeReserve }), 1, 'the other shield is sold');
     Supplies.useRowSource(id => id === 42 ? [42, 1, [[1458, 3]], 1] : undefined);
     assert.equal(count(state(1458, { clanId: 42, equipmentPlan: exchange })), 5,
         'personal C exchange and active clan need have separate quantities');

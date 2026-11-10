@@ -1,4 +1,4 @@
-// E43 (step 3.3 group B): a shop on the board trades only through the board.
+// A shop on the board trades only through the board.
 // Select opens a trade window on an AFK projection too (activeMerchantTrade);
 // the NPC buy and sell packets (Purchase 0x1f, Sell 0x1e) sent to it must not
 // trade the projection's in-memory store around the record and its escrow.

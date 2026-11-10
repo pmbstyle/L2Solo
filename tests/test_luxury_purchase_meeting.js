@@ -34,9 +34,14 @@ const fixture = require('./fixtures/luxury_purchase_states.json');
         // than its 1917; it holds that stock, so the crystal roots decide.
         if (state.characterId === 2007229) state.inventory[1464] = { ...state.inventory[1464], amount: 3000 };
         // Its healing potions at the stock's own target, whatever use the table gives them.
-        const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(state, 'potions');
+        const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
         state.inventory[potions.itemId] = { ...state.inventory[potions.itemId], selfId: potions.itemId,
             amount: Math.max(potions.current, potions.target) };
+        // A marker saved before markers carried their anchor is rewritten at boot
+        // (TradeMeeting.remark): the buyer's accepted meeting is anchored at this
+        // Giran point, so the ad's quote is one its buyer may take (OfferQuery.admits).
+        if (Array.isArray(state.stats.tradeMeeting) && state.stats.tradeMeeting.length < 6) state.stats.tradeMeeting = [
+            ...state.stats.tradeMeeting.slice(0, 2), 'Giran', state.loc.locX, state.loc.locY, state.loc.locZ];
         const before = JSON.stringify(state);
         const secondRoot = state.characterId === 2007229, count = secondRoot ? 260 : 370;
         const seller = 2007106, side = state.characterId < seller ? 0 : 1;

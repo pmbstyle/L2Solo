@@ -29,12 +29,23 @@ function compact(stats = {}) {
 // The mind: what the background thread decided for the bot (its stats packet
 // and published card). It is saved in its own column (bot_life_state.mindJson),
 // so a refused body write never takes the decision with it.
-const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
-    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory']);
+// woken, waiting, situationSeq: the bot's woken decisions (Situations, their one owner); earning: the earning
+// spot's held answer (EquipmentIncomeRoute.answerOf); spotMarks: the spots its situations ruled out for the
+// outing (SpotRiskPolicy.withSpotMark, written and forgotten by Situations' raise); cleanupDue: the bag's
+// town trip a build decided, held until it starts (PartyMarketBreak.cleanupDecision); rebuff: the rebuff
+// decision's held answer (Bot/AI/Rebuff); huntSpot: the spot the bot goes to when sent to hunt, the
+// worker route's one choice ({ spotId }, BotRoute.huntSpotHeld; an older row's extra fields are ignored).
+const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections',
+    'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
+    'spotMarks', 'gearMarks', 'cleanupDue', 'rebuff', 'huntSpot']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
+// Keys no owner keeps any more, dropped as an old row saves again: wishDirty (the build's
+// sections, gone with the build on situations).
+const RETIRED_KEYS = Object.freeze(['wishDirty', 'mammonRetryAt']);
 function split(stats = {}) {
     const body = compact(stats), mind = {};
+    for (const key of RETIRED_KEYS) delete body[key];
     for (const key of MIND_KEYS) {
         if (!Object.hasOwn(body, key)) continue;
         mind[key] = body[key];

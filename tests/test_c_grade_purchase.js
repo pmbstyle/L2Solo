@@ -204,6 +204,25 @@ async function run() {
         assert.equal(townEquipment.state.stats.lastImprovement.kind, 'luxury_exchange');
         assert.equal(townEquipment.state.activity, 'shopping', 'exchange also precedes market return');
         assert.equal(townEquipment.state.inventory[161].equipped, false);
+        // A symbol maker's henna is drawn on the visit it came for, as the exchange: a visit that left
+        // without it brought the bot back to town for it again and again.
+        state = await seed(9642);
+        const symbol = invoke('GameServer/Henna/HennaRules').availableForClass(54).find(row => row.STR > 0);
+        await DB.setItem(state.characterId, { selfId: symbol.dyeSelfId, name: 'Dye', amount: symbol.dyeAmount });
+        state = await Life.syncExternalInventory(state.characterId, 'town_henna_fixture', state);
+        const townHenna = await townStep(state, { kind: 'henna', symbolId: symbol.id });
+        assert(townHenna.ok);
+        assert.equal(townHenna.state.stats.hennas?.[0], symbol.id, 'the visit draws the henna it came for');
+        assert.equal(townHenna.state.activity, 'shopping', 'the henna precedes the market return');
+        // Only in a town where a symbol maker stands (C4 spawns): the Elven Village has none.
+        const elven = Object.values(invoke('GameServer/World/TownRespawn').towns).find(town => town.name === 'Elven Village');
+        const hennaCard = { activity: { activity: 'improving', improvement: { kind: 'henna', symbolId: symbol.id } }, riskWeight: 1 };
+        const elvenHenna = await invoke('GameServer/Bot/Economy/BotImprovementService').reviewCold({ ...state, currentRegion: elven.name,
+            loc: { locX: elven.locX, locY: elven.locY, locZ: elven.locZ } }, { decide: () => hennaCard });
+        assert.equal(elvenHenna.changed, false, 'no henna where no symbol maker stands');
+        const dropped = Life.cachedState(state.characterId);
+        assert.equal(dropped.stats.activityLeaf, 0, 'a town without one refuses the held step: the next build drops it');
+        assert(invoke('GameServer/Bot/Situations').woken(dropped.stats, 'build'), 'and is woken by the refusal');
         state = await seed(9640);
         state = await Life.upsertState({ ...state, stats: { ...state.stats, equipmentPlan: {
             strategy: 'luxury_exchange', status: 'active', target: { selfId: 161, slot: 7 }, exchange: silver,

@@ -16,7 +16,9 @@ const geo = {
 const dependencies = {
     'GameServer/Bot/Population/PopulationConfig': config,
     'GameServer/Bot/AI/SpotService': { findById: () => null, findCurrentSpot: () => null },
-    'GameServer/Geodata/GeodataEngine': geo
+    'GameServer/Geodata/GeodataEngine': geo,
+    'GameServer/Bot/Population/PopulationMetrics': { recordWalkerRoadStepBack: () => {} },
+    'GameServer/Bot/Population/PartyHuntingTarget': { competitionNpcId: () => null }
 };
 const math = Object.create(Math);
 math.random = () => 0.75;

@@ -10,8 +10,10 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
 async function main() {
     const ids = [719410,719411,719412];
     const levelUpIds = [719413,719414];
+    const stuckIds = [719415,719416];
     const world = await createWorld([...ids.map(id => ({ id, classId: 12, level: 40 })),
-        ...levelUpIds.map(id => ({ id, classId: 46, level: 61 }))], 'cold-free-skill-authority');
+        ...levelUpIds.map(id => ({ id, classId: 46, level: 61 })),
+        ...stuckIds.map(id => ({ id, classId: 32, race: 2, level: 40 }))], 'cold-free-skill-authority');
     const save = Database.saveBotLifeState, learn = Database.learnBotSkill;
     let repairs = 0, spent = 0, consumed = 0;
     try {
@@ -103,6 +105,9 @@ async function main() {
                 inventory:{}, vitals:{hp:187,maxHp:187,mp:74,maxMp:74} },'committed_level_up');
             assert(Books.needsTraining(state),'a committed level gain still needs its native grants');
             assert(Life.trainingNeeded(state),'the commit ack names its training review');
+            // The ack names it for the step that moved the level fact, not for one that moved nothing.
+            assert.deepEqual(coordinator.reviewSteps({ durable:{ classId:46 } },state),{ review:['training'] },'a level step trains');
+            assert.deepEqual(coordinator.reviewSteps({ durable:null },state),{},'a step that moved no level nor bag asks no training');
             coordinator.stopping = true;
             await review(id);
             assert.equal((await Database.fetchSkill(id,239))[0].level,3,'retired worker cannot grant ranks');
@@ -114,6 +119,29 @@ async function main() {
             assert.equal(trainedState.stats.coldCombat.skills.find(skill=>skill.selfId===239).level,4);
             assert.equal(trainedState.sp,0,'postcommit grants remain free');
             assert.equal(Books.needsTraining(trainedState),false,'the entire eligible kit is published');
+        }
+        // A Palus Knight at 40 takes its second class in the character row through main's training,
+        // which starts from the class that row holds: a stamp written over a class the record never
+        // took (stuck) heals at the next training, and a step's projected class its commit did not
+        // write (projected) is no source.
+        const Classes = invoke('GameServer/Bot/BotClassProgression');
+        for (const [index,id] of stuckIds.entries()) {
+            await Database.execute(['UPDATE characters SET username=?,sp=0 WHERE id=?', ['bot_free_skill_authority',id]]);
+            for (const skill of Profile.skillRecordsFromTree(32,40)) await Database.setSkill(skill,id);
+            const second = Classes.nextClass(32,40,id), statsClass = index ? second : 32;
+            const stats = { classId:statsClass, classProgressionClassId:statsClass, classProgressionLevel:40,
+                coldCombat:Profile.legacySnapshot({ stats:{classId:32} },await Database.fetchSkills(id)) };
+            const state = await Life.upsertState({ characterId:id, accountName:'bot_free_skill_authority', name:`Palus${id}`,
+                level:40, sp:0, phase:'cold', activity:'hunting', stats,
+                inventory:{}, vitals:{hp:187,maxHp:187,mp:74,maxMp:74} },'class_record_lag');
+            assert(Life.trainingNeeded(state),'a profession due at the level names the training review');
+            assert.equal((await review(id)).ok,true);
+            const [record] = await Database.execute(['SELECT classId FROM characters WHERE id=?',[id]]);
+            assert.equal(Number(record.classId),second,`a ${index ? 'projected' : 'stuck'} first class at 40 takes its second class`);
+            const trained = Life.cachedState(id);
+            assert.equal(trained.stats.classId,second);
+            assert.deepEqual(trained.stats.classTransitions,[second],'the transition is recorded once, by the write that made it');
+            assert.equal(Life.trainingNeeded(trained),false,'the trained bot asks no further training');
         }
         console.log('Cold free-skill authority: legacy repair, zero SP, no book demand, native grants and startup catch-up passed');
     } finally {

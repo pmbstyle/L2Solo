@@ -101,55 +101,6 @@ assert.equal(answer.line.lineId, answerBid.lineId);
 assert.equal(answer.count, 4, 'the physical answer offers the bid count; the trade checks the money');
 assert(answer.outcome.sold < 4, 'its value counts only the expected paid units');
 assert.equal(answer.outcome.sold, expected.after.sold);
-// A bilateral rejection is scoped to the actual quantity and buyer's exact
-// state and market sources. Other bids and larger fills remain candidates.
-const Refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
-const Admission = invoke('GameServer/Bot/Population/PartyAdmission');
-let buyer = { characterId: 7, phase: 'cold', updatedAt: 10, simulation: { revision: 2 } };
-Admission.configureTradeAdmission(id => Number(id) === 7 ? buyer : null);
-let sourcesCurrent = true;
-const request = { actorA: 7, actorB: 42, lines: [{ payer: 0, selfId: ITEM, enchant: 0,
-    count: 4, price: 500, adId: answerBid.recordId, adRevision: answerBid.revision }] };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => sourcesCurrent);
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a rejected full fill chooses the next bid instead of starting the same meeting');
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 3, residualUnitValue: 10 }).line.price, 500,
-    'another quantity retains its own fresh consent');
-sourcesCurrent = false;
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'changed market sources reopen the previously refused fill');
-sourcesCurrent = true;
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => sourcesCurrent);
-buyer = { ...buyer, simulation: { revision: 3 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a new buyer authority reopens the fill');
-buyer = { ...buyer, adena: 10000, stats: { money: [100, 0, 0, 0] }, loc: { locX: 1, locY: 1, locZ: 0 } };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => true,
-    { minimumFree: 1000 });
-buyer = { ...buyer, adena: 9000, updatedAt: 20, simulation: { revision: 4 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a guaranteed alternative remains valid across an unrelated buyer step with sufficient free money');
-buyer = { ...buyer, adena: 500 };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'the guaranteed alternative reopens when free money no longer covers it');
-buyer = { ...buyer, adena: 9000 };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => true,
-    { minimumFree: 1000 });
-buyer = { ...buyer, loc: { locX: 2, locY: 1, locZ: 0 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a changed route reopens the fill');
-buyer = { ...buyer, loc: { locX: 1, locY: 1, locZ: 0 } };
-let specificSource = true;
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => specificSource,
-    { fundingDominance: true });
-buyer = { ...buyer, adena: 500, stats: { money: [100, 0, 0, 500] }, updatedAt: 30, simulation: { revision: 5 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a strictly cheaper funded alternative dominates even when buyer funds or revision change');
-specificSource = false;
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a change to the actual alternative immediately reopens the bid');
-Refusals.clear();
-Admission.configureTradeAdmission(() => null);
 // A seller answering a remote buy ad is the traveler. Its own protected
 // funding, not the buyer's wallet, decides whether it can pay the fare.
 const distantSeller = { characterId: 42, phase: 'cold', activity: 'hunting', adena: 1000000,

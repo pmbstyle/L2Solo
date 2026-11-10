@@ -93,17 +93,28 @@ function forState(state, timestamp = Date.now(), inputs = null) {
         slotLimit: InventoryLimits.forState(state, profile), maxLoad: profile.maxLoad }), state, timestamp);
 }
 
+// The bag's numbers the floor reads: its slots and load against its slot limit and
+// the kit's carrying load (ColdCombatProfile's kit profile, the clock does not change it).
+function bagLoad(state, kitHashes = null) {
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile'); // lazy: worker as forState.
+    const items = invoke('GameServer/DataCache').items; // lazy: worker as forState.
+    const profile = Profile.profileFor(state, 0, kitHashes ? { kitHashes } : {});
+    return { ...stateInventory(state, items), slotLimit: InventoryLimits.forState(state, profile), maxLoad: profile.maxLoad };
+}
+
 // The bag part of the floor alone (no slot, overweight; dead first, as in
 // forState): what a sale trip answers, without the cast costs and the mana
 // read forState pays. The author's thresholds, the same evaluate.
 function bagFor(state, timestamp = Date.now()) {
     if (!state) return null;
-    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile'); // lazy: worker as forState.
-    const items = invoke('GameServer/DataCache').items; // lazy: worker as forState.
-    const profile = Profile.profileFor(state, timestamp);
-    const floor = evaluate({ dead: state.activity === 'dead', hp: state.vitals?.hp, ...stateInventory(state, items),
-        slotLimit: InventoryLimits.forState(state, profile), maxLoad: profile.maxLoad });
-    return saleRetryWaits(floor, state, timestamp);
+    return saleRetryWaits(evaluate({ dead: state.activity === 'dead', hp: state.vitals?.hp, ...bagLoad(state) }), state, timestamp);
+}
+
+// The bag's own floor (the bag fact's, PartyMarketBreak.bagFact): no slot or overweight,
+// read without the bot's life and without the sale retry (the board). kitHashes: the
+// state's kit events when the caller holds them.
+function bagFloor(state, kitHashes = null) {
+    return state ? evaluate(bagLoad(state, kitHashes)) : null;
 }
 
 function actorInventory(actor) {
@@ -126,7 +137,7 @@ function bagMarks(actor) {
 }
 
 // A hot bag's sale retry, held while its bag and saved retry are the same
-// (a buyer of its goods is read again at the next bag change, as sellTripDue).
+// (a buyer of its goods is read again at the next bag change).
 const actorRetries = new WeakMap();
 function actorRetryHolds(actor, state) {
     const bag = actorInventory(actor), seen = state?.stats?.marketSellSeen, held = actorRetries.get(actor.backpack);
@@ -163,4 +174,4 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     () => actorRetryHolds(actor, state));
 }
 
-module.exports = { evaluate, forState, bagFor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };
+module.exports = { evaluate, forState, bagFor, bagFloor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };

@@ -251,6 +251,13 @@ function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
         session, bot, recoveryKey(relocation), relocation.token);
     cancel(session, bot, reason);
     TownTransitPolicy.defer(session, bot, reason);
+    // A confirmed path failure with no escape while it is safe (alive, no threat): the
+    // spot is unreachable for it, the earning spot's situation (spot_unreachable; its
+    // mark keeps the body off it until the answer). An unconfirmed one (a queued path),
+    // a death or a threat is an execution retry: only deferred.
+    // lazy: only a failed trip raises; travel itself needs none of the economy DecisionEvents loads.
+    if (!escape && confirmed && safe) invoke('GameServer/Bot/AI/DecisionEvents').raiseDecision(session, 'spot_unreachable',
+        { payload: { spotId: String(relocation.spotId), reason } });
     if (!escape) return false;
     const spot = SpotService.findById(relocation.spotId) || { id: relocation.spotId, center: relocation.destination };
     return startEmergencyScroll(session, bot, spot, relocation.destination, relocation.preserveSpot);

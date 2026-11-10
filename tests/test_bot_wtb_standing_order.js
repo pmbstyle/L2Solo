@@ -30,7 +30,7 @@ const original = {
     evaluate: NeedsEvaluator.evaluate
 };
 
-// The bot's buy order is a buy ad on the board (step 3.3); it has no shop.
+// The bot's buy order is a buy ad on the board; it has no shop.
 const stops = [];
 const order = { id: 95726, ownerId: 7, kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 37213, revision: 1,
     lines: [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }] };
@@ -89,16 +89,12 @@ try {
     // A legacy craft material plan cannot manufacture the current leaf;
     // its original retry window remains an independent negative.
     const crafting = (stats = {}) => ({ ...resting(999), stats: { generatedCold: true, classId: 0, ...stats,
-        equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1, marketFallback: true,
+        equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1,
             target: { selfId: 999, slot: 11 }, next: { itemId: PIECE_BONE_GAITERS, amount: 2 },
             materials: [{ selfId: PIECE_BONE_GAITERS, amount: 2, missing: 2 }] } } });
     state = (await nativeChoice.capture(crafting(), {}, 'original_craft_plan')).state;
     result = await BotAfkMarket.reconcile(state, recover);
     assert.deepStrictEqual(stops, [7], 'a legacy material plan alone cannot bypass the actual native choice');
-    stops.length = 0;
-    state = (await nativeChoice.capture(crafting({ marketRetryAfter: Date.now() + 60000 }), {}, 'original_retry_window')).state;
-    result = await BotAfkMarket.reconcile(state, recover);
-    assert.deepStrictEqual(stops, [7], 'a material under its market retry window does not hold an order');
     stops.length = 0;
 
     // Drop and craft plans are run by the resolver, not by a market goal: a
@@ -187,21 +183,11 @@ try {
     assert.deepStrictEqual(stops, [7], 'an NPC-shop plan holds no WTB through a rest');
     stops.length = 0;
 
-    // A goal review returns the needs it evaluated, for the reconcile after it.
-    const GoalService = invoke('GameServer/Bot/Goals/GoalService');
-    const GoalState = invoke('GameServer/Bot/Goals/GoalState');
-    const savedGoalState = { snapshot: GoalState.snapshot, set: GoalState.set };
-    try {
-        GoalState.snapshot = () => ({ characterId: 7, current: { ...recover, nextReviewAt: Date.now() + 60000 } });
-        GoalState.set = (characterId, goal) => Promise.resolve({ characterId, current: goal });
-        const reviewNative = await nativeChoice.capture(resting(PIECE_BONE_GAITERS), {}, 'goal_review_native_input');
-        const snapshot = await GoalService.review(reviewNative.state);
-        assert(Array.isArray(snapshot?.candidates) && snapshot.candidates.length > 0, 'the review hands back its needs');
-        assert(snapshot.current?.type, 'and the chosen goal');
-    } finally {
-        GoalState.snapshot = savedGoalState.snapshot;
-        GoalState.set = savedGoalState.set;
-    }
+    // The needs read once serve the reconcile after a visit: the goal is their first.
+    const reviewNative = await nativeChoice.capture(resting(PIECE_BONE_GAITERS), {}, 'goal_review_native_input');
+    const needs = NeedsEvaluator.needs(reviewNative.state);
+    assert(Array.isArray(needs) && needs.length > 0, 'the needs are read on the bot');
+    assert.equal(NeedsEvaluator.goal(reviewNative.state)?.type, needs[0].type, 'and its goal is the first of them');
 } finally {
     LifeState.snapshot = original.snapshot;
     AfkTrade.findOwnerProjection = original.findOwnerProjection;

@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N6): a completed meeting replayed (arrive twice, a late cancel,
+// A completed meeting replayed (arrive twice, a late cancel,
 // settle and ack twice per actor) records one market trade for its event key,
 // keeps each actor's last receipt, and moves the goods once: the buyer's card
 // sees the 2 skins once (nothing left to order, not a negative or double count).

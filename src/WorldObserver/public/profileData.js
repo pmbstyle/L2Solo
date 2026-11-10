@@ -76,7 +76,7 @@
             ${equipment ? `<div class="economy-equipment"><span>Equipment review</span><strong>${escape(status(equipment.status))}</strong>${reason(equipment.reason) ? `<span>${escape(reason(equipment.reason))}</span>` : ''}</div>` : ''}
             ${money ? `<article class="economy-card economy-money">
                 <header class="economy-section-heading"><h4>Adena & spending</h4><span>Latest budget</span></header>
-                <dl class="economy-money-metrics">${fact('Wallet', adena(money.wallet))}${fact('Survival reserve', adena(money.survivalReserve))}
+                <dl class="economy-money-metrics">${fact('Wallet', adena(money.wallet))}${fact('Refill reserve', adena(money.refillReserve))}
                     ${fact('Estimated income / hour', adena(money.adenaPerHour))}${money.firstUnfundedPrice > 0 ? fact('Next unfunded wish', adena(money.firstUnfundedPrice)) : ''}</dl>
                 ${money.funded.length ? `<div class="economy-budget"><div class="economy-budget-heading"><h5>Planned purchases</h5><span>Amounts are priorities only</span></div>
                     ${money.funded.map(row => `<div class="economy-budget-row"><span>${row.item ? item(row.item) : 'Other planned purchases'}</span><strong>${adena(row.cost)}</strong></div>`).join('')}</div>` : '<p class="economy-note">No purchases budgeted yet.</p>'}

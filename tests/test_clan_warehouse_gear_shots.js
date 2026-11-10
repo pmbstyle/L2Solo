@@ -87,8 +87,10 @@ async function main() {
     const shotId = ShotStock.planForActor(rich).selfId;
     const quotePrice = Number(DataCache.items.find(row => row.selfId === shotId).template.price);
     // Declare a real player's physical surplus large enough for the native
-    // table's full town-visit interval; this does not author the buyer target.
-    const supplyUnits = Math.ceil(Table.value(id, 'dps', 25, true).shots
+    // table's full town-visit interval, at the precision the kit rates keep
+    // (StatsPacket.roundRates); this does not author the buyer target.
+    const tableUse = invoke('GameServer/Bot/Economy/StatsPacket').roundRates({ shotUse: Table.value(id, 'dps', 25, true).shots }).shotUse;
+    const supplyUnits = Math.ceil(tableUse
         * invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours(Economy.stateForActor(rich).stats));
     const sellerAccount = 'shot_surplus_seller';
     await Database.createAccount(sellerAccount, 'fixture');
@@ -109,6 +111,9 @@ async function main() {
     Economy.forget(31); Economy.forget(32);
     world.economyFor(Economy.stateForActor(poor));
     const richEconomy = world.economyFor(Economy.stateForActor(rich));
+    // The member holds its build's answer as a near bot does: main reads the kit
+    // rates it published (a member no build rated buys no kit).
+    rich.session.coldLifeState = { ...rich.session.coldLifeState, stats: { ...rich.session.coldLifeState.stats, ...richEconomy.statsPacket } };
     const originals = [];
     function stub(object, name, replacement) {
         const original = object[name];

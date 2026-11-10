@@ -1,48 +1,32 @@
+// Main's executor of the spot aggregate's outcomes that start a fight between far bots: a
+// spot's PvP dispute (SpotContest) and a grievance meeting (EnemyMet's revenge, the war
+// director's clan_war), each carried out by ColdPartyConflict. Called with the worker's
+// competition frame (ColdSimulationCoordinator).
 const DiagnosticConfig = require('./PopulationConfig');
-const Episode = require('./ColdCompetitionEpisode');
-const RelationshipContext = require('../../Social/RelationshipContext');
-const InventorySummary = require('./InventorySummary');
-const TTL_MS = 10000;
-const COOLDOWN_MS = 2 * 60000;
+// A forecast's freshness: the spot contest's (SpotContest).
+const { EVENT_TTL_MS: TTL_MS } = require('./SpotContest');
+// The pause a contested fight's sides wait before it starts (ColdPartyConflict's waitMs).
 const WAIT_MS = 15000;
-const CONFLICT_COOLDOWN_MS = 10 * 60000;
-// Losing a mob is a provocation, but should not exhaust the budget of a real fight.
-const DISPUTE_COOLDOWN_MS = 3 * 60000;
 const MAX_APPLIED = 4, MAX_ATTEMPTS = 8, BUDGET_MS = 75;
-// Leaving a contested spot has its own small budget next to the four fight
-// slots, so a busy scan of fights and invitations cannot starve departures.
-const MAX_LEAVES = 2, MAX_LEAVE_ATTEMPTS = 4;
-const leaving = e => e.action === 'avoid' || e.action === 'yield';
 const count = (map, key) => { if (!DiagnosticConfig.developerDiagnostics) return; map[key] = (map[key] || 0) + 1; };
-const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
-
-function eligible(state, event, participant, now) {
-    const partyId = state?.party?.partyId || state?.partyId || null;
-    const recruiting = event.action === 'offer_party' && event.accepted && participant.partyId;
-    return state?.phase === 'cold' && (recruiting ? ['grouped', 'hunting'].includes(state.activity) : state.activity === 'hunting') && state.vitals?.hp > 0
-        && (recruiting ? partyId === participant.partyId : !partyId) && !state.stats?.travel
-        && !state.stats?.supplyErrand && !state.stats?.warehouseWorkflow && !state.stats?.marketReturn
-        && !state.stats?.coldCompetition?.wait
-        && Number(state.simulation?.revision || 0) === participant.revision
-        && state.spotId === event.spotId
-        && (recruiting || require('./PartyHuntingTarget').competitionNpcId(null, state) === event.npcId)
-        && now - Number(state.stats?.coldCompetition?.at || 0) >= COOLDOWN_MS;
-}
+// A meeting of grievance peers (enemy_met, the war director): no spot pressure is its cause.
+const MEETINGS = new Set(['revenge', 'clan_war']);
+const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'contest' ? 1 : 0;
 
 // Consumes forecasts, not combat events. The two participant versions fence
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
-    constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
+    constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), onState = () => {}, canRun = () => true, participantAllowed = () => true,
         conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, now = Date.now, budgetNow = () => performance.now(),
         releaseForecasts = () => {} }) {
-        Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
+        Object.assign(this, { life, owner, memory, parties, personaFor, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
         Object.assign(this, { incrementalPvp, onEncounter, budgetNow, releaseForecasts });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
         this.spotActivity = new Map();
         this.spotActivityEvicted = 0;
-        this.report = { mode: 'cooperation', applied: 0, rejected: 0, avoids: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
+        this.report = { mode: 'cooperation', applied: 0, rejected: 0, contests: 0, revenges: 0, clanWars: 0, deescalated: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
         Object.assign(this.report, { attempted: 0, decisionRefreshes: 0, decisionRecomputes: 0, rejectedReasons: {}, rejectionExamples: [], skippedActions: {}, pvpRejected: {}, pvpSuppressed: {}, pvpCompleted: 0, pvpOutcomes: {}, pvpExtensions: 0, pvpExtendedMs: 0 });
     }
     submit(forecast, options = {}) {
@@ -50,17 +34,16 @@ class ColdCompetitionActions {
         const releaseForecasts = options.releaseForecasts || this.releaseForecasts;
         this.lastScanAt = options.framed ? Math.max(this.lastScanAt, forecast.at) : forecast.at;
         const candidates = (forecast.events || forecast.recent || []).filter(e => e.at === forecast.at
-            && (e.action === 'avoid' || e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
-                || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
+            && ((e.action === 'contest' && this.conflictsEnabled())
+                || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled())
+                || (e.action === 'clan_war' && this.pvpEnabled())))
             .sort((a, b) => priority(b) - priority(a));
         this.running = (async () => {
             const started = this.budgetNow();
-            const fights = { attempted: 0, applied: 0, maxApplied: MAX_APPLIED, maxAttempts: MAX_ATTEMPTS };
-            const leaves = { attempted: 0, applied: 0, maxApplied: MAX_LEAVES, maxAttempts: MAX_LEAVE_ATTEMPTS };
+            const slots = { attempted: 0, applied: 0, maxApplied: MAX_APPLIED, maxAttempts: MAX_ATTEMPTS };
             const skipped = [];
             let open = true;
             for (const event of candidates) {
-                const slots = leaving(event) ? leaves : fights;
                 if (slots.applied >= slots.maxApplied || slots.attempted >= slots.maxAttempts) { skipped.push(event); continue; }
                 open = open && !this.stopping && this.canRun() && this.budgetNow() - started < BUDGET_MS;
                 if (!open) { skipped.push(event); continue; }
@@ -81,7 +64,7 @@ class ColdCompetitionActions {
                     if (!result.ok) count(this.report.pvpRejected, result.detail || result.reason || 'unknown');
                     else if (!result.pvp) count(this.report.pvpSuppressed, result.deescalated ? 'deescalated' : result.pvpReason || 'not_started');
                 }
-                if (DiagnosticConfig.developerDiagnostics && result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'avoid' ? 'avoids' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
+                if (DiagnosticConfig.developerDiagnostics && result.ok) this.report[result.deescalated ? 'deescalated' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : 'clanWars']++;
                 if (DiagnosticConfig.developerDiagnostics && result.ok && result.pvp) {
                     DiagnosticConfig.developerDiagnostics && (this.report.pvpFights++);
                     const kills = result.combat.fighters.flatMap(f => f.kills);
@@ -119,8 +102,8 @@ class ColdCompetitionActions {
     async apply(event) {
         const now = this.now();
         if (!event.key || event.at > now || now - event.at > TTL_MS || event.actor.id === event.peer.id
-            || (event.action !== 'revenge' && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
-        if (event.action === 'contest' || event.action === 'revenge') {
+            || (!MEETINGS.has(event.action) && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
+        if (event.action === 'contest' || MEETINGS.has(event.action)) {
             const current = require('./ColdConflictDecision').refresh(event, this, now);
             // A participant written since the worker's scan: main decided again.
             if (current.recomputed) DiagnosticConfig.developerDiagnostics && (this.report.decisionRecomputes++);
@@ -130,88 +113,21 @@ class ColdCompetitionActions {
         }
         const participants = [event.actor, event.peer];
         if (!participants.every(p => this.participantAllowed(p.id))) return { ok: false, reason: 'hot_handoff_fenced' };
-        if (event.action === 'avoid' || event.action === 'yield' && participants.some(p => p.partyId)) {
-            return require('./ColdCompetitionRetreat').apply({ ...this, event, waitMs: WAIT_MS });
-        }
         if (event.action === 'clan_war') {
             if (!this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: 1000, cooldownMs: 15000, disputeCooldownMs: 15000 });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: 1000 });
         }
         if (event.action === 'revenge') {
             if (!this.conflictsEnabled() || !this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS });
         }
+        // A spot's dispute is carried out as a fight (PvP intent, PvP on) or, with a party on
+        // a side, by the party conflict; a solo pair with no fight to carry out is no action.
         if (event.action === 'contest' && (participants.some(p => p.partyId) || event.pvpIntent === true && this.pvpEnabled())) {
             if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS });
         }
-        const states = participants.map(p => this.life.cachedState(p.id));
-        if (!states.every((s, i) => eligible(s, event, participants[i], now))) return { ok: false, reason: 'state_changed_or_busy' };
-        const contest = event.action === 'contest';
-        if (contest) {
-            if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
-            if (!states.every(s => this.contestContextAllowed(s, event))) return { ok: false, reason: 'contest_context_changed' };
-            if (states.some(s => Number(s.stats?.coldCompetition?.conflictUntil || 0) > now)) return { ok: false, reason: 'conflict_cooldown' };
-        }
-        if (!states.every((s, i) => {
-            const memoryRevision = this.memory.revision(s.characterId);
-            return memoryRevision !== undefined && memoryRevision === participants[i].memoryRevision;
-        })) return { ok: false, reason: 'memory_changed' };
-        const next = states.map((s, i) => ({ ...s, stats: { ...s.stats, coldCompetition: Episode.begin(s.stats?.coldCompetition, {
-            outcome: event.action, key: event.key, at: now, action: event.action, peerId: participants[1 - i].id,
-            ...(contest ? { conflictUntil: now + DISPUTE_COOLDOWN_MS, npcId: event.npcId } : {}),
-            ...((event.action === 'yield' && i === 0) || (contest && i === 1)
-                ? { wait: { start: now, until: now + WAIT_MS } } : {})
-        }) } }));
-        let queued = false;
-        if (event.action === 'offer_party' && event.accepted) {
-            if (Math.abs(states[0].level - states[1].level) > 4) return { ok: false, reason: 'level_mismatch' };
-            if (!states.some(s => s.party?.partyId || s.partyId)
-                && require('../../Actor/PartyRewardMath').validMemberIndexes(states.map(s => s.level || 1)).length !== states.length) {
-                return { ok: false, reason: 'party_experience_mismatch' };
-            }
-            const party = await this.formParty(next, event, { participantAllowed: this.participantAllowed });
-            if (party?.partyId) (party.memberIds || states.map(s => s.characterId)).forEach(id => this.onState(id));
-            if (party?.partyId) return { ok: true, partyId: party.partyId, ...(party.recruited ? { recruited: party.recruited } : {}) };
-            if (party?.rejected !== 'party_capacity' || states.some(s => s.party?.partyId || s.partyId)) {
-                return { ok: false, reason: party?.rejected || 'party_commit_rejected' };
-            }
-            // A willing hunter can keep looking for a group while farming.
-            // Use the ordinary request queue, not a reserved social pool or a
-            // replay of this expired invitation. Later formation revalidates it.
-            queued = true;
-            next.forEach(s => {
-                if (s.stats.partyRequest?.status === 'open' && s.stats.partyRequest.priority === 'required') return;
-                const plan = s.stats.equipmentPlan || {};
-                const objectiveKey = `${plan.strategy || 'acquisition'}:${event.spotId}:${event.npcId}`;
-                const previous = s.stats.partyRequest;
-                s.stats.partyRequest = { status: 'open', priority: 'preferred', reason: 'shared_target',
-                    objectiveKey, spotId: event.spotId, npcId: event.npcId,
-                    strategy: plan.strategy || 'acquisition', itemId: Number(plan.next?.itemId || plan.target?.selfId || 0) || null,
-                    targetId: Number(plan.target?.selfId || 0) || null,
-                    requestedAt: previous?.status === 'open' && previous.objectiveKey === objectiveKey ? previous.requestedAt || now : now,
-                    attempts: 0 };
-            });
-        }
-        if (event.action !== 'yield' && !contest && !queued) return { ok: false, reason: 'forecast_only' };
-        const delayed = contest ? 1 : 0;
-        if (!queued) next[delayed].timing = { ...states[delayed].timing,
-            nextResolveAt: Math.max(now, Number(states[delayed].timing?.nextResolveAt || 0)) + WAIT_MS };
-        const group = { id: event.key, memberIds: participants.map(p => p.id) };
-        // Each member commits on its cached revision: a write since then
-        // refuses the pair whole.
-        const results = await this.owner.commitBatch(next.map((state, i) => ({
-            revision: Number(states[i].simulation?.revision || 0), nextState: state,
-            atomicGroup: group, options: { allowLifecycle: true }, proposal: {
-                ...InventorySummary.bagChange(states[i].inventory, state.inventory),
-                ...(contest && i === 1 ? { result: { memoryEvents: [RelationshipContext.enrich({ key: `${event.key}:contested`,
-                    sourceId: state.characterId, targetId: states[0].characterId, kind: 'character',
-                    type: 'mob_contested', at: now }, state)] } } : {}) }
-        })), { timestamp: this.now(), journalReason: 'competition' });
-        if (results.length !== 2 || results.some(r => !r.ok)) return { ok: false, reason: 'commit_rejected' };
-        states.forEach(s => this.onState(s.characterId));
-        return queued ? { ok: true, queued: true } : { ok: true, waitUntil: now + WAIT_MS,
-            ...(contest ? { victimId: states[1].characterId, memoryEvent: 'mob_contested', pvp: false } : {}) };
+        return { ok: false, reason: 'forecast_only' };
     }
     async stop() { this.stopping = true; if (this.running) await this.running; }
     recordPvpStep(result) {
@@ -230,4 +146,4 @@ class ColdCompetitionActions {
         spotActivityEvicted: this.spotActivityEvicted,
         mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
-module.exports = { ColdCompetitionActions, eligible, TTL_MS, WAIT_MS, CONFLICT_COOLDOWN_MS };
+module.exports = { ColdCompetitionActions, TTL_MS, WAIT_MS };

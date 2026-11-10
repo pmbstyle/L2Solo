@@ -1,5 +1,5 @@
 'use strict';
-// Spot cutting (T123, docs/game-decisions.md "Spot cutting"): the catalogue
+// Spot cutting: the catalogue
 // SpotService builds from the world's spawns splits a cell by floor, joins an
 // edge fragment to the neighbour field of its species (its old id still finds
 // that field), floors the area a few spawns cover, takes in the spawns of the

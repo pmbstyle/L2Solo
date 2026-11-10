@@ -54,7 +54,7 @@ function itemName(itemId, supplied) {
 }
 
 function goalKey(goal) {
-    if (goal?.status !== 'active') return '';
+    if (!goal) return '';
     if (ChatterItems.isRoutineSupply(goal.target?.itemId, goal.target?.itemName)) return '';
     switch (goal.type) {
         case 'upgrade_gear': case 'buy_craft_material': return `${goal.type}:${goal.target?.itemId || goal.target?.itemName || ''}`;
@@ -150,7 +150,9 @@ function flush(now = Date.now(), immediate = false) {
             }
             if (entry.help && !helpStillGrouped(entry.help)) continue;
             if (entry.task && !taskStillGrouped(entry.task)) continue;
-            if (entry.goal && goalKey(invoke('GameServer/Bot/Goals/GoalState').snapshot(id(entry.source))?.current) !== entry.goal) continue;
+            // A goal line still names the goal of the card the bot holds (NeedsEvaluator.shownGoal).
+            if (entry.goal && goalKey(invoke('GameServer/Bot/Goals/NeedsEvaluator')
+                .shownGoal(invoke('GameServer/Bot/Population/BotLifeState').cachedState(id(entry.source)))) !== entry.goal) continue;
             const players = audience(entry.source, clanId);
             if (!players.length) continue;
             const text = Voice.line(`clan.${entry.topic}`, entry.source, entry.values, entry.join?.texts || []);
@@ -184,6 +186,11 @@ function flush(now = Date.now(), immediate = false) {
     }
 }
 
+// Whether any human of the bot's clan would hear it: a line nobody hears is not made.
+function heard(source) {
+    return Config.clanChatEnabled !== false && !!id(source) && audience(source).length > 0;
+}
+
 function onGoal(source, goal, previous, now = Date.now()) {
     const key = goalKey(goal);
     if (!key || key === goalKey(previous)) return false;
@@ -199,6 +206,17 @@ function onGoal(source, goal, previous, now = Date.now()) {
         if (!Number.isInteger(values.level) || values.level <= Number(source.level || 0)) return false;
     }
     return enqueue(source, topic, values, `goal:${key}`, now, { goal: key });
+}
+
+// A far bot's new decision (ColdEconomyDecisions: its decisionSeq moved): its goal
+// read over the new card and over the one before (NeedsEvaluator), told when it
+// changed. Our flavour, not C4: a player telling his clan what he saves for.
+function onDecision(state, card, previous, now = Date.now()) {
+    if (!heard(state)) return false;
+    // lazy: cycle ColdEconomyDecision calls this module when it holds a card.
+    const view = invoke('GameServer/Bot/Population/ColdEconomyDecision').view;
+    const goal = decision => invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { economy: view(state, decision), now });
+    return onGoal(state, goal(card), goal(previous), now);
 }
 
 function onDeath(source, token, now = Date.now()) {
@@ -296,7 +314,7 @@ function safe(callback) {
 }
 
 module.exports = {
-    onGoal: safe(onGoal), onDeath: safe(onDeath), onResolved: safe(onResolved), onWarehouse: safe(onWarehouse),
+    onGoal: safe(onGoal), onDecision: safe(onDecision), onDeath: safe(onDeath), onResolved: safe(onResolved), onWarehouse: safe(onWarehouse),
     onClanTask: safe(onClanTask), onPartyHelp: safe(onPartyHelp), onWithdrawal: safe(onWithdrawal), onJoined: safe(onJoined), flush: safe(flush), goalKey,
     DEATH_WINDOW_MS, EVENT_COOLDOWN_MS, QUEUE_TTL_MS, MAX_PENDING, MAX_CLANS,
     snapshot() { return { clans: queues.size, pending: [...queues.values()].reduce((sum, queue) => sum + queue.pending.length, 0), history: history.size, deaths: deaths.size }; },

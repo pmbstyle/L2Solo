@@ -14,13 +14,14 @@ const Training = invoke('GameServer/Bot/BotSkillTraining');
 Data.init();
 const restores = [];
 const stub = (object, key, value) => { const old = object[key]; object[key] = value; restores.push(() => { object[key] = old; }); };
-const npcTalkFile = require.resolve('../src/GameServer/World/Generics/NpcTalkResponse');
-require(npcTalkFile);
-const npcTalk = require.cache[npcTalkFile];
-const npcResponse = npcTalk.exports;
+// The visit's NPC sale of its leftovers (the general sell-junk), counted.
+const sellJunkFile = require.resolve('../src/GameServer/World/Generics/NpcBypasses/SellJunk');
+require(sellJunkFile);
+const sellJunk = require.cache[sellJunkFile];
+const sellJunkHandler = sellJunk.exports;
 let npcSales = 0;
-npcTalk.exports = () => { npcSales++; };
-let serial = 0, requests = 0, restocks = 0, upgrades = 0, settlements = 0, terminal = 'completed';
+sellJunk.exports = () => { npcSales++; };
+let serial = 0, requests = 0, restocks = 0, upgrades = 0, terminal = 'completed';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const bot = { fetchId: () => 920051, fetchName: () => 'PendingShopper', fetchClassId: () => 0,
     fetchLevel: () => 14, fetchLocX: () => 83396, fetchLocY: () => 147904, fetchLocZ: () => -3400,
@@ -41,7 +42,7 @@ function stage() {
 function visit(selling = false) {
     session.actor = bot; session.plan = 'shopping'; session.shopTimer = ++serial;
     session.shoppingDoneAnnounced = true; session.lastTradeSummary = null;
-    session.shoppingRestock = undefined; session.companionEquipmentRetryAt = undefined;
+    session.shoppingRestock = undefined; session.nearRaise = null;
     const target = { recordId: 123, name: selling ? 'Buyer' : 'Seller', town: 'Giran', ...point };
     session.shoppingTarget = target;
     session.companionShopping = selling ? undefined : { kind: 'market_purchase', itemId: 1,
@@ -60,7 +61,6 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
     try {
         stub(Afk, 'recordStore', () => null);
         stub(Afk, 'ownerRecords', () => []);
-        stub(Afk, 'settleOwners', async () => { settlements++; });
         stub(Afk, 'buyFromShop', async () => { requests++; return { pending: true, token: activeToken }; });
         stub(Afk, 'sellToShop', async () => { requests++; return { pending: true, token: activeToken }; });
         stub(Trade, 'sellableActorItems', () => [{ fetchId: () => 123, fetchSelfId: () => 1867, fetchAmount: () => 2 }]);
@@ -100,7 +100,7 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         for (const selling of [false, true]) for (const outcome of ['completed', 'cancelled', 'discarded']) {
             visit(selling); terminal = outcome;
             activeToken = stage();
-            const before = { requests, restocks, upgrades, settlements, npcSales };
+            const before = { requests, restocks, upgrades, npcSales };
             const work = Shopping.sellAndRestock(session, bot, null, ai);
             await tick();
             assert(session.pendingShoppingMeeting, 'a pending exchange retains its shopping continuation');
@@ -112,7 +112,6 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
             await work;
             assert.equal(session.pendingShoppingMeeting, undefined, 'terminal outcome releases the continuation');
             assert.equal(restocks, before.restocks + 1, 'completion and cancellation both continue the visit');
-            assert.equal(settlements, before.settlements + Number(outcome !== 'discarded'), 'settle durable delivery/refund before continuing');
             if (!selling) {
                 assert.equal(upgrades, before.upgrades + Number(outcome === 'completed'), 'only committed purchases equip gear');
                 assert.match(session.lastTradeSummary, outcome === 'completed' ? /^bought 1x/ : /^could not buy/);
@@ -148,10 +147,10 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         visit(); activeToken = stage();
         const staleWork = Shopping.sellAndRestock(session, bot, null, ai);
         await tick();
-        const before = { restocks, upgrades, settlements };
+        const before = { restocks, upgrades };
         session.actor = { ...bot };
         terminal = 'completed'; await Meetings.accept(activeToken, bot.fetchId()); await staleWork;
-        assert.deepEqual({ restocks, upgrades, settlements }, before, 'a replaced actor cannot resume the old visit');
+        assert.deepEqual({ restocks, upgrades }, before, 'a replaced actor cannot resume the old visit');
         visit(); activeToken = stage();
         const stoppedWork = Shopping.sellAndRestock(session, bot, null, ai);
         await tick(); session.pendingShoppingMeeting.controller.abort(); await stoppedWork;
@@ -171,7 +170,7 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         console.log('PASS hot shopping: pending buy/sell, native completion/cancellation, discarded preparation, single trade and actor/AI interruption');
     } finally {
         clearTimeout(deadline);
-        Meetings.reset(); npcTalk.exports = npcResponse;
+        Meetings.reset(); sellJunk.exports = sellJunkHandler;
         for (const restore of restores.reverse()) restore();
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

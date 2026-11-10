@@ -152,7 +152,6 @@ assert.deepEqual(Profit.materials([{ id: 1, selfId: STEM, amount: 6 }], {
 assert.deepEqual(Profit.materials([{ id: 1, selfId: STEM, amount: 10 }, { id: 1, selfId: STEM, amount: 10 }], {
     materials: [{ selfId: STEM, amount: 5 }, { selfId: STEM, amount: 5 }] }), [{ id: 1, selfId: STEM, amount: 10 }]);
 assert.equal(Profit.mpHours({ mpCost: 0 }, 1, {}), 0);
-assert.equal(Profit.craftIncomePerHour({ hours: 0, profit: 10, labour: 0 }), null, 'zero-MP does not invent a repeatable clock');
 assert.equal(Profit.mpHours({ mpCost: 10 }, 1, {}), null);
 
 const emptyBoard = new BoardIndex();

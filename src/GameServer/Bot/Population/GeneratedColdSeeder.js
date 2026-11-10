@@ -250,30 +250,11 @@ function migratePopulationAppearances(states = []) {
 }
 
 function awardBaseGear(characterId, classId) {
-    const items = StarterItemCatalog.firstClassRow(DataCache.newbieItems, classId)?.items || [];
-    const starterTemplates = items.filter((item) => item.equipped === true)
-        .map((item) => ItemTemplateIndex.findStrict(DataCache.items, item.selfId));
-    const hasTwoHandedWeapon = starterTemplates.some((template) => (
-        Number(template?.etc?.slot || 0) === 14 &&
-        String(template?.template?.kind || '').startsWith('Weapon.')
-    ));
+    const rows = StarterItemCatalog.starterRows(DataCache.newbieItems, classId, DataCache.items);
     return Database.fetchItems(characterId, 'seeder_base_gear').then((existing) => {
         const existingIds = new Set((existing || []).map((item) => Number(item.selfId)));
-        return Promise.all(items
-            .filter((item) => !existingIds.has(Number(item.selfId)))
-            .map((item) => {
-                const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
-                return Database.setItem(characterId, {
-                    ...item,
-                    slot: template?.etc?.slot || 0,
-                    // Bows and other slot-14 weapons occupy both hands.
-                    // Newbie templates may still grant a Buckler, but it
-                    // must remain in inventory until the two-handed weapon
-                    // is replaced.
-                    equipped: item.equipped === true
-                        && !(hasTwoHandedWeapon && Number(template?.etc?.slot || 0) === 8)
-                });
-            }));
+        return Promise.all(rows.filter((row) => !existingIds.has(Number(row.selfId)))
+            .map((row) => Database.setItem(characterId, row)));
     });
 }
 
@@ -654,9 +635,9 @@ const GeneratedColdSeeder = {
                             });
                         })
                         // The station publishes its workshop to bots (E212);
-                        // review writes only when its entries change.
+                        // its listing writes only when its entries change.
                         .then((saved) => (saved?.phase === 'cold' && LifeState.cachedState(saved.characterId)
-                            ? invoke('GameServer/Bot/Economy/CraftWorkshopService').review(LifeState.cachedState(saved.characterId))
+                            ? invoke('GameServer/Bot/Economy/CraftWorkshopService').publishListing(LifeState.cachedState(saved.characterId))
                                 .then(() => saved)
                             : saved))
                         .then((saved) => {

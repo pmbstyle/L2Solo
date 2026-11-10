@@ -138,7 +138,7 @@ async function reclaimRequiredRoleParties(clan) {
     let releasedMembers = 0;
     const reclaimedPartyIds = [];
     for (const partyId of partyIds) {
-        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved', 'clan_operation_reclaimed');
         if (!dissolved) continue;
         const released = await LifeState.releaseDissolvedPartyMembers(partyId, 'clan_operation_reclaimed');
         releasedMembers += number(released);
@@ -164,7 +164,7 @@ async function reclaimPlayerOrderParties(clan, goal) {
     let releasedMembers = 0;
     const reclaimedPartyIds = [];
     for (const partyId of partyIds) {
-        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved', 'player_clan_order_reclaimed');
         if (!dissolved) continue;
         const released = await LifeState.releaseDissolvedPartyMembers(partyId, 'player_clan_order_reclaimed');
         releasedMembers += number(released);

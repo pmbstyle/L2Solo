@@ -76,12 +76,9 @@ async function coldBot(id, account, name) {
     }, 'test_cold_seed');
 }
 
-// A deal on a far bot's record (step 3.3) settles at once, and the merge
-// moves the row's revision. The worker steps the owner, a buyer or seller
-// fills its record, then the worker commits a hunt (+30 adena, 2 Stems)
-// projected from the inventory it stepped from: the commit is refused and
-// the retry from the merged row keeps the hunt and the deal.
-async function fillDuringStep({ label, storeType, lines, ownerItems, counterpartyItems = [], write, settled }) {
+// A deal on a far bot's record leaves what it owes the owner on the board
+// and its row alone.
+async function farDeal({ label, storeType, lines, ownerItems, counterpartyItems = [], write }) {
     const owner = await makeCharacter(`bot_${label}_owner`, `${label}Owner`, ownerItems);
     const counterparty = await makeCharacter(`pl_${label}`, `${label}Player`, counterpartyItems);
     await coldBot(owner.id, `bot_${label}_owner`, `${label}Owner`);
@@ -95,29 +92,27 @@ async function fillDuringStep({ label, storeType, lines, ownerItems, counterpart
     const before = await amounts(owner.id);
     const store = AfkTrade.findOwnerProjection(owner.id).actor.fetchPrivateStore();
     await write(store, counterparty, owner);
-    const merged = await amounts(owner.id);
-    for (const [selfId, delta] of Object.entries(settled)) {
-        assert.strictEqual(Number(merged[selfId] || 0), Number(before[selfId] || 0) + delta, `${label}: the deal settles at once`);
-    }
-    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits on the board`);
+    assert.deepStrictEqual(await amounts(owner.id), before, `${label}: the deal leaves the far owner's bag alone`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [owner.id], `${label}: what it owes waits on the board`);
+    assert.strictEqual(LifeState.cachedState(owner.id).simulation.revision, stepRevision, `${label}: and the row is not moved`);
+    return { owner, stepped, stepRevision, before };
+}
 
+// The worker steps the owner, a buyer or seller fills its record, then the
+// worker commits a hunt (+30 adena, 2 Stems) projected from the inventory it
+// stepped from: the commit lands and merges the deal in the same save,
+// keeping the hunt and the deal once.
+async function fillDuringStep(spec) {
+    const { label, settled } = spec;
+    const { owner, stepped, stepRevision, before } = await farDeal(spec);
     const next = structuredClone(stepped.inventory);
     next['57'].amount += 30;
     next['1864'] = { selfId: 1864, name: 'Stem', amount: 2 };
-    const [refused] = await Owner.commitBatch([{ revision: stepRevision,
+    const step = () => Owner.commitBatch([{ revision: stepRevision,
         nextState: { ...stepped, adena: next['57'].amount, inventory: next },
         proposal: InventorySummary.bagChange(stepped.inventory, next) }], { timestamp: Date.now() });
-    assert.strictEqual(refused.reason, 'stale_revision', `${label}: the step from before the deal is refused`);
-
-    const retry = LifeState.cachedState(owner.id);
-    assert.strictEqual(retry.adena, merged[57], `${label}: the retry starts from the merged wallet`);
-    const hunted = structuredClone(retry.inventory);
-    hunted['57'].amount += 30;
-    hunted['1864'] = { selfId: 1864, name: 'Stem', amount: 2 };
-    const [commit] = await Owner.commitBatch([{ revision: retry.simulation.revision,
-        nextState: { ...retry, adena: hunted['57'].amount, inventory: hunted },
-        proposal: InventorySummary.bagChange(retry.inventory, hunted) }], { timestamp: Date.now() });
-    assert(commit.ok, `${label}: the retry commits`);
+    const [commit] = await step();
+    assert(commit.ok && commit.settled, `${label}: the step from before the deal commits and merges it`);
     const after = await amounts(owner.id);
     const expected = { ...settled, 57: 30 + Number(settled[57] || 0) };
     for (const [selfId, delta] of Object.entries(expected)) {
@@ -125,12 +120,43 @@ async function fillDuringStep({ label, storeType, lines, ownerItems, counterpart
             `${label}: item ${selfId} holds the hunt and the deal`);
     }
     assert.strictEqual(Number(after[1864] || 0), 2, `${label}: the hunt's stems stay`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits on the board`);
     const cached = LifeState.cachedState(owner.id);
     assert.strictEqual(cached.adena, after[57], `${label}: the bot goes on with the merged wallet`);
     // A cache behind the row's updatedAt would make every later command of
-    // this bot stale against the row (L127).
+    // this bot stale against the row (a stale_command loop).
     const [lifeRow] = await Database.execute(['SELECT updatedAt FROM bot_life_state WHERE characterId = ?', [owner.id]]);
     assert.strictEqual(cached.updatedAt, Number(lifeRow.updatedAt), `${label}: the cached checkpoint follows the row`);
+    const [replayed] = await step();
+    assert(!replayed.ok, `${label}: a replay of the step is refused`);
+    assert.deepStrictEqual(await amounts(owner.id), after, `${label}: the deal is merged once`);
+}
+
+// A far bot main drives through town (shopping) takes no worker step there:
+// each lifecycle command's resolve (the row's save, then its bag's sync)
+// merges what a deal left for it on the board, once, and the next command,
+// built on the published state, keeps it.
+async function fillThenResolve(spec) {
+    const { label, settled } = spec;
+    const { owner, before } = await farDeal(spec);
+    const step = () => LifeState.applyResolve(LifeState.cachedState(owner.id),
+        { patch: { activity: 'shopping' }, debug: {}, events: [] });
+    const resolved = await step();
+    assert(resolved, `${label}: the lifecycle step commits`);
+    const after = await amounts(owner.id);
+    for (const [selfId, delta] of Object.entries(settled)) {
+        assert.strictEqual(Number(after[selfId] || 0), Number(before[selfId] || 0) + delta, `${label}: item ${selfId} holds the deal`);
+        assert.strictEqual(Number(resolved.inventory[selfId]?.amount || 0), after[selfId], `${label}: the published bag holds it`);
+    }
+    assert.strictEqual(resolved.adena, after[57], `${label}: the bot goes on with the merged wallet`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits on the board`);
+    const [life] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [owner.id]]);
+    assert.strictEqual(Number(life.adena), after[57], `${label}: the stored wallet holds it`);
+    for (const selfId of Object.keys(settled)) {
+        assert.strictEqual(InventorySummary.read(life.inventorySummary)[selfId].amount, after[selfId], `${label}: the stored bag holds item ${selfId}`);
+    }
+    await step();
+    assert.deepStrictEqual(await amounts(owner.id), after, `${label}: the next lifecycle step keeps the deal, merged once`);
 }
 
 // The worker steps the owner, the owner's own move (a close, reprice or
@@ -212,6 +238,25 @@ async function writeDuringStep({ label, storeType, lines, ownerItems, counterpar
     // A fill of a far bot's buy order: the 5 bought ores arrive at once.
     await fillDuringStep({
         label: 'buy', storeType: AfkTrade.BUY,
+        ownerItems: [item(57, 1000, 'Adena'), item(IRON_ORE, 5, 'Iron Ore')],
+        counterpartyItems: [item(57, 5000, 'Adena'), item(IRON_ORE, 10, 'Iron Ore')],
+        lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],
+        write: (store, seller) => AfkTrade.sellToShop(seller.id, store, IRON_ORE, 5,
+            { objectId: seller.ids[IRON_ORE], expectedPrice: 20 }),
+        settled: { [IRON_ORE]: 5 }
+    });
+
+    // The same sale and fill for a bot main walks through town.
+    await fillThenResolve({
+        label: 'townsell', storeType: AfkTrade.SELL,
+        ownerItems: [item(57, 1000, 'Adena'), item(POTION, 10, 'Lesser Healing Potion')],
+        counterpartyItems: [item(57, 5000, 'Adena')],
+        lines: (ids) => [{ objectId: ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 10, price: 50, stackable: true }],
+        write: (store, buyer) => AfkTrade.buyFromShop(buyer.id, store, POTION, 5, { expectedPrice: 50 }),
+        settled: { 57: 250 }
+    });
+    await fillThenResolve({
+        label: 'townbuy', storeType: AfkTrade.BUY,
         ownerItems: [item(57, 1000, 'Adena'), item(IRON_ORE, 5, 'Iron Ore')],
         counterpartyItems: [item(57, 5000, 'Adena'), item(IRON_ORE, 10, 'Iron Ore')],
         lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],

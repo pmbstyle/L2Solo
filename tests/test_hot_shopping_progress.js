@@ -81,43 +81,35 @@ async function run() {
         assert.equal(bot.moves, 0, 'a meeting preparation still owns the actor before its durable marker arrives');
         prepared = false;
 
+        // A refused restock is tried again at once (its purchase waits its counter delay)
+        // until it succeeds or its attempts run out; then the bot leaves for its hunt.
         for (const failedPurchases of [1, 3]) {
             failures = failedPurchases; purchases = 0;
             const visit = { actor: bot, plan: 'shopping', shoppingTarget: target,
                 shoppingDoneAnnounced: true, dataSendToOthers() {} };
             Shopping.scheduleRestock(visit, bot, null, ai);
-            await elapse(9000);
-            assert.equal(visit.plan, 'shopping');
-            assert.equal(visit.shoppingRestockFailures, 1);
-            assert.equal(visit.shoppingRestock, undefined);
-            Shopping.tick(visit, bot, null, ai);
-            assert.equal(timers.size, 0, 'the retry delay must not start another purchase early');
-            await elapse(5000);
-            prepared = true;
-            Shopping.tick(visit, bot, null, ai);
-            assert.equal(timers.size, 0, 'meeting preparation must also block a due restock retry');
-            prepared = false;
-            current = stale;
-            Shopping.tick(visit, bot, null, ai);
-            assert.equal(timers.size, 0, 'accepted native custody must also block a due restock retry');
-            current = live;
-            for (let attempt = 1; attempt < 3 && visit.plan === 'shopping'; attempt++) {
-                if (attempt > 1) await elapse(5000);
-                Shopping.tick(visit, bot, null, ai);
-                assert(visit.shoppingRestock, 'a waiting visit must actually restart its failed restock');
-                const count = timers.size;
-                Shopping.tick(visit, bot, null, ai);
-                assert.equal(timers.size, count, 'an in-flight retry must not create duplicate purchases or departure callbacks');
+            for (let attempt = 0; attempt < 5 && visit.plan === 'shopping'; attempt++) {
                 await elapse(9000);
+                Shopping.tick(visit, bot, null, ai);
             }
             assert.equal(purchases, failedPurchases === 1 ? 2 : 3);
             assert.equal(visit.plan, 'hunting', 'success or the last failed attempt must release the farming continuation');
             assert.equal(visit.shoppingDoneAnnounced, false);
             assert.equal(visit.pendingFarmDepartureAnnouncement, true);
-            assert.equal(visit.shoppingRestockRetryAt, undefined);
-            assert.equal(timers.size, 0);
+            assert.equal(timers.size, 0, 'no purchase is left behind');
         }
-        console.log('Hot shopping progress: stale custody, real custody, preparation, delayed retry and farming return passed');
+        // A meeting preparation that took the bot during a refused restock owns it: the
+        // visit ends with no second purchase.
+        failures = 3; purchases = 0;
+        const held = { actor: bot, plan: 'shopping', shoppingTarget: target, shoppingDoneAnnounced: true, dataSendToOthers() {} };
+        Shopping.scheduleRestock(held, bot, null, ai);
+        prepared = true;
+        await elapse(9000);
+        prepared = false;
+        assert.equal(purchases, 1, 'meeting preparation blocks a restock retry');
+        assert.equal(held.plan, 'hunting');
+        assert.equal(timers.size, 0);
+        console.log('Hot shopping progress: stale custody, real custody, preparation, retry at once and farming return passed');
     } finally {
         Date.now = original.now;
         global.setTimeout = original.setTimeout;

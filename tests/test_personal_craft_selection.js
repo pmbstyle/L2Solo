@@ -33,8 +33,7 @@ function base(classId, level, adena) {
 function build(state) {
     const service = id => ({ characterId: 990412, recipeId: id, price: 1000, entryPrice: 1000, capacityBatches: 1,
         townName: 'Giran', loc: { locX: 83400, locY: 148600, locZ: -3400 }, publicStation: false });
-    return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [], npcOffersFor: () => [], workshop: null,
-        knownRecipes: [], withNodes: true, knowledgeEnabled: false,
+    return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [], npcOffersFor: () => [], knownRecipes: [], withNodes: true, knowledgeEnabled: false,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: id => [service(id)], caller: 'meeting_prepare' });
 }

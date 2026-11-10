@@ -5,19 +5,41 @@ const SearchWork = require('./RaidSearchWork');
 const Priority = require('./RaidRosterPriority');
 const { RaidRosterCoverage } = require('./RaidRosterCoverage');
 const { RaidSearchCounters, LIMITS } = require('./RaidSearchCounters');
+const Trace = require('../DecisionTrace');
 
 // An indexed adventurer pool, one bounded proposal per opportunity, and the
 // native party lifecycle. No boss sweep creates recruitment requests.
+// A search runs at its situations (wake), never on a clock: the director's start,
+// a raid boss spawned (RaidEntityIndex), a raid party ended, the pacing end
+// (lastFormedAt + opportunisticRaidIntervalMs, armed once), and raid_opportunity (the
+// available pool grew by a roster, 9, since the last search that formed nothing). A
+// search starts only with its whole forecast CPU allowance (a rate: it refills by
+// LIMITS.forecastCpuMs per forecastRefillMs); one busy main or that allowance cut stays
+// due and goes on with its deferred rosters only (draining: fresh rosters wait for the
+// next situation, raid_opportunity among them) once main is free or the allowance full
+// again, and ends when that queue is empty; one the forecast cap (count, deadline) cut
+// ends there. A boss whose encounter
+// could not be placed is held out until its next spawn. Member cooldowns are reads.
+const ROSTER = 9;
+const BUDGET_CUT = new Set(['busy', 'forecast_cpu_budget']);
 class OpportunisticRaidDirector {
     constructor(deps) {
         Object.assign(this, deps);
         this.pool = new Map();
         this.cooldowns = new Map();
         this.encounters = new Map();
-        this.blockedBosses = new Map();
+        this.unreachableBosses = new Set();
+        this.spawnedBosses = new Set();
         this.placementFailures = new Map();
         this.lastFormedAt = 0;
-        this.nextSearchAt = 0;
+        // due: the reason of the pending search (null: none); pacingAt: the pacing
+        // end's wake, armed once; poolAtFailure: the pool after a search that formed
+        // nothing (null: none since).
+        this.due = null;
+        this.pacingAt = 0;
+        this.poolAtFailure = null;
+        // draining: the due search was cut after proposing its rosters; it goes on with them.
+        this.draining = false;
         this.running = false;
         this.active = false;
         this.lastResult = { reason: 'starting' };
@@ -53,24 +75,38 @@ class OpportunisticRaidDirector {
             const state = this.life.cachedState(Number(packet.characterId));
             if (state && Policy.available(state)) this.pool.set(state.characterId, state);
             else this.pool.delete(Number(packet.characterId));
+            if (this.poolAtFailure !== null && this.pool.size >= this.poolAtFailure + ROSTER) this.wake('raid_opportunity');
         }, { replay: true });
         this.unsubscribeParty = this.parties.subscribeChanges(party => {
             if (!Policy.isObjective(party.stats?.objective)) return;
             this.lastFormedAt = Math.max(this.lastFormedAt, Number(party.startedAt));
             this.remember(party.memberIds, party.status === 'dissolved' ? Date.now() : party.startedAt);
+            if (party.status === 'dissolved') this.wake('raid_ended');
         });
+        // Told inside the index's writes: the boss is looked up at the next pulse.
+        this.unsubscribeBoss = this.onBossChanged?.(templateId => { if (this.active) this.spawnedBosses.add(Number(templateId)); });
         await this.preparations?.start();
         for (const plan of this.preparations?.snapshot() || []) {
             this.lastFormedAt = Math.max(this.lastFormedAt, plan.startedAt);
             this.remember(plan.memberIds, plan.startedAt);
         }
+        this.wake('start');
+    }
+
+    // A search is due (its situation: reason). Held until a search runs it.
+    wake(reason) {
+        if (!this.active) return;
+        this.due ||= reason;
+        this.poolAtFailure = null;
+        this.draining = false;
     }
 
     stop() {
         this.preparations?.stop();
         this.searchEpoch++;
-        this.active = false; this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.pool.clear();
-        this.encounters.clear(); this.blockedBosses.clear(); this.placementFailures.clear();
+        this.active = false; this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.unsubscribeBoss?.(); this.pool.clear();
+        this.encounters.clear(); this.unreachableBosses.clear(); this.spawnedBosses.clear(); this.placementFailures.clear();
+        this.due = null; this.pacingAt = 0; this.poolAtFailure = null; this.draining = false;
         this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0;
     }
 
@@ -80,7 +116,7 @@ class OpportunisticRaidDirector {
     }
 
     snapshot() { return { pool: this.pool.size, lastFormedAt: this.lastFormedAt,
-        nextSearchAt: this.nextSearchAt, lastResult: this.lastResult,
+        due: this.due, pacingAt: this.pacingAt, lastResult: this.lastResult,
         preparations: this.preparations?.snapshot() || [], search: this.searchCounters.snapshot() }; }
 
     room(spot, catalog, alive, admitted) {
@@ -98,42 +134,49 @@ class OpportunisticRaidDirector {
         const current = () => this.active && this.searchEpoch === epoch;
         const scheduling = { ...this.searchScheduling, current };
         const yieldNow = scheduling.yieldNow || SearchWork.yieldToLoop;
-        let searchStarted = false, searchStatus = 'complete', cpuAllowance = 0;
+        let searchStarted = false, searchStatus = 'complete', cpuAllowance = 0, proposed = false;
         try {
             await this.maintain(timestamp);
             if (!current()) return;
-            if (timestamp < this.nextSearchAt) return;
-            this.nextSearchAt = timestamp + this.config.opportunisticRaidSearchIntervalMs;
-            if (!this.canWork()) {
-                this.nextSearchAt = timestamp + 10000;
-                this.lastResult = { reason: 'raid_background_busy' };
-                return;
+            // A boss back in the index (its spawn): its unreachable mark ends, a search is due.
+            for (const id of this.spawnedBosses) {
+                this.spawnedBosses.delete(id);
+                if (!this.bossAlive?.(id)) continue;
+                this.unreachableBosses.delete(id);
+                this.wake('boss_spawned');
             }
-            if (timestamp - this.lastFormedAt < this.config.opportunisticRaidIntervalMs) return;
+            if (this.pacingAt && timestamp >= this.pacingAt) { this.pacingAt = 0; this.wake('pacing_end'); }
+            if (!this.due) return;
+            // Pacing and the party cap hold the search: their ends wake it again.
+            if (timestamp - this.lastFormedAt < this.config.opportunisticRaidIntervalMs) {
+                this.pacingAt = this.lastFormedAt + this.config.opportunisticRaidIntervalMs; this.due = null; return;
+            }
             const admitted = [...this.parties.admitted(), ...(this.preparations?.admitted() || [])];
-            if (admitted.filter(p => Policy.isObjective(p.stats?.objective)).length >= this.config.opportunisticRaidMaxParties) return;
+            if (admitted.filter(p => Policy.isObjective(p.stats?.objective)).length >= this.config.opportunisticRaidMaxParties) {
+                this.due = null; return;
+            }
+            if (!this.canWork()) { this.lastResult = { reason: 'raid_background_busy' }; return; }
             // A synchronous forecast can overrun the allowance once. Charge
-            // that debt to following search windows instead of adding the
-            // same overrun every minute. Idle raid/cap windows refill normally.
+            // that debt to the following refill windows instead of adding the
+            // same overrun every search.
             this.forecastCpuAt ??= timestamp;
-            const windows = Math.max(0, Math.floor((timestamp - this.forecastCpuAt)
-                / this.config.opportunisticRaidSearchIntervalMs));
+            const windows = Math.max(0, Math.floor((timestamp - this.forecastCpuAt) / LIMITS.forecastRefillMs));
             this.forecastCpuTokens = Math.min(LIMITS.forecastCpuMs,
                 this.forecastCpuTokens + windows * LIMITS.forecastCpuMs);
-            this.forecastCpuAt += windows * this.config.opportunisticRaidSearchIntervalMs;
+            this.forecastCpuAt += windows * LIMITS.forecastRefillMs;
             this.searchCounters.cpuBudget.availableMs = Math.max(0, this.forecastCpuTokens);
             this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
-            if (this.forecastCpuTokens <= 0) {
+            if (this.forecastCpuTokens < LIMITS.forecastCpuMs) {
                 this.searchCounters.cpuBudget.deferredSearches++;
                 this.lastResult = { reason: 'raid_forecast_cpu_rest' }; return;
             }
             cpuAllowance = this.forecastCpuTokens;
-            this.searchCounters.begin(timestamp); searchStarted = true;
+            this.searchCounters.begin(timestamp, this.due); searchStarted = true;
             // Hydrate a rotating, bounded slice. Recent publication order must
             // not permanently hide an older tank or healer.
             const shortlist = await SearchWork.run(Policy.candidateSteps([...this.pool.values()],
-                this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters), scheduling);
-            if (!shortlist) return;
+                this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters, this.draining), scheduling);
+            if (!shortlist) { searchStatus = 'busy'; return; }
             const { candidates } = shortlist;
             this.tankCursor = shortlist.tankCursor;
             for (const [reason, count] of Object.entries(shortlist.rejected))
@@ -160,13 +203,12 @@ class OpportunisticRaidDirector {
             const windowCursor = this.rosterWindowCursor || 0;
             const rosters = await SearchWork.run(Policy.proposalSteps(shortlist.proposals, members,
                 this.memory.assess.bind(this.memory), timestamp, this.searchCounters), scheduling);
-            if (!rosters) return;
+            if (!rosters) { searchStatus = 'busy'; return; }
             this.rosterWindowCursor = (windowCursor + 1) % 3;
             this.searchCounters.add('rostersProposed', rosters.length);
-            this.deferredRosters = rosters.map(roster => roster.map(s => s.characterId));
+            this.deferredRosters = rosters.map(roster => roster.map(s => s.characterId)); proposed = true;
             if (!rosters.length) { this.lastResult = { reason: 'raid_compatible_roster_missing' }; searchStatus = 'no_roster'; return; }
             const catalog = this.catalog.all(), alive = this.catalog.liveTemplateIds();
-            for (const [id, until] of this.blockedBosses) if (until <= timestamp) this.blockedBosses.delete(id);
             const claimed = new Set(admitted.map(p => Number(p.stats?.objective?.raidBossTemplateId || 0)));
             // A coverage pass drains the fresh, revalidated deferred queue in
             // order. Rotating it again could hide the adjacent strong cohort
@@ -192,7 +234,7 @@ class OpportunisticRaidDirector {
                 const priority = roster.map(s => s.characterId).join(':') === shortlist.priorityKey;
                 const key = `${priority ? 'priority:' : ''}${Math.min(...roster.map(s => s.level))}:${Math.max(...roster.map(s => s.level))}`;
                 const all = catalog.filter(s => alive.has(s.raidBossTemplateId) && !claimed.has(s.raidBossTemplateId)
-                    && !this.blockedBosses.has(s.raidBossTemplateId)
+                    && !this.unreachableBosses.has(s.raidBossTemplateId)
                     && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
                     .sort((a, b) => targetScore(a) - targetScore(b)
                         || a.avgLevel - b.avgLevel || a.raidBossTemplateId - b.raidBossTemplateId);
@@ -226,7 +268,7 @@ class OpportunisticRaidDirector {
                     this.lastResult = { ...assessment, bossId: spot.raidBossTemplateId,
                         members: roster.map(s => ({ id: s.characterId, name: s.name, level: s.level })) };
                     if (!assessment.ready) continue;
-                    if (!current() || !this.canWork()) return;
+                    if (!current() || !this.canWork()) { searchStatus = 'busy'; return; }
                     const objective = { status: 'open', priority: 'required', reason: 'opportunistic_raid', sourceKind: 'raid',
                         opportunisticRaid: true, raidBoss: true, raidBossTemplateId: spot.raidBossTemplateId,
                         npcId: spot.raidBossTemplateId, sourceLevel: spot.avgLevel, spotId: spot.id,
@@ -236,6 +278,10 @@ class OpportunisticRaidDirector {
                     const party = needsSupplies
                         ? await this.preparations?.reserve(roster, objective, timestamp)
                         : await this.form(roster, objective);
+                    // A ready roster put to its boss: formed, its supplies' preparation begun, or refused.
+                    if (Trace.on()) Trace.record({ kind: 'raid', bot: Number(roster[0]?.characterId), phase: 'forming',
+                        outcome: !party ? 'refused' : needsSupplies ? 'preparing' : 'formed', party: party?.partyId ? String(party.partyId) : undefined,
+                        npcId: Number(spot.raidBossTemplateId), members: roster.length });
                     if (party) {
                         if (needsSupplies) this.searchCounters.add('preparationsStarted');
                         searchStatus = needsSupplies ? 'preparing' : 'formed';
@@ -249,7 +295,7 @@ class OpportunisticRaidDirector {
                     this.searchCounters.reject('admission', needsSupplies ? 'raid_preparation_refused' : 'raid_formation_refused');
                 }
                 await yieldNow();
-                if (!current() || !this.canWork()) return;
+                if (!current() || !this.canWork()) { searchStatus = 'busy'; return; }
             }
         } finally {
             if (searchStarted) {
@@ -258,6 +304,19 @@ class OpportunisticRaidDirector {
                 this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
                 this.searchCounters.pendingRosters = this.deferredRosters.length;
                 this.searchCounters.finish(current() ? searchStatus : 'interrupted');
+                // One record per search run: the situation that made it due, how it ended.
+                if (Trace.on()) Trace.record({ kind: 'raid', phase: 'search', reason: String(this.due || ''),
+                    outcome: String(current() ? searchStatus : 'interrupted') });
+                this.config.developerDiagnostics && console.info('BotPopulation :: raid search woken=%s status=%s', this.due, searchStatus);
+                // Done: a formed party paces the next; one that formed nothing waits for a
+                // situation (the pool's growth among them). A search busy main or the CPU
+                // allowance cut stays due while rosters it proposed wait in its queue.
+                const cut = BUDGET_CUT.has(searchStatus);
+                if (cut && proposed) this.draining = true;
+                if ((!cut || this.draining && !this.deferredRosters.length) && current()) {
+                    this.due = null; this.draining = false;
+                    if (!['formed', 'preparing'].includes(searchStatus)) this.poolAtFailure = this.pool.size;
+                }
             }
             this.running = false;
         }
@@ -338,7 +397,7 @@ class OpportunisticRaidDirector {
                     const failures = (this.placementFailures.get(party.partyId) || 0) + 1;
                     this.placementFailures.set(party.partyId, failures);
                     if (failures >= 3) {
-                        this.blockedBosses.set(objective.raidBossTemplateId, timestamp + 30 * 60000);
+                        this.unreachableBosses.add(Number(objective.raidBossTemplateId));
                         this.lastResult.reason = 'raid_boss_unreachable';
                         await this.dissolve(party, 'raid_boss_unreachable');
                     }
@@ -364,8 +423,9 @@ class OpportunisticRaidDirector {
             }
             if (party.stats?.raidEncounter?.status === 'failed') continue;
             const progress = this.observeProgress(party, boss, sessions, timestamp);
+            // In the fight only the stall insurance: 8 min with no boss, minion or buff progress.
             const stalled = timestamp - progress.progressAt > 8 * 60000;
-            if (stalled || timestamp - progress.startedAt > 25 * 60000 || objective.expiresAt <= timestamp
+            if (stalled || objective.expiresAt <= timestamp
                 || sessions.some(s => s.actor.fetchLevel() > objective.sourceLevel + 8
                     || Number(s.actor.fetchKarma?.()) > 0 || Number(s.actor.fetchPk?.()) > 0)) {
                 if (sessions[0]) await this.hot.abandonRaid(sessions[0], stalled ? 'raid_no_progress' : 'raid_admission_expired', timestamp);

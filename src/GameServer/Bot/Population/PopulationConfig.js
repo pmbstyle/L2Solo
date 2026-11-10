@@ -5,14 +5,13 @@ const DEFAULTS = {
     // Mobius buylists: only the GM shop); crafters make them (T116).
     staticShotsDisabled: true,
     developerDiagnostics: false,
-    economyDiagnostics: false,
-    economyDiagnosticsBotIds: '',
+    // The decision trace (Bot/DecisionTrace): its own switch, not under developerDiagnostics.
+    decisionTrace: false,
     // Personal knowledge errors and learning by own actions share one switch.
     knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,
     backgroundPartyEnabled: true,
     opportunisticRaidsEnabled: true,
-    opportunisticRaidSearchIntervalMs: 60000,
     opportunisticRaidIntervalMs: 15 * 60000,
     opportunisticRaidMemberCooldownMs: 30 * 60000,
     opportunisticRaidMaxParties: 2,
@@ -31,8 +30,9 @@ const DEFAULTS = {
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
     // Cold simulation remains alive while a player is online, but its IPC
-    // and commit burst must yield the main event loop to player traffic.
-    coldWorkerPlayerMaxInFlight: 8,
+    // and commit burst must yield the main event loop to player traffic:
+    // main commits each half of the window (8 rows) while the other half runs.
+    coldWorkerPlayerMaxInFlight: 16,
     coldWorkerLagMaxInFlight: 2,
     // Resolver work is serialized inside the worker. Keep the lease window
     // bounded so a catch-up burst cannot create a large queue of expiring
@@ -55,12 +55,17 @@ const DEFAULTS = {
     coldWorkerQueueMaxEntries: 1024,
     coldWorkerQueueMaxBytes: 4 * 1024 * 1024,
     // A full 1,700-bot world with warm economic caches exceeds 256 MiB
-    // after major GC. Leave headroom for transient planning/clone allocations.
+    // after major GC. Leave headroom for transient plan-build and clone allocations.
     coldWorkerHeapMb: 512,
     // The worker's young generation, three semi-spaces. V8's 48 MB let a plan
     // build's short-lived objects reach the old space: a major GC every 3 s
     // (gc-trace 11-01). Restart to apply.
     coldWorkerYoungMb: 192,
+    // The clan planning worker (ClanPlanningCoordinator): live heap 59-81 MB at
+    // 1,700 bots, but with no cap V8 kept 209 MB committed (memory census
+    // 11-05). Young generation at V8's 48 MB. Restart to apply.
+    clanWorkerHeapMb: 256,
+    clanWorkerYoungMb: 48,
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
@@ -76,31 +81,27 @@ const DEFAULTS = {
     backgroundJobTickMs: 250,
     backgroundGovernorWindowMs: 1000,
     backgroundGovernorIdleBudgetMs: 250,
-    backgroundGovernorPlayerBudgetMs: 50,
+    backgroundGovernorPlayerBudgetMs: 80,
     backgroundGovernorIdleDbQueueMax: 8,
     backgroundGovernorPlayerDbQueueMax: 8,
     backgroundGovernorLagAbortMs: 120,
     partyFormationIdleBudgetMs: 3000,
-    partyFormationPlayerBudgetMs: 600,
+    // With a player online a forming pass starts no new recruit or roster past 25 ms
+    // (one party a pass at most) and waits out main's writes (membershipWritesWait).
+    partyFormationPlayerBudgetMs: 25,
     partyFormationSliceMs: 12,
     // Existing cold population predates full class progression. Reconcile it
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
-    // A protected player session may replenish only required parties. The
-    // worker finds candidates; the main loop performs one guarded atomic write.
-    protectedPartyFormationPollMs: 5000,
-    protectedPartyFormationIntervalMs: 30000,
-    protectedPartyFormationCandidateLimit: 12,
-    protectedPartyFormationLagAbortMs: 40,
-    protectedPartyFormationMainBudgetMs: 25,
-    protectedPartyFormationMaxBackoffMs: 120000,
     phasePolicyIntervalMs: 10000,
     // Start with every level-one hunting sector. Waves open every five levels
     // at x1-x10, or every ten levels at x50 and above. This is a cap for
     // generated adventurers only; shop services are not part of it.
     maxPlayingPopulation: 1700,
     starterBotsPerRace: 30,
+    // New bots' starting classes by weight (PopulationIntakePolicy.classWeights).
+    classMix: 'humanFighter:18,humanMystic:4,elfFighter:16,elfMystic:6,darkFighter:17,darkMystic:6,orcFighter:16,orcMystic:5,dwarf:12',
     generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
     // Append-only diagnostics and AI memory have explicit lifecycles. Run a
@@ -126,21 +127,15 @@ const DEFAULTS = {
     // Idle formation can fill six parties per pass; live-player protection
     // still caps the same pass at one party in PopulationService.
     partyFormationBatchSize: 6,
-    // Observation itself only forecasts. Main-process actions validate and
-    // commit cooperation, resource interruptions and optional bounded PvP.
-    coldCompetitionObserveEnabled: true,
+    // The spot aggregate's outcomes (SpotContest, EnemyMet) reach main in a
+    // frame; main-process actions validate and commit cooperation, resource
+    // interruptions and optional bounded PvP.
     coldCompetitionActionsEnabled: true,
     coldCompetitionConflictsEnabled: true,
     coldCompetitionPvpEnabled: true,
     pvpAggression: 0.5,
     partyMinSize: 2,
     partyMaxSize: 5,
-    // Shared safety ceiling for every background party. Admission never
-    // depends on social/clan origin or opens extra slots for a backlog.
-    maxBackgroundParties: 72,
-    partyRequestMaxAgeMs: 15 * 60 * 1000,
-    partyPreferredMaxAgeMs: 5 * 60 * 1000,
-    partyRequestCooldownMs: 5 * 60 * 1000,
     // Dissolved party rows are operational history, not durable state. Keep
     // a short diagnostic window without allowing every rotation to grow the
     // population database forever.
@@ -149,8 +144,13 @@ const DEFAULTS = {
     partyHistoryCleanupIntervalMs: 60 * 60 * 1000,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
-    cooldownRadius: 11000,
-    activationRadius: 9000,
+    // A body cools past cooldownRadius, at least the hysteresis (HOT_HYSTERESIS, keepHotRadius)
+    // beyond activationRadius.
+    cooldownRadius: 9000,
+    // A bot turns into a body within this radius of a player: the client's view (6000) plus
+    // one 10 s activation scan of a running player (160 u/s), so a bot is a body before the
+    // player sees it. Our choice: C4 characters act whether seen or not; the radii are ours.
+    activationRadius: 7600,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
@@ -175,9 +175,6 @@ const DEFAULTS = {
     marketTradeChatEnabled: true,
     marketTradeChatIntervalMs: 8 * 60 * 1000,
     marketTradeChatGlobalMinIntervalMs: 100000,
-    partyMarketBreakMinSessionMs: 10 * 60 * 1000,
-    partyMarketBreakMinFights: 8,
-    partyMarketBreakCooldownMs: 5 * 60 * 1000,
     devLogPlayerChat: true,
     resolveSlowMs: 250,
     resolveSampleLimit: 200,
@@ -230,6 +227,8 @@ const ENV_KEYS = {
     coldWorkerQueueMaxBytes: 'BOT_POPULATION_COLD_WORKER_QUEUE_BYTES',
     coldWorkerHeapMb: 'BOT_POPULATION_COLD_WORKER_HEAP_MB',
     coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
+    clanWorkerHeapMb: 'BOT_POPULATION_CLAN_WORKER_HEAP_MB',
+    clanWorkerYoungMb: 'BOT_POPULATION_CLAN_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
@@ -244,16 +243,9 @@ const ENV_KEYS = {
     backgroundGovernorLagAbortMs: 'BOT_BACKGROUND_GOVERNOR_LAG_ABORT_MS',
     partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
     partyFormationPlayerBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_PLAYER_BUDGET_MS',
-    protectedPartyFormationPollMs: 'BOT_POPULATION_PROTECTED_PARTY_POLL_MS',
-    protectedPartyFormationIntervalMs: 'BOT_POPULATION_PROTECTED_PARTY_INTERVAL_MS',
-    protectedPartyFormationCandidateLimit: 'BOT_POPULATION_PROTECTED_PARTY_CANDIDATE_LIMIT',
-    protectedPartyFormationLagAbortMs: 'BOT_POPULATION_PROTECTED_PARTY_LAG_ABORT_MS',
-    protectedPartyFormationMainBudgetMs: 'BOT_POPULATION_PROTECTED_PARTY_MAIN_BUDGET_MS',
-    protectedPartyFormationMaxBackoffMs: 'BOT_POPULATION_PROTECTED_PARTY_MAX_BACKOFF_MS',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     marketTradeChatGlobalMinIntervalMs: 'BOT_MARKET_TRADE_CHAT_GLOBAL_MIN_INTERVAL_MS',
-    partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
     partyHistoryCleanupIntervalMs: 'BOT_PARTY_HISTORY_CLEANUP_INTERVAL_MS',
@@ -322,5 +314,27 @@ const PopulationConfig = applyOverrides(
 );
 PopulationConfig.maxPlayingPopulation = Math.max(0, Math.min(2000, Math.floor(Number(PopulationConfig.maxPlayingPopulation) || 0)));
 PopulationConfig.pvpAggression = require('../../Social/PvpAggression').normalize(PopulationConfig.pvpAggression);
+// A worker's V8 heap caps (new Worker resourceLimits) from its two keys
+// (coldWorkerHeapMb/coldWorkerYoungMb, clanWorkerHeapMb/clanWorkerYoungMb): a
+// value that is not a number falls back to the key's default, floors at
+// 128 MB old and V8's 48 MB young. Not enumerable: the config stays data.
+Object.defineProperty(PopulationConfig, 'workerResourceLimits', {
+    value: (heapKey, youngKey) => ({
+        maxOldGenerationSizeMb: Math.max(128, Number(PopulationConfig[heapKey]) || DEFAULTS[heapKey]),
+        maxYoungGenerationSizeMb: Math.max(48, Number(PopulationConfig[youngKey]) || DEFAULTS[youngKey])
+    })
+});
+
+// How far a body cools beyond the activation ring at the least, so a body near the ring's edge
+// does not flip hot and cold as the player steps (our choice: one scan's run past the view).
+const HOT_HYSTERESIS = 1400;
+
+// How far from every player a hot body stays hot and thinks: cooldownRadius, and never closer
+// than the hysteresis past activationRadius (the launcher sets activationRadius alone, so a large
+// one would otherwise reach the cooldown ring and leave no hysteresis). Read at the call, not
+// normalised at load: tests set the radii directly. Not enumerable: the config stays data.
+Object.defineProperty(PopulationConfig, 'keepHotRadius', {
+    value: (config = PopulationConfig) => Math.max(Number(config.cooldownRadius) || 0, (Number(config.activationRadius) || 0) + HOT_HYSTERESIS)
+});
 
 module.exports = PopulationConfig;

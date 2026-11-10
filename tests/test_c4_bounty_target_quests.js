@@ -92,8 +92,7 @@ function restoredTargets() {
     const reference = process.env.C4_REFERENCE_SPAWNS;
     if (!reference || !fs.existsSync(reference)) {
         // The pinned reference is a research checkout, not repository content, so
-        // its absence must not fail the run. The claim it supports is recorded in
-        // docs/c4/quests/imported-quests.md.
+        // its absence must not fail the run.
         return;
     }
     let mentions = 0;

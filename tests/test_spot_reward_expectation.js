@@ -9,6 +9,8 @@ const Formulas = invoke('GameServer/Formulas');
 const Drops = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+// Loading SpotProfiles makes the server's catalogue the table's spot source: loaded first, the fixture's catalogue holds.
+invoke('GameServer/Bot/Population/SpotProfiles');
 const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
 const original = { npcs: Data.npcs, rewards: Data.npcRewards, items: Data.items,
     rate: process.env.L2NODE_PROGRESSION_RATE, roll: Rates.rewardGroupRoll };
@@ -61,7 +63,7 @@ try {
     assert.notEqual(highRate.drop, lo.drop * 50, 'an x1 reward curve cannot predict saturated high-rate loot');
 
     // Same combat measurements, now backed by concrete native rewards. The table
-    // ends at the deep-blue gap where drops fall to 30% (user 10-29): level 27 on an 18 spot.
+    // ends at the deep-blue gap where C4 drops fall to 30%: level 27 on an 18 spot.
     const at = 18 + Rates.DEEP_BLUE_LEVEL_GAP;
     const tableRate = Rewards.value(blue, at, { spoilSkillLevel: 1 });
     useRate('x1');
@@ -88,12 +90,14 @@ try {
         assert.equal(forecasts, firstForecasts,
             'a price-only ranking reuses unpriced spot forecasts rather than rebuilding rewards');
     } finally { Rewards.value = nativeValue; }
-    const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+    const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
-    const savedMatch = Match.spotMatchup, savedCosts = Hunt.consumablePrices;
+    const savedMatch = Match.spotMatchup, savedCosts = Hunt.consumablePrices, savedCycle = Table.cycle;
     try {
         Match.spotMatchup = () => ({ eligible: true });
         Hunt.consumablePrices = () => ({ shots: 0, potions: 0 });
+        // The fixture table has no hunt cycle columns: a kill of 18 s (10 fight, 4 rest, 4 walk).
+        Table.cycle = () => ({ kph: 200, fight: 10, rest: 4, cap: 1000 });
         const spoiler = { characterId: 990190, level: 20, spotId: 'S', stats: { classId: 54, role: 'spoiler',
             coldCombat: { skills: [{ selfId: 254, level: 1 }] } } };
         const fighter = { characterId: 990191, level: at, spotId: 'S', stats: { classId: 0, role: 'dps' } };
@@ -101,15 +105,15 @@ try {
             party: { spotId: 'S', cohesion: 1 }, timestamp: 1791656778971 });
         const personal = prepared.rows.get(spoiler.characterId);
         const partyYield = Rewards.value(blue, at, { spoilSkillLevel: 1, spoilerLevel: 20 });
-        close(personal.income, personal.kills * ((partyYield.adena + partyYield.drop) / 2 + partyYield.spoil),
+        close(personal.adena + personal.loot, personal.kills * ((partyYield.adena + partyYield.drop) / 2 + partyYield.spoil),
             'party spoil uses the older killer penalty and the actual spoiler skill, retaining personal spoil');
         const secondSpoiler = { ...spoiler, characterId: 990192 };
         const two = Income.prepare([spoiler, secondSpoiler, fighter], { spots: [blue, near],
             party: { spotId: 'S', cohesion: 1 }, timestamp: 1791656778971 });
         const second = two.rows.get(secondSpoiler.characterId);
-        close(second.income, second.kills * (partyYield.adena + partyYield.drop) / 3,
+        close(second.adena + second.loot, second.kills * (partyYield.adena + partyYield.drop) / 3,
             'only the first native party spoiler receives spoil; two spoilers do not duplicate income');
-    } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; }
+    } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; Table.cycle = savedCycle; }
     useRate('x1');
     close(Table.value('S', 'dps', at).loot, row.kills * tableLow.drop, 'rate change invalidates table value memo');
     useRate('x50');

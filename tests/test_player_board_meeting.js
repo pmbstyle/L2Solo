@@ -144,12 +144,12 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         assert.deepEqual(tells(), [], 'a merchant already at the point does not claim to be on the way');
         assert.deepEqual(Life.cachedState(seller).inventory[952], rings, 'large physical bags survive worker consent and native custody publication');
         assert.equal(Meetings.counters().preparations, 0);
+        // The seller's bag changed with the sale: its ad of boots it wears (stock it cannot
+        // sell) is trimmed then, before any buyer answers it.
+        await waitFor(async () => await Database.fetchAfkTradeShop(bootSale.shop.id) === null, 'stale worn-item advertisement is removed');
         Board.show(session, { side: 1, town: 'Giran' });
-        const buyBoots = /action="bypass -h (board answer sell_ad \d+ \d+ 62 [^"]+)">/.exec(html())[1];
-        await click(buyBoots);
-        assert(html().includes('Worn items cannot be sold'), html());
-        assert.deepEqual(tells(), [], 'rejected stock sends no private promise');
-        assert.equal(await Database.fetchAfkTradeShop(bootSale.shop.id), null, 'stale worn-item advertisement is removed');
+        assert(!/board answer sell_ad \d+ \d+ 62 /.test(html()), 'the board no longer offers the worn boots');
+        assert.deepEqual(tells(), [], 'trimmed stock sends no private promise');
         assert.equal((await Database.fetchItems(seller)).find(row => row.id === boots.id).equipped, 1);
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079, 'a rejected worn-item offer moves no adena');
         assert.equal(boughtBucklers(), 1, 'a rejected offer does not emit a pickup receipt');

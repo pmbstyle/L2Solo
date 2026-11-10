@@ -8,6 +8,7 @@
 // (ClanEquipmentService) and the clan-level goal (ClanMarketService).
 const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const Diagnostics = require('../Bot/Economy/EconomyDiagnostics');
+const Trace = require('../Bot/DecisionTrace');
 const Database = () => invoke('Database');
 const LifeState = () => invoke('GameServer/Bot/Population/BotLifeState');
 const PurchaseFunding = () => invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -67,4 +68,30 @@ async function returnUnspent(characterId, errand, spent) {
     return refund(clanId, characterId, left, 'clan_errand_refund');
 }
 
-module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent };
+// A clan errand's lifecycle, traced at the commit that changes the bot's errands (every end, whoever wrote it: a
+// purchase, the need gone, a lapse, a drop): taken when it enters them; when it leaves them, done (the commit bought
+// its last units: lastErrand), lapsed (its time ran out) or failed (the commit's reason). One errand: its key.
+function clanErrands(state) {
+    const errands = new Map();
+    for (const errand of state?.stats?.marketErrands || [])
+        if (errand?.purpose === 'clan' && Number(errand.tag?.clanId) > 0) errands.set(CombinedErrands.key(errand), errand);
+    return errands;
+}
+function traceCommitted(previous, next) {
+    const before = clanErrands(previous), after = clanErrands(next);
+    if (!before.size && !after.size) return;
+    const record = (phase, errand, reason) => Trace.record({ kind: 'errand', bot: Number(next.characterId), phase,
+        errandKey: `clan:${Number(errand.tag.clanId)}`, item: Number(errand.selfId) || undefined, errandAt: Number(errand.at) || undefined,
+        ...(reason ? { reason: String(reason) } : {}) });
+    for (const [key, errand] of after) if (!before.has(key)) record('taken', errand);
+    const bought = next.stats?.lastErrand, fresh = bought && Number(bought.at) !== Number(previous.stats?.lastErrand?.at);
+    for (const [key, errand] of before) {
+        if (after.has(key)) continue;
+        if (fresh && bought.purpose === 'clan' && Number(bought.selfId) === Number(errand.selfId)
+            && Number(bought.units) >= Number(errand.amount)) record('done', errand);
+        else if (CombinedErrands.lapsed(errand.at, Number(next.updatedAt) || Date.now())) record('lapsed', errand);
+        else record('failed', errand, next.stats?.lastReason || 'dropped');
+    }
+}
+
+module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent, traceCommitted };

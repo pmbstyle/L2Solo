@@ -12,11 +12,12 @@ invoke('GameServer/Bot/AI/DecisionEvents').held = session => session.heldEconomy
 const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Decision = invoke('GameServer/Bot/AI/BotDecisionService');
+const Situations = invoke('GameServer/Bot/Situations');
 const World = invoke('GameServer/World/World');
 const destination = { locX: 183244, locY: 51238, locZ: -5122 };
 const start = { locX: 177223, locY: 46613, locZ: -4104 };
 const spot = { id: '30_8', name: 'Test field', center: destination,
-    minLevel: 55, maxLevel: 59, avgLevel: 57, density: 35, levelCounts: { 57: 35 } };
+    minLevel: 55, maxLevel: 59, avgLevel: 57, density: 35, levelCounts: { 57: 35 }, npcNames: [] };
 let scans = 0;
 World.user = { sessions: [] };
 World.npc = { spawns: [] };
@@ -44,7 +45,8 @@ function fixture(result = false) {
             session.lastPathfinding = { requestedTo: { ...destination }, at: Date.now(), routeUsable: result };
         }
     };
-    const session = { actor: bot, plan: 'hunting', noTargetTicks: 5,
+    // The spot the worker's one choice names, published in the body's mind.
+    const session = { actor: bot, plan: 'hunting', noTargetTicks: 5, decisionStats: { huntSpot: { spotId: spot.id } },
         heldEconomy: { network: { activity: { activity: 'hunting', spotId: spot.id } },
             stock: () => ({ itemId: 0, usePerHour: 0 }), statsPacket: {} },
         botStatus: { available: true, mode: 'hunting', level: 57, loc: start, blockers: ['no_targets_nearby'],
@@ -69,21 +71,31 @@ try {
     assert.strictEqual(failed.bot.moves, 1);
     assert.strictEqual(failed.session.townRoutePlan, null);
     assert.strictEqual(failed.session.lastSpotRelocation.method, 'walk_route_unavailable');
-    assert(failed.session.spotRetryAfter[spot.id] > Date.now());
+    // The walk that could not reach its spot is the earning spot's situation (spot_unreachable): its mark keeps
+    // the body off that spot, whatever time passes, until the bot's next own situation re-decides it.
+    const failedStats = failed.session.decisionStats;
+    assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'spot_unreachable' }]);
+    assert(Situations.woken(failedStats, 'earning_spot'), 'spot_unreachable wakes the earning spot');
+    // and the build: the spot walked to is the hunting leaf's (a material hunt's source spot too), which the build chose.
+    assert(Situations.woken(failedStats, 'build'), 'spot_unreachable wakes the build that named the spot');
+    // The same spot failed again before the answer is no news: the decisions its mark woke answer it.
+    const seq = failedStats.situationSeq;
+    const again = { spotId: spot.id, reason: failedStats.spotMarks[0].reason };
+    Situations.raise(failedStats, 'spot_unreachable', again, Situations.OPEN);
+    assert.strictEqual(failedStats.situationSeq, seq, 'a spot already marked raises nothing new');
     assert(scans > 0, 'local target search must resume in the same tick after a failed retry');
-    assert.strictEqual(Decision.suggest(failed.session.botStatus, failed.session).action, 'search_locally');
-
-    // Exercise real destination selection, including expiry and per-bot isolation.
     const status = failed.session.botStatus;
-    assert.strictEqual(Spots.findBestSpot(status).spot.id, spot.id);
-    assert.strictEqual(Spots.findBestSpot(status, { spotRetryAfter: failed.session.spotRetryAfter }), null);
-    failed.session.lastSpotMoveAt = Date.now() - 16000;
-    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'search exhaustion must respect failed spot cooldown');
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'the marked spot is not walked to');
     status.nearby.attackableNpcs = 0;
     status.nearby.eligibleAttackableNpcs = 0;
-    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings must respect failed spot cooldown');
-    failed.session.spotRetryAfter[spot.id] = Date.now() - 1;
-    assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'destination becomes eligible after cooldown');
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings keep the mark');
+    Situations.raise(failedStats, 'spot_empty', null, Situations.OPEN);
+    failedStats.earning = { spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 5 };
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake or a new answer does not drop the mark');
+    // The outing ends (a new grade, a town trip, a death): the mark is forgotten, and the worker's choice
+    // naming the spot again sends the body there.
+    Situations.raise(failedStats, 'grade_changed', null, Situations.OPEN);
+    assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'and the held spot is walked to again');
 
     const initial = fixture();
     initial.session.spotRelocation = undefined;
@@ -104,7 +116,21 @@ try {
     const usable = fixture(true);
     tick(usable);
     assert(usable.session.spotRelocation, 'valid route retains travel ownership');
-    assert.strictEqual(usable.session.spotRetryAfter, undefined);
+    assert.strictEqual(usable.session.decisionStats?.spotMarks, undefined);
+
+    // The walk ends by the arrival rule: a body that reaches its spot's ground short of the
+    // center's radius has finished its walk and stands on that spot (it hunts, no new walk).
+    const containsLocation = Spots.containsLocation;
+    try {
+        Spots.containsLocation = (target, loc) => String(target?.id) === spot.id && loc?.locX === start.locX;
+        const edge = fixture(true);
+        tick(edge);
+        assert.strictEqual(edge.session.spotRelocation, undefined, 'the walk ends on the spot\'s ground');
+        assert.strictEqual(edge.session.lastSpotRelocation?.method, 'walk');
+        assert.strictEqual(edge.bot.moves, 0, 'no step past the ground it reached');
+        assert.notStrictEqual(Decision.suggest(edge.session.botStatus, edge.session).action, 'move_to_spot',
+            'a body that finished its walk is on its spot');
+    } finally { Spots.containsLocation = containsLocation; }
 
     for (const wrongDestination of [false, true]) {
         const stale = fixture(true);
@@ -117,22 +143,24 @@ try {
     }
     const expired = fixture();
     expired.session.spotRelocation.startedAt = Date.now() - 121000;
+    expired.session.decisionStats = {}; // no next walk after the timeout: only the timeout is read
     tick(expired);
     assert.strictEqual(expired.session.spotRelocation, undefined);
-    assert(expired.session.spotRetryAfter[spot.id] > Date.now(), 'timeout must not immediately select the same destination');
+    assert(!(expired.session.decisionStats?.spotMarks || []).length,
+        'a timeout (fights on the way) marks nothing: an execution retry, bounded by the relocation timeout');
 
-    // A hot bot with karma never uses SoE or a gatekeeper: it looks for a
-    // spot within walking range and walks there.
+    // A hot bot with karma never uses SoE or a gatekeeper: it walks to its chosen spot.
     const farSpot = { ...spot, id: '31_8', name: 'Far field',
         center: { locX: start.locX + 30000, locY: start.locY, locZ: start.locZ } };
     Spots.ensureIndexed = () => [farSpot];
     const redStatus = { ...fixture().session.botStatus, nearby: { attackableNpcs: 0, eligibleAttackableNpcs: 0 } };
-    assert.strictEqual(Spots.findBestSpot(redStatus).spot.id, farSpot.id, 'a far spot is in range for SoE');
-    assert.strictEqual(Spots.findBestSpot(redStatus, { walkOnly: true }), null, 'walking range ends at 12000');
     const white = fixture(true);
     const red = fixture(true);
     red.bot.fetchKarma = () => 500;
-    for (const f of [white, red]) f.session.heldEconomy.network.activity.spotId = farSpot.id;
+    for (const f of [white, red]) {
+        f.session.heldEconomy.network.activity.spotId = farSpot.id;
+        f.session.decisionStats = { huntSpot: { spotId: farSpot.id } };
+    }
     assert.strictEqual(Decision.suggest(redStatus, white.session).spot?.id, farSpot.id, 'a white bot executes the selected far hunt');
     assert.strictEqual(Decision.suggest(redStatus, red.session).spot?.id, farSpot.id, 'karma changes how the chosen hunt is reached, not the occupation');
 
@@ -159,76 +187,92 @@ try {
     assert.strictEqual(red.session.spotRelocation?.method, 'walk', 'a bot with karma walks even to a far spot');
     assert.strictEqual(red.bot.moves, 1, 'a bot with karma starts walking at once');
 
-    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Events = require('../src/GameServer/Bot/AI/DecisionEvents');
     const TownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
-    const savedPurchase = { check: Market.canTravelForPurchase, state: Economy.stateForActor,
-        held: Events.held, travel: TownTravel.request };
+    const savedPurchase = { state: Economy.stateForActor, held: Events.held, travel: TownTravel.request };
     const purchaseState = { characterId: 2002505, activity: 'hunting' };
-    const purchaseEconomy = { network: { activity: { activity: 'shopping', itemId: 1835,
+    const purchaseEconomy = { network: { decisionSeq: 1, activityLeaf: 7, activity: { activity: 'shopping', itemId: 1835,
         amount: 8, town: 'Giran', valueHours: 0.002, rootKey: 'stock:shots' } } };
-    let purchaseChecks = 0, purchaseTrips = 0, allowed = false;
-    let expectedRequest = { selfId: 1835, amount: 8, town: 'Giran' };
+    let purchaseTrips = 0;
     try {
         Events.held = () => purchaseEconomy;
         Economy.stateForActor = () => purchaseState;
-        Market.canTravelForPurchase = (state, request, options) => {
-            purchaseChecks++;
-            assert.strictEqual(state, purchaseState);
-            assert.strictEqual(options.economy, purchaseEconomy, 'the hot guard reuses its existing decision');
-            // The guard is asked about this item, count and town; the rest of the request is its own.
-            for (const [key, value] of Object.entries(expectedRequest)) assert.strictEqual(request[key], value, key);
-            return allowed;
-        };
         TownTravel.request = () => { purchaseTrips++; return 'escape'; };
-        const denied = fixture();
-        denied.session.spotRelocation = undefined;
-        denied.session.townRoutePlan = null;
-        denied.bot.automation = { abortAll() {} };
-        tick(denied);
-        assert.strictEqual(purchaseChecks, 1);
-        assert.strictEqual(purchaseTrips, 0, 'a tiny unprofitable purchase cannot initiate a visible town trip');
-        assert.strictEqual(denied.session.lastDecision.action, 'continue_occupation', 'a refused purchase waits for the planner instead of inventing a hunt');
-        assert.strictEqual(denied.session.spotRelocation, undefined);
-        assert.strictEqual(denied.bot.moves, 0);
-        allowed = true;
+        // The held shopping leaf is its build's decision (its visit weighed there): its trip
+        // starts once per decision, no tick weighs it again.
         const accepted = fixture();
-        accepted.session.companionEquipmentRetryAt = Date.now() + 300000;
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
         accepted.bot.automation = { abortAll() {} };
         tick(accepted);
-        assert.strictEqual(purchaseChecks, 2);
-        assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
+        assert.strictEqual(purchaseTrips, 1, 'the held leaf starts its trip');
+        accepted.session.plan = 'hunting';
+        accepted.session.spotRelocation = undefined;
+        tick(accepted);
+        assert.strictEqual(purchaseTrips, 1, 'the same decision does not start it again');
+        purchaseEconomy.network.decisionSeq = 2;
+        tick(accepted);
+        assert.strictEqual(purchaseTrips, 2, 'a new decision of the leaf does');
+        // The bag's town trip a build decided (stats.cleanupDue) starts
+        // while the live bag needs it; an emptied bag ends the hold with no trip, so no
+        // second trip starts before the next answer lands.
+        {
+            const trips = [], request = TownTravel.request;
+            TownTravel.request = (_session, _bot, _ai, reason) => { trips.push(reason); return 'escape'; };
+            Events.held = () => ({ network: { activity: { activity: 'hunting', spotId: spot.id } }, stock: () => ({ itemId: 0 }) });
+            const book = invoke('GameServer/DataCache').items.find(item => item.template.kind === 'Other.Spellbook');
+            const bagged = items => {
+                const f = fixture();
+                f.session.spotRelocation = undefined;
+                f.bot.automation = { abortAll() {} };
+                f.bot.backpack = { fetchItems: () => items };
+                f.session.decisionStats = { cleanupDue: { reason: 'no_slot' } };
+                return f;
+            };
+            try {
+                const emptied = bagged([]);
+                tick(emptied);
+                assert.deepStrictEqual(trips, [], 'an emptied bag takes no trip');
+                assert.strictEqual(emptied.session.decisionStats.cleanupDue, null, 'and its hold ends');
+                const full = bagged(Array.from({ length: 81 }, (_, i) => ({ selfId: book.selfId, amount: 1, id: 9800000 + i })));
+                tick(full);
+                assert.deepStrictEqual(trips, ['Inventory no_slot. Heading to town.'], 'a full bag carries the decided trip to town');
+                assert.strictEqual(full.session.decisionStats.cleanupDue, null, 'which ends the hold');
+                // A trip the executor refuses raises its failure for the build (no hold left to retry each tick).
+                TownTravel.request = () => false;
+                const refused = bagged(Array.from({ length: 81 }, (_, i) => ({ selfId: book.selfId, amount: 1, id: 9810000 + i })));
+                refused.session.decisionStats = { ...refused.session.decisionStats, woken: 0, situationSeq: 0,
+                    wishSections: {}, equipmentPlan: {}, earning: {} };
+                Hunting.tick(refused.session, refused.bot, {}, { ...ai, getClosestTown: () => ({ name: 'Giran' }) });
+                assert.strictEqual(refused.session.decisionStats.cleanupDue, null, 'a refused trip ends the hold');
+                assert(Situations.woken(refused.session.decisionStats, 'build'), 'its failure wakes the build');
+            } finally { TownTravel.request = request; Events.held = () => purchaseEconomy; }
+        }
+        // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
+        const gearFailure = () => ({ seq: 1, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 1 }, seq: 1 }],
+            impossible: true, impossibleSeq: 1 });
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
-        unreachable.session.companionEquipmentRetryAt = Date.now() + 300000;
+        unreachable.session.nearRaise = gearFailure();
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
         tick(unreachable);
-        assert.strictEqual(purchaseTrips, 1, 'a failed physical route is deferred even for stock instead of restarting each tick');
+        assert.strictEqual(purchaseTrips, 2, 'a failed physical route is deferred even for stock instead of restarting each tick');
         assert.strictEqual(unreachable.session.plan, 'hunting');
         assert.strictEqual(unreachable.session.spotRelocation, undefined);
-        const checked = purchaseChecks;
         purchaseState.inventory = { 1835: { amount: 20 } };
         purchaseEconomy.network.activity.heldAtDecision = 12;
+        purchaseEconomy.network.decisionSeq = 3;
         const completed = fixture();
         completed.session.spotRelocation = undefined;
         tick(completed);
-        assert.strictEqual(purchaseChecks, checked, 'a completed purchase waits for its next decision instead of ordering the same quantity again');
-        assert.strictEqual(purchaseTrips, 1);
+        assert.strictEqual(purchaseTrips, 2, 'a completed purchase waits for its next decision instead of ordering the same quantity again');
         purchaseState.inventory = {};
-        delete purchaseEconomy.network.activity.heldAtDecision;
-        purchaseEconomy.network.activity.rootKey = 'power:148:7';
-        purchaseEconomy.network.activity.r = 0.001;
-        expectedRequest = { ...expectedRequest, r: 0.001 };
-        const materialBuy = fixture();
-        materialBuy.session.spotRelocation = undefined;
-        tick(materialBuy);
-        assert.strictEqual(purchaseTrips, 2, 'a material purchase retains the accepted root funding ratio');
         const crafting = fixture();
         Events.held = () => ({ network: { activity: { activity: 'crafting', kind: 'craft', rootKey: 'stock:shots' } } });
-        tick(crafting);
+        // On its ground the errand holds the body (off ground it would walk to its spot, errand kept).
+        Spots.findCurrentSpot = () => ({ ...spot, npcNames: [] });
+        try { tick(crafting); } finally { Spots.findCurrentSpot = () => null; }
         assert.strictEqual(crafting.session.spotRelocation, undefined, 'a craft waiting for its worker details releases an old hunting route');
         assert.strictEqual(crafting.bot.moves, 0, 'the hunt cannot steal the craft waiting window');
         assert.strictEqual(crafting.session.lastDecision.activity, 'crafting');
@@ -248,39 +292,35 @@ try {
             assert.strictEqual(gearCraft.session.shoppingServicePhase, 'workshop');
         } finally { Shopping.workshopTarget = oldTarget; }
     } finally {
-        Market.canTravelForPurchase = savedPurchase.check;
         Economy.stateForActor = savedPurchase.state;
         Events.held = savedPurchase.held;
         TownTravel.request = savedPurchase.travel;
     }
 
-    // A solo hunter with expired newbie buffs whose guide trip was abandoned
-    // waits for the retry time instead of walking the same route next tick.
-    const Buffs = invoke('GameServer/Bot/AI/BotBuffs');
+    // A solo hunter walks to the Newbie Guide only when its rebuff answered the guide
+    // (Bot/AI/Rebuff), once per answer, to a guide within its town radius; a guide out of
+    // reach holds the answer done (no retry until the next situation).
     const guideAt = offset => ({ ...ai,
         getClosestNewbieGuide: () => ({ locX: start.locX + offset, locY: start.locY, locZ: start.locZ }) });
-    const buffTrip = (retryAt, BotAI) => {
+    const buffTrip = (answered, BotAI, after = null) => {
         const f = fixture(true);
         f.session.spotRelocation = undefined;
         f.session.townRoutePlan = null;
-        f.session.newbieGuideRetryAt = retryAt;
+        if (answered) Events.replaceStats(f.session, { ...Events.statsFor(f.session), rebuff: { via: 'guide', providerId: null, at: 1 } });
         f.bot.automation = { abortAll() {} };
         Hunting.tick(f.session, f.bot, {}, BotAI);
+        if (after) after(f);
         return f.session.plan;
     };
-    Buffs.needsNewbieRefresh = () => true;
-    try {
-        assert.strictEqual(buffTrip(Date.now() + 60000, guideAt(2000)), 'hunting',
-            'expired buffs do not restart a guide trip before its retry time');
-        assert.strictEqual(buffTrip(Date.now() - 1, guideAt(2000)), 'getting_buffed',
-            'expired buffs send the hunter to the guide once the retry time passed');
-        assert.strictEqual(buffTrip(undefined, guideAt(7600)), 'hunting',
-            'expired buffs do not send a hunter to a guide beyond its town radius');
-        assert.strictEqual(buffTrip(undefined, guideAt(7400)), 'getting_buffed',
-            'expired buffs send a hunter to a guide within its town radius');
-    } finally {
-        Buffs.needsNewbieRefresh = () => false;
-    }
+    assert.strictEqual(buffTrip(false, guideAt(2000)), 'hunting', 'no answer: no guide trip, buffs or not');
+    assert.strictEqual(buffTrip(true, guideAt(2000)), 'getting_buffed', 'the guide answer sends the hunter to the guide');
+    assert.strictEqual(buffTrip(true, guideAt(7600), f => {
+        assert.equal(Events.statsFor(f.session).rebuff.done, true, 'a guide out of reach holds the answer done');
+        f.session.plan = 'hunting';
+        Hunting.tick(f.session, f.bot, {}, guideAt(7400));
+        assert.equal(f.session.plan, 'hunting', 'a done answer starts no later trip');
+    }), 'hunting', 'no trip to a guide beyond its town radius');
+    assert.strictEqual(buffTrip(true, guideAt(7400)), 'getting_buffed', 'a guide within its town radius is in reach');
 
     console.log('Bot hunting route failure checks passed');
 } finally {

@@ -3,7 +3,6 @@
 const assert = require('node:assert/strict');
 const nativeDecision = require('./workerEconomyDecision');
 const Decision = require('../../src/GameServer/Bot/Population/ColdEconomyDecision');
-const Sections = require('../../src/GameServer/Bot/Economy/DecisionSections');
 
 // Independent E3 oracle over the real worker packet: C(r) is the cumulative
 // cost of wishes above r. This helper never creates or alters a money packet.
@@ -76,11 +75,8 @@ async function captureAndRead(state, { timestamp, context = {}, needsOptions = {
         const goals = Needs.evaluate(accepted, options);
         assert.equal(goals.length, 1, 'the accepted native choice maps to one voluntary goal');
         const goal = goals[0];
-        assert.equal(goal.priority, 50, 'voluntary goals share the current network priority');
-        assert.deepEqual(goal.blockers, []);
         assert.equal(goal.plan.wishKey, leaf.rootKey);
         assert.equal(goal.plan.economyActivity, leaf.activity);
-        assert.equal(goal.inputHash, read.inputHash);
         if (leaf.activity === 'shopping') {
             const item = invoke('GameServer/DataCache').items.find(row => Number(row.selfId) === leaf.itemId);
             assert(item, 'a native shopping item has an authored template');
@@ -104,11 +100,12 @@ async function captureAndRead(state, { timestamp, context = {}, needsOptions = {
         assertFunding(accepted);
         assert.deepEqual(Needs.evaluate({ ...accepted, updatedAt: accepted.updatedAt + 1 }, options), [],
             'a later main timestamp cannot consume the previous decision');
-        // A level move raises the build section (its event check): a card
-        // holds only while no section is raised.
-        assert.deepEqual(Needs.evaluate({ ...accepted, level: accepted.level + 1, stats: { ...accepted.stats,
-            wishDirty: Sections.sectionMask(['build']) } }, options), [],
-            'a raised build section cannot consume the previous decision');
+        // A situation that woke the build (a new grade) waits for its decision: the card
+        // holds only while its build is not woken.
+        const Situations = invoke('GameServer/Bot/Situations');
+        assert.deepEqual(Needs.evaluate({ ...accepted, level: accepted.level + 1, stats: Situations.raise({ ...accepted.stats, woken: 0 },
+            'grade_changed', null, Situations.REST) }, options), [],
+            'a woken build cannot consume the previous decision');
         console.log(JSON.stringify({ characterId: state.characterId, nativeActivity: leaf.activity,
             goalType: goal.type, money: accepted.stats.money, nativeQueue: captured.queue }));
         return { state: accepted, captured, activity: leaf, goal };

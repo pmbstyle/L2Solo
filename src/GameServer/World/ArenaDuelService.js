@@ -569,7 +569,6 @@ function release(session, reason = 'released') {
         invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff').refreshSummon(duel.playerSession, currentPlayerSummon);
     }
     if (duel.botSession?.actor) {
-        EffectTicker.clearAll(duel.botSession.actor);
         duel.botSession.dataSendToOthers?.(ServerResponse.deleteOb(duel.botSession.actor.fetchId()), duel.botSession.actor);
         duel.botSession.actor.destructor();
         World.removeUser(duel.botSession);

@@ -6,7 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
 
-// Migration 52 (step 3.1, N6a): version 1 personas become version 2 in one
+// Migration 52: version 1 personas become version 2 in one
 // transaction of the world database.
 const Database = invoke('Database');
 const Types = require('../src/GameServer/Bot/AI/BotPersonaTypes');

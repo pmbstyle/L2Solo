@@ -99,7 +99,8 @@ function clean() {
 
     const owner = LifeState.snapshot(ownerId);
     assert.strictEqual(owner.phase, 'cold');
-    assert.strictEqual(Number(owner.inventory['1865']?.amount), 1, 'a cold WTB owner is still synced');
+    const [owed] = await Database.execute(['SELECT SUM(amount) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 1865', [ownerId]]);
+    assert.strictEqual(Number(owed.amount), 1, 'a cold WTB owner\'s varnish waits on the board for its own commit');
 
     await AfkTrade._resetForTests();
     await Database.close();

@@ -32,7 +32,17 @@ function afterSend(session, packet) {
     }
     const actor = packet?.__characterActor;
     if (packet?.[0] !== 0x03 || !actor) return;
-    knownActors(session).set(actor.fetchId(), new WeakRef(actor));
+    const known = knownActors(session);
+    const first = known.get(actor.fetchId())?.deref() !== actor;
+    known.set(actor.fetchId(), new WeakRef(actor));
+    // A player's client receives a bot for the first time: the bot meets the player
+    // (enemy_met; BotRevenge.playerSeen decides, a bot's own grievance
+    // or a clan war). A re-send after a teleport or a view re-entry rolls nothing new.
+    if (first && session.actor && actor.session && actor !== session.actor) {
+        // Never into the send path: a failed meeting is counted, the packet goes on.
+        try { invoke('GameServer/Bot/AI/BotRevenge').playerSeen(actor, session.actor); }
+        catch (error) { invoke('FailureLog').note('visibility.enemy_met', error); }
+    }
     if (packet.__skipMotionReplay || session.actor === actor || !session.dataSendToMe
         || actor.state?.fetchDead?.() || !actor.state?.fetchTowards?.()) return;
 

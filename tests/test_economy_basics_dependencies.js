@@ -22,11 +22,11 @@ try {
         const state = structuredClone(original), before = structuredClone(state);
         const basic = Economy.basics(state, deps);
         const full = Economy.forState(state, { ...deps, producerSource: null, onSourceScope: undefined,
-            workshop: { known: true, incomePerHour: 0 }, knownRecipes: [], buyOrderEscrow: 0,
+            knownRecipes: [], buyOrderEscrow: 0,
             routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
                 () => ({ known: true, durationMs: 0, fee: 0 })) });
         for (const kind of ['shots', 'potions', 'scrolls']) assert.deepEqual(basic.stock(kind), full.stock(kind));
-        for (const field of ['survivalReserve', 'deathHours', 'lostGearHours', 'karmaHours', 'riskWeight', 'bestSpotId'])
+        for (const field of ['refillReserve', 'deathHours', 'lostGearHours', 'karmaHours', 'riskWeight', 'bestSpotId'])
             assert.deepEqual(basic[field], full[field], 'native foundation agrees with the full wish review: ' + field);
         assert.deepEqual(state, before, 'both readers leave physical inputs untouched');
         Economy.reset(); Profile.forgetBuild(state.characterId);
@@ -37,7 +37,7 @@ try {
     // recipe/list API because this path does not build public production goals.
     const partial = { ...deps, board: { first: () => null } };
     Economy.basics(fixture, partial).stock('shots');
-    Economy.stockFor(fixture, 'potions', partial);
+    Economy.basics(fixture, partial).stock('potions');
     assert.equal(indexes, 0);
     assert.equal(invoke('Database').isReady(), false);
     console.log('PASS native basics: identical stocks/reserves/risk, zero production/book/workshop/escrow readers, complete review retains production');

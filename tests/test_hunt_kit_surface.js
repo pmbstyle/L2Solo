@@ -1,5 +1,5 @@
 'use strict';
-// The kit surface (user 10-29): the spot table reads a bot's own kit by its
+// The kit surface: the spot table reads a bot's own kit by its
 // numbers against the author's kit (HuntCycle.kitFeatures), on fight and
 // damage-taken coefficients fitted from real fights in kits; a band without
 // them reads the nearest measured one.

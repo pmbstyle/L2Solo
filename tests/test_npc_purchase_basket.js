@@ -6,7 +6,7 @@ const fixture = require('./helpers/isolatedSocialDatabase')('npc-basket');
 require('../src/Global'); fixture.assertConfigured(options.default);
 process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 const DB = invoke('Database'), Data = invoke('GameServer/DataCache');
-const Life = invoke('GameServer/Bot/Population/BotLifeState'), Goals = invoke('GameServer/Bot/Goals/GoalState');
+const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Basket = require('../src/GameServer/Bot/Economy/NpcPurchaseBasket');
 const SavedStats = require('../src/GameServer/Bot/SavedStats');
@@ -34,20 +34,11 @@ async function native(state, settings) {
 }
 async function run() {
     await DB.init();
-    let military = await seed(9599, 5000, { partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 } });
-    await assert.rejects(native(military), /war_supply_only/, 'a military supply basket cannot sneak unrelated items into a shot refill');
-    assert.equal(await amount(9599, 57), 5000); assert.equal(await amount(9599, 2509), 0, 'the whole mixed basket rolls back');
-    military = Life.cachedState(9599) || military;
-    await native(military, { lines: [lines[0]] });
-    assert.equal(await amount(9599, 2509), 100, 'the reserved shot refill still commits through the native writer');
     const at = Date.now(), first = { selfId: 2509, town: 'Dion', amount: 120, at, purpose: 'shots', money: 2160 };
     const unrelated = { selfId: 736, town: 'Giran', amount: 2, at, purpose: 'scrolls' };
     let state = await seed(9511, 5000, { marketErrands: [first, unrelated], marketErrand: first });
-    const goal = await Goals.set(9511, { type: 'buy_craft_material', status: 'active',
-        target: { itemId: 2509, amount: 120 }, plan: { purpose: 'shots' } });
     const chosen = lines.map(line => ({ ...line }));
     chosen[0].errands = [{ errand: first, units: 100, spent: 1800 }];
-    chosen[0].goal = { expectedGoal: goal.current, updatedAt: goal.updatedAt, units: 100 };
     const purchased = await Basket.purchase(state, { seller, lines: chosen });
     assert(purchased.ok && purchased.purchased);
     assert.equal(await amount(9511, 57), 2504);
@@ -56,21 +47,17 @@ async function run() {
     assert.equal(purchased.state.stats.marketErrands[0].amount, 20);
     assert.equal(purchased.state.stats.marketErrands[0].money, 360);
     assert.deepEqual(purchased.state.stats.marketErrands[1], unrelated);
-    assert.equal(Goals.snapshot(9511).current.target.amount, 20);
     assert(Buffer.byteLength(JSON.stringify(purchased.economyCommit)) <= 384);
     const replay = await Basket.purchase(purchased.state, { seller: { ...seller, sourceId: 1 }, lines: [], original: purchased.economyCommand });
     assert(replay.replayed); assert.equal(await amount(9511, 57), 2504);
-    assert.equal(replay.state.stats.marketErrands[0].amount, 20); assert.equal(Goals.snapshot(9511).current.target.amount, 20);
+    assert.equal(replay.state.stats.marketErrands[0].amount, 20);
     await DB.close(); await DB.init();
     const restarted = await Basket.purchase(replay.state, { seller, lines: [], original: purchased.economyCommand });
     assert(restarted.replayed); assert.equal(await amount(9511, 2509), 100);
 
     state = await seed(9512, 5000, { marketErrands: [first], marketErrand: first });
-    const rollbackGoal = await Goals.set(9512, { type: 'buy_craft_material', status: 'active',
-        target: { itemId: 2509, amount: 120 }, plan: { purpose: 'shots' } });
     const rollbackLines = lines.map(line => ({ ...line }));
     rollbackLines[0].errands = [{ errand: first, units: 100, spent: 1800 }];
-    rollbackLines[0].goal = { expectedGoal: rollbackGoal.current, updatedAt: rollbackGoal.updatedAt, units: 100 };
     const admission = await Commit.admit(state, Commit.KINDS.npcBuy);
     await DB.execute(["CREATE TEMP TRIGGER fail_basket BEFORE INSERT ON items WHEN NEW.characterId=9512 AND NEW.selfId=1060 BEGIN SELECT RAISE(ABORT,'basket rollback'); END"]);
     try { await assert.rejects(DB.purchaseNpcInventoryBasket(9512, { seller, lines: rollbackLines,
@@ -81,7 +68,6 @@ async function run() {
     const [intent] = await DB.execute(['SELECT tuple FROM bot_economy_intents WHERE characterId=9512']);
     assert.equal(JSON.parse(intent.tuple)[1], 0, 'the rolled-back purchase leaves its intent pending');
     assert.equal(JSON.parse(row.statsJson).marketErrands[0].amount, 120);
-    assert.equal(JSON.parse((await DB.execute(['SELECT goalJson FROM bot_goal_state WHERE characterId=9512']))[0].goalJson).target.amount, 120);
     await DB.execute(['DROP TRIGGER fail_basket']);
     assert((await DB.purchaseNpcInventoryBasket(9512, { seller, lines: rollbackLines, economyCommand: admission.command })).ok);
 
@@ -130,23 +116,8 @@ async function run() {
     assert.equal(await amount(9516, 57), 2504);
     const changedErrand = { ...first, amount: 40 };
     state = await seed(9517, 5000, { marketErrands: [changedErrand], marketErrand: changedErrand });
-    const oldGoal = await Goals.set(9517, { type: 'buy_craft_material', status: 'active', target: { itemId: 2509, amount: 120 } });
-    const newGoal = await Goals.set(9517, { type: 'progress_level', status: 'active', target: { level: 20 } });
-    const changedLines = [{ ...chosen[0], goal: { expectedGoal: oldGoal.current, updatedAt: oldGoal.updatedAt, units: 100 } }];
-    const unchanged = await Basket.purchase(state, { seller, lines: changedLines });
-    assert.deepEqual(unchanged.state.stats.marketErrands[0], changedErrand);
-    assert.deepEqual(Goals.snapshot(9517).current, newGoal.current);
-    const actualPurchase = DB.purchaseNpcInventoryBasket;
-    state = await seed(9518);
-    await Goals.set(9518, { type: 'buy_craft_material', status: 'active', target: { itemId: 2509, amount: 120 } });
-    DB.purchaseNpcInventoryBasket = async (...args) => {
-        const committed = await actualPurchase.apply(DB, args);
-        await Goals.set(9518, { type: 'progress_level', status: 'active', target: { level: 30 } });
-        return committed;
-    };
-    try { assert((await Basket.purchase(state, { seller, lines: [lines[0]] })).ok); }
-    finally { DB.purchaseNpcInventoryBasket = actualPurchase; }
-    assert.equal(Goals.snapshot(9518).current.type, 'progress_level', 'new goal published after native commit survives old result delivery');
+    const unchanged = await Basket.purchase(state, { seller, lines: [{ ...chosen[0] }] });
+    assert.deepEqual(unchanged.state.stats.marketErrands[0], changedErrand, 'a line for another errand leaves the changed one');
     const fundedPacket = [1000, .001, 0, 0, .1, 900, 2509, .05, 1440, 1060];
     const fundedLines = [{ selfId: 2509, amount: 50, unitPrice: 18, funding: { r: .1 } },
         { selfId: 1060, amount: 5, unitPrice: 108, funding: { r: .05 } }];
@@ -226,23 +197,55 @@ async function run() {
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
     state = { ...state, level: 30 };
     const packet = Economy.forState(state).statsPacket;
-    state = await Life.upsertState({ ...state, stats: { ...state.stats, ...packet } }, 'basket_fixture');
+    // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
+    state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');
     const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
-    // A town restock buys up to the plan's published kit (stats.stockTargets), not a
-    // fresh earning-spot search's target; a row naming another potion (a level or
-    // weapon change since the plan) reads the basics.
+    // A town restock buys from the build's published kit rates (stats.kitRates) over the live bag,
+    // not a fresh earning-spot search's target: an outing's survival drinks, never less than one hour's.
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock'), potionId = Potions.purchasePotionFor(state).selfId;
     const potionLine = value => Restock.collect(value, { town: 'Dion', shots: false, scrolls: false })
         .flatMap(row => row.lines).find(line => line.selfId === potionId)?.amount || 0;
-    const fresh = Economy.basics(state).stock('potions').target + 7, targets = Packet.kitRow(packet.stockTargets);
-    assert.equal(targets.complete, true, 'the plan publishes its restock slots');
-    const published = { ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, potionTarget: fresh, potionSurvivalTarget: fresh }) } };
-    assert.equal(potionLine(published), fresh, 'the errand fills the published potion target');
-    const otherPotion = { ...published, stats: { ...published.stats, stockTargets: Packet.stockTargets({ ...Packet.kitRow(published.stats.stockTargets), potionId: 0 }) } };
-    const basicsAmount = Potions.restockPlan(otherPotion, { unitPrice: Restock.quoteFor(potionId, 'Dion').price,
-        context: Economy.basics(otherPotion) }).amount;
-    assert.notEqual(basicsAmount, fresh, 'the basics target differs from the published one');
-    assert.equal(potionLine(otherPotion), basicsAmount, 'a row of another potion buys the basics target');
+    const rates = Packet.ratesOf(state.stats.kitRates, state.stats.earning);
+    assert(rates, 'the build publishes its kit rates');
+    // The per-bot rates in stats.kitRates, the spot's use in the earning answer.
+    const rated = changes => {
+        const named = { ...rates, ...changes };
+        return { ...state, stats: { ...state.stats, kitRates: Packet.kitRates(named),
+            earning: { ...state.stats.earning, shotsPerHour: named.shotUse, potionsPerHour: named.potionUse } } };
+    };
+    const published = rated({ potionUse: 15, potionRestUse: 0, outingHours: 1 });
+    assert.equal(potionLine(published), 15, 'the errand fills the published line (one hour of use)');
+    const potionTarget = value => Potions.restockPlan(value, { unitPrice: Restock.quoteFor(potionId, 'Dion').price }).targetAmount;
+    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, outingHours: 3 })), 15, 'its target is an outing of that use');
+    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, outingHours: .5 })), 5, 'never less than one hour of it');
+    // The rates are read by kind: a level or weapon change since the build buys its new potion at them.
+    assert.equal(potionLine(rated({ potionUse: 15, potionRestUse: 0, outingHours: 1, potionId: 0 })), 15,
+        'a row of another potion buys the bot\'s potion at the row\'s rates');
+    // The spot's use by one rule on both threads (EquipmentIncomeRoute.spotUseOf): an answer saved before it
+    // carried the use, a party member (its hunt is no answer's spot) and a bot holding no answer read the spot
+    // table at their spot and level: each has a potion line on main and buys it on a town visit.
+    {
+        const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+        const { shotsPerHour, potionsPerHour, ...oldAnswer } = state.stats.earning;
+        assert(shotsPerHour >= 0 && potionsPerHour > 0, 'fixture: the answer carries the use');
+        const shapes = { old: { ...state, stats: { ...state.stats, earning: oldAnswer } },
+            party: { ...state, partyId: 'bgp_basket', stats: { ...state.stats, earning: { ...state.stats.earning, potionsPerHour: 0 } } },
+            none: { ...state, stats: { ...state.stats, earning: undefined } } };
+        for (const [name, shape] of Object.entries(shapes)) {
+            assert(Packet.lineOf(shape.stats.kitRates, Route.spotUseOf(shape), 'potions') > 0, `${name}: a potion line on main`);
+            assert(potionLine(shape) > 0, `${name}: the town visit buys it`);
+        }
+    }
+    // No build has rated the kit yet: no potion is bought, no basics are built.
+    const unrated = { ...state, stats: { ...state.stats, kitRates: undefined } };
+    const basics = Economy.basics;
+    Economy.basics = () => assert.fail('an unrated kit builds no basics');
+    try { assert.equal(potionLine(unrated), 0, 'an unrated bot buys no potions'); } finally { Economy.basics = basics; }
+    // Counted on the health line without developer diagnostics: each unrated bot once, not each read.
+    const unratedCount = () => invoke('GameServer/Bot/Situations').counts().raised['kit:unrated@main'] || 0;
+    const unratedOnce = unratedCount();
+    potionLine(unrated);
+    assert(unratedOnce >= 1 && unratedCount() === unratedOnce, 'an unrated bot is counted once');
     // Each step of a restock reads the bag after the virtual purchases before
     // it: an extra bought between the potions and the shots is in the sale
     // list the shots' step reads (a new bag, not the potions' one edited).
@@ -262,9 +265,9 @@ async function run() {
             assert.equal(seen.at(-1), 10, 'the shots\' step sees the extra in the sale list');
         } finally { Economy.keptKit = keptKit; }
     }
-    // The row the build just published buys what a fresh foundation buys.
+    // The rates the build just published buy what a fresh foundation buys.
     const Shot = invoke('GameServer/Inventory/ShotStock'), Scrolls = invoke('GameServer/Bot/Travel/ScrollStock');
-    const shotId = targets.shotId, shotPrice = Restock.quoteFor(shotId, 'Dion')?.price || 7;
+    const shotId = rates.shotId, shotPrice = Restock.quoteFor(shotId, 'Dion')?.price || 7;
     const potionPrice = Restock.quoteFor(potionId, 'Dion').price, scrollPrice = Restock.quoteFor(736, 'Dion').price;
     const withContext = context => context ? { context } : {};
     const shotPlan = (value, context) => Shot.restockPlan(value, { plan: Shot.planForState(value), unitPrice: shotPrice,
@@ -272,48 +275,39 @@ async function run() {
     const potionPlan = (value, context) => Potions.restockPlan(value, { unitPrice: potionPrice, ...withContext(context) });
     const scrollPlan = (value, context) => Scrolls.restockPlan(value, { unitPrice: scrollPrice, ...withContext(context) });
     const kept = Economy.keptKit(state), built = Economy.basics(state);
-    assert.equal(kept.survivalReserve, built.survivalReserve, 'the same survival reserve');
+    assert.equal(kept.refillReserve, built.refillReserve, 'the same survival reserve');
     for (const id of [potionId, shotId, 736]) assert.equal(kept.kitCost(id), built.kitCost(id), `the same kit cost of ${id}`);
     assert.deepEqual(shotPlan(state), shotPlan(state, built), 'the same shot restock');
     assert.deepEqual(potionPlan(state), potionPlan(state, built), 'the same potion restock');
     assert.deepEqual([scrollPlan(state).amount, scrollPlan(state).cost], [scrollPlan(state, built).amount, scrollPlan(state, built).cost],
         'the same scroll restock (the row keeps three digits of its hours)');
-    // Shots: whether they restock, their survival target, the stock owned at the build.
-    const shotRow = (shotsCanRestock, shotTarget, shotSurvivalTarget, shotCurrentAtBuild, owned) => ({ ...state,
-        inventory: { ...state.inventory, [shotId]: { selfId: shotId, amount: owned } },
-        stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, shotTarget, shotCurrentAtBuild, shotsCanRestock, shotSurvivalTarget }) } });
-    const restocking = shotPlan(shotRow(true, 500, 200, 0, 0));
-    assert(restocking.needed, 'below the published survival target the bot restocks');
-    assert.equal(restocking.targetAmount, 500, 'up to the published shot target');
-    assert(restocking.amount >= 200, 'the survival part is always funded');
-    const capped = shotPlan(shotRow(false, 500, 200, 60, 50));
+    // Shots: whether they restock, their use, the stock the bag holds now.
+    const shotRow = (shotsCanRestock, shotUse, owned) => ({ ...rated({ shotsPay: true, shotsCanRestock, shotUse, outingHours: 2 }),
+        inventory: { ...state.inventory, [shotId]: { selfId: shotId, amount: owned } } });
+    const restocking = shotPlan(shotRow(true, 250, 0));
+    assert(restocking.needed, 'below one hour of use the bot restocks');
+    assert.equal(restocking.targetAmount, 500, 'up to an outing of the published use');
+    assert(restocking.amount >= 250, 'the survival part is always funded');
+    const capped = shotPlan(shotRow(false, 250, 50));
     assert.equal(capped.targetAmount, 50, 'shots that cannot restock keep at most what the bag holds');
     assert.equal(capped.needed, false, 'and buy none');
-    const rose = shotRow(false, 500, 200, 40, 50);
-    assert.deepEqual(shotPlan(rose), shotPlan(rose, Economy.basics(rose)), 'capped shots risen since the build read the basics');
-    const roseRestocking = shotPlan(shotRow(true, 500, 200, 40, 50));
-    assert.equal(roseRestocking.targetAmount, 500, 'restockable shots keep the published target as they rise');
+    assert.equal(shotPlan(shotRow(false, 250, 80)).targetAmount, 80, 'capped shots follow the bag as it rises');
+    const roseRestocking = shotPlan(shotRow(true, 250, 100));
+    assert.equal(roseRestocking.targetAmount, 500, 'restockable shots keep the outing target as they rise');
     assert(roseRestocking.needed);
     // Scrolls: the hours one saves, the money a side purchase may take.
-    const scrollRow = scrollHours => ({ ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, scrollHours }) } });
-    assert.equal(scrollPlan(scrollRow(targets.scrollHours)).funding.side, targets.scrollHours / scrollPrice, 'a scroll is worth the hours it saves');
+    const scrollRow = scrollHours => rated({ scrollHours });
+    assert.equal(scrollPlan(scrollRow(rates.scrollHours)).funding.side, rates.scrollHours / scrollPrice, 'a scroll is worth the hours it saves');
     assert.equal(scrollPlan(scrollRow(0)).funding.side, 0, 'no saved hours, no side money');
-    const unpriced = scrollRow(null);
-    assert(scrollPlan(unpriced).funding.side > 0, 'a row without scroll hours reads them from the basics');
-    assert.deepEqual(scrollPlan(unpriced), scrollPlan(unpriced, Economy.basics(unpriced)));
+    assert.equal(scrollPlan(scrollRow(null)).funding.side, 0, 'a row without scroll hours saves none: no route is solved on main');
     assert.equal((await Restock.purchase(state, { town: 'Dion', shots: false, potions: false })).receipts.length, 1);
-    assert.equal(await amount(9543, 736), 10, 'a planned side purchase commits through the writer');
+    assert.equal(await amount(9543, 736), 1, 'a planned side purchase commits through the writer: one scroll for the outing');
     // A refusal the next pass cannot change ends the purchase, never the visit.
     const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
     state = await seed(9544, 1000000, { classId: 1, money: null, townVisit: { town: 'Dion', startedAt: Date.now() },
         marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
     const left = await Market.finishTownErrands({ ...state, level: 30 });
     assert.equal(left.stats.townVisit.completed, true, 'a refused basket ends the visit, the bot leaves town');
-    // A war supply trip plans its supply alone; any other line would refuse the whole basket.
-    state = await seed(9545, 1000000, { classId: 1, partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 },
-        marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
-    assert.equal(Restock.collect({ ...state, level: 30 }, { town: 'Dion', shots: false }).flatMap(row => row.lines)
-        .filter(line => line.selfId !== 2509).length, 0, 'no scroll or potion joins a war supply basket');
     state = await seed(9529, 10000000);
     const fullStack = await Basket.purchase(state, { seller, lines: [
         { selfId: 2509, amount: 16481, unitPrice: 18 }, { selfId: 1785, amount: 10001, unitPrice: 300 }] });

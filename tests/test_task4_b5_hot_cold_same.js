@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N9): one decision read hot and cold gives the same leaf, root, item and amount, and a bot
+// One decision read hot and cold gives the same leaf, root, item and amount, and a bot
 // flipped cold -> hot -> cold with an open buy ad keeps exactly one ad for one root (no second ad,
 // no second escrow): hot leaves the cold ad standing, the cold return sees the same order.
 const assert = require('node:assert/strict');
@@ -41,13 +41,15 @@ async function run() {
     Database.init();
     await Life.init();
     await Native.character(Database, 1, 'Native1', 'bot_b5_hotcold');
-    await Database.setItem(1, { selfId: 57, name: 'Adena', amount: 10000, stackable: true });
+    await Database.setItem(1, { selfId: 57, name: 'Adena', amount: 100000, stackable: true });
     await Database.setItem(1, { selfId: itemId, name: 'Stem', amount: 4, stackable: true });
     const cold = await Life.upsertState({ characterId: 1, accountName: 'bot_b5_hotcold', name: 'Native1', level: 30,
-        exp: 0, sp: 0, adena: 10000, phase: 'cold', activity: 'hunting', homeRegion: 'Giran', currentRegion: 'Giran',
-        loc: { x: 83000, y: 148000, z: -3400 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 0, shopTown: { town: 'Giran', at: 1 }, money: [10000, .0001, 0, 0, .001, 10000, itemId] },
-        inventory: { 57: { selfId: 57, amount: 10000 }, [itemId]: { selfId: itemId, amount: 4 } },
+        exp: 0, sp: 0, adena: 100000, phase: 'cold', activity: 'hunting', homeRegion: 'Giran', currentRegion: 'Giran',
+        loc: { locX: 83000, locY: 148000, locZ: -3400 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
+        stats: { generatedCold: true, classId: 0, shopTown: { town: 'Giran', at: 1 },
+            // The material's row stands at its funded root's place in the money queue.
+            money: [10000, .0001, 0, 0, invoke('GameServer/Bot/Economy/PurchaseFunding').rootRatio(network.queue[0]), 100000, itemId] },
+        inventory: { 57: { selfId: 57, amount: 100000 }, [itemId]: { selfId: itemId, amount: 4 } },
         simulation: { revision: 0 }, timing: {}, updatedAt: Date.now() }, 'native_fixture');
 
     // One decision, read cold (the card) and hot (the near body's held view of the same card,
@@ -72,7 +74,7 @@ async function run() {
     assert.equal(ad.lines[0].count, 26, opened.reason);
     const escrow = ad.escrowAdena;
     const walletAfterAd = Native.amount(await Database.fetchItems(1), 57);
-    assert.equal(walletAfterAd, 10000 - escrow);
+    assert.equal(walletAfterAd, 100000 - escrow);
 
     // Flip hot with the ad open: the hot review neither withdraws nor republishes it.
     const hot = await Life.upsertState({ ...(await current(1)), phase: 'hot', timing: { lastHotAt: Date.now() } }, 'receipt_handoff');

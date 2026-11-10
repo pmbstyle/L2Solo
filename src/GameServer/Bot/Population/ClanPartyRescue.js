@@ -64,13 +64,13 @@ async function rescue({ requester, objective, rows, entry, commit, create, relea
             partyRequest: { ...objective, status: 'open', requestedAt: now } } });
     }
     if (!listeners(clanId) || !moved.every(memberOfClan)) return null;
-    const help = { until: now + 10 * 60000, memberIds: moved.map(state => state.characterId) };
+    const memberIds = moved.map(state => state.characterId);
     let party;
     if (target) {
-        const result = await commit({ ...target, memberIds: help.memberIds,
-            roleCoverage: Composition.roleCoverage(moved), stats: { ...target.stats, clanHelp: help } }, moved, {
+        const result = await commit({ ...target, memberIds,
+            roleCoverage: Composition.roleCoverage(moved) }, moved, {
             characterId: target.leaderId, eventType: 'party_recruit', summary: `Clan reinforced the hunt for ${requester.name}`,
-            meta: { partyId: target.partyId, reason: 'clan_rescue', memberIds: help.memberIds }, weight: 3, createdAt: now
+            meta: { partyId: target.partyId, reason: 'clan_rescue', memberIds }, weight: 3, createdAt: now
         });
         if (result?.party && !result.failed?.length) party = result.party;
     } else {

@@ -146,6 +146,14 @@ async function run() {
         'the hot companion must walk to the live NPC that owns the selected shop list');
     assert.strictEqual(session.coldLifeState.stats.equipmentPlan.target.selfId, 1,
         'the refreshed hot equipment plan must be retained on the session');
+    // A quote the body was refused where it acts (GearMarks, as a cold buyer's) is no errand
+    // while its mark lasts: the visit does not walk back to that seller at that price.
+    const unmarked = session.coldLifeState;
+    session.coldLifeState = { ...unmarked, stats: { ...unmarked.stats, gearMarks: [{ key: 1, town: town.name, price: offer.price }] } };
+    assert.strictEqual(CompanionEquipmentShopping.planErrand(session, bot, town), null, 'a refused quote is not planned again');
+    session.coldLifeState = { ...unmarked, stats: { ...unmarked.stats, gearMarks: [{ key: 1, town: town.name, price: offer.price + 1 }] } };
+    assert.strictEqual(CompanionEquipmentShopping.planErrand(session, bot, town)?.itemId, 1, 'another quote of the item is');
+    session.coldLifeState = unmarked;
 
     MarketOpportunity.npcOffers = (selfId, townName) => (
         Number(selfId) === 1 && townName === town.name ? [offer, alternateOffer] : []

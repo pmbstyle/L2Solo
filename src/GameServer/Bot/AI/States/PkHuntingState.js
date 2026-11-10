@@ -80,7 +80,7 @@ module.exports = {
             // wash it through PvE, without becoming scripted PK encounters.
             session.plan = 'hunting';
             session.currentTargetId = undefined;
-            session.currentSpot = null;
+            invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
             session.noTargetTicks = 0;
             return;
         }

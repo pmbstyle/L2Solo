@@ -21,6 +21,9 @@ const fs = require('node:fs');
 const GIRAN = { locX: 83396, locY: 147904, locZ: -3400 };
 const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 const held = (items, id) => items.filter(item => Number(item.selfId) === id).reduce((sum, item) => sum + Number(item.amount), 0);
+// A far seller's price waits on the board for its own commit: its bag plus what waits there.
+const owned = async (id, selfId) => held(await Database.fetchItems(id), selfId) + Number((await Database.execute([
+    'SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = ?', [id, selfId]]))[0].amount);
 const cash = amount => ({ selfId: 57, name: 'Adena', amount });
 let serial = 0;
 async function seed(items, { classId = 0, level = 30, name = 'Fixture', town = 'Giran', loc = GIRAN } = {}) {
@@ -128,7 +131,7 @@ async function images(ids) {
         assert.deepEqual(goods(await images([crafter.characterId, supplier.characterId])), goods(refusedBefore),
             'below-floor production cannot debit, crystallize or consume materials');
         const refused = await Shots.execute(crafter, { craft: { recipeId: 20, batches: 65 } }, now);
-        assert(refused.stats.wishDirty, 'what the act refuses is heard, the plan does not ask it again');
+        assert(invoke('GameServer/Bot/Situations').woken(refused.stats, 'build'), 'what the act refuses is heard, the plan does not ask it again');
         assert(invoke('GameServer/Bot/Economy/WealthCraftDecision').refused(refused, 20), 'its recipe waits for the next town look');
 
         const oldOffer = Afk.offers(45, Afk.SELL).find(row => Number(row.sourceId) === supplier.characterId);
@@ -177,7 +180,7 @@ async function images(ids) {
         assert.equal(held(actual, 45), 0); assert.equal(held(actual, 1785), 0);
         assert.equal(Number(result.inventory[45]?.amount || 0), 0); assert.equal(Number(result.inventory[1785]?.amount || 0), 0);
         assert.equal(result.adena, 1000000 - 1000 - 21 * 550); assert.equal(held(actual, 57), result.adena);
-        assert.equal(held(await Database.fetchItems(supplier.characterId), 57), 1001000);
+        assert.equal(await owned(supplier.characterId, 57), 1001000);
         assert.equal(Number((await images([crafter.characterId]))[0].character.mp), 1000 - 7 * recipe.mpCost);
         console.log('PASS native funded demand, strict original quote refusal and physical four-step conservation');
 
@@ -215,7 +218,7 @@ async function images(ids) {
         assert.equal(learned.adena, 999999); assert.equal(held(await Database.fetchItems(recipeBuyer.characterId), 57), 999999);
         assert.equal(held(await Database.fetchItems(recipeBuyer.characterId), 1804), 0);
         assert.equal(held(await Database.fetchItems(supplier.characterId), 1804), 0);
-        assert.equal(held(await Database.fetchItems(supplier.characterId), 57), 1001001);
+        assert.equal(await owned(supplier.characterId, 57), 1001001);
         assert.equal(learned.stats.shotRecipeDemand, null);
         console.log('PASS finite recipe price refusal, physical paid delivery and scroll consumption');
 
@@ -232,7 +235,7 @@ async function images(ids) {
             purchases.push(['shop', args[3], args[4].expectedPrice]);return receipt;};
         Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc.apply(Database, args);
             purchases.push(['npc', args[1].amount, args[1].unitPrice]);return receipt;};
-        // Task 4 B3: main's shot review plans no purchase. The core's root
+        // Main's shot review plans no purchase. The core's root
         // stock:shots (the same stock rule) is executed by its card: board
         // deals by the economy plan, the NPC remainder by the town visit.
         const fighterBefore = await images([fighter.characterId, supplier.characterId]);
@@ -274,7 +277,9 @@ async function images(ids) {
         const fieldLoc = { locX: -45000, locY: 110000, locZ: -3000 };
         // T43 table: a level-30 Warrior's owned D shots no longer pay (no batch to weigh); at 38 they do.
         let hunter = await nativeEconomy(await seed(fighterItems, { classId: 1, level: 38, name: 'Field', town: 'Gludio', loc: fieldLoc }), now);
-        hunter = await Life.upsertState({ ...hunter, activity: 'hunting' }, 'native_field_restock');
+        // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
+        hunter = await Life.upsertState({ ...hunter, activity: 'hunting',
+            stats: { ...hunter.stats, earning: require('./helpers/ratedKit')(hunter).stats.earning } }, 'native_field_restock');
         const fieldBefore = await images([hunter.characterId]);purchases.length = 0;
         const traveling = (await Shots.review(hunter, now + 72000)).state;
         assert.deepEqual(purchases, [], 'no remote field inventory purchase');
@@ -332,7 +337,7 @@ async function images(ids) {
             1459: { ...cCrafter.inventory[1459], amount: 1 } } };
         const pausedGear = invoke('GameServer/Bot/AI/GearPlanSelection').deferredWishPlan(gearPlan, {}, beforeInputs);
         cCrafter = await Life.upsertState({ ...cCrafter, stats: { ...cCrafter.stats, equipmentPlan: pausedGear } }, 'c_inputs_after_gear_pause');
-        assert.equal(Policy.availableMaterial(cCrafter, 1459), 0, 'the collected gear crystal stays reserved');
+        assert.equal(invoke('GameServer/Bot/Economy/WealthCraftDecision').freeOf(cCrafter, 1459), 0, 'the collected gear crystal stays reserved');
         const cCandidate = Shots.craftCandidate(cCrafter, cRecipe, Shots.marketSnapshot(now + 120000));
         assert(cCandidate?.batches > 0, 'the learned recipe reaches a finite executable production batch');
         assert.equal(cCandidate.gear.source, 'crystals');
@@ -348,6 +353,47 @@ async function images(ids) {
             'the producer physically buys its own crystals before acquiring ore and crafting');
         assert.equal(cCrafter.stats.shotCraft.preparing, undefined, 'completed production clears its preparation facts');
         console.log('PASS physical C recipe purchase/learning, input allocation and C shot production');
+
+        // A paused exchange's need is met first from the bot's warehouse: the bag crystals the
+        // planner finds free are the ones the native commit lets the shot craft spend. A craft
+        // the commit refuses anyway is an outcome (counted, the recipe marked), not a throw.
+        const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        const WealthDecision = invoke('GameServer/Bot/Economy/WealthCraftDecision');
+        const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+        // The shots made above already fill the open bid: sold out of the bag, so the bid is
+        // demand a new batch can meet.
+        const bankerId = cCrafter.characterId, oreId = Number(cCandidate.ore.selfId);
+        for (const [selfId, amount] of [[1459, 200], [oreId, 10000], [1464, 0]]) {
+            await Database.execute(['DELETE FROM items WHERE characterId=? AND selfId=?', [bankerId, selfId]]);
+            if (amount) await Database.setItem(bankerId, { selfId, amount });
+        }
+        cCrafter = await Life.syncExternalInventory(bankerId, 'c_banked_exchange_stock', Life.cachedState(bankerId));
+        const bankedPlan = () => ({ ...Life.cachedState(bankerId), vitals: { ...Life.cachedState(bankerId).vitals, mp: 1000 },
+            stats: { ...Life.cachedState(bankerId).stats, wealthRefused: null, equipmentPlan: { strategy: 'none', status: 'deferred',
+                reason: 'wish_focus', exchange: { kind: 'luxury_exchange' }, target: { selfId: 95, slot: 14 },
+                materials: [{ selfId: 1459, amount: 1000 }] } } });
+        cCrafter = await Life.upsertState(bankedPlan(), 'c_banked_exchange_paused');
+        assert.equal(WealthDecision.freeOf(cCrafter, 1459), 0, 'without its bank the paused exchange keeps every bag crystal');
+        Warehouse.useRowSource(id => id === bankerId ? [bankerId, 1, [[1459, 1000, 0]]] : undefined, () => true);
+        const craftThrough = Database.craftInventoryItems;
+        try {
+            assert.equal(WealthDecision.freeOf(cCrafter, 1459), 200, 'the banked crystals meet the paused exchange');
+            const banked = Shots.craftCandidate(cCrafter, cRecipe, Shots.marketSnapshot(now + 150000));
+            assert(banked?.batches > 0, 'the freed bag crystals make a production batch');
+            const shotsBefore = held(await Database.fetchItems(bankerId), 1464);
+            const refusedBefore = DecisionEvents.rejections()['shot:craft_failed'] || 0;
+            Database.craftInventoryItems = async () => { throw Error('economy_material_protected'); };
+            const refused = await Shots.execute(cCrafter, { craft: Policy.selectionFor(banked) }, now + 150000);
+            Database.craftInventoryItems = craftThrough;
+            assert.equal(DecisionEvents.rejections()['shot:craft_failed'], refusedBefore + 1, 'a refused shot craft is counted');
+            assert(WealthDecision.refused(refused, cRecipe.recipeId), 'a refused shot recipe waits for the next town look');
+            assert.equal(held(await Database.fetchItems(bankerId), 1464), shotsBefore);
+            cCrafter = await Life.upsertState(bankedPlan(), 'c_banked_exchange_retry');
+            cCrafter = await Shots.execute(cCrafter, { craft: Policy.selectionFor(banked) }, now + 150000);
+            assert(held(await Database.fetchItems(bankerId), 1464) > shotsBefore, 'the commit spends the crystals the planner freed');
+            assert(held(await Database.fetchItems(bankerId), 1459) < 200);
+        } finally { Database.craftInventoryItems = craftThrough; Warehouse.useRowSource(); }
+        console.log('PASS banked exchange crystals free the bag for a shot craft, a refused craft is an outcome');
 
         // A whole native bootstrap through the hidden backed bid: no initial
         // C scroll knowledge, crystals or shots; the exact shield must be
@@ -402,7 +448,7 @@ async function images(ids) {
             { objectId: bootstrapProduct.id, lineId: paidOffer.lineId, expectedPrice: paidOffer.price,
                 expectedRevision: paidOffer.expectedRevision, coldState: bootstrap });
         assert(!bootstrapSale.pending);
-        assert.equal(held(await Database.fetchItems(paidBuyer.characterId), 1464), 952);
+        assert.equal(await owned(paidBuyer.characterId, 1464), 952);
         assert.equal(held(await Database.fetchItems(bootstrap.characterId), 57), 1000000 - 30000 - 121162 - 30 + 952 * 500);
         console.log('PASS native backed C bootstrap: recipe, shield purchase, 51 residual crystals, 952 shots and paid sale');
 
@@ -457,7 +503,7 @@ async function images(ids) {
                 expectedRevision: publicLot.expectedRevision,
                 coldState: Life.cachedState(aggregateBuyers[0].characterId) });
         assert.equal(held(await Database.fetchItems(aggregateBuyers[0].characterId), 1464), purchased);
-        assert.equal(held(await Database.fetchItems(aggregateCrafter.characterId), 57),
+        assert.equal(await owned(aggregateCrafter.characterId, 57),
             2000000 - 30000 - 121162 - aggregateLot.batches * 15 + purchased * aggregateLot.exit.price);
         console.log('PASS native aggregate C launch: unbacked ads, recipe, shield, production, publication and paid sale');
     } finally {

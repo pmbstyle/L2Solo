@@ -14,14 +14,13 @@
 //
 // The window's rule, the one owner of "is a hunting round's end a decision
 // point" (design rules, Recompute: when, not what). It reads at each round what
-// a step would hear at work and the rounds raise no event for: the soft point's
-// goal and market watch. The money drift, the bot's own samples and a better
-// earning spot (income_moved) wait at work (Reaction), as a step's would; the
-// build at the window's end reads them and checks the held earning spot. The
+// a step would hear at work: what its rounds raised (Situations: the wallet's
+// crossings of its goal among them). The build at the window's end reads the rest, and searches the earning spot only when one of its situations woke it. The
 // rounds run in one burst at the step, against the world as it stands then:
 // the kernel bounds how far ahead of the step's clock they run (its look-ahead,
 // WINDOW_LEAD_MS), so the window's end comes within it.
 const ColdEconomyPlan = require('./ColdEconomyPlan');
+const Situations = require('../Situations');
 
 // The bot's own clock: what its hunt has been credited through.
 function ownClock(state) {
@@ -66,28 +65,19 @@ function huntingRound(result) {
 }
 
 // What ended the window at this round, '' while it runs on. before, after: the
-// round's states, its projection done (hard events raised, soft ones not read).
-// readers, the worker's and the kernel's: edges(before, after)
-// (ColdEconomyPlan.edges), moneyBound(after) (the goal at work), market(after)
-// (the decision's market watch crossed, DecisionSections.marketCrossed),
-// feasible(after) (EconomyContext.leafCheck, the held leaf's execution check),
-// planHolds(after, at) (the native facts its planLifecycle reads) and
-// kind(after) (lifecycleKind: a state that asks a command).
+// round's states, its projection done (its situations raised: the wallet's crossings
+// and the supply lines among them). readers, the worker's and the kernel's: feasible(after)
+// (EconomyContext.leafOutcome: what the held leaf's execution proved, raised by the step)
+// and kind(after) (lifecycleKind: a state that asks a command).
 function endOf(before, after, result, readers) {
     if (!huntingRound(result)) return 'round';
     // The round's own end: a rest, a death, a flight.
     if (after.activity !== 'hunting') return after.activity === 'dead' ? 'death' : 'rest';
-    // Level is no fact of its own: the kit's section may not move with it.
-    if (Number(after.level) !== Number(before.level)) return 'level';
-    // The hard events of the round: supplies, the bag, the kit, the funding, a death mark.
-    if (Number(after.stats?.wishDirty) || 0) return 'event';
-    // New loot (bit 1) is no decision point: the commit's edges read it from the window's start.
-    if (readers.edges(before, after) & ~1) return 'supplies';
-    if (readers.moneyBound(after)) return 'money';
-    if (readers.market(after)) return 'market';
+    // A decision woken by the round (Situations: what is heard at work; a level up
+    // waits for the rest): its step decides. What waits does not end it.
+    if (Situations.anyWoken(after.stats)) return 'event';
     if (!readers.feasible(after)) return 'leaf';
-    if (readers.kind(after) !== 'resolver') return 'command';
-    return readers.planHolds(after, Number(after.timing?.nextResolveAt) || 0) ? '' : 'plan';
+    return readers.kind(after) !== 'resolver' ? 'command' : '';
 }
 
 // A window's debug for main: the rounds' numbers summed over the last round's fields.

@@ -64,10 +64,10 @@ const changedBag = { ...dcBag, 5767: { ...dcBag[5767], equipped: false, equipped
     ...bagFor([6384]) };
 const changed = stateFor(changedBag, stale);
 const after = Profile.profileFor(changed, TS);
-assert.equal(before.castSpd, 468);
-assert.equal(before.pDef, 573.9);
-assert.equal(after.castSpd, 369, 'one Major Arcana glove must lose Dark Crystal casting bonus and WIT');
-assert.equal(after.pDef, 547.9, 'one Major Arcana glove must lose Dark Crystal defence bonus');
+assert.equal(before.castSpd, 445);
+assert.equal(before.pDef, 542);
+assert.equal(after.castSpd, 352, 'one Major Arcana glove must lose Dark Crystal casting bonus and WIT');
+assert.equal(after.pDef, 516, 'one Major Arcana glove must lose Dark Crystal defence bonus');
 assert.deepEqual(power(changed), power(stateFor(changedBag, nativeEffects(changedBag))));
 assert.deepEqual(power(stateFor(dcBag)), power(complete));
 

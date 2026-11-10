@@ -44,6 +44,14 @@ class PublicWorkshopIndex {
             if (first) yield first;
         }
     }
+    // Every listed fee of a recipe but the owner's, in every town: what a crafter pricing
+    // its own fee sees of its rivals (MarketPricing.serviceFee), as a player sees every
+    // open workshop, not only the cheapest one per town a customer picks from.
+    *fees(recipeId, excludeOwner = 0) {
+        for (const rows of this.recipes.get(Number(recipeId))?.values() || []) {
+            for (const row of rows) if (row.characterId !== Number(excludeOwner)) yield Number(row.price);
+        }
+    }
     clear() { this.recipes.clear(); this.keys.clear(); }
 }
 module.exports = { PublicWorkshopIndex };

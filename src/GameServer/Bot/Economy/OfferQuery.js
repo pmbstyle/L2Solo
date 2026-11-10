@@ -3,9 +3,44 @@
 // city merchants), in the one order of OfferOrder (price plus the trip to the
 // offer's town, a player before a bot, an NPC last, a stable id). The main
 // thread asks it through MarketOpportunity.bestOffer; the planning workers
-// over the index they build from the board table. Static code only.
+// over the index they build from the board table. Its admission (admits) reads
+// the buyer's and the seller's states and other bots' claims beside the lines.
 const { SELL, offerFields } = require('../../AfkTrade/BoardIndex');
 const OfferOrder = require('./OfferOrder');
+const Production = require('./ProductionPolicy');
+const PartyAdmission = require('../Population/PartyAdmission');
+const GearMarks = require('../AI/GearMarks');
+// lazy: BoardClaims loads the population config, which a planning worker reads later.
+let Claims = null;
+
+// Whether a bot may buy from a source at all: an NPC shop only for an item the
+// production rule leaves to NPCs, a configured city merchant only for its shots.
+// fixed: the offer is a configured merchant's (a live private store says so by
+// its name, MarketOpportunity.botCanBuy).
+function sourceAllowed(offer, fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed') {
+    if (offer.sourceType === 'npc' && !Production.allowsNpcShot(offer.selfId)) return false;
+    return !fixed || Production.allowsFixedShot(offer.selfId);
+}
+// The units of a sell line a buyer may take: a board line's count less what other
+// bots' trips claim (BoardClaims.unclaimed), another source's count.
+function takeableUnits(line, buyer) {
+    return line.recordId ? (Claims ||= require('./BoardClaims')).unclaimed(line, buyer?.characterId) : Number(line.count);
+}
+// May `buyer` (a bot's plain state; null for none) buy this sell line or offer:
+// the one admission of the build's offer reader (WishPurchaseEvidence) and of
+// the buyers that carry its step out (MarketOpportunity.bestOffer,
+// ColdMarketService.planPurchase), main and workers, so what a build quotes its
+// buyer takes. A source a bot buys from (sourceAllowed); not a quote its buyer
+// refused where it acts (GearMarks.refused: the item at that town and price); a
+// board line while units are left beyond other bots' claims; a personal offer
+// only where both sides can meet (PartyAdmission.personalOfferAllowed: no party,
+// a compatible meeting town, a seller that can pay its way there; the other
+// side's state from the thread's trade lookups). session: a main buyer's live session.
+function admits(line, buyer, session = null) {
+    if (!line || !sourceAllowed(line) || GearMarks.refused(buyer?.stats, line)) return false;
+    if (line.recordId && !(takeableUnits(line, buyer) > 0)) return false;
+    return PartyAdmission.personalOfferAllowed(line, buyer, undefined, session);
+}
 
 // options: towns (a list; null: every town), excludeOwner (the buyer's own
 // records), budget, cost (OfferOrder.tripCost), accept(offer) (the caller's
@@ -42,13 +77,16 @@ function bestSellOffer(index, selfId, options = {}) {
 // rest, within `money`: { lines: [{ line, count, price }], npc (units from the NPC),
 // units, cost }. One rule for the purchase of a stack (a shot restock,
 // materials): ShotStock.restockPlan and cheapestTown.
-function takeable(line, { npcPrice = 0, maxPrice = Infinity, excludeOwner = 0 }) {
+// countOf(line): the units of a line the buyer may take (its count less what other
+// bots' errands claim, BoardClaims.unclaimed; the line's count by default).
+const lineCount = line => Number(line.count);
+function takeable(line, { npcPrice = 0, maxPrice = Infinity, excludeOwner = 0, countOf = lineCount }) {
     const price = Number(line.price);
     return !(excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner))
-        && price > 0 && price <= maxPrice && !(npcPrice > 0 && price > npcPrice) && Number(line.count) > 0;
+        && price > 0 && price <= maxPrice && !(npcPrice > 0 && price > npcPrice) && countOf(line) > 0;
 }
 function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0,
-    accept = null, acceptFill = null } = {}) {
+    accept = null, acceptFill = null, countOf = lineCount } = {}) {
     let left = Math.max(0, Math.floor(Number(amount) || 0));
     let budget = Math.max(0, Number(money));
     const taken = [];
@@ -57,8 +95,8 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
         if (left <= 0) break;
         const price = Number(line.price);
         if (accept && !accept(line)) continue;
-        if (!takeable(line, { npcPrice, maxPrice, excludeOwner })) continue;
-        const count = Math.min(left, Number(line.count), Math.floor(budget / price));
+        if (!takeable(line, { npcPrice, maxPrice, excludeOwner, countOf })) continue;
+        const count = Math.min(left, countOf(line), Math.floor(budget / price));
         if (count <= 0) break;
         // Some admission evidence covers this exact fill, not the whole
         // quoted stack or a different remainder after earlier lines.
@@ -78,7 +116,7 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
 let pastDepth = 0;
 
 // The town where a buyer gets `amount` units of an item for the least, its
-// trip there included (б5, D1; user Q1 A for shots): in each town the board's
+// trip there included: in each town the board's
 // lines there and the NPC shop there as one more offer (fill), plus the
 // buyer's round trip (`cost`, OfferOrder.tripCost; 0 for its own town). A
 // town that fills the whole amount comes first, then the least landed price
@@ -128,11 +166,12 @@ function boardView(index, selfId, options, amount = 0) {
         read++;
         if (!inspected.has(line.town)) inspected.set(line.town, []);
         inspected.get(line.town).push(line);
-        if (met || !named(line.town) || !takeable(line, { maxPrice, excludeOwner: options.excludeOwner })
+        const countOf = options.countOf || lineCount;
+        if (met || !named(line.town) || !takeable(line, { maxPrice, excludeOwner: options.excludeOwner, countOf })
             || options.accept && !options.accept(line)) continue;
         const before = held.get(line.town) || 0;
-        if (options.acceptFill && !options.acceptFill(line, Math.min(Number(line.count), amount - before))) continue;
-        const units = before + Number(line.count);
+        if (options.acceptFill && !options.acceptFill(line, Math.min(countOf(line), amount - before))) continue;
+        const units = before + countOf(line);
         held.set(line.town, units);
         met = units >= amount;
     }
@@ -145,7 +184,7 @@ function betterOffer(best, options, amount, town, trip, price, lines) {
     const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
     const filled = fill(lines, amount, {
         npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
-        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill
+        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill, countOf: options.countOf
     });
     if (!filled.units) return best;
     const landed = filled.cost + trip;
@@ -238,4 +277,4 @@ function othersIn(towns, fixed = [], npc = []) {
     ].filter((offer) => offer.available !== false);
 }
 
-module.exports = { bestSellOffer, cheapestTown, townTable, cheapestIn, fill, topPrice, othersIn, pastDepthCount: () => pastDepth };
+module.exports = { admits, sourceAllowed, takeableUnits, bestSellOffer, cheapestTown, townTable, cheapestIn, fill, topPrice, othersIn, pastDepthCount: () => pastDepth };

@@ -136,9 +136,10 @@ async function main() {
         assert.equal(attacks.at(-1), 100);
 
         // The cold material hunt names its monster as well as its ground.
-        // An ordinary closer mob cannot silently replace that occupation.
+        // On its spot, an ordinary closer mob cannot silently replace that occupation.
         const previousActivity = session.heldEconomy.network.activity;
         session.heldEconomy.network.activity = { activity: 'hunting', itemId: 1874, amount: 1, npcId: 150 };
+        session.currentSpot = { id: '0_0' };
         session.currentTargetId = undefined;
         bot.moving = false;
         available = [npc(101, 30), npc(150, 200)];
@@ -150,25 +151,6 @@ async function main() {
         session.testIncoming = null;
         session.currentTargetId = undefined;
         session.heldEconomy.network.activity = previousActivity;
-
-        const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-        const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-        const oldTravel = Market.canTravelForPurchase, oldReject = Events.rejectSession;
-        try {
-            Market.canTravelForPurchase = () => false;
-            Events.rejectSession = () => { throw Error('a declined journey must not reroll the occupation'); };
-            session.heldEconomy.network.activity = { activity: 'shopping', itemId: 736, amount: 1,
-                town: 'Oren', rootKey: 'stock:scrolls' };
-            available = [npc(201, 100)];
-            tick();
-            assert.equal(session.currentTargetId, 201, 'an unprofitable separate shopping journey leaves the bot farming locally');
-            assert.equal(session.heldEconomy.network.activity.activity, 'shopping', 'local earning preserves the pending occupation');
-            assert.equal(session.spotRelocation, undefined, 'waiting for a worthwhile shopping visit cannot choose another field');
-        } finally {
-            Market.canTravelForPurchase = oldTravel; Events.rejectSession = oldReject;
-            session.heldEconomy.network.activity = previousActivity;
-            session.currentTargetId = undefined;
-        }
 
         session.currentSpot = { id: '0_0', center: { locX: 8, locY: 8, locZ: 0 } };
         session.noTargetTicks = 2;

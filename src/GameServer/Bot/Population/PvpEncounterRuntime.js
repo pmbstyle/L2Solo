@@ -108,7 +108,7 @@ async function pass(actions) {
             const event = { key: e.key, at, pressure: 3, spotId: e.spotId, npcId: e.npcId,
                 actor: participant(e.sides[0]), peer: participant(e.sides[1]), action: e.reason === 'clan_war' ? 'clan_war' : e.reason === 'revenge' ? 'revenge' : 'contest', pvpIntent: true, willing: e.willing };
             const result = await ColdPartyConflict.apply({ ...actions, event, resume: e,
-                incrementalPvp: true, onEncounter: register, waitMs: 15000, cooldownMs: 600000,
+                incrementalPvp: true, onEncounter: register, waitMs: 15000,
                 rng: seeded(`${e.key}:${e.sequence}`) });
             if (result.ok) {
                 actions.recordPvpStep(result);

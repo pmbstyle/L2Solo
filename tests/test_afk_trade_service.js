@@ -96,15 +96,20 @@ function sessionFor(accountId, row, items) {
     const customer = sessionFor('afk_service_customer', customerRow, await Database.fetchItems(customerId));
     World.user.sessions.push(owner, customer);
 
-    for (const town of Object.values(invoke('GameServer/World/TownRespawn').towns)) {
+    // Every town square opens an AFK shop, Floran too: the PK town is open to
+    // PvP (no peace zone), yet a red name trades there.
+    for (const [key, town] of Object.entries(invoke('GameServer/World/TownRespawn').towns)) {
         owner.actor.setLocXYZ(town);
+        assert.strictEqual(utils.isInPeaceZone(town.locX, town.locY), key !== 'floran_village',
+            `${town.name} ${key === 'floran_village' ? 'allows PvP' : 'is a peace zone'}`);
         for (const type of [AfkTrade.SELL, AfkTrade.BUY]) {
             assert.strictEqual(await AfkTrade.begin(owner, type), true, `${town.name}: AFK shop window opens`);
             assert.strictEqual(owner.afkTradeDraft, type);
             assert.strictEqual(PrivateStore.quit(owner, type), true);
         }
     }
-    owner.actor.setLocXYZ({ locX: 0, locY: 0, locZ: 0 });
+    // A hunting field just outside Oren is no town.
+    owner.actor.setLocXYZ({ locX: 87696, locY: 56090, locZ: -3600 });
     for (const type of [AfkTrade.SELL, AfkTrade.BUY]) {
         assert.strictEqual(await AfkTrade.begin(owner, type), false, 'AFK shops remain blocked outside towns');
         assert.strictEqual(owner.afkTradeDraft, null);

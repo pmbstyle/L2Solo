@@ -53,6 +53,11 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     const shown = line();
     Coordinator.lastWorkerSnapshot = { failures: { swallowed: { 'route.search': 3 } } };
     assert.strictEqual(line() - shown, 3, 'the worker\'s sites are summed on the line with main\'s');
+    // The full diagnostics line carries the decision counts too: the worker's situations
+    // with main's own notes (a forming outcome) summed in.
+    invoke('GameServer/Bot/Situations').note('party:form:roster_refused');
+    Coordinator.lastWorkerSnapshot = { situations: { raised: {}, woke: {}, decided: {}, unwoken: {} } };
+    assert.match(Status.summary().line, / situations=raised:\S*party:form:roster_refused:1/);
     Coordinator.lastWorkerSnapshot = {};
     // The shared rule: an owner's refusal code is an outcome, a bug's error is a failure even with a
     // code for a message; the backstop's unnamed sites (one per distinct throw) never crowd out a named one.
@@ -70,6 +75,14 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(sites['unhandled rejection: row # refused'], 5, 'ids in a message do not split a site');
     assert.ok(sites['other unnamed sites'] > 0, 'unnamed sites past their cap share one count');
     assert.strictEqual(sites['test.named_after_flood'], 1, 'a flood of unnamed sites leaves room for a named one');
+    // A failure whose decision-trace record throws is still counted, and so is the trace's own failure.
+    const Trace = invoke('GameServer/Bot/DecisionTrace'), traceRecord = Trace.record;
+    Trace.record = () => { throw Error('trace queue broken'); };
+    console.warn = console.info = () => {};
+    try { FailureLog.note('test.trace_broken', Error('a failure while the trace fails')); }
+    finally { Trace.record = traceRecord; console.info = info; console.warn = warn; }
+    assert.strictEqual(FailureLog.snapshot()['test.trace_broken'], 1);
+    assert.strictEqual(FailureLog.snapshot()['failure_log.trace'], 1, 'the trace failing on a failure path is counted');
     const rejectedAcks = [];
     const rejectedQueue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [],
         onResults: rows => rejectedAcks.push(...rows) });
@@ -104,7 +117,7 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(queue.enqueue({ ...proposal(1), result: { ...proposal(1).result, patch: { activity: 'resting' } } }).ok, true);
     assert.strictEqual(queue.snapshot().coalesced, 1);
     assert.strictEqual(queue.snapshot().depth, 1);
-    assert.strictEqual(await queue.flushDue(), false, 'P2 must wait for a batching deadline or early admission');
+    assert.strictEqual(await queue.flushDue(), false, 'P2 must wait for a batching deadline or a full window');
     now += 2000;
     assert.strictEqual(await queue.flushDue(), true);
     assert.strictEqual(commits, 1);
@@ -222,48 +235,62 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         assert.strictEqual(memoryQueue.bytes, 0);
     }
 
+    // Half the worker's window waits on main (capacityBlocked): it commits at once, half the window
+    // (windowRows) per commit so one is one short turn of main, admitted by the governor; refused,
+    // the rows keep their own age.
     let allowed = false;
     let admissions = 0;
     const completedLeases = [];
-    const earlyQueue = new ColdCommitQueue({
+    const windowQueue = new ColdCommitQueue({
         now: () => now,
         prepare: async (entry) => entry.baseState,
         commit: async (entries) => {
             now += 7;
             return entries.map((entry) => ({ ok: true, characterId: entry.nextState.characterId }));
         },
-        admitEarlyFlush: () => { admissions++; return allowed ? { id: 1 } : null; },
-        completeEarlyFlush: (lease, duration) => completedLeases.push({ lease, duration })
+        admitWindowFlush: () => { admissions++; return allowed ? { id: 1 } : null; },
+        windowRows: () => 4,
+        completeWindowFlush: (lease, duration) => completedLeases.push({ lease, duration })
     });
-    earlyQueue.enqueue(proposal(40));
-    assert.strictEqual(await earlyQueue.flushDue(), false);
-    assert.strictEqual(admissions, 0, 'ordinary work must retain its batching delay');
-    earlyQueue.capacityBlocked = true;
-    assert.strictEqual(await earlyQueue.flushDue(), false, 'a denied budget cannot flush early');
+    for (let id = 40; id < 48; id++) windowQueue.enqueue(proposal(id));
+    assert.strictEqual(await windowQueue.flushDue(), false);
+    assert.strictEqual(admissions, 0, 'a window that can still fill keeps its batching delay');
+    windowQueue.capacityBlocked = true;
+    assert(windowQueue.nextDueAt() <= now, 'a full window is due at the next tick');
+    assert.strictEqual(await windowQueue.flushDue(), false, 'a refused admission does not commit');
+    assert.strictEqual(windowQueue.capacityBlocked, false, 'a refused window waits for its rows\' own age, not a retry timer');
+    assert.strictEqual(windowQueue.size(), 8);
     allowed = true;
-    assert.strictEqual(await earlyQueue.flushDue(), false, 'admission retries must be rate limited');
-    now += 100;
-    assert.strictEqual(await earlyQueue.flushDue(), true, 'a blocked worker can progress with an admitted budget');
-    assert.deepStrictEqual(completedLeases, [{ lease: { id: 1 }, duration: 7 }]);
-    assert.strictEqual(earlyQueue.capacityBlocked, false);
-    earlyQueue.enqueue(proposal(41, 'P0'));
+    windowQueue.capacityBlocked = true;
+    assert.strictEqual(await windowQueue.flushDue(), true, 'a full window commits at once with an admitted budget');
+    assert.strictEqual(windowQueue.size(), 4, 'one window commit takes half the window: one short turn of main');
+    assert.strictEqual(windowQueue.capacityBlocked, true, 'the rest still waits on main');
+    assert.strictEqual(await windowQueue.flushDue(), true, 'the other half commits at the next turn');
+    assert.strictEqual(windowQueue.size(), 0);
+    assert.deepStrictEqual(completedLeases, [{ lease: { id: 1 }, duration: 7 }, { lease: { id: 1 }, duration: 7 }]);
+    assert.strictEqual(windowQueue.capacityBlocked, false);
+    windowQueue.enqueue(proposal(41, 'P0'));
     allowed = false;
-    assert.strictEqual(await earlyQueue.flushDue(), true, 'durability priority must not depend on opportunistic admission');
-    assert.strictEqual(admissions, 2);
+    assert.strictEqual(await windowQueue.flushDue(), true, 'durability priority does not depend on the window admission');
+    assert.strictEqual(admissions, 3);
     allowed = true;
-    now += 100;
-    for (let id = 50; id < 58; id++) earlyQueue.enqueue(proposal(id));
-    earlyQueue.capacityBlocked = true;
-    assert.strictEqual(await earlyQueue.flushDue(), true);
-    assert.strictEqual(earlyQueue.size(), 6, 'early commits must free a small number of slots per budget');
-    await earlyQueue.flushDue(true);
-    now += 100;
-    [61, 62, 63].forEach(id => earlyQueue.enqueue({ ...proposal(id, 'P1'),
-        atomicGroup: { id: 'early-party', memberIds: [61, 62, 63] } }));
-    earlyQueue.capacityBlocked = true;
-    assert.strictEqual(await earlyQueue.flushDue(), false, 'a party larger than the early budget must wait intact');
-    assert.strictEqual(earlyQueue.size(), 3);
-    assert.strictEqual(await earlyQueue.flushDue(true), true);
+    const party = [61, 62, 63, 64, 65];
+    party.forEach(id => windowQueue.enqueue({ ...proposal(id, 'P1'),
+        atomicGroup: { id: 'window-party', memberIds: party } }));
+    windowQueue.enqueue(proposal(66));
+    windowQueue.capacityBlocked = true;
+    assert.strictEqual(await windowQueue.flushDue(), true, 'a party larger than a window commit commits whole, alone');
+    assert.strictEqual(windowQueue.size(), 1, 'the party is not split and nothing joins it');
+    await windowQueue.flushDue();
+    assert.strictEqual(windowQueue.size(), 0);
+    for (let id = 70; id < 72; id++) windowQueue.enqueue(proposal(id));
+    allowed = false;
+    windowQueue.capacityBlocked = true;
+    assert.strictEqual(await windowQueue.flushDue(), false);
+    now += 249;
+    assert.strictEqual(await windowQueue.flushDue(), false);
+    now += 1;
+    assert.strictEqual(await windowQueue.flushDue(), true, 'a refused window still commits at its rows\' overdue age, 250 ms');
 
     let clock = 1000;
     const measured = new ColdCommitQueue({
@@ -276,22 +303,22 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         afterCommit: async () => { clock += 11; }
     });
     measured.enqueue(proposal(70));
-    clock = 1499;
+    clock = 1249;
     assert.strictEqual(await measured.flushDue(), false);
-    clock = 1500;
-    assert.strictEqual(await measured.flushDue(), true, 'the P2 fairness deadline must flush at 500 ms, before the 2 second target');
+    clock = 1250;
+    assert.strictEqual(await measured.flushDue(), true, 'the P2 fairness deadline must flush at 250 ms, before the 2 second target');
     const timing = measured.snapshot();
-    assert.strictEqual(timing.queueP95Ms, 500, 'queue wait ends before preparation begins');
+    assert.strictEqual(timing.queueP95Ms, 250, 'queue wait ends before preparation begins');
     assert.strictEqual(timing.commitP95Ms, 21, 'legacy commit timing includes preparation, commit callback and after-commit work');
     assert.deepStrictEqual(timing.stages.prepare, { count: 1, p95Ms: 3 });
     assert.deepStrictEqual(timing.stages.commitCall, { count: 1, p95Ms: 7 });
     assert.deepStrictEqual(timing.stages.afterCommit, { count: 1, p95Ms: 11 });
     assert.deepStrictEqual(timing.flushReasons, { p2_overdue: 1 });
-    assert.strictEqual(earlyQueue.snapshot().earlyDenied, 1);
-    assert.strictEqual(earlyQueue.snapshot().earlyEmpty, 1, 'admission without room for an atomic group must be visible');
-    assert.strictEqual(earlyQueue.snapshot().flushReasons.capacity, 2);
+    assert.strictEqual(windowQueue.snapshot().windowDenied, 2);
+    assert.strictEqual(windowQueue.snapshot().windowFlushes, 4);
+    assert.strictEqual(windowQueue.snapshot().flushReasons.window, 4);
 
-    console.log('Cold commit queue coalescing, durability, backpressure, early budget, and retry checks passed');
+    console.log('Cold commit queue coalescing, durability, backpressure, full-window commit, and retry checks passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;

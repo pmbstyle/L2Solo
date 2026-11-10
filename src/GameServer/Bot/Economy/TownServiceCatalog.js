@@ -14,6 +14,12 @@ const ROLES = Object.freeze({
     WAREHOUSE: 'warehouse',
     GATEKEEPER: 'gatekeeper'
 });
+// A bot's improvements at a town NPC, apart from the service rows (they are no town
+// points: TownTransitPolicy, the navigation check): a smith's special ability, the soul
+// crystal quest (Q350) and a henna. C4 (L2J Lisvus): the blacksmiths that add a special
+// ability and the magisters of the soul crystal quest by their ids, a symbol maker by its title.
+const IMPROVEMENT_ROLES = Object.freeze({ SMITH: 'smith', SOUL_CRYSTAL: 'soul_crystal', SYMBOL_MAKER: 'symbol_maker' });
+const SMITHS = new Set([7300, 7471, 7678, 7688, 7846, 7898, 8271, 8316]), MAGISTERS = new Set([7115, 7194, 7856]);
 
 const GENERIC_MERCHANT_TITLES = Object.freeze(new Set([
     'Trader',
@@ -48,6 +54,41 @@ function rolesFor(npcSelfId, title, sellerIds, gatekeeperIds) {
     if (gatekeeperIds.has(npcSelfId)) roles.push(ROLES.GATEKEEPER);
     return roles;
 }
+// The improvement roles of an NPC: one rule for a far visit's town (improvementTowns) and a
+// near body's NPC in reach (BotImprovementService.stationMatches).
+function improvementRoles(npcSelfId, title) {
+    const roles = [];
+    if (SMITHS.has(npcSelfId)) roles.push(IMPROVEMENT_ROLES.SMITH);
+    if (MAGISTERS.has(npcSelfId)) roles.push(IMPROVEMENT_ROLES.SOUL_CRYSTAL);
+    if (/symbol maker/i.test(title)) roles.push(IMPROVEMENT_ROLES.SYMBOL_MAKER);
+    return roles;
+}
+// The towns where an improvement NPC of the role stands: a spawn within MAX_TOWN_DISTANCE of
+// the town's centre, the radius a near body searches for one (BotImprovementService.stationTarget),
+// so a far visit finds the NPC exactly where a near body would. Built once per spawn list:
+// inputs DataCache.npcSpawns (identity, length).
+let improvementSpawns = null, improvementSpawnsLength = null, improvementByRole = new Map();
+function improvementTowns(role) {
+    const spawns = DataCache.npcSpawns;
+    if (improvementSpawns !== spawns || improvementSpawnsLength !== spawns?.length) {
+        improvementByRole = new Map(Object.values(IMPROVEMENT_ROLES).map(name => [name, new Set()]));
+        const towns = Object.values(TownRespawn.towns || {});
+        for (const zone of Array.isArray(spawns) ? spawns : []) for (const spawn of zone?.spawns || []) {
+            const npcSelfId = Number(spawn?.selfId || 0);
+            const title = String(ItemTemplateIndex.find(DataCache.npcs, npcSelfId)?.template?.title || spawn.title || '');
+            const roles = improvementRoles(npcSelfId, title);
+            if (!roles.length) continue;
+            for (const coords of spawn.coords || []) for (const town of towns) {
+                if (distance(coords, town) > MAX_TOWN_DISTANCE) continue;
+                for (const name of roles) improvementByRole.get(name).add(town.name);
+            }
+        }
+        improvementSpawns = spawns;
+        improvementSpawnsLength = spawns?.length;
+    }
+    return improvementByRole.get(String(role)) || EMPTY_SET;
+}
+const EMPTY_SET = Object.freeze(new Set());
 
 function build() {
     const spawns = DataCache.npcSpawns;
@@ -201,9 +242,12 @@ function targetNear(role, from, options = {}) {
 
 module.exports = {
     GENERIC_MERCHANT_TITLES,
+    IMPROVEMENT_ROLES,
     MAX_TOWN_DISTANCE,
     ROLES,
     candidates,
+    improvementRoles,
+    improvementTowns,
     rows,
     rowsForTown,
     targetFor,

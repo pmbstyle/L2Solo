@@ -3,8 +3,13 @@ const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
 const DecisionEvents = require('../AI/DecisionEvents');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
+// lazy: the town catalogue reads main's NPC data; the worker loads this module too.
+const catalog = () => invoke('GameServer/Bot/Economy/TownServiceCatalog');
+// The town NPC each improvement kind is done at (the catalogue's improvement roles).
+const ROLE_OF = Object.freeze({ sa: 'SMITH', crystal_quest: 'SOUL_CRYSTAL', henna: 'SYMBOL_MAKER' });
+const roleOf = kind => ROLE_OF[kind] ? catalog().IMPROVEMENT_ROLES[ROLE_OF[kind]] : null;
 const pendingCold = new Map(), pendingHot = new WeakMap();
-let improvementDeferred = 0;
+let improvementDeferred = 0, improvementRetired = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
     'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'invalid_bot_luxury_exchange', 'soul_crystal_resonance']);
 const rejectedInput = error => INPUT_REJECTIONS.has(error?.message);
@@ -52,6 +57,15 @@ async function reviewCold(state, options = {}) {
     if (!improvement || improvement.kind !== 'enchant' && !selfCrystallization(improvement) && !inTown(state)) return Promise.resolve({state,changed:false});
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)
         && !selfCrystallization(improvement) && state.currentRegion !== 'Giran') return { state, changed: false };
+    // A smith's special ability, the soul crystal quest and a henna only in a town where
+    // such an NPC stands (C4 spawns, where a near body finds one: stationTarget). An enchant
+    // scroll is read from the bag anywhere (C4: no NPC). A town without one refuses the held
+    // step for good: counted, goal_failed {impossible} drops it from the next build.
+    const role = roleOf(improvement.kind);
+    if (role && !catalog().improvementTowns(role).has(String(state.currentRegion))) {
+        const raised = await DecisionEvents.rejectOnRow(state, state, `improvement:${improvement.kind}:no_station`);
+        return { state: raised || state, changed: false, reason: 'no_station' };
+    }
     const original = Life.cachedState(state.characterId);
     const work = invoke('Database').applyBotImprovement(state.characterId, {
         ...improvement, lossHours: improvement.riskHours * context.riskWeight
@@ -63,14 +77,21 @@ async function reviewCold(state, options = {}) {
         invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);
         return {state:current,changed:true,result};
     }).catch(async error => {
-        // These native refusals describe the selected input, never a stale
-        // revision, location, MP or uncertain transaction-delivery retry.
-        if (!rejectedInput(error)) throw error;
         const current = Life.cachedState(state.characterId) || state;
+        // Another write moved the bot's row between this review and its transaction: the
+        // held improvement stands (no failed goal) and the next review takes it on the new
+        // row. Counted (developer counters: improvementRetired), not a fault.
+        if (error?.message === 'improvement_source_retired') {
+            if (DiagnosticConfig.developerDiagnostics) improvementRetired++;
+            return { state: current, changed: false, reason: 'source_retired' };
+        }
+        // These native refusals describe the selected input, never a stale
+        // revision, location, MP or uncertain transaction-delivery retry. Counted
+        // by the improvement's kind and the reason (DecisionEvents.rejections).
+        if (!rejectedInput(error)) throw error;
         if (current.phase !== 'cold') return { state: current, changed: false };
-        const rejected = DecisionEvents.rejectedState(current, state, `improvement:${error.message}`);
-        const saved = rejected === current ? current : await Life.upsertState(rejected, 'improvement_source_rejected') || current;
-        return { state: saved, changed: false, reason: error.message };
+        const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${improvement.kind}:${error.message}`);
+        return { state: raised || current, changed: false, reason: error.message };
     }).finally(() => pendingCold.delete(state.characterId));
     pendingCold.set(state.characterId,work); return work;
 }
@@ -129,16 +150,15 @@ function reviewHot(session) {
         session.dataSendToMe?.(invoke('GameServer/Network/Response').userInfo(actor));
         Economy.forget(actor.fetchId()); return result;
     }).catch(error => {
-        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted);
+        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
         throw error;
     }).finally(() => pendingHot.delete(actor));
     pendingHot.set(actor,work); return work;
 }
 function stationMatches(npc, improvement) {
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)) return Number(npc.fetchSelfId()) === Number(improvement.npcId);
-    if (improvement.kind === 'sa') return [7300,7471,7678,7688,7846,7898,8271,8316].includes(npc.fetchSelfId());
-    if (improvement.kind === 'crystal_quest') return [7115,7194,7856].includes(npc.fetchSelfId());
-    return /symbol maker/i.test(String(npc.fetchTitle?.() || ''));
+    return catalog().improvementRoles(Number(npc.fetchSelfId()), String(npc.fetchTitle?.() || ''))
+        .includes(roleOf(improvement.kind));
 }
 function stationTarget(actor, improvement) {
     const town = invoke('GameServer/World/TownRespawn').getClosestTown(actor.fetchLocX(),actor.fetchLocY(),actor.fetchLocZ());
@@ -149,4 +169,4 @@ function stationTarget(actor, improvement) {
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
 module.exports = { reviewCold, reviewHot, chosen, inTown, selfCrystallization, acquisitionTravel, Policy, stationTarget,
-    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred }) : { enabled: false } };
+    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred, improvementRetired }) : { enabled: false } };

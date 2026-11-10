@@ -35,7 +35,7 @@ assert.strictEqual(joiners.get(445), 5, 'a hit minion alerts the leader and the 
 assert.strictEqual(joiners.get(1), undefined);
 
 // The start-time table: per spawn group (spot entry) the share of its spawns by pull size and their
-// mean, set only where a spawn pulls more than one (user 10-29: a spot mixes lone mobs, pairs and packs).
+// mean, set only where a spawn pulls more than one (a spot mixes lone mobs, pairs and packs).
 const spot = {
     npcEntries: [{ selfId: 10, count: 2 }, { selfId: 20, count: 1 }, { selfId: 30, count: 1 }],
     records: [
@@ -132,6 +132,35 @@ assert.deepStrictEqual(Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0],
     { efficiency: Matchup.speciesPulls(hunterProfiles, mixed.npcEntries[0], { soloSafety: true }).efficiency,
         canHunt: true, share: 0.7, allowed: [[2, 0.7]] });
 assert.strictEqual(Cold.npcForSpot(mixed, () => 0.99, { pull: true }).pull, 3, 'without safety the whole mix is rolled');
+// What comes at a targeted hunt first is one of the groups the hunter takes, at a pull it
+// survives, as on an untargeted hunt: the hunter survives a lone White Wolf (aggressive), not a pair.
+{
+    const ground = wolves => ({ ...gremlins(0), npcEntries: [{ selfId: 1, count: 3 }, { selfId: 527, count: 10, pulls: wolves }] });
+    const engaged = wolves => Cold.npcForSpot(ground(wolves), () => 0,
+        { preferredNpcId: 1, soloSafety: true, pull: true, matchupProfiles: hunterProfiles });
+    assert.deepStrictEqual([engaged([[2, 1]]).selfId, engaged([[2, 1]]).aggressiveInterruption], [1, false],
+        'wolf pairs the hunter never takes do not engage its targeted gremlin hunt');
+    const lone = engaged([[2, 0.5], [1, 0.5]]);
+    assert.deepStrictEqual([lone.selfId, lone.pull, lone.aggressiveInterruption], [527, 1, true],
+        'a wolf group it takes engages it first, a lone wolf');
+}
+// A party meets the whole pull as a solo hunter does (one rule, F20: the target's helpers and
+// aggressive neighbours come whoever hits it): two hunters on a field of gremlin pairs fight
+// both, and the round pays the spot share and the rewards for each mob.
+{
+    const PartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+    const pair = [hunter(), { ...hunter(), characterId: 73 }];
+    const fight = Resolver.resolvePartyFight({ members: pair, spot: gremlins(2), rng: () => 0, timestamp: 1e12 });
+    assert.deepStrictEqual([fight.won, fight.debug.killsPaid], [true, 2], 'a party fight on a field of pairs kills the pair');
+    const round = pull => PartyResolver.resolve({ party: { partyId: `pull_${pull}`, cohesion: 0.65, risk: 0, stats: {} },
+        members: pair, spot: gremlins(pull), elapsedMs: 60000, rng: () => 0, timestamp: 1e12 });
+    const singles = round(0), pairs = round(2);
+    assert(singles.debug.wins > 0 && pairs.debug.wins > 0);
+    assert.strictEqual(singles.debug.defeatedNpcIds.length, singles.debug.wins);
+    assert.strictEqual(pairs.debug.defeatedNpcIds.length, 2 * pairs.debug.wins, 'each won fight kills both gremlins');
+    const expPerWin = result => result.memberResults.reduce((sum, entry) => sum + entry.result.materialize.exp, 0) / result.debug.wins;
+    assert(Math.abs(expPerWin(pairs) / expPerWin(singles) - 2) < 0.1, 'each mob of the pull gives its exp');
+}
 // User 10-29: a round counts only the spawns the bot may fight. One lone gremlin group
 // (production 6 a hour) beside 45 trio spawns it cannot survive feeds one kill in ten
 // minutes and one fight a round, not the trios' respawns.
@@ -172,7 +201,7 @@ try {
     assert.strictEqual(builds, 3, 'a level builds anew');
     assert.deepStrictEqual(roundOf({ ...bot }), round, 'back to the first inputs: the first round');
 } finally { Matchup.coldProfiles = builtProfiles; }
-// T106 (user 10-29): a species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
+// A species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
 const pack = hunt(3);
 assert.deepStrictEqual([pack.debug.pulls, pack.patch.stats.lastReason], [0, 'no_safe_solo_target'],
     'a weaponless level-9 hunter leaves a field of gremlin trios alone');
@@ -184,7 +213,7 @@ const nextFight = pull => Resolver.resolveFight({ state: hurt, spot: gremlins(pu
 assert(!nextFight(0).avoided, 'a lone gremlin is fought at 250 HP');
 assert.strictEqual(nextFight(3).reason, 'solo_recovery_needed', 'a usual trio is rested for at 250 HP');
 
-// Area and aura skills hit every mob of the pull (F20, plan 3.3(в)): a nuker whose
+// Area and aura skills hit every mob of the pull: a nuker whose
 // only spell strikes an area kills a pull of three about as fast as one mob, while
 // a single-target nuker of the same damage needs three times as long.
 const fieldMob = Data.npcs.find(n => n.template?.kind === 'Monster' && Number(n.template.level) === 20 && !n.template.hostile);

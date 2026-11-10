@@ -1,10 +1,9 @@
 'use strict';
-// ARCH-08-b: a spot search reads the game table's spot list for the bot's
-// role and level and takes the first spot it may hunt whose level fits; the
-// crowd enters only as the room filter (ROUTE-ROOM: the worker's own index;
-// ROUTE-ROOM-4: main's world index for a search on main, a party's counting
-// all its members). The real table; a catalogue of its own spots built from
-// its authored reward rows (no World in a test); one level 29 mage.
+// The leveling search (SpotSearch.leveling) reads the game table's spot list for
+// the bot's role and level and takes a spot it may hunt whose level fits: the
+// first such, or the bot's favourite among those within the habit band of its
+// value; no search reads the crowd. The real table; a catalogue of its own spots
+// built from its authored reward rows (no World in a test); one level 29 mage.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,10 +16,10 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const Index = invoke('GameServer/Bot/AI/SpotIndex');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
 const IncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
-const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
+const Search = invoke('GameServer/Bot/AI/SpotSearch');
 
 const at = 1800000000000;
 const mage = { classId: 12, level: 29, role: 'mage', maxHp: 592, maxMp: 932,
@@ -53,11 +52,17 @@ Spots.cache = profiles;
 const options = { matchupProfiles: [mage], timestamp: at, profiles };
 const level = Routes.targetLevelForState(state, options);
 
-// The list's order, read by hand: the first spot the bot may hunt there.
-const listed = IncomeRoute.spotList(state, { level }).ids(true)
+// The list's order, read by hand: the spots the bot may hunt there, with their values.
+const valueOf = new Map(IncomeRoute.spotList(state, { level }).values(true).map(row => [row.spotId, row.value]));
+const listed = [...valueOf.keys()]
     .map(id => Index.spotById(profiles, id))
     .filter(spot => spot && !spot.raidBoss && Routes.isSpotAllowedForState(spot, state, options));
 const first = listed.find(spot => SpotService.isSuitable(spot, level));
+// The spots a search may take: suitable, listed after none better excluded, within the habit band of the best one's value.
+const band = (excluded = new Set()) => {
+    const fitting = listed.filter(spot => !excluded.has(String(spot.id)) && SpotService.isSuitable(spot, level));
+    return fitting.filter(spot => valueOf.get(spot.id) >= valueOf.get(fitting[0].id) * (1 - Search.HABIT_BAND)).map(spot => spot.id);
+};
 assert(first && listed.length > 1, 'fixture: the mage may hunt several listed spots');
 const scored = Routes.bestSpot(profiles.filter(spot => !spot.raidBoss
     && spot.minLevel <= level + 4 && spot.maxLevel >= level - 4
@@ -65,88 +70,14 @@ const scored = Routes.bestSpot(profiles.filter(spot => !spot.raidBoss
 assert(scored && scored.id !== first.id, 'fixture: the old score would pick another spot');
 
 const chosen = Spots.findForState(state, options);
-assert.equal(chosen?.id, first.id, 'the search takes the first allowed, level-fitting spot of the table list');
-const route = Routes.routeMatchFor(first, state, options).route;
+assert(band().includes(chosen?.id), 'the search takes an allowed, level-fitting spot of the table list within the band of the first');
+assert.equal(Spots.findForState(state, options)?.id, chosen.id, 'and keeps it at the next search');
+const route = Routes.routeMatchFor(Index.spotById(profiles, chosen.id), state, options).route;
 assert.equal(chosen.route?.id ?? null, route?.id ?? null, 'the chosen spot carries its own guide route');
 
-const next = listed.find(spot => spot.id !== first.id && SpotService.isSuitable(spot, level));
-assert.equal(Spots.findForState(state, { ...options, excludedSpotIds: new Set([String(first.id)]) })?.id, next?.id,
-    'an avoided spot is skipped: the next one of the list');
-// ROUTE-ROOM: the worker passes its own room filter.
-assert.equal(Spots.findForState(state, { ...options, hasRoom: id => String(id) !== String(first.id) })?.id, next?.id,
-    'a full spot of the list is skipped: the next one of the list');
-assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id, chosen.id,
-    'a filter that finds room everywhere changes nothing');
-// ROUTE-ROOM-2: the filter holds for the gear plan's source and the income
-// route too: a full one counts as absent, the list walk decides; the bot's
-// own spot is never full to it.
-{
-    const source = listed.find(spot => spot.id !== first.id && spot.id !== next?.id);
-    const planning = (spotId = null) => ({ ...state, spotId, stats: { ...state.stats,
-        equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { spotId: source.id } } } });
-    const noRoomAt = id => other => String(other) !== String(id);
-    assert.equal(Spots.findForState(planning(), options)?.id, source.id, 'fixture: the plan\'s source is the pick');
-    assert.equal(Spots.findForState(planning(), { ...options, hasRoom: noRoomAt(source.id) })?.id, first.id,
-        'a full planned source is skipped: the first spot of the list');
-    assert.equal(Spots.findForState(planning(source.id), { ...options, hasRoom: () => false })?.id, source.id,
-        'a planned source the bot stands on is taken even when it counts as full');
-
-    // The income route's own pick needs a kit that survives its spots; the
-    // naked fixture survives none, so its answer is given here.
-    const select = IncomeRoute.select;
-    try {
-        IncomeRoute.select = () => ({ spot: source });
-        assert.equal(Spots.findForState(state, options)?.id, source.id, 'fixture: the income route\'s spot is the pick');
-        assert.equal(Spots.findForState(state, { ...options, hasRoom: noRoomAt(source.id) })?.id, first.id,
-            'a full income route spot is skipped: the first spot of the list');
-    } finally { IncomeRoute.select = select; }
-}
-
-// ROUTE-ROOM-4: a market return (GoalExecutor.finishMarketVisit) to the spot
-// the bot left goes home, full or not: main searches no spot, the room is
-// read at arrival by the worker, which then re-routes the bot.
-{
-    const savedCatalogue = SpotService.spots, select = IncomeRoute.select;
-    SpotService.spots = profiles;
-    // No income route: the return is the list search's, not an income pick that leads elsewhere.
-    IncomeRoute.select = () => null;
-    try {
-        // No class in the stats: no matchup profile refuses a spot, so the
-        // search has other spots to offer (the naked mage survives none).
-        const shopper = { ...state, activity: 'shopping', currentRegion: 'Giran', adena: 100000,
-            inventory: { 57: { selfId: 57, amount: 100000 }, 736: { selfId: 736, amount: 3 } },
-            loc: { locX: 83400, locY: 147943, locZ: -3400 }, stats: { role: 'nuker', deaths: 0 } };
-        // Home is a spot the shopper may hunt but would not pick first: returning there
-        // proves the saved spot is kept, not searched again.
-        const head = Spots.findForState({ ...shopper, activity: 'hunting' }, { timestamp: at });
-        const homeSpot = head && Spots.findForState({ ...shopper, activity: 'hunting' },
-            { timestamp: at, excludedSpotIds: new Set([String(head.id)]) });
-        assert(homeSpot && homeSpot.id !== head.id, 'fixture: the classless shopper has two spots of the list');
-        const shopping = { ...shopper, stats: { ...shopper.stats, townVisit: { town: 'Giran', completed: true },
-            marketReturn: { spotId: homeSpot.id, regionName: homeSpot.name, loc: { ...homeSpot.center } } } };
-        const home = GoalExecutor.finishMarketVisit(shopping, at);
-        assert.equal(home?.stats.travel.reason, 'return_after_market', 'fixture: the visit ends in a return trip');
-        assert.equal(home.stats.travel.spotId, homeSpot.id, 'a saved spot with room: the bot returns home');
-
-        for (let i = 0; i < Routes.roomForSpot(homeSpot); i++) {
-            LifeState.acceptLifecycleRow({ characterId: 990950 + i, accountName: `bot_${990950 + i}`,
-                characterName: `Home${i}`, level: 29, phase: 'cold', activity: 'hunting', spotId: homeSpot.id,
-                statsJson: '{}', inventorySummary: '{}' });
-        }
-        const full = GoalExecutor.finishMarketVisit(shopping, at);
-        assert.equal(full?.stats.travel.reason, 'return_after_market', 'a full saved spot: still a return trip');
-        assert.equal(full.stats.travel.spotId, homeSpot.id, 'a full saved spot: the bot goes home, met full at arrival');
-
-        // The remembered region name differs from the spot's, so the trip shows
-        // which of the two the destination was read from.
-        const forgetful = { ...shopping, stats: { ...shopping.stats,
-            marketReturn: { ...shopping.stats.marketReturn, regionName: 'Remembered ground' } } };
-        const alone = GoalExecutor.finishMarketVisit(forgetful, at);
-        assert.equal(alone?.stats.travel.spotId, homeSpot.id, 'the bot goes home');
-        assert.equal(alone.stats.travel.regionName, homeSpot.name, 'the saved spot itself is the destination');
-    } finally { SpotService.spots = savedCatalogue; IncomeRoute.select = select; }
-}
-
+const avoided = new Set([String(chosen.id)]);
+const next = Spots.findForState(state, { ...options, excludedSpotIds: avoided });
+assert(next && next.id !== chosen.id && band(avoided).includes(next.id), 'an avoided spot is skipped: the band of the next ones');
 Spots.cache = originalCache;
 
 // The keep rule holds only a current spot the bot may hunt at its own level.
@@ -170,7 +101,7 @@ Spots.cache = originalCache;
     const saved = { spotList: IncomeRoute.spotList, evaluate: Ground.evaluate, cache: Spots.cache };
     try {
         Spots.cache = catalogue;
-        IncomeRoute.spotList = () => ({ spoiler: () => null, ids: () => ['cur', 'other'] });
+        IncomeRoute.spotList = () => ({ spoiler: () => null, values: () => [{ spotId: 'cur', value: 2 }, { spotId: 'other', value: 1 }] });
         Ground.evaluate = (spot, actor, opts = {}) => ({
             allowed: spot.id !== 'cur' || Number(opts.level ?? actor.level) < actor.level });
         const search = { matchupProfiles: [mage], timestamp: at, profiles: catalogue };
@@ -183,8 +114,9 @@ Spots.cache = originalCache;
         IncomeRoute.spotList = saved.spotList; Ground.evaluate = saved.evaluate; Spots.cache = saved.cache;
     }
 }
-// ROUTE-ROOM: the room filter on thin spots (density 2: none fits) the
-// ground allows; the bot's own level, no recovery.
+// No search reads the room (the crowd is met at arrival, SpotContest): on thin spots
+// (density 2: none fits) the ground allows, at the bot's own level, a crowded spot is
+// chosen as an empty one, solo, for a party and for a party waiter.
 {
     const Ground = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
     const exp = Number(Data.experience[28]) + 100000;
@@ -195,76 +127,35 @@ Spots.cache = originalCache;
     const saved = { spotList: IncomeRoute.spotList, evaluate: Ground.evaluate, cache: Spots.cache };
     try {
         Ground.evaluate = () => ({ allowed: true });
-        const search = (catalogue, ids, hasRoom) => {
+        const search = (catalogue, ids) => {
             Spots.cache = catalogue;
-            IncomeRoute.spotList = () => ({ spoiler: () => null, ids: () => ids });
-            return { matchupProfiles: [mage], timestamp: at, profiles: catalogue, ...(hasRoom ? { hasRoom } : {}) };
+            IncomeRoute.spotList = () => ({ spoiler: () => null, values: () => ids.map(spotId => ({ spotId, value: 1 })) });
+            return { matchupProfiles: [mage], timestamp: at, profiles: catalogue };
         };
-        const current = [thin('cur'), thin('other')];
-        assert.equal(Spots.findForState({ ...bot, spotId: 'cur' }, search(current, ['other', 'cur'], () => false))?.id,
-            'cur', 'the current spot is kept even when it counts as full');
-
         const listed = [thin('a'), thin('b', 3), thin('c')];
-        assert.equal(Spots.findForState(bot, search(listed, ['a']))?.id, 'a',
-            'a solo search on main with nobody on the listed spot takes it');
-        assert.equal(Spots.findForState(bot, search(listed, ['a'], id => id === 'c'))?.id, 'c',
-            'every listed spot full: the near-level fallback skips the full ones too');
-
-        // ROUTE-ROOM-4: a solo search on main reads main's world index (the
-        // rows main accepted); spot 'a' holds as many bots as its room.
+        // Spot 'a' holds its room, 'c' all but two places.
         for (let i = 0; i < Routes.roomForSpot(listed[0]); i++) {
             LifeState.acceptLifecycleRow({ characterId: 990900 + i, accountName: `bot_${990900 + i}`,
                 characterName: `Crowd${i}`, level: 25, phase: 'cold', activity: 'hunting', spotId: 'a',
                 statsJson: '{}', inventorySummary: '{}' });
         }
-        assert.notEqual(Spots.findForState(bot, search(listed, ['a']))?.id, 'a',
-            'a full listed spot is skipped by a solo search on main');
-        assert.equal(Spots.findForState({ ...bot, spotId: 'a' }, search(listed, ['a']))?.id, 'a',
-            'the bot\'s own spot is never full to it');
-        assert.equal(Spots.findForState(bot, search(listed, ['a'], () => true))?.id, 'a',
-            'a filter the caller passes is read instead of main\'s index');
-
-        // A party search on main (formation, retreat) counts the whole party
-        // (capacityStates) against main's index; its own members standing
-        // there are not counted against it. Spot 'c' holds 9: 7 stand there.
-        const room = Routes.roomForSpot(listed[2]);
-        const crowd = Array.from({ length: room - 2 }, (_, i) => 990960 + i);
-        for (const characterId of crowd) {
-            LifeState.acceptLifecycleRow({ characterId, accountName: `bot_${characterId}`,
-                characterName: `Camp${characterId}`, level: 25, phase: 'cold', activity: 'hunting', spotId: 'c',
+        for (let i = 0; i < Routes.roomForSpot(listed[2]) - 2; i++) {
+            LifeState.acceptLifecycleRow({ characterId: 990960 + i, accountName: `bot_${990960 + i}`,
+                characterName: `Camp${i}`, level: 25, phase: 'cold', activity: 'hunting', spotId: 'c',
                 statsJson: '{}', inventorySummary: '{}' });
         }
+        assert.equal(Spots.findForState(bot, search(listed, ['a']))?.id, 'a', 'a full spot is chosen: met at arrival');
         const member = characterId => ({ ...bot, characterId });
-        const partySearch = members => Spots.findForState(members[0],
-            { ...search(listed, ['c']), mode: 'party', capacityStates: members })?.id;
-        assert.notEqual(partySearch([member(990980), member(990981), member(990982)]), 'c',
-            'a party of 3 is refused at a spot with 2 free places');
-        assert.equal(partySearch([member(990980), member(990981)]), 'c', 'a party of 2 fits the 2 free places');
-        assert.equal(partySearch([member(990980), member(990981), member(crowd[0])]), 'c',
-            'a member standing there is not counted against its own party');
-        assert.equal(Spots.findForState(bot, search(listed, ['c']))?.id, 'c', 'a solo bot still takes one free place');
-        const index = LifeState.occupancyIndex();
-        assert.equal(Spots.roomFilterFor(index, listed, [member(990980), member(990981), member(990982)])('c'), false,
-            'the filter: 7 standing + 3 arriving > 9');
-        assert.equal(Spots.roomFilterFor(index, listed, [member(crowd[0]), member(crowd[1]), member(990980)])('c'), true,
-            'the filter: the party\'s own 2 excluded, 5 + 3 <= 9');
-        assert.equal(Spots.roomFilterFor(index, listed, [member(990980)])('c'), true, 'the filter: a solo bot, 7 + 1 <= 9');
-
-        // A party-wait search on main (PartyWaitFallback.spotFor, no filter
-        // passed) reads the same index: a full planned spot is no fallback,
-        // the level search picks another; one with room is the fallback.
+        assert.equal(Spots.findForState(member(990980), { ...search(listed, ['c']), mode: 'party',
+            capacityStates: [member(990980), member(990981), member(990982)] })?.id, 'c',
+        'a party of 3 takes a spot with 2 free places: met as one unit at its arrival');
         const safeFallback = GearPlanner.safeFallbackForPlan;
         try {
-            const waitingOn = (spotId) => {
-                GearPlanner.safeFallbackForPlan = () => ({ spotId, npcId: 321 });
-                search(listed, ['a']);
-                // No class in the stats: no matchup profile refuses a spot.
-                return PartyWaitFallback.spotFor({ ...bot, stats: { role: 'nuker', deaths: 0 } }, { status: 'active' }, listed,
-                    { excludedSpotIds: new Set(), timestamp: at })?.spot?.id;
-            };
-            assert.equal(waitingOn('c'), 'c', 'a planned fallback with room is taken');
-            const other = waitingOn('a');
-            assert(other && other !== 'a', 'a full planned fallback on main: the level search picks another spot');
+            GearPlanner.safeFallbackForPlan = () => ({ spotId: 'a', npcId: 321 });
+            search(listed, ['a']);
+            // No class in the stats: no matchup profile refuses a spot.
+            assert.equal(PartyWaitFallback.spotFor({ ...bot, stats: { role: 'nuker', deaths: 0 } }, { status: 'active' }, listed,
+                { excludedSpotIds: new Set(), timestamp: at })?.spot?.id, 'a', 'a full planned fallback is taken');
         } finally { GearPlanner.safeFallbackForPlan = safeFallback; }
     } finally {
         IncomeRoute.spotList = saved.spotList; Ground.evaluate = saved.evaluate; Spots.cache = saved.cache;

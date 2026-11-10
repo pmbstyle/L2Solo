@@ -63,6 +63,17 @@ const command = (s) => Native(session, ['native-status', ...s.split(' ')]);
         savedVitals = { hp: 910, maxHp: 1000, mp: 230, maxMp: 500 };
         await command('tab details'); assert(body().includes('shopping -> Giran'));
         assert(body().includes('Latest background simulation state'));
+        // A failed goal read shows no goal: the window and the legacy panel still open.
+        replace(invoke('GameServer/Bot/Population/ColdSimulationCoordinator'), 'economyDecisions',
+            { inspect() { throw Error('fixture_goal_read_failed'); } });
+        replace(Life, 'findByName', async (name) => ({ characterId: 999, name, level: 60, classId: 30, vitals: savedVitals,
+            phase: 'cold', activity: 'hunting', currentRegion: 'Dion', stats: { role: 'healer', partyHistory: {} } }));
+        await command('tab overview');
+        assert.deepStrictEqual(state().slice(11, 14), ['background', '91', '46']);
+        assert(body().includes('field\tGoal\tnone'), 'a failed goal read shows no goal');
+        await command('open 0'); await Menu(session, ['bot-status', 'BackgroundBot']);
+        assert(body().includes('Cold Bot Status') && /Goal.*none/.test(body()), 'the legacy panel shows no goal too');
+        await command('open 1'); await Menu(session, ['bot-status', 'BackgroundBot']);
         let finish;
         Life.findByName = () => new Promise((resolve) => { finish = resolve; });
         const old = command('refresh'); const resolveOld = finish;

@@ -1,6 +1,8 @@
 'use strict';
 
-const LIMITS = Object.freeze({ rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12 });
+const LIMITS = Object.freeze({ rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12,
+    // The forecast CPU allowance refills by forecastCpuMs per this window (a rate, not a search cadence).
+    forecastRefillMs: 60000 });
 const RECENT_LIMIT = 2048;
 const counts = () => ({ searches: 0, rosterAttempts: 0, rostersProposed: 0, rostersAssessed: 0,
     forecasts: 0, forecastWorkMs: 0, forecastFailures: 0, socialChecks: 0, hydratedBots: 0, formations: 0, preparationsStarted: 0 });
@@ -12,7 +14,8 @@ function increment(map, reason) {
 }
 class RaidSearchCounters {
     constructor() { this.pendingRosters = 0; this.cpuBudget = { availableMs: LIMITS.forecastCpuMs, debtMs: 0, deferredSearches: 0 }; this.sinceAt = Date.now(); this.total = counts(); this.rejections = rejections(); this.additionalReasons = {}; this.unchecked = {}; this.recent = new Map(); }
-    begin(at) { this.last = { at, ...counts(), searches: 1, rejections: rejections(), additionalReasons: {}, unchecked: {}, status: 'searching' }; this.total.searches++; }
+    // woken: the situation that made the search due (OpportunisticRaidDirector.wake), counted.
+    begin(at, woken = null) { this.last = { at, woken, ...counts(), searches: 1, rejections: rejections(), additionalReasons: {}, unchecked: {}, status: 'searching' }; this.total.searches++; if (woken) increment(this.woken ||= {}, woken); }
     add(key, amount = 1) { this.total[key] += amount; this.last[key] += amount; }
     reject(stage, reason) { increment(this.rejections[stage], reason); increment(this.last.rejections[stage], reason); }
     forecast(assessment, bossId) {
@@ -45,7 +48,7 @@ class RaidSearchCounters {
     }
     finish(status = 'complete') { if (this.last) this.last.status = status; }
     formed() { this.total.formations++; if (this.last?.status === 'searching') this.last.formations++; }
-    snapshot() { return { sinceAt: this.sinceAt, total: { ...this.total }, rejections: structuredClone(this.rejections),
+    snapshot() { return { sinceAt: this.sinceAt, total: { ...this.total }, woken: { ...this.woken }, rejections: structuredClone(this.rejections),
         pendingRosters: this.pendingRosters, cpuBudget: { ...this.cpuBudget }, additionalReasons: { ...this.additionalReasons }, unchecked: { ...this.unchecked },
         lastForecast: this.lastForecast ? structuredClone(this.lastForecast) : null,
         lastSearch: this.last ? structuredClone(this.last) : null, recentDistinctRosters: this.recent.size,

@@ -115,6 +115,8 @@ async function craftSelf(session, recipeId, random = Math.random, options = {}) 
             materials: (consumed || []).map(({ item, amount }) => ({ id: item.fetchId(), selfId: item.fetchSelfId(), amount })),
             product: drawn ? product : null, mp, economyCommand: command,
             recipeId: bot ? recipe.recipeId : 0, random,
+            // The hot body owns its vitals: its MP now, read after validate in the transaction.
+            liveMp: bot ? () => Number(actor.fetchMp?.() || 0) : null,
             validate: bot ? () => {
                 const registered = invoke('GameServer/World/World').registeredActorById(actorId);
                 if (registered?.session !== session || registered?.actor !== actor || session.actor !== actor
@@ -143,6 +145,9 @@ async function craftSelf(session, recipeId, random = Math.random, options = {}) 
     } catch (error) {
         utils.infoWarn('Crafting', 'craft rejected: %s', error.message || error);
         if (committed?.committed) return !!committed.success;
+        // The act refused the craft and committed nothing: say why, so a bot's held
+        // craft is marked refused (HotWealthCraftService) instead of tried again.
+        if (Object.isExtensible(options)) options.refused = String(error.message || error);
         return fail(session, recipe);
     } finally {
         Commit.finish(actorId, command);

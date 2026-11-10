@@ -54,5 +54,15 @@ try {
         assert.equal(Pricing.botNpcListPrice(id), town, `a bot's NPC price of ${id} is the town's`);
         assert.equal(Index.npcPrice.get(id) ?? Infinity, town, `the craft index prices ${id} as the town`);
     }
+    // The bought potion follows the NPC price table when it moves (a worker's
+    // snapshot from main) and again when it moves back.
+    const Market = invoke('GameServer/Bot/Economy/BotMarketPricing');
+    const healing = Potions.purchasePotionFor({ level: 62 });
+    Market.useNpcOfferSnapshot([{ selfId: healing.selfId, price: 1234 }]);
+    assert.deepEqual(Potions.purchasePotionFor({ level: 62 }), { ...healing, price: 1234 }, 'a moved NPC price is the new quote');
+    assert.equal(Potions.purchasePotionFor({ level: 70 }).price, 1234, 'the whole band reads it');
+    Market.useNpcOfferSnapshot([{ selfId: healing.selfId, price: healing.price }]);
+    assert.deepEqual(Potions.purchasePotionFor({ level: 62 }), healing, 'and the old one when it moves back');
+    assert.equal(Potions.purchasePotionFor({ level: 10 }).selfId, lesser.selfId, 'the band, not the last quote, picks the potion');
 } finally { useRate(original); }
 console.log('PASS potion NPC price');

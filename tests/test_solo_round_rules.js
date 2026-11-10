@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 
-// T106 (user 10-29, docs/game-decisions.md "Bot behaviour"): a cold solo
+// Solo rounds (our choice): a cold solo
 // round's kills follow the walk to the next mob, a solo bot buffs itself, and
 // a bot that heals itself with MP sits for MP.
 const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');

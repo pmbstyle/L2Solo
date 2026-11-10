@@ -33,7 +33,7 @@ async function seedBot(id, clanId, adena = 10000) {
     // This clan fixture has no personal discretionary wishes. Publish that
     // existing money-queue state explicitly; native payments require its
     // authoritative packet even when a treasury supplies most of the price.
-    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').survivalReserve({
+    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').refillReserve({
         characterId: id, level: 40, adena, inventory, stats: { classId: 1, clanId } });
     const money = invoke('GameServer/Bot/Economy/PurchaseFunding').packetFor({ queue: [], moneyPrice: 0, gap: null }, 0, reserve);
     await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,exp,sp,hp,maxHp,mp,maxMp,adena,phase,activity,currentRegion,
@@ -121,13 +121,13 @@ async function main() {
     assert(resolved.goal.economy); assert.equal(projection.members[0].persona.traits.ambition, 0.8);
     done('actual registered C4 proof offer becomes a funded level goal before farm preparation');
     await Events.drain(Database);
-    // Native metadata publication on the same shop still carries its indexed
-    // item keys; the real board subscriber addresses only interested clans.
+    // A level 2 clan waits on the board for its proof: a change of that item's
+    // offers wakes it (the plan reads the offer), no other board change does.
     Afk.refreshRecord(sale.shop);
     const offerEvents = await Events.drain(Database);
     assert.deepEqual(offerEvents.map(event => event.clanId), [77]);
-    assert(offerEvents[0].causes.includes('board'));
-    done('native board refresh wakes the clan waiting for that original item');
+    assert(offerEvents[0].causes.includes('offer_posted'));
+    done('a board change of the level proof wakes the level 2 clan');
 
     const current = await Goals.clanProjectionById(77);
     const protectedPay = await Database.payClanMember({ clanId: 77, characterId: 100, amount: 1, kind: 'member_gear' });

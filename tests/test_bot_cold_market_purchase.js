@@ -17,7 +17,6 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const originalReconcileClanGoals = Database.reconcileBotClanGoals;
 const World = invoke('GameServer/World/World');
-const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -26,24 +25,15 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 // On arrival a cold bot buys only what its held card orders (Task 4, question
-// 1 = A). These goals stand for that step: the genuine card is kept and its
-// leaf orders the goal's item; a bot without a card keeps the goal's amount.
+// 1 = A). These goals stand for that step (the goal read from the card).
 function purchaseOnCard(state, goal) {
-    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
-    const decided = decisions.decided;
-    decisions.decided = function (value) {
-        const real = decided.call(this, value);
-        return real && goal?.target?.itemId ? Object.create(real, { activity: { value: { activity: 'shopping',
-            itemId: Number(goal.target.itemId), amount: Math.max(1, Number(goal.target.amount) || 1) } } }) : real;
-    };
-    return ColdMarketService.tryPurchase(state, goal).finally(() => { delete decisions.decided; });
+    return ColdMarketService.tryPurchase(state, goal);
 }
 
 DataCache.init();
 require('./helpers/huntingReturnFixture')('field', { locX: 100, locY: 200, locZ: -10 }, 'Field');
 
 const originals = {
-    canTravelForPurchase: ColdMarketService.canTravelForPurchase,
     reconcileBotClanMembership: Database.reconcileBotClanMembership,
     execute: Database.execute,
     fetchItems: Database.fetchItems,
@@ -53,7 +43,6 @@ const originals = {
     syncInventorySummary: Database.syncInventorySummary,
     updateCharacterLocation: Database.updateCharacterLocation,
     updateCharacterProgress: Database.updateCharacterProgress,
-    clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
     npcOffers: MarketOpportunity.npcOffers,
@@ -72,7 +61,7 @@ async function run() {
     // ARCH-NOTE: native prepared writers need real declared SQL identities and bags.
     // The raw execution seams below do not claim a selected/funded shopping wish.
     Database.init();
-    for (const id of [77, 777, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 91, 92]) {
+    for (const id of [77, 777, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97]) {
         await Native.character(Database, id, 'ColdBuyer' + id, 'bot_' + id);
     }
     await Native.character(Database, 9001, 'RareSupplier', 'bot_raresupplier');
@@ -173,10 +162,6 @@ async function run() {
             persistedSaleId: saleEvents[0].id, remainingShopRows: shopsAfter.length, remainingLineRows: linesAfter.length }));
         return { result, afterBuyer, afterSeller };
     }
-    GoalState.clear = (characterId, status) => {
-        calls.push({ type: 'goal', characterId, status });
-        return Promise.resolve(null);
-    };
     // Group F/E14: this configured non-shot private input is retired; the
     // separate declared public counterpart below is a genuine native deal.
     World.user = { sessions: [{
@@ -258,8 +243,6 @@ async function run() {
     assert.strictEqual(funded.purchased, false);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 57), 11000);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 2), 0);
-    assert(!calls.some(call => call.type === 'goal' && call.characterId === 777 && call.status === 'completed'),
-        'unfunded shopping does not report a completed purchase');
     await executePublicSword(oldFundedInput, 9001, 'RareSupplier', 1000, 'public_original_11000');
     const playerTransactions = MarketTelemetry.transactions();
     const purchaseTrade = playerTransactions.recentPeerTrades[0];
@@ -273,10 +256,8 @@ async function run() {
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 2);
 
     const lowTierMarketLookups = [];
-    let lowTierBudget;
     MarketOpportunity.bestOffer = (_itemId, options) => {
         lowTierMarketLookups.push(options);
-        lowTierBudget = options.budget;
         const offer = {
             selfId: 2,
             itemName: 'Long Sword',
@@ -296,7 +277,7 @@ async function run() {
     const lowTierState = await declaredState(lowTierNative.state, 'low_tier');
     // The native bot also probes public offers while checking remote-trade
     // eligibility. Count this consumer separately from capture/preparation.
-    lowTierMarketLookups.length = 0; lowTierBudget = undefined;
+    lowTierMarketLookups.length = 0;
     const lowTierPlayerPurchase = await purchaseOnCard(lowTierState, {
         type: 'upgrade_gear',
         status: 'active',
@@ -304,17 +285,19 @@ async function run() {
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
-    assert.strictEqual(lowTierBudget, Funding.spendable(lowTierNative.state, 0, { itemId: 2 }));
-    assert(lowTierBudget < 900, 'the unchanged cheaper quote is still outside the real queue');
-    assert.strictEqual(lowTierPlayerPurchase.reason, 'low_tier_offer_missing');
+    // A purse short of the card's price is refused for money: no seller is looked up, the step
+    // fails and the item is not marked (the build admits no shop step its buyer cannot pay, so
+    // the item stays a purchase it takes again once the bag pays it).
+    assert.strictEqual(lowTierPlayerPurchase.reason, 'funding_short');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(88)?.stats, 2),
+        'the item refused for money is not marked');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
-    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 1,
-        'NG/D purchase consumer performs one indexed market lookup');
+    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 0,
+        'a purse short of the step looks up no seller');
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost === 'function').length, 0,
         'a miss on arrival plans nothing on main: no remote-trade probe (Task 4 question 1 = A)');
-    assert(lowTierMarketLookups.every(lookup => lookup.budget === lowTierBudget),
-        'neither public lookup fabricates funding for the original quote');
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
     // Separate public counterpart keeps the low-tier seller id/name, 900
@@ -331,10 +314,13 @@ async function run() {
         lowTierBuyStoreCalls += 1;
         return Promise.resolve({ opened: true });
     };
+    // A purse that covers the step: the miss is the seller's, not the money's.
     const missingLowTierNpcGear = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 87,
         level: 14,
+        adena: 100000,
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: {
             ...state.stats,
             equipmentPlan: {
@@ -350,26 +336,47 @@ async function run() {
     });
     assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_offer_missing');
     assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D gear must replan instead of opening a WTB store');
-    assert.strictEqual(missingLowTierNpcGear.state.activity, 'traveling');
+    assert.strictEqual(missingLowTierNpcGear.state.activity, 'resting', 'the visit ends: the worker routes it from town');
+    // No seller is the contest at the seller lost (the single unit sold first), not the item
+    // failing: the item is not marked, the purchase stays; only the quote the buyer was refused
+    // is (GearMarks: Skeleton Buckler in Giran at 1000). The build it wakes reads the board as
+    // it is: it takes another seller, never the refused quote, until a seller posts an offer
+    // it wants (offer_posted); with no seller it has no step to go back for (no refusal burst).
+    await new Promise(resolve => setImmediate(resolve));
+    const Marks = invoke('GameServer/Bot/AI/GearMarks');
+    const refusedFor = BotLifeState.cachedState(87);
+    assert(!Marks.marked(refusedFor?.stats, 945), 'a refusal for no seller does not mark the item');
+    assert.deepStrictEqual(Marks.quotes(refusedFor?.stats), [[945, 'Giran', 1000]], 'it marks the refused quote');
+    const { SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const posted = [];
+    const board = { heads: (id, side, options = {}) => posted.filter(line => line.selfId === id && line.storeType === side
+        && (!options.accept || options.accept(line))) };
+    const trip = () => 0; trip.details = () => ({ known: true, hours: 0, fees: 0 });
+    const evidence = (stats = refusedFor.stats) => invoke('GameServer/Bot/Economy/WishPurchaseEvidence')
+        .reader({ ...refusedFor, stats }, { board, trip }, { tripCost: trip })(945);
+    assert.strictEqual(evidence(), null, 'no seller: the build has no step to send the bot back for');
+    // The board still shows the refused quote (the buyer's view and the build's differ) and a dearer seller.
+    const line = (recordId, price) => ({ storeType: SELL, selfId: 945, price, count: 1, enchant: 0, town: 'Giran', ownerId: 9002,
+        recordId, lineId: recordId, revision: 1, kind: 'shop', custodyPolicy: 0 });
+    posted.push(line(1, 1000));
+    assert.strictEqual(evidence(), null, 'the build does not take the quote its buyer just refused');
+    posted.push(line(2, 1200));
+    assert.strictEqual(evidence()?.price, 1200, 'it takes the next seller');
+    const Situations = invoke('GameServer/Bot/Situations');
+    const heard = { ...refusedFor.stats, gearMarks: [...refusedFor.stats.gearMarks] };
+    Situations.applyFacts(heard, 'offer_posted');
+    assert.strictEqual(evidence(heard)?.price, 1000, 'a posted offer the build hears ends the refusal: the cheaper quote is a purchase again');
     MarketOpportunity.npcOffers = originals.npcOffers;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
     BuyStoreService.open = originals.openBuyStore;
 
-    const completedGoal = await purchaseOnCard(state, {
-        ...goal,
-        status: 'completed',
-        plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
-    });
-    assert.strictEqual(completedGoal.reason, 'no_purchase_goal', 'a completed market goal must not buy its item again during a batch visit');
     // Town trips are paid (N2, user 2026-10-04): the bot shopping in Giran walks
     // to the Giran gatekeeper and pays the hop to the requested town.
     // ARCH-NOTE: preserve this legacy journey's original bot77 account marker.
     // The new bot_77 receipt identity additionally admits remote-trade planning,
     // which is a different route consumer; these are raw gatekeeper assertions.
-    // This section verifies route payment after a declared approved departure;
-    // actual quantity/utility admission is tested in test_purchase_trip_admission.
-    ColdMarketService.canTravelForPurchase = () => true;
+    // This section verifies route payment after a declared approved departure.
     const legacyJourneyState = { ...state, accountName: 'bot77' };
     const fundedInGiran = { ...legacyJourneyState, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
@@ -396,10 +403,9 @@ async function run() {
         ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Unknown town' }
     });
     assert.strictEqual(unknownTown.reason, 'different_market_town');
-    assert(unknownTown.state.stats.marketRetryAfter > Date.now(),
-        'an unavailable destination must back off instead of immediately repeating');
+    assert.equal(unknownTown.state.stats.marketWanted?.itemId, goal.target.itemId,
+        'an unavailable destination: the want waits for a new offer, no retry window');
 
-    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     let blockedReserveCalls = 0;
     MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
     MarketOpportunity.reserve = () => {
@@ -432,46 +438,121 @@ async function run() {
     assert.strictEqual(incompatibleShield.reason, 'incompatible_loadout');
     assert.strictEqual(incompatibleShield.purchased, false);
     assert.strictEqual(blockedReserveCalls, 0, 'an incompatible purchase must be rejected before reserving market stock');
-    assert.strictEqual(incompatibleShield.state.stats.equipmentPlan, undefined,
-        'rejecting an incompatible shield must discard the stale acquisition plan');
-    assert.strictEqual(incompatibleShield.state.stats.partyRequest, undefined,
-        'rejecting an incompatible shield must clear its obsolete party request');
+    // The gear plan stays; the refused item is its mark (GearMarks), which its reviews plan without.
+    assert.strictEqual(incompatibleShield.state.stats.equipmentPlan?.target?.selfId, 626,
+        'a refused shield leaves the gear plan to its own review');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(86)?.stats, 626),
+        'the refused shield is marked: the build does not send the bot for it again');
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
 
+    // The miss cases below hold a purse that covers the step: the miss is the seller's.
     const noOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 79,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(noOffer.purchased, false);
-    assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
-    assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
-    assert(noOffer.state.stats.marketRetryAfter > Date.now(), 'a buyer with no offer must wait before retrying the same market trip');
+    assert.strictEqual(noOffer.state.activity, 'resting', 'a buyer with no offer ends its visit: the worker sends it back to farming');
+    assert.strictEqual(noOffer.state.timing.nextResolveAt <= Date.now(), true, 'at its next step, due now');
+    assert.equal(noOffer.state.stats.marketWanted?.itemId, 999999, 'a buyer with no offer waits for a new one (offer_posted), no retry window');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(79)?.stats, 999999),
+        'a material with no seller stays a purchase: no mark');
 
     MarketOpportunity.bestOffer = () => null;
     BuyStoreService.open = () => Promise.reject(new Error('forced buy-store persistence failure'));
     const failedBuyStore = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 82,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
     }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a miss on arrival enters the normal market retry path; no WTB opens from main');
-    assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
+    assert.equal(failedBuyStore.state.stats.marketWanted?.itemId, 999999);
     BuyStoreService.open = originals.openBuyStore;
+    // The card's step is paid as its held check reads it in town: by its root's place in the money
+    // queue, its value per unit having chosen the seller (EconomyContext LEAF_CHECKS.shopping, the
+    // hot buyer too). A purse the queue funds is not refused for that value: the miss is the seller's.
+    const queuedMaterial = await purchaseOnCard(await declaredState({
+        ...state,
+        characterId: 89,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+        stats: { ...state.stats, money: [10000, .0001, 0, 0, .001, 100, 999999],
+            marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+    }, 'queued_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 },
+        plan: { valueRate: .001, valueHours: .001 } });
+    assert.strictEqual(queuedMaterial.reason, 'no_affordable_offer', 'a step its queue place funds is no funding refusal on arrival');
 
     MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
     MarketOpportunity.reserve = () => false;
     const changedOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 80,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
     }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
     assert.strictEqual(changedOffer.reason, 'offer_changed');
-    assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
-    assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');
+    assert.strictEqual(changedOffer.state.activity, 'resting', 'a stale offer ends the visit: the worker returns the buyer to farming');
+    assert.equal(changedOffer.state.stats.marketWanted?.itemId, 2, 'a stale offer: the want waits for a new offer');
+    // A write that failed (no seller row took the stack) is no refusal at the seller: the quote
+    // stays a purchase, unmarked, so one failed write does not lock the bot out of that seller.
+    MarketOpportunity.reserve = () => true;
+    const failedWrite = await purchaseOnCard(await declaredState({
+        ...state,
+        characterId: 90,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+        stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+    }, 'failed_write'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
+    assert.strictEqual(failedWrite.reason, 'persist_failed', 'fixture: the write fails');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(BotLifeState.cachedState(90), 'fixture: the buyer\'s state is cached');
+    assert.deepStrictEqual(invoke('GameServer/Bot/AI/GearMarks').quotes(BotLifeState.cachedState(90).stats), [], 'a failed write marks no quote');
+    // A board deal whose write failed is no refusal at the seller either: the quote stays a
+    // purchase and the failure is counted; a line the seller changed meanwhile marks its quote.
+    const FailureLog = invoke('FailureLog'), priorBestOffer = MarketOpportunity.bestOffer;
+    MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'afk_bot_store', town: 'Giran', recordId: 7, lineId: 7,
+        revision: 1, store: { afkTrade: true, storeType: Afk.SELL, items: [{ selfId: 2, count: 1, price: 1000, afkTradeLineId: 7 }] } });
+    const originalBuyFromShop = Afk.buyFromShop;
+    const boardBuy = async (characterId, thrown) => {
+        Afk.buyFromShop = () => Promise.reject(new Error(thrown));
+        const result = await purchaseOnCard(await declaredState({
+            ...state,
+            characterId,
+            adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+            stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+        }, thrown), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Board Sword', adena: 1000 } });
+        await new Promise(resolve => setImmediate(resolve));
+        assert(BotLifeState.cachedState(characterId), 'fixture: the buyer\'s state is cached');
+        return { result, quotes: invoke('GameServer/Bot/AI/GearMarks').quotes(BotLifeState.cachedState(characterId).stats) };
+    };
+    const failuresOf = () => Number(FailureLog.snapshot()?.['economy.cold_board_buy'] || 0);
+    const failuresBefore = failuresOf();
+    const failedBoardWrite = await boardBuy(93, 'cold_state_sync_failed');
+    assert.deepStrictEqual([failedBoardWrite.result.reason, failedBoardWrite.quotes], ['purchase_failed', []], 'a failed board write marks no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 1, 'the failed write is counted');
+    const soldMeanwhile = await boardBuy(94, 'afk_trade_stock_changed');
+    assert.deepStrictEqual([soldMeanwhile.result.reason, soldMeanwhile.quotes], ['afk_trade_stock_changed', [[2, 'Giran', 1000]]],
+        'a line the seller changed marks its quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 1, 'a refusal at the seller is no failure');
+    // A broken invariant at the meeting (a total past a safe integer) is a failure, not a refusal.
+    const brokenMeeting = await boardBuy(95, 'trade_meeting_integer');
+    assert.deepStrictEqual([brokenMeeting.result.reason, brokenMeeting.quotes], ['purchase_failed', []], 'a broken meeting invariant marks no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 2, 'it is counted');
+    // A busy party is the meeting's refusal: it ends the buy under its name, unmarked and uncounted.
+    const busyParty = await boardBuy(96, 'trade_meeting_party_busy');
+    assert.deepStrictEqual([busyParty.result.reason, busyParty.quotes], ['trade_meeting_party_busy', []], 'a busy party marks no quote');
+    // The writer refused for money (the bag short of the line): a purse short of it, as the
+    // buyer's own check, marks nothing.
+    const shortPurse = await boardBuy(97, 'not_enough_adena');
+    assert.deepStrictEqual([shortPurse.result.reason, shortPurse.quotes], ['funding_short', []], 'a writer\'s money refusal is funding_short, no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 2, 'neither refusal is a failure');
+    Afk.buyFromShop = originalBuyFromShop;
+    MarketOpportunity.bestOffer = priorBestOffer;
 
     const duplicateArmorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,
@@ -739,50 +820,34 @@ async function run() {
             kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });
         const npcPlan = ColdMarketService.planPurchase(state, 1785, 1, { towns: [npcTown.town], cost: () => 0 });
         assert.strictEqual(npcPlan.npc, 1, 'a legal NPC remains available when the cheaper personal source is in a party');
-        const nativeList = selectedBoard.list.bind(selectedBoard);
-        let indexedReads = 0;
-        selectedBoard.list = (...args) => { indexedReads++; return nativeList(...args); };
-        const admissionEconomy = { inputKey: 'held-context', moneyPrice: .0001,
-            trip: () => 0 };
-        admissionEconomy.trip.details = () => ({ known: true, hours: 0, fees: 0 });
-        const fundedBuyer = { ...state, adena: 100000, stats: { ...state.stats, money: [1000, .0001, 0, 0] } };
-        const admissionRequest = { selfId: 1864, amount: 1, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        const refusedReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, refusedReads, 'an unchanged observed membership retains the cheap negative-cache hit');
-        supplier = { characterId: 990101 };
-        assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
-            { npc: false, cost: () => 0 }).lines[0].line.recordId, 990001,
-        'the same public quote becomes legal immediately after the supplier leaves the party');
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), true, 'a held context cannot retain a refusal after source-owner membership changes');
+        // The build quotes only what its buyer takes: the shop step it holds is bought on arrival.
+        const quoteTrip = () => 0;
+        quoteTrip.details = () => ({ known: true, hours: 0, fees: 0 });
+        const quote = () => require('../src/GameServer/Bot/Economy/WishPurchaseEvidence')
+            .reader(state, { board: selectedBoard, trip: quoteTrip }, { tripCost: quoteTrip })(1864);
+        const bought = () => ColdMarketService.planPurchase(state, 1864, 1, { npc: false, cost: () => 0 });
+        const agree = (town, price, why) => {
+            assert.deepStrictEqual([quote()?.town, quote()?.price], [town, price], `the build quotes ${why}`);
+            assert.deepStrictEqual([bought()?.town, bought()?.lines[0].price], [town, price], `the buyer takes ${why}`);
+        };
+        agree('Giran', 100, 'the backed shop while the cheaper seller is in a party');
+        // A seller away from the ad's town whose money is all promised cannot pay its way there.
         supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
-            loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false, 'the owner cannot spend protected money on the route');
-        const fareRefusedReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, fareRefusedReads, 'unchanged fare refusal is cached');
+            loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
+        agree('Giran', 100, 'the backed shop while the cheaper seller cannot pay the trip to its ad');
         supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), true, 'the held refusal expires when the same seller can afford its route');
-        const missingRequest = { selfId: 9999999, amount: 1, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
-        const missingReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, missingReads, 'a refusal with no conditional owners retains its original cache');
-        for (let at = 0; at < 9; at++) selectedBoard.put({ id: 991100 + at, ownerId: 991100 + at,
-            storeType: Afk.SELL, custodyPolicy: 1, kind: 'sell_ad', town: 'Dion', revision: 1,
-            lines: [{ lineId: 9911000 + at, selfId: 1865, count: 1, price: 1 }] });
-        const overflowRequest = { selfId: 1865, amount: 10, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
-        const overflowReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
-        assert(indexedReads > overflowReads, 'more than eight distinct source owners cannot leave an incomplete refusal cache');
+        agree('Dion', 1, 'the cheaper ad once its seller can pay the trip');
+        // Units another bot's trip claimed are gone for this buyer.
+        const Claims = require('../src/GameServer/Bot/Economy/BoardClaims');
+        Claims.claimErrand(990150, { town: 'Dion', selfId: 1864, purpose: 'supply', at: Date.now() },
+            [{ line: selectedBoard.list(1864, Afk.SELL, 'Dion')[0], count: 3 }]);
+        try {
+            agree('Giran', 100, 'the backed shop while every unit of the cheaper ad is claimed');
+        } finally {
+            Claims.ownerChanged(990150, null);
+        }
+        supplier = { characterId: 990101 };
+        agree('Dion', 1, 'the same public quote immediately after the supplier leaves the party');
     } finally {
         Afk.boardIndex = nativeBoardIndex;
         Admission.configureTradeAdmission(id => BotLifeState.cachedState(Number(id)),
@@ -795,7 +860,6 @@ run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
 }).finally(async () => {
-    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     Database.reconcileBotClanMembership = originals.reconcileBotClanMembership;
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
     Database.execute = originals.execute;
@@ -806,7 +870,6 @@ run().catch((err) => {
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
     Database.updateCharacterProgress = originals.updateCharacterProgress;
-    GoalState.clear = originals.clearGoal;
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;

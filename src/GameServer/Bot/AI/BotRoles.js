@@ -15,10 +15,10 @@ const ROLE_CLASSES = {
 };
 const SUMMONER_CLASSES = new Set([14, 28, 41]);
 // The first classes whose second classes split the kit they fight 20-39
-// with: they fight with their own future second class's (user 10-30, class
+// with: they fight with their own future second class's (class
 // kits by C4 masteries). By weapon, bow or dagger (Rogue, Elven Scout,
 // Assassin); by pet, a servitor or none (Wizard, Elven Wizard, Dark Wizard:
-// a future summoner summons the cat it learns at 20, as in C4, T122).
+// a future summoner summons the cat it learns at 20, as in C4).
 const splitsBy = (next, holds) => next.some(holds) && next.some((id) => !holds(id));
 const SPLIT_KIT_CLASSES = new Set(Object.entries(ClassProgression.secondProfMap)
     .filter(([, next]) => (next.some((id) => ROLE_CLASSES.archer.includes(id))

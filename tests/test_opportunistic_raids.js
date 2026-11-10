@@ -30,7 +30,7 @@ function member(id, classId, level, weapon, healer = false) {
     return s;
 }
 
-// Member 8 holds a Two-Handed Sword: a Human Warrior wears only two-handers or polearms (user 10-29).
+// Member 8 holds a Two-Handed Sword: a Human Warrior wears only two-handers or polearms (C4 masteries).
 const party = [member(1, 32, 26, 3), member(2, 42, 29, 178, true), member(3, 29, 26, 178, true),
     member(4, 54, 31, 157), member(5, 56, 29, 93), member(6, 56, 28, 168),
     member(7, 54, 28, 156), member(8, 1, 29, 124), member(9, 56, 30, 291)];
@@ -133,8 +133,7 @@ async function run() {
         status: 'active', spotId: spot.id, startedAt: at, stats: { objective } };
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const mission = JSON.stringify(formation);
-    assert.deepEqual(await Population.applyWorkerPartyRequirements(formation, {
-        requirementRefreshedAt: at, memberPlans: party.map(s => ({ characterId: s.characterId, plan: null })) }), []);
+    Population.applyWorkerPartyRequirements(formation, { requirementRefreshedAt: at });
     assert.equal(JSON.stringify(formation), mission, 'ordinary gear replanning cannot replace or release an agreed raid expedition');
     const Calculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
     const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
@@ -185,7 +184,7 @@ async function run() {
     const crowd = [...party.map(s => Policy.role(s) === 'damage' ? { ...s, level: 31 } : s),
         ...Array.from({ length: 90 }, (_, i) => member(100 + i, 56, 31, 168))];
     const config = { opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidIntervalMs: 900000,
-        opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidMaxParties: 2, opportunisticRaidAliveFraction: .5 };
+        opportunisticRaidMaxParties: 2, opportunisticRaidAliveFraction: .5 };
     const secondSpot = { ...spot, id: 'raid:10362', raidBossTemplateId: 10362, avgLevel: 24 };
     const director = new OpportunisticRaidDirector({ config, database: { execute: async () => [] },
         life: { cachedState: id => crowd.find(s => s.characterId === id),
@@ -211,6 +210,32 @@ async function run() {
     director.stop();
     publications({ characterId: 1 });
 
+    // Searches run at their situations, never on a clock: one that formed nothing waits
+    // for the pool to grow by a roster or a boss to spawn.
+    const few = crowd.slice(0, 5), joined = [...few];
+    let bossListener = null, publishIdle = null;
+    const idle = new OpportunisticRaidDirector({ config, database: { execute: async () => [] },
+        life: { cachedState: id => joined.find(s => s.characterId === id),
+            statesByIds: async ids => joined.filter(s => ids.includes(s.characterId)),
+            subscribePublications: fn => { publishIdle = fn; few.forEach(s => fn({ characterId: s.characterId })); return () => {}; } },
+        parties: { admitted: () => [], subscribeChanges: () => () => {} },
+        catalog: { all: () => [spot], liveTemplateIds: () => new Set([10366]) },
+        memory: { ensureMany: async () => {}, assess: neutral }, canWork: () => true, bossFree: () => true,
+        onBossChanged: listener => { bossListener = listener; return () => {}; }, bossAlive: () => true,
+        assess: async () => fit, form: async () => null });
+    await idle.start();
+    await idle.pulse(at);
+    await idle.pulse(at + 60000);
+    await idle.pulse(at + 3600000);
+    assert.equal(idle.snapshot().search.total.searches, 1, 'no situation, no search: the clock wakes none');
+    for (const s of crowd.slice(5, 14)) { joined.push(s); publishIdle({ characterId: s.characterId }); }
+    await idle.pulse(at + 3600001);
+    assert.equal(idle.snapshot().search.total.searches, 2, 'a roster more of available adventurers searches again');
+    bossListener(10366);
+    await idle.pulse(at + 3600002);
+    assert.deepEqual(idle.snapshot().search.woken, { start: 1, raid_opportunity: 1, boss_spawned: 1 });
+    idle.stop();
+
     const rotatedCrowd = Array.from({ length: 8 }, (_, i) => party.map((s,j) => ({ ...s,
         characterId: 9000 + i * 9 + j, level: 28 }))).flat();
     const bosses = Array.from({ length: 7 }, (_, i) => ({ ...spot, id: `raid:${11000+i}`,
@@ -227,7 +252,7 @@ async function run() {
             return {ready:false,reason:'raid_fight_too_long'}; }
     });
     await rotating.start();
-    for (let i = 0; i < 8; i++) { const prior = forecasts; await rotating.pulse(at+i*60000);
+    for (let i = 0; i < 8; i++) { const prior = forecasts; rotating.wake('raid_opportunity'); await rotating.pulse(at+i*60000);
         assert(forecasts-prior <= 12, 'boss rotation retains the worker forecast cap'); }
     assert.equal(visited.size, bosses.length, 'later suitable bosses are not starved by restarting every queue at the first boss');
     rotating.stop();
@@ -248,7 +273,7 @@ async function run() {
     formation.stats.objective.expiresAt = unexpired;
     assert.equal(released, 1, 'an unreachable encounter releases the adventurers after bounded native placement attempts');
     assert.equal(stranded.lastResult.reason, 'raid_boss_unreachable');
-    assert(stranded.blockedBosses.get(10366) > at, 'a broken spawn is temporarily skipped by subsequent roster proposals');
+    assert(stranded.unreachableBosses.has(10366), 'a broken spawn is skipped by roster proposals until its next spawn');
 
     const young = [member(4000, 32, 26, 3), member(4001, 29, 26, 178, true), member(4002, 42, 26, 178, true),
         ...Array.from({ length: 6 }, (_, i) => member(4010 + i, 56, 26, 168))];
@@ -352,7 +377,10 @@ async function run() {
         return { ready: false, reason: 'raid_fight_too_long', workMs: 6,
             reasons: ['raid_fight_too_long', 'raid_tank_survival'], unchecked: ['supplies'] };
     };
-    await cpuLimited.service.start(); await cpuLimited.service.pulse(at); cpuLimited.service.stop();
+    await cpuLimited.service.start(); await cpuLimited.service.pulse(at);
+    assert(cpuLimited.service.due && cpuLimited.service.poolAtFailure === null,
+        'a search its CPU allowance cut stays due: it goes on once the allowance is full, not on pool churn');
+    cpuLimited.service.stop();
     const cpuCounted = cpuLimited.service.snapshot().search;
     assert.equal(cpuLimited.assessed.length, 2, 'stop before another worker forecast once its CPU budget is spent');
     assert.equal(cpuCounted.lastSearch.status, 'forecast_cpu_budget');
@@ -370,12 +398,30 @@ async function run() {
     await queued.service.start(); await queued.service.pulse(at);
     const awaiting = queued.service.deferredRosters.map(ids => ids[0]);
     assert.equal(awaiting.length, 6, 'the CPU limit preserves unforecasted combinations');
+    queued.service.wake('raid_opportunity');
     await queued.service.pulse(at + 60000);
     assert(queued.assessed.slice(2).every(id => awaiting.includes(id)), 'deferred combinations get forecasts before newly sampled ones');
     assert.equal(queued.service.deferredRosters.filter(ids => awaiting.includes(ids[0])).length, 4,
         'only the two forecasted deferred rosters are retired; fresh proposals remain bounded');
     assert(queued.service.snapshot().search.lastSearch.hydratedBots <= 72);
     queued.service.stop();
+
+    // A search carried on past its allowance with no new situation drains only its deferred
+    // rosters (fresh ones wait for the next situation) and ends when that queue is empty.
+    const draining = budgetSearch(-1);
+    draining.service.assess = async members => {
+        draining.assessed.push(members[0].characterId);
+        return { ready: false, reason: 'raid_fight_too_long', workMs: 6 };
+    };
+    await draining.service.start(); await draining.service.pulse(at);
+    const queuedFirst = draining.service.deferredRosters.map(ids => ids[0]);
+    let windows = 0;
+    while (draining.service.due && windows < 10) await draining.service.pulse(at + ++windows * 60000);
+    assert(draining.assessed.slice(2).every(id => queuedFirst.includes(id)), 'a continuation forecasts only its deferred rosters');
+    assert.equal(draining.assessed.length, 8, 'each proposed roster is forecast once, no fresh one is added');
+    assert(!draining.service.due && windows === 3 && draining.service.poolAtFailure !== null,
+        'the search ends with its queue: the next one waits for a situation');
+    draining.service.stop();
 
     // A full deferred queue leaves room for just one fresh anchor per pass.
     // Rotation must advance only past tanks actually examined, or the same
@@ -400,6 +446,7 @@ async function run() {
     await sustained.start();
     try {
         for (let turn = 0; turn < 120; turn++) {
+            sustained.wake('raid_opportunity');
             await sustained.pulse(at + turn * 60000);
             const report = sustained.snapshot().search;
             assert.equal(report.lastSearch.forecasts, 1, 'the same 12 ms CPU budget permits only one forecast per window');
@@ -417,11 +464,15 @@ async function run() {
     overrun.service.assess = async () => ({ ready: false, reason: 'raid_fight_too_long', workMs: 30 });
     await overrun.service.start(); await overrun.service.pulse(at);
     assert.equal(overrun.service.snapshot().search.total.forecasts, 1);
+    overrun.service.wake('raid_opportunity');
     await overrun.service.pulse(at + 60000);
     assert.equal(overrun.service.snapshot().search.total.forecasts, 1, 'a CPU overrun is repaid by deferring the following window');
     assert.equal(overrun.service.snapshot().search.cpuBudget.deferredSearches, 1);
+    overrun.service.wake('raid_opportunity');
     await overrun.service.pulse(at + 120000);
-    assert.equal(overrun.service.snapshot().search.total.forecasts, 2, 'a refilled positive allowance resumes search');
+    assert.equal(overrun.service.snapshot().search.total.forecasts, 1, 'a part allowance starts no search');
+    await overrun.service.pulse(at + 180000);
+    assert.equal(overrun.service.snapshot().search.total.forecasts, 2, 'a full allowance resumes the search still due');
     overrun.service.stop();
 
     const hotParty = { partyId: 'progress', status: 'hot', startedAt: at,
@@ -476,16 +527,17 @@ async function run() {
     hotSession.raidPreparationComplete = false;
     hotSession.lastSupportOutcome = null;
     await progressing.maintain(at);
-    for (const minute of [7, 14, 21, 25]) {
+    for (const minute of [7, 14, 21, 28, 35, 42]) {
         hotSession.lastSupportOutcome = { outcome: 'landed', at: at + minute * 60000 };
         await progressing.maintain(at + minute * 60000);
     }
-    await progressing.maintain(at + 25 * 60000 + 1);
-    assert.deepEqual(abandoned, ['raid_admission_expired'], 'preparation activity cannot extend the hard expedition limit');
+    assert.deepEqual(abandoned, [], 'a fight that progresses is not cut by a clock: only its stall insurance ends it');
+    await progressing.maintain(at + 45 * 60000);
+    assert.deepEqual(abandoned, ['raid_admission_expired'], 'the expedition ends at its expiry');
     abandoned.length = 0;
     progressing.encounters.clear();
-    await progressing.maintain(at + 26 * 60000);
-    assert.deepEqual(abandoned, ['raid_admission_expired'], 'the native hot start keeps the hard limit across a director restart');
+    await progressing.maintain(at + 46 * 60000);
+    assert.deepEqual(abandoned, ['raid_admission_expired'], 'the native hot start keeps the expiry across a director restart');
 
     const large = [...crowd, ...Array.from({ length: 12 }, (_, i) => member(1000 + i, 32, 26, 3)),
         ...Array.from({ length: 1400 }, (_, i) => ({ ...crowd[9], characterId: 2000 + i }))];

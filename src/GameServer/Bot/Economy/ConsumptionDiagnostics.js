@@ -1,5 +1,6 @@
 'use strict';
 const Diagnostics = require('./EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const LIMIT = 17, MAX_BYTES = 1024;
 const CAPTURE_BYTES = Symbol('captureBytes');
 const POTION_COUNT = Symbol('potionCount');
@@ -28,7 +29,7 @@ function publish(owner, rows, context = {}) {
         const [item, before, after, kind] = row, actual = before - after, reason = KINDS[kind];
         Diagnostics.count('consumption', 'debits', reason);
         Diagnostics.count('consumption', 'items', reason, actual);
-        if (Diagnostics.enabled(owner)) Diagnostics.push({ owner: Number(owner), phase: 'consumed', item,
+        if (Trace.detailed(owner)) Trace.detail({ owner: Number(owner), phase: 'consumed', item,
             source: context.source || 'cold_commit', before, after, actual, reason,
             commandId: context.commandId, proposalId: context.proposalId, revision: context.revision, sequence: context.sequence });
     }
@@ -46,7 +47,7 @@ function hot(session, item, before, after, reason) {
     const owner = Number(session.actor?.fetchId?.());
     Diagnostics.count('consumption', 'debits', reason);
     Diagnostics.count('consumption', 'items', reason, before - after);
-    if (Diagnostics.enabled(owner)) Diagnostics.push({ owner, item, before, after, actual: before - after,
+    if (Trace.detailed(owner)) Trace.detail({ owner, item, before, after, actual: before - after,
         phase: 'consumed', source: 'hot_inventory', reason, commandId: session.workerCommand?.commandId });
 }
 module.exports = { fact, attach, publish, drop, hot, LIMIT, MAX_BYTES };

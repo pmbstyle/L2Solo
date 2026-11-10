@@ -53,10 +53,13 @@ async function refresh(session) {
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
         stats: { classId: session.actor.fetchClassId(), money: [77000, 1e-5, 1000, 0, 4e-5, 1000000, 1463] } };
     if (session.botSession) {
-        const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(session.actor);
+        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+        const state = Economy.stateForActor(session.actor);
         const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
         session.coldLifeState.stats.huntEfficiency = [{ signature: Hunt.signature(state), spotId: '-10_30',
             at: Date.now(), samples: 3, cycleMs: 3600000, adena: 1000000, loot: 0, exp: 100000, kills: 1 }];
+        // The kit rates its build publishes (stats.kitRates): main buys no kit for a bot no build rated.
+        session.coldLifeState.stats.kitRates = Economy.kitRates(Economy.basics(Economy.stateForActor(session.actor)));
     }
 }
 async function stock(session, selfId, amount, enchant = 0, equipped = false, slot = 0) {

@@ -107,7 +107,12 @@ async function run() {
     assert((await Database.fetchItems(missing.id)).some(i=>i.selfId===73),'failed transaction keeps source sword');
     assert.strictEqual(missing.bot.backpack.fetchTotalWeaponKind(),'Weapon.Sword');
     await State.sellAndRestock(missing.session,missing.bot,{},ai);
-    assert(missing.session.companionEquipmentRetryAt > Date.now(),'failed combination backs off instead of repeating each visit tick');
+    // The failed step is raised (goal_failed of a gear errand): its combination is marked (GearMarks) and
+    // planned no more until its source changed (GearMarks), instead of repeating each visit tick.
+    const Marks=require('../src/GameServer/Bot/AI/GearMarks'),Events=invoke('GameServer/Bot/AI/DecisionEvents');
+    assert(Marks.marked(Events.statsFor(missing.session),902576),'failed combination is marked');
+    missing.session.companionShopping=undefined;
+    assert.strictEqual(Shopping.planErrand(missing.session,missing.bot,{name:'Giran'}),null,'and no retry loop: the same combination is not planned again');
 
     const interrupted = await actorCase({stored:false});
     interrupted.session.companionShopping={kind:'dual_sword_combine',recipeId:902576,target:{actorId:100,npcSelfId:7846}};

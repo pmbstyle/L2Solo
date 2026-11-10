@@ -42,8 +42,8 @@ function decidedDanger(session) {
         ? { economy, deathHours, riskWeight: packet ? Packet.riskWeight(packet) : economy.riskWeight } : null;
 }
 
-// The mobs on the bot as one mob with their HP left and attack summed (minimum.md #3).
-// An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
+// The mobs on the bot as one mob with their HP left and attack summed.
+// An area skill hits each of them (as BotTargetMatchup reads `pull`).
 // They are in the fight: no opening before they close in (engaged).
 function enemyOn(actor, target, attackers = attackersOf(actor, target)) {
     const view = TargetMatchup.targetView(target);

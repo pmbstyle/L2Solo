@@ -7,14 +7,14 @@ const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const SHORT_GLOVES = 48;
 const LEATHER_SHOES = 37;
 const now = 10 * 60 * 60 * 1000;
-const ttl = MarketDemandIndex.WANTED_TTL_MS;
+const later = 3 * 60 * 60 * 1000;
 // Private wants are read only for the own bot and its group (71143511).
 const scope = { ownerId: 1, groupOwnerIds: [2] };
 const signalsFor = (states, timestamp, selfId) => (MarketDemandIndex.indexSignals(states, timestamp, scope).get(selfId) || [])
     .map((signal) => signal.characterId);
 
 const wanting = { characterId: 1, adena: 500, stats: {
-    marketWanted: { itemId: SHORT_GLOVES, amount: 1, lastMissingAt: now } } };
+    decisionSeq: 4, marketWanted: { itemId: SHORT_GLOVES, amount: 1, lastMissingAt: now, decisionSeq: 4 } } };
 const planning = { characterId: 2, adena: 5000, stats: {
     equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: LEATHER_SHOES } } } };
 
@@ -31,9 +31,11 @@ const richer = { ...wanting, adena: 900 };
 assert.strictEqual(MarketDemandIndex.indexSignals([richer], now + 2000, scope).get(SHORT_GLOVES)[0].budget, 900,
     'a replaced state carries its new budget');
 
-// A want only the wish card backs has no drop event yet: it expires on time.
-assert.deepStrictEqual(signalsFor([wanting], now + ttl - 1, SHORT_GLOVES), [1]);
-assert.deepStrictEqual(signalsFor([wanting], now + ttl, SHORT_GLOVES), [], 'the want expires on time');
+// A want only the wish card backs lives with the build that held it, however long,
+// and the next build (its decisionSeq) drops it: no clock.
+assert.deepStrictEqual(signalsFor([wanting], now + later, SHORT_GLOVES), [1], 'it stands while its build is held');
+const rebuilt = { ...wanting, stats: { ...wanting.stats, decisionSeq: 5 } };
+assert.deepStrictEqual(signalsFor([rebuilt], now + 1, SHORT_GLOVES), [], 'the next build drops it');
 
 // A want the plan backs, a shot stack and a shot recipe live until their clear
 // events, however long the bot waits for a seller.
@@ -43,7 +45,7 @@ const planPiece = { characterId: 1, adena: 500, inventory: {}, stats: {
     marketWanted: { itemId: SHORT_GLOVES, lastMissingAt: now, held: 1, plan: true },
     shotDemand: { itemId: 1463, amount: 500, maxSpend: 400, at: now },
     shotRecipeDemand: { itemId: 1804, amount: 1, maxSpend: 1000, at: now } } };
-const lateSignals = MarketDemandIndex.indexSignals([planPiece], now + 6 * ttl, scope);
+const lateSignals = MarketDemandIndex.indexSignals([planPiece], now + later, scope);
 assert.deepStrictEqual([SHORT_GLOVES, 1463, 1804].map(id => (lateSignals.get(id) || []).length), [1, 1, 1],
     'three hours later the backed wants still stand');
 assert.strictEqual(LifeState.reconcileFulfilledEquipmentPlan(planPiece).stats.marketWanted, planPiece.stats.marketWanted,

@@ -1,6 +1,9 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+const Situations = invoke('GameServer/Bot/Situations');
+// A count map as name:n, most first.
+const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -38,7 +41,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 let lastMoneyPacketMissing = 0;
 // The body's fact posts (BotLifeState.notifyNearFacts reasons); any other
 // near post reason is a named raise.
-const NEAR_FACTS = Object.freeze(['bag', 'equip', 'level', 'death', 'revive', 'near_spot', 'activated']);
+const NEAR_FACTS = Object.freeze(['bag', 'equip', 'level', 'death', 'revive', 'near_spot', 'near_left', 'activated']);
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -56,7 +59,7 @@ const PopulationStatus = {
         }
         const active = Math.max(0, hot - merchants);
         const lifeCounts = LifeState.counts();
-        const coldQueue = LifeState.coldDueSummary();
+        const coldQueue = LifeState.coldDueSummary(Date.now());
         const partyCounts = PartyState.counts();
         const targetCombat = LifeState.targetCombatSummary();
         const partyRequests = LifeState.partyRequestSummary();
@@ -94,16 +97,20 @@ const PopulationStatus = {
 
     // The near bots' line, always on (logSummary prints it without
     // diagnostics), from the coordinator's snapshot: nearFacts=bag/equip/
-    // level/death/revive/near_spot/activated, their fact posts queued since
+    // level/death/revive/near_spot/near_left/activated, their fact posts queued since
     // start; nearRaises=, the posts a named raise made (DecisionEvents
-    // raiseDecision: town, money, revived, sources, ...); nearDecisions=
-    // accepted/refused/dropped, the decisions their bodies took, refused as
-    // older than the one held, or dropped as the bot cooled before they came.
+    // raiseDecision: arrived_town, money, goal_failed, ...); nearDecisions=
+    // accepted/refused/dropped/linesStale, the decisions their bodies took, refused as
+    // older than the one held, or dropped as the bot cooled before they came; their own
+    // lines' looks refused as the row moved before main applied them.
+    // nearRaiseOver= (only when any): raises past a body's pending bag's cap
+    // (DecisionEvents.NEAR_NAMES), dropped.
     nearText(coordinator) {
         const nearFacts = coordinator?.snapshots?.nearFacts || {}, decisions = coordinator?.nearDecisions || {};
         const raises = Object.entries(nearFacts).reduce((sum, [reason, count]) => NEAR_FACTS.includes(reason) ? sum : sum + count, 0);
         return `nearFacts=${NEAR_FACTS.map(reason => nearFacts[reason] || 0).join('/')} nearRaises=${raises}`
-            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}`;
+            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}/${decisions.linesStale || 0}`
+            + (DecisionEvents.nearOverflow() ? ` nearRaiseOver=${DecisionEvents.nearOverflow()}` : '');
     },
 
     // The goal's numbers without diagnostics, in the full line's names: cold queue due now and the oldest wait,
@@ -118,8 +125,12 @@ const PopulationStatus = {
     workerBusyText() {
         const busy = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').takeBusyWindow();
         const ms = busy.activeMs + busy.idleMs;
-        if (!(ms > 0)) return 'workerElu=- workerEluMax=- workerLag=-';
-        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms`;
+        // workerDue=<p50>/<p99>/<max> ms@<bot>: how late the steps committed since the last line landed
+        // past their due (StepLateness; the percentiles are bucket bounds), and the latest one's bot.
+        const due = busy.due ? `${busy.due.p50Ms}/${busy.due.p99Ms}/${busy.due.maxMs}ms${busy.due.maxBot?.characterId
+            ? `@${busy.due.maxBot.characterId}` : ''}` : '-';
+        if (!(ms > 0)) return `workerElu=- workerEluMax=- workerLag=- workerDue=${due}`;
+        return `workerElu=${(busy.activeMs / ms).toFixed(2)} workerEluMax=${busy.maxElu.toFixed(2)} workerLag=${Math.round(busy.lagMs)}ms workerDue=${due}`;
     },
 
     goalText(queue = {}, coordinator) {
@@ -135,17 +146,25 @@ const PopulationStatus = {
         // commands throw, held off until one succeeds (ColdSimulationKernel FAULT_*); 0/0/0 when healthy.
         // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
         // swallowed: swallowedText; pathPool, pathCrashes: pathPoolText; packetRefused: packetRefusedText.
+        // clanRestarts: clan planning workers started after one failed (ClanPlanningCoordinator), 0 when healthy.
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
             + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
             + ` botFaults=${failures.faultBackoff || 0}/${failures.faultQuarantined || 0}/${failures.workerFaults || 0}`
             + ` ${this.swallowedText(failures.swallowed)}`
             + ` commandDbErrors=${failures.commandDbErrors || 0} ${this.pathPoolText()} ${this.packetRefusedText()}`
+            + ` clanRestarts=${ClanPlanningCoordinator.metrics().restarts || 0}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
+            + this.decisionText(worker);
+    },
+
+    // The worker's decision counts (links, the build's node cap, doors, situations, solo
+    // windows): on the goal line and on the full diagnostics line alike.
+    decisionText(worker = {}) {
+        return this.linksText(worker.links) + (worker.nodeCapBuilds === undefined ? '' : ` nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -183,33 +202,43 @@ const PopulationStatus = {
 
     // doors=<caller>:<built>:<served>:<left to the step>:<read as held>:<moved down its agenda>: every door since the worker started.
     // raised=<link>@<place>:<n>: what woke a review (Reaction). rejected=<why>:<n>: what main refused at the act.
-    doorsText(doors, raised) {
-        const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
-        return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
+    doorsText(doors) {
+        return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} rejected=${top(DecisionEvents.rejections())}` : '';
     },
 
-    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>;event:<input>=<n>+...;party<kept>/<missed>: held
-    // earning spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics
-    // off too: event the searches each input of the search's key asked (a build's own and a read's; observation: the
-    // bot's own samples; prices, frustration, crowd: what its answer stands on), most first.
-    incomeHoldText(h) {
-        if (!h) return '';
-        const events = Object.entries(h.event || {}).sort((a, b) => b[1] - a[1]).map(([input, n]) => `${input}=${n}`).join('+');
-        return ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0}`
-            + `;event:${events || 0};party${h.partyKept || 0}/${h.partyMissed || 0}`;
+    // situations=raised:<name@place>:<n>,...;woke:<decision><name>:<n>,...;decided:<decision>:<taken>/<served>,
+    // <decision>:unwoken:<caller>:<n>,...[;search:<n>/<ms>ms][;over:<n>]: the worker's situation counts since it started
+    // (Situations.counts), diagnostics off too, most first. decided build: taken (a situation woke it, the step
+    // built) / served (the held card served the step). unwoken: a decision taken with no woken bit, by its
+    // caller (0 for a solo step: the one gate); search: the earning spot's searches and their
+    // time (EquipmentIncomeRoute.searchTotals); over: keys past the maps' cap. main: main's
+    // own counts (its raises on far rows, BotLifeState.raiseOnRow), summed in.
+    situationsText(worker, main) {
+        if (!worker) return '';
+        const sum = (a = {}, b = {}) => {
+            const out = { ...a };
+            for (const [key, n] of Object.entries(b)) out[key] = Array.isArray(n) ? n.map((v, at) => v + (out[key]?.[at] || 0)) : n + (out[key] || 0);
+            return out;
+        };
+        const c = { raised: sum(worker.raised, main?.raised), woke: sum(worker.woke, main?.woke), decided: sum(worker.decided, main?.decided),
+            unwoken: sum(worker.unwoken, main?.unwoken), overflow: (worker.overflow || 0) + (main?.overflow || 0) };
+        const decided = Object.entries(c.decided || {}).map(([name, row]) => `${name}:${row[0]}/${row[1]}`);
+        const unwoken = Object.entries(c.unwoken || {}).sort((a, b) => b[1] - a[1])
+            .map(([key, n]) => `${key.slice(0, key.indexOf(':'))}:unwoken:${key.slice(key.indexOf(':') + 1)}:${n}`);
+        return ` situations=raised:${top(c.raised)};woke:${top(c.woke)};decided:${[...decided, ...unwoken].join(',')}`
+            + (worker.search ? `;search:${worker.search.count}/${Math.round(worker.search.ms)}ms` : '')
+            + (c.overflow ? `;over:${c.overflow}` : '');
     },
 
-    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],verify<mismatch>/<row>/<checked>,new<n>;...;search=<n>/<ms>ms: the
-    // decision links since the worker started (EconomyContext incomeShadow, buildShadow, workshopShadow; developerDiagnostics
-    // only): rebuilt/kept as the link's key decides (a link still on masks: as it would decide); mask (those only): today's
-    // mask rebuilt what the key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); verify:
-    // held answers checked against a fresh one (mismatch: another spot or recipe, row: another income); new: answers
-    // with nothing to compare; search: the earning spot searches and their time.
+    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],new<n>;...: the decision links since the
+    // worker started (EconomyContext buildShadow; developerDiagnostics only): rebuilt/kept as the
+    // link's key decides (a link still on masks: as it would decide); mask (those only): today's mask rebuilt what the
+    // key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); new: answers with nothing
+    // to compare.
     linksText(links) {
         if (!links) return '';
-        const rows = Object.entries(links).filter(([link]) => link !== 'search').map(([link, r]) =>
-            `${link}:${r.rebuilt}/${r.kept}${r.maskOnly === undefined ? '' : `,mask${r.maskOnly},key${r.keyOnly}`},verify${r.mismatch}/${r.row}/${r.verified},new${r.unjudged}`);
-        if (links.search) rows.push(`search=${links.search.searches}/${Math.round(links.search.ms)}ms`);
+        const rows = Object.entries(links).map(([link, r]) =>
+            `${link}:${r.rebuilt}/${r.kept}${r.maskOnly === undefined ? '' : `,mask${r.maskOnly},key${r.keyOnly}`},new${r.unjudged}`);
         return ` links=${rows.join(';')}`;
     },
 
@@ -337,12 +366,14 @@ const PopulationStatus = {
             .sort((left, right) => right[1].count - left[1].count || left[0].localeCompare(right[0])).slice(0, 3)
             .map(([operation, entry]) => `${operation}:${entry.count}:${entry.maxMs}ms`)
             .join('|') || 'none';
-        const databaseFailureOps = Object.entries(database.operations || {})
-            .filter(([, value]) => Number(value.failures || 0) > 0)
-            .sort((left, right) => Number(right[1].failures || 0) - Number(left[1].failures || 0)
+        // Failed and refused (a named refusal: an outcome) operations by name, most first.
+        const databaseOps = field => Object.entries(database.operations || {})
+            .filter(([, value]) => Number(value[field] || 0) > 0)
+            .sort((left, right) => Number(right[1][field] || 0) - Number(left[1][field] || 0)
                 || left[0].localeCompare(right[0]))
-            .map(([operation, value]) => `${operation}:${value.failures}`)
+            .map(([operation, value]) => `${operation}:${value[field]}`)
             .join('|') || 'none';
+        const databaseFailureOps = databaseOps('failures'), databaseRefusalOps = databaseOps('refusals');
         const checkpoint = database.checkpoint || {};
         const checkpointLast = checkpoint.last || {};
         const checkpointDebt = Math.max(0,
@@ -392,18 +423,20 @@ const PopulationStatus = {
             market,
             hotLod,
             hotDispatch,
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} activationRefusals=${metrics.delta.activationRefusals || 0} refusalReasons=${refusalReasons} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} schedulerLag=${scheduler.lagMs || 0}ms backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale ${this.pathPoolText(pathWorkers)} ${this.packetRefusedText()} ${this.swallowedText()} raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms`
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketFundingShort=${market.delta.fundingShort} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} activationRefusals=${metrics.delta.activationRefusals || 0} lateInViewActivations=${metrics.delta.lateInViewActivations || 0} refusalReasons=${refusalReasons} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyMeetingCut=${assembly.meetingCut || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} schedulerLag=${scheduler.lagMs || 0}ms backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale ${this.pathPoolText(pathWorkers)} ${this.packetRefusedText()} ${this.swallowedText()} raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms`
         };
         const missingTotal = require('../Economy/PurchaseFunding').summary().moneyPacketMissing;
         summary.moneyPacketMissing = Math.max(0, missingTotal - lastMoneyPacketMissing);
         summary.moneyPacketMissingTotal = missingTotal;
         lastMoneyPacketMissing = missingTotal;
         summary.line += ` moneyPacketMissing=${summary.moneyPacketMissing}`;
-        summary.improvementDeferred = invoke('GameServer/Bot/Economy/BotImprovementService').summary().improvementDeferred;
+        const improvements = invoke('GameServer/Bot/Economy/BotImprovementService').summary();
+        summary.improvementDeferred = improvements.improvementDeferred;
+        summary.improvementRetired = improvements.improvementRetired;
         summary.planDeferred = Number(invoke('GameServer/Bot/Population/PopulationService').planDeferred || 0);
         summary.coldBuffSales = invoke('GameServer/Bot/Economy/ColdBuffService').summary();
         summary.line += ` coldBuffSales=${summary.coldBuffSales.offers}/${summary.coldBuffSales.sold}/${summary.coldBuffSales.dropped}`;
-        summary.line += ` improvementDeferred=${summary.improvementDeferred} planDeferred=${summary.planDeferred}`;
+        summary.line += ` improvementDeferred=${summary.improvementDeferred} improvementRetired=${summary.improvementRetired} planDeferred=${summary.planDeferred}`;
         summary.line += ` floorCandidates=${metrics.delta.activationFloorCandidates || 0} floorAccepted=${metrics.delta.activationFloorAccepted || 0} floorRejected=${metrics.delta.activationFloorRejected || 0} floorGeo=${metrics.delta.activationFloorGeoChecks || 0}/${metrics.delta.activationFloorCacheHits || 0}/${metrics.delta.activationFloorBudgetDeferred || 0} floorP95=${activationFloor.p95Ms || 0}ms floorReasons=${activationFloorReasons} companionWorkers=${pathWorkers.companionBusy || 0}b/${pathWorkers.companionQueue || 0}q lod=${hotLod.population.full}/${hotLod.population.visible}/${hotLod.population.preload} lodTicks=${hotLod.delta.fullTicks || 0}/${hotLod.delta.visibleTicks || 0}/${hotLod.delta.preloadTicks || 0} lodDeferred=${hotLod.delta.deferrals || 0} lodPromotions=${hotLod.delta.promotions || 0} aiP95=${hotLod.tick.p95Ms || 0}ms statusP95=${hotLod.status.p95Ms || 0}ms botPackets=${hotLod.delta.packetBroadcasts || 0}/${hotLod.delta.packetSkips || 0}/${hotLod.delta.packetRecipients || 0} lodStages=${lodSubsystems}`;
         summary.clanFinanceMs = invoke('GameServer/ClanHall/Runtime').financeSummary().p95Ms;
         summary.line += ` clanFinanceMs=${summary.clanFinanceMs}`;
@@ -412,7 +445,7 @@ const PopulationStatus = {
         summary.boardReviewWakeups = metrics.delta.boardReviewWakeups || 0;
         summary.line += ` boardReviewWakeups=${summary.boardReviewWakeups}`;
         summary.line += ` hotDispatch=${hotDispatch.depth || 0}/${hotDispatch.urgentDepth || 0}/${hotDispatch.maxDepth || 0} hotDispatchFlow=${hotDispatch.enqueued || 0}/${hotDispatch.completed || 0}/${hotDispatch.coalesced || 0}/${hotDispatch.canceled || 0}/${hotDispatch.errors || 0} hotDispatchWait=${hotDispatch.waitP95Ms || 0}/${hotDispatch.waitMaxMs || 0}ms hotDispatchRun=${hotDispatch.runP95Ms || 0}/${hotDispatch.runMaxMs || 0}ms`;
-        summary.line += ` coldOwner=${metrics.delta.coldOwnerCommitted || 0} coldOwnerRejected=${metrics.delta.coldOwnerRejected || 0} coldOwnerErrors=${metrics.delta.coldOwnerErrors || 0} coldOwnerLegacy=${metrics.delta.coldOwnerLegacyDeferred || 0} legacyConflicts=${metrics.delta.legacyOwnershipConflicts || 0} coldOwnerLegacyReasons=${coldOwnerLegacyReasons} coldOwnerRejectReasons=${coldOwnerRejectReasons} coldOwnerCommitP95=${coldOwner.commit?.p95Ms || 0}ms coldOwnerHandoffs=${metrics.delta.coldOwnerHandoffs || 0} farmCapacity=${farmCapacity.spots}/${farmCapacity.violations}/${farmCapacity.maxReserved}/${farmCapacity.maxExcess} farmWorst=${farmCapacity.worstSpot}:${farmCapacity.worstReserved}/${farmCapacity.worstCapacity} dbQueue=${database.pending || 0}/${database.maxPending || 0} dbSnapshots=${database.snapshots || 0} dbFailures=${database.failures || 0} dbFailureOps=${databaseFailureOps} dbOverBudget=${databaseOverBudget} dbBusy=${metrics.delta.coldOwnerDbBusy || 0} checkpoint=${checkpoint.ready ? 'ready' : checkpoint.started ? 'starting' : 'stopped'}/${checkpoint.inFlight ? 'busy' : 'idle'} checkpointRuns=${checkpoint.completed || 0}/${checkpoint.skipped || 0}/${checkpoint.busy || 0}/${checkpoint.errors || 0} checkpointP95=${checkpoint.p95Ms || 0}ms checkpointFrames=${checkpoint.frames || 0} checkpointDebt=${checkpointDebt} checkpointWal=${Math.round(Number(checkpointLast.afterBytes || 0) / 1024 / 1024)}MB checkpointResets=${checkpoint.resets || 0}/${checkpoint.resetBusy || 0}/${checkpoint.resetErrors || 0} checkpointRestarts=${checkpoint.restarts || 0}`;
+        summary.line += ` coldOwner=${metrics.delta.coldOwnerCommitted || 0} coldOwnerRejected=${metrics.delta.coldOwnerRejected || 0} coldOwnerErrors=${metrics.delta.coldOwnerErrors || 0} coldOwnerLegacy=${metrics.delta.coldOwnerLegacyDeferred || 0} legacyConflicts=${metrics.delta.legacyOwnershipConflicts || 0} coldOwnerLegacyReasons=${coldOwnerLegacyReasons} coldOwnerRejectReasons=${coldOwnerRejectReasons} coldOwnerCommitP95=${coldOwner.commit?.p95Ms || 0}ms coldOwnerHandoffs=${metrics.delta.coldOwnerHandoffs || 0} farmCapacity=${farmCapacity.spots}/${farmCapacity.violations}/${farmCapacity.maxReserved}/${farmCapacity.maxExcess} farmWorst=${farmCapacity.worstSpot}:${farmCapacity.worstReserved}/${farmCapacity.worstCapacity} dbQueue=${database.pending || 0}/${database.maxPending || 0} dbSnapshots=${database.snapshots || 0} dbFailures=${database.failures || 0} dbFailureOps=${databaseFailureOps} dbRefusals=${database.refusals || 0} dbRefusalOps=${databaseRefusalOps} dbOverBudget=${databaseOverBudget} dbBusy=${metrics.delta.coldOwnerDbBusy || 0} checkpoint=${checkpoint.ready ? 'ready' : checkpoint.started ? 'starting' : 'stopped'}/${checkpoint.inFlight ? 'busy' : 'idle'} checkpointRuns=${checkpoint.completed || 0}/${checkpoint.skipped || 0}/${checkpoint.busy || 0}/${checkpoint.errors || 0} checkpointP95=${checkpoint.p95Ms || 0}ms checkpointFrames=${checkpoint.frames || 0} checkpointDebt=${checkpointDebt} checkpointWal=${Math.round(Number(checkpointLast.afterBytes || 0) / 1024 / 1024)}MB checkpointResets=${checkpoint.resets || 0}/${checkpoint.resetBusy || 0}/${checkpoint.resetErrors || 0} checkpointRestarts=${checkpoint.restarts || 0}`;
         summary.line += ` stateRetention=${metrics.delta.stateRetentionRuns || 0}/${metrics.delta.stateRetentionRows || 0}/${stateRetention.policy || 'none'} stateRetentionNext=${stateRetention.nextPolicy || 'none'} stateRetentionP95=${stateRetention.p95Ms || 0}ms stateRetentionRows=${stateRetentionPolicyRows} maintenanceRefusals=${maintenanceRefusals} stateRetentionErrors=${metrics.delta.stateRetentionErrors || 0} stateRetentionOverruns=${metrics.delta.stateRetentionOverruns || 0}`;
         summary.line += ` clanSim=${clanSimulation.founder.founderCreated || 0}/${clanSimulation.founder.existingClanJoins || 0}/${clanSimulation.founder.founderBlocked || 0} clanActions=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.succeeded || 0}/${clanSimulation.actions.failed || 0}/${clanSimulation.actions.queueAgeAvgMs || 0}ms clanActionFlow=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.resolved || 0}/${clanSimulation.actions.releasedUnstarted || 0}/${clanSimulation.actions.deferred || 0} clanActionQueue=${clanSimulation.actions.queuePending || 0}/${clanSimulation.actions.queueReady || 0}/${clanSimulation.actions.queueRunning || 0}/${Math.round(Number(clanSimulation.actions.queueOldestReadyAgeMs || 0) / 1000)}s clanActionLease=${clanSimulation.actions.leaseRecoveries || 0}/${clanSimulation.actions.releaseConflicts || 0}/${clanSimulation.actions.budgetOverruns || 0} clanActionP95=${clanActionStages} clanActionTypeP95=${clanActionTypeStages} clanActionDeferP95=${clanActionDeferP95}ms clanFounderP95=${clanFounderStages} clanFounderBudget=${clanSimulation.founder.budgetStops || 0}/${clanSimulation.founder.budgetOverruns || 0} clanLevels=${clanSimulation.economy.levelUps || 0} clanDeposits=${clanSimulation.warehouse.depositsApplied || 0} clanGoals=${clanSimulation.goals.activeGoals || 0}/${clanSimulation.goals.replans || 0} clanLlm=${clanSimulation.goals.llm?.requested || 0}/${clanSimulation.goals.llm?.selected || 0}/${clanSimulation.goals.llm?.fallback || 0}/${clanSimulation.goals.llm?.pendingEntries || 0} clanLlmTokens=${clanSimulation.goals.llm?.promptTokensActual || clanSimulation.goals.llm?.promptTokensEstimated || 0}/${clanSimulation.goals.llm?.completionTokens || 0} clanContext=${clanSimulation.goals.context?.builds || 0}/${Math.round(clanSimulation.goals.context?.tokenAvg || 0)}/${clanSimulation.goals.candidates?.cacheHits || 0} clanTitles=${clanSimulation.titles.appliedClans || 0}/${clanSimulation.titles.appliedTitles || 0}/${clanSimulation.titles.llm?.requested || 0}/${clanSimulation.titles.llm?.pendingEntries || 0} clanTitleTokens=${clanSimulation.titles.llm?.promptTokensActual || clanSimulation.titles.llm?.promptTokensEstimated || 0}/${clanSimulation.titles.llm?.completionTokens || 0} clanMarket=${clanSimulation.market.purchases || 0}/${clanSimulation.market.deposited || 0} clanParty=${clanSimulation.party.operationsStarted || 0}/${clanSimulation.party.operationsSucceeded || 0}/${clanSimulation.party.operationsFailed || 0}`;
         summary.line += ` bgGovernor=${governor.mode || 'idle'}/${governor.usedMs || 0}/${governor.capMs || 0}/${Object.keys(governor.resources || {}).length} bgGovernorFlow=${governor.admitted || 0}/${governor.deferred || 0}/${governor.completed || 0}/${governor.overruns || 0} bgGovernorDeferrals=${governorDeferrals}`;
@@ -451,7 +484,7 @@ const PopulationStatus = {
         const commitTriggers = Object.entries(commitQueue.flushReasons || {})
             .map(([reason, count]) => `${reason}:${count}`).join('|') || 'none';
         summary.line += ` heaps=${heapsLine(PopulationStatus.heaps({ coldWorker: worker, history: database.history, checkpoint, pathWorkers }))}`;
-        summary.line += ` commitStages=${commitStages} afterCommitSteps=${afterCommitSteps} commitTriggers=${commitTriggers} commitEarly=${commitQueue.earlyAttempts || 0}/${commitQueue.earlyDenied || 0}/${commitQueue.earlyEmpty || 0}`;
+        summary.line += ` commitStages=${commitStages} afterCommitSteps=${afterCommitSteps} commitTriggers=${commitTriggers} commitWindow=${commitQueue.windowFlushes || 0}/${commitQueue.windowDenied || 0}`;
         // workerFlight=inFlight/dirty/commanding:<oldest command age>/<oldest step age>; workerRecovery=stalled/orphan;
         // workerNearHeld=hot rows older than their near record, kept out (ColdSimulationKernel nearHeld).
         summary.line += ` coldWorker=${coldWorker.ready ? 'ready' : coldWorker.started ? 'starting' : 'stopped'}/${coldWorker.heartbeatAgeMs ?? -1}ms workerState=${worker.paused ? 'paused' : 'running'}/${worker.stopping ? 'stopping' : 'active'}/${worker.heap || 0}h workerLimit=${worker.maxInFlight || 0} workerFlow=${worker.selected || 0}/${worker.resolved || 0}/${worker.proposals || 0} workerQueueHead=${workerQueueHead} workerFlight=${worker.inFlight || 0}/${worker.dirty || 0}/${worker.commanding || 0}:${Math.round(Number(worker.commandingAgeMs || 0) / 1000)}s/${Math.round(Number(worker.inFlightAgeMs || 0) / 1000)}s workerPartyCapacity=${worker.partyCapacityBursts || 0}/${worker.partyCapacityDeferrals || 0} workerFlush=${worker.flushes || 0}/${worker.flushRows || 0}/${worker.lastFlushRows || 0}/${worker.maxFlushRows || 0}:${workerFlushReasons} workerRecovery=${worker.stallRecoveries || 0}/${worker.orphanRecoveries || 0} workerNearHeld=${worker.nearHeld || 0} heldAcks=${coldWorker.heldAcks || 0}/${worker.lateAcks || 0} ackState=${coldWorker.ackState?.with || 0}/${coldWorker.ackState?.without || 0}/${worker.ackUnbuilt || 0} workerPayload=${worker.proposalCompactions || 0}/${worker.proposalOversize || 0}/${worker.proposalOversizeRejected || 0} workerLoop=${Math.round(Number(worker.eventLoopLagP95Ms || 0))}/${Math.round(Number(worker.eventLoopLagMaxMs || 0))}ms ${this.workerBusyText()} commitRefused=${commitRefused} staleCommand=${refusals.staleCommand || 0} reviews=${reviews} workerHeap=${Math.round(Number(worker.heapUsed || 0) / 1024 / 1024)}MB workerHeapGc=${worker.heapAfterGc ? Math.round(worker.heapAfterGc / 1024 / 1024) : '-'}/${worker.heapAfterGcMax10 ? Math.round(worker.heapAfterGcMax10 / 1024 / 1024) : '-'}MB workerRestarts=${coldWorker.workerRestarts || 0} economyDecisions=${coldWorker.economyDecisions?.hits || 0}/${coldWorker.economyDecisions?.misses || 0}/${coldWorker.economyDecisions?.held || 0} ipc=${coldWorker.messagesIn || 0}/${coldWorker.messagesOut || 0}/${coldWorker.invalidMessages || 0}/${coldWorker.duplicateMessages || 0} ipcRejects=${invalidIpcReasons} commitQueue=${commitQueue.depth || 0}/${commitQueue.p0 || 0}/${commitQueue.p1 || 0}/${commitQueue.p2 || 0} commitFlow=${commitQueue.committed || 0}/${commitQueue.stale || 0}/${commitQueue.rejected || 0} commitLag=${commitQueue.queueP95Ms || 0}/${commitQueue.oldestMs || 0}ms commitP95=${commitQueue.commitP95Ms || 0}ms commitBusy=${commitQueue.busy || 0}/${commitQueue.retries || 0}`;
@@ -463,7 +496,7 @@ const PopulationStatus = {
         }
         summary.line += ` mainKits=${ColdCombatProfile.kitStoreSize()}`;
         summary.line += ` snapshot=${snapshots.dirty || 0}/${snapshots.critical || 0}/${snapshots.inFlight ? 1 : 0} snapshotLast=${lastSnapshot.mode || 'none'}/${lastSnapshot.rows || 0}/${lastSnapshot.pages || 0}/${lastSnapshot.durationMs || 0}ms snapshotRuns=${snapshots.fullRuns || 0}/${snapshots.dirtyRuns || 0}/${snapshots.criticalRuns || 0} snapshotDeferrals=${snapshots.deferrals || 0} snapshotYields=${snapshots.yields || 0}`;
-        summary.line += ` ${this.nearText(coldWorker)}`;
+        summary.line += ` ${this.nearText(coldWorker)}${this.decisionText(worker)}`;
         return summary;
     }
 };

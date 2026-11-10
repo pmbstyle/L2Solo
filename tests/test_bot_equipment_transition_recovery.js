@@ -38,7 +38,7 @@ assert(!Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).exclud
 assert(Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
     'unchanged combat inputs keep the target dormant across elapsed time');
 
-// A Prophet: a caster buffer (an Overlord keeps the melee blunt, user 10-29).
+// A Prophet: a caster buffer (an Overlord keeps the melee blunt).
 const caster = { level: 56, adena: 11564058, stats: { classId: 17, role: 'buffer' },
     inventory: inventory([...heavy, [156, [7]]]) };
 assert.strictEqual(Gear.combatReadiness(caster).hasWeapon, false,

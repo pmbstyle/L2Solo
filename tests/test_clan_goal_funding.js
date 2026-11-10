@@ -64,12 +64,14 @@ async function main() {
             VALUES (?, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run(clanId);
         seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
             VALUES (?, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run(clanId);
+        // The members hunt in the field a walk from Giran (no gatekeeper fee): a bot standing
+        // in the seller's town already would shop there with no trip.
         // The poor member's wallet is earmarked for its own unpaid wish.
         for (const [id, adena] of [[leaderId, 5000000], [poorId, 20000]]) {
             seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
-                locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, ?)`).run(id, `Fund${id}`, clanId);
+                locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 75000, 141000, -3400, ?)`).run(id, `Fund${id}`, clanId);
             seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-                currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', 82000, 148000, -3400, ?, ?, ?, 1)`)
+                currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', 75000, 141000, -3400, ?, ?, ?, 1)`)
                 .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1,
                     ...(id === POOR ? { money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463] } : {}),
                     ...(id === POOR + 10 ? { money: [77000, 0, 15000, 0] } : {}) }));
@@ -88,9 +90,9 @@ async function main() {
     for (const [id, classId, level, partyId, weapon] of [[LEADER + 20, 1, 40, 'party-busy', helped.target.selfId], [GLADIATOR, 2, 42, null, held.selfId],
         [GLADIATOR + 1, 1, 40, null, helped.target.selfId]]) {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
-            locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, 93)`).run(id, `Fund${id}`, classId, level);
+            locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 75000, 141000, -3400, 93)`).run(id, `Fund${id}`, classId, level);
         seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-            currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, ?, 20000, 'hunting', 'cold', 'Ant fields', 82000, 148000, -3400, ?, ?, ?, 1)`)
+            currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, ?, 20000, 'hunting', 'cold', 'Ant fields', 75000, 141000, -3400, ?, ?, ?, 1)`)
             .run(id, `Fund${id}`, level, partyId, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 20000 }, [weapon]: { ...held, selfId: Number(weapon) } }),
                 JSON.stringify({ classId, role: 'dps', money: [77000, 0, 15000, 0] }));
         seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', 20000, 0, 0, 0, ?)`).run(id);

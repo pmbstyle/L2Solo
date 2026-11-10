@@ -280,6 +280,12 @@ test('bot shots retain authored price after player refresh; other static purchas
     await assert.rejects(TradeService.buyFromStore(session.actor, materialStore, MATERIAL, 1), /static.*unavailable/i);
     const ordinary = { storeType: 1, items: [{ selfId: MATERIAL, price: 7, count: 2 }] };
     assert.strictEqual((await TradeService.buyFromStore(session.actor, ordinary, MATERIAL, 1)).totalAdena, 7);
+    // A purse short of the price is refused for money: the bot says it is short of Adena and
+    // its gear step fails without marking the item; the lot stays.
+    const dear = { storeType: 1, items: [{ selfId: MATERIAL, price: wallet(session) + 1, count: 1 }] };
+    await assert.rejects(TradeService.buyFromStore(session.actor, dear, MATERIAL, 1),
+        error => error instanceof Error && error.message === 'Not enough Adena.');
+    assert.strictEqual(dear.items[0]?.count, 1, 'a refused purchase keeps the lot');
     } finally { Population.staticShotsDisabled = disabled; }
 });
 

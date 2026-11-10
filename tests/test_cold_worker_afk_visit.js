@@ -53,7 +53,10 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         assert.equal(plan.shop, 'Elven Village', 'open in the town actually visited');
         assert(plan.sell.length >= 4, `an adventurer quotes surplus without an existing buyer: ${JSON.stringify(plan)}`);
         assert.equal(plan.take, undefined, 'town errands retain their own purchase executor');
-        assert.equal(plan.buyAds, undefined);
+        // The visit posts its bids too (a C4 player opens a buy store in town, not from the
+        // field): the build's want, beside the showcase; no trip of its own.
+        assert(plan.buyAds?.length > 0 && plan.buyAds.every(row => row[0] > 0 && row[1] > 0 && row[2] > 0),
+            `the visit carries its bids: ${JSON.stringify(plan.buyAds)}`);
         assert.equal(plan.travel, null);
         const shieldPlans = plan.sell.filter(row => row[0] === 626);
         assert(shieldPlans.some(row => row[4] === 1),

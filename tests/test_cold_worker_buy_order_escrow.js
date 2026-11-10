@@ -26,6 +26,7 @@ const point = { locX: 145224, locY: 120001, locZ: -4500 };
 // The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
 // A C4 Warrior's kit weapon is two-handed (slot 14), not a one-hand (slot 7).
 const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => [7, 14].includes(Number(item.slot)));
+const Situations = require('../src/GameServer/Bot/Situations');
 const base = (characterId, adena) => ({
     characterId, name: `Buyer${characterId}`, accountName: `bot_${characterId}`, level: 30, exp: Number(DataCache.experience[29]), sp: 0,
     phase: 'cold', activity: 'hunting', loc: { ...point },
@@ -142,8 +143,11 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
         const partyRows = (partyId, leaderId, wallet) => {
             const party = { partyId, leaderId, memberIds: [leaderId, leaderId + 1], status: 'active', spotId: spot.id,
                 nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10 } };
+            // Its wallet reached the bridge's threshold (goal_affordable:focus heard in the party): its stay is woken.
             const member = (characterId, adena, body) => ({ ...base(characterId, adena), activity: 'grouped',
                 spotId: spot.id, timing, party: { partyId, leaderId, role: 'dps' },
+                stats: { ...base(characterId, adena).stats, backgroundPartyId: partyId,
+                    woken: Situations.FIRST | Situations.BITS.party_stay },
                 inventory: {
                     [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 },
                     [body]: { selfId: body, amount: 1, equippedCount: 1, equipped: 1 }

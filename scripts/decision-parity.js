@@ -32,13 +32,12 @@ invoke('GameServer/Bot/Economy/BotMarketPricing').useNpcOfferSnapshot(catalog);
 Economy.configure({ board: () => board, spots: () => spots, memory: () => null });
 const epoch = 'decision-parity';
 const observer = String.raw`
-module.exports.decisionOracle = async (ids, workshops) => {
+module.exports.decisionOracle = async ids => {
     const assert = require('node:assert/strict');
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), original = Economy.forState;
     const result = [];
-    for (const [at, id] of ids.entries()) {
+    for (const id of ids) {
         const entry = kernel.states.get(id), state = entry.state, timestamp = Number(state.updatedAt || 1e12) + 1;
-        if (workshops[at]) entry.published = ColdEconomyDecision.capture({ workshop: workshops[at] }, state);
         let seen, built, cost;
         Economy.forState = (value, deps) => { seen = structuredClone(value); const start = performance.now();
             const context = original(value, deps); cost = performance.now() - start; return context; };
@@ -46,7 +45,7 @@ module.exports.decisionOracle = async (ids, workshops) => {
             const projected = await LifeStateProjector.prepareResolve(state, { patch: {}, materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 debug: {}, events: [], nextResolveAt: timestamp + 60000 }, {
                 persist: false, timestamp, projectClassProgression: true,
-                economyDeps: { board: boardIndex, spots: planningSpots, memory: null, workshop: workshops[at] },
+                economyDeps: { board: boardIndex, spots: planningSpots, memory: null },
                 onEconomy: context => { built = context; }
             });
             const start = performance.now(), decision = ColdEconomyDecision.capture(built, projected, seen);
@@ -72,7 +71,7 @@ loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
     if (!message.decisionOracle) return;
-    loaded.exports.decisionOracle(message.decisionOracle, message.workshops).then(value => parentPort.postMessage({ oracleId: message.msgId, value }))
+    loaded.exports.decisionOracle(message.decisionOracle).then(value => parentPort.postMessage({ oracleId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ oracleId: message.msgId, error: error.stack }));
 });`;
 (async () => {
@@ -92,10 +91,6 @@ parentPort.on('message', message => {
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
         send('init', { config: { loopIntervalMs: 1000 } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
-        // Each crafter's workshop as main computes it; the oracle hands it to
-        // the worker as the decision the worker published for that state.
-        const workshops = new Map(states.map(state => [state.characterId, state.stats?.workshop?.entries?.length
-            ? Economy.craftIncome(state, { hourAdena: Economy.basics(state).hunt.perHour, worth: Economy.basics(state).price, timestamp: Number(state.updatedAt) + 1 }) : null]));
         for (let at = 0; at < states.length; at += 4) send('snapshot_page', { rows: states.slice(at, at + 4)
             .map(state => ({ state })), ack: true }, 'state-' + at);
         await wait(message => message.type === 'ready' && message.msgId === 'state-' + (Math.floor((states.length - 1) / 4) * 4));
@@ -103,12 +98,12 @@ parentPort.on('message', message => {
         for (let at = 0; at < states.length; at += 20) {
             const msgId = 'oracle-' + at;
             const ids = states.slice(at, at + 20).map(state => state.characterId);
-            worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, msgId), decisionOracle: ids, workshops: ids.map(id => workshops.get(id)) });
+            worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, msgId), decisionOracle: ids });
             const response = await wait(message => message.oracleId === msgId); if (response.error) throw Error(response.error);
             for (const row of response.value) {
                 if (row.commandKeys) { assert.deepEqual(row.commandKeys.sort(), row.fullKeys.sort()); commandContracts++; }
                 const workerDecision = Decision.compact(row.decision), fresh = Economy.forState(row.seen, { timestamp: row.timestamp,
-                    board, spots, memory: null, workshop: workshops.get(row.id), caller: 'parity' });
+                    board, spots, memory: null, caller: 'parity' });
                 const mainDecision = Decision.capture(fresh, row.seen);
                 const leaf = value => [value?.activity ?? null, value?.spotId ?? null, value?.npcId ?? null];
                 const checks = [JSON.stringify(leaf(workerDecision.activity)) === JSON.stringify(leaf(mainDecision.activity)),

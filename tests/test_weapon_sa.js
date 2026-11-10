@@ -221,7 +221,7 @@ try {
     bowActor.backpack.deleteItem = (_s, _id, n, cb) => { arrows -= n; cb(); };
     assert.strictEqual(BowResources.consume(session(bowActor), bowActor, () => 0), true);
     assert.strictEqual(arrows, 0); assert.strictEqual(bowActor.mp, 0);
-    // A bot pays the MP of its shot but no arrow (user 10-29); without the MP it cannot shoot.
+    // A bot pays the MP of its shot but no arrow (our choice); without the MP it cannot shoot.
     const botBow = actor(); allActors.push(botBow); equip(botBow, 275); botBow.mp = 10;
     botBow.backpack.fetchItemFromSelfId = () => null;
     const botSession = { ...session(botBow), botSession: true };

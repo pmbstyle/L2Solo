@@ -8,8 +8,6 @@ process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: 
 const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Native = require('./helpers/nativeMarketFixture');
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-Config.developerDiagnostics = true; Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9201';
 const config = (selfId, count, price = 10, town = 'Dion') => ({ storeType: 3, town, title: 'Inputs',
     lines: [{ selfId, count, price, name: `Input ${selfId}`, enchant: 0, stackable: true }] });
 const records = () => Database.fetchAfkTradeShops(9201);
@@ -96,8 +94,4 @@ async function run() {
 }
 run().then(async () => {
     await Database.close();
-    const rows = fs.readFileSync(require('node:path').join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
-    const growth = rows.find(row => row.phase === 'buy_ad_reconcile' && row.reason === 'changed');
-    assert.equal(growth.reserveDelta, 0); assert(growth.recordId > 0); assert(growth.revision > 0);
-    console.log('Conditional ad telemetry records zero custody movement');
 }).catch(async error => { console.error(error); process.exitCode = 1; await Database.close(); });

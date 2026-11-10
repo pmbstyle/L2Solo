@@ -13,7 +13,6 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
-const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
@@ -60,7 +59,7 @@ function sitDown(session, bot) {
     return true;
 }
 
-// The rest's posture (RestPolicy.sitsToRest, user 10-29): seated unless
+// The rest's posture (RestPolicy.sitsToRest): seated unless
 // standing refills what the bot lacks faster (a Sorcerer's Clear Mind).
 function restsSeated(session, bot) {
     const automation = bot.automation;
@@ -116,24 +115,6 @@ function needsRecovery(session, bot) {
         { locked: !!session.recoveryLocked, pet: SummonerTactics.petRestView(bot) });
 }
 
-function beginNewbieGuideRecovery(session, bot, playerSession) {
-    session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    session.preBuffPlan = 'following';
-    session.resumeAfterBuff = {
-        plan: 'following',
-        followPlayerSession: playerSession,
-        partyCompanion: true,
-        botStay: session.botStay === true,
-        stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
-        role: BotRoles.inferRole(bot)
-    };
-    session.plan = 'getting_buffed';
-    session.currentTargetId = undefined;
-    bot.unselect?.();
-    standUp(session, bot);
-    bot.automation?.abortAll?.(bot);
-}
-
 function retreatFromThreat(session, bot, threat) {
     standUp(session, bot);
     session.plan = 'fleeing';
@@ -155,7 +136,7 @@ module.exports = {
     maybeCastManaRegeneration,
     rested,
     tick(session, bot, Generics, BotAI) {
-        invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 1);
+        invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 1);
         if (session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
             const player = playerSession?.actor;
@@ -201,20 +182,7 @@ module.exports = {
                 ? threat.actor.fetchId()
                 : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
             const leaderSeated = player.state?.fetchSeated?.() === true;
-            const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const recovered = rested(session, bot);
-
-            // A companion can join while it is already sitting from a prior
-            // hunt. If it is in a starter town, send low-level bots to the
-            // Newbie Guide instead of making the new party wait for normal
-            // seated regeneration. This checks the bot's own position, so it
-            // never leaves a farming spot just because the leader is in town.
-            if (!session.explicitRestOrder && !combatTargetId && !recovered && HotTownRebuff.recoveryGuide(session, bot, BotAI)) {
-                beginNewbieGuideRecovery(session, bot, playerSession);
-                recordWakeDecision(session, bot, hpRatio < 0.95 ? 'recover_hp' : 'recover_mp', 'newbie_guide_recovery');
-                BotAI.say(session, "I'm recovering at the Newbie Guide, then I'll return to you.");
-                return;
-            }
 
             // When the whole party rests, regroup first. FollowingState checks
             // the seated leader before its low-resource branch, so the bot
@@ -301,6 +269,8 @@ module.exports = {
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            // The rest's end is the body's stop: what waited for it wakes (Situations).
+            invoke('GameServer/Bot/AI/DecisionEvents').stop(session);
             if (session.followPlayerSession && session.partyCompanion === true) {
                 session.plan = 'following';
                 BotAI.say(session, "Fully rested! Ready to follow you again.");

@@ -159,18 +159,28 @@ async function main() {
         const refreshedWait = await LifeState.findByCharacterId(firstGoal.target.memberId);
         assert.equal(refreshedWait.stats.partyRequest.requestedAt, beganAt,
             'revising the clan plan must not restart an unchanged assembly deadline');
-        const expired = PartyRequestPlanner.expireState(refreshedWait, Date.now());
-        await LifeState.upsertState(expired, 'fixture_timeout');
+        // Forming found no roster: the request closes and the worker releases the waiter
+        // without the clan's route (ClanPartyDuty.release).
+        const Duty = require('../src/GameServer/Bot/Population/ClanPartyDuty');
+        const closedWait = { ...refreshedWait, stats: { ...refreshedWait.stats,
+            partyRequest: { ...refreshedWait.stats.partyRequest, status: 'closed', lastReason: 'no_compatible_level_match' } } };
+        assert(Duty.released(closedWait), 'a waiter whose clan request closed is released');
+        const release = Duty.release(closedWait, Date.now()).patch;
+        await LifeState.upsertState({ ...closedWait, ...release }, 'fixture_closed');
         await equipmentService.assignPlan(fixtureMember, waiting.stats.equipmentPlan, fixtureClan, firstGoal);
-        const cooling = await LifeState.findByCharacterId(firstGoal.target.memberId);
-        assert.equal(cooling.activity, 'hunting');
-        assert.equal(cooling.stats.partyRequest.status, 'deferred', 'clan reviews preserve the saved cooldown');
-        assert.equal(cooling.stats.equipmentPlan, undefined, 'the expired farm route stays suspended while cooling down');
-        await LifeState.upsertState({ ...cooling, stats: { ...cooling.stats,
-            partyRequest: { ...cooling.stats.partyRequest, deferredUntil: Date.now() - 1 } } }, 'fixture_retry');
+        const closedState = await LifeState.findByCharacterId(firstGoal.target.memberId);
+        assert.equal(closedState.activity, 'hunting');
+        assert.equal(closedState.stats.partyRequest.status, 'closed', 'clan reviews keep the closed request');
+        assert.equal(closedState.stats.clanPartyObjective.status, 'open', 'the clan keeps its call');
+        assert.equal(closedState.stats.equipmentPlan, undefined, 'the clan route is not hunted alone while the request is closed');
+        // The member's next build asks again; the clan's next review hands the route back.
+        const reopened = PartyRequestPlanner.partyRequestForPlan(closedState, null, Date.now(), { economy: { worth: () => 0 } });
+        assert.equal(reopened.status, 'open');
+        await LifeState.upsertState({ ...closedState, stats: { ...closedState.stats, partyRequest: reopened } }, 'fixture_build');
         await equipmentService.assignPlan(fixtureMember, waiting.stats.equipmentPlan, fixtureClan, firstGoal);
-        assert.equal((await LifeState.findByCharacterId(firstGoal.target.memberId)).stats.partyRequest.status, 'open',
-            'the clan can retry the retained goal after the assembly cooldown');
+        const retried = await LifeState.findByCharacterId(firstGoal.target.memberId);
+        assert.equal(retried.stats.partyRequest.status, 'open', 'the clan retries the retained goal after the next build');
+        assert(retried.stats.equipmentPlan, 'the clan route is assigned again');
 
         await Database.setItem(firstGoal.target.memberId, {
             selfId: firstGoal.target.itemId,

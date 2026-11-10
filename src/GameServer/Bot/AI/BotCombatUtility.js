@@ -82,7 +82,7 @@ function normalAttackMs(bot) {
 
 // MP a resting bot wins back per ms: the adapter's cold rest rate, else the
 // hot Automation's regeneration per its 3 s tick in the faster posture
-// (seated, or standing: RestPolicy.sitsToRest, user 10-29).
+// (seated, or standing: RestPolicy.sitsToRest).
 function seatedMpPerMs(bot) {
     if (bot?.fetchSeatedMpPerMs) return bot.fetchSeatedMpPerMs();
     const amount = (options) => Number(bot?.automation?.fetchRevMpAmount?.(bot, options)) || 0;
@@ -100,7 +100,7 @@ function restMsPerMp(bot, party = false) {
     return seated > 0 && RestPolicy.sitsForMana(bot, party) ? restShare(bot.fetchMp?.(), bot.fetchMaxMp?.()) / seated : 0;
 }
 
-// T100 (docs/game-decisions.md, Bot behaviour): MP is priced in rest time.
+// MP is priced in rest time.
 // A damage skill's worth is its damage, capped at the target's HP, per ms of
 // its cast plus the seated rest that wins its MP back; the alternative is the
 // normal attack's hit, capped alike, per attack time - nothing for a staff

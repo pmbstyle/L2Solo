@@ -30,7 +30,7 @@ const Response = invoke('GameServer/Network/Response');
         assert.deepStrictEqual(sent, [], 'already delivered backlog produces neither messages nor sounds');
         assert.strictEqual(await AfkTrade.begin(session, AfkTrade.SELL), false);
         assert.deepStrictEqual(sent.map(packet => packet[0]), [0x64], 'command rejection is a silent system notice');
-        assert(sent[0].toString('utf16le', 13).includes('peace zone'));
+        assert(sent[0].toString('utf16le', 13).includes('in a town'));
     } finally {
         Database.fetchAfkTradeNotifications = savedFetch;
         Database.markAfkTradeNotificationsDelivered = savedMark;

@@ -22,7 +22,6 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
-const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -201,7 +200,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         mp: Math.max(0, Number(state.vitals?.mp || 0)),
         maxMp: combat.maxMp
     };
-    // Seated, or standing when that refills the rest faster (user 10-29).
+    // Seated, or standing when that refills the rest faster.
     const regen = restRegenPerTick(state, vitals.maxHp - vitals.hp, vitals.maxMp - vitals.mp, { profile: combat, timestamp, ...options });
     const ticks = Math.max(0, Number(elapsedMs) || 0) / Formulas.REGEN_TICK_MS;
     vitals.hp = Math.min(vitals.maxHp, vitals.hp + regen.hp * ticks);
@@ -227,6 +226,13 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
             scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
+    // A solo rest that ends with no ground under it (a town visit's end hands the bot
+    // back with no spot) is due now: the worker's next step routes it to the spot it is
+    // sent to hunt (BotRoute.huntSpot), not half a minute later. Only a resting bot
+    // reaches it, and the state it leaves hunts. A respawn keeps the spot it died at, so
+    // it is not one. A party's rest ends on its party's step.
+    const routeNow = !resting && state.activity === 'resting' && state.spotId == null
+        && !options.party && !state.party?.partyId && !state.partyId;
     // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
     // and a potion's ms are fractions; ceil the deadline so a rest never ends early.
     const restUntil = resting ? Math.ceil(timestamp + remainingMs) : null;
@@ -246,7 +252,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         // Sleeping is not an active simulation state.  Persist the exact
         // recovery deadline so the scheduler can leave this bot alone until
         // HP/MP should have changed.
-        nextResolveAt: resting ? restUntil : timestamp + 30000,
+        nextResolveAt: resting ? restUntil : routeNow ? timestamp : timestamp + 30000,
         debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs, requireMana }
     };
 }
@@ -287,14 +293,6 @@ function resolveTravel(state, timestamp = Date.now()) {
     const arrivalActivity = travel.arrivalActivity || 'shopping';
     const nextStats = { ...(state.stats || {}), travel: arrived ? null : travel };
     if (arrived && travel.clearMarketReturn) nextStats.marketReturn = null;
-    // A detour's stand-in pair (BotRoute.trip, HuntingTravel): the held leaf's
-    // spot and the ground reached, kept until the next arrival;
-    // DecisionSections.occupationPlanned reads it while the bot stands there.
-    // Cleared to null, not deleted: the projection merges the patch over the
-    // state's stats (BotLifeState.applyResolve).
-    if (arrived && (travel.leafSpotId != null || nextStats.standIn != null)) {
-        nextStats.standIn = travel.leafSpotId != null ? { leaf: travel.leafSpotId, ground: travel.spotId ?? null } : null;
-    }
     return {
         patch: {
             activity: arrived ? arrivalActivity : 'traveling',
@@ -461,7 +459,7 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
 // stats: the bot's; a first round without its coldCombat drinks nothing.
 // Returns { bag, drunk (by selfId) or null, count, ms, until }: ms the rest the
 // bottles run for at least, until the last one's end.
-function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet = null, shared = null } = {}) {
+function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet = null, shared = null, use = undefined } = {}) {
     const outcome = { bag, drunk: null, count: 0, ms: 0, until: 0 };
     const combat = stats.coldCombat;
     const waits = Math.max(0, Number(combat?.potionUntil || 0) - at);
@@ -472,7 +470,7 @@ function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet
     for (let ms = waits; ; ms += HealingPotionStock.HOT_MS) {
         const actor = ColdClassPolicy.actorFor(profile, { hp: Math.min(vitals.maxHp, vitals.hp + hpPerMs * ms),
             mp: Math.min(vitals.maxMp, vitals.mp + mpPerMs * ms), cooldowns, time: at + ms });
-        const potion = RestPotion.betweenFights(actor, { stats, inventory: outcome.bag, pet: () => pet });
+        const potion = RestPotion.betweenFights(actor, { stats, inventory: outcome.bag, pet: () => pet, use });
         if (!potion) return outcome;
         if (outcome.bag === shared) outcome.bag = { ...shared };
         HealingPotionStock.debitColdPotion(outcome.bag, potion);
@@ -640,7 +638,7 @@ function soloMusicGain(provider, skill) {
         * hit(Math.min(1, rate * mul('pCritRateMul')), mul('pCritDamageMul')) / hit(rate, 1) - 1);
 }
 
-// T100 (docs/game-decisions.md): BotCombatUtility.manaPrice's rule for a
+// BotCombatUtility.manaPrice's rule for a
 // solo song. Its damage gain over its duration must cover the attacks lost
 // sitting for its MP (BotCombatUtility.restMsPerMp, the skills' price: none
 // for a bot that never rests for MP); the attack rate cancels out.
@@ -942,8 +940,8 @@ function castHuntPartyBuffs(members, timestamp) {
     };
 }
 
-// A solo bot's own buffs before a fight (T106, docs/game-decisions.md "Solo
-// self-buffs"): the party plan (coldBuffPlan) on the bot alone, its own
+// A solo bot's own buffs before a fight:
+// the party plan (coldBuffPlan) on the bot alone, its own
 // buffs included, paying the MP and the cast time. The fighter is built only
 // when one of the plan's buffs (buffSkills, useful to the bot by the plan's
 // PartyBuffLoadout.useful) is missing or about to expire, castable now; the
@@ -1701,6 +1699,21 @@ function countHitRule(rule) {
     if (Diagnostics.active()) Diagnostics.count('cold_fight', 'rule', rule);
 }
 
+// The mob a fight meets, one rule for a solo fight and a party's (resolveFight,
+// resolvePartyFight): the whole pull its pick rolled (F20: ColdCombatProfile.npcForSpot
+// with pull; the target, its helpers and the aggressive mobs near it come
+// together, in C4 as in the hot world) as one view (BotPullEstimate.pullView),
+// its mobs standing together by the share of the hunters' damage by area
+// skills: the share given (a solo readiness read at the bot's vitals), else
+// the hunters' survival read of that pull (TargetMatchup.soloSurvival).
+function pulledMob(picked, profiles, areaShare = null) {
+    const pull = Number(picked.pull) || 1;
+    if (!(pull > 1)) return picked;
+    const share = areaShare ?? (profiles?.length
+        ? Number(TargetMatchup.soloSurvival(profiles, BotPullEstimate.pullView(picked, pull)).areaShare) || 0 : 0);
+    return BotPullEstimate.pullView(picked, pull, share);
+}
+
 // roundProfiles: the solo round's matchup profiles (resolveSolo), so its
 // fights read one set of species verdicts (they are kept per profile array);
 // without them the fight builds its own. round: the solo round's carry
@@ -1798,10 +1811,7 @@ function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(
     let time = 0;
     // A pull is counted once, when its fight starts; a continued fight keeps its saved view.
     // A won fight reports the kills it paid (`killsPaid`) for the spot share.
-    if (!pending && picked.aggressiveInterruption && Number(picked.pull) > 1) {
-        areaShare = Number(TargetMatchup.soloSurvival(matchupProfiles, BotPullEstimate.pullView(picked, picked.pull)).areaShare) || 0;
-    }
-    const mob = pending ? picked : BotPullEstimate.pullView(picked, picked.pull, areaShare);
+    const mob = pending ? picked : pulledMob(picked, matchupProfiles, picked.aggressiveInterruption ? null : areaShare);
     // The bot that pulls a melee monster strikes while it closes in; one that
     // came at the bot first (an aggressive interruption) strikes at once. A
     // pet takes the mob where it stands: the mob walks only when it first
@@ -2103,8 +2113,11 @@ function applyPartyHotTicks(fighter, at) {
     }
 }
 
+// partyProfiles: a hunting round's party matchup profiles (BackgroundPartyResolver
+// partyRound): the pick takes only the mobs the party may fight, judged by its
+// strength together, the set its round's walk and share read.
 function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now(), encounter = null,
-    partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false }) {
+    partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false, partyProfiles = null }) {
     const encounterKey = sharedEncounterKey || PveEncounter.key(members, spot, partyId);
     const pending = PveEncounter.read(encounter, encounterKey, timestamp, {
         maxSlices: sharedEncounter ? 1000 : PveEncounter.MAX_SLICES
@@ -2144,20 +2157,23 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             now: timestamp
         };
     });
-    const matchupProfiles = pending ? [] : fighters.filter(f => f.vitals.hp > 0)
+    const matchupProfiles = pending ? [] : partyProfiles || fighters.filter(f => f.vitals.hp > 0)
         .flatMap(f => TargetMatchup.coldProfiles(f.profile, f.state, timestamp, { shot: f.shot }));
     const persistedRaid = sharedEncounter
         ? coldRaidEncounterProfile(pending, spot, targetNpcId)
         : { mob: pending?.mob || null, hp: Number(pending?.hp), upgraded: false };
-    // The saved mob is copied as the solo fight's (resolveFight).
-    const mob = (persistedRaid.mob && { ...persistedRaid.mob }) || ColdCombatProfile.npcForSpot(spot, rng, {
-        preferredNpcId: targetNpcId, matchupProfiles, allowRaid: sharedEncounter
+    // The saved mob is copied as the solo fight's (resolveFight); a new one is
+    // the whole pull of its spawn group, as a solo fight meets it (pulledMob;
+    // the party's verdict admitted that pull size: npcForSpot's allowed).
+    const picked = (persistedRaid.mob && { ...persistedRaid.mob }) || ColdCombatProfile.npcForSpot(spot, rng, {
+        preferredNpcId: targetNpcId, matchupProfiles, soloSafety: !!partyProfiles, allowRaid: sharedEncounter, pull: true
     }) || {
         level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
         accur: 1, evasion: 0, critical: 0, atkSpd: 253
     };
-    if (mob.avoided) return { avoided: true, reason: mob.reason, members: fighters, won: false };
+    if (picked.avoided) return { avoided: true, reason: picked.reason, members: fighters, won: false };
+    const mob = persistedRaid.mob ? picked : pulledMob(picked, matchupProfiles);
     const mobFight = coldMobFight(mob, pending?.mobFight);
     let mobHp = persistedRaid.mob
         ? (persistedRaid.hp ?? mob.maxHp)
@@ -2234,13 +2250,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (!hit || hit === WAITED) continue;
             next.hate = addHate(next.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
-            mobHp -= Math.max(0, hit.damage);
+            // Each mob of a pull an area skill strikes takes the full hit (F20), as solo's.
+            mobHp -= Math.max(0, hit.damage) * hit.struck;
             if (mobHp <= 0) {
                 overhitContext = invoke('GameServer/Progression/OverhitReward').contextForHit({
                     attacker: { characterId: next.state.characterId },
                     skill: hit.skill,
                     targetHpBeforeHit,
-                    targetMaxHp: mob.maxHp,
+                    targetMaxHp: mob.maxHp / Number(mob.pull || 1),
                     finalDamage: hit.damage,
                     encounterId: mob.selfId || targetNpcId,
                     timestamp: timestamp + time
@@ -2334,6 +2351,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
             potionsUsed: fighters.reduce((sum, fighter) => sum + Number(fighter.potionsUsed || 0), 0),
             mobSelfId: mob.selfId || null,
+            // Every mob of the pull is a kill (resolveFight's killsPaid).
+            ...(mobHp <= 0 ? { killsPaid: Number(mob.pull || 1) } : {}),
             remainingHp: Math.max(0, mobHp),
             raidControlCapacity,
             raidProfileUpgraded: persistedRaid.upgraded,
@@ -2353,7 +2372,7 @@ function soloPickOptions(state) {
 // Each spawn group of the spot and the share of its spawns the bot may fight
 // alone (BotTargetMatchup.speciesPulls under the pick's options; 0 for one it
 // may not hunt), once per round: a solo hunter takes only the pulls it
-// survives (user 10-29), so a spot's other mobs neither feed its kills nor
+// survives, so a spot's other mobs neither feed its kills nor
 // widen its round. Null for a spot without spawn groups or with none the
 // verdict knows (the fight then takes the spot's own mob: resolveFight).
 // profiles: the round's (roundProfiles), else built here.
@@ -2493,7 +2512,7 @@ function admittedDensity(spot, shares) {
     return total > 0 ? density * admitted / total : density;
 }
 
-// T106 (docs/game-decisions.md "Solo fights per hour"): the walk from a kill
+// Solo fights per hour: the walk from a kill
 // to the next mob, at runSpd: the mean distance to the nearest of the density
 // monsters a bot may fight (admittedDensity) spread over the area its spawns
 // cover (SpotService spawnArea; without one the SPOT_CELL_SIZE square of the
@@ -2587,8 +2606,8 @@ const BackgroundResolver = {
 
         const raidSupply = require('./RaidSupplyPolicy').held(state, timestamp);
         if (raidSupply && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
-            // In town the command retries its purchase (kept, limits.md "Wait
-            // polls"). Parked, the bot waits for main's preparation: its party,
+            // In town the command retries its purchase (a bounded
+            // wait poll). Parked, the bot waits for main's preparation: its party,
             // its cancel or an errand trip each write the row with their own
             // due; the hold ends by itself when the reservation expires.
             const shopping = ['shopping', 'merchant'].includes(state.activity);
@@ -2708,7 +2727,9 @@ const BackgroundResolver = {
                 nextResolveAt: timestamp + 30000, debug: { reason: `survival_${floor.reason}`, fights: 0, wins: 0 } };
         }
 
-        if (invoke('GameServer/Bot/Population/ClanPartyDuty').waiting(state)) return invoke('GameServer/Bot/Population/ClanPartyDuty').hold(state, timestamp);
+        const clanDuty = invoke('GameServer/Bot/Population/ClanPartyDuty');
+        if (clanDuty.released(state)) return clanDuty.release(state, timestamp);
+        if (clanDuty.waiting(state)) return clanDuty.hold(state, timestamp);
 
         if (invoke('GameServer/Bot/Population/RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
             const cleared = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);
@@ -2742,8 +2763,8 @@ const BackgroundResolver = {
                 name: state.currentRegion || null,
                 area: state.area || state.stats?.area || null
             };
-        const currentHuntingGround = BotHuntingGroundPolicy.evaluate(currentGround, state);
-        const destinationHuntingGround = BotHuntingGroundPolicy.evaluate(spot, state);
+        const currentHuntingGround = LevelingRoutes.groundVerdict(currentGround, state);
+        const destinationHuntingGround = LevelingRoutes.groundVerdict(spot, state);
         const huntingGround = !currentHuntingGround.allowed
             ? currentHuntingGround
             : destinationHuntingGround;
@@ -2814,7 +2835,7 @@ const BackgroundResolver = {
         const drunkPotions = {};
         let combatMs = 0;
         let damageTaken = 0, spellTaken = 0;
-        // The pet's share (user 10-29: it tanks a solo fight): the damage it took, its deaths.
+        // The pet's share (it tanks a solo fight): the damage it took, its deaths.
         let petTaken = 0, summonDeaths = 0, petWaits = 0;
         const foughtNpcIds = [];
         // The mobs killed by species (the spot table's measured kill mix).
@@ -2833,8 +2854,10 @@ const BackgroundResolver = {
         // The bottles that save rest (coldRestPotions) go into the round's
         // counts; returns the ms they run for.
         const drinkToRest = (profile, resting, pet) => {
+            // The potion line by the kit's one use rule (EquipmentIncomeRoute.spotUseOf).
+            const use = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').spotUseOf({ ...state, stats: patch.stats || state.stats });
             const drank = coldRestPotions(profile, patch.vitals, patch.stats, patch.inventory || state.inventory,
-                timestamp + combatMs, { resting, pet, shared: state.inventory });
+                timestamp + combatMs, { resting, pet, shared: state.inventory, use });
             if (!drank.count) return 0;
             patch.inventory = drank.bag;
             patch.stats.coldCombat = { ...patch.stats.coldCombat, potionUntil: drank.until };
@@ -2969,7 +2992,8 @@ const BackgroundResolver = {
                     type: 'death',
                     summary: `${state.name || 'Bot'} died near ${spot.name}`,
                     weight: 4,
-                    meta: { spotId: spot.id, fights: i + 1 }
+                    // killer: the mob's template id (the decision trace's death record).
+                    meta: { spotId: spot.id, fights: i + 1, killer: Number(result.debug?.mobSelfId) || 0 }
                 });
                 break;
             }

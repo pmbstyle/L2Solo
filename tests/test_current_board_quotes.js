@@ -34,12 +34,10 @@ try {
     const repriced = Pricing.look(state, [line], ctx(4));
     assert(repriced.reprices[0].price < 4);
     assert.equal(repriced.reprices[0].pricing.worth, 4, 'new quote checkpoints current usefulness');
-    const seen = new Look.SeenLines();
-    Look.review(state, [line], ctx(100), seen);
-    const dropped = Look.review(state, [line], ctx(1), seen);
-    assert.equal(dropped.withdrawals.length, 1, 'positive usefulness decline wakes quiet board review');
+    const dropped = Look.review(state, [line], ctx(1));
+    assert.equal(dropped.withdrawals.length, 1, 'a positive usefulness decline withdraws at the next look');
     const recovered = { ...line, pricing: { ...line.pricing, worth: 0 } };
-    const repaired = Look.review(state, [recovered], ctx(4), new Look.SeenLines());
+    const repaired = Look.review(state, [recovered], ctx(4));
     assert.equal(repaired.reprices[0].pricing.worth, 4, 'lost cold checkpoint uses current prepared value');
     const sell = { ...line, storeType: 1, price: 4, pricing: { ...line.pricing, price: 4, worth: 0 } };
     centre = 8;

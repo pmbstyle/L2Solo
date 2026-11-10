@@ -30,6 +30,11 @@ const Telemetry = require('../src/GameServer/Bot/Population/WorkerHeapTelemetry'
     await new Promise(resolve => setTimeout(resolve, 20));
     const first = pauses.pauses();
     assert.ok(first.minor?.count > 0, `scavenges counted: ${JSON.stringify(first)}`);
+    assert.ok(first.minor.maxMs > 0);
+    // The longest pause is the window's (since the handle's last read), not since start: a read with no GC
+    // since the last one has none; the counts stay cumulative.
+    const unchanged = pauses.pauses();
+    assert.deepEqual([unchanged.minor.count, unchanged.minor.maxMs], [first.minor.count, 0]);
     again.close();
     garbage();
     await new Promise(resolve => setTimeout(resolve, 20));

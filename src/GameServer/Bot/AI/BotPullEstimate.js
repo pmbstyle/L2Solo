@@ -111,7 +111,7 @@ function minionJoiners(groupsByBoss) {
 }
 
 // Sets, on each spot entry with a spawn whose pull is above one, entry.pulls
-// ([[size, share], ...] by size, shares to three decimals: user 10-29, a
+// ([[size, share], ...] by size, shares to three decimals: a
 // spot is a mix of lone mobs, pairs and packs) and entry.pull (their mean,
 // one decimal), from the spot's spawn records, and drops the records.
 function annotate(spots, rules, joiners = new Map()) {

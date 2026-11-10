@@ -7,8 +7,15 @@ const { deflateRawSync, inflateRawSync } = require('node:zlib');
 const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // 5: the metadata row without the card key (the card carries its echo, the
 // row's decisionSeq, activityLeaf and focus); the restart prefix inside is
-// format 4. An older card is refused before inflate: one rebuild per bot.
-const VERSION = 5;
+// format 4. 6: the same format; the decisions it holds start on the woken
+// store (Situations) and a decisionSeq raises no longer move, so every bot
+// builds once. 7: the same format; the build publishes its kit rates
+// (stats.kitRates) instead of targets, so every bot builds once to rate its
+// kit. 8: the card's proof is its identity only (EconomyContext proof v3, the
+// build on situations), its saved prefix the generation alone. An older card
+// is refused before inflate: one rebuild per bot. 9: the card carries no
+// workshop.
+const VERSION = 9;
 
 function cardData(value, maxBytes) {
     if (typeof value !== 'string' || value.length > Math.ceil(maxBytes / 3) * 4

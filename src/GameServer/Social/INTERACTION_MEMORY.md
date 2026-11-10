@@ -105,6 +105,9 @@ bot's actively targeted, claimed monster, independent of willingness to provoke
 PvP. Party members, raids, arena participants and abandoned targets are excluded.
 Clan membership does not erase personal grievances. Repeated swings/casts on
 the same claim do not create additional episodes; respawn resets the claim.
+A far bot that loses a spot contest (`SpotContest.grievance`: displaced by a
+stronger arrival, or sharing under a stronger stranger at its arrival) records
+`mob_contested` toward the stronger unit's principal in its own step's commit.
 Successful ordinary group hunts now create `hunted_together`. Hot episodes use
 living, online, reward-eligible group members after NPC death; raids are excluded.
 Cold worker episodes require wins, no losses and surviving participants, and
@@ -196,6 +199,9 @@ For an
 encounter affecting multiple characters use one complete `atomicGroup` containing
 all participants, with their directed events in their respective proposals.
 The single-owner `Owner.commit` path also accepts `options.memoryEvents`.
+A far step main runs as a lifecycle command posts its plan's `memoryEvents`; main
+writes them once the command's writes landed (`ColdSimulationOwner.commitMemory`,
+checked as a step commit's are; a refused command writes none).
 
 Rejected lifecycle proposals write no memory. Invalid/expired social events
 throw and roll back the transaction, including physical changes. Main runtime

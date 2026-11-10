@@ -7,6 +7,7 @@ const Economy = require('./EconomyContext');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const Diagnostics = require('./EconomyDiagnostics');
 const ArrowStock = require('../../Inventory/ArrowStock');
+const Trace = require('../DecisionTrace');
 const LIMIT = 12;
 const sellerKey = seller => [seller.town, seller.sourceId, seller.locX, seller.locY, seller.locZ].join(':');
 function quoteFor(selfId, town, price = null, seller = null) {
@@ -23,12 +24,11 @@ function observePlan(state, current, selfId, amount, count, available, offer, at
     if (!Diagnostics.active()) return;
     const price = Number(offer.price);
     Diagnostics.count('npc_plan', count > 0 ? 'planned' : 'refused', reason);
-    if (Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: Number(state.characterId),
+    if (Trace.detailed(state.characterId)) Trace.detail({ owner: Number(state.characterId),
         phase: 'npc_plan', reason, caller: 'NpcRestockPlan', item: Number(selfId),
         requested: amount, planned: count, available, budget: available, wallet: Number(current.adena),
         unitPrice: price, npcId: Number(offer.sourceId), town: offer.town,
-        source: attribution.errand?.purpose || attribution.goal?.expectedGoal?.type || 'stock',
-        goalRevision: Number(attribution.goal?.updatedAt), errandAt: Number(attribution.errand?.at),
+        source: attribution.errand?.purpose || attribution.source || 'stock', errandAt: Number(attribution.errand?.at),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
 }
@@ -41,20 +41,38 @@ function collect(state, options = {}) {
     const Shot = invoke('GameServer/Inventory/ShotStock');
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
     const survivalIds = new Set([736, Shot.planForState(current).selfId, Potions.purchasePotionFor(current).selfId]);
-    let preparedState = null, prepared = null;
+    // The visit's funding and amounts, over the bag after the purchases before
+    // (the wallet after the sale). Funding ranks each wish at the bot's own
+    // estimate (E187): main's kit at its own prices (EconomyContext.keptKit), the
+    // worker's build. Amounts are that same kit's rates priced at this town's
+    // quotes, unless the visit holds its own (a hot visit: options.kit, fixed
+    // after its sale).
+    const onMain = require('node:worker_threads').isMainThread;
+    // Each line pays PurchaseFunding.payable: the bag and the bot's own buy orders' escrow
+    // (the board's records live on main).
+    const escrow = onMain ? invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId) : 0;
+    const quote = id => quoteFor(id, town, null, options.seller)?.price;
+    let preparedState = null, prepared = null, kitState = null, visitKit = null;
     const economics = () => {
         if (preparedState !== current) {
-            prepared = require('node:worker_threads').isMainThread ? Economy.keptKit(current) : Economy.forState(current);
+            prepared = onMain ? Economy.keptKit(current) : Economy.forState(current);
             preparedState = current;
         }
         return prepared;
     };
+    const kit = () => {
+        if (options.kit) return options.kit;
+        if (kitState !== current) {
+            // The worker's amounts read the rates of the build that funds them.
+            const rates = onMain ? undefined : economics()?.plan?.rates;
+            visitKit = Economy.keptKit(current, {}, { quote, ...(rates ? { rates } : {}) });
+            kitState = current;
+        }
+        return visitKit;
+    };
     const baskets = new Map();
     let order = 0;
-    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak'); // lazy: optional, war trips only
     const add = (selfId, amount, offer, terms = {}, attribution = {}) => {
-        // A war supply trip buys its supply alone: the writer refuses the whole basket otherwise.
-        if (PartyBreak.warSupplyPurchaseBlocker(state, selfId)) return;
         if (order >= LIMIT || !offer || offer.town !== town || !(amount > 0)
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);
@@ -66,7 +84,7 @@ function collect(state, options = {}) {
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
         const desired = Math.floor(amount);
-        const available = Funding.spendable(current, 0, funding);
+        const available = Funding.payable(current, escrow, funding);
         const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price),
             ArrowStock.admitted(current, selfId, desired));
         if (!(count > 0)) {
@@ -92,7 +110,6 @@ function collect(state, options = {}) {
         line.amount += count;
         line.fundingParts.push({ amount: count, funding, order: order++ });
         if (attribution.errand) line.errands.push({ errand: attribution.errand, units: count, spent: count * price });
-        if (attribution.goal) line.goal = { ...attribution.goal, units: count };
         // The virtual purchase is a new state and bag (readers key on their identity).
         const adena = Math.max(0, Number(current.adena || 0) - count * price), inventory = { ...current.inventory };
         inventory[selfId] = { ...inventory[selfId], selfId: Number(selfId), amount: Number(inventory[selfId]?.amount || 0) + count };
@@ -106,7 +123,7 @@ function collect(state, options = {}) {
         const potion = Potions.purchasePotionFor(current), offer = quoteFor(potion.selfId, town, null, options.seller);
         if (offer) {
             const context = economics();
-            const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price, context });
+            const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price, context, kit: kit() });
             add(potion.selfId, plan.amount, offer, {}, { survival: Funding.survivalTranche(context, potion.selfId, offer.price) });
         }
     }
@@ -115,7 +132,7 @@ function collect(state, options = {}) {
         const offer = quoteFor(736, town, null, options.seller);
         if (offer) {
             const context = economics();
-            const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context });
+            const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context, kit: kit() });
             add(736, plan.amount, offer, plan.funding, { survival: Funding.survivalTranche(context, 736, offer.price) });
         }
     }
@@ -128,7 +145,7 @@ function collect(state, options = {}) {
         const shot = Shot.planForState(current), offer = quoteFor(shot.selfId, town, null, options.seller);
         if (offer) {
             const context = economics();
-            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context });
+            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context, kit: kit() });
             add(shot.selfId, plan.npcAmount, offer, {}, { survival: Funding.survivalTranche(context, shot.selfId, offer.price) });
         }
     }

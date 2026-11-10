@@ -30,7 +30,7 @@ async function seed(recipe, crafter = false, copies = 3) {
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         vitals: { hp: 1000, maxHp: 1000, mp: 1000000, maxMp: 1000000 },
         stats: { classId: crafter ? 57 : 0, generatedCold: true, money: [36000, 0, 0, 0] }, timing: {} }, 'receipt_fixture');
-    if (crafter) state = await Workshop.review(state);
+    if (crafter) state = await Workshop.publishListing(state);
     return state;
 }
 async function image(ids) {

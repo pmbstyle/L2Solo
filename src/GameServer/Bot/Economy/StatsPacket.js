@@ -6,13 +6,20 @@
 // through here: their slots and sentinels live only in this file.
 //
 // stats.money, the money packet (PurchaseFunding.packetFor writes it):
-//   [hourAdena, moneyPrice (hours per Adena), survivalReserve, firstUnfundedPrice (the gap's cash, 0 without one),
+//   [hourAdena, moneyPrice (hours per Adena), refillReserve, firstUnfundedPrice (the gap's cash, 0 without one),
 //    then one (ratio, cumulative, itemId) row per funded queue wish, at most MONEY_ROWS; with more funded
-//    wishes the last row merges the tail and carries itemId 0 (FX-E3)].
-// stats.stockTargets, the plan's kit targets (EconomyContext.stockTargets writes it):
-//   [potionId, potionTarget, shotId, shotTarget, shotCurrentAtBuild, potionSurvivalTarget, gapHorizonHours,
-//    shotsCanRestock (1/0), shotSurvivalTarget, scrollHours (-1: the build did not price the scroll)].
-//   Rows saved before the restock slots carry 5 or 7 slots and read as such.
+//    wishes the last row merges the tail and carries itemId 0].
+// stats.kitRates, the build's per-bot kit rates (EconomyContext.kitRates writes it; EconomyContext.kitReader
+// computes the amounts from them and the held earning answer's per-spot rates over the live bag, wallet and
+// prices):
+//   [shotId (the shot the verdict was judged for), shotBenefit (hours per unit), shot verdict (0: shots do not
+//    pay, 1: the bot fires the shots it holds, 2: a restock pays too), potionId, potionRestUse (rest bottles per
+//    hour, RestPotion), potionBenefit (hours per unit), scrollHours (-1: the build did not price the scroll),
+//    outingHours, gapHorizonHours]. A row of another length (the old stockTargets, the rates before the spot's
+//    use moved to the answer) reads as none. The spot's shots and potions per hour live in stats.earning
+//    (shotsPerHour, potionsPerHour: EquipmentIncomeRoute.answerOf, its layout's owner); ratesOf and lineOf read
+//    both. Rounded by roundRates (below), which the build reads too: the row moves with a real change of a rate,
+//    not with every loot pickup.
 // stats.dangerPrice: [deathHours, riskWeight] (DangerRule's weights for the cold fight).
 // Values are stored as given: their rounding is the writer's caller's rule.
 
@@ -20,8 +27,8 @@
 const HOUR = 0, PRICE = 1, RESERVE = 2, GAP = 3, QUEUE = 4, ROW = 3;
 // The funded rows the money packet keeps (its byte bound).
 const MONEY_ROWS = 8;
-function money({ hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice }) {
-    return [hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice];
+function money({ hourAdena, moneyPrice, refillReserve, firstUnfundedPrice }) {
+    return [hourAdena, moneyPrice, refillReserve, firstUnfundedPrice];
 }
 // Appends a funded wish's row; a packet already holding `rows` rows has its
 // last one replaced (the merged tail).
@@ -35,7 +42,7 @@ const hasMoney = packet => Array.isArray(packet) && packet.length >= QUEUE;
 const slot = (packet, at) => Array.isArray(packet) ? packet[at] : undefined;
 const hourAdena = packet => slot(packet, HOUR);
 const moneyPrice = packet => slot(packet, PRICE);
-const survivalReserve = packet => slot(packet, RESERVE);
+const refillReserve = packet => slot(packet, RESERVE);
 const firstUnfundedPrice = packet => slot(packet, GAP);
 // The packet's complete funded rows, in queue order.
 const fundedRows = packet => Array.isArray(packet) ? Math.max(0, Math.floor((packet.length - QUEUE) / ROW)) : 0;
@@ -48,32 +55,53 @@ function setFundedCumulative(packet, row, cumulative) {
     return packet;
 }
 
-// The kit targets row.
-const SCROLL_UNPRICED = -1;
-function stockTargets({ potionId, potionTarget, shotId, shotTarget, shotCurrentAtBuild, potionSurvivalTarget, gapHorizonHours,
-    shotsCanRestock, shotSurvivalTarget, scrollHours }) {
-    return [potionId, potionTarget, shotId, shotTarget, shotCurrentAtBuild, potionSurvivalTarget, gapHorizonHours,
-        shotsCanRestock ? 1 : 0, shotSurvivalTarget, scrollHours ?? SCROLL_UNPRICED];
+// The kit rates row.
+const SCROLL_UNPRICED = -1, RATES = 9;
+const VERDICT = 2, OUTING = 7, HORIZON = 8;
+// The precision a decision reads: rates, benefits and horizons to three
+// significant digits, the outing to a tenth of an hour (a target moves by a
+// tenth of an hour's use). The build rounds its own rates with it before it
+// reads them; the earning answer rounds its per-spot rates with roundRate.
+const significant = value => Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(3)) : value;
+function roundRates(rates) {
+    return { ...rates, shotUse: significant(rates.shotUse), shotBenefit: significant(rates.shotBenefit),
+        potionUse: significant(rates.potionUse), potionRestUse: significant(rates.potionRestUse),
+        potionBenefit: significant(rates.potionBenefit), outingHours: Math.round(rates.outingHours * 10) / 10,
+        ...(rates.scrollHours == null ? {} : { scrollHours: significant(rates.scrollHours) }),
+        ...(rates.gapHorizonHours === undefined ? {} : { gapHorizonHours: significant(rates.gapHorizonHours) }) };
 }
-// The row by name; null without one (fewer than its five first slots).
-// complete: the row has the restock slots and finite targets (a row from
-// before them serves the sale only). scrollHours: null when unpriced.
-function kitRow(row) {
-    if (!Array.isArray(row) || row.length < 5) return null;
-    return { potionId: row[0], potionTarget: row[1], shotId: row[2], shotTarget: row[3], shotCurrentAtBuild: row[4],
-        potionSurvivalTarget: row[5], gapHorizonHours: row[6], shotsCanRestock: row[7] === 1, shotSurvivalTarget: row[8],
-        scrollHours: row[9] >= 0 ? row[9] : null,
-        complete: row.length >= 10 && [1, 3, 5, 8, 9].every(at => Number.isFinite(row[at])) };
+// The per-bot row; a named object's shotUse and potionUse are the answer's, not stored here.
+function kitRates(named) {
+    const { shotId, shotBenefit, shotsPay, shotsCanRestock, potionId, potionRestUse, potionBenefit,
+        scrollHours, outingHours, gapHorizonHours } = roundRates(named);
+    return [shotId, shotBenefit, shotsCanRestock ? 2 : shotsPay ? 1 : 0, potionId, potionRestUse,
+        potionBenefit, scrollHours ?? SCROLL_UNPRICED, outingHours, gapHorizonHours];
 }
-// One slot without the row object (read per rest tick and per step).
-const potionSurvivalTarget = row => slot(row, 5);
-const gapHorizonHours = row => slot(row, 6);
+// A row is its length with its two item ids (a saved value may be null: JSON keeps no Infinity).
+const isRates = row => Array.isArray(row) && row.length === RATES && Number.isFinite(row[0]) && Number.isFinite(row[3]);
+// The spot's use per hour from a use object ({ shotsPerHour, potionsPerHour }:
+// EquipmentIncomeRoute.spotUseOf, the answer's or the table's by its one rule).
+const spotUse = (earning, kind) => Math.max(0, Number(kind === 'shots' ? earning?.shotsPerHour : earning?.potionsPerHour) || 0);
+// The rates by name, the per-bot row with the answer's per-spot use; null without a row. scrollHours: null when unpriced.
+function ratesOf(row, earning = null) {
+    if (!isRates(row)) return null;
+    return { shotId: row[0], shotUse: spotUse(earning, 'shots'), shotBenefit: row[1], shotsPay: row[VERDICT] >= 1,
+        shotsCanRestock: row[VERDICT] === 2, potionId: row[3], potionUse: spotUse(earning, 'potions'), potionRestUse: row[4],
+        potionBenefit: row[5], scrollHours: Number(row[6]) >= 0 ? row[6] : null,
+        outingHours: row[OUTING], gapHorizonHours: row[HORIZON] };
+}
+// One value without the row object (read per rest tick and per step); undefined without a row.
+// lineOf: a kind's line, one hour of its use (the answer's; the survival drinks for potions; no shots that do not pay).
+const lineOf = (row, earning, kind) => !isRates(row) ? undefined : kind === 'shots' && !(row[VERDICT] >= 1) ? 0
+    : Math.ceil(spotUse(earning, kind));
+const outingHours = row => isRates(row) ? row[OUTING] : undefined;
+const gapHorizonHours = row => isRates(row) ? row[HORIZON] : undefined;
 
 // The danger price.
 const dangerPrice = ({ deathHours, riskWeight }) => [deathHours, riskWeight];
 const deathHours = row => slot(row, 0);
 const riskWeight = row => slot(row, 1);
 
-module.exports = { MONEY_ROWS, money, addFunded, hasMoney, hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice,
+module.exports = { MONEY_ROWS, money, addFunded, hasMoney, hourAdena, moneyPrice, refillReserve, firstUnfundedPrice,
     fundedRows, fundedRatio, fundedCumulative, fundedItem, setFundedCumulative,
-    stockTargets, kitRow, potionSurvivalTarget, gapHorizonHours, dangerPrice, deathHours, riskWeight };
+    kitRates, roundRates, roundRate: significant, ratesOf, lineOf, outingHours, gapHorizonHours, dangerPrice, deathHours, riskWeight };

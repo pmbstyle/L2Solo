@@ -8,7 +8,6 @@ const Data = invoke('GameServer/DataCache');
 Data.init();
 invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure());
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
-const Planner = invoke('GameServer/Bot/Goals/GoalPlanner');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
@@ -29,7 +28,6 @@ function checkLeaf(goals, leaf, label) {
     assert.equal(goals.length, leaf ? 1 : 0, `${label}: one decided voluntary leaf`);
     if (!leaf) return;
     const goal = goals[0];
-    assert.equal(goal.priority, 50, `${label}: no gear/material/sale priority ladder`);
     assert.equal(goal.plan.wishKey, leaf.rootKey);
     assert.equal(goal.plan.economyActivity, leaf.activity);
     assert.equal(goal.plan.kind, leaf.activity === 'hunting' ? 'farm_route'
@@ -39,7 +37,6 @@ function checkLeaf(goals, leaf, label) {
         assert.equal(goal.target.itemId, id);
         assert.equal(goal.target.amount, Math.max(1, Math.ceil(leaf.amount || 1)));
         assert.equal(goal.plan.estimatedCost, leaf.price);
-        assert.deepEqual(goal.blockers, []);
     } else if (leaf.activity === 'hunting') {
         assert.equal(goal.type, leaf.funding ? 'earn_adena' : 'progress_level');
         assert.equal(goal.plan.spotId, leaf.spotId);
@@ -71,7 +68,7 @@ function checkHot(label, state) {
             `${label}: every funded quote is admitted by the same payment rule`);
         cumulative = packet[index + 1];
     }
-    const selected = Planner.plan(goals, timestamp);
+    const selected = goals[0] || null;
     assert.equal(selected?.plan.wishKey || null, context.network.activity?.rootKey || null);
     if (context.network.activity?.funding) {
         assert.equal(selected.target.adena, context.network.gap.price,
@@ -88,13 +85,13 @@ const lowHp = fixture({ vitals: { hp: 200, maxHp: 1000, mp: 400, maxMp: 500 } })
 for (const state of [healthy, lowHp, fixture({ adena: 50 })]) {
     const cold = { ...state, phase: 'cold' };
     assert.deepEqual(Needs.evaluate(cold, { now: timestamp }), []);
-    assert.equal(Planner.plan(Needs.evaluate(cold, { now: timestamp }), timestamp), null);
+    assert.equal(Needs.goal(cold, { now: timestamp }), null);
 }
 const dead = { ...healthy, phase: 'cold', activity: 'dead' };
 // ARCH-NOTE: the native dead floor already returned revive at10083113;
 // the old town_return expectation was stale. C1 preserves hard survival floors.
 assert.equal(Floor.forState(dead, timestamp).action, 'revive');
-assert.equal(Planner.plan(Needs.evaluate(dead, { now: timestamp }), timestamp).plan.kind, 'revive');
+assert.equal(Needs.goal(dead, { now: timestamp }).plan.kind, 'revive');
 
 const nativeItem = id => Data.items.find(row => Number(row.selfId) === Number(id));
 const dKit = Life.inventorySummaryFromItems(Gear.planFor({ classId: 0, level: 20 }).items);
@@ -152,14 +149,6 @@ for (const [label, adena, persona] of [['ordinary sale', 8000, {}],
     checkHot(label, state);
 }
 
-const candidate = (priority, blockers = [], nextReviewAt) => ({ type: 'test', priority,
-    target: { priority }, plan: {}, blockers, ...(nextReviewAt ? { nextReviewAt } : {}) });
-assert.equal(Planner.plan([], timestamp), null);
-assert.equal(Planner.plan([candidate(20), candidate(90, ['blocked'])], timestamp).priority, 20);
-assert.equal(Planner.plan([candidate(20), candidate(90, [], timestamp - 1)], timestamp).priority, 20);
-assert.equal(Planner.plan([candidate(20), candidate(30)], timestamp).priority, 30);
-assert.equal(Planner.plan([candidate(30)], timestamp).nextReviewAt, timestamp + 60000);
-
 async function checkWorkerBoundary() {
     const input = { ...healthy, phase: 'cold' };
     const native = await require('./helpers/workerEconomyDecision')(input, { timestamp });
@@ -173,7 +162,19 @@ async function checkWorkerBoundary() {
         checkLeaf(Needs.evaluate(state, { now: timestamp, decisions }), leaf, 'actual worker');
         assert.deepEqual(Needs.evaluate({ ...state, updatedAt: timestamp + 1 },
             { now: timestamp, decisions }), [], 'changed checkpoint defers the stored leaf');
+        assert.equal(Needs.goal(state, { now: timestamp, decisions })?.plan.wishKey, leaf?.rootKey,
+            'the goal is the leaf the card holds');
+        // A player is shown the goal of the card the bot holds (its status window, its clan's goal
+        // line) also after its row moved on, a later publication or a loot settled, until the next
+        // decision; acting on it waits for a current card.
+        assert(leaf, 'the worker decided a leaf');
+        assert.equal(Needs.shownGoal({ ...state, updatedAt: timestamp + 1 }, { now: timestamp, decisions })?.plan.wishKey,
+            leaf.rootKey, 'a later row still shows the held goal');
+        decisions.accept(state.characterId, native.decision, { settled: true }, state);
+        assert.equal(Needs.goal(state, { now: timestamp, decisions }), null, 'a card made before the loot settled is not acted on');
+        assert.equal(Needs.shownGoal(state, { now: timestamp, decisions })?.plan.wishKey, leaf.rootKey,
+            'a card made before the loot settled still shows its goal');
     } finally { Economy.forState = build; decisions.forget(state.characterId); }
-    console.log('Native goal planner and worker boundary checks passed');
+    console.log('Native goal view and worker boundary checks passed');
 }
 checkWorkerBoundary().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,6 +1,6 @@
 const assert = require('assert');
 
-// Persona types (step 3.1, N6a): the table, the type choice by class and
+// Persona types: the table, the type choice by class and
 // share, the triangular spread and the talents.
 const Types = require('../src/GameServer/Bot/AI/BotPersonaTypes');
 

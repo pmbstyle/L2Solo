@@ -113,7 +113,8 @@ async function run() {
         // including repeated worker-budget failures rather than an empty path.
         for (const error of [undefined, 'PATH_BUDGET']) {
             const f = fixture(2003060, street);
-            f.bot.moveTo = command => { f.session.lastPathfinding = {
+            let moves = 0;
+            f.bot.moveTo = command => { moves++; f.session.lastPathfinding = {
                 requestedTo: command.to, routeUsable: false, error, at: now
             }; };
             let released = false;
@@ -122,8 +123,11 @@ async function run() {
                 now += 6000;
             }
             assert(released, 'failed optional shop exit must yield to farm/gatekeeper selection');
+            const walked = moves;
+            now += 120000;
             assert.equal(Hunting.leaveShop(f.session, f.bot), false,
-                'the retry cooldown must keep farming decisions available');
+                'the ended departure keeps farming decisions available, no retry');
+            assert.equal(moves, walked, 'nor walks for the exit again');
         }
         console.log(`Gludio shop, merchant and departure recovery checks passed: 16 exit variants, ${searches} searches`);
     } finally {

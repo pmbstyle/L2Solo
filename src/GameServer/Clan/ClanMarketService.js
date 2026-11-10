@@ -86,7 +86,8 @@ async function resolveClan(clan) {
         if (!state || state.phase !== 'cold' || String(state.party?.partyId || '') !== '') continue;
         const nextOffer = playerControlled ? ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget))
             : MarketOpportunity.bestOffer(itemId, { buyerCharacterId: state.characterId,
-                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state, 0, { free: true }) + clanBudget) });
+                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.payable(state,
+                    invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId), { free: true }) + clanBudget) });
         if (nextOffer) {
             offer = nextOffer;
             buyer = state;

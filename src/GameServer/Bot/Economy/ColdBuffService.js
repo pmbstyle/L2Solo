@@ -13,9 +13,7 @@ function priceOffer(provider, recipient, mpCost, count, timestamp) {
         { id: provider.characterId }, { id: recipient.characterId }, {}, timestamp);
     const price = Policy.priceFor({ provider, recipient, mp: mpCost, count, town: false,
         trust: Number(relation?.effective?.trust ?? relation?.personal?.trust ?? 0) });
-    const wallet = Number(recipient.adena || 0);
-    const benefitCeiling = Policy.incomeForTenMinutes(recipient) * 0.8;
-    return price > wallet * 0.25 || price > benefitCeiling ? null : price;
+    return Policy.affordable(price, recipient.adena, recipient) ? price : null;
 }
 function coldOffer(provider, recipient, timestamp = Date.now()) {
     const choice = Offer.select(provider, recipient, timestamp);

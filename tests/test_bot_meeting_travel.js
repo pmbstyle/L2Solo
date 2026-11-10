@@ -6,7 +6,9 @@ const Routes = require('../src/GameServer/Bot/Travel/TravelRoutes');
 const NativeTeleport = invoke('GameServer/Actor/Generics/TeleportTo');
 const originalInvoke = global.invoke, originalBetween = Routes.between, originalTimeout = global.setTimeout;
 let nativeMode = false;
-let x = 0, paid = [], acknowledgements = [], teleports = [], moves = [], cancelled = [];
+let x = 0, paid = [], acknowledgements = [], teleports = [], moves = [], cancelled = [], published = [];
+// The meeting's other side is a far (cold) bot: every meeting write fences its row too.
+const far = { characterId: 2, phase: 'cold', simulationRevision: 7 };
 const actor = { fetchId: () => 1, isDead: () => false, fetchHp: () => 100,
     fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
     state: { fetchHits: () => false, fetchCasts: () => false },
@@ -19,16 +21,17 @@ const database = { fetchTradeMeeting: async () => ({ ...meeting }), fetchItems: 
         assert.equal(side, 0);
         if (meeting.legA) assert.deepEqual(JSON.parse(meeting.legA), { sequence, legId, fee, scroll });
         else { paid.push(fee); meeting.routeReserveA -= fee; meeting.legA = JSON.stringify({ sequence, legId, fee, scroll }); meeting.nextLegA++; }
-        return {};
+        return { coldLifeRows: { 2: far } };
     }, acknowledgeTradeMeetingLeg: async (_id, side, sequence) => {
         assert.equal(side, 0); assert.equal(JSON.parse(meeting.legA).sequence, sequence);
         acknowledgements.push(sequence); meeting.legA = null;
-    }, cancelTradeMeeting: async (id, reason) => { cancelled.push({ id, reason }); return {}; } };
+    }, cancelTradeMeeting: async (id, reason) => { cancelled.push({ id, reason }); return { coldLifeRows: { 2: far } }; } };
 global.invoke = name => {
     if (nativeMode && name === path.actor) return { updatePosition: (_session, _actor, point) => { x = point.locX; } };
     if (nativeMode && name === 'GameServer/Pets/PetTravel') return { begin: () => [], finish() {} };
     if (name === 'Database') return database;
-    if (name === 'GameServer/Bot/Population/BotLifeState') return {};
+    if (name === 'GameServer/Bot/Population/BotLifeState') return { acceptLifecycleRow: row => ({ ...row }) };
+    if (name === 'GameServer/Bot/Population/ColdSimulationCoordinator') return { notifyState: state => { published.push(state.characterId); } };
     if (name === 'GameServer/AfkTrade/AfkTradeService') return { syncOnlineInventory: async () => {} };
     if (name === 'GameServer/World/World') return { notifyUserStateChanged() {}, npc: { spawns: [{
         fetchSelfId: () => 1, fetchLocX: () => x < 1000 ? 0 : 1400, fetchLocY: () => 0, fetchLocZ: () => 0 }] } };
@@ -45,6 +48,7 @@ Routes.between = position => ({ start: { locX: position.locX < 1000 ? 0 : 1400, 
     try {
         await Travel.requestMeeting(session, actor, meeting, 0);
         assert.deepEqual(paid, [100], 'reserve is paid one performed hop at a time');
+        assert.deepEqual(published, [2], 'the hop\'s fence reaches the far side\'s worker row');
         assert.deepEqual(acknowledgements, [], 'departure is not physical arrival');
         await Travel.requestMeeting(session, actor, meeting, 0);
         assert.equal(teleports.length, 1, 'one active physical departure');
@@ -71,6 +75,8 @@ Routes.between = position => ({ start: { locX: position.locX < 1000 ? 0 : 1400, 
             const walks = moves.length;
             await Travel.requestMeeting(session, actor, meeting, 0);
             assert.deepEqual(cancelled.at(-1), { id: 1, reason: 'route_unfunded' });
+            assert.equal(published.at(-1), 2, 'the far side\'s worker learns the meeting ended (else it waits on it for good)');
+            published.length = 0;
             assert.equal(moves.length, walks, 'an unfunded native/shared route never becomes a cross-town walk');
             assert.equal(teleports.length, departures);
         }

@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N4): an accepted meeting fills the card's purchase (the old card
+// An accepted meeting fills the card's purchase (the old card
 // buys nothing); when that meeting ends without delivery (expired) its incoming clears, the
 // same card's amount reopens once and the next plan buys exactly that amount;
 // a second plan while the new meeting is accepted buys nothing more.

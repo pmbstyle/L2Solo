@@ -54,7 +54,7 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
             const investing = { ...state, level: 52, stats: { ...state.stats,
                 shotRecipeDemand: { itemId: recipe.recipeItemId, at: Date.now(), amount: 1, maxSpend: 1000 } } };
             // Its healing potions at the stock's own target, whatever use the table gives them.
-            const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(investing, 'potions');
+            const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics(investing).stock('potions');
             investing.inventory = { ...investing.inventory, [potions.itemId]: { selfId: potions.itemId, amount: potions.target } };
             const wishes = await probe(investing, { nativeRoutes: true, recipes: { recipeBook: Codec.pack([]) },
                 boardRows: [...records, ...competitors].map(row => [row.id, rowOf(row)]) });
@@ -126,12 +126,12 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
                     { selfId: row.selfId, amount: row.amount * 64, stackable: true }])),
                 [recipe.productId]: { selfId: recipe.productId, amount: held, stackable: true },
                 168: { selfId: 168, amount: 1, equipped: true, slot: 7, stackable: false } } };
-            const refreshed = await probe(producer, { recipeEarning: true, refreshEconomy: true, timestamp: now,
+            const refreshed = await probe(producer, { recipeEarning: true, stepEconomy: true, timestamp: now,
                 recipes: { recipeBook: Codec.pack([20]), knownShotRecipes: [20] }, tablePages: [{ tables: [
                     { name: 'board', from: null, to: 0, full: true, rows: [[scroll.id, rowOf(scroll)]], removed: [], last: true },
                     { name: 'market', from: null, to: 0, full: true, rows: rows.map(row => [row[0], row]), removed: [], last: true }
                 ] }] });
-            assert(refreshed.selected?.craft?.ownReserve > 0, 'native economy refresh retains the real personal shot reserve');
+            assert(refreshed.selected?.craft?.ownReserve > 0, 'the step\'s own economy keeps the real personal shot reserve');
             const checked = atDecision(() => Shots.recheck(producer, refreshed.selected.craft));
             assert(checked && checked.expectedSold > 0, 'the native batch produces a commercial surplus after its personal reserve');
             assert(checked.expectedSold <= checked.batches * recipe.productCount + held - refreshed.selected.craft.ownReserve,

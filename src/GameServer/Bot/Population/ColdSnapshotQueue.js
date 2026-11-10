@@ -38,7 +38,8 @@ class ColdSnapshotQueue {
         };
         this.dirty.set(characterId, entry);
         if (critical) this.critical.set(characterId, entry);
-        if (options.near === true) this.nearFacts[entry.reason] = (this.nearFacts[entry.reason] || 0) + 1;
+        // A near post names the reasons of its turn (BotLifeState.notifyNearFacts): each counts once.
+        if (options.near === true) for (const reason of entry.reason.split(',')) this.nearFacts[reason] = (this.nearFacts[reason] || 0) + 1;
         DiagnosticConfig.developerDiagnostics && (this.counters.marked += 1);
         if (previous) DiagnosticConfig.developerDiagnostics && (this.counters.coalesced += 1);
         if (critical) DiagnosticConfig.developerDiagnostics && (this.counters.critical += 1);

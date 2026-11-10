@@ -14,7 +14,6 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotAfkMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const { character, amount } = require('./helpers/nativeMarketFixture');
 DataCache.init();
@@ -26,7 +25,7 @@ const base = {
     stats: { generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };
 // Its healing potions at the stock's own target, whatever use the table gives them.
-base.inventory = { 1061: { selfId: 1061, amount: invoke('GameServer/Bot/Economy/EconomyContext').stockFor(base, 'potions').target } };
+base.inventory = { 1061: { selfId: 1061, amount: invoke('GameServer/Bot/Economy/EconomyContext').basics(base).stock('potions').target } };
 const plan = GearAcquisitionPlanner.staticNpcUpgradePlan(base);
 assert.strictEqual(plan?.market?.sourceType, 'npc', 'the fixture must plan an NPC purchase');
 const state = { ...base, stats: { ...base.stats, equipmentPlan: plan } };
@@ -36,7 +35,6 @@ const state = { ...base, stats: { ...base.stats, equipmentPlan: plan } };
 const native = await NativeChoice.capture(state, {}, 'npc_original_300k');
 assert.strictEqual(native.read.activity.activity, 'hunting');
 assert.strictEqual(native.goals.length, 1);
-assert.strictEqual(native.goals[0].priority, 50);
 assert.strictEqual(native.goals.find(row => row.type === 'upgrade_gear'), undefined);
 assert.strictEqual(Funding.spendable(native.state, 0, { itemId: plan.target.selfId }), 0,
     'the authored NPC plan does not bypass the real money packet');
@@ -61,8 +59,14 @@ try {
     assert.strictEqual(BotAfkMarket.canTradeRemotely(state, activeGoal), false,
         'a cheaper bot listing does not turn an NPC-shop plan into a WTB');
 } finally { MarketOpportunity.bestOffer = bestOffer; }
-const travel = GoalExecutor.beginMarketTravel(state, activeGoal, Date.now());
-assert.strictEqual(travel, null, 'an authored NPC route without a currently funded useful purchase cannot start a new trip');
+// The build's shopping leaf check owns whether a purchase trip goes (main starts it without
+// weighing again): the authored NPC route without a currently funded purchase does not go.
+const leaf = { activity: 'shopping', kind: 'buy', itemId: Number(plan.target.selfId), amount: 1,
+    unitPrice: plan.market.price, sourceType: 'npc', town: plan.market.town };
+// The trip is known and free here: the purse is the subject.
+const known = { tripCost: Object.assign(() => 0, { details: () => ({ known: true, hours: 0, fees: 0 }) }) };
+assert.strictEqual(invoke('GameServer/Bot/Economy/EconomyContext').leafCheck(native.state, leaf, known, {}).reason, 'check:short',
+    'an authored NPC route without a currently funded useful purchase cannot start a new trip');
 
 Database.init();
 await character(Database, 7, 'NpcBuyer', 'bot_7', base.loc);

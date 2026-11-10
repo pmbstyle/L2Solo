@@ -59,20 +59,30 @@ function index(profile) {
     return { nodes, projectStack };
 }
 
+// V8 keeps a profile's clock (us) in 32 bits: it wraps every 2^32 us (~71.6 min), so a chunk across
+// the wrap ends "before" it starts (seen 2026-11-06: start 4 262 941 468, end 27 992 796). Sample
+// times are startTime plus the timeDeltas, summed here without the wrap, so the profile's end and the
+// previous chunk's end (`since`) are put on that same clock: the nearest value to the start modulo
+// 2^32 (a chunk lasts a minute, far below half the wrap).
+const CLOCK_WRAP = 2 ** 32;
+const onClockOf = (start, time) => start + ((((time - start) % CLOCK_WRAP) + CLOCK_WRAP * 1.5) % CLOCK_WRAP - CLOCK_WRAP / 2);
+
 // Time of each sample: until the next one (the last one: until the profile's end), in ms.
 function timings(profile) {
     const samples = profile.samples || [], deltas = profile.timeDeltas || [];
     const at = new Array(samples.length), ms = new Array(samples.length);
-    let clock = profile.startTime || 0;
+    const start = profile.startTime || 0;
+    let clock = start;
     for (let i = 0; i < samples.length; i++) {
         clock += deltas[i] || 0;
         at[i] = clock;
     }
+    const end = profile.endTime ? Math.max(clock, onClockOf(start, profile.endTime)) : clock;
     for (let i = 0; i < samples.length; i++) {
-        const next = i + 1 < samples.length ? at[i + 1] : (profile.endTime || at[i]);
+        const next = i + 1 < samples.length ? at[i + 1] : end;
         ms[i] = Math.max(0, next - at[i]) / 1000;
     }
-    return { at, ms };
+    return { at, ms, start, end };
 }
 
 function add(map, key, ms) {
@@ -99,21 +109,35 @@ function attribute(run, samples, ms, tree, count) {
 // on, main normal), each sample then weighs ~0.5 s and the whole chunk reads as one busy run. Its
 // numbers say nothing about the thread: the recorder and the report leave it out.
 const STARVED_GAP_MS = 20;
+// A profiler can also starve in stretches while its average stays under STARVED_GAP_MS (2026-11-06,
+// the cold worker's first minute: 3788 samples in 61.5 s, 120 gaps over 100 ms holding 19 s, read
+// as one 60.6 s busy run). A gap between two samples longer than STARVED_STRETCH_MS (5 x
+// STARVED_GAP_MS) is a sample-less stretch: whether the thread went back to wait in it is unknown,
+// so its time is neither busy nor idle (counted as unsampledMs) and it ends a busy run, as an idle
+// sample does. Healthy threads stay far below it (that run: main's longest gap 49 ms, at boot).
+// A chunk with more than STARVED_SHARE of its time in such stretches is starved as a whole.
+const STARVED_STRETCH_MS = 5 * STARVED_GAP_MS;
+const STARVED_SHARE = 0.1;
 
 // longTurnMs: a busy run at least this long is a long turn. top: rows per list. keep: long turns
 // listed with their time (the longest is also attributed). since: samples up to this time (profile
 // clock, us) are left out: the part an overlapping chunk shares with the one before it.
 function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 0 } = {}) {
     const tree = index(profile), samples = profile.samples || [];
-    const { at, ms } = timings(profile);
+    const { at, ms, start, end } = timings(profile);
+    const from = since ? onClockOf(start, since) : -Infinity;
     const self = new Map(), files = new Map(), owners = new Map(), runs = [];
-    let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, run = null, counted = 0;
+    let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, unsampledMs = 0, stretches = 0, run = null, counted = 0;
     for (let i = 0; i < samples.length; i++) {
-        if (at[i] <= since) continue;
+        if (at[i] <= from) continue;
         counted++;
         const node = tree.nodes.get(samples[i]) || { name: '?' };
-        if (node.name === IDLE) {
-            idleMs += ms[i];
+        const unsampled = ms[i] > STARVED_STRETCH_MS;
+        if (unsampled || node.name === IDLE) {
+            if (unsampled) {
+                unsampledMs += ms[i];
+                stretches++;
+            } else idleMs += ms[i];
             if (run) runs.push(run);
             run = null;
             continue;
@@ -126,7 +150,7 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
         // The owner: the nearest project frame on the stack, so SQLite's native run() or a
         // JSON.stringify counts for the code that called it; without one, the frame itself.
         if (node.name !== ROOT_NODE) add(owners, tree.projectStack(samples[i])[0] || node.key || node.name, ms[i]);
-        if (!run) run = { from: i, to: i, ms: 0, atMs: (at[i] - (profile.startTime || 0)) / 1000 };
+        if (!run) run = { from: i, to: i, ms: 0, atMs: (at[i] - start) / 1000 };
         run.to = i;
         run.ms += ms[i];
     }
@@ -134,10 +158,12 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
     const long = runs.filter(r => r.ms >= longTurnMs);
     const longest = runs.reduce((best, r) => (!best || r.ms > best.ms ? r : best), null);
     const round = (value) => Math.round(value * 10) / 10;
-    const durationMs = round(Math.max(0, (profile.endTime || 0) - Math.max(profile.startTime || 0, since)) / 1000);
+    const durationMs = round(Math.max(0, end - Math.max(start, from)) / 1000);
     return {
-        durationMs, samples: counted, starved: durationMs >= 1000 && counted * STARVED_GAP_MS < durationMs,
+        durationMs, samples: counted,
+        starved: durationMs >= 1000 && (counted * STARVED_GAP_MS < durationMs || unsampledMs > STARVED_SHARE * durationMs),
         busyMs: round(busyMs), idleMs: round(idleMs), gcMs: round(gcMs), programMs: round(programMs),
+        unsampledMs: round(unsampledMs), stretches,
         runs: runs.length,
         longTurns: long.length,
         longest: longest ? { ms: round(longest.ms), atMs: Math.round(longest.atMs),

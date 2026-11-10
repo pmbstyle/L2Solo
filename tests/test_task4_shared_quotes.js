@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B1: one depth-capped purchase quote (OfferQuery.cheapestTown
+// One depth-capped purchase quote (OfferQuery.cheapestTown
 // quoteDepth) and one exit competition rule (PriceDecision.exitCompetition)
 // for the planners, their rechecks and bidSale.
 require('../src/Global');

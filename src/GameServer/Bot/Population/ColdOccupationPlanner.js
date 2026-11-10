@@ -1,14 +1,19 @@
 'use strict';
 const DiagnosticConfig = require('./PopulationConfig');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const FailureLog = require('../../../FailureLog');
 
 const { performance } = require('node:perf_hooks');
-const { unknownWorkshop } = require('./ColdEconomyDecision');
+// The answer of a job that gave none (asked or cancelled while stopping, cancelled,
+// failed, retired for a stale owner), in every mode, action included: no reader takes
+// more from it than that it is not known. Only an action build that finished with no
+// plan answers null (finish).
+const UNANSWERED = Object.freeze({ known: false });
 const MAX_CONTEXTS = 64, MAX_OWNERS = 8, OWNER_UNITS = 4, MAX_UNITS = 32, SLICE_MS = 4;
-// One job per bot per mode (input.mode, 'occupation' when none): an ask of
-// one mode never replaces another mode's answer.
-const MODES = Object.freeze(['occupation', 'near', 'refresh', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
-const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
+// One job per bot per mode (input.mode, required): an ask of one mode never
+// replaces another mode's answer.
+const MODES = Object.freeze(['near', 'page', 'action', 'showcase', 'meeting', 'wish']);
+const keyOf = (id, mode) => `${mode}:${Number(id)}`;
 
 // Incomplete contexts stay in the working pool (slots, MAX_CONTEXTS) through
 // yield. A finished job leaves the pool as a card (cards): its answer, the
@@ -21,18 +26,18 @@ const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
 // valueKey(input): the values it reads of its state, compared only when the
 // inputKey matches (the worker digests a state once). A new ask with both the
 // same and no moved source gets the answer or joins the work.
-// servesUntil(input): the clock (input.timestamp) from which a finished
-// answer no longer serves an ask of the same key: a window for an input the
-// answer reads that has no event (the worker states which); none by default.
+// sourceToken(id, mode): the revision of a read source item as a job of that
+// mode (entry.mode) reads it (the worker: a meeting job reads the item's
+// category, every other mode the item); one token per mode serves every owner
+// of the item at once (sourceChanged).
 class ColdOccupationPlanner {
     constructor({ capture, create, step, result, ownCurrent = () => true, inputKey = input => input, valueKey = () => '',
-        servesUntil = () => Infinity, sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
+        sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
         onSlots = () => {}, onWorking = () => {}, publish = () => {}, onPublishError = () => {}, now = () => performance.now(),
         schedule = callback => setImmediate(callback) } = {}) {
-        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, valueKey, servesUntil, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
+        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, valueKey, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
         this.slots = new Map(); this.cards = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.workingContexts = 0;
-        this.errorsSeen = new Set();
         this.scopes = new Map();
         this.scopeDependencies = new Map();
         // Meeting readers share one representative item per category: their
@@ -59,19 +64,20 @@ class ColdOccupationPlanner {
 
     request(id, input, { awaitResult = true } = {}) {
         id = Number(id);
-        if (!id || this.stopped) return Promise.resolve(unknownWorkshop());
-        const mode = input?.mode || 'occupation', key = keyOf(id, mode);
+        const mode = input?.mode;
+        if (!MODES.includes(mode)) throw Error(`occupation_mode_unknown:${mode}`);
+        if (!id || this.stopped) return Promise.resolve(UNANSWERED);
+        const key = keyOf(id, mode);
         const existing = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         const fingerprint = this.inputKey(input);
-        if (existing && existing.fingerprint === fingerprint && !existing.dirty
-            && !(existing.done && Number(input?.timestamp) >= existing.until) && this.valuesOf(existing) === this.valueKey(input)) {
+        if (existing && existing.fingerprint === fingerprint && !existing.dirty && this.valuesOf(existing) === this.valueKey(input)) {
             if (existing.done) { existing.input = input; DiagnosticConfig.developerDiagnostics && (this.stats.unchanged++); return Promise.resolve(existing.value); }
             return awaitResult ? existing.promise : null;
         }
         if (existing) this.cancel(id, mode);
         let resolve;
         const promise = new Promise(done => { resolve = done; });
-        const entry = { key, id, mode, input, fingerprint, until: this.servesUntil(input), resolve, promise,
+        const entry = { key, id, mode, input, fingerprint, resolve, promise,
             cursor: new Float64Array(16), dirty: false, done: false, values: null };
         this.waiting.set(key, entry);
         this.kick();
@@ -120,7 +126,7 @@ class ColdOccupationPlanner {
     read(entry, id) {
         id = Number(id);
         if (!(id > 0) || entry.reads.has(id)) return;
-        entry.reads.set(id, this.sourceToken(id, entry.input));
+        entry.reads.set(id, this.sourceToken(id, entry.mode));
         let owners = this.dependencies.get(id);
         if (!owners) this.dependencies.set(id, owners = new Set());
         owners.add(entry.key);
@@ -148,10 +154,14 @@ class ColdOccupationPlanner {
     // Producer dispatch names an item; it never walks all owners or a board.
     sourceChanged(id) {
         id = Number(id);
+        // This call's tokens by mode, sourceToken's only input besides the id.
+        let tokens = null;
         for (const owner of this.dependencies.get(id) || []) {
             const entry = this.held(owner);
             if (!entry) continue;
-            const token = this.sourceToken(id, entry.input);
+            tokens ||= new Map();
+            let token = tokens.get(entry.mode);
+            if (token === undefined) tokens.set(entry.mode, token = this.sourceToken(id, entry.mode));
             if (entry.reads.get(id) === token) continue;
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
@@ -160,7 +170,7 @@ class ColdOccupationPlanner {
             if (entry.cursor) entry.cursor[14] = 1;
             DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
         }
         this.kick();
     }
@@ -185,17 +195,14 @@ class ColdOccupationPlanner {
             entry.dirty = true; if (entry.cursor) entry.cursor[14] = 1;
             if (!wasDirty) DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
         }
         this.kick();
     }
     markReset(entry) {
-        // A source table was replaced, no board move: a build kept on the input
-        // may have read it empty (ColdSimulationWorker, refresh).
-        entry.input.builtRefresh = null;
         entry.dirty = true; if (entry.cursor) entry.cursor[14] = 2;
         DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
-        if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+        if (entry.done) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
     }
     // After a whole source table was replaced and its full copy applied: only
     // the jobs whose read items or admission scope moved are marked, as
@@ -208,7 +215,7 @@ class ColdOccupationPlanner {
             let changed = entry.admissionScope != null && entry.admissionToken !== this.sourceScopeToken(entry.admissionScope);
             if (!changed) {
                 for (const [id, token] of entry.reads) {
-                    if (this.sourceToken(id, entry.input) !== token) { changed = true; break; }
+                    if (this.sourceToken(id, entry.mode) !== token) { changed = true; break; }
                 }
             }
             if (changed) { this.markReset(entry); moved++; } else kept++;
@@ -239,17 +246,15 @@ class ColdOccupationPlanner {
         entry.validation = null;
     }
 
-    // A failed build ends as an empty result: each distinct failure is logged
-    // once, as an error the deploy read counts. A meeting's refusal is its answer.
-    reportError(entry) {
-        if (entry.mode === 'meeting' || this.errorsSeen.has(entry.error) || this.errorsSeen.size >= 32) return;
-        this.errorsSeen.add(entry.error);
-        console.error(`ColdOccupationPlanner :: Error: ${entry.error}`);
+    // A failed build ends as an empty result (an unknown answer): counted per mode, the
+    // first logged with its stack (FailureLog). A meeting's refusal (a bare code) is its answer.
+    reportError(entry, error) {
+        if (entry.mode !== 'meeting' || !FailureLog.refusal(error)) FailureLog.note(`occupation.${entry.mode}_failed`, error);
     }
 
     finish(entry, value) {
         if (entry.done || this.slots.get(entry.key) !== entry) return;
-        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : unknownWorkshop());
+        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : UNANSWERED);
         // The card keeps the answer, its key and its read tokens: no scratch
         // graph, no cursor. It leaves the working pool.
         entry.work = null; entry.captured = null; entry.validation = null; entry.cursor = null;
@@ -273,7 +278,7 @@ class ColdOccupationPlanner {
             if (!next.done) {
                 const [id, token, scope] = next.value;
                 entry.cursor[3]++;
-                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id, entry.input)) !== token) {
+                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id, entry.mode)) !== token) {
                     entry.dirty = true; entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
                 }
                 return;
@@ -306,10 +311,10 @@ class ColdOccupationPlanner {
                 if (units && clock - started >= SLICE_MS) break;
                 const unitStarted = clock;
                 try { this.unit(entry); }
-                catch (error) { entry.error = String(error?.message || error); this.reportError(entry); this.finish(entry, entry.mode === 'meeting'
+                catch (error) { entry.error = String(error?.message || error); this.reportError(entry, error); this.finish(entry, entry.mode === 'meeting'
                     ? { refused: true, reason: entry.error, ...(error.priceEvidence ? { priceEvidence: error.priceEvidence } : {}),
                         ...(error.priceFallback ? { priceFallback: error.priceFallback } : {}) }
-                    : unknownWorkshop()); }
+                    : UNANSWERED); }
                 clock = this.now();
                 const duration = clock - unitStarted;
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
@@ -347,7 +352,7 @@ class ColdOccupationPlanner {
         const entry = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         if (!entry) return;
         this.waiting.delete(key);
-        entry.resolve?.(unknownWorkshop()); entry.resolve = null;
+        entry.resolve?.(UNANSWERED); entry.resolve = null;
         this.release(id, mode);
     }
     stop() {
@@ -360,4 +365,4 @@ class ColdOccupationPlanner {
         active: this.ready.size, dependencies: this.dependencies.size, cursorBytes: (this.slots.size + this.waiting.size) * 128 }; }
 }
 
-module.exports = { ColdOccupationPlanner, MAX_CONTEXTS, MAX_OWNERS, OWNER_UNITS, MAX_UNITS, SLICE_MS, MODES };
+module.exports = { ColdOccupationPlanner, UNANSWERED, MAX_CONTEXTS, MAX_OWNERS, OWNER_UNITS, MAX_UNITS, SLICE_MS, MODES };

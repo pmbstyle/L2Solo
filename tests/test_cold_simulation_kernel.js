@@ -16,7 +16,7 @@ const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTr
 
 // The facts a kernel gives the free functions (its parties table, its
 // states, the board's escrow) for a bot that leads `party`.
-const leading = (party, members = []) => ({ leaderParty: () => party, partyMembers: () => members, buyOrderEscrow: () => 0,
+const leading = (party, members = []) => ({ leaderParty: () => party, partyMembers: () => members,
     hallNeeded: () => false, playerWaiting: () => false });
 
 function state(characterId = 1, overrides = {}) {
@@ -393,6 +393,68 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.equal(combats, Number(!expired), 'an ongoing fight keeps ownership; an expired record cannot block the occupation');
     }
 
+    // A far newbie's held guide answer is its worker step's whole round: the guide's three
+    // buffs, no HP/MP, the walk there and back spent resting, the answer done, so the
+    // committed state carries the visit out once. That step plans nothing: the errand its
+    // card holds (a shopping trip) waits, and the next step holds that occupation's round.
+    // In town (a command step) the same round rides the command, with no walk and no plan.
+    {
+        const Buffs = invoke('GameServer/Bot/AI/BotBuffs');
+        const guide = Buffs.GUIDES[0];
+        let at = 5000;
+        const answer = { via: 'guide', providerId: null, at: 4000 };
+        const newbie = (id, activity) => state(id, { level: 12, activity,
+            loc: { locX: guide.locX + 3000, locY: guide.locY, locZ: guide.locZ },
+            vitals: { hp: 10, maxHp: 200, mp: 5, maxMp: 100 },
+            stats: { karma: 0, coldCombat: { effects: [] }, rebuff: answer } });
+        assert.strictEqual(lifecycleKind(newbie(90010, 'hunting')), 'resolver', 'a field newbie steps on the worker');
+        const shopping = { travel: 'stock:scrolls', sell: [], withdraw: [], buyAds: [] };
+        // The card's errand, the planner's trip back to the field (its rest over).
+        const card = ({ state: current }) => ({ plannedState: { ...current, activity: 'hunting' },
+            activityPick: { activity: 'shopping' }, economyPlan: shopping });
+        let combats = 0, projected = null;
+        const guided = recordingKernel({ now: () => at,
+            resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: card,
+            projectResolve: (current, result, stamp, plan) => (projected = { state: { ...current, activity: result.patch.activity ?? current.activity,
+                vitals: { ...current.vitals, ...result.patch.vitals }, stats: { ...current.stats, ...result.patch.stats, ...plan?.statsPacket } },
+            ...(plan?.economyPlan ? { economyPlan: plan.economyPlan } : {}) }),
+            emit: () => {} });
+        guided.upsert(standOn(guided, { state: newbie(90010, 'hunting') }, { id: 'newbie-field' }));
+        guided.tick(); await guided.resolveChain; guided.flush(null, true);
+        const proposal = sentProposals.get(guided).get(90010);
+        assert(proposal && projected, 'the visit is the worker step\'s proposal, not a command');
+        assert.equal(combats, 0, 'no fight on the guide\'s round');
+        assert.equal(proposal.economyPlan, undefined, 'the guide\'s step plans nothing: the errand waits');
+        const committed = proposal.nextState;
+        assert.deepStrictEqual(committed.stats.coldCombat.effects.map(effect => effect.key).sort(),
+            Buffs.newbieEffects(at).map(effect => effect.key).sort());
+        assert.equal(committed.vitals.hp, 10, 'the guide restores no HP');
+        assert.equal(committed.activity, 'resting', 'the walk there and back');
+        assert.equal(committed.stats.rebuff.done, true, 'carried out once');
+        assert.equal(proposal.result.events[0].type, 'newbie_guide');
+        commitAck(guided, { results: [{ ok: true, characterId: 90010, state: { ...committed, simulation: { revision: 4 } } }] });
+        at += 3600000;
+        guided.tick(); await guided.resolveChain; guided.flush(null, true);
+        const errand = sentProposals.get(guided).get(90010);
+        assert.notStrictEqual(errand, proposal, 'the bot steps again');
+        assert.deepStrictEqual(errand.economyPlan, shopping, 'the next step holds the errand\'s round');
+        assert.equal(errand.result.events.some(event => event.type === 'newbie_guide'), false, 'the guide is visited once');
+        assert.equal(combats, 0, 'the occupation\'s round, no fight');
+        let townPlanned = 0;
+        const town = recordingKernel({ now: () => at, resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: input => { townPlanned++; return card(input); }, emit: () => {} });
+        town.upsert(standOn(town, { state: newbie(90011, 'shopping') }, { id: 'newbie-town' }));
+        town.tick(); await town.resolveChain;
+        const request = sentCommands.get(town).get(90011);
+        assert.equal(request.precomputedResult.debug.activity, 'newbie_guide');
+        assert.equal(request.precomputedResult.patch.activity, undefined, 'in town no walk');
+        assert.equal(request.precomputedResult.patch.stats.rebuff.done, true);
+        assert.equal(request.precomputedPlan, null, 'in town too the guide\'s step plans nothing');
+        assert.equal(townPlanned, 0);
+        assert.equal(combats, 0);
+    }
+
     assert.strictEqual(lifecycleKind(state(2, { activity: 'crafting' })), 'command');
     const clanDuty = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear' };
     for (const activity of ['shopping', 'crafting', 'merchant']) {
@@ -403,10 +465,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         'a finished service must still preserve the clan assembly wait before solo hunting');
     assert.strictEqual(lifecycleKind(state(2, { activity: 'party_wait', stats: { clanPartyObjective: clanDuty } })), 'resolver',
         'actual clan assembly must remain in the pure worker wait path');
-    assert.strictEqual(lifecycleKind(state(2, { activity: 'party_wait', adena: 1000, stats: {
-        clanPartyObjective: clanDuty,
-        equipmentPlan: { strategy: 'market', market: { price: 500, reserve: 100 } }
-    } })), 'command', 'a funded weapon bridge must recover from a stale party-wait state');
     for (const plan of [{ status: 'complete' }, { status: 'deferred', strategy: 'none' },
         { status: 'active', strategy: 'craft' }]) {
         assert.strictEqual(lifecycleKind(state(2, { stats: {
@@ -416,13 +474,12 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(lifecycleKind(state(2, { stats: { craftReturn: { loc: {} },
         equipmentPlan: { strategy: 'craft', status: 'ready_to_craft' } } })), 'command',
     'ready crafting still uses the main-thread crafting workflow');
-    assert.strictEqual(lifecycleKind(state(2, { stats: { equipmentPlan: { strategy: 'market' } } })), 'resolver');
-    // A wallet of 1000 above its survival reserve (the kit the table's use asks for) funds the piece.
+    // A funded market plan is the build's trip (its card's town leaf): the bot hunts on the resolver.
     const fundedWallet = invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(state(2)) + 1000;
     assert.strictEqual(lifecycleKind(state(2, {
         adena: fundedWallet,
         stats: { equipmentPlan: { strategy: 'market', market: { price: 500, reserve: 100 } } }
-    })), 'command');
+    })), 'resolver');
     assert.strictEqual(lifecycleKind(state(2, { party: { partyId: 'party' } }), leading({ partyId: 'party', leaderId: 2 })), 'party');
 
     // The worker's own hunting pick is the target for the native solo
@@ -479,6 +536,15 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(commandKernel.scheduleTokens.has(3), true,
         'a same-revision command ACK must restore the consumed due token');
     assert.strictEqual(commandKernel.snapshot().commanding, 0);
+    // A command answered that it waits on its bot's trade preparation: the bot takes no step
+    // (no poll) until the preparation's end sends its row again, which schedules it.
+    commandKernel.tick();
+    await commandKernel.resolveChain;
+    assert.strictEqual(commandKernel.commanding.has(3), true, 'the overdue shopping bot runs its next command');
+    commandAck(commandKernel, { characterId: 3, waiting: true, state: { ...commandState } });
+    assert.strictEqual(commandKernel.scheduleTokens.has(3), false, 'a waiting answer leaves the bot unscheduled');
+    commandKernel.upsert({ state: { ...commandState } });
+    assert.strictEqual(commandKernel.scheduleTokens.has(3), true, 'the row the preparation\'s end sends schedules it');
 
     const commandPressureMessages = [];
     const commandPressureKernel = recordingKernel({ resolveSolo: resolver, now: () => now,
@@ -535,9 +601,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
 
     const memberOnlyKernel = recordingKernel({ resolveSolo: resolver, emit: () => {}, now: () => now });
     memberOnlyKernel.upsert({ state: state(4, { party: { partyId: 'member-only' } }) });
-    assert.strictEqual(memberOnlyKernel.heap.values.filter(entry => entry.kind !== 'alarm').length, 0,
-        'party members must be scheduled only through their leader');
-    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 0);
+    assert.strictEqual(memberOnlyKernel.heap.values.length, 0, 'party members must be scheduled only through their leader');
     assert.strictEqual(memberOnlyKernel.snapshot().due, 0,
         'party members must not inflate independent worker due-age telemetry');
 
@@ -718,18 +782,124 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     await refreshKernel.resolveChain;
     const refreshProposal = refreshMessages.find(message => message.type === 'proposal_batch').payload.proposals.find(proposal => proposal.partyResolution);
     assert.deepStrictEqual(refreshed, [120, 121], 'the party resolve refreshes each member after its projection');
-    assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
+    const refreshProposals = refreshMessages.find(message => message.type === 'proposal_batch').payload.proposals;
+    assert.deepStrictEqual(refreshProposals.map(proposal => proposal.nextState.stats.equipmentPlan.strategy), ['market', 'market'],
+        'each member\'s own commit carries its plan, the changed one its new plan');
     assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
-    assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
-    const baselineReview = refreshProposal.partyResolution.party.stats.sessionReview;
-    assert(Number.isSafeInteger(baselineReview?.key) && baselineReview.decisions.length === 0,
-        'a new party\'s first resolve records its review evidence, with no review step');
-    const baselineParty = refreshProposal.partyResolution.party, baselineStats = baselineParty.stats;
-    assert(!require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle').sessionExpired(
-        { ...baselineParty, stats: { ...baselineStats, fightsResolved: Number(baselineStats.fightsResolved || 0) + 50,
-            fightsWon: Number(baselineStats.fightsWon || 0) + 50, lastProgressAt: now + 3600000 - 1000 } },
-        now + 3600000, refreshKernel.partyReviewOptions({ party: refreshParty }), refreshMembers),
-    'a winning party with unchanged inputs is not reviewed on the clock');
+    // Main refuses that commit (a clan write moved the member's row since the worker read it):
+    // its due mark stays, and the next step re-plans the member and its commit carries the plan.
+    {
+        let at = now;
+        const messages = [];
+        const kernel = recordingKernel({ resolveSolo: resolver, now: () => at,
+            resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+                partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+            projectResolve: state => ({ state }),
+            planPartyRequirement: ({ state }) => ({ acquisitionPlan: state.characterId === 120
+                ? { status: 'active', strategy: 'market', target: { selfId: 55 } } : state.stats.equipmentPlan }),
+            emit: (type, payload) => messages.push({ type, payload }) });
+        kernel.upsert(standOn(kernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
+        kernel.upsert({ state: refreshMembers[1] });
+        kernel.partyPut(refreshParty.partyId, { ...refreshParty, requirementRefresh: true }); kernel.tick();
+        await kernel.resolveChain;
+        const refused = messages.find(message => message.type === 'proposal_batch').payload.proposals;
+        commitAck(kernel, { results: refused.map(proposal => ({ ok: false, characterId: proposal.characterId, reason: 'stale_revision',
+            state: { ...refreshMembers.find(member => member.characterId === proposal.characterId), simulation: { revision: 4 } } })) });
+        messages.length = 0;
+        at += 60000;
+        kernel.partyPut(refreshParty.partyId, { ...refreshParty, nextResolveAt: at, requirementRefresh: true }); kernel.tick();
+        await kernel.resolveChain;
+        const again = messages.find(message => message.type === 'proposal_batch')?.payload.proposals.find(proposal => proposal.characterId === 120);
+        assert.strictEqual(again?.nextState.stats.equipmentPlan.strategy, 'market', 'the re-planned member\'s commit carries its plan again');
+    }
+    // The re-plan holds only the members whose plan landed (main committed it). Each step
+    // below: { kit: the members whose own step moves their kit, refuse: the members whose
+    // commit main refuses, lose: the batch never leaves and the stall recovery frees the
+    // steps }; returns what each step planned and sent. A re-plan a moved kit
+    // opened has no due mark on main to re-plan from: the worker's re-plan is its only record.
+    {
+        const steps = async (script, due = false) => {
+            let at = now, revision = 3;
+            const messages = [], planned = [];
+            let kit = [], lost = false;
+            const kernel = recordingKernel({ resolveSolo: resolver, now: () => at,
+                resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+                    partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+                projectResolve: state => ({ state, kitMoved: kit.includes(state.characterId) }),
+                planPartyRequirement: ({ state }) => { planned.push(state.characterId); return { acquisitionPlan: state.characterId === 121
+                    ? { status: 'active', strategy: 'market', target: { selfId: 57 } } : state.stats.equipmentPlan }; },
+                emit: (type, payload) => { messages.push({ type, payload }); return !(lost && type === 'proposal_batch'); } });
+            kernel.upsert(standOn(kernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
+            kernel.upsert({ state: refreshMembers[1] });
+            const out = [];
+            for (const [index, { kit: moved = [], refuse = [], lose = false }] of script.entries()) {
+                kit = moved; lost = lose; planned.length = 0; messages.length = 0; revision += 1;
+                kernel.partyPut(refreshParty.partyId, { ...refreshParty, nextResolveAt: at, requirementRefresh: due && index === 0 });
+                kernel.tick();
+                await kernel.resolveChain;
+                const sent = messages.find(message => message.type === 'proposal_batch')?.payload.proposals || [];
+                out.push({ planned: [...planned], end: sent.find(proposal => proposal.partyResolution)?.partyResolution.requirementRefreshedAt,
+                    plan: id => sent.find(proposal => proposal.characterId === id)?.nextState.stats.equipmentPlan });
+                if (lose) kernel.recoverStalled(at + 30001);
+                else commitAck(kernel, { results: sent.map(proposal => refuse.includes(proposal.characterId)
+                    ? { ok: false, characterId: proposal.characterId, reason: 'stale_revision',
+                        state: { ...kernel.states.get(proposal.characterId).state, simulation: { revision } } }
+                    : { ok: true, characterId: proposal.characterId, state: { ...proposal.nextState, simulation: { revision } } }) });
+                at += 60000;
+            }
+            return out;
+        };
+        // Main commits every member's plan: the re-plan ended, its next step plans nothing.
+        const landed = await steps([{}, {}], true);
+        assert.deepStrictEqual(landed[0].planned, [120, 121]);
+        assert.strictEqual(landed[0].end, now);
+        assert.deepStrictEqual(landed[1].planned, [], 'the next step plans nothing');
+        assert.strictEqual(landed[1].end, undefined);
+        // A member's refused plan: the next step plans it again, its commit carries the plan, and the end goes.
+        const refused = await steps([{ kit: [121], refuse: [121] }, {}]);
+        assert.deepStrictEqual(refused[0].planned, [121], 'a moved kit opens the re-plan at that member');
+        assert.deepStrictEqual(refused[1].planned, [120, 121], 'the refused member is planned again');
+        assert.strictEqual(refused[1].plan(121).target.selfId, 57, 'its commit carries its plan');
+        assert.strictEqual(refused[1].end, now + 60000, 'every member planned: the re-plan ends');
+        // The re-plan's end refused (the leader's commit): the next step plans the leader and sends the end again.
+        const end = await steps([{ kit: [121] }, { refuse: [120] }, {}]);
+        assert.strictEqual(end[1].end, now + 60000);
+        assert.deepStrictEqual(end[2].planned, [120]);
+        assert.strictEqual(end[2].end, now + 120000, 'the end is sent again');
+        // A member refused on a step that carried no new plan of its: its landed plan stands.
+        const kept = await steps([{ kit: [121] }, { refuse: [121] }, {}]);
+        assert.strictEqual(kept[1].end, now + 60000);
+        assert.deepStrictEqual(kept[2].planned, [], 'the re-plan ended: nothing to plan again');
+        // A member's new plan lost with its step (never sent, the stall frees it): the next step
+        // plans it again, its commit carries the plan, and the end goes.
+        const lost = await steps([{ kit: [121], lose: true }, {}]);
+        assert.deepStrictEqual(lost[0].planned, [121]);
+        assert.deepStrictEqual(lost[1].planned, [120, 121], 'the re-plan stays open at the lost member');
+        assert.strictEqual(lost[1].plan(121).target.selfId, 57, 'its commit carries its plan');
+        assert.strictEqual(lost[1].end, now + 60000, 'every member planned: the re-plan ends');
+    }
+    // A member whose own step changed its plan (the projection), re-planned to that same
+    // plan: the plan rides its own proposal; no member plan and no fallback event go out.
+    {
+        const projectedMessages = [];
+        const projectedPlan = { status: 'active', strategy: 'market', target: { selfId: 57 } };
+        const projectedKernel = recordingKernel({ resolveSolo: resolver, now: () => now,
+            resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+                partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+            projectResolve: state => ({ state: state.characterId === 121
+                ? { ...state, stats: { ...state.stats, equipmentPlan: projectedPlan } } : state }),
+            planPartyRequirement: ({ state }) => ({ acquisitionPlan: state.stats.equipmentPlan,
+                replanContext: state.characterId === 121 ? { failure: { reason: 'combat_unviable', targetId: 56 } } : {} }),
+            emit: (type, payload) => projectedMessages.push({ type, payload }) });
+        projectedKernel.upsert(standOn(projectedKernel, { state: refreshMembers[0] }, { id: 'refresh-spot' }));
+        projectedKernel.upsert({ state: refreshMembers[1] });
+        projectedKernel.partyPut(refreshParty.partyId, { ...refreshParty, requirementRefresh: true }); projectedKernel.tick();
+        await projectedKernel.resolveChain;
+        const proposals = projectedMessages.find(message => message.type === 'proposal_batch').payload.proposals;
+        assert(proposals.every(proposal => !proposal.atomicGroup), 'a plan the projection already holds changes nothing to commit together');
+        assert(!proposals.some(proposal => proposal.result.events.some(event => event.type === 'gear_acquisition_fallback')),
+            'nor is a fallback event raised for it');
+    }
 
     // A member whose own step moved its kit opens the re-plan with
     // no due mark from main; members already passed wait for the next step.
@@ -767,7 +937,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             projectResolve: state => ({ state }),
             reviewRecruits: ({ members }) => {
                 reviewed.push(members.map(member => member.characterId));
-                return outcome === 'accepted' ? { memberGoals: [], incomeReviews: [], lastIncomeReviewAt: now, agreement: null } : null;
+                return outcome === 'accepted' ? { memberGoals: [], agreement: null } : null;
             },
             emit: (type, payload) => joinMessages.push({ type, payload }) });
         joinKernel.upsert(standOn(joinKernel, { state: joinMembers[0] }, { id: 'refresh-spot' }));
@@ -825,91 +995,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             && proposal.nextState.activity === 'hunting'), 'native completion releases every physical state');
     }
 
-    const expiredPartyMessages = [];
-    const expiredPartyMembers = [
-        state(22, {
-            activity: 'grouped',
-            party: { partyId: 'expired-party', leaderId: 22 },
-            stats: { partyRequest: { status: 'open', priority: 'required' } }
-        }),
-        state(23, {
-            activity: 'traveling',
-            party: { partyId: 'expired-party', leaderId: 22 },
-            stats: {
-                partyRequest: { status: 'open', priority: 'required' },
-                travel: { reason: 'party_spot_replan', spotId: 'old-party-spot' }
-            }
-        })
-    ];
-    const expiredParty = {
-        partyId: 'expired-party',
-        leaderId: 22,
-        memberIds: [22, 23],
-        spotId: 'old-party-spot',
-        startedAt: now - 120000,
-        // The review's clock (a concern's grace) ran out.
-        stats: { sessionReview: { at: now - 300000, nextAt: now - 1 } }
-    };
-    const expiredPartyKernel = recordingKernel({
-        resolveSolo: resolver,
-        resolveParty: () => { throw new Error('expired party must not enter combat'); },
-        emit: (type, payload) => expiredPartyMessages.push({ type, payload }),
-        now: () => now
-    });
-    expiredPartyKernel.upsert(standOn(expiredPartyKernel, { state: expiredPartyMembers[0] }, { id: 'old-party-spot' }));
-    expiredPartyKernel.upsert({ state: expiredPartyMembers[1] });
-    expiredPartyKernel.partyPut(expiredParty.partyId, expiredParty);
-    expiredPartyKernel.tick();
-    assert.deepStrictEqual(lastSteps(expiredPartyKernel), [22, 23]);
-    await expiredPartyKernel.resolveChain;
-    const expiryProposal = expiredPartyMessages.find((entry) => entry.type === 'proposal_batch');
-    assert.strictEqual(expiryProposal.payload.proposals.length, 2, 'expired party release must include every member');
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.atomicGroup?.memberIds.join(',') === '22,23'));
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.party.partyId === 'expired-party'));
-    assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 22)
-        .partyResolution.party.status, 'active');
-    assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 23)
-        .nextState.activity, expiredPartyMembers[1].activity, 'a review alone preserves current travel/activity');
-    const reviewed = expiryProposal.payload.proposals.find(p => p.partyResolution).partyResolution.party.stats.sessionReview;
-    assert(Number.isSafeInteger(reviewed.key) && !(reviewed.nextAt > 0 && reviewed.nextAt <= now),
-        'review records its inputs rather than spin on a spent deadline');
-
-    const expiryScheduleMessages = [];
-    let expiryScheduleNow = now;
-    const expiryScheduleMembers = [
-        state(25, {
-            timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: expiryScheduleNow + 60000 },
-            party: { partyId: 'scheduled-expiry-party', leaderId: 25 }
-        }),
-        state(26, {
-            timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: expiryScheduleNow + 60000 },
-            party: { partyId: 'scheduled-expiry-party', leaderId: 25 }
-        })
-    ];
-    const expiryScheduleParty = {
-        partyId: 'scheduled-expiry-party',
-        leaderId: 25,
-        memberIds: [25, 26],
-        nextResolveAt: expiryScheduleNow + 60000,
-        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 5000 } }
-    };
-    const expiryScheduleKernel = recordingKernel({
-        resolveSolo: resolver,
-        resolveParty: resolver,
-        emit: (type, payload) => expiryScheduleMessages.push({ type, payload }),
-        now: () => expiryScheduleNow
-    });
-    expiryScheduleKernel.upsert(standOn(expiryScheduleKernel, { state: expiryScheduleMembers[0] }, { id: 'scheduled-expiry-spot' }));
-    expiryScheduleKernel.upsert({ state: expiryScheduleMembers[1] });
-    expiryScheduleKernel.partyPut(expiryScheduleParty.partyId, expiryScheduleParty);
-    expiryScheduleKernel.tick();
-    assert.strictEqual(expiryScheduleMessages.length, 0,
-        'a valid party must remain scheduled until its earliest resolve or expiry');
-    expiryScheduleNow += 5001;
-    expiryScheduleKernel.tick();
-    assert.deepStrictEqual(lastSteps(expiryScheduleKernel), [25, 26],
-        'a valid party must step at session expiry even when nextResolveAt is later');
-
+    const expiryScheduleNow = now;
     const partyDue = expiryScheduleNow + 3000;
     const partyDueLeader = state(27, {
         timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
@@ -924,15 +1010,15 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 27,
         memberIds: [27, 28],
         nextResolveAt: partyDue,
-        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 60000 } }
+        stats: {}
     };
     const partyDueFacts = leading(partyDueParty, [partyDueLeader, partyDueMember]);
-    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, {}, false, partyDueFacts), partyDue,
+    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, {}, partyDueFacts), partyDue,
         'a newly assigned leader with no personal due time must use the durable party schedule');
     assert.strictEqual(nextDueAt({
         ...partyDueLeader,
         timing: { ...partyDueLeader.timing, nextResolveAt: expiryScheduleNow + 1000 }
-    }, expiryScheduleNow, {}, false, partyDueFacts), partyDue,
+    }, expiryScheduleNow, {}, partyDueFacts), partyDue,
         'a stale leader schedule must not outrun the authoritative party row');
 
     const priorityParty = {
@@ -960,7 +1046,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 24,
         memberIds: [24],
         nextResolveAt: singletonNow + 60000,
-        stats: { sessionReview: { at: singletonNow - 1000, nextAt: singletonNow + 5000 } }
+        stats: {}
     };
     const singletonKernel = recordingKernel({
         resolveSolo: resolver,
@@ -1024,21 +1110,16 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     const partyRouteKernel = recordingKernel({
         resolveSolo: resolver,
         resolveParty: () => { throw new Error('party combat must not run during route travel'); },
-        partyRoute: () => partyRoute,
+        partyRoute: () => ({ route: partyRoute }),
         emit: (type, payload) => partyRouteMessages.push({ type, payload }),
         now: () => now
     });
     partyRouteKernel.upsert(standOn(partyRouteKernel, { state: partyRouteMembers[0] }, { id: 'starter-field' }));
     partyRouteKernel.upsert({ state: partyRouteMembers[1] });
     partyRouteKernel.partyPut(partyRouteParty.partyId, partyRouteParty);
-    // A member's kept solo route: a new state keeps it, the party run's
-    // step takes the member and drops it.
-    partyRouteKernel.states.get(31).route = { spotId: 'solo-kept' };
     partyRouteKernel.upsert({ state: { ...partyRouteMembers[1], level: 17,
         simulation: { ...partyRouteMembers[1].simulation, revision: Number(partyRouteMembers[1].simulation?.revision || 0) + 1 } } });
-    assert.deepStrictEqual(partyRouteKernel.states.get(31).route, { spotId: 'solo-kept' }, 'a committed state keeps the bot\'s route');
     partyRouteKernel.tick();
-    assert.strictEqual(partyRouteKernel.states.get(31).route, null, 'the party step drops the member\'s solo route');
     assert.deepStrictEqual(lastSteps(partyRouteKernel), [30, 31]);
     await partyRouteKernel.resolveChain;
     const partyRouteProposal = partyRouteMessages.find((entry) => entry.type === 'proposal_batch');
@@ -1048,7 +1129,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     // A party's wanted trip waits for its engaged fight, which ends with no new one.
     {
         let fight = null;
-        const held = recordingKernel({ resolveSolo: resolver, partyRoute: () => partyRoute, emit: () => {}, now: () => now,
+        const held = recordingKernel({ resolveSolo: resolver, partyRoute: () => ({ route: partyRoute }), emit: () => {}, now: () => now,
             resolveParty: (options) => { fight = options; return { memberResults: options.members.map(member => ({ state: member, result: {} })),
                 events: [], partyPatch: {}, nextResolveAt: options.timestamp + 60000 }; } });
         held.upsert(standOn(held, { state: partyRouteMembers[0] }, { id: 'starter-field' }));
@@ -1183,8 +1264,13 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     capacityFlushKernel.tick();
     assert.strictEqual(lastSteps(capacityFlushKernel).length, 8);
     await capacityFlushKernel.resolveChain;
-    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
-    const readyProposals = [...capacityFlushKernel.dirty.entries()];
+    // Each finished half of the window goes to main at once, its commit asked at once.
+    const halves = capacityFlushMessages.splice(0).filter(entry => entry.type === 'proposal_batch');
+    assert.deepStrictEqual(halves.map(entry => [entry.payload.proposals.length, entry.payload.capacityBlocked]), [[4, true], [4, true]]);
+    assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.half_window, 2);
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
+    const readyProposals = halves.flatMap(entry => entry.payload.proposals).map(proposal => [proposal.characterId, proposal]);
+    readyProposals.forEach(([id, value]) => capacityFlushKernel.dirty.set(id, value));
     for (const reason of ['forced', 'priority', 'batch']) {
         capacityFlushKernel.flush(null, reason === 'forced', { reason });
         const message = capacityFlushMessages.pop();
@@ -1203,6 +1289,73 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
+
+    // The worker asks main to commit at once when half its window waits on main: the other half
+    // runs while main commits that half (pipelined), so the worker does not idle through the commit.
+    // Fewer sent: a running step can still join the batch, so its finished neighbours wait for it.
+    const windowMessages = [];
+    const windowKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 4,
+        emit: (type, payload) => windowMessages.push({ type, payload }) });
+    const pendingOf = id => ({ ...oversizedProposal, characterId: id, enqueuedAt: now,
+        proposalId: `${id}:${now}`, revision: 3, nextState: state(id), result: { events: [], debug: {} } });
+    for (const id of [700, 701, 702, 703]) {
+        windowKernel.upsert({ state: state(id) });
+        windowKernel.inFlight.set(id, { state: state(id), startedAt: now });
+    }
+    windowKernel.dirty.set(700, pendingOf(700));
+    windowKernel.flush(null, false, { reason: 'capacity' });
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, false, 'a quarter sent: main keeps batching');
+    windowKernel.dirty.set(701, pendingOf(701));
+    windowKernel.flush(null, false, { reason: 'capacity' });
+    assert.strictEqual(windowMessages.pop().payload.capacityBlocked, true,
+        'half the window waits on main while two steps still run: it commits at once');
+
+    // Half the window finished is sent at once, with the commit asked at once: the worker does not
+    // wait for the whole window or the 2 s batching age while the other half could run.
+    const halfMessages = [];
+    const halfKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxBatch: 64, maxInFlight: 16,
+        flushTargetMs: 2000, flushHardMs: 5000, emit: (type, payload) => halfMessages.push({ type, payload }) });
+    Array.from({ length: 8 }, (_, index) => state(720 + index)).forEach(entry =>
+        halfKernel.upsert(standOn(halfKernel, { state: entry }, { id: 'spot', rewards: {} })));
+    halfKernel.tick();
+    assert.strictEqual(lastSteps(halfKernel).length, 8);
+    await halfKernel.resolveChain;
+    const halfBatch = halfMessages.find(entry => entry.type === 'proposal_batch');
+    assert(halfBatch, 'eight finished steps of a 16-slot window go to main without waiting for their age');
+    assert.strictEqual(halfBatch.payload.proposals.length, 8);
+    assert.strictEqual(halfBatch.payload.capacityBlocked, true, 'main commits the half window at once');
+    // The worker's flush timer sends the same half window (steps finished before a window shrank to it).
+    const timerMessages = [];
+    const timerKernel = recordingKernel({ resolveSolo: resolver, now: () => now, maxInFlight: 16,
+        emit: (type, payload) => timerMessages.push({ type, payload }) });
+    for (let id = 740; id < 750; id++) {
+        timerKernel.upsert({ state: state(id) });
+        timerKernel.inFlight.set(id, { state: state(id), startedAt: now });
+    }
+    for (let id = 740; id < 747; id++) timerKernel.dirty.set(id, pendingOf(id));
+    assert.strictEqual(timerKernel.flushDue(), 0, 'seven of a 16-slot window finished, six free: they wait for more or their age');
+    timerKernel.dirty.set(747, pendingOf(747));
+    assert.strictEqual(timerKernel.flushDue(), 8);
+    assert.strictEqual(timerMessages.pop().payload.capacityBlocked, true);
+    // With a player online one finished step of an unfilled window goes to main after 250 ms, not the 2 s
+    // batching age; with no player it keeps the 2 s age.
+    let ageNow = now;
+    const ageMessages = [];
+    const ageKernel = recordingKernel({ resolveSolo: resolver, now: () => ageNow, maxInFlight: 16,
+        flushTargetMs: 2000, flushHardMs: 5000, emit: (type, payload) => ageMessages.push({ type, payload }) });
+    for (const id of [760, 761]) {
+        ageKernel.upsert({ state: state(id) });
+        ageKernel.inFlight.set(id, { state: state(id), startedAt: ageNow });
+    }
+    ageKernel.dirty.set(760, { ...pendingOf(760), enqueuedAt: ageNow });
+    ageNow += 300;
+    assert.strictEqual(ageKernel.flushDue(), 0, 'no player: a lone finished step waits for the 2 s batching age');
+    ageKernel.setPressure({ maxInFlight: 16, player: true });
+    assert.strictEqual(ageKernel.flushDue(), 1, 'player online: a lone finished step goes to main after 250 ms');
+    assert.strictEqual(ageMessages.pop().payload.proposals[0].characterId, 760);
+    ageKernel.dirty.set(761, { ...pendingOf(761), enqueuedAt: ageNow });
+    ageNow += 200;
+    assert.strictEqual(ageKernel.flushDue(), 0, 'player online: a step younger than 250 ms still waits');
 
     // An atomic clan party needs the entire small player window. A few free
     // slots must not leave the completed owners waiting for the ordinary timer.
@@ -1433,15 +1586,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(marketProposal.market.updates, undefined, 'unchanged quotes send no metadata update');
     assert.strictEqual(marketProposal.nextState.stats.priceBeliefs, undefined, 'line knowledge does not ride in bot stats');
     assert.strictEqual(marketKernel.beginCommand(40, 'market_review'), null, 'board review command kind is retired');
-    marketKernel.lookSeen.set(40, new Map([[6, { deals: 3, at: now }]]));
-    marketKernel.fence(40);
-    assert.strictEqual(marketKernel.lookSeen.has(40), false, 'hot handoff deletes worker line observations');
-    marketKernel.upsert({ state: state(41) });
-    marketKernel.lookSeen.set(41, new Map([[7, { deals: 3, at: now }]]));
-    marketKernel.remove(41);
-    assert.strictEqual(marketKernel.lookSeen.has(41), false);
     await marketKernel.shutdown();
-    assert.strictEqual(marketKernel.lookSeen.size, 0);
 
     {
         // A commit ack naming a review: the bot waits for the review command
@@ -1612,22 +1757,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         await new Promise(resolve => setTimeout(resolve, 20));
         assert.strictEqual(steps, 1, 'the refused bot is still queued and steps');
 
-        // A market wake on such a bot does not hold it on commands forever.
-        steps = 0;
-        const woken = 2001001;
-        console.error = () => {};
-        refusedKernel.upsert({ state: { characterId: woken, name: 'Woken', level: 20, phase: 'cold', activity: 'hunting', stats: {},
-            inventory: {}, simulation: { revision: 3 }, updatedAt: clock - 90000,
-            timing: { activityStartedAt: clock - 89999.5, nextResolveAt: clock + 10000, lastResolvedAt: clock - 90000 } } });
-        assert.strictEqual(refusedKernel.wakeBuyer(woken), true, 'an idle hunter takes a market wake');
-        refusedKernel.tick();
-        await new Promise(resolve => setTimeout(resolve, 20));
-        console.error = consoleError;
-        assert.strictEqual(refusedKernel.wakeBuyer(woken), false, 'a refused bot takes no second wake');
-        clock += 30001;
-        refusedKernel.tick();
-        await new Promise(resolve => setTimeout(resolve, 20));
-        assert.strictEqual(steps, 1, 'a refused wake leaves the bot its resolver steps');
     }
 
     // A party run with no member result (no spot): the whole roster commits
@@ -1668,7 +1797,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         ['empty-party', 4, emptyNow + 60000, undefined], 'the row change is fenced on the run\'s revision');
     const emptyLeaderCommit = emptyCommits.find(proposal => proposal.partyResolution);
     assert.strictEqual(emptyLeaderCommit.characterId, 250);
-    assert.strictEqual(emptyLeaderCommit.partyResolution.reviewGoals, true, 'main reviews the party\'s goals');
     assert(emptyKernel.busy(250) && emptyKernel.busy(251), 'every member stays in flight until the commit ACK');
     emptyKernel.partyPut(emptyParty.partyId, { ...emptyParty, nextResolveAt: emptyNow + 60000, revision: 5 });
     commitAck(emptyKernel, { results: emptyCommits.map(proposal => ({ ok: true, characterId: proposal.characterId,
@@ -1687,6 +1815,27 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(emptyKernel.busy(250), false);
     assert(emptyKernel.scheduleTokens.get(250).dueAt >= emptyNow + 1000,
         'a refused commit with no new row waits a second, not the row\'s past due');
+
+    // A bot with no step coming (a craft shop: event_driven) whose row a raise woke
+    // (main's raiseOnRow: its buy ad's need withdrawn) takes one command step, which
+    // decides on the raise; a write that wakes nothing steps it not.
+    {
+        let shopNow = now;
+        const shopKernel = recordingKernel({ now: () => shopNow, resolveSolo: resolver });
+        const shop = revision => ({ characterId: 2002000, name: 'Shop', level: 40, phase: 'cold', activity: 'crafting',
+            stats: { craftShop: { recipeId: 1 }, woken: 0 }, inventory: {}, simulation: { revision }, updatedAt: shopNow,
+            timing: { activityStartedAt: shopNow, nextResolveAt: shopNow + 3600000, lastResolvedAt: shopNow } });
+        shopKernel.upsert({ state: shop(3) });
+        shopKernel.tick();
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), false, 'fixture: a craft shop takes no step');
+        shopKernel.upsert({ state: { ...shop(4), updatedAt: shopNow + 1 } });
+        shopKernel.tick();
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), false, 'a write that wakes nothing steps it not');
+        shopKernel.upsert({ state: { ...shop(5), stats: { ...shop(5).stats, woken: 2, situationSeq: 1 } } });
+        shopKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), true, 'a raise that woke its build steps it at once');
+    }
 
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {

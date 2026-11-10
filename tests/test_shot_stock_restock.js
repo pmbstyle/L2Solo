@@ -98,7 +98,9 @@ async function run() {
     const packet = captured.statsPacket;
     assert(captured.reserveInputs.stocks.find(row => row.selfId === 1061)?.perHour > 0,
         'the unarmed native economic snapshot still has real healing demand');
+    // The earning answer carries the spot's kit use, as the worker's decision publishes it.
     cold = { ...mirrored, phase: 'cold', stats: { ...mirrored.stats, ...packet } };
+    cold = { ...cold, stats: { ...cold.stats, earning: require('./helpers/ratedKit')(cold).stats.earning } };
     hot.session.coldLifeState = { ...cold, phase: 'hot' };
     const options = { plan: dPlan, targetAmount: 3000, unitPrice: 20, potionUnitPrice: 200,
         offers: [{ store: 'a', price: 15, count: 400 }] };
@@ -106,7 +108,7 @@ async function run() {
     assert.deepEqual(hotPlan, coldPlan);
     const potions = Potions.restockPlan(cold, { unitPrice: 200 });
     assert(potions.amount > 0); assert.equal(coldPlan.potionCost, coldPlan.needed ? potions.cost : 0);
-    assert(coldPlan.cost + coldPlan.potionCost <= cold.adena - Packet.survivalReserve(packet.money));
+    assert(coldPlan.cost + coldPlan.potionCost <= cold.adena - Packet.refillReserve(packet.money));
     assert.equal(coldPlan.needed, false, 'an unequipped native bot has no funded D-shot wish');
     assert.equal(coldPlan.amount, 0); assert.deepEqual(coldPlan.shops, []);
 

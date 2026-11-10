@@ -48,7 +48,7 @@ invoke('GameServer/Bot/Population/ColdSimulationOwner').handoffToMain = async ()
 Manager.loadAndSpawnBot = async (_account, data) => { spawned = data; return body(data.coldLifeState, data.economyDecision); };
 Spots.findById = id => id === spot.id ? spot : id === 'other' ? { ...spot, id, center: { ...spot.center, locX: 180000 } } : null;
 Spots.findCurrentSpot = () => spot;
-Spots.findBestSpot = () => { throw Error('target_search_must_not_replan'); };
+invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search = () => { throw Error('target_search_must_not_replan'); };
 (async () => {
     for (const leaf of [
         { activity: 'shopping', itemId: 1879, amount: 4, town: 'Aden', rootKey: 'power:91:7' },
@@ -79,7 +79,7 @@ Spots.findBestSpot = () => { throw Error('target_search_must_not_replan'); };
         // A later worker answer is allowed to change the occupation. The
         // activation advice does not pin it forever or override a new answer.
         Events.receive(session, card(spawned.coldLifeState, { activity: 'hunting', spotId: 'other' }),
-            { nearSeq: 1, statsPacket: { ...spawned.coldLifeState.stats, decisionSeq: 6 } });
+            { nearSeq: 1, statsPacket: { ...spawned.coldLifeState.stats, decisionSeq: 6, huntSpot: { spotId: 'other' } } });
         assert.equal(Decision.suggest(status, session).spot.id, 'other');
     }
 

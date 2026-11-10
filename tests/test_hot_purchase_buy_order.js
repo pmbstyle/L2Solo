@@ -41,6 +41,8 @@ const errand = () => ({
 const original = {
     ownerRecords: AfkTrade.ownerRecords,
     closeBotRecord: AfkTrade.closeBotRecord,
+    boardIndex: AfkTrade.boardIndex,
+    repriceBotLines: AfkTrade.repriceBotLines,
     npcOffers: MarketOpportunity.npcOffers,
     buyFromStore: TradeService.buyFromStore,
     npcPurchase: NpcRestock.purchaseForActor,
@@ -62,6 +64,55 @@ async function buyWithOrderFor(orderItemId) {
     return stopped;
 }
 
+// The step a body holds may spend its root's own bids (the decision's bids): its bag alone
+// is short of the price, so it takes back the bids it needs before it pays, and buys in
+// this visit. The root holds two bids (900 and 200 Adena); the step costs 883.
+const ROOT = 854, INPUT = 855;
+async function buyWithStepBids(bids) {
+    const order = [];
+    AfkTrade.boardIndex = () => ({ ownerLines: ownerId => Number(ownerId) === BOT_ID
+        ? [{ storeType: AfkTrade.BUY, custodyPolicy: 0, kind: 'shop', selfId: ROOT, count: 1, price: 900 },
+            { storeType: AfkTrade.BUY, custodyPolicy: 0, kind: 'shop', selfId: INPUT, count: 1, price: 200 }] : [] });
+    AfkTrade.ownerRecords = ownerId => Number(ownerId) === BOT_ID ? [{ id: 22, kind: 'shop', storeType: AfkTrade.BUY, revision: 3,
+        escrowAdena: 1100, lines: [{ id: 5, selfId: ROOT, count: 1, price: 900 }, { id: 6, selfId: INPUT, count: 1, price: 200 }] }] : [];
+    AfkTrade.repriceBotLines = async (_ownerId, _reprices, { withdrawals = [] } = {}) => {
+        order.push(['withdraw', ...withdrawals.map(row => row.lineId)]); return { changed: 1 }; };
+    NpcRestock.purchaseForActor = async () => { order.push(['buy']);
+        return { ok: true, receipts: [{ lines: [{ selfId: SHORT_SWORD, amount: 1, unitPrice: 883 }] }] }; };
+    const session = { actor: bot, companionShopping: { ...errand(), ...(bids ? { bids } : {}) }, coldLifeState: { characterId: BOT_ID, stats: {} } };
+    await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
+    assert.strictEqual(session.coldLifeState.stats.lastMarketPurchase?.selfId, SHORT_SWORD, 'the purchase completes');
+    return order;
+}
+
+// A purchase refused for money is counted as a cold buyer's funding_short; refused for money or
+// for no seller (the NPC's line gone) the step fails, the bot decides anew and the item is not
+// marked: it stays a purchase the next plan takes once the bag pays it or a seller stands.
+async function refusedForMoney() {
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+    const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+    const Situations = invoke('GameServer/Bot/Situations');
+    const Marks = invoke('GameServer/Bot/AI/GearMarks');
+    const diagnostics = Config.developerDiagnostics, offers = MarketOpportunity.npcOffers;
+    Config.developerDiagnostics = true;
+    try {
+        AfkTrade.ownerRecords = () => [];
+        NpcRestock.purchaseForActor = async () => ({ ok: true, receipts: [{ lines: [] }] });
+        const before = Number(MarketTelemetry.current().fundingShort || 0);
+        const session = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+        await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
+        assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'a hot refusal for money is counted');
+        assert(Situations.woken(session.coldLifeState.stats, 'build'), 'the step failed: the bot decides anew');
+        assert(!Marks.marked(session.coldLifeState.stats, SHORT_SWORD), 'the item refused for money is not marked');
+        MarketOpportunity.npcOffers = () => [];
+        const gone = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+        await ShoppingState.sellAndRestock(gone, bot, null, { getClosestTown: () => null, say() {} });
+        assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'no seller is no refusal for money');
+        assert(Situations.woken(gone.coldLifeState.stats, 'build'), 'no seller: the step failed, the bot decides anew');
+        assert(!Marks.marked(gone.coldLifeState.stats, SHORT_SWORD), 'the item with no seller is not marked: it stays a purchase');
+    } finally { Config.developerDiagnostics = diagnostics; MarketOpportunity.npcOffers = offers; }
+}
+
 async function run() {
     MarketOpportunity.npcOffers = () => [{ sourceType: 'npc', sourceId: 7001, price: 883, available: true }];
     TradeService.buyFromStore = async () => ({ qty: 1, totalAdena: 883, name: 'Short Sword' });
@@ -78,6 +129,12 @@ async function run() {
         'a hot purchase of the item must withdraw the bot\'s buy order for it');
     assert.deepStrictEqual(await buyWithOrderFor(SHORT_SWORD + 1), [],
         'a buy order for another item stays');
+    assert.deepStrictEqual(await buyWithStepBids([ROOT]), [['withdraw', 5], ['buy']],
+        'a bag short of the step takes the root\'s own bid back before it pays');
+    assert.deepStrictEqual(await buyWithStepBids(null), [['buy']], 'a step that names no bid takes none back');
+    assert.deepStrictEqual(await buyWithStepBids([INPUT, ROOT]), [['withdraw', 5], ['buy']],
+        'only the bids the bag needs are taken back: the other stays on the board');
+    await refusedForMoney();
 }
 
 run().then(() => console.log('Hot purchase buy order checks passed'))
@@ -85,6 +142,8 @@ run().then(() => console.log('Hot purchase buy order checks passed'))
     .finally(() => {
         AfkTrade.ownerRecords = original.ownerRecords;
         AfkTrade.closeBotRecord = original.closeBotRecord;
+        AfkTrade.boardIndex = original.boardIndex;
+        AfkTrade.repriceBotLines = original.repriceBotLines;
         MarketOpportunity.npcOffers = original.npcOffers;
         TradeService.buyFromStore = original.buyFromStore;
         NpcRestock.purchaseForActor = original.npcPurchase;

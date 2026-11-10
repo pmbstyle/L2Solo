@@ -53,7 +53,7 @@ async function run() {
     const op = { id: 'legacy-return', clanId: 10, enemyClanId: 20, status: 'returning', outcome: 'spot_cleared',
         targetSpotId: target.id, targetLoc: target.center, homeSpotId: home.id, homeLoc: staleHome, expiresAt: at - 1 };
     const prepared = Parties.prepareCommit({ partyId, leaderId: 1, memberIds: ids, spotId: target.id, status: 'active',
-        startedAt: at - 1000000, nextResolveAt: at, stats: { warOperation: op, sessionReview: { at: at - 300000, nextAt: at - 1 } } });
+        startedAt: at - 1000000, nextResolveAt: at, stats: { warOperation: op } });
     const assigned = current().map(s => Life.preparePartyAssignment(s, partyId, s.characterId === 3 ? 'healer' : 'dps', 1, at));
     const committed = await DB.commitBackgroundPartyMembership({ party: prepared.row, members: assigned });
     assert(committed.ok, committed.reason); Life.acceptPartyAssignments(assigned, committed.lifeRows); Parties.acceptRow(committed.partyRow);
@@ -76,7 +76,6 @@ async function run() {
         assert.equal(session.lastDecision.action, 'clan_war_home'); assert.equal(nativeDestination, null);
     } finally { Travel.start = originals.start; Tactics.stop = originals.stop; Restrictions.canUseBasicAction = originals.canUse; }
 
-    assert(!Lifecycle.sessionExpired(Parties.find(partyId), at));
     for (const status of ['assembling', 'engaging', 'returning']) assert(!Capacity.elective({ ...Parties.find(partyId),
         stats: { warOperation: { ...op, status } } }, at), 'an unfinished military order retains its slot after its deadline');
     assert(!await Capacity.reclaim(objective, { parties: Parties, life: Life, database: DB,
@@ -92,14 +91,9 @@ async function run() {
 
     director = new ClanWarDirector({ database: DB, life: Life, parties: Parties, war: War });
     const oldRevision = Parties.find(partyId).revision;
-    const staleSupplySave = Parties.find(partyId);
     await director.maintain(Parties.find(partyId), at);
     assert.deepEqual(Parties.find(partyId).stats.warOperation.homeLoc, home.center, 'a legacy order is repaired once in durable state');
     assert.equal((await DB.setClanWarPartyOperation(partyId, oldRevision, op)).reason, 'party_changed', 'stale arrival/operation writes cannot undo the repair');
-    const afterLateSupply = await Parties.createOrUpdate({ ...staleSupplySave,
-        stats: { ...staleSupplySave.stats, lastMarketBreakAt: at } }, { preserveWarOperation: true });
-    assert.deepEqual(afterLateSupply.stats.warOperation.homeLoc, home.center,
-        'a delayed supply-roster save cannot undo the current return anchor');
     const repairedRevision = Parties.find(partyId).revision;
     await director.maintain(Parties.find(partyId), at + 1);
     assert.equal(Parties.find(partyId).revision, repairedRevision, 'waiting for a real arrival does not write repeatedly');
@@ -122,10 +116,6 @@ async function run() {
     await director.maintain(Parties.find(partyId), arrivalAt + 1);
     assert.equal(Parties.find(partyId).stats.warOperation, null, 'the native owner closes the order after physical return');
     assert.equal(Parties.find(partyId).spotId, home.id);
-    const completed = Parties.find(partyId);
-    const afterCompletionSave = await Parties.createOrUpdate({ ...completed,
-        stats: { ...completed.stats, warOperation: op, lastMarketBreakAt: arrivalAt } }, { preserveWarOperation: true });
-    assert.equal(afterCompletionSave.stats.warOperation, null, 'a delayed supply-roster save cannot resurrect a completed operation');
     assert(Capacity.elective(Parties.find(partyId), arrivalAt + 2));
     assert(await Capacity.reclaim(objective, { parties: Parties, life: Life, database: DB,
         metrics: { recordPartyDissolution() {} } }, arrivalAt + 2), 'ordinary capacity rules resume after the military order has finished');

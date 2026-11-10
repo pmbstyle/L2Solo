@@ -187,6 +187,7 @@ module.exports = {
     ARMOR_SETS,
     SET_SKILLS,
     activeSets,
+    activeSetsForEquippedIds,
     effectsForEquippedIds,
     resolveSkill,
     sync

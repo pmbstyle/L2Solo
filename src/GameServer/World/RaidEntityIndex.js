@@ -61,6 +61,7 @@ const bossChangedListeners = new Set();
 
 function onBossChanged(listener) {
     bossChangedListeners.add(listener);
+    return () => bossChangedListeners.delete(listener);
 }
 
 function bossIn(state, target) {

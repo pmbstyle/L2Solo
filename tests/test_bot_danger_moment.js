@@ -10,8 +10,8 @@ const { SOLO_GATE_MARGIN } = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
 DataCache.init();
 
-// E70: the danger moment compares drinking, fleeing, sitting and fighting on
-// in the bot's hours (§13.6).
+// The danger moment compares drinking, fleeing, sitting and fighting on
+// in the bot's hours.
 const base = { hp: 30, maxHp: 100, survivalRatio: 0.6, attacked: true, potion: { heal: 112, price: 50 },
     restHours: 0.02, deathHours: 0.5, moneyPrice: 1 / 10000, riskWeight: 1.5, roll: 0.5 };
 

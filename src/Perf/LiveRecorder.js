@@ -14,7 +14,8 @@ const HeapProfile = require('./HeapProfile');
 // Without live it registers nothing and starts no timer. With it, per boot folder:
 // - timeline-<day>.jsonl: a "summary" line per population summary (logSummary, every 30 s) and a
 //   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns); the
-//   summary line carries main's GC pauses by kind (count, ms, longest), cumulative from the recorder's start;
+//   summary line carries main's GC pauses by kind (count and ms cumulative from the recorder's start, the
+//   longest since the line before);
 // - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
 //   (scripts/perf.js capture cpu), for Chrome DevTools;
@@ -298,10 +299,13 @@ class LiveRecorder {
             gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept,
             // The profile clock at the chunk's end: the report leaves the next chunk's overlap out
             // even when this chunk's file was not kept.
-            endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}) });
+            endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}),
+            // Stretches the profiler left without samples (CpuProfile): in ms but in neither busy nor idle.
+            ...(a.unsampledMs ? { unsampledMs: a.unsampledMs } : {}) });
         if (a.starved && !state.starvedWarned) {
             state.starvedWarned = true;
-            this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms (left out of the report)`));
+            this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms,`
+                + ` ${Math.round(a.unsampledMs)} ms of it without samples (left out of the report)`));
         }
         if (!a.starved && a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,

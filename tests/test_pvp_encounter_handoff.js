@@ -42,7 +42,7 @@ function assertClosingRow(key, encounter, outcome) {
 invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const telemetry = new (require('../src/GameServer/Bot/Population/ColdCompetitionActions').ColdCompetitionActions)({});
 const patch = (o, k, v) => { const old = o[k]; saved.push(() => { o[k] = old; }); o[k] = v; };
-let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0;
+let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0, resolvePlacement;
 const state = id => Life.cachedState(id);
 const base = { life: Life, owner: Owner, memory: Memory, parties: Parties, now: () => clock,
     personaFor: () => ({ traits: { empathy: 0, caution: 0, assertiveness: 1, commitment: 1, sociability: 1 } }),
@@ -87,6 +87,7 @@ async function main() {
     patch(World, 'fetchVisibleRealPlayers', () => []);
     // The fence as the worker holds it; the release is the real one (no worker runs here).
     patch(Coordinator, 'fenceBot', async n => { Coordinator.fencedBots.add(Number(n)); return { ok: true }; });
+    resolvePlacement = invoke('GameServer/Bot/Population/ActivationPlacement').resolve;
     patch(invoke('GameServer/Bot/Population/ActivationPlacement'), 'resolve', s => ({ loc: s.loc, spot: { id: 'test' } }));
     patch(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
     patch(invoke('GameServer/Bot/AI/BotPvpThreats'), 'context', () => ({ threats: [] }));
@@ -275,6 +276,34 @@ async function main() {
     assert([5,6].every(n => !Coordinator.fencedBots.has(n)), 'a failed encounter activation leaves no member fenced');
     assert.strictEqual(Manager.sessions.length, 0, 'failed staging publishes nobody');
     assert(!Runtime.pending.size);
+    // Two solo sides on their held spot turn hot as one fight: each stands by the first
+    // side's principal, not by a live mob of the species it hunts (3000 away on opposite
+    // sides; the fight's 1500 would refuse it).
+    const heldSpot = { id: 'test', center: { locX: 0, locY: 0, locZ: 0 },
+        npcEntries: [{ selfId: 10, count: 5, level: 40 }, { selfId: 11, count: 5, level: 40 }] };
+    const mobAt = (npcId, locX) => ({ fetchSelfId: () => npcId, isDead: () => false,
+        fetchLocX: () => locX, fetchLocY: () => 0, fetchLocZ: () => 0 });
+    const Spots = invoke('GameServer/Bot/AI/SpotService'), Geo = invoke('GameServer/Geodata/GeodataEngine');
+    const Target = invoke('GameServer/Bot/Population/PartyHuntingTarget');
+    const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
+    const stubs = [[Placement, 'resolve', resolvePlacement], [Spots, 'findById', () => heldSpot],
+        [Spots, 'containsLocation', (_spot, loc) => Math.abs(loc.locX) < 6000 && Math.abs(loc.locY) < 6000],
+        [Spots, 'findCurrentSpot', () => heldSpot], [World, 'actorSessionsNear', () => []],
+        [Target, 'competitionNpcId', (_party, s) => s.characterId === 5 ? 10 : 11],
+        [World, 'fetchNpcsInRadius', () => [mobAt(10, 3000), mobAt(11, -3000)]],
+        [Geo, 'hasGeo', () => true], [Geo, 'getHeight', () => 0], [Geo, 'getCellData', () => ({ z: 0, nswe: 15 })],
+        [Geo, 'hasLineOfSight', () => true]];
+    const unstubbed = stubs.map(([object, key, value]) => { const before = object[key]; object[key] = value; return () => { object[key] = before; }; });
+    spawned = 0; failSpawn = 0;
+    try {
+        const placed = await Lifecycle.activate(solo.encounter);
+        assert(placed.ok, JSON.stringify(placed));
+        const [a, b] = World.user.sessions.map(s => s.actor);
+        assert(Math.hypot(a.fetchLocX() - b.fetchLocX(), a.fetchLocY() - b.fetchLocY()) <= 1500, 'the sides stand within one fight');
+        assert((await Lifecycle.cooldown(placed.encounter, 'test', { ignoreVisibility: true })).ok);
+    } finally {
+        unstubbed.reverse().forEach(restore => restore());
+    }
     const running = await Conflict.apply({ ...base, event: event(7, 8) });
     assert(running.encounter);
     Runtime.encounters.clear(); Runtime.register(running.encounter);

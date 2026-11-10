@@ -19,7 +19,7 @@ Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1000 * (1-benef
 Table.best = (role, level, shots) => Table.value('policy', role, level, shots);
 Hunt.huntIncome = () => ({ perHour: 10000, expPerHour: 1000, source: 'own', spotId: 'policy' });
 Belief.prior = id => ({ mu: Math.log(Number(id) === 1835 ? 14 : 1), K: 1 });
-const deps = { board: { first: () => null }, spots: [], workshop: null, workshops: null, knownRecipes: [],
+const deps = { board: { first: () => null }, spots: [], workshops: null, knownRecipes: [],
     npcOffersFor: () => [], timestamp: 1800000000000, persona: { traits: {}, understanding: 1 } };
 try {
     let stock = Economy.basics(state, deps).stock('shots');

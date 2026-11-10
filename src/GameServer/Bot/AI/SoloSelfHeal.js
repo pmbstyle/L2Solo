@@ -1,7 +1,7 @@
 'use strict';
 
-// Owner: when a solo bot on mobs heals itself, hot and cold alike (T107,
-// docs/game-decisions.md "Solo self-heal"). No fixed HP line:
+// Owner: when a solo bot on mobs heals itself, hot and cold alike.
+// No fixed HP line:
 // - in a fight, only when the bot would not outlive the mob otherwise (the
 //   damage it takes until the mob dies reaches its HP at the fight's pace) and
 //   the heal outgains what the bot loses during its cast;

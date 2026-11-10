@@ -1,10 +1,12 @@
 const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
+const FailureLog = invoke('FailureLog');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const TableChannel = require('../Bot/Population/ColdTableChannel');
 const { SpotCatalogWriter } = require('./ClanSpotCatalog');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const DataCache = invoke('GameServer/DataCache');
+const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -62,7 +64,10 @@ class ClanPlanningCoordinator {
         // Updated only on a reply, dropped with the job, the worker or a
         // failed send (the next message then sends everything).
         this.jobInputs = null;
-        this.stats = { completed: 0, failures: 0, timeouts: 0, rejected: 0, restarts: 0, maxRunMs: 0, contextPublishes: 0 };
+        // Always counted (status line clanRestarts=): workers started after
+        // one failed (fail: a crash, an OOM, a timeout ends one worker).
+        this.restarts = 0;
+        this.stats = { completed: 0, failures: 0, timeouts: 0, rejected: 0, maxRunMs: 0, contextPublishes: 0 };
     }
 
     // The worker is gone (failed or stopped): nothing published to it
@@ -79,10 +84,15 @@ class ClanPlanningCoordinator {
         this.pending.clear();
     }
 
-    fail(worker, error) {
+    // A worker ends once: its error (an OOM too), exit or timeout, whichever
+    // comes first, counted under `clan.worker.<site>` (FailureLog: the first
+    // of a site logged with its stack); the next request after
+    // restartDelayMs starts a new one (restarts).
+    fail(worker, error, site) {
         if (this.worker !== worker) return;
         this.release(error);
         this.retryAt = Date.now() + this.restartDelayMs;
+        FailureLog.note(`clan.worker.${site}`, error);
         DiagnosticConfig.developerDiagnostics && (this.stats.failures++);
         void worker.terminate();
     }
@@ -98,7 +108,7 @@ class ClanPlanningCoordinator {
             const id = ++this.sequence;
             const timer = setTimeout(() => {
                 DiagnosticConfig.developerDiagnostics && (this.stats.timeouts++);
-                this.fail(worker, new Error('clan planning worker timed out'));
+                this.fail(worker, new Error('clan planning worker timed out'), 'timeout');
             }, this.timeoutMs);
             this.pending.set(id, { resolve, reject, timer });
             worker.ref();
@@ -109,7 +119,7 @@ class ClanPlanningCoordinator {
                 // ordered request by original object identity, never by ID alone.
                 worker.postMessage({ id, type, ...payload });
             } catch (error) {
-                this.fail(worker, error);
+                this.fail(worker, error, 'send');
             }
         });
     }
@@ -119,14 +129,21 @@ class ClanPlanningCoordinator {
         if (this.initializing) return this.initializing;
         if (this.worker) return;
         if (Date.now() < this.retryAt) throw new Error('clan planning worker recovering');
-        const worker = new Worker(this.workerFile, { workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true } });
+        // An OOM ends the worker with ERR_WORKER_OUT_OF_MEMORY (fail).
+        const resourceLimits = DiagnosticConfig.workerResourceLimits('clanWorkerHeapMb', 'clanWorkerYoungMb');
+        const worker = new Worker(this.workerFile, { resourceLimits, workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true,
+            spotTable: SpotValueTable.sharedDescriptor() } });
         this.worker = worker;
+        // Only a failed worker is replaced (shutdown closes for good).
+        if (this.epoch > 0) {
+            this.restarts++;
+            invoke('GameServer/Bot/DecisionTrace').record({ kind: 'restart', worker: 'clan', reason: 'replaced' });
+        }
         const epoch = ++this.epoch;
         // A restarted worker has not reported yet (WorkerHeapTelemetry.heapRecord).
         delete this.stats.v8Heap;
-        DiagnosticConfig.developerDiagnostics && (this.stats.restarts++);
-        worker.on('error', (error) => this.fail(worker, error));
-        worker.on('exit', (code) => this.fail(worker, new Error(`clan planning worker exited: ${code}`)));
+        worker.on('error', (error) => this.fail(worker, error, 'error'));
+        worker.on('exit', (code) => this.fail(worker, new Error(`clan planning worker exited: ${code}`), 'exit'));
         worker.on('message', (message) => {
             if (this.worker !== worker) return;
             if (message.type === 'table_resync') {
@@ -155,7 +172,7 @@ class ClanPlanningCoordinator {
             }
         })();
         try { await this.initializing; }
-        catch (error) { this.fail(worker, error); throw error; }
+        catch (error) { this.fail(worker, error, 'catalog'); throw error; }
         finally { this.initializing = null; }
         // Every table in full now; changes before each plan (plan()).
         if (this.worker === worker) this.tableChannel.attach(this, epoch, (payload) => this.postTables(worker, payload));
@@ -167,7 +184,7 @@ class ClanPlanningCoordinator {
             worker.postMessage({ type: 'table_page', ...payload });
             return true;
         } catch (error) {
-            this.fail(worker, error);
+            this.fail(worker, error, 'tables');
             return false;
         }
     }
@@ -330,7 +347,11 @@ class ClanPlanningCoordinator {
         }
     }
 
-    metrics() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, pending: this.pending.size, running: !!this.worker }; }
+    // restarts always; the rest with developer diagnostics.
+    metrics() {
+        return { ...(DiagnosticConfig.developerDiagnostics ? this.stats : { enabled: false }), restarts: this.restarts,
+            pending: this.pending.size, running: !!this.worker };
+    }
 }
 
 let coordinator = null;
@@ -414,6 +435,6 @@ module.exports = {
     plan: (payload) => coordinator.plan(payload, DataCache, invoke('GameServer/Bot/Population/SpotProfiles').ensure()),
     withJob: (deadlineAt, work) => coordinator.withJob(deadlineAt, DataCache, work),
     prepareRaids: payload => coordinator.prepareRaids(payload, DataCache, invoke('GameServer/Bot/Population/SpotProfiles').ensure()),
-    metrics: () => coordinator?.metrics() || { running: false, pending: 0 },
+    metrics: () => coordinator?.metrics() || { running: false, pending: 0, restarts: 0 },
     shutdown: () => coordinator?.shutdown()
 };

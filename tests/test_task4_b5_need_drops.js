@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 (N3): material that reaches the bag by loot or spoil (no purchase event) shrinks the same need.
+// Material that reaches the bag by loot or spoil (no purchase event) shrinks the same need.
 // Cold: the stale card and a fresh rebuild both order 14 instead of 24, under the same root, one advert row.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

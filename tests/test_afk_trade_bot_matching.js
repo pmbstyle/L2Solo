@@ -1,5 +1,5 @@
-// A player's AFK shop and the bots' board records make no deal from afar
-// (E45, design 4.4 and 4.6): a crossed buy ad or sell ad leaves the shop
+// A player's AFK shop and the bots' board records make no deal from afar:
+// a crossed buy ad or sell ad leaves the shop
 // standing; a bot that comes to the town buys from it or sells into it in
 // person, its bag paying or receiving in the same deal.
 const assert = require('assert');

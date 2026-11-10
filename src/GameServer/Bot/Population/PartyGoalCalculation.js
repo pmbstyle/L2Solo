@@ -40,11 +40,12 @@ function validMembers(party, members, partial = false) {
 
 // A forming roster (main's `stats.forming`, before the party is built) gets only its verdict,
 // PartyGoalPolicy.formingVerdict: the accepted ids, no goals.
-async function calculate(party, members, prepare, timestamp, current = () => true, { spots } = {}) {
+// bridgeReason: the thread's funded-bridge read (PartyStay.joins), for a forming verdict.
+async function calculate(party, members, prepare, timestamp, current = () => true, { spots, bridgeReason = null } = {}) {
     if (party.stats?.forming) {
         if (!current()) throw new Error('party_goal_expired');
         // lazy: optional the joint policy loads only for a goal or recruit check
-        return require('./PartyGoalPolicy').formingVerdict(members, party.stats.forming.requested || null, { spots, timestamp });
+        return require('./PartyGoalPolicy').formingVerdict(members, party.stats.forming.requested || null, { spots, timestamp, bridgeReason });
     }
     if (require('./OpportunisticRaidPolicy').isObjective(party.stats?.objective)) {
         if (!current()) throw new Error('party_goal_expired');
@@ -63,7 +64,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     // Declared material needs do not require personal or group wish rebuilds.
     if (require('./CraftMaterialParty').isObjective(party.stats?.objective)) {
         if (!current()) throw new Error('party_goal_expired');
-        return require('./PartyGoalPolicy').joint(party, members, { timestamp, spots });
+        return require('./PartyGoalPolicy').joint(party, members);
     }
     const contexts = [];
     for (const member of members) {
@@ -73,7 +74,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     }
     const policy = require('./PartyGoalPolicy');
     const context = policy.groupContext(party, members, { timestamp, memberContexts: contexts, rememberGroup: false });
-    return policy.joint(party, members, { context, timestamp, memberContexts: contexts, spots });
+    return policy.joint(party, members, { context });
 }
 
 // The recruit check of a pending join: the members with the recruits on one
@@ -81,7 +82,8 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
 // PartyGoalPolicy.recruitment). The join is the answer only when every
 // required member accepts; null otherwise. Runs where the party steps: the
 // leader's step in the background thread, or main for a party near the player.
-function recruitCheck(party, members, { spots, timestamp }) {
+// bridgeReason: the thread's funded-bridge read (PartyStay.joins).
+function recruitCheck(party, members, { spots, timestamp, bridgeReason = null }) {
     // lazy: optional material rules load only for a recruit check (this file loads with the protocol)
     const Material = require('./CraftMaterialParty');
     // lazy: optional gear rules (item data) load only for a recruit check
@@ -93,9 +95,13 @@ function recruitCheck(party, members, { spots, timestamp }) {
         stats: { ...(party.stats || {}), agreement } };
     // lazy: optional the joint policy loads only for a goal or recruit check
     const joint = require('./PartyGoalPolicy').recruitment(roster, members, { spots, timestamp });
+    // A recruit whose own stay would leave at once is no join (PartyStay.joins).
+    const current = new Set((party.memberIds || []).map(Number));
     const refused = members.some(member => (material ? Progression.adventurer(member) : Progression.personal(member))
-        && !joint.incomeReviews.find(row => row.characterId === Number(member.characterId))?.accept);
-    return refused ? null : { ...joint, agreement: agreement || null };
+        && !joint.progressReviews.find(row => row.characterId === Number(member.characterId))?.accept)
+        || members.some(member => !current.has(Number(member.characterId))
+            && !require('./PartyStay').joins(member, { now: timestamp, bridgeReason }));
+    return refused ? null : { objective: joint.objective, memberGoals: joint.memberGoals, agreement: agreement || null };
 }
 
 module.exports = { source, sources, sameSource, matches, validMembers, calculate, recruitCheck };

@@ -497,12 +497,6 @@ CREATE TABLE IF NOT EXISTS bot_market_counts (
 );
 CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
 CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
-CREATE TABLE IF NOT EXISTS bot_goal_state (
-    characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
-    goalJson TEXT,
-    updatedAt INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS bot_personas (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     version INTEGER NOT NULL DEFAULT 1,

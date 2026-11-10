@@ -78,6 +78,45 @@ assert.equal(tail.busyMs, 3);
 assert.equal(tail.runs, 2);
 assert.equal(tail.longest.ms, 2);
 
+// V8's profile clock (us) wraps at 2^32 (~71.6 min): a chunk across the wrap ends "before" it
+// starts. The same chunk read across the wrap gives the same numbers, also with an overlap (since)
+// on either side of it.
+const WRAP = 2 ** 32;
+const shifted = (startTime) => ({ ...profile, startTime, endTime: (startTime + 9000) % WRAP });
+for (const startTime of [WRAP - 4000, WRAP - 2000]) {
+    const wrapped = CpuProfile.analyze(shifted(startTime), { longTurnMs: 3 });
+    assert.deepEqual([wrapped.durationMs, wrapped.idleMs, wrapped.long], [9, 3, [{ atMs: 1, ms: 5 }]], 'the last sample lasts until the end');
+    const after = CpuProfile.analyze(shifted(startTime), { longTurnMs: 2, since: (startTime + 3000) % WRAP });
+    assert.deepEqual([after.durationMs, after.busyMs, after.longest.ms], [6, 3, 2], 'the overlap is left out across the wrap');
+}
+// The real case (2026-11-06): a starved worker minute across the wrap read as 0 ms long, so it was
+// not marked starved and its one 60 s "run" became the report's longest turn.
+const starvedWrap = CpuProfile.analyze({ nodes: profile.nodes, samples: [3, 6, 3], timeDeltas: [1000, 20e6, 20e6],
+    startTime: WRAP - 30e6, endTime: 30e6 });
+assert.equal(starvedWrap.durationMs, 60000);
+assert.equal(starvedWrap.starved, true);
+
+// A profiler that starves in stretches while its average gap stays under 20 ms: a gap over 100 ms
+// has no samples, so it is neither busy nor idle and ends a busy run (it held a 60 s fake turn).
+// 3000 busy samples 1 ms apart, one 200 ms gap after the 1500th: 6 % of the chunk, still usable.
+const busyChunk = (gaps) => {
+    const timeDeltas = Array(3000).fill(1000);
+    timeDeltas[0] = 0;
+    for (const at of gaps) timeDeltas[at] = 200000;
+    const length = timeDeltas.reduce((sum, delta) => sum + delta, 0) + 1000;
+    return { nodes: profile.nodes, samples: Array(3000).fill(3), timeDeltas, startTime: 0, endTime: length };
+};
+const stretch = CpuProfile.analyze(busyChunk([1500]), { longTurnMs: 1000 });
+assert.equal(stretch.durationMs, 3199);
+assert.equal(stretch.starved, false, '6 % of the chunk without samples');
+assert.deepEqual([stretch.unsampledMs, stretch.stretches, stretch.busyMs], [200, 1, 2999]);
+assert.deepEqual(stretch.long, [{ atMs: 1699, ms: 1500 }, { atMs: 0, ms: 1499 }], 'two runs, not one of 3199 ms');
+// Five such gaps: 1 s of 4 s (25 %) without samples starve the whole chunk, though its 3000 samples
+// average one per 1.3 ms.
+const stretches = CpuProfile.analyze(busyChunk([500, 1000, 1500, 2000, 2500]));
+assert.equal(stretches.starved, true, 'more than 10 % of the chunk without samples');
+assert.equal(stretches.unsampledMs, 1000);
+
 // Node writes regexp code names unescaped ("RegExp: <source>"): a quote or backslash in a pattern
 // breaks the profile's JSON until it is repaired.
 const v8 = require('v8');

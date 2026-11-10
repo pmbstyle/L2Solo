@@ -21,6 +21,8 @@ const command = (state, kind = 'lifecycle') => ({ characterId: state.characterId
 let currentRows;
 const oldCached = LifeState.cachedState;
 const oldSettle = LifeState.settleWrites;
+const oldRaise = LifeState.raiseOnRow;
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 LifeState.cachedState = id => currentRows.get(Number(id)) || null;
 const failures = [];
 async function check(name, work) { try { await work(); console.log(`PASS ${name}`); } catch (error) { failures.push(name); console.error(`FAIL ${name}: ${error.stack}`); } }
@@ -95,6 +97,40 @@ async function run() {
         assert.equal(h.coordinator.refusals.commandDbErrors, 0);
         assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
         assert.equal(h.coordinator.counters.commandErrors, 1); assert.equal(h.coordinator.commandInflight.size, 0);
+    });
+    // The writer's named refusal (the act's facts moved since its decision) that no owner
+    // caught refuses the decision: goal_failed drops the held step and the bot decides again.
+    // Never a fault (refusals in a row never quarantine the bot), never the command retried.
+    await check('named command refusal re-decides, never a fault or a retry of the command', async () => {
+        const h = fixture({ error: Error('economy_material_protected') }), raises = [];
+        const before = DecisionEvents.rejections()['command:economy_material_protected'] || 0;
+        LifeState.raiseOnRow = async (id, list) => { raises.push(list);
+            return { ...currentRows.get(id), simulation: { revision: 1 } }; };
+        try {
+            for (let i = 0; i < 5; i++) {
+                currentRows.set(1, { ...row(1), stats: { decisionSeq: 3, activityLeaf: 1 } });
+                await h.submit([command(currentRows.get(1))]); await h.coordinator.commandTail;
+                const result = acknowledgements(h).at(-1).message.payload.results[0];
+                assert.equal(result.ok, false); assert.equal(result.reason, 'economy_material_protected');
+                assert.equal(result.fault, undefined, 'an outcome, never a fault');
+                assert.equal(result.retryAfterMs, undefined, 'the refused command is not retried');
+                assert.equal(result.state.simulation.revision, 1, 'the ack carries the row the refusal was raised on');
+            }
+        } finally { LifeState.raiseOnRow = oldRaise; }
+        assert.equal(raises.length, 5);
+        assert.deepEqual(raises[0], [{ name: 'goal_failed', payload: { impossible: true } }], 'the held step is dropped');
+        assert.equal(DecisionEvents.rejections()['command:economy_material_protected'] - before, 5);
+    });
+    // A bare code the writer does not name as a refusal is a broken invariant: a fault with its stack.
+    await check('unnamed code is a fault with its stack, nothing raised', async () => {
+        const h = fixture({ error: Error('economy_completion_missing') });
+        let raised = 0; LifeState.raiseOnRow = async () => { raised += 1; return null; };
+        try {
+            currentRows.set(1, { ...row(1), stats: { decisionSeq: 3, activityLeaf: 1 } });
+            await h.submit([command(currentRows.get(1))]); await h.coordinator.commandTail;
+        } finally { LifeState.raiseOnRow = oldRaise; }
+        const result = acknowledgements(h)[0].message.payload.results[0];
+        assert.match(result.fault.stack, /economy_completion_missing/); assert.equal(raised, 0);
     });
     await check('retired command error has no replacement reply or error effects', async () => {
         const h = fixture({ held: true }); await h.submit([command(currentRows.get(1))]); await h.entered.promise;

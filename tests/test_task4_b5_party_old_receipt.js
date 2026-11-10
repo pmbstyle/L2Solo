@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N13 (E169 old accepted receipt): a trade meeting accepted before the
+// A trade meeting accepted before the
 // buyer joins a party still completes. Goods arrive, the receipt is readable,
 // custody is conserved, and the party bot accepts no new trade afterwards.
 const assert = require('node:assert/strict');
@@ -49,7 +49,10 @@ const ids = [730281, 730282], point = { locX: 83396, locY: 147904, locZ: -3400 }
         assert.equal((await Database.prepareTradeParticipant(ids[0])).partyId, 'b5-joined-party');
         const arrived = await Database.arriveTradeMeeting(meetingId);
         assert.equal(arrived.meeting.state, 'completed', 'an old accepted meeting completes for a party bot');
-        for (const actor of ids) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(meetingId, actor); }
+        // The arrival fences both far rows with the delivery in their bags: nothing waits on the board.
+        assert.deepEqual(Database.boardSettlementOwners(), [], 'a meeting delivers straight into far bags');
+        assert.equal(arrived.coldLifeRows[ids[0]].inventoryPatch[1867].amount, 102, 'the buyer\'s fenced row carries the goods');
+        for (const actor of ids) await Database.acknowledgeTradeMeeting(meetingId, actor);
         assert.equal((await bag(ids[0]))[1867], 102, 'goods delivered to the party buyer');
         assert.equal((await bag(ids[1]))[1867], 98, 'goods left the seller');
         for (const actor of ids) {

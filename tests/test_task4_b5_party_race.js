@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N12 (E169 race): a trade meeting acceptance and a party join for the
+// A trade meeting acceptance and a party join for the
 // same bot are started together, in both orders. Exactly one wins; the losing side
 // is refused (party_busy / party_trade_busy) and moves no goods, Adena or journal rows.
 const assert = require('node:assert/strict');

@@ -8,7 +8,6 @@ require('../src/Global');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
-const { rowOf } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 async function runWorker(state, predicate, followUp = null) {
     const epoch = `economy-publication-${state.characterId}`, received = [];
@@ -65,44 +64,20 @@ async function runWorker(state, predicate, followUp = null) {
         timing: { nextResolveAt: now + 60000, lastResolvedAt: now - 60000 }, updatedAt: now,
         simulation: { revision: 1 },
         vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
-    // A workshop gone stale: a far row's echoes to main; a near row's does not
-    // (its copy is current by nearSeq). The far crafter reads 1882, the near build 1835.
-    const staleFor = id => message => message.type === 'ready'
-        && message.payload.phase === 'economy_workshop_stale' && message.payload.characterId === id;
-    const far = { ...state, characterId: 765414, name: 'PublicationFar', phase: 'cold', nearSeq: undefined,
-        timing: { nextResolveAt: now - 1, lastResolvedAt: now - 60000 },
-        stats: { classId: 0, clanId: 9, generatedCold: true, dwarvenCraftLevel: 1, workshop: { entries: [] }, money: [1000, .001, 0, 0] } };
     const decidedFor = id => message => message.type === 'ready' && message.payload.phase === 'economy_decided'
         && message.payload.characterId === id;
     const hot = await runWorker(state, decidedFor(state.characterId),
-        async ({ result, until, seen, post, table }) => {
+        async ({ result, until, table }) => {
             // A clan member's deposit moves the clan supply the near decision
             // reads: the same post is decided again on it.
             table([{ name: 'clan_supplies', from: null, to: 0, full: true, last: 1, removed: [],
                 rows: [[9, [9, 1, [[1864, 3]], 5]]] }]);
             await until(message => message !== result && decidedFor(state.characterId)(message));
-            // Crafted materials enter the workshop only with actual demand;
-            // permanent resource buyers take raw materials, not product 1882.
-            const buyer = { id: 765415, ownerId: 765416, storeType: 3, town: 'Giran',
-                revision: 1, escrowAdena: 100000,
-                lines: [{ id: 7654150, selfId: 1882, count: 100, price: 1000 }] };
-            table([{ name: 'board', from: 0, to: 1, full: false, last: 1, removed: [],
-                rows: [[buyer.id, rowOf(buyer)]] }]);
-            post(far);
-            // A moved item marks a done slot only: pages repeat until the far one has finished.
-            for (let version = 0; !seen(staleFor(far.characterId)); version++) {
-                assert(version < 200, 'the far crafter echoes its stale workshop');
-                table([{ name: 'market', from: version, to: version + 1, full: false, last: 1, removed: [],
-                    rows: [1835, 1882].map(id => [`i:${id}`, [`i:${id}`, version + 1, 1]]) }]);
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            assert(!seen(staleFor(state.characterId)), 'a near row\'s stale workshop is not echoed to main');
         });
     // A near bot's decision is the whole one a far bot gets (its clan plan
     // included), with the mind it moved and the row's post number beside it.
     const decision = Decisions.compact(hot.payload.economyDecision), near = hot.payload.near;
     assert(decision.clan?.huntPerHour > 0, 'a clan member near the player gets its clan valuation');
-    assert.equal(decision.workshop.known, true);
     assert.equal(near.nearSeq, state.nearSeq, 'the decision names the post it answers');
     assert.deepEqual(decision.echo, [near.statsPacket.decisionSeq, near.statsPacket.activityLeaf, near.statsPacket.wishFocus[0]],
         'the card and the moved mind are one decision');
@@ -116,11 +91,12 @@ async function runWorker(state, predicate, followUp = null) {
         && message.payload.phase === 'economy_decided', async ({ result: first, until, received, post }) => {
         const own = first.payload.near.statsPacket.decisionSeq;
         const raised = { ...state, characterId: 765413, nearSeq: 4, updatedAt: now + 1,
-            raise: { seq: 1, bits: 1, impossible: true, impossibleSeq: 1 } };
+            raise: { seq: 1, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } };
         post({ ...state, characterId: 765414, updatedAt: now + 1 });
         post(raised);
         const answer = (await decidedAt(until, 4)).payload.near, one = answer.statsPacket;
-        assert.equal(one.decisionSeq, own + 1, 'a raise main posted is taken once, on the worker\'s mind');
+        assert.equal(answer.raiseSeq, 1, 'a raise main posted is taken, on the worker\'s mind');
+        assert.equal(one.decisionSeq, own, 'a raise is no decision: the mind\'s sequence stays');
         assert(answer.shots && Number.isFinite(answer.shots.ownedUsePerHour), 'the decision carries its build\'s auto-shot verdict');
         // A writer's copy of the cached row (no post number) is older than the
         // record's post: the record stands and no decision answers it.
@@ -138,9 +114,21 @@ async function runWorker(state, predicate, followUp = null) {
         assert.equal(two.decisionSeq, one.decisionSeq, 'a later post naming the same raise neither raises again nor rolls the mind back');
         // The pending bag is cumulative: a later raise still carries the
         // impossible mark of raise 1 (its step drop: test_near_decision_order).
-        post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, bits: 1, impossible: true, impossibleSeq: 1 } });
-        const three = (await decidedAt(until, 6)).payload.near.statsPacket;
-        assert.equal(three.decisionSeq, two.decisionSeq + 1, 'the new raise is taken');
+        post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } });
+        assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
+        // A failed gear errand marks its key in the near mind and wakes the build and the gear
+        // review (its source failed): the review plans without the item and keeps its mark
+        // (only its situations forget it), and the answer carries it to the body (GearMarks:
+        // one rule near and far), so the next failure's review cannot take it again: an earlier
+        // failure's mark stays beside it.
+        const planned = { ...raised, stats: { ...raised.stats, equipmentPlan: null } };
+        const sixFailed = { name: 'goal_failed', payload: { kind: 'gear_errand', key: 6 }, seq: 3 };
+        post({ ...planned, nearSeq: 7, updatedAt: now + 5, raise: { seq: 3, names: [sixFailed] } });
+        assert.deepEqual((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, [{ key: 6 }], 'the first failure marks its key');
+        post({ ...planned, nearSeq: 8, updatedAt: now + 6, raise: { seq: 4,
+            names: [sixFailed, { name: 'goal_failed', payload: { kind: 'gear_errand', key: 5 }, seq: 4 }] } });
+        const reviewed = (await decidedAt(until, 8)).payload.near.statsPacket;
+        assert.deepEqual(reviewed.gearMarks, [{ key: 6 }, { key: 5 }], 'the review it woke keeps both marks it planned without');
     });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,

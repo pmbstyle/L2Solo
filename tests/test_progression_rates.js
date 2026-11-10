@@ -128,7 +128,7 @@ assert.strictEqual(ProgressionRates.profile().multiplier, 1);
 
 useRate(originalRate);
 
-// L129: the single-killer penalty equals the rule's for every gap and malformed level.
+// The single-killer penalty equals the rule's for every gap and malformed level.
 for (const npcLevel of [0, -3, 'x', 1, 20, 20.5, 80]) {
     for (const killerLevel of [undefined, 0, -1, 'x', 1, 20, 28, 29, 30, 40, 29.5, 99]) {
         assert.strictEqual(ProgressionRates.deepBluePenaltyPercent(npcLevel, killerLevel),

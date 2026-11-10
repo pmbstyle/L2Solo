@@ -221,7 +221,31 @@ function deferredAcquisitionPlan(state, previous, economy, replanContext = {}, t
     return paused;
 }
 
-function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
+// The plan's review with the route's verdict on its source (withRoutedSource).
+function selectAcquisitionPlan(state, previousPlan, options = {}) {
+    const selection = select(state, previousPlan, options);
+    return { ...selection, acquisitionPlan: withRoutedSource(state, selection.acquisitionPlan,
+        options.spots || [], options.timestamp ?? Date.now()) };
+}
+
+// The route's verdict on an active plan's source, judged with the plan and held with it
+// until its next review: routedSpotId names the source spot when the solo route's source
+// test takes it (GearAcquisitionPlanner.isPlanSourceViableForState over the catalogue: an
+// eligible source, the voluntary hunt band, the solo source reader), absent when it
+// refuses it. It is the outgrown fact's input (DecisionSections.routedSourceOf, how far
+// the bot has outgrown the source: source_stalled), not where the bot goes: that is the
+// route's own choice (BotRoute.huntSpot). A verdict names its spot: one carried onto
+// another source is none.
+function withRoutedSource(state, plan, spots, timestamp) {
+    const spotId = plan?.status === 'active' && plan.next?.spotId != null
+        && GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots, timestamp }) ? String(plan.next.spotId) : undefined;
+    if (!plan || plan.routedSpotId === spotId) return plan;
+    const next = { ...plan, routedSpotId: spotId };
+    if (spotId === undefined) delete next.routedSpotId;
+    return next;
+}
+
+function select(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
     if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
     const economy = preparedEconomy || invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
         spots, timestamp, board: planningOptions.board, buyOrderEscrow: planningOptions.buyOrderEscrow, caller: 'gear_plan'
@@ -232,21 +256,19 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     if (!lockedClan && (['luxury_exchange', 'craft'].includes(preparedAcquisition?.strategy) || preparedAcquisition?.combine?.type === 'dual_sword')) return {
         acquisitionPlan: withRetainedCraftPreparation(state, previousPlan, { ...preparedAcquisition,
             ...(previousPlan?.clanGoal && Number(previousPlan.target?.selfId) === Number(preparedAcquisition.target?.selfId)
-                ? { clanGoal: previousPlan.clanGoal } : {}) }, timestamp), replanContext: {}, reusablePartyRequest: false,
-        excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
+                ? { clanGoal: previousPlan.clanGoal } : {}) }, timestamp), replanContext: {}, reusablePartyRequest: false, economy };
     const chosen = economy.network.queue.find(wish => wish.key === economy.network.activity?.rootKey)
         || economy.network.queue.find(wish => wish.key === economy.network.focus?.[0]);
     const wishTargetId = chosen?.object?.slot ? chosen.object.itemId : null;
     const activity = economy.network.activity;
     const activeGear = wishTargetId && activity?.rootKey === chosen.key
-        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && activity.kind !== 'production' && !activity.funding;
+        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && !activity.funding;
     if (!activeGear && !GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)) {
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.
         const replanContext = preparedReplanContext || GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
         const acquisitionPlan = deferredAcquisitionPlan(state, previousPlan, economy, replanContext, timestamp);
-        return { acquisitionPlan, replanContext,
-            reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
+        return { acquisitionPlan, replanContext, reusablePartyRequest: false, economy };
     }
     // The selected item's native funding gate reads the packet made by this
     // same review, including the bot's own funded buy-order escrow.
@@ -282,10 +304,16 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';
     if (clanRaidPlan) planOptions.allowRaidSources = true;
-    const weaponBridgePlan = !GearAcquisitionPlanner.combatReadiness(state).hasWeapon
+    const bridge = !GearAcquisitionPlanner.combatReadiness(state).hasWeapon
         ? GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planOptions) : null;
-    const clanGoalLocked = !weaponBridgePlan
-        && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+    // The bridge is taken unless the held clan plan stands against it (clanPlanKeptAgainst:
+    // a weapon bridge beats the lock, an armour bridge does not). A taken bridge lifts the
+    // lock, so a craft one step from done (personal or clan) is still finished first
+    // (shouldFinishPreviousPlan): our choice, not C4.
+    const weaponBridgePlan = bridge && !GearAcquisitionPlanner.clanPlanKeptAgainst(
+        state.stats?.equipmentPlan === previousPlan ? state : { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } },
+        bridge) ? bridge : null;
+    const clanGoalLocked = !weaponBridgePlan && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
     const finishedOffer = !weaponBridgePlan && !clanGoalLocked && previousPlan?.strategy === 'craft'
         && ['active', 'component_ready'].includes(previousPlan.status)
         ? GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, planOptions) : null;
@@ -358,14 +386,12 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         && (previousPlan.materials || []).some(row => Number(state.inventory?.[row.selfId]?.amount || 0) > 0);
     const acquisitionPlan = retainedInputs ? deferredWishPlan(previousPlan, replanContext, state, timestamp) : withRetainedCraftPreparation(state, previousPlan, withMarketCraftPreparation(state, previousPlan, withBridgeInputPreparation(state, previousPlan, {
         ...finalizedPlan,
-        ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {}),
-        marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-            && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
+        ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {})
     }, timestamp), timestamp), timestamp);
     const result = { acquisitionPlan: { ...acquisitionPlan },
-        replanContext, reusablePartyRequest, excludedSpotIds, planKey };
+        replanContext, reusablePartyRequest, planKey };
     economy.gearPlanMemo = { key, spots, result };
     return { ...result, economy };
 }
 
-module.exports = { selectAcquisitionPlan, deferredWishPlan, deferredAcquisitionPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };
+module.exports = { selectAcquisitionPlan, withRoutedSource, deferredWishPlan, deferredAcquisitionPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };

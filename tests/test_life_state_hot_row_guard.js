@@ -98,7 +98,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             await BotLifeState.markHot(session, 'hot_activation');
             assert.strictEqual(BotLifeState.snapshot(83).phase, 'hot', 'fixture: markHot wrote the hot row');
             assert.strictEqual(session.coldMarketState.phase, 'hot', 'markHot marks the session snapshot hot');
-            // (The market sale write went with the stalls, step 3.3; any write of the
+            // (The market sale write went with the stalls; any write of the
             // session's hot snapshot stands for it.)
             const sold = await BotLifeState.upsertState({ ...session.coldMarketState, adena: 1500 }, 'hot_market_sale');
             assert.strictEqual(sold?.adena, 1500, 'a hot merchant\'s sale is written');

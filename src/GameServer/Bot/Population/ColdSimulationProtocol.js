@@ -19,7 +19,6 @@ const MAIN_TYPES = new Set([
     'commit_ack',
     'command_ack',
     'command_request',
-    'party_formation_request',
     'party_goal_request',
     'fence',
     'fence_ack',
@@ -39,14 +38,30 @@ const WORKER_TYPES = new Set([
     'proposal_batch',
     'command_request',
     'command_ack',
-    'party_formation_proposal',
     'party_goal_result',
     'heartbeat',
     'fence_ack',
     'drained',
     'table_resync',
+    // The spot aggregate's commands to bodies near a player (EnemyMet.hotCommand):
+    // { commands: [{ kind: 'enemy_met', key, at, reason, actorId, peerId, roll, chance }] }.
+    'spot_command',
     'fault'
 ]);
+// One spot command (spot_command; validSpotCommand). At most SPOT_COMMANDS a message.
+const SPOT_COMMANDS = 16;
+const unit = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+// A spot outcome main carries out: enemy_met (two bodies near a player met), or command_lost
+// (a far bot displaced off a spot a player commanded tells that player: names <= 240 chars).
+const shortText = (value, empty = false) => typeof value === 'string' && value.length <= 240 && (empty || value.length > 0);
+function validSpotCommand(row) {
+    if (row?.kind === 'command_lost') return Number.isSafeInteger(row.botId) && row.botId > 0 && Number.isSafeInteger(row.playerId)
+        && row.playerId > 0 && shortText(row.botName) && shortText(row.spotName) && shortText(row.holder, true);
+    return !!row && typeof row === 'object' && row.kind === 'enemy_met' && typeof row.key === 'string' && row.key.length > 0
+        && row.key.length <= 240 && Number.isSafeInteger(row.at) && row.at > 0 && ['revenge', 'clan_war'].includes(row.reason)
+        && Number.isSafeInteger(row.actorId) && row.actorId > 0 && Number.isSafeInteger(row.peerId) && row.peerId > 0
+        && row.actorId !== row.peerId && unit(row.roll) && unit(row.chance);
+}
 
 // The message and page limits are UTF-8 bytes of the value's JSON. They are
 // counted here without building the text: stringifying a ~19 KB bot state
@@ -147,8 +162,6 @@ function byteLength(value) {
     }
 }
 
-const INCOME_REVIEW_KEYS = new Set(['characterId', 'accept', 'reason', 'soloIncome', 'partyIncome',
-    'soloHours', 'partyHours', 'fee', 'soloSpotId', 'soloBuffPrice', 'at', 'soloSource', 'partySource']);
 function validRaidAssessment(joint, sources) {
     const a = joint.raidAssessment;
     if (joint.objective?.opportunisticRaid !== true || joint.objective.sourceKind !== 'raid'
@@ -190,33 +203,12 @@ function validRaidAssessment(joint, sources) {
 }
 
 // A forming verdict (PartyGoalPolicy.formingVerdict): distinct accepted ids of the roster's
-// sources, a material roster's reviews; no goals.
+// sources; no goals.
 function validFormingVerdict(joint, sources) {
     const ids = sources.map(source => source?.characterId), accepted = joint.formingAccepted;
-    return Object.keys(joint).every(key => ['formingAccepted', 'lastIncomeReviewAt', 'incomeReviews'].includes(key))
+    return Object.keys(joint).every(key => key === 'formingAccepted')
         && accepted.length <= ids.length && new Set(accepted).size === accepted.length
         && accepted.every(id => Number.isSafeInteger(id) && ids.includes(id));
-}
-
-// incomeReviewKey: the hash of the review's inputs (PartyGoalPolicy.incomeReviewKey), with a review only.
-function validPartyIncomeReviews(joint, sources) {
-    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return joint.incomeReviewKey === undefined;
-    if (joint.incomeReviewKey !== undefined && !(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviewKey >= 0)) return false;
-    if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
-        || !Array.isArray(joint.incomeReviews) || joint.incomeReviews.length !== sources.length) return false;
-    const nullableNumber = value => value === null || typeof value === 'number' && Number.isFinite(value);
-    return joint.incomeReviews.every((row, index) => row && typeof row === 'object' && !Array.isArray(row)
-        && Object.keys(row).every(key => INCOME_REVIEW_KEYS.has(key))
-        && row.characterId === sources[index]?.characterId && typeof row.accept === 'boolean'
-        && ['solo_preferred', 'help_fee_unfunded', 'higher_personal_income', 'income_unknown',
-            'goal_requires_party', 'equipment_sooner'].includes(row.reason)
-        && row.at === joint.lastIncomeReviewAt
-        && ['soloIncome', 'partyIncome', 'soloHours', 'partyHours'].every(key => nullableNumber(row[key]))
-        && ['soloHours', 'partyHours'].every(key => row[key] === null || row[key] >= 0)
-        && ['fee', 'soloBuffPrice'].every(key => typeof row[key] === 'number' && Number.isFinite(row[key]) && row[key] >= 0)
-        && (row.soloSpotId === null || typeof row.soloSpotId === 'string' && row.soloSpotId.length <= 128)
-        && [null, 'solo_route', 'paid_buff', 'native_craft'].includes(row.soloSource)
-        && [null, 'own_party', 'table_party', 'native_party_forecast'].includes(row.partySource));
 }
 
 // Main reconstructs the lifecycle input from its admitted native state and
@@ -311,12 +303,6 @@ function validateEnvelope(message, direction, options = {}) {
                 || payload.pageIndex > 0 && payload.party !== undefined)
             || !Array.isArray(payload.escrows) || payload.escrows.length !== payload.members.length
             || payload.escrows.some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
-            || payload.recipeKnowledge !== undefined && (!Array.isArray(payload.recipeKnowledge)
-                || payload.recipeKnowledge.length !== payload.members.length
-                || payload.recipeKnowledge.some(row => !row || typeof row !== 'object'
-                    || row.recipeBook != null && (typeof row.recipeBook !== 'string' || row.recipeBook.length > 512)
-                    || row.knownShotRecipes !== undefined && (!Array.isArray(row.knownShotRecipes)
-                        || row.knownShotRecipes.length > 8 || row.knownShotRecipes.some(id => !Number.isSafeInteger(id)))))
             || !Number.isSafeInteger(payload.timestamp) || payload.timestamp <= 0
             || !Number.isSafeInteger(payload.replyBy) || payload.replyBy < payload.timestamp)
             return { ok: false, reason: 'invalid_party_goal_request' };
@@ -329,10 +315,13 @@ function validateEnvelope(message, direction, options = {}) {
                 || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
                     : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
                     || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
-                        'lastIncomeReviewAt', 'incomeReviewKey', 'incomeReviews', 'raidAssessment'].includes(key))
+                        'raidAssessment'].includes(key))
                     || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
-                || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
+    }
+    if (message.type === 'spot_command' && (!Array.isArray(message.payload.commands) || !message.payload.commands.length
+        || message.payload.commands.length > SPOT_COMMANDS || !message.payload.commands.every(validSpotCommand))) {
+        return { ok: false, reason: 'invalid_spot_command' };
     }
     const meeting = ['command_request', 'command_ack'].includes(message.type)
         && (message.payload.requests || message.payload.results || []).some(row => row?.kind === 'meeting');
@@ -370,8 +359,7 @@ function validateEnvelope(message, direction, options = {}) {
         proposal_batch: 'proposals',
         commit_ack: 'results',
         command_request: 'requests',
-        command_ack: 'results',
-        party_formation_proposal: 'candidates'
+        command_ack: 'results'
     };
     const batchField = batchFields[message.type];
     const batch = batchField ? message.payload[batchField] : null;

@@ -1,5 +1,5 @@
 'use strict';
-// T135 (docs/game-decisions.md "Summoner keeps its pet alive"): a summoner
+// A summoner keeps its pet alive: it
 // heals its pet below PetHealRule's line, cold between fights and in a fight,
 // and spends its own MP and the heal's reuse on it.
 const assert = require('node:assert/strict');

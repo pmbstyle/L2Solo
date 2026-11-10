@@ -85,11 +85,11 @@ check('physical and magic threats give distinct necklace gains', () => {
     assert.deepEqual(Providers.gearGain(bot, necklace, 1000), values.get(3), 'the default threat is both');
     assert.equal(values.get(1).attack, values.get(3).attack);
 });
-check('saved level-19 build: survival shots, then armour gaps; empty jewel slots take owned jewellery', () => {
+check('saved level-19 build: survival shots weighed with the armour gaps; empty jewel slots take owned jewellery', () => {
     // Recorded build, not a reconstruction of its historical purchase order.
     // Prices/offers are native x10. The bot misses its NG kit milestone
-    // (PersonalGearProgression): the survival shot tranche leads, then only
-    // gap-closing pieces compete; threat masks still shape gear value above.
+    // (PersonalGearProgression): the shots below their line are weighed in one
+    // tier with the gap-closing pieces they serve; threat masks still shape gear value above.
     const fixture = require('./fixtures/facada-gear-threat.json');
     const Sources = invoke('GameServer/Bot/Population/ColdOccupationSources');
     const { BoardIndex } = invoke('GameServer/AfkTrade/BoardIndex');
@@ -102,8 +102,9 @@ check('saved level-19 build: survival shots, then armour gaps; empty jewel slots
     const bot = structuredClone(fixture.state);
     const unarmed = Economy.forState(bot, deps);
     assert.equal(unarmed.gearThreatMask, 1);
-    assert.deepEqual(unarmed.network.queue.map(wish => wish.key), ['stock:shots'],
-        'the missing survival shot tranche leads the kit');
+    const kitKeys = unarmed.network.queue.map(wish => wish.key);
+    assert(kitKeys.includes('stock:shots') && kitKeys.every(key => key === 'stock:shots' || key.startsWith('power:')),
+        `the missing shots stand beside the kit's gaps, nothing else: ${kitKeys}`);
     Economy.reset();
     bot.inventory[1835] = { selfId: 1835, amount: 20000, kind: 'Other.Shot' };
     const physical = Economy.forState(bot, deps);

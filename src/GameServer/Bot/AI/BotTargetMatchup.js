@@ -90,7 +90,7 @@ function actorProfiles(actors) {
 // without either. coldProfiles builds the gate's pair with it, and a solo
 // fight's readiness reads it anew before each fight (a pet dead or raised
 // since the round's profiles were built).
-// A pet's owner heals it (PetHealRule, user 10-30): its best heal and the
+// A pet's owner heals it (PetHealRule): its best heal and the
 // MP that pays for it, the fields sideLifetime reads; none without a heal.
 // The owner's heal numbers once per profile object.
 const petSustains = new WeakMap();
@@ -394,7 +394,7 @@ function evaluate(profiles, target, attacksOf = channels) {
 // only after the summon's cast. Each attacker deals its best attack over that
 // time; areaShare: the share of that damage by area skills, which keeps a
 // pull's mobs standing together (Pull.repack).
-// How long the bot's side outlives a mob view (user 10-29: the pet tanks, as
+// How long the bot's side outlives a mob view (the pet tanks, as
 // in C4): { total, pet }, pet: the time the pet stands. Each servitor's HP over
 // the damage it takes, held longer by its owner's heals
 // (PetHealRule.healedLifetime: petSustain, ownerMp), then the owner's (the
@@ -444,7 +444,7 @@ function readyProfiles(profiles, state, timestamp) {
 // What a solo bot's matchup verdicts read of it, as one string: a verdict
 // kept over a spot stands while this reads the same. The solo array
 // (stateProfiles at a timestamp, heldSolo's inputs) is the kit (the stored
-// profile, one object while ColdCombatProfile.kitHash's parts hold: class,
+// profile, one object while ColdCombatProfile.kitEvents' parts hold: class,
 // level, gear, hennas, skills, capture), survivalKnown, the shot and the
 // servitor: of the shot the verdicts read the kind (actionShot), of the
 // servitor its profile at this moment (HP, MP, cooldowns, a summon's
@@ -457,7 +457,7 @@ function soloVerdictKey(state, timestamp, ready = false) {
         || !state.inventory) return null;
     if (state.vitals?.hp === 0 || state.activity === 'dead') return 'dead';
     const Cold = coldCombatProfile();
-    const kitHashes = Cold.kitHash(Cold.combatView(state));
+    const kitHashes = Cold.kitEvents(state);
     const kit = Cold.profileFor(state, timestamp, { kitHashes });
     let servitor;
     if (ready) {
@@ -499,7 +499,7 @@ function bestRate(attacks) {
     return best;
 }
 
-// The survival ratio (T132, docs/game-decisions.md): the damage a bot deals
+// The survival ratio: the damage a bot deals
 // over the target's HP before its own runs out. Cold hunt deaths do not fall
 // above 1.0 (gate sweep, 700 kit and mob pairs): the ratio a fight is won at,
 // which DangerRule's lose chance reads. Whether a bot starts a fight alone is
@@ -843,7 +843,7 @@ const spotMatchups = new WeakMap();
 // One spawn group's verdict over its pulls (BotPullEstimate.pullsOf): the
 // pulls the profiles survive (allowed, their shares as measured), their
 // share of the group, and the efficiency over all its pulls; null for a
-// species no one hunts. The bot takes only the spawns it can (user 10-29).
+// species no one hunts. The bot takes only the spawns it can.
 function entryVerdict(verdicts, entry, verdictOptions) {
     const allowed = [];
     let efficiency = 0, share = 0, known = false;

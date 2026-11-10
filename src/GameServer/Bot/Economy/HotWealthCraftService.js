@@ -10,7 +10,10 @@ function canStart(session, leaf) {
     if (!actor || leaf?.activity !== 'crafting' || !/^resale:\d+$/.test(String(leaf.rootKey))
         || !Number.isSafeInteger(Number(leaf.recipeId)) || Number(leaf.recipeId) <= 0) return false;
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(leaf.recipeId));
+    // A craft refused at the act waits for the decision the refusal raised: the
+    // body does not try it again each tick (WealthCraftDecision.refused).
     return !!recipe && Number(recipe.productId) === Number(leaf.rootKey.slice(7))
+        && !require('./WealthCraftDecision').refused({ stats: DecisionEvents.statsFor(session) }, recipe.recipeId)
         && !actor.isDead?.() && Number(actor.fetchHp?.()) > 0 && Number(actor.fetchMp?.()) >= Number(recipe.mpCost)
         && Number(actor.fetchPrivateStoreType?.() || 0) === 0 && !actor.state?.fetchHits?.() && !actor.state?.fetchCasts?.()
         && !session.currentTargetId && !session.partyCompanion && !session.followPlayerSession && !session.hotBackgroundPartyId;
@@ -43,12 +46,24 @@ function review(session, context) {
             && !(state.stats?.equipmentPlan?.strategy === 'craft'
                 && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status));
         const book = () => actor.backpack?.fetchRecipeBook?.(actor, recipe.type) || [];
+        const refusal = {};
         const ready = state => {
             const opportunity = require('./ColdWealthCraftService').recheck(state,
-                { recipeId: Number(recipe.recipeId), batches: 1, scroll: [-1] }, book());
+                { recipeId: Number(recipe.recipeId), batches: 1, scroll: [-1] }, book(), refusal);
             // Ready when the basket orders nothing: its owned rows already took the
             // free stock through the one quantity reader (remainingQuantity).
+            if (opportunity && opportunity.basket.purchases.length) refusal.reason = 'owned_materials_changed';
             return opportunity && opportunity.basket.purchases.length === 0 ? opportunity : null;
+        };
+        // A craft refused at the act is not picked again until the next town look
+        // (WealthCraftDecision.refusedMark), as a far bot's; short of MP is no fault
+        // of the craft. Only a refusal of the decision the body still holds marks it: a
+        // newer decision was built on newer facts. The mark is a body key: the near post
+        // the rejection raised runs after this turn and carries it.
+        const reject = state => {
+            if (DecisionEvents.rejectSession(session, accepted, `wealth:${refusal.reason || 'source'}`)
+                && refusal.reason !== 'mp_changed') DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session),
+                wealthRefused: require('./WealthCraftDecision').refusedMark(state, recipe.recipeId) });
         };
         const packet = context.statsPacket || DecisionEvents.statsFor(session);
         const accepted = { characterId: Number(actor.fetchId()), stats: { decisionSeq: packet.decisionSeq, activityLeaf: packet.activityLeaf,
@@ -58,7 +73,7 @@ function review(session, context) {
         if (!permitted(state)) return { attempted: false };
         if (!ready(state)) {
             // A withdrawn bid or changed input rejects this accepted work.
-            DecisionEvents.rejectSession(session, accepted);
+            reject(state);
             retirePreparation();
             return { attempted: false };
         }
@@ -70,11 +85,13 @@ function review(session, context) {
                     { recipeIds: [Number(recipe.recipeId)] });
                 state = liveState();
                 if (!permitted(state)) return { attempted, crafted: false };
-                if (!ready(state)) { DecisionEvents.rejectSession(session, accepted); return { attempted, crafted: false }; }
+                if (!ready(state)) { reject(state); return { attempted, crafted: false }; }
                 if (!book().some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId))) return { attempted, crafted: false };
             }
             attempted = true;
-            const crafted = await invoke('GameServer/Crafting/RecipeCrafting').craftSelf(session, Number(recipe.recipeId));
+            const act = {};
+            const crafted = await invoke('GameServer/Crafting/RecipeCrafting').craftSelf(session, Number(recipe.recipeId), Math.random, act);
+            if (!crafted && act.refused) { refusal.reason = 'craft_refused'; reject(state); }
             return { attempted, crafted: !!crafted };
         } finally {
             if (attempted) {

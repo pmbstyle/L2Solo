@@ -41,7 +41,7 @@ async function proposals(party, route, at) {
     const kernel = new Kernel.ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw Error('no solo combat in a trip'); },
         resolveParty: () => { throw Error('no party combat in a trip'); },
-        partyRoute: () => route,
+        partyRoute: () => ({ route }),
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const member of members) {
         const current = Life.cachedState(member.characterId);
@@ -123,8 +123,8 @@ async function main() {
     assert.equal(Life.cachedState(states[0].characterId).adena, wallet, 'the full unused escrow returns to its native payer');
     const request = Life.cachedState(states[0].characterId).stats.partyRequest;
     assert.equal(request.itemId, 4108);
-    assert.equal(request.status, 'deferred');
-    assert.equal(request.deferReason, Route.REASON);
+    assert.equal(request.status, 'closed');
+    assert.equal(request.lastReason, Route.REASON);
     assert.equal(await Life.clearParty(party.partyId, Route.REASON), 0);
     assert.deepEqual(Life.cachedState(states[0].characterId).stats.partyRequest, request, 'postcommit cleanup preserves the owner need');
 

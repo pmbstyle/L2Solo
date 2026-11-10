@@ -175,6 +175,34 @@ async function run() {
         rows = await Database.fetchItems(id);
         assert.equal(Native.amount(rows, 21), 3, 'hot cleanup leaves two project inputs and one advertised copy');
         assert.equal(Native.amount(rows, 57), 1000 + 6 * price, 'a project reserve is subtracted once, regardless of bag order');
+        // The advertised goods sold to an NPC or a fixed buyer: the conditional ad that kept
+        // them in the bag no longer offers what the bot does not hold (the board's init
+        // subscribes this to the owner's state changes).
+        Life.subscribePublications(Afk.reconcileOwnStock);
+        const third = await seed(id + 2, 'QuantitySold');
+        await Afk.openBotRecords(id + 2, 'sell_ad', [{ storeType: 1, title: 'Shirt', town: 'Giran', ...point,
+            lines: [{ objectId: third.copies[0], selfId: 21, name: 'Shirt', count: 1, price: 189, enchant: 0, stackable: false }] }]);
+        assert.equal(Afk.boardIndex().ownerLines(id + 2).filter(row => row.selfId === 21).length, 1);
+        await Life.applyNpcLiquidation(Life.snapshot(id + 2) || third.state, [{ selfId: 21, count: 3, enchant: 0, npcPrice: price,
+            objectIds: third.copies.slice(0, 3) }]);
+        for (let turn = 0; turn < 20 && Afk.boardIndex().ownerLines(id + 2).some(row => row.selfId === 21); turn++) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        assert.equal(Afk.boardIndex().ownerLines(id + 2).filter(row => row.selfId === 21).length, 0,
+            'an ad of goods sold to an NPC is trimmed at the owner\'s bag change');
+        // A reserve keeps units of an item whatever their enchant: the owner's lines of it at
+        // two enchant levels share its free units (bag less reserve) and offer no more than
+        // the accept would let it part with.
+        const fourth = await seed(id + 3, 'QuantityReserved');
+        await Afk.openBotRecords(id + 3, 'sell_ad', [{ storeType: 1, title: 'Shirt', town: 'Giran', ...point,
+            lines: [{ objectId: fourth.copies[0], selfId: 21, name: 'Shirt', count: 1, price: 189, enchant: 0, stackable: false }] },
+        { storeType: 1, title: 'Shirt +6', town: 'Giran', ...point,
+            lines: [{ objectId: fourth.copies[3], selfId: 21, name: 'Shirt', count: 1, price: 900, enchant: 6, stackable: false }] }]);
+        await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.clanMaterialDemand',json('{\"21\":3}')) WHERE characterId=?", [id + 3]]);
+        await Database.reconcileConditionalSellAds(id + 3);
+        const offered = (await Database.fetchAfkTradeShops(id + 3)).flatMap(ad => ad.status === 'active' ? ad.lines : [])
+            .filter(line => line.selfId === 21).reduce((sum, line) => sum + Number(line.count), 0);
+        assert.equal(offered, 1, 'four shirts less a reserve of three: one offered over both enchant lines');
         console.log('PASS standing sale quantities: conditional, escrow, stacks, enchant, reservations, residual buyer, native cold/hot NPC sales');
     } finally {
         Pricing.traderContext = original.context; Pricing.disposition = original.disposition;

@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const CpuProfile = require('../../src/Perf/CpuProfile');
 const HeapProfile = require('../../src/Perf/HeapProfile');
+const StepLateness = require('../../src/GameServer/Bot/Population/StepLateness');
 
 const MB = 1048576;
 const round = (value, digits = 0) => Math.round(value * 10 ** digits) / 10 ** digits;
@@ -86,9 +87,11 @@ function threadSummary(data, label, start, end) {
         add(files, a.files);
         add(owners, a.owners);
     }
-    // A starved chunk (CpuProfile) says nothing of the thread: left out, and counted.
+    // A starved chunk (CpuProfile) says nothing of the thread: left out, and counted. A usable one's
+    // stretches without samples are in neither its busy nor its idle time: left out of its length.
     const chunks = window.filter(line => !starved.has(line));
-    const ms = chunks.reduce((sum, line) => sum + line.ms, 0);
+    const unsampled = chunks.reduce((sum, line) => sum + (line.unsampledMs || 0), 0);
+    const ms = chunks.reduce((sum, line) => sum + line.ms, 0) - unsampled;
     const busy = chunks.reduce((sum, line) => sum + line.busyMs, 0), gc = chunks.reduce((sum, line) => sum + line.gcMs, 0);
     // By part of the server, each sample charged to its owner (native time to the project code that
     // called it: SQLite counts as database, not as native).
@@ -109,6 +112,7 @@ function threadSummary(data, label, start, end) {
         chunkLongestP95Ms: chunks.length ? round(quantiles(chunks.map(line => line.longestMs))?.p95Ms || 0) : null,
         instances: new Set(chunks.map(line => line.instance)).size,
         starvedChunks: starved.size,
+        unsampledSec: round(unsampled / 1000, 1),
         longTurnCode: top(held, 10, 0).map(({ fn, ms: total }) => ({ fn, ms: total })),
         cpuSelf: top(self, 60, profiled),
         cpuFiles: top(files, 10, profiled),
@@ -151,6 +155,30 @@ function playerSummary(lines) {
 // cold <-> hot transitions over the window (PopulationMetrics, with developerDiagnostics): how many
 // (the counters, uncapped) and how long one took (the timed samples, at most 200 per 30 s window, so
 // avg is of those; p95 and max are the worst of the 30 s windows).
+// How late the worker's steps committed past their due (StepLateness), over the health lines'
+// windows: boot (before the perf window) and steady (inside it); drainedS: from the first line to
+// the first one whose window's latest step was at most 1 s late (the boot backlog gone).
+function workerDueSummary(lines, start, end) {
+    const part = list => {
+        const counts = StepLateness.empty();
+        let maxMs = 0, maxBot = null;
+        for (const line of list) {
+            const window = line.coordinator?.stepLate;
+            if (!window) continue;
+            StepLateness.add(counts, window.counts);
+            if (Number(window.maxMs) > maxMs) [maxMs, maxBot] = [Number(window.maxMs), window.maxBot || null];
+        }
+        return { ...StepLateness.summary(counts, maxMs), maxBot };
+    };
+    const windows = lines.filter(line => line.coordinator?.stepLate?.steps > 0);
+    const drained = windows.find(line => line.coordinator.stepLate.maxMs <= 1000);
+    return {
+        boot: part(lines.filter(line => Date.parse(line.t) <= start)),
+        steady: part(lines.filter(line => Date.parse(line.t) > start && Date.parse(line.t) <= end)),
+        drainedS: drained && lines.length ? Math.round((Date.parse(drained.t) - Date.parse(lines[0].t)) / 1000) : null
+    };
+}
+
 function transitionsSummary(lines) {
     const metrics = lines.map(line => line.population?.metrics).filter(Boolean);
     if (!metrics.length) return null;
@@ -238,26 +266,58 @@ function contextSummary(summaries, timeline, start, end) {
             swallowedSites: failures.at(-1)?.swallowed || null,
             safetyRepairs: vitals.at(-1)?.safetyRepairs || null, pathQueueMax: max(values(line => line.vitals?.pathWorkers?.queue)),
             restarts },
-        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)), mainGc: gcPauses(summaries, before),
+        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)),
+            mainGc: gcPauses(summaries.map(line => ({ t: Date.parse(line.t), gc: line.main?.gc })), before && { t: Date.parse(before.t), gc: before.main?.gc }),
             geodataMb: range(values(line => Math.round((line.vitals?.geodata?.loadedBytes || 0) / MB) || NaN)),
             freeMemMinMb: min(values(line => line.machine?.freeMemMb)),
             majorPageFaults: grown(line => line.machine?.majorPageFaults) }
     };
 }
 
-// Main's GC pauses by kind (cumulative on each summary line): count and ms from the last line before the
-// window (else its first) to its last, per minute of that span, and the longest single pause since the
-// recorder started; null for runs recorded before the recorder counted them.
-function gcPauses(summaries, before) {
-    const gcAt = (line) => line?.main?.gc || null;
-    const last = summaries.findLast(gcAt), base = gcAt(before) ? before : summaries.find(gcAt);
-    const minutes = last ? (Date.parse(last.t) - Date.parse(base.t)) / 60000 : 0;
+// GC pauses by kind over the window from records { t, gc } in time order (main: its summary lines; the worker:
+// its turn windows), gc = { kind: { count, ms, maxMs } } with count and ms cumulative and maxMs the longest
+// since the record before: count and ms from the record before the window (else its first) to its last, per
+// minute of that span, and the longest in the window; null without two records.
+function gcPauses(records, before) {
+    const list = records.filter(record => record.gc);
+    const last = list.at(-1), base = before?.gc ? before : list[0];
+    const minutes = last ? (last.t - base.t) / 60000 : 0;
     if (!(minutes > 0)) return null;
-    return Object.fromEntries(Object.entries(last.main.gc).map(([kind, after]) => {
-        const from = base.main.gc[kind] || {};
+    return Object.fromEntries(Object.entries(last.gc).map(([kind, after]) => {
+        const from = base.gc[kind] || {};
         return [kind, { perMin: round((after.count - (from.count || 0)) / minutes, 1),
-            msPerMin: round((after.ms - (from.ms || 0)) / minutes, 1), maxMsSinceStart: after.maxMs }];
+            msPerMin: round((after.ms - (from.ms || 0)) / minutes, 1),
+            maxMs: Math.max(0, ...list.filter(record => record !== base).map(record => record.gc[kind]?.maxMs || 0)) }];
     }));
+}
+
+// Turn length per thread over the window: event-loop delay at 5 ms (a turn is one task, not tasks back to back),
+// main's per summary line (PopulationMetrics), the worker's per its own 30 s window (each read once, by its end)
+// with its GC pauses by kind. p99Ms is the worst window's p99, p99MedianMs the median window's, maxMs the longest
+// turn; null for a thread without a window (diagnostics off, a run recorded before these were).
+function turnsSummary(timeline, start, end) {
+    const inside = (t) => t > start && t <= end;
+    const summaries = timeline.filter(line => line.type === 'summary');
+    const main = summaries.filter(line => inside(Date.parse(line.t)) && line.population?.metrics?.eventLoop?.delay?.samples > 0)
+        .map(line => line.population.metrics.eventLoop.delay);
+    const seen = new Set(), worker = [];
+    let workerBefore = null;
+    for (const line of summaries) {
+        const turn = line.coordinator?.worker?.turn;
+        if (!turn || seen.has(turn.at)) continue;
+        seen.add(turn.at);
+        if (turn.at <= start) workerBefore = { t: turn.at, gc: turn.gc };
+        else if (turn.at <= end) worker.push(turn);
+    }
+    const of = (windows) => {
+        if (!windows.length) return null;
+        const p99 = windows.map(window => window.p99Ms).sort((a, b) => a - b);
+        return { windows: windows.length, p99Ms: p99.at(-1), p99MedianMs: p99[Math.floor((p99.length - 1) / 2)],
+            maxMs: Math.max(...windows.map(window => window.maxMs)) };
+    };
+    const workerTurns = of(worker);
+    if (workerTurns) workerTurns.gc = gcPauses(worker.map(turn => ({ t: turn.at, gc: turn.gc })), workerBefore);
+    return { main: of(main), worker: workerTurns };
 }
 
 function swallowedTotal(sites) {
@@ -294,6 +354,8 @@ function summarize(dir) {
         processCores: seconds ? round(cpuMs / 1000 / seconds, 2) : 0,
         recorderMainPct: seconds ? round(100 * recorderMs / 1000 / seconds, 2) : 0,
         coldDueMax: Math.max(0, ...summaries.map(line => line.coldQueue?.overdue || 0)),
+        workerDue: workerDueSummary(data.timeline.filter(line => line.type === 'summary'), start, end),
+        turns: turnsSummary(data.timeline, start, end),
         player: playerSummary(data.timeline.filter(line => line.type === 'player' && Date.parse(line.t) > start && Date.parse(line.t) <= end)),
         transitions: transitionsSummary(summaries),
         e2e: data.timeline.some(line => line.type === 'e2e' || line.type === 'e2e-done') ? {
@@ -315,6 +377,16 @@ function print(s) {
     console.log(`${r.folder}: ${r.sha}${r.dirty ? ' (uncommitted changes)' : ''}, ${r.scenario}, ${r.save.name}`);
     console.log(`  bots ${JSON.stringify(r.bots)}, ${r.warmupMinutes} min warm-up, window ${s.windowMinutes} min`
         + `; process ${s.processCores} cores, recorder ${s.recorderMainPct} % of main, cold due max ${s.coldDueMax}`);
+    if (s.workerDue) {
+        const due = (x) => `p50 ${x.p50Ms} / p99 ${x.p99Ms} / max ${x.maxMs} ms${x.maxBot ? ` (bot ${x.maxBot.characterId}`
+            + `${x.maxBot.eventWaitMs ? `, ${x.maxBot.eventWaitMs} ms event wait off` : ''})` : ''} over ${x.steps} steps`;
+        console.log(`  worker due (commit past due): steady ${due(s.workerDue.steady)}; boot ${due(s.workerDue.boot)}`
+            + `, drained ${s.workerDue.drainedS ?? '-'} s`);
+    }
+    const turn = (x) => (x ? `p99 ${x.p99Ms} (median window ${x.p99MedianMs}) / max ${x.maxMs} ms over ${x.windows} windows` : '-');
+    console.log(`  turns (loop delay): main ${turn(s.turns.main)}; worker ${turn(s.turns.worker)}`);
+    const pauses = (gc) => Object.entries(gc).map(([kind, p]) => `${kind} ${p.perMin} (${p.msPerMin} ms, longest ${p.maxMs} ms)`).join(', ');
+    if (s.turns.worker?.gc) console.log(`  worker GC pauses per minute: ${pauses(s.turns.worker.gc)}`);
     if (s.e2e) {
         const failed = s.e2e.steps.filter(row => !row.ok).length;
         console.log(`\ne2e ${s.run.script || ''}: ${s.e2e.steps.length} step(s), ${failed} failed${s.e2e.done ? '' : ', NOT FINISHED in the window'}`);
@@ -349,7 +421,8 @@ function print(s) {
         }
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
             + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`
-            + `${t.starvedChunks ? `; ${t.starvedChunks} starved chunks left out (the profiler sampled too rarely)` : ''}`);
+            + `${t.starvedChunks ? `; ${t.starvedChunks} starved chunks left out (the profiler sampled too rarely)` : ''}`
+            + `${t.unsampledSec ? `; ${t.unsampledSec} s without samples left out` : ''}`);
         if (t.longTurnCode.length) console.log('  long turns held by:');
         for (const row of t.longTurnCode.slice(0, 6)) console.log(`  ${String(row.ms).padStart(8)} ms  ${row.fn}`);
         console.log(`  by part: ${t.cpuParts.map(row => `${row.part} ${row.pct} %`).join(', ')}`);
@@ -363,8 +436,7 @@ function print(s) {
         console.log(`\ncontext: hot ${c.load.hotAvg ?? '-'} / cold ${c.load.coldAvg ?? '-'} bots avg, players max ${c.load.playersMax ?? '-'},`
             + ` sustained lag max ${c.load.lagSustainedMaxMs ?? '-'} ms; main heap after GC ${span(c.memory.mainHeapAfterGcMb)} MB,`
             + ` geodata ${span(c.memory.geodataMb)} MB, free memory min ${c.memory.freeMemMinMb ?? '-'} MB, major page faults ${c.memory.majorPageFaults}`);
-        if (c.memory.mainGc) console.log(`main GC pauses per minute: ${Object.entries(c.memory.mainGc).map(([kind, p]) =>
-            `${kind} ${p.perMin} (${p.msPerMin} ms, longest since start ${p.maxMsSinceStart} ms)`).join(', ')}`);
+        if (c.memory.mainGc) console.log(`main GC pauses per minute: ${pauses(c.memory.mainGc)}`);
         const d = c.database;
         console.log(`database: queue max ${d.pendingMax ?? '-'}${d.maxPending != null ? ` (peak ${d.maxPending})` : ''}, WAL ${span(d.walMb)} MB,`
             + ` world ${span(d.worldMb)} MB, history WAL ${span(d.historyWalMb)} MB, checkpoints ${d.checkpoints}`);

@@ -102,24 +102,36 @@ try {
             assert.equal(kills.length, beforeExcluded);
         } finally { Service.duelForActor = original; War.view.replace(previous); }
     }
-    const Start = invoke('GameServer/Bot/AI/BotClanWar'), Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
-    const Risk = invoke('GameServer/Bot/AI/BotPvpRisk'), World = invoke('GameServer/World/World');
+    // A war enemy met in the field (enemy_met): the bot starts the war
+    // fight its rule decided; its party's war members join at the first blow.
+    const Revenge = invoke('GameServer/Bot/AI/BotRevenge'), Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+    const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
     const attacker = actor(9, 10), enemy = actor(10, 20), tagged = actor(11, 10), neutral = actor(12, 30), human = actor(13, 10);
     for (const a of [attacker, tagged, neutral]) { a.session.accountId = `bot_war_${a.fetchId()}`; a.session.plan = 'hunting'; }
-    let scans = 0, riskAllies;
+    let riskAllies;
     patch(invoke('GameServer/Effects/EffectRestrictions'), 'canUseBasicAction', () => true);
-    patch(World, 'fetchVisibleUsers', () => { scans++; return [enemy.session]; });
+    patch(invoke('GameServer/Bot/AI/BotPvpChat'), 'canSend', () => true);
+    patch(invoke('GameServer/Bot/BotAI'), 'promoteForPlayerInteraction', () => {});
     patch(Threats, 'members', () => [attacker.session, tagged.session, neutral.session, human.session]);
     patch(Risk, 'defenseDecision', (_session, _targets, options) => {
-        riskAllies = [tagged.session, neutral.session, human.session].filter(options.allyAllowed); return { action: 'fight' };
+        riskAllies = [tagged.session, neutral.session, human.session].filter(options.allyAllowed || (() => false)); return { action: 'fight' };
     });
-    assert(!Start.tryStart(attacker.session), 'an incoming-only opponent is not a military target');
-    assert.equal(scans, 0, 'bots outside mutual wars do not scan nearby users for war targets');
+    const met = () => Revenge.meet(attacker.session, enemy, { reason: 'clan_war', roll: 0, key: 'war-met', rng: () => 0 }, Date.now());
+    assert.equal(met(), 'no_war', 'an incoming-only opponent is not a military target');
     War.view.accept({ fromClanId: 20, toClanId: 10, active: 1, revision: 4 });
-    assert(Start.tryStart(attacker.session));
+    // The guards of the former war scan: clan wars off, a player's follower, a managed encounter.
+    const Config = require('../src/GameServer/Clan/ClanWarConfig'), enabled = Config.enabled;
+    try { Config.enabled = false; assert.equal(met(), 'not_ready', 'clan wars off: no war fight'); } finally { Config.enabled = enabled; }
+    for (const [key, value] of [['followPlayerSession', {}], ['pvpEncounter', { key: 'managed' }]]) {
+        attacker.session[key] = value;
+        assert.equal(met(), 'not_ready', `${key} refuses a war fight`);
+        delete attacker.session[key];
+    }
+    assert.equal(met(), 'started');
     assert.equal(attacker.session.pvpRevenge.reason, 'clan_war');
-    assert.equal(tagged.session.pvpRevenge.reason, 'clan_war');
     assert.deepEqual(riskAllies, [tagged.session], 'the tactical decision counts only eligible war participants');
+    Revenge.onAttack(attacker, enemy, Date.now(), () => 0);
+    assert.equal(tagged.session.pvpRevenge?.reason, 'clan_war', 'its war member joins at the first blow');
     assert(!neutral.session.pvpRevenge && !human.session.pvpRevenge, 'war cannot commandeer neutral companions or human party members');
     console.log('Clan war native impact: one-sided PK, white mutual-war PvP, neutral third clans, withdrawal and journal parity passed');
 } finally { changes.reverse().forEach(f => f()); War.view.replace([]); }

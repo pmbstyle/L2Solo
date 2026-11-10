@@ -141,8 +141,8 @@ async function run() {
     Commit.finish(1, retrySale.command);
     assert(savedSale.replayed);
     assert.equal(await amount(1, 1870), 2);
-    await Database.settleBoardOwner(2);
-    assert.equal(await amount(2, 1870), 2);
+    const [owed] = await Database.execute(['SELECT SUM(amount) AS amount FROM board_settlements WHERE ownerId = 2 AND selfId = 1870']);
+    assert.equal(Number(owed.amount), 2, 'the far buyer\'s coal waits on the board for its own commit');
     const beforeRefund = await amount(2, 57);
     await Database.closeAfkTradeShop(2);
     assert.equal(await amount(2, 57), beforeRefund + 20, 'partial order returns exactly its remaining escrow');
@@ -159,6 +159,9 @@ async function run() {
     Commit.finish(2, learnRetry.command);
     assert(learningReplay.replayed);
     assert.equal(await amount(2, recipe.recipeItemId), 1, 'learning retry cannot consume another scroll');
+    assert.equal(await amount(2, 1870), 2, 'the far buyer\'s own writes (its close, its recipe command) take its coal into the bag once');
+    assert.deepEqual(Database.boardSettlementOwners(), [], 'nothing waits on the board');
+    assert.equal(Number((await current(2)).inventory[1870]?.amount || 0), 2, 'its stored bag holds the coal');
     assert.equal((await Database.fetchCharacterRecipes(2)).filter(row => row.recipeId === recipe.recipeId).length, 1);
     const uncertain = Object.values(Recipes.loadRecipeItems()).find(row => row.type === 'dwarven' && row.successRate < 100 && row.mpCost > 0);
     assert(uncertain, 'native catalog supplies a probabilistic recipe');
@@ -172,13 +175,7 @@ async function run() {
     }
     const product = Data.items.find(row => Number(row.selfId) === Number(uncertain.productId));
     const beforeOutput = await amount(2, uncertain.productId);
-    // Task 4 B4: a failed roll completes no goal. The goal that wants the
-    // product stays as it was; the next card re-derives the need from stock.
-    const wanted = JSON.stringify({ id: 'craft-target', type: 'buy_craft_material', status: 'active',
-        target: { itemId: uncertain.productId, amount: uncertain.productCount * 3 }, createdAt: 1, reviewedAt: 1 });
-    await Database.execute(['INSERT OR REPLACE INTO bot_goal_state (characterId, goalJson, updatedAt) VALUES (?, ?, ?)', [2, wanted, 1]]);
-    const goalRow = async () => (await Database.execute(['SELECT goalJson, updatedAt FROM bot_goal_state WHERE characterId=?', [2]]))[0];
-    const goalBefore = await goalRow();
+    // A failed roll yields no product; the next card re-derives the need from stock.
     const failing = await step(2, Commit.KINDS.craft);
     let draws = 0;
     const failedArgs = { recipeId: uncertain.recipeId, batches: 3, materials: failureMaterials,
@@ -196,8 +193,6 @@ async function run() {
     Commit.finish(2, failedRetry.command);
     assert(replayFailure.replayed && !replayFailure.success);
     assert.equal(draws, 1, 'retry must keep the saved failure, never draw again');
-    assert.deepEqual(await goalRow(), goalBefore, 'a failed craft and its replay leave the goal untouched');
-    assert.equal(JSON.parse((await goalRow()).goalJson).status, 'active');
     assert.equal(Number((await current(2)).inventory?.[uncertain.productId]?.amount || 0), beforeOutput,
         'the cold snapshot holds no product after the failed roll');
     // A pending intent without a commit survives restart, but recovery never
@@ -218,6 +213,27 @@ async function run() {
     await assert.rejects(Database.purchaseNpcInventoryItem(1, { selfId: 1864, amount: 1, unitPrice: 1,
         economyCommand: recovered.command, funding: { r: 1 } }), /owner_changed/);
     Commit.finish(1, recovered.command);
+    // A near crafter spends its live MP: the characters row holds vitals saved at
+    // level-up only, so a stale row below the cost does not refuse the craft.
+    await seed(3, 'bot_e2_near');
+    await Database.setSkill({ selfId: 172, name: 'Create Item', level: 9 }, 3);
+    await Database.setCharacterRecipe(3, recipe.recipeId, recipe.type);
+    const nearMaterials = [];
+    for (const material of recipe.materials) {
+        const inserted = await Database.setItem(3, { selfId: material.selfId, name: 'Material', amount: material.amount });
+        nearMaterials.push({ id: inserted.insertId, selfId: material.selfId, amount: material.amount });
+    }
+    const near = await current(3);
+    await Life.upsertState({ ...near, phase: 'hot', timing: { ...near.timing, lastHotAt: Date.now() } }, 'near_crafter');
+    await Database.execute(['UPDATE characters SET mp = 0 WHERE id = 3']);
+    const nearStep = await step(3, Commit.KINDS.craft);
+    const nearCraft = await Database.craftInventoryItems(3, { materials: nearMaterials, recipeId: recipe.recipeId,
+        product: { selfId: recipe.productId, name: 'Product', amount: recipe.productCount, stackable: true },
+        economyCommand: nearStep.command, liveMp: () => recipe.mpCost + 7 });
+    Commit.finish(3, nearStep.command);
+    assert.equal(nearCraft.success, true, 'a near crafter with the live MP crafts whatever its saved row says');
+    assert.equal(Number(nearCraft.mp), 7, 'the craft spends the live MP');
+    assert.equal(await amount(3, recipe.productId), recipe.productCount);
     assert.equal(Commit.size(), 0);
     console.log('Native economy completion: craft/MP, NPC, closed AFK fill replay, partial refunds, protected leaf and handoff passed');
 }

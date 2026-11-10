@@ -1,8 +1,11 @@
 const Diagnostics = require('./EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 const Packet = require('./StatsPacket');
+const BoardRules = require('../../AfkTrade/BoardRules');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
-// higher-valued funded wishes keep their cumulative costs before a spend.
+// every funded row ahead of a spend in queue order keeps its cost; a spend that is no funded
+// row gets only the money above every funded row (budgetFor).
 const nonnegative = value => Math.max(0, Number(value) || 0);
 let moneyPacketMissing = 0;
 function budget(state = {}, escrow = 0) {
@@ -13,7 +16,7 @@ function budget(state = {}, escrow = 0) {
 let EconomyContext, WishNetwork;
 function operatingReserve(state = {}) {
     // lazy: cycle EconomyContext requires PurchaseFunding at load.
-    return (EconomyContext ||= require('./EconomyContext')).survivalReserve(state);
+    return (EconomyContext ||= require('./EconomyContext')).refillReserve(state);
 }
 function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
     return Math.max(0, nonnegative(price) + nonnegative(reserve) - budget(state, escrow));
@@ -21,18 +24,35 @@ function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
 function surplus(state = {}, price = 0, reserve = 0) {
     return Math.max(0, budget(state) - nonnegative(price) - nonnegative(reserve));
 }
-function moneyReached(state, escrow = 0) {
-    const packet = state?.stats?.money;
-    if (!Packet.hasMoney(packet) || !(Number(Packet.firstUnfundedPrice(packet)) > 0)) return false;
-    let fundedPrice = 0;
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) fundedPrice = Math.max(fundedPrice, Number(Packet.fundedCumulative(packet, row)) || 0);
-    return budget(state, escrow) - nonnegative(Packet.survivalReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
+// The funded row a rank r names: its ratio as given (a rank read from the packet) or as the
+// packet rounds it (significant), else -1.
+function fundedRow(packet, r) {
+    if (!(Number(r) > 0) || !Number.isFinite(Number(r))) return -1;
+    const exact = Number(r), rank = significant(exact);
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
+        const ratio = Packet.fundedRatio(packet, row);
+        if (ratio === exact || ratio === rank) return row;
+    }
+    return -1;
 }
+// The rank r when it is one of the packet's funded rows (its ratio as the packet keeps it), else null.
+function fundedRank(packet, r) {
+    const row = fundedRow(packet, r);
+    return row < 0 ? null : Packet.fundedRatio(packet, row);
+}
+// The money a spend at rank r may take: the wallet above the reserve and the money the
+// queue holds for the funded rows ahead of it. The rows stand in queue order, tier first,
+// then value per Adena, so a row of a higher tier may hold a lower ratio: a funded root's
+// own row reads the money above the rows before it, any other rank (an unfunded root, a
+// later tier, a side purchase: -Infinity) the money above every funded row, as the network
+// funds a root only from what the roots ahead of it leave. Infinity (a companion's errand)
+// stands ahead of the whole queue.
 function budgetFor(packet, wallet, escrow, r, capture = null) {
-    let prior = 0;
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) > r) prior = Packet.fundedCumulative(packet, row);
+    const rows = r === Infinity ? 0 : Packet.fundedRows(packet), own = r === Infinity ? -1 : fundedRow(packet, r);
+    const ahead = own < 0 ? rows : own;
+    const prior = ahead > 0 ? Packet.fundedCumulative(packet, ahead - 1) : 0;
     if (capture) capture.priorityReserve = nonnegative(prior);
-    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.survivalReserve(packet)) - prior);
+    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.refillReserve(packet)) - prior);
 }
 // A paid funded contribution no longer needs cash protection. Keep the same
 // bounded packet and priority rule; crafting inputs can name their admitted
@@ -104,15 +124,16 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const own = options.ownClanErrand || (options.free === true && options.clanPart !== undefined && options.itemId
         ? { selfId: options.itemId } : null);
     const wallet = Math.max(0, budget(state, escrow) - clanCredit(state, own)), packet = state.stats?.money;
-    const selected = Diagnostics.active() && Diagnostics.enabled(state.characterId);
+    const selected = Trace.detailed(state.characterId);
     // Native callers observe this same calculation; they never calculate a second wallet.
-    const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
+    // A traced bot's record reads it with diagnostics off too (the decision trace samples bots on its own switch).
+    const capture = Diagnostics.active() || selected ? captureOutput || (selected ? {} : null) : null;
     let queueBudget = 0, reason = 'ratio_below_money_price';
     if (!Packet.hasMoney(packet)) {
         if (Diagnostics.active()) moneyPacketMissing++;
         reason = 'money_packet_missing';
         queueBudget = Math.max(0, wallet - operatingReserve(state));
-    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - Packet.survivalReserve(packet)); }
+    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - Packet.refillReserve(packet)); }
     else if (options.free === true) {
         // Already credited treasury money belongs to this physical wallet.
         // Exclude it from personal free cash before adding its actual remainder.
@@ -130,10 +151,14 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
         const quoted = options.quoteScale > 0 ? r * options.quoteScale : r;
         if (quoted >= Packet.moneyPrice(packet)) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
     }
-    // Native utility terms take precedence over a free/clan allowance too.
+    // Native utility terms take precedence over a free/clan allowance too. A purchase
+    // whose rank is a funded row of the packet (the build funded it there) reads the
+    // money above the rows ranked before it; any other (none, Infinity, unfunded)
+    // the money above every funded row.
     if (Packet.hasMoney(packet) && !options.upperBound && options.valueHours !== undefined) {
         reason = 'finite_value';
-        queueBudget = Math.min(worth(packet, options.valueHours), budgetFor(packet, wallet, 0, Packet.moneyPrice(packet), capture));
+        queueBudget = Math.min(worth(packet, options.valueHours),
+            budgetFor(packet, wallet, 0, fundedRank(packet, options.r) ?? -Infinity, capture));
     }
     // A side purchase (T177) carries its own value per Adena and takes only the
     // money no queue row holds.
@@ -149,13 +174,47 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const survivalShare = Math.min(survivalCost, nonnegative(options.survivalShare ?? options.survivalCost));
     const available = Math.min(wallet, Math.max(queueBudget + Math.min(wallet, survivalShare), survivalCost));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
-    if (selected) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
+    if (selected) Trace.detail({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
-        escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.survivalReserve(packet)),
+        escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.refillReserve(packet)),
         priorityReserve: capture.priorityReserve, moneyPrice: Number(Packet.moneyPrice(packet)), valueHours: Number(options.valueHours),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
     return available;
+}
+// What a purchase may pay now: the planner's rule (spendable over the bag and the money
+// the bot's own buy orders hold, escrow) paid from the bag. One rule for the planner and
+// every buyer: hot and cold, main and the native writer. stepBids: the money of the bids
+// the step's buyer takes back before it pays (the card's `bids`, at most STEP_BIDS).
+function payable(state = {}, escrow = 0, options = {}, captureOutput = null, stepBids = 0) {
+    return Math.min(budget(state) + nonnegative(stepBids), spendable(state, escrow, options, captureOutput));
+}
+// The money the bot's own backed bids hold per item (item -> count x price of its BUY lines
+// that hold escrow; a conditional bid holds none), from its board lines (BoardIndex.ownerLines,
+// either thread). O(its lines).
+function ownBids(lines) {
+    const held = new Map();
+    for (const line of lines || []) {
+        if (Number(line.storeType) !== BoardRules.BUY || Number(line.custodyPolicy) === 1) continue;
+        const id = Number(line.selfId);
+        held.set(id, (held.get(id) || 0) + nonnegative(line.count) * nonnegative(line.price));
+    }
+    return held;
+}
+// What those of `items` hold.
+function bidMoney(own, items) {
+    let money = 0;
+    for (const id of items || []) money += own.get(Number(id)) || 0;
+    return money;
+}
+// A shop step names at most this many of its root's bids (the card keeps them).
+const STEP_BIDS = 8;
+// The money a shop step's buyer takes back to pay it (BotAfkMarketService.freeStepBids):
+// what the bot's own bids (own: ownBids) on the step's named bids hold, the first STEP_BIDS
+// of them. One reading for the build that admits the step (WishNetwork), the held step's
+// check (EconomyContext) and every buyer (payable's stepBids), hot and cold.
+function stepBids(own, bids) {
+    return own?.size && bids?.length ? bidMoney(own, bids.slice(0, STEP_BIDS)) : 0;
 }
 // Finite action utility supplies a funding ratio, never an extra purse.
 // Native writers still reread the current money packet and physical wallet.
@@ -246,7 +305,7 @@ function packetRowWishes(funded) {
 function packetFor(network, hour, reserve) {
     // lazy: cycle WishNetwork requires PurchaseFunding at load.
     const { fundable, cashCharge } = WishNetwork ||= require('./WishNetwork');
-    const packet = Packet.money({ hourAdena: Math.round(hour), moneyPrice: significant(network.moneyPrice), survivalReserve: Math.round(reserve),
+    const packet = Packet.money({ hourAdena: Math.round(hour), moneyPrice: significant(network.moneyPrice), refillReserve: Math.round(reserve),
         firstUnfundedPrice: Math.round(network.gap ? cashCharge(network.gap) : 0) });
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {
@@ -259,6 +318,5 @@ function packetFor(network, hour, reserve) {
     }
     return packet;
 }
-function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, payable, ownBids, STEP_BIDS, stepBids, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, budgetFor, packetAfterPurchase, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

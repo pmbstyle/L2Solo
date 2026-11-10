@@ -12,7 +12,6 @@ const Profit = require('./CraftProfitPolicy');
 const BidPurchaseAlternative = require('./BidPurchaseAlternative');
 const { npcOwnsPurchase, shotRecipeCap } = require('./TradeIntent');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
-const MeetingPriceRefusals = require('./MeetingPriceRefusals');
 const PartyAdmission = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const BoardLook = require('./BoardLook');
@@ -145,8 +144,6 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
         if (line.custodyPolicy === 1 && !PartyAdmission.personalOfferAllowed(line, ctx.state)) continue;
-        if (line.custodyPolicy === 1 && MeetingPriceRefusals.rejects(line,
-            Math.min(units, line.count), PartyAdmission.counterpartyState(line.ownerId))) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;
@@ -181,6 +178,21 @@ function beliefFor(selfId, ctx, enchant = 0) {
         ctx.board?.first(selfId,BUY,{excludeOwner:ctx.characterId,enchant})].filter(row => row?.price > 0);
     return { ...belief, mu:(Math.log(cost) * belief.K + quotes.reduce((n,row) => n + Math.log(row.price),0))
         / (belief.K + quotes.length), K:belief.K + quotes.length };
+}
+// A crafter's fee for a recipe it offers (its workshop listing, CraftShopService.listing):
+// its belief of the service's worth, the product's price as the prior
+// (CraftShopService.productPrice), learnt from every rival's listed fee (as a player
+// browsing the workshops sees them all) and its own fills (its earnings per fill, weighted by the
+// fills). Priced when the workshop decides: temporary until its own lines' look reprices
+// a fee on a rival's line.
+function serviceFee(recipe, previous, rivalFees = []) {
+    const first = invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe);
+    const belief = { mu: Math.log(Math.max(1, first)), K: PriceBelief.S0 };
+    const observations = rivalFees.filter(price => price > 0).map(price => [Math.log(price), 1]);
+    const paid = Number(previous?.earned || 0), filled = Number(previous?.fills || 0);
+    if (paid > 0 && filled > 0) observations.push([Math.log(paid / filled), filled]);
+    PriceBelief.learn(belief, observations);
+    return Math.max(1, Math.round(Math.exp(belief.mu)));
 }
 // A fresh ask for this choice; nothing is read from saved item memory.
 function priceForSale(selfId, ctx, { town = null, units = 1, enchant = 0, current = 0, rollKey }) {
@@ -325,9 +337,16 @@ function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = nul
     return null;
 }
 
-// Only lines selected by the owner's shared attention roll reach this choice.
+// Whether the best rival price moved from the one a line was priced against (seen)
+// past the price's accepted noise (sigma, log scale): the own look reprices only then,
+// and a new rival line raises line_undercut on a line only then (lineEvents).
+function rivalMoved(seen, now, sigma) {
+    return Math.abs(Math.log(now / seen)) >= sigma;
+}
+
+// The own_lines answer over the lines BoardLook.review looks at (its reasons).
 // Native writes retain revision + previousPricing fences; an unchanged price
-// returns no update. Its observation stays in the worker's numeric lookSeen.
+// returns no update.
 function look(state, lines, ctx) {
     const reprices = [];
     const withdrawals = [];
@@ -367,10 +386,9 @@ function look(state, lines, ctx) {
         // evidence, but never turn every small quote move into another roll.
         const rival = ctx.board?.first(line.selfId, line.storeType, { excludeOwner: ctx.characterId,
             enchant: line.enchant || 0 });
-        const movement = rival?.price > 0 && line.pricing.rival > 0
-            ? Math.abs(Math.log(rival.price / line.pricing.rival))
-            : Math.abs(belief.mu - Math.log(line.pricing.price || line.price));
-        if (!forced && reason & 1 && movement < acceptedSigma && !(line.price > market.purchaseCap)) continue;
+        const moved = rival?.price > 0 && line.pricing.rival > 0 ? rivalMoved(line.pricing.rival, rival.price, acceptedSigma)
+            : Math.abs(belief.mu - Math.log(line.pricing.price || line.price)) >= acceptedSigma;
+        if (!forced && reason & 1 && !moved && !(line.price > market.purchaseCap)) continue;
         const rollKey = [line.storeType === BUY ? 'bid' : 'ask', ctx.characterId,
             line.lineId, line.selfId, counter.deals, line.fills || 0];
         let chosen;
@@ -414,8 +432,9 @@ function look(state, lines, ctx) {
     return reprices.length || withdrawals.length ? { reprices, withdrawals } : null;
 }
 
-function lookOwn(state, lines, ctx, lookSeen) {
-    return BoardLook.review(state, lines, ctx, lookSeen);
+// options: { visit } (BoardLook.review).
+function lookOwn(state, lines, ctx, options = {}) {
+    return BoardLook.review(state, lines, ctx, options);
 }
 
-module.exports = { beliefFor, traderContext, priceForSale, lineState, bestAnswer, disposition, bid, look, lookOwn };
+module.exports = { beliefFor, traderContext, priceForSale, serviceFee, lineState, bestAnswer, disposition, bid, look, lookOwn, rivalMoved };

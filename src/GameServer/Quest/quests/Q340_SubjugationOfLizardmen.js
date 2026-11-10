@@ -4,7 +4,7 @@
 // NPC ids are L2Solo native datapack ids (reference id - 23000); ordinary mob
 // ids are the reference id - 20000. The raid boss is this quest's one
 // exception: reference 25146 is native 10146 (Serpent Demon Bifrons), not 5146,
-// which is the unrelated quest monster 27146. See docs/c4/quests/imported-quests.md.
+// which is the unrelated quest monster 27146.
 //
 // Bifrons' chest is a transient quest spawn exactly as the reference's
 // addSpawn(CHEST, npc, false, 30000) is: it stands where the boss fell, belongs
@@ -234,7 +234,7 @@ module.exports = {
         // Adonius demands both relics and nothing else can ever drop one. The
         // rolls and their rates are kept exactly as authored; only the outer
         // guard is widened to "does not yet hold both", so the pair stays
-        // reachable. See docs/c4/quests/imported-quests.md.
+        // reachable.
         if (holy && rosary) return;
         if (Math.random() >= SYMBOL_CHANCE) return;
         const gives = [];

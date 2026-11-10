@@ -122,11 +122,8 @@ function npcOffersAll(selfId) {
 // shots until the dwarves' production chain replaces it in 3.6. Also used at
 // execution, so a saved non-shot offer cannot bypass the new routing rule.
 function botCanBuy(offer) {
-    if (!offer) return false;
-    const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
-        || (offer.sourceType === 'private_store' && MerchantStoreConfigs[offer.sourceName]);
-    if (offer.sourceType === 'npc' && !ProductionPolicy.allowsNpcShot(offer.selfId)) return false;
-    return !fixed || ProductionPolicy.allowsFixedShot(offer.selfId);
+    return !!offer && OfferQuery.sourceAllowed(offer, offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
+        || (offer.sourceType === 'private_store' && !!MerchantStoreConfigs[offer.sourceName]));
 }
 
 // A live private store's line as an offer: a configured city merchant is
@@ -197,8 +194,7 @@ function hotOffers(selfId, options = {}) {
     ].filter((offer) => offer.available && Number(offer.sourceId) !== Number(options.buyerCharacterId)
         && Number(offer.price) <= (options.budget ?? Infinity)
         && (!options.accept || options.accept(offer))
-        && PartyAdmission.personalOfferAllowed(offer,
-        ownState, undefined, ownSession))
+        && OfferQuery.admits(offer, ownState, ownSession))
         .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
@@ -208,21 +204,19 @@ function hotOffers(selfId, options = {}) {
 // face to face only, E14, E22), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
+// The offers are the ones the bot's build quotes (OfferQuery.admits, the build's reader).
 function bestOffer(selfId, options = {}) {
     const towns = options.town ? [options.town] : options.towns || null;
     const fixed = fixedStoreOffers(selfId);
     const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
+    const buyer = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
+    const session = World.registeredActorById(Number(options.buyerCharacterId))?.session || null;
     return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
         towns,
         excludeOwner: options.buyerCharacterId,
         budget: options.budget,
         cost: options.cost,
-        accept: (offer) => botCanBuy(offer)
-            && PartyAdmission.personalOfferAllowed(offer,
-                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId)),
-                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(offer.sourceId)),
-                World.registeredActorById(Number(options.buyerCharacterId))?.session,
-                World.registeredActorById(Number(offer.sourceId))?.session) && (!options.accept || options.accept(offer)),
+        accept: (offer) => OfferQuery.admits(offer, buyer, session) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
@@ -355,7 +349,7 @@ function supplyCatalog(limit = 96, origin = null) {
 
 // Where a hot bot goes to deal with an offer: a stall's actor (a shop, a
 // live private store), or a board record without a stall (an ad), dealt
-// with by record at its place (D6: hot bots take ads by records like cold
+// with by record at its place (hot bots take ads by records like cold
 // ones). { actorId, recordId, sourceId, name, locX, locY, locZ, town }.
 function offerTarget(offer, town = null) {
     const actor = offer?.projection?.actor || offer?.session?.actor || null;

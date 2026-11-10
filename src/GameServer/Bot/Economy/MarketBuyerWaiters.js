@@ -1,16 +1,21 @@
-const DiagnosticConfig = require('../Population/PopulationConfig');
-const PurchaseFunding = require('./PurchaseFunding');
+'use strict';
+// The board's buyers (worker): what each bot's held build
+// wants from player supply (its card's watch rows: item, the most it pays a unit),
+// registered while the card is held (register, from the worker's held card: a build
+// taken, a card restored on a record's first row) and dropped with it, no clock. A new
+// SELL line, or a cheaper one, wakes at most five buyers of its item whose budget
+// reaches its price (recordChanged → wake: offer_posted, which wakes the build); a
+// woken want leaves the index until the build it wakes holds its next card, a want
+// whose wake is refused (a bot that cannot take it now) stays. At most MAX_WANTS per
+// bot (the rest counted: board:wait:capped). Beside it the owners' own lines
+// (lineEvents): the same record change raises their own-line situations.
+const MAX_WANTS = 8;
+const WAKES_PER_RECORD = 5;
 
-function eligible(state) {
-    return state?.phase === 'cold' && ['hunting', 'party_wait'].includes(state.activity)
-        && Number(state.vitals?.hp ?? state.hp ?? 1) > 0
-        && !state.partyId && !state.party?.partyId && !state.stats?.travel
-        && !state.stats?.pveEncounter && !state.stats?.pvpEncounter;
-}
-
-// Each item keeps an indexed max-heap of affordable budgets. Publication
-// visits only this owner's wants; a new record inspects at most five nodes.
-// State objects remain in the canonical provider, never in this index.
+// Each item keeps an indexed max-heap of budgets. Publication visits only
+// this owner's wants; a new record wakes at most five: a want refused (its own
+// record's owner, a near, fenced or failed bot) is passed over without spending
+// one, so buyers below it still hear the offer.
 class ItemWaiters {
     constructor() { this.nodes = []; }
     before(a, b) { return a.budget > b.budget || (a.budget === b.budget && a.sequence < b.sequence); }
@@ -47,13 +52,12 @@ class ItemWaiters {
 }
 
 class MarketBuyerWaiters {
-    constructor({ stateFor, demandsFor, wake }) {
-        if ([stateFor, demandsFor, wake].some(fn => typeof fn !== 'function')) {
-            throw new TypeError('market buyer waiters require canonical state, demand and wake providers');
-        }
-        Object.assign(this, { stateFor, demandsFor, wake });
+    // wake(ownerId, { itemId, price }): the offer that woke the buyer; true when taken.
+    // capped(): told a want past MAX_WANTS.
+    constructor({ wake, capped = () => {} }) {
+        if (typeof wake !== 'function') throw new TypeError('market buyer waiters require a wake');
+        Object.assign(this, { wake, capped });
         this.items = new Map(); this.owners = new Map(); this.sequence = 0;
-        this.stats = { inspected: 0, woken: 0 };
     }
     clear() { this.items.clear(); this.owners.clear(); }
     size() { return { owners: this.owners.size, items: this.items.size }; }
@@ -65,27 +69,27 @@ class MarketBuyerWaiters {
         }
         this.owners.delete(ownerId);
     }
-    ownerChanged(ownerId, timestamp = Date.now()) {
+    // A card held: its wants replace the bot's. wants: [{ itemId, budget }] (budget: the
+    // most it pays a unit, as the wallet read when the card was held).
+    register(ownerId, wants = []) {
         this.remove(ownerId);
-        const state = this.stateFor(ownerId);
-        if (!eligible(state)) return;
-        const reserve = PurchaseFunding.operatingReserve(state);
         const byItem = new Map();
-        for (const [itemId, signal] of this.demandsFor(state, timestamp)) {
-            const budget = Math.max(0, Number(signal.budget) - reserve);
-            if (signal.ready && Number.isSafeInteger(itemId) && itemId > 0 && Number.isFinite(budget) && budget > 0) {
-                byItem.set(itemId, Math.max(byItem.get(itemId) || 0, budget));
-            }
+        for (const { itemId, budget } of wants) {
+            const id = Number(itemId), most = Number(budget);
+            if (Number.isSafeInteger(id) && id > 0 && Number.isFinite(most) && most > 0) byItem.set(id, Math.max(byItem.get(id) || 0, most));
         }
         const nodes = [];
         for (const [itemId, budget] of byItem) {
+            if (nodes.length >= MAX_WANTS) { this.capped(); break; }
             if (!this.items.has(itemId)) this.items.set(itemId, new ItemWaiters());
             const node = { ownerId, itemId, budget, sequence: ++this.sequence, position: -1 };
             this.items.get(itemId).add(node); nodes.push(node);
         }
         if (nodes.length) this.owners.set(ownerId, nodes);
     }
-    recordChanged(record, previous = [], timestamp = Date.now()) {
+    // A SELL record posted or changed: the offers it adds (a new line, a lower price,
+    // more units) wake their buyers. Returns the woken owner ids.
+    recordChanged(record, previous = []) {
         if (Number(record.storeType) !== 1) return [];
         const old = new Map(previous.map(line => [line.lineId, line]));
         const offers = new Map();
@@ -99,33 +103,64 @@ class MarketBuyerWaiters {
             offers.set(itemId, Math.min(offers.get(itemId) ?? Infinity, price));
         }
         const woken = [], held = [];
-        let inspected = 0;
         try {
             for (const [itemId, price] of offers) {
                 const heap = this.items.get(itemId);
-                while (heap?.peek()?.budget >= price && inspected < 5) {
-                    const node = heap.peek(); heap.remove(node); inspected++;
-                    if (node.ownerId === Number(record.ownerId)) { held.push(node); continue; }
-                    const state = this.stateFor(node.ownerId);
-                    this.remove(node.ownerId);
-                    if (!eligible(state)) continue;
-                    const reserve = PurchaseFunding.operatingReserve(state);
-                    const demand = this.demandsFor(state, timestamp).find(([id, signal]) => id === itemId
-                        && signal.ready && Number(signal.budget) - reserve >= price);
-                    if (!demand) continue;
-                    if (this.wake(node.ownerId, timestamp, { itemId, price })) woken.push(node.ownerId);
+                while (heap?.peek()?.budget >= price && woken.length < WAKES_PER_RECORD) {
+                    const node = heap.peek(); heap.remove(node);
+                    if (node.ownerId === Number(record.ownerId) || !this.wake(node.ownerId, { itemId, price })) { held.push(node); continue; }
+                    this.remove(node.ownerId); woken.push(node.ownerId);
                 }
-                if (inspected === 5) break;
+                if (woken.length === WAKES_PER_RECORD) break;
             }
         } finally {
             for (const node of held) {
                 if (!this.items.has(node.itemId)) this.items.set(node.itemId, new ItemWaiters());
                 this.items.get(node.itemId).add(node);
             }
-            DiagnosticConfig.developerDiagnostics && (this.stats.inspected += inspected); DiagnosticConfig.developerDiagnostics && (this.stats.woken += woken.length);
         }
         return woken;
     }
 }
 
-module.exports = { MarketBuyerWaiters, eligible };
+// The own-line situations of a board record's change (record: BoardIndex.recordOf;
+// previous: its indexed lines before; board: the index with the record put): a bot
+// owner's line filled (its fills moved: a sale, a bid answered; a line sold out leaves
+// the record and raises none) raises goal_done:line on it; a new SELL line raises
+// line_undercut on the bot owners of the same item's dearer SELL lines where it sells
+// (its town; an unplaced line every town) when it moves the best rival price that line
+// was priced against past its accepted noise (MarketPricing.rivalMoved, the look's own
+// test: a smaller move is one the look keeps its price through), at most
+// WAKES_PER_RECORD a line from the cheapest up, each owner past them told to
+// capped(). A C4 seller sees a new stall or
+// shout of his item when it appears; a rival's price change he sees at his own next
+// look (his town arrival, arrived_town), so a reprice raises none: two sellers of one
+// item do not undercut each other at machine speed. wake(ownerId, name).
+// lazy: MarketPricing's graph is loaded after the worker's board modules.
+const Pricing = () => invoke('GameServer/Bot/Economy/MarketPricing');
+function lineEvents(record, previous, board, wake, capped = () => {}) {
+    const ownerId = Number(record.ownerId), old = new Map(previous.map(line => [line.lineId, line]));
+    if (record.botOwned && record.lines.some(line => line.fills > Number(old.get(Number(line.lineId))?.fills ?? line.fills))) {
+        wake(ownerId, 'goal_done:line');
+    }
+    if (Number(record.storeType) !== 1) return;
+    const woken = new Set();
+    for (const line of record.lines) {
+        if (old.has(Number(line.lineId))) continue;
+        let raised = 0;
+        for (const other of board.lines(Number(line.selfId), 1, record.town)) {
+            if (!(other.price > Number(line.price)) || !other.botOwned || other.ownerId === ownerId || woken.has(other.ownerId)) continue;
+            const seen = other.pricing?.rival, sigma = other.pricing?.sigma;
+            if (seen > 0 && sigma > 0) {
+                const rival = board.first(Number(line.selfId), 1, { excludeOwner: other.ownerId, enchant: other.enchant });
+                if (!(rival?.price > 0) || !Pricing().rivalMoved(seen, rival.price, sigma)) continue;
+            }
+            woken.add(other.ownerId);
+            if (raised === WAKES_PER_RECORD) { capped(); continue; }
+            raised++;
+            wake(other.ownerId, 'line_undercut');
+        }
+    }
+}
+
+module.exports = { MarketBuyerWaiters, MAX_WANTS, lineEvents };

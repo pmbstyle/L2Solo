@@ -133,7 +133,7 @@ try {
         try {
             TripPayment.fee = () => 2900;
             Config.developerDiagnostics = true;
-            Diagnostics.stop();
+            Diagnostics.reset();
             const town = { name: 'Fee Town', x: 5000, y: 0, z: -100 };
             const broke = botAt({ locX: 0, locY: 0, locZ: 0 });
             broke.backpack.items.get(57).amount = 1000;
@@ -148,7 +148,7 @@ try {
         } finally {
             TripPayment.fee = originalFee;
             Config.developerDiagnostics = originalDiagnostics;
-            Diagnostics.stop();
+            Diagnostics.reset();
         }
     }
 
@@ -189,7 +189,7 @@ try {
     redBot.fetchKarma = () => redKarma;
     const redSession = session(redBot);
     const redResult = BotTownTravel.request(redSession, redBot, farAi, 'Out of shots.');
-    // A bot with karma walks to Floran, the town where a PK trades (design 5.8).
+    // A bot with karma walks to Floran, the town where a PK trades.
     assert.strictEqual(redResult, 'walk', 'a hot bot with karma walks to its town');
     assert.strictEqual(redSession.plan, 'shopping');
     assert.strictEqual(redSession.townEscape, undefined, 'a bot with karma should not cast Scroll of Escape to town');

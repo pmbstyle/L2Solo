@@ -49,7 +49,9 @@ function retainedLines(state, lines, owned, town) {
 // Preserve still-needed, funded standing craft lines alongside the newly
 // prepared wishes, rather than discarding the whole new batch. Each carried
 // line keeps its own current project certificate and its accepted price.
-function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0) {
+// held: the root whose shop purchase the held goal makes (heldPurchaseRoot): its
+// lines are not carried, as linesFor bids none for it.
+function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0, held = null) {
     const plan = state.stats?.equipmentPlan;
     if (!(Number(moneyPrice) > 0) || !plan || !owned?.length
         || !(plan.inputPreparation || plan.clanGoal || plan.recipeId
@@ -61,7 +63,7 @@ function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0) {
     const needs = require('./TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1);
     const output = wanted.slice(), limit = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
     for (const line of candidates) {
-        const need = needs.filter(row => Number(row.itemId) === Number(line.selfId))
+        const need = needs.filter(row => Number(row.itemId) === Number(line.selfId) && (!held || row.key !== held))
             .reduce((best, row) => !best || Number(row.amount) > Number(best.amount) ? row : best, null);
         const count = Math.min(Number(line.count), Number(need?.amount || 0)), price = Number(line.price);
         if (!need || !Number.isSafeInteger(count) || count <= 0 || !Number.isSafeInteger(price) || price <= 0
@@ -141,7 +143,8 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
         preferProvidedWorth: goal.intent?.retainedProject === true || goal.intent?.shotRecipeInvestment === true,
         money: spendable, town,
-        rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
+        // The bid's roll: one per bot and item (a goal has no identity of its own).
+        rollKey: ['bid', Number(state.characterId || 0), selfId] });
     if (!chosen) return null;
     const price = Math.floor(chosen.price);
     const count = Math.min(requestedCount, chosen.count ?? requestedCount, Math.floor(spendable / price));
@@ -159,8 +162,19 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     };
 }
 
+// One acquisition path per root at a time: while the held goal is a purchase the bot
+// makes at a shop (an NPC or a board quote), no bid of the same root holds that money.
+// The root's key, else null. C4: a player walking to the NPC with that money closes his
+// WTB for the same project; his next store asks again once the purchase is made.
+function heldPurchaseRoot(goal) {
+    return ['upgrade_gear', 'buy_craft_material'].includes(goal?.type)
+        && (nativeGoal(goal) || goal.plan?.priceSource === 'offer') ? goal.plan?.wishKey || null : null;
+}
+
 function linesFor(state, goal, { money = Infinity, watchList, ...options } = {}) {
-    const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList).map(row => ({ type: 'buy_craft_material',
+    const held = heldPurchaseRoot(goal);
+    const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList)
+        .filter(row => !held || row.key !== held).map(row => ({ type: 'buy_craft_material',
         target: { itemId: row.itemId, amount: row.amount },
         intent: row, plan: { estimatedCost: row.worth, purpose: row.kind, valueRate: row.valueRate } }));
     if (!nativeGoal(goal) && !watchList?.some(row => row.key) && goal?.target?.itemId
@@ -224,4 +238,4 @@ function withinCap(price, cap) {
     return !Number.isFinite(cap) || Number(price) <= cap;
 }
 
-module.exports = { survivalCost, goalMoney, bidFor, linesFor, retainedLines, keepRetainedBids, withinCap };
+module.exports = { survivalCost, goalMoney, bidFor, linesFor, retainedLines, keepRetainedBids, heldPurchaseRoot, withinCap };

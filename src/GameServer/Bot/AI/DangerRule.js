@@ -4,7 +4,7 @@ const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 
-// Owner: the one decision of "it got dangerous", hot and cold (E70, §13.6):
+// Owner: the one decision of "it got dangerous", hot and cold:
 // drink, run, sit or fight on, each priced in the bot's hours, and what a run
 // and a last strike are bound by. No live actor and no world: the hot adapter
 // is DangerMoment (each tick of a fight), the cold one BackgroundResolver
