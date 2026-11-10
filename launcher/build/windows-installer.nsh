@@ -1,8 +1,8 @@
 !include UAC.nsh
 !include getProcessInfo.nsh
 Var pid
-!define L2SOLO_NSIS_DIRECTORY "${__FILEDIR__}"
-!include "${L2SOLO_NSIS_DIRECTORY}/windows-messages.nsh"
+!addincludedir "${__FILEDIR__}"
+!include "windows-messages.nsh"
 
 ; The standard running-app check remains in use for both install and uninstall.
 ; The installer additionally checks access before uninstallOldVersion is reached.
@@ -15,7 +15,7 @@ Var pid
 !macroend
 
 !ifndef BUILD_UNINSTALLER
-!include "${L2SOLO_NSIS_DIRECTORY}/windows-preflight.nsh"
+!include "windows-preflight.nsh"
 Var L2SoloElevationRequested
 Var L2SoloPermissionResume
 Var L2SoloOriginalProfile
@@ -52,7 +52,7 @@ Var L2SoloPreviousDirectory
 
 !macro customHeader
 !insertmacro L2SoloInstallerMessages
-!include "${L2SOLO_NSIS_DIRECTORY}/windows-check-hook.nsh"
+!include "windows-check-hook.nsh"
 Function L2SoloCheckRunningAndAccess
   StrCpy $CmdPath "$SYSDIR\cmd.exe"
   StrCpy $PowerShellPath "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"

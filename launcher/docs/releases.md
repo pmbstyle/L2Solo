@@ -84,6 +84,8 @@ Windows Setup checks create/write/delete access to the destination and any previ
 
 `npm --prefix launcher run test:installer` compiles a disposable NSIS installer, its uninstaller and an access-check driver. On Windows it also tests denied directory/file ACLs, file locks, preservation of the installed version on failure and a successful retry. The fixture has a separate application ID, package name and installation folder. Other platforms perform compilation only; setting `L2SOLO_NSIS_WINE` to a Wine executable additionally exercises file operations in an isolated temporary prefix. Wine does not validate Windows ACLs or UAC. Interactive consent, cancellation and same-account elevation remain part of the native Windows release walkthrough.
 
+Installer includes use NSIS's include directory search so Windows and POSIX compilers resolve paths with their native separators. Installer check failures retain a nonzero exit status after Electron Builder's asynchronous cleanup. A launcher unit test injects a build failure with that cleanup hook active, preventing a failed compilation from producing a green CI result.
+
 The server directory owns `config/local.ini`, world/history databases, `tmp/saves`, logs and separate geodata. A running world is protected by the same database access lock used by backups and the server. Applying code requires a stopped world. Before file replacement a service snapshot checkpoints and checks both databases, then a journal binds old code and old data to the same update operation.
 
 The selected release object is fixed for the entire installation even when an informational check discovers a newer release. After installation, update availability is compared against the actual installed version.
