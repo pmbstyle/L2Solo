@@ -2176,6 +2176,12 @@ function all(sql, params = []) {
     return normalizeRows(Statements.prepare(connection, sql, true).all(...params));
 }
 
+// An owner's stock rows, read inside the transaction that changed them, for
+// PersonalWarehouseIndex.committed (one indexed read of at most a few dozen rows).
+function warehouseStockUnsafe(characterId) {
+    return all('SELECT selfId, amount, enchant FROM warehouse_items WHERE characterId = ? AND amount > 0', [characterId]);
+}
+
 function write(sql, params = []) {
     checkMutationAdmission();
     traceRevisionWrite(sql, params);
@@ -7891,25 +7897,21 @@ const Database = {
         return select('warehouse_items', ['*'], 'characterId = ? AND amount > 0', [characterId], 'warehouse:list');
     },
     setWarehouseItem(characterId, item) {
-        const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, enchant: Math.max(0, Number(item.enchant ?? 0) || 0), characterId };
-        if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
-        return insert('warehouse_items', values, 'warehouse:insert').then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+        const petData = item.petData ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData)) : null;
+        let stock = null;
+        return inTransaction(() => {
+            const result = write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)',
+                [item.selfId, item.name ?? '', item.amount ?? 1, Math.max(0, Number(item.enchant ?? 0) || 0), petData, characterId]);
+            stock = warehouseStockUnsafe(characterId);
+            return result;
+        }, 'warehouse:insert').then(result => {
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
-    },
-    updateWarehouseItemAmount(characterId, id, amount) {
-        const work = Number(amount) <= 0
-            ? remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete-empty')
-            : update('warehouse_items', { amount }, 'id = ? AND characterId = ?', [id, characterId], 'warehouse:amount');
-        return work.then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
-    },
-    deleteWarehouseItem(characterId, id) {
-        return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete')
-            .then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
     },
 
     transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null, validate = null } = {}) {
         if (coldState && Number(coldState.characterId) !== Number(characterId)) return Promise.reject(new Error('economy_state_changed'));
+        let stock = null;
         return withCharacterFlush(characterId, () => inTransaction(() => {
             validate?.();
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
@@ -7928,10 +7930,11 @@ const Database = {
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId], null,
                 Number(craftDepositTarget) > 0 ? { craftWarehouseDepositTarget: Number(craftDepositTarget),
                     ...(craftDepositKind ? { craftWarehouseDepositKind: craftDepositKind } : {}) } : null);
+            stock = warehouseStockUnsafe(characterId);
             return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:deposit')).then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
     },
 
@@ -7942,6 +7945,7 @@ const Database = {
         // its scalar location and activity inside the native transaction.
         const townIntent = coldState && { activity: coldState.activity, currentRegion: coldState.currentRegion,
             locX: Number(coldState.loc?.locX || 0), locY: Number(coldState.loc?.locY || 0), locZ: Number(coldState.loc?.locZ || 0) };
+        let stock = null;
         return withCharacterFlush(characterId, () => inTransaction(() => {
             validate?.();
             let life = null;
@@ -7985,10 +7989,11 @@ const Database = {
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
+            stock = warehouseStockUnsafe(characterId);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:withdraw')).then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
     },
 
