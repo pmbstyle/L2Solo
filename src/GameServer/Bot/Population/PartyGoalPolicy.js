@@ -57,13 +57,15 @@ function pending(party, members) {
 // renewed when that is searched again) and goal (its wish focus with the cash
 // it names, its party request and plan step), and the spot the forecast reads
 // (PartyIncomeComparison.prepare's: the objective's, else the party's, else
-// the first member's). The review runs when this moves, never on the clock.
+// the first member's), and the shot variant whose table row it forecasts.
+// The review runs when this moves, never on the clock.
 // Not in it: the party's cohesion, which drifts every fight and scales only
 // the table forecast, which departs nobody
 // (PopulationService departs on an own_party review); the wallet, heard in
 // town by the member's own decision; the solo route of a member whose
 // decision holds no earning spot (PartyIncomeComparison.soloRoute's own memo).
 function incomeReviewKey(party, members, objective) {
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
     const goal = row => row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? row.kind ?? null,
         row.amount ?? null] : null;
     const help = party.stats?.agreement?.help || objective?.helpDeal;
@@ -74,6 +76,7 @@ function incomeReviewKey(party, members, objective) {
         members.map(member => {
             const stats = member.stats || {};
             return [Number(member.characterId), Number(member.level || 0), stats.classId ?? member.classId ?? null,
+                ShotStock.planForState(member).selfId,
                 Rewards.spoilSkillLevel(member), stats.wishSections?.build ?? null, stats.wishSections?.sample ?? null,
                 Number(Packet.hourAdena(stats.money)) || 0, stats.wishFocus?.[0] ?? null, stats.wishFocus?.[2] ?? null,
                 goal(stats.partyRequest), goal(stats.equipmentPlan?.next)];

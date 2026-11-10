@@ -216,8 +216,9 @@ function combatShotIds(plan) {
 }
 
 // The table rows of a plan's shots (SpotValueTable: 2 Blessed Spiritshot).
-function shotRows(plan) {
-    return plan?.kind === 'blessedSpiritshot' ? 2 : true;
+// A deliberately uncharged hunt keeps the false row for every shot kind.
+function shotRows(plan, enabled = true) {
+    return enabled === false ? false : plan?.kind === 'blessedSpiritshot' ? 2 : true;
 }
 
 // A shared bounded encounter decision; never builds the wish graph or reads SQL.
@@ -232,7 +233,7 @@ function usePolicy(state, prepared = {}) {
     if (!Object.hasOwn(prepared, 'bestTable')) {
         const hunt = Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
         const spot = hunt.spotId || state.spotId;
-        const shots = hunt.useShots === false ? false : shotRows(plan);
+        const shots = shotRows(plan, hunt.useShots);
         best = (spot && Table.value(spot, tableRole, state.level, shots)) || Table.best(tableRole, state.level, shots);
         hour = Hunt.huntHour(hunt, state);
     }
@@ -780,6 +781,7 @@ module.exports = {
     beginnerAmount,
     combatPlanForState,
     combatShotIds,
+    shotRows,
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,

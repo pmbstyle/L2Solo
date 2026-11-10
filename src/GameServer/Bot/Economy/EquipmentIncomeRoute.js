@@ -24,12 +24,13 @@ function economicHunt(state) {
 // spot closest to level; cuts: takes the ranking's cut, for the prices the
 // same ids stand over (SpotValueTable.rankedSpotIds, cutStands).
 function spotList(state, { price } = {}) {
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), shotPlan = ShotStock.planForState(state);
     let spoiler, costs = null;
     const spoilerOf = () => spoiler !== undefined ? spoiler
         : (spoiler = ColdKillRewards.spoilerFor(state, { skills: ColdCombatProfile.skillsFor(state) }) || null);
     return { spoiler: spoilerOf, ids: (shots, level = state.level, minGap = -7, cuts = null) => SpotValueTable.rankedSpotIds(
         SpotValueTable.roleFor(state), level,
-        costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, shots,
+        costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, ShotStock.shotRows(shotPlan, shots),
         { spoilSkillLevel: spoilerOf()?.skillLevel || 0 }, cuts) };
 }
 
@@ -57,8 +58,9 @@ function matchupOptions(state, timestamp) {
 // it stands on makes two spots each look better from the other (own outputs
 // are not inputs); at the bot's money weight.
 function valuesFor(state, timestamp, price) {
-    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, true, 'income');
-    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, true, 'exp')?.exp };
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), shots = ShotStock.shotRows(ShotStock.planForState(state));
+    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, shots, 'income');
+    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, shots, 'exp')?.exp };
     const weight = SpotEconomics.moneyWeight(state);
     return { hour, weight, evaluate: SpotEconomics.create(state, { timestamp, price, hour, moneyWeight: weight }) };
 }

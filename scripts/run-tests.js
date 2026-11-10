@@ -279,6 +279,7 @@ const tests = [
     'tests/test_auto_soulshots.js',
     'tests/test_shot_stock_restock.js',
     'tests/test_shot_stock_weapon_rank.js',
+    'tests/test_blessed_shot_forecast.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_shot_economy.js',
     'tests/test_live_player_store_purchase.js',

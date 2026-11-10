@@ -224,16 +224,18 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
     const tableRole = Table.roleFor(state);
     const level = levelOf(state);
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const shots = Shots.shotRows(Shots.planForState(state));
     const currentFits = !state.spotId || !fits || fits(state.spotId);
-    const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, true, rewardOptions);
+    const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, shots, rewardOptions);
     const costs = consumablePrices(state);
     const ranked = shots => Table.rankedIncome(tableRole, level, costs, -7, shots, rewardOptions);
-    let progress = current || Table.best(tableRole, level, true);
-    let row = current && netIncome(current, costs) > 0 ? current : ranked(true)[0] || ranked(false)[0];
+    let progress = current || Table.best(tableRole, level, shots);
+    let row = current && netIncome(current, costs) > 0 ? current : ranked(shots)[0] || ranked(false)[0];
     const rowUnfit = fits && row && !fits(row.spotId || state.spotId);
     const progressUnfit = fits && progress && !fits(progress.spotId || state.spotId);
     if (rowUnfit || progressUnfit) {
-        const list = ranked(true).length ? ranked(true) : ranked(false);
+        const list = ranked(shots).length ? ranked(shots) : ranked(false);
         let earning = null, leveling = null;
         for (let at = 0; at < Math.min(list.length, FIT_CHECKS); at++) {
             const entry = list[at];
@@ -254,7 +256,8 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     const income = netIncome(row, costs);
     return { perHour: income * onSpotShare(state), perKill: row.kills > 0 ? income / row.kills : 0,
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
-        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId, useShots: row.useShots !== false };
+        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId,
+        useShots: row.useShots === false ? false : shots };
 }
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
@@ -263,7 +266,9 @@ function huntHour(hunt, state = {}) {
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
     const table = invoke('GameServer/Bot/AI/SpotValueTable');
     const tableRole = table.roleFor(state);
-    const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, true, rewardOptions)[0]
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const shots = Shots.shotRows(Shots.planForState(state));
+    const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, shots, rewardOptions)[0]
         || table.rankedIncome(tableRole, levelOf(state), costs, -7, false, rewardOptions)[0];
     return Math.max(1, row ? netIncome(row, costs) : 0);
 }

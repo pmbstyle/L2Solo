@@ -219,7 +219,8 @@ function build(state, ctx) {
     // The bot's class weighs against its own class's reference (Table.roleFor, T115).
     const role = Table.roleFor(state), level = Number(state.level) || 1;
     const ref = reference(role, level);
-    const shots = ctx.hunt?.useShots !== false;
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    const shots = ShotStock.shotRows(ShotStock.planForState(state), ctx.hunt?.useShots);
     // Shots and potions at their NPC prices, as the bot's hour (BotHuntEfficiency.huntIncome).
     const costs = Hunt.consumablePrices(state);
     const rewardOptions = { spoilSkillLevel: Rewards.spoilSkillLevel(state) };
