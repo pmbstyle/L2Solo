@@ -641,8 +641,10 @@ function verify() {
         let native = { ...fighter(990511), spotId: tableId, loc: ground[0].center };
         const own = Economics.create(native, { timestamp: started })(ground[0], true);
         assert(own?.shotUnits > 0, 'fixture: the table spot pays for its shots');
+        // The alternative beats this camp's uncharged fallback, while the
+        // charged camp wins initially: rising shot prices must cross the choice.
         for (let n = 0; n < 3; n++) native = { ...native, stats: { ...native.stats, huntEfficiency: Hunt.record(native, { spotId: otherId,
-            timestamp: started, cycleMs: 3600000, exp: 0.2 * own.exp, adena: 0.2 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
+            timestamp: started, cycleMs: 3600000, exp: 0.2 * own.exp, adena: 0.3 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
         const on = minute => ({ spots: ground, timestamp: time(minute) });
         const built = Economy.forState(native, on(0));
         assert.equal(built.hunt.spotId, tableId, 'fixture: the bot earns at its table spot');
@@ -723,6 +725,10 @@ function verify() {
             const ids = Route.spotList(fighter(990530)).ids(true, 10, -15).slice(0, 4);
             const ground = ids.map((id, at) => ({ id, avgLevel: 10, minLevel: 10, maxLevel: 10, density: 10, tagsAuthoritative: true,
                 tags: ['starter'], npcEntries: [], center: { locX: -80000 + at * 1500, locY: 250000, locZ: 0 } }));
+            // Keep cash and progression distinct even when a catalogue refresh
+            // makes the fastest native camp also the richest. This bot has
+            // measured a slow, profitable alternative; its crowd must affect
+            // the earning forecast without changing the progression pick.
             const on = minute => ({ spots: ground, timestamp: time(minute) });
             const agrees = (state, minute, what) => {
                 const read = count(() => Economy.basics(state, on(minute)));
@@ -735,7 +741,15 @@ function verify() {
                 return read.result.hunt;
             };
             const holding = (characterId, at) => {
-                const native = { ...fighter(characterId), spotId: ids[at], loc: ground[at].center };
+                let native = { ...fighter(characterId), spotId: ids[at], loc: ground[at].center };
+                const measured = Table.value(ids[1], Table.roleFor(native), native.level, true);
+                const earning = Economics.create(native, { timestamp: started });
+                const cashIncome = 1.4 * Math.max(...ground.flatMap(spot => [true, false]
+                    .map(shots => earning(spot, shots)?.income || 0)));
+                for (let n = 0; n < 3; n++) native = { ...native, stats: { ...native.stats,
+                    huntEfficiency: Hunt.record(native, { spotId: ids[1], timestamp: started,
+                        cycleMs: 3600000, exp: measured.exp, adena: cashIncome, loot: 0,
+                        costs: 0, kills: measured.kills }) } };
                 const state = published(native, Economy.forState(native, on(0)));
                 assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
                 return state;
@@ -748,7 +762,9 @@ function verify() {
                 if (pick.spotId === state.spotId) break;
             }
             assert.equal(pick.spotId, state.spotId, 'fixture: the bot earns where it stands');
-            const rows = ground.flatMap(spot => [true, false].map(shots => ({ spot, row: Economics.create(state, { timestamp: time(2) })(spot, shots) })));
+            const price = Economy.basics(state, on(2)).price;
+            const rows = ground.flatMap(spot => [true, false].map(shots => ({ spot,
+                row: Economics.create(state, { timestamp: time(2), price })(spot, shots) })));
             const richest = rows.filter(({ spot, row }) => spot.id !== pick.spotId && row?.income > 0).sort((a, b) => b.row.income - a.row.income)[0];
             assert(richest?.row.income * Hunt.onSpotShare(state) === pick.perHour, 'fixture: another spot sets the earning');
             const quiet = ids.find(id => id !== pick.spotId && id !== richest.spot.id);

@@ -1,6 +1,6 @@
 {
   "name": "l2solo-launcher",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Install, configure and run your L2Solo world",
   "homepage": "https://l2solo.com",
@@ -17,6 +17,7 @@
     "test": "node --test test/*.test.cjs",
     "test:ui": "node scripts/run-ui-smoke.cjs",
     "test:packaged": "node scripts/run-packaged-smoke.cjs",
+    "test:installer": "node scripts/check-windows-installer.cjs",
     "runtime": "node scripts/prepare-runtime.cjs",
     "release:server": "node scripts/package-server.cjs",
     "dist": "electron-builder --publish never",
@@ -85,6 +86,7 @@
     "nsis": {
       "artifactName": "L2Solo-Launcher-${version}-windows-${arch}-Setup.${ext}",
       "oneClick": false,
+      "include": "build/windows-installer.nsh",
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false
     },

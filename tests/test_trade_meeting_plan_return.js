@@ -23,13 +23,15 @@ const arrive = async id => {
     const world = await createWorld(ids.map(id => ({ id, classId: 0, level: 30 })), 'meeting-plan-return');
     try {
         await Life.init();
+        const huntingReturn = require('./helpers/huntingReturnFixture');
+        const returns = origins.map((loc, side) => huntingReturn(`meeting-field-${side}`, loc, `Field${side}`));
         await Database.createAccount('bot_meeting_return', 'fixture');
         for (const [side, id] of ids.entries()) {
             await Database.execute(['UPDATE characters SET username=? WHERE id=?', ['bot_meeting_return', id]]);
             await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 120000 });
             await Database.setItem(id, { selfId: 1864, name: 'Stem', amount: 20 });
             await Life.upsertState({ characterId: id, name: `Return${side}`, phase: 'cold', activity: 'hunting',
-                level: 30, currentRegion: `Field${side}`, loc: origins[side], adena: 120000,
+                level: 30, spotId: returns[side].spotId, currentRegion: `Field${side}`, loc: origins[side], adena: 120000,
                 vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 }, stats: plans[side],
                 inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)), timing: {} }, 'return_fixture');
         }
@@ -57,7 +59,7 @@ const arrive = async id => {
         const meeting = await accept('return-completed');
         for (const [side, id] of ids.entries()) {
             assert.deepEqual(Life.cachedState(id).stats.marketReturn,
-                { loc: origins[side], regionName: `Field${side}` });
+                returns[side]);
             checkPlan(Life.cachedState(id), side);
             adopt(await Database.payTradeMeetingLeg(meeting, side, 1,
                 `walk:${point.locX}:${point.locY}:${point.locZ}`, 0, false));
@@ -73,18 +75,21 @@ const arrive = async id => {
             const returning = Goals.finishMarketVisit(state, Date.now());
             assert(returning, 'both buyer and seller can resume their original outing');
             assert.equal(returning.stats.travel.reason, 'return_after_market');
-            assert.deepEqual(returning.stats.travel.to, origins[side]);
+            assert.equal(returning.stats.travel.spotId, returns[side].spotId);
             await Life.upsertState(returning, 'fixture_return_start');
             const returned = await arrive(id);
             assert.equal(returned.activity, 'hunting');
-            assert.deepEqual(returned.loc, origins[side]);
+            assert(Math.hypot(returned.loc.locX - origins[side].locX,
+                returned.loc.locY - origins[side].locY) <= 257
+                && Math.abs(returned.loc.locZ - origins[side].locZ) <= 100,
+            'the return arrives at the original hunting ground');
             assert.equal(returned.stats.marketReturn, null);
             checkPlan(returned, side);
             await Database.acknowledgeTradeMeeting(meeting, id);
         }
         // A second appointment must keep the existing outing rather than
         // making the meeting town its new hunting destination.
-        const existing = { loc: { locX: 60000, locY: 150000, locZ: -3500 }, regionName: 'Original field' };
+        const existing = huntingReturn('meeting-original', { locX: 60000, locY: 150000, locZ: -3500 }, 'Original field');
         await Life.upsertState({ ...Life.cachedState(ids[0]), stats: { ...Life.cachedState(ids[0]).stats,
             marketReturn: existing } }, 'return_already_saved');
         const cancelled = await accept('return-cancelled');
@@ -94,7 +99,9 @@ const arrive = async id => {
         await arrive(ids[0]);
         adopt(await Database.cancelTradeMeeting(cancelled, 'fixture_cancel'));
         const recovered = Goals.finishMarketVisit(Life.cachedState(ids[0]), Date.now());
-        assert.deepEqual(recovered.stats.travel.to, existing.loc, 'cancelled detour also resumes the original outing');
+        assert.equal(recovered.stats.travel.spotId, existing.spotId, 'cancelled detour also resumes the original outing');
+        assert(Math.hypot(recovered.stats.travel.to.locX - existing.loc.locX,
+            recovered.stats.travel.to.locY - existing.loc.locY) <= 257);
         checkPlan(recovered, 0);
         for (const id of ids) {
             await Database.settleBoardOwner(id);

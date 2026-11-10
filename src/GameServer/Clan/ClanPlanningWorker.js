@@ -130,6 +130,8 @@ global.invoke = (name) => {
     }
     return originalInvoke(name);
 };
+invoke('GameServer/Bot/Economy/StaticMerchantPricing').useBoard(() => tables.ready('board') ? boardIndex : null);
+invoke('GameServer/Bot/Economy/MarketCounters').useTable(() => tables.rows('market'));
 
 parentPort.on('message', (message) => {
     try {

@@ -1900,7 +1900,7 @@ function buildForState(state, deps) {
     Object.assign(context, valueReaders(state, network, projection.values, persona, knowledgeEnabled,
         base.kitCost, () => context.statsPacket.money));
     context.watchList = TradeIntent.project(state, network, projection, id => context.worth(id) ?? price(id),
-        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
+        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details, base.survivalReserve);
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
@@ -2246,13 +2246,14 @@ function view(state, plan, deps, built = {}) {
     context.horizonHours = plan.horizonHours;
     Object.assign(context, valueReaders(state, network, plan.values, plan.persona, plan.knowledgeEnabled,
         kitCost, () => context.statsPacket.money));
-    // The retained kit can change independently of the cached decision. Its
-    // small list of bids must use today's physical stock, not the old view.
-    if (state.stats?.equipmentPlan?.inputPreparation || state.stats?.equipmentPlan?.clanGoal
+    // Reprice retained craft inputs and recipe investments against this
+    // wallet: the source graph may stand while the money queue changes.
+    if (state.stats?.shotRecipeDemand || state.stats?.equipmentPlan?.inputPreparation || state.stats?.equipmentPlan?.clanGoal
         || state.stats?.equipmentPlan?.strategy === 'craft' && state.stats?.equipmentPlan?.status === 'active'
         || state.stats?.equipmentPlan?.status === 'deferred' && state.stats?.equipmentPlan?.reason === 'wish_focus') {
         const watch = TradeIntent.project(state, network, context.projection,
-            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
+            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad,
+            context.board, context.trip?.details, context.survivalReserve);
         if (watch) context.watchList = Agenda.bidsAfter(watch, network.filled);
     }
     return context;

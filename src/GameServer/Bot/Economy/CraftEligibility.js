@@ -14,6 +14,7 @@ function isServiceCrafter(state = {}) {
 // Warsmith keeps the levels it learned as an Artisan. Kept per class, indexed
 // by character level.
 const CREATE_ITEM_SKILL_ID = 172;
+const CRYSTAL_SKILL_LEVEL = Object.freeze({ d: 1, c: 2, b: 3, a: 4, s: 5 });
 const craftLevelRows = new Map();
 let craftLevelsTree = null;
 let ColdCombatProfile = null;
@@ -43,4 +44,13 @@ function canCraft(state = {}, recipe = {}) {
     return Number.isFinite(level) && Number.isFinite(required) && required > 0 && level >= required;
 }
 
-module.exports = { isServiceCrafter, craftLevelFor, canCraft };
+function canCrystallize(state = {}, rank) {
+    const required = CRYSTAL_SKILL_LEVEL[rank];
+    if (!required) return false;
+    const skills = state.stats?.coldCombat?.skills || state.skills;
+    if (Array.isArray(skills)) return skills.some(skill => Number(skill.selfId) === 248 && Number(skill.level) >= required);
+    ColdCombatProfile ||= invoke('GameServer/Bot/Population/ColdSkillTree');
+    return ColdCombatProfile.treeSkillLevel(Number(state.stats?.classId ?? state.classId ?? 0), Number(state.level || 1), 248) >= required;
+}
+
+module.exports = { isServiceCrafter, craftLevelFor, canCraft, canCrystallize, CRYSTAL_SKILL_LEVEL };

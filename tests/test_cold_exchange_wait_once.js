@@ -24,7 +24,10 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         await Database.execute(['UPDATE characters SET username=? WHERE id=?', ['bot_exchange_wait', botId]]);
         await Life.init();
         const place = Town.marketTown('Giran').center;
-        const spot = invoke('GameServer/Bot/Population/SpotProfiles').ensure().filter(row => row.center)
+        const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+        // A return needs a catalogue destination, as it does on the server.
+        invoke('GameServer/Bot/AI/SpotService').spots = spots;
+        const spot = spots.filter(row => row.center)
             .sort((a, b) => Math.hypot(a.center.locX - place.locX, a.center.locY - place.locY)
                 - Math.hypot(b.center.locX - place.locX, b.center.locY - place.locY))[0];
         await Database.setItem(botId, { selfId: 57, amount: 1000, slot: 0 });

@@ -35,6 +35,8 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-11-09** Shot production and recipe supply, bot recovery, inventory and cross-floor combat fixes, Windows launcher updates
+- **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
 - **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
 - **2026-10-30** Clan wars, geodata, bug fixes
 - **2026-10-26** Server stability, better AI, spoil, hunting, bug fixes
@@ -55,11 +57,11 @@ Optional but recommended for a better experience
 - **2026-09-02** AFK trade, market observer, xN mob fix
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
-- **2026-08-27** Add LLM-driven clan management
 
 <details>
 <summary>Earlier</summary>
-  
+
+- **2026-08-27** Add LLM-driven clan management
 - **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 - **2026-08-25** Bot clans update follow-up, bug fixes
 - **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
@@ -71,7 +73,7 @@ Optional but recommended for a better experience
 - **2026-08-15** Blade Dancers and Sword Singers bot progression update
 - **2026-08-15** Raid Encounter and Gameplay Stability Update
 - **2026-08-15** Server stability and performance update
-- **2026-08-13** Fix hot party performance issues, fix raid boss atk freeze
+- **2026-08-13** Fix hot party performance issues, fix raid boss attack freeze
 - **2026-08-13** Raid bosses, better bot progression and market use, skill fixes, party finder update
 - **2026-08-11** Expand C4 world content and bot progression systems
 - **2026-08-09** Expand C4 world content and runtime fidelity
@@ -163,6 +165,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Complete Lineage 2 C4 experience
 
 <p align="center">
+<img src="https://github.com/user-attachments/assets/ddb9c791-63ef-4c9f-861a-be822340a866" />
+
+
 <img src="https://github.com/user-attachments/assets/99695c45-80e8-4300-afa6-cada58ccd3bd" />
 </p>
 
@@ -173,9 +178,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <!-- STABLE_DOWNLOADS -->
 | Platform | Download |
 |----------|----------|
-| **Windows** | [L2Solo-Launcher-0.2.1-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/launcher-v0.2.1/L2Solo-Launcher-0.2.1-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.1-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/launcher-v0.2.1/L2Solo-Launcher-0.2.1-mac-arm64.dmg) |
-| **Linux** | [L2Solo-Launcher-0.2.1-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/launcher-v0.2.1/L2Solo-Launcher-0.2.1-linux-x86_64.AppImage) |
+| **Windows** | [L2Solo-Launcher-0.2.2-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.2-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.2-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
 On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.

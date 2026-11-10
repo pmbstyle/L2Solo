@@ -146,7 +146,6 @@ class Controller extends EventEmitter {
         this.state.connection = this.state.installed ? loginConnection(readConfig(root)) : null;
         this.state.population = null;
         const marker = await readJson(markerPath(root));
-        this.state.developerMode = fs.existsSync(path.join(root, '.git'));
         this.state.updatePending = (await readJson(journalPath(root)))?.phase === 'awaiting-start';
         const pkg = this.state.installed ? await readJson(path.join(root, 'package.json')) : null;
         this.state.version = marker?.tag || (pkg?.version ? `v${pkg.version} · existing installation` : null);
@@ -252,7 +251,7 @@ class Controller extends EventEmitter {
         this.progress({ label: 'All files ready', percent: 100 });
     }
     async downloadServerUpdate() {
-        if (this.busy || this.appUpdating || this.state.developerMode || this.state.updatePending) throw new Error('Wait for the current operation or pending update to finish.');
+        if (this.busy || this.appUpdating || this.state.updatePending) throw new Error('Wait for the current operation or pending update to finish.');
         if (this.preparing) return this.snapshot();
         const release = await this.findRelease();
         if (newerVersion(release.manifest.minimumLauncherVersion || '0.1.0', this.launcherVersion)) throw new Error('Update the launcher before downloading this server release.');
@@ -269,7 +268,6 @@ class Controller extends EventEmitter {
     async install() {
         if (this.preparing) throw new Error('Wait for the server download to finish.');
         await this.operation(async () => {
-            if (this.state.developerMode) throw new Error('This folder is a developer Git checkout. Update it with your development tools, or choose a separate folder for a managed server.');
             this.progress({ label: 'Finding the latest stable release', percent: 1 });
             const target = await this.findRelease();
             if (newerVersion(target.manifest.minimumLauncherVersion || '0.1.0', this.launcherVersion)) throw new Error('Update the launcher in Updates before installing this server release.');

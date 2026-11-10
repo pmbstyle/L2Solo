@@ -10,7 +10,7 @@ const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 const Valuation = require('./EconomicValuation');
 const Profit = require('./CraftProfitPolicy');
 const BidPurchaseAlternative = require('./BidPurchaseAlternative');
-const { npcOwnsPurchase } = require('./TradeIntent');
+const { npcOwnsPurchase, shotRecipeCap } = require('./TradeIntent');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
 const MeetingPriceRefusals = require('./MeetingPriceRefusals');
 const PartyAdmission = require('../Population/PartyAdmission');
@@ -93,8 +93,9 @@ function traderContext(state, deps = {}) {
         trader,
         economy,
         preparedWorth: deps.preparedWorth || (economy.network?.demands && economy.projection?.values
-            ? id => economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
-                ? economy.worth(id) : NaN : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
+            ? id => economy.watchList?.find(row => row.itemId === Number(id) && row.shotRecipeInvestment)?.worth
+                ?? (economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
+                    ? economy.worth(id) : NaN) : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
         // The version of the card preparedWorth reads (ColdEconomyDecision.usefulnessVersion), main's card reader.
         preparedVersion: deps.preparedVersion ?? null,
         preparedValue: economy.network?.demands && economy.projection?.values ? id => {
@@ -377,7 +378,8 @@ function look(state, lines, ctx) {
         if (line.storeType === BUY) {
             worth = Object.hasOwn(ctx, 'preparedWorth') ? ctx.preparedWorth?.(line.selfId) ?? NaN
                 : typeof ctx.economy?.worth === 'function' ? ctx.economy.worth(line.selfId) : worth;
-            const cashCap = BidPurchaseAlternative.cashCap(line, ctx);
+            const moneyCap = BidPurchaseAlternative.cashCap(line, ctx);
+            const cashCap = Math.min(moneyCap, shotRecipeCap(state, line.selfId, moneyCap));
             if (!Number.isFinite(worth) || worth < 0) {
                 // Unknown new usefulness cannot author additional spend. A
                 // confirmed cheaper purchase/funding limit can still reduce

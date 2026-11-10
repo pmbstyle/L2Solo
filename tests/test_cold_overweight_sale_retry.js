@@ -19,6 +19,8 @@ const ids = [731501, 731502];
         await Database.createAccount('bot_loaded_shaman', 'fixture');
         await Database.execute(["UPDATE characters SET username='bot_loaded_shaman' WHERE id IN (?,?)", ids]);
         await Life.init();
+        const returnTo = require('./helpers/huntingReturnFixture')('shaman-field',
+            { locX: -29133, locY: -100191, locZ: -2728 }, 'Hunting ground');
         for (const id of ids) {
             await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 361 });
             if (id === ids[0]) {
@@ -46,7 +48,7 @@ const ids = [731501, 731502];
                 loc: { locX: -44600, locY: -112400, locZ: -240 }, inventory,
                 vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
                 stats: { classId: 49, generatedCold: true, marketSellSeen: retry,
-                    marketReturn: { loc: { locX: -29133, locY: -100191, locZ: -2728 }, regionName: 'Hunting ground' },
+                    marketReturn: returnTo,
                     townVisit: { town: 'Orc Village', reason: 'sell_inventory', completed: true, startedAt: now - 25000 } }, timing: {} }, 'shaman_sale_fixture');
             if (id === ids[0]) {
                 assert.equal(Floor.bagFor(state, now)?.action, 'unload', 'surplus armor requires a physical unload');

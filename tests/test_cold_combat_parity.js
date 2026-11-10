@@ -97,6 +97,8 @@ function assertNativeHeldPolicy(state) {
 }
 function spotFor(npcId) {
     const npc = DataCache.npcs.find((n) => n.selfId === npcId);
+    assert(npc && invoke('GameServer/Bot/AI/BotHuntingTargetPolicy').canHunt(npc),
+        `combat fixture ${npcId} must be an eligible hunting target`);
     const level = npc.template.level;
     return { id: 'parity', name: 'parity', avgLevel: level, minLevel: level, maxLevel: level, density: 12,
         npcEntries: [{ selfId: npcId, count: 1 }], npcSelfIds: [npcId],
@@ -149,31 +151,33 @@ function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400)
         mobHp: r.encounter ? Math.round(r.encounter.hp) : null,
         botReadyAt: r.encounter ? Math.round(r.encounter.botReadyAt) : null };
 }
+// Grima is a Quest Monster and cannot be a routine hunting target. Use the
+// native level-50 Tarlk Basilisk for these physical combat scenarios.
 // [name, fighter, npc, seed, fight limit ms, action limit]
 // Mobs re-picked when the C4 passive rules (robe sets, Final Fortress off at full HP)
 // changed a fight from its scenario. The safety gate now declines a fresh
 // sorcerer pull; these records exercise combat after an encounter has begun.
 const SOLO = [
     ['sorcerer wins without a futile self-heal', sorcerer, 241, 1],
-    ['gladiator charges', gladiator, 5135, 2],
+    ['gladiator charges', gladiator, 573, 2],
     ['bishop', bishop, 583, 3],
     ['warlock servitor, heals, potion', warlock, 239, 4],
     ['necromancer corpse servitor', necromancer, 129, 5],
     ['swordsinger songs', swordsinger, 129, 6],
-    ['tyrant', tyrant, 5135, 7],
+    ['tyrant', tyrant, 573, 7],
     ['paladin', paladin, 146, 8],
     ['sorcerer 40 survives without a futile self-heal', sorcerer40, 88, 9],
-    ['bladedancer dances', bladedancer, 5135, 10],
-    ['gladiator times out', gladiator, 5135, 14, 4000, 400],
+    ['bladedancer dances', bladedancer, 573, 10],
+    ['gladiator times out', gladiator, 573, 14, 4000, 400],
     ['paladin runs out of actions', paladin, 122, 15, 60000, 10],
-    ['gladiator charges with soulshots', gladiatorShots, 5135, 2],
+    ['gladiator charges with soulshots', gladiatorShots, 573, 2],
     ['sorcerer with spiritshots', sorcererShots, 241, 1]
 ];
 // T124: re-pinned where the new hot rules in the cold fight (a spell's level-fail roll
 // before its critical, the monster's spells rolling it too) moved the rolls.
 const SOLO_GOLDEN = {
     'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 1975, mp: 2264, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator charges': { won: true, died: false, hp: 3131, mp: 564, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator charges': { won: true, died: false, hp: 3133, mp: 473, charges: 0, actions: 22, durationMs: 13764, skillUses: 12, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'bishop': { won: true, died: false, hp: 2023, mp: 2243, charges: 0, actions: 16, durationMs: 16435, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T135: the warlock heals its pet once (one more skill use, its MP), so the pet strikes twice more.
     // T140: the mob hits whoever holds its hate, and the owner strikes only under the pet's hate.
@@ -181,14 +185,14 @@ const SOLO_GOLDEN = {
     'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
     'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'tyrant': { won: true, died: false, hp: 3713, mp: 785, charges: 0, actions: 10, durationMs: 5134, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'tyrant': { won: true, died: false, hp: 3684, mp: 706, charges: 0, actions: 12, durationMs: 6803, skillUses: 7, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Paladin heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
     'paladin': { won: true, died: false, hp: 2717, mp: 864, charges: 0, actions: 22, durationMs: 17647, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 722, mp: 1108, charges: 0, actions: 11, durationMs: 6642, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 2258, mp: 668, charges: 0, actions: 23, durationMs: 16085, skillUses: 4, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator times out': { won: false, died: false, hp: 3341, mp: 768, charges: 0, actions: 8, durationMs: 4000, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1026, botReadyAt: 1723 },
+    'bladedancer dances': { won: true, died: false, hp: 2342, mp: 600, charges: 0, actions: 26, durationMs: 18287, skillUses: 5, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator times out': { won: false, died: false, hp: 3365, mp: 768, charges: 0, actions: 8, durationMs: 4000, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1237, botReadyAt: 1723 },
     'paladin runs out of actions': { won: false, died: false, hp: 2991, mp: 976, charges: 0, actions: 10, durationMs: 5573, skillUses: 1, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 529, botReadyAt: 925 },
-    'gladiator charges with soulshots': { won: true, died: false, hp: 1898, mp: 365, charges: 0, actions: 20, durationMs: 12927, skillUses: 10, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator charges with soulshots': { won: true, died: false, hp: 1932, mp: 229, charges: 0, actions: 23, durationMs: 14434, skillUses: 13, shotActions: 8, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'sorcerer with spiritshots': { won: true, died: false, hp: 1975, mp: 2294, charges: 0, actions: 1, durationMs: 0, skillUses: 1, shotActions: 1, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
 };
 // T100: the gate counts the Sorcerer 60's priced pick, which wins this fight
@@ -197,8 +201,8 @@ const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer40, spo
     targetNpcId: 241, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert.deepStrictEqual({ avoided: unsafeFreshPull.avoided, reason: unsafeFreshPull.reason },
     { avoided: true, reason: 'no_safe_solo_target' }, 'a dangerous fresh solo target is still declined');
-const safeFreshPull = withSeed(2, rng => resolveFight({ state: gladiator, spot: spotFor(5135), pressure: {},
-    targetNpcId: 5135, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
+const safeFreshPull = withSeed(2, rng => resolveFight({ state: gladiator, spot: spotFor(573), pressure: {},
+    targetNpcId: 573, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert(safeFreshPull.won, 'a survivable fresh solo target still enters combat');
 const doomed = { ...sorcerer, vitals: { ...sorcerer.vitals, hp: 1 } };
 const doomedFight = soloOutcome(doomed, 241, 1);
@@ -292,22 +296,22 @@ function partyOutcome(members, npcId, seed) {
             m.actions, m.skillUses, m.shotActions, m.heals, m.musicUses, m.charges]) };
 }
 const PARTY = [
-    ['tank, charges, healer, songs, servitor', [paladin, gladiator, injuredBishop, swordsinger, warlock], 5135, 11],
+    ['tank, charges, healer, songs, servitor', [paladin, gladiator, injuredBishop, swordsinger, warlock], 573, 11],
     ['casters and a dancer', [sorcerer, necromancer, bishop, bladedancer], 7538, 12],
     ['injured with potions', [injuredTyrant, gladiator, sorcerer40], 7538, 13],
     ['necromancer corpse servitor', [necromancer, bishop], 129, 16],
-    ['tank with shots and healer', [paladinShots, injuredBishop], 5135, 11]
+    ['tank with shots and healer', [paladinShots, injuredBishop], 573, 11]
 ];
 // R2: without a tank the mob hits the most hated member (NpcHate), no longer a
 // member rolled per swing, so the tankless pins carry the top damage dealer's HP loss.
 // T106: the shot Paladin is a C-grade 50 now (the only band whose shots pay): with the
-// injured Bishop it no longer kills Grima inside the 15 s party round (both alive, mob at 715).
+// injured Bishop it no longer kills the Tarlk Basilisk inside the 15 s party round (both alive, mob at 715).
 // T124: the cold fight rolls the hot rules it lacked (a spell's level-fail roll, drains,
 // effects, damage over time): the fights that meet them, or roll after them, were re-pinned.
 const PARTY_GOLDEN = {
-    'tank, charges, healer, songs, servitor': { won: true, actions: 22, skillUses: 13, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2933, 976, 5, 2, 0, 1, 0, 0],
-            [1002, 3481, 768, 6, 5, 0, 0, 0, 0],
-            [1011, 2112, 2311, 2, 2, 0, 0, 0, 0],
+    'tank, charges, healer, songs, servitor': { won: true, actions: 27, skillUses: 16, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2924, 976, 7, 2, 0, 1, 0, 0],
+            [1002, 3481, 677, 7, 7, 0, 0, 0, 0],
+            [1011, 2112, 2296, 3, 3, 0, 0, 0, 0],
             [1006, 2891, 586, 4, 4, 0, 0, 4, 0],
             [1004, 2058, 2262, 1, 0, 0, 0, 0, 0]] },
     'casters and a dancer': { won: true, actions: 13, skillUses: 10, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1001, 1519, 2179, 4, 4, 0, 0, 0, 0],
@@ -319,7 +323,7 @@ const PARTY_GOLDEN = {
             [1009, 1010, 1234, 2, 2, 0, 2, 0, 0]] },
     'necromancer corpse servitor': { won: true, actions: 4, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1005, 1907, 2171, 2, 2, 0, 0, 0, 0],
             [1003, 2200, 2334, 1, 1, 0, 0, 0, 0]] },
-    'tank with shots and healer': { won: false, actions: 22, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 715, help: 0, members: [[1017, 1793, 454, 8, 2, 5, 2, 0, 0],
+    'tank with shots and healer': { won: false, actions: 22, skillUses: 6, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 715, help: 0, members: [[1017, 1703, 561, 8, 1, 6, 1, 0, 0],
             [1011, 2198, 2183, 5, 5, 0, 1, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
@@ -358,15 +362,15 @@ for (const [name, state, npcId, seed] of SOLO) {
 // ---------- solo start vitals and the physical damage spread ----------
 // Stored HP / MP above the maximum start the solo fight at the maximum, as the party fight does.
 const overfull = { ...gladiator, vitals: { hp: 999999, mp: 999999 } };
-const overfullFight = withSeed(2, (rng) => resolveFight({ state: overfull, spot: spotFor(5135), pressure: {}, targetNpcId: 5135,
+const overfullFight = withSeed(2, (rng) => resolveFight({ state: overfull, spot: spotFor(573), pressure: {}, targetNpcId: 573,
     rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert.ok(overfullFight.hp <= overfullFight.maxHp && overfullFight.mp <= overfullFight.maxMp, 'solo start HP and MP are clamped to the maximum');
-assert.deepStrictEqual(overfullFight.hp, soloOutcome(gladiator, 5135, 2).hp, 'an overfull bot fights like a bot at full HP');
+assert.deepStrictEqual(overfullFight.hp, soloOutcome(gladiator, 573, 2).hp, 'an overfull bot fights like a bot at full HP');
 // Every damage roll of a cold fight draws from the fight rng: Math.random does not change the outcome.
 const fightWith = (randomSeed) => {
     const realRandom = Math.random;
     Math.random = seeded(randomSeed);
-    try { return soloOutcome(tyrant, 5135, 7); } finally { Math.random = realRandom; }
+    try { return soloOutcome(tyrant, 573, 7); } finally { Math.random = realRandom; }
 };
 assert.deepStrictEqual(fightWith(1), fightWith(2), 'physical damage spread comes from the fight rng, not Math.random');
 

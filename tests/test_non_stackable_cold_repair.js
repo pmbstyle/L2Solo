@@ -33,6 +33,19 @@ const Native = require('./helpers/nativeMarketFixture');
         await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,activity,phase,
             inventorySummary,statsJson,updatedAt) VALUES (9402,'bot_cold_repair','ColdRepair',1,'hunting','cold',?,
             '{"classId":0,"role":"dps"}',1)`, [Summary.saved(inventory)]]);
+        await Native.character(Database, 9405, 'CountOnlyRepair', 'bot_count_only_repair');
+        const countOnlyObject = await Database.setItem(9405, { selfId: 19, name: 'Small Shield', amount: 3, enchant: 5, slot: 0 });
+        // The live loot bug left no instance list or stackability at all.
+        await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,activity,phase,
+            inventorySummary,statsJson,updatedAt) VALUES (9405,'bot_count_only_repair','CountOnlyRepair',1,'hunting','cold',?,
+            '{"classId":0,"role":"dps"}',1)`, [Summary.saved({ 19: { selfId: 19, name: 'Small Shield', amount: 4 } })]]);
+        await Native.character(Database, 9406, 'MixedCountRepair', 'bot_mixed_count_repair');
+        const mixedStack = await Database.setItem(9406, { selfId: 19, name: 'Small Shield', amount: 3, enchant: 5, slot: 0 });
+        const mixedSingle = await Database.setItem(9406,
+            { selfId: 19, name: 'Small Shield', amount: 1, enchant: 7, equipped: true, slot: 8 });
+        await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,activity,phase,
+            inventorySummary,statsJson,updatedAt) VALUES (9406,'bot_mixed_count_repair','MixedCountRepair',1,'hunting','cold',?,
+            '{"classId":0,"role":"dps"}',1)`, [Summary.saved({ 19: { selfId: 19, name: 'Small Shield', amount: 5 } })]]);
         const before = (await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=9402']))[0];
         await Database.execute([`CREATE TRIGGER fail_repair_snapshot BEFORE UPDATE OF inventorySummary ON bot_life_state
             WHEN NEW.characterId=9402 BEGIN SELECT RAISE(ABORT,'fixture snapshot failure'); END`]);
@@ -40,7 +53,7 @@ const Native = require('./helpers/nativeMarketFixture');
         assert.deepEqual((await Database.fetchItems(9402)).map(row => [row.id, row.amount, row.enchant]),
             [[Number(original.insertId), 3, 4]], 'a snapshot failure rolls back every physical copy');
         await Database.execute(['DROP TRIGGER fail_repair_snapshot']);
-        assert.deepEqual(await Database.splitNonStackableItems([19]), { rowsSplit: 2, copiesCreated: 4 });
+        assert.deepEqual(await Database.splitNonStackableItems([19]), { rowsSplit: 4, copiesCreated: 8 });
         const physicalIds = (await Database.fetchItems(9402)).map(row => row.id);
         const repaired = (await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=9402']))[0];
         const summary = Summary.read(repaired.inventorySummary);
@@ -65,6 +78,32 @@ const Native = require('./helpers/nativeMarketFixture');
         const canonicalShields = (await Database.fetchItems(9403)).filter(row => row.selfId === 19);
         assert.deepEqual(canonicalShields.map(row => row.enchant).sort(), [2, 6, 6, 6]);
         assert(canonicalPhysicalIds.every(id => canonicalShields.some(row => row.id === id)));
+        const countOnlyPhysicalIds = (await Database.fetchItems(9405)).map(row => row.id);
+        const countOnlyState = await Life.findByCharacterId(9405);
+        assert.equal(countOnlyState.inventory['19'].stackable, false);
+        assert.deepEqual(countOnlyState.inventory['19'].instances.map(item => item.enchant), [5, 5, 5, 0]);
+        assert.equal(countOnlyState.inventory['19'].instances[0].id, Number(countOnlyObject.insertId));
+        await Database.syncInventorySummary(9405, countOnlyState.inventory);
+        const countOnlyShields = (await Database.fetchItems(9405)).filter(row => row.selfId === 19);
+        assert.deepEqual(countOnlyShields.map(row => row.enchant).sort(), [0, 5, 5, 5]);
+        assert(countOnlyShields.every(row => row.amount === 1));
+        assert(countOnlyPhysicalIds.every(id => countOnlyShields.some(row => row.id === id)),
+            'a count-only legacy snapshot cannot merge the repaired rows or replace their identities');
+        const mixedIds = (await Database.fetchItems(9406)).map(row => row.id);
+        const mixedState = await Life.findByCharacterId(9406);
+        assert.deepEqual(mixedState.inventory['19'].instances.map(item => item.enchant).sort(), [0, 5, 5, 5, 7],
+            'count-only repair also binds untouched single copies before adding pending loot');
+        assert.equal(mixedState.inventory['19'].equipped, true);
+        assert.deepEqual(mixedState.inventory['19'].equippedSlots, [8]);
+        await Database.syncInventorySummary(9406, mixedState.inventory);
+        const mixedShields = (await Database.fetchItems(9406)).filter(row => row.selfId === 19);
+        assert.deepEqual(mixedShields.map(row => row.enchant).sort(), [0, 5, 5, 5, 7]);
+        assert(mixedIds.every(id => mixedShields.some(row => row.id === id)), 'every pre-existing physical ID survives');
+        assert.equal(mixedShields.find(row => row.id === Number(mixedStack.insertId)).enchant, 5);
+        const worn = mixedShields.find(row => row.id === Number(mixedSingle.insertId));
+        assert.equal(worn.enchant, 7);
+        assert.equal(worn.equipped, 1);
+        assert.equal(worn.slot, 8);
         assert.deepEqual(await Database.splitNonStackableItems([19]), { rowsSplit: 0, copiesCreated: 0 });
         console.log('PASS cold stack repair: atomic projection, virtual loot, revisions, IDs and enchant survive hydration');
     } finally {

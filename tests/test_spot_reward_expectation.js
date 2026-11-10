@@ -28,6 +28,19 @@ try {
     Data.npcRewards = [...Data.npcRewards, reward(lower), reward(higher)];
     Data.items = [...Data.items, { selfId: itemId, template: { price: 4, kind: 'Other.Material' } }];
     useRate('x1');
+    const emptyId = 990184, missingId = 990185;
+    Data.npcs = [...Data.npcs, mob(emptyId, 18, 'Empty Drop Mob'), mob(missingId, 18, 'Missing Drop Mob')];
+    Data.npcRewards = [...Data.npcRewards, { selfId: emptyId, rewards: [], spoils: [] }];
+    const empty = { ...spot('empty', [{ selfId: emptyId, count: 1 }]), rewards: { adenaMin: 100, adenaMax: 200 } };
+    const missing = { ...spot('missing', [{ selfId: missingId, count: 1 }]), rewards: empty.rewards };
+    for (const rate of ['x1', 'x50']) {
+        useRate(rate);
+        assert.deepEqual(Rewards.value(empty, 19, { spoilSkillLevel: 1 }), { adena: 0, drop: 0, spoil: 0 },
+            'known empty reward data must not fabricate forecast income');
+        close(Rewards.value(missing, 19).adena, 150 * Rates.profile().adena,
+            'the existing fallback remains reserved for genuinely missing reward data');
+    }
+    useRate('x1');
     close(Rewards.value(blue, 26).adena, 70, 'no drop penalty through eight levels');
     close(Rewards.value(blue, 27).adena, 70 * .91 / 3, 'the NPC level, not avgLevel 99, activates gap-nine penalty');
     close(Rewards.value(blue, 33).adena, 70 * .37 / 3, 'gap-fifteen native Adena');
@@ -166,10 +179,15 @@ try {
     const replaced = Table.value('-2_3', 'mage', 18, false);
     close(replaced.loot, replaced.kills * Rewards.value(actual[0], 18).drop,
         'replacing a same-size period catalog invalidates the outer money memo');
-    const alias = spot('native-id-alias', [{ selfId: 5038, count: 1 }]);
-    const namedAlias = { ...alias, npcNames: [Data.npcs.find(npc => npc.selfId === 5038).template.name] };
-    const aliasValue = Rewards.value(alias, 40), namedValue = Rewards.value(namedAlias, 40);
-    assert(namedValue.drop > 0, 'native Cat\'s Eye Bandit alias has a concrete reward');
+    const questAlias = spot('quest-id-alias', [{ selfId: 5038, count: 1 }]);
+    assert.equal(Rewards.value(questAlias, 40), null,
+        'quest Cat\'s Eye Bandit must not advertise ordinary hunting income through a name alias');
+    const aliasId = 990186;
+    Data.npcs = [...Data.npcs, mob(aliasId, 1, 'Gremlin')];
+    const alias = spot('native-id-alias', [{ selfId: aliasId, count: 1 }]);
+    const namedAlias = { ...alias, npcNames: ['Gremlin'] };
+    const aliasValue = Rewards.value(alias, 1), namedValue = Rewards.value(namedAlias, 1);
+    assert(namedValue.drop > 0, 'an ordinary world NPC alias has a concrete named reward');
     for (const key of ['adena', 'drop', 'spoil']) close(aliasValue[key], namedValue[key],
         'compact NPC catalog preserves the native name mapping when spawn and reward IDs differ');
     console.log('PASS exact NPC rewards: gap 8/9/15, x1/x10/x50, mixed mobs, learned spoil, native-roll parity and shared bounded caches');
