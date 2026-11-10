@@ -389,14 +389,14 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     // body that fails the same walk again while it waits).
     if (marked(stats, name, payload)) return { woken: 0, waiting: 0, leaf: false, taken: 0, facts: {} };
     const now = !row.heard || !!(planesAt(where) & row.heard);
-    // A mark past its owner's cap (SpotRiskPolicy.MAX_SPOT_MARKS, GearMarks.MAX_MARKS) drops
+    // A mark past its owner's cap (SpotRiskPolicy.MAX_SPOT_MARKS, GearMarks.MAX_MARKS and MAX_QUOTES) drops
     // the oldest: counted by owner.
     const facts = raisedFacts(stats, name, payload, owner => count(raisedCounts, `${owner}:dropped`));
-    // A gear errand failed on its item (its mark) is its gear source failing, and a mark
+    // A gear errand failed on its item (its mark, not a quote's) is its gear source failing, and a mark
     // forgotten its source changing (GearMarks.LIFETIME): either wakes what a stalled source
     // wakes too (source_stalled: the gear plan, whose excluded items moved).
     // A decision hears its situations only on its subjects (heardBy).
-    const wakes = (facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & heardBy(stats);
+    const wakes = (facts.gearMarks && !facts.quote ? WAKES[name] | WAKES.source_stalled : WAKES[name]) & heardBy(stats);
     return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
         leaf: payload?.impossible === true, taken: facts.earning && !facts.ended ? BITS.earning_spot : 0, facts };
 }
@@ -407,7 +407,7 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 // of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
 // (SpotRiskPolicy.withSpotMark), which a situation of its lifetime forgets (FORGETS).
 // { earning, spotMarks, forgot, ended }, undefined: unchanged. stats: the facts before the raise
-// (null: none known). dropped(owner): told a mark past the owner's cap ('spot_mark', 'gear_mark').
+// (null: none known). dropped(owner): told a mark past the owner's cap ('spot_mark', 'gear_mark', 'quote_mark').
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
@@ -426,6 +426,7 @@ function forgets(owner, names, forget) {
 const GearMarks = require('./AI/GearMarks');
 // GearMarks loads here (raisedFacts writes its marks): its lifetimes are declared as it loads.
 forgets('gear', GearMarks.LIFETIME, GearMarks.forget);
+forgets('gear_quote', GearMarks.QUOTE_LIFETIME, GearMarks.forgetQuotes);
 // A stronger arrival displaced the bot off the spot a player's command holds (contest_lost,
 // reason displaced): the command ends there (outcome displaced, uncommanded; news on a spot
 // already marked), so its route reads its marks again. Our choice (C4 has no bot command): a
@@ -453,10 +454,12 @@ function raisedFacts(stats, name, payload, dropped = null) {
     }, {});
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks),
     // each mark counted by what failed (gear_mark:<reason>).
+    // A refused shop step's quote is marked alone (quote: the gear plan's items did not move),
+    // unless GearMarks marks its item instead (the item's quotes past their cap).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
-        const gearMarks = GearMarks.withMark(stats, payload.key, dropped && (() => dropped('gear_mark')));
-        if (gearMarks) note(`gear_mark:${payload.reason || 'unnamed'}`);
-        return gearMarks ? { gearMarks } : {};
+        const facts = GearMarks.withMark(stats, payload.key, dropped, GearMarks.quoteOf(payload));
+        if (facts) note(`${facts.quote ? 'quote_mark' : 'gear_mark'}:${payload.reason || 'unnamed'}`);
+        return facts || {};
     }
     if (payload?.spotId == null) return {};
     if (name === 'player_command') return { earning: (IncomeRoute ||=

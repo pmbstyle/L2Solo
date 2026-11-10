@@ -41,8 +41,7 @@ try {
         price: 100, town: 'Giran', heldAtDecision: 0 };
     const remaining = Needs.evaluate({ characterId: 9911, inventory: { 1835: { amount: 2 } } },
         { errand: null, economy: { inputHash: 1, network: { activity: leaf } }, board: { heads: () => [] }, npcOffersFor: () => [] });
-    assert.equal(remaining[0].target.amount, 8);
-    assert.equal(remaining[0].plan.valueHours, 0.8, 'already acquired units cannot subsidise another trip for the remainder');
+    assert.equal(remaining[0].target.amount, 8, 'already acquired units leave the remainder to buy');
 } finally { Floor.forState = originalFloor; Economy.refillReserve = originalReserve; }
 
 const Remote = invoke('GameServer/Bot/Economy/BotAfkMarketService');

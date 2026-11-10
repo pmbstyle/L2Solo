@@ -61,7 +61,7 @@ async function run() {
     // ARCH-NOTE: native prepared writers need real declared SQL identities and bags.
     // The raw execution seams below do not claim a selected/funded shopping wish.
     Database.init();
-    for (const id of [77, 777, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 91, 92]) {
+    for (const id of [77, 777, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97]) {
         await Native.character(Database, id, 'ColdBuyer' + id, 'bot_' + id);
     }
     await Native.character(Database, 9001, 'RareSupplier', 'bot_raresupplier');
@@ -338,22 +338,34 @@ async function run() {
     assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D gear must replan instead of opening a WTB store');
     assert.strictEqual(missingLowTierNpcGear.state.activity, 'resting', 'the visit ends: the worker routes it from town');
     // No seller is the contest at the seller lost (the single unit sold first), not the item
-    // failing: no mark, the purchase stays. The build it wakes reads the board as it is: with no
-    // seller there is no step to go back for (no refusal burst); once a seller posts one (the
-    // build hears offer_posted) it reads the offer and the bot buys it.
+    // failing: the item is not marked, the purchase stays; only the quote the buyer was refused
+    // is (GearMarks: Skeleton Buckler in Giran at 1000). The build it wakes reads the board as
+    // it is: it takes another seller, never the refused quote, until a seller posts an offer
+    // it wants (offer_posted); with no seller it has no step to go back for (no refusal burst).
     await new Promise(resolve => setImmediate(resolve));
+    const Marks = invoke('GameServer/Bot/AI/GearMarks');
     const refusedFor = BotLifeState.cachedState(87);
-    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(refusedFor?.stats, 945), 'a refusal for no seller marks nothing');
+    assert(!Marks.marked(refusedFor?.stats, 945), 'a refusal for no seller does not mark the item');
+    assert.deepStrictEqual(Marks.quotes(refusedFor?.stats), [[945, 'Giran', 1000]], 'it marks the refused quote');
     const { SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
     const posted = [];
     const board = { heads: (id, side, options = {}) => posted.filter(line => line.selfId === id && line.storeType === side
         && (!options.accept || options.accept(line))) };
     const trip = () => 0; trip.details = () => ({ known: true, hours: 0, fees: 0 });
-    const evidence = () => invoke('GameServer/Bot/Economy/WishPurchaseEvidence').reader(refusedFor, { board, trip }, { tripCost: trip })(945);
+    const evidence = (stats = refusedFor.stats) => invoke('GameServer/Bot/Economy/WishPurchaseEvidence')
+        .reader({ ...refusedFor, stats }, { board, trip }, { tripCost: trip })(945);
     assert.strictEqual(evidence(), null, 'no seller: the build has no step to send the bot back for');
-    posted.push({ storeType: SELL, selfId: 945, price: 1000, count: 1, enchant: 0, town: 'Giran', ownerId: 9002,
-        recordId: 1, lineId: 1, revision: 1, kind: 'shop', custodyPolicy: 0 });
-    assert.strictEqual(evidence()?.price, 1000, 'a posted offer is a purchase the build takes again');
+    // The board still shows the refused quote (the buyer's view and the build's differ) and a dearer seller.
+    const line = (recordId, price) => ({ storeType: SELL, selfId: 945, price, count: 1, enchant: 0, town: 'Giran', ownerId: 9002,
+        recordId, lineId: recordId, revision: 1, kind: 'shop', custodyPolicy: 0 });
+    posted.push(line(1, 1000));
+    assert.strictEqual(evidence(), null, 'the build does not take the quote its buyer just refused');
+    posted.push(line(2, 1200));
+    assert.strictEqual(evidence()?.price, 1200, 'it takes the next seller');
+    const Situations = invoke('GameServer/Bot/Situations');
+    const heard = { ...refusedFor.stats, gearMarks: [...refusedFor.stats.gearMarks] };
+    Situations.applyFacts(heard, 'offer_posted');
+    assert.strictEqual(evidence(heard)?.price, 1000, 'a posted offer the build hears ends the refusal: the cheaper quote is a purchase again');
     MarketOpportunity.npcOffers = originals.npcOffers;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
@@ -462,6 +474,18 @@ async function run() {
     assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a miss on arrival enters the normal market retry path; no WTB opens from main');
     assert.equal(failedBuyStore.state.stats.marketWanted?.itemId, 999999);
     BuyStoreService.open = originals.openBuyStore;
+    // The card's step is paid as its held check reads it in town: by its root's place in the money
+    // queue, its value per unit having chosen the seller (EconomyContext LEAF_CHECKS.shopping, the
+    // hot buyer too). A purse the queue funds is not refused for that value: the miss is the seller's.
+    const queuedMaterial = await purchaseOnCard(await declaredState({
+        ...state,
+        characterId: 89,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+        stats: { ...state.stats, money: [10000, .0001, 0, 0, .001, 100, 999999],
+            marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+    }, 'queued_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 },
+        plan: { valueRate: .001, valueHours: .001 } });
+    assert.strictEqual(queuedMaterial.reason, 'no_affordable_offer', 'a step its queue place funds is no funding refusal on arrival');
 
     MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
     MarketOpportunity.reserve = () => false;
@@ -475,6 +499,60 @@ async function run() {
     assert.strictEqual(changedOffer.reason, 'offer_changed');
     assert.strictEqual(changedOffer.state.activity, 'resting', 'a stale offer ends the visit: the worker returns the buyer to farming');
     assert.equal(changedOffer.state.stats.marketWanted?.itemId, 2, 'a stale offer: the want waits for a new offer');
+    // A write that failed (no seller row took the stack) is no refusal at the seller: the quote
+    // stays a purchase, unmarked, so one failed write does not lock the bot out of that seller.
+    MarketOpportunity.reserve = () => true;
+    const failedWrite = await purchaseOnCard(await declaredState({
+        ...state,
+        characterId: 90,
+        adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+        stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+    }, 'failed_write'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
+    assert.strictEqual(failedWrite.reason, 'persist_failed', 'fixture: the write fails');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(BotLifeState.cachedState(90), 'fixture: the buyer\'s state is cached');
+    assert.deepStrictEqual(invoke('GameServer/Bot/AI/GearMarks').quotes(BotLifeState.cachedState(90).stats), [], 'a failed write marks no quote');
+    // A board deal whose write failed is no refusal at the seller either: the quote stays a
+    // purchase and the failure is counted; a line the seller changed meanwhile marks its quote.
+    const FailureLog = invoke('FailureLog'), priorBestOffer = MarketOpportunity.bestOffer;
+    MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'afk_bot_store', town: 'Giran', recordId: 7, lineId: 7,
+        revision: 1, store: { afkTrade: true, storeType: Afk.SELL, items: [{ selfId: 2, count: 1, price: 1000, afkTradeLineId: 7 }] } });
+    const originalBuyFromShop = Afk.buyFromShop;
+    const boardBuy = async (characterId, thrown) => {
+        Afk.buyFromShop = () => Promise.reject(new Error(thrown));
+        const result = await purchaseOnCard(await declaredState({
+            ...state,
+            characterId,
+            adena: 100000, inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } },
+            stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+        }, thrown), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Board Sword', adena: 1000 } });
+        await new Promise(resolve => setImmediate(resolve));
+        assert(BotLifeState.cachedState(characterId), 'fixture: the buyer\'s state is cached');
+        return { result, quotes: invoke('GameServer/Bot/AI/GearMarks').quotes(BotLifeState.cachedState(characterId).stats) };
+    };
+    const failuresOf = () => Number(FailureLog.snapshot()?.['economy.cold_board_buy'] || 0);
+    const failuresBefore = failuresOf();
+    const failedBoardWrite = await boardBuy(93, 'cold_state_sync_failed');
+    assert.deepStrictEqual([failedBoardWrite.result.reason, failedBoardWrite.quotes], ['purchase_failed', []], 'a failed board write marks no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 1, 'the failed write is counted');
+    const soldMeanwhile = await boardBuy(94, 'afk_trade_stock_changed');
+    assert.deepStrictEqual([soldMeanwhile.result.reason, soldMeanwhile.quotes], ['afk_trade_stock_changed', [[2, 'Giran', 1000]]],
+        'a line the seller changed marks its quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 1, 'a refusal at the seller is no failure');
+    // A broken invariant at the meeting (a total past a safe integer) is a failure, not a refusal.
+    const brokenMeeting = await boardBuy(95, 'trade_meeting_integer');
+    assert.deepStrictEqual([brokenMeeting.result.reason, brokenMeeting.quotes], ['purchase_failed', []], 'a broken meeting invariant marks no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 2, 'it is counted');
+    // A busy party is the meeting's refusal: it ends the buy under its name, unmarked and uncounted.
+    const busyParty = await boardBuy(96, 'trade_meeting_party_busy');
+    assert.deepStrictEqual([busyParty.result.reason, busyParty.quotes], ['trade_meeting_party_busy', []], 'a busy party marks no quote');
+    // The writer refused for money (the bag short of the line): a purse short of it, as the
+    // buyer's own check, marks nothing.
+    const shortPurse = await boardBuy(97, 'not_enough_adena');
+    assert.deepStrictEqual([shortPurse.result.reason, shortPurse.quotes], ['funding_short', []], 'a writer\'s money refusal is funding_short, no quote');
+    assert.strictEqual(failuresOf(), failuresBefore + 2, 'neither refusal is a failure');
+    Afk.buyFromShop = originalBuyFromShop;
+    MarketOpportunity.bestOffer = priorBestOffer;
 
     const duplicateArmorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,

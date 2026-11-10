@@ -9,6 +9,7 @@ const { SELL, offerFields } = require('../../AfkTrade/BoardIndex');
 const OfferOrder = require('./OfferOrder');
 const Production = require('./ProductionPolicy');
 const PartyAdmission = require('../Population/PartyAdmission');
+const GearMarks = require('../AI/GearMarks');
 // lazy: BoardClaims loads the population config, which a planning worker reads later.
 let Claims = null;
 
@@ -29,13 +30,14 @@ function takeableUnits(line, buyer) {
 // the one admission of the build's offer reader (WishPurchaseEvidence) and of
 // the buyers that carry its step out (MarketOpportunity.bestOffer,
 // ColdMarketService.planPurchase), main and workers, so what a build quotes its
-// buyer takes. A source a bot buys from (sourceAllowed); a board line while
-// units are left beyond other bots' claims; a personal offer only where both
-// sides can meet (PartyAdmission.personalOfferAllowed: no party, a compatible
-// meeting town, a seller that can pay its way there; the other side's state
-// from the thread's trade lookups). session: a main buyer's live session.
+// buyer takes. A source a bot buys from (sourceAllowed); not a quote its buyer
+// refused where it acts (GearMarks.refused: the item at that town and price); a
+// board line while units are left beyond other bots' claims; a personal offer
+// only where both sides can meet (PartyAdmission.personalOfferAllowed: no party,
+// a compatible meeting town, a seller that can pay its way there; the other
+// side's state from the thread's trade lookups). session: a main buyer's live session.
 function admits(line, buyer, session = null) {
-    if (!line || !sourceAllowed(line)) return false;
+    if (!line || !sourceAllowed(line) || GearMarks.refused(buyer?.stats, line)) return false;
     if (line.recordId && !(takeableUnits(line, buyer) > 0)) return false;
     return PartyAdmission.personalOfferAllowed(line, buyer, undefined, session);
 }

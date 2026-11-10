@@ -18,6 +18,8 @@ const EconomicValuation = require('./EconomicValuation');
 const PriceDecision = require('./PriceDecision');
 const Trace = require('../DecisionTrace');
 const BoardClaims = require('./BoardClaims');
+const GearMarks = require('../AI/GearMarks');
+const FailureLog = invoke('FailureLog');
 
 function purchaseObservation(state, selfId, requested, budget, phase, reason, extra) {
     if (!Diagnostics.active()) return;
@@ -35,15 +37,15 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
 // keeps it): after it the job that sent it plans again.
 const ERRAND_MS = CombinedErrands.ERRAND_MS;
 // The reasons a gear buy fails on the item itself: the supply retired, the bot's gear rules
-// refusing it (already held, a shield under a two-hander). They mark it (GearMarks). No seller
-// at the step's price (none, the line taken or changed) is the contest at the seller lost, not
-// the item failing: the purchase stays in the bot's wants, the build it wakes reads the board
-// as it is now and takes the step again only where a seller stands (a posted offer wakes it,
-// offer_posted). Our choice after C4 play: the board is trade chat, a player who finds the
-// item sold keeps asking for it. A purse short of the step's price (funding_short) marks
-// nothing: the build admits a shop step only where its buyer pays it. A price change, an arrow
-// or war-ticket limit, a full bag or weight and a failed write mark nothing either (their
-// facts have other owners).
+// refusing it (already held, a shield under a two-hander). They mark it (GearMarks). A refusal
+// of the card's step at the seller (no seller at its price, the price refused, the line taken
+// or changed: GearMarks.SELLER_REFUSALS) is the contest at that seller lost, not the item failing: it marks the step's
+// quote only (the item at this town and unit price, GearMarks), so the build it wakes reads the
+// board as it is now and takes another seller or holds, never the quote its buyer just refused,
+// until a posted offer wakes it (offer_posted). Our choice after C4 play: the board is trade
+// chat, a player who finds the item sold keeps asking for it, at other stalls. A purse short of
+// the step's price (funding_short) marks nothing: the build admits a shop step only where its
+// buyer pays it, read by the same terms (goalFunding), so the next build sees the purse too.
 const GEAR_SOURCE_FAILED = new Set(['configured_supply_retired', 'already_owned', 'incompatible_loadout']);
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
@@ -60,7 +62,7 @@ function retryAfterFailedPurchase(state, goal, reason) {
     const hot = hotResult(state, reason);
     if (hot) return Promise.resolve(hot);
     if (reason === 'no_affordable_offer') MarketTelemetry.noOffer();
-    else if (reason === 'offer_changed') MarketTelemetry.offerChanged();
+    else if (GearMarks.sellerRefused(reason)) MarketTelemetry.offerChanged();
     else if (reason === 'purchase_failed' || reason === 'persist_failed') MarketTelemetry.purchaseFailed();
     const timestamp = Date.now();
     const retryState = {
@@ -139,6 +141,14 @@ function observePurchase(offer, units, state) {
     }); } catch (error) { utils.infoWarn('BotMarket', 'committed purchase telemetry deferred: %s', error.message); }
 }
 
+// The board's and the meeting's refusals of a buy that are no seller's (GearMarks.SELLER_REFUSALS)
+// and no money's (GearMarks.FUNDING_REFUSALS): the buyer's or the seller's party busy, the
+// meeting queue full, the buyer anchored to a meeting elsewhere, its authority moved since the
+// decision (TradeMeetingService.prepareTrade, stage), the record now trading by meeting only
+// (Database.buyFromAfkTradeShop). They end the line's buy unmarked; any other code is a failure.
+const BOARD_BUY_REFUSALS = new Set(['trade_meeting_party_busy', 'trade_meeting_backpressure',
+    'trade_meeting_point_changed', 'trade_meeting_authority_changed', 'trade_meeting_player_at_point', 'trade_meeting_required']);
+
 // Buys `options.qty` (one by default) of a found offer for a cold bot: a
 // board record through AfkTradeService (one deal transaction), otherwise an
 // NPC or a configured city merchant. No goal or travel change; an NPC
@@ -195,7 +205,21 @@ function buyOffer(state, offer, options = {}) {
                 ...(invoke('GameServer/AfkTrade/TradeMeetingService').paysInPreparation(state.characterId) ? { pending: true } : {}),
                 purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
-            return { state: LifeState.cachedState(state.characterId) || state, purchased: false, reason: 'offer_changed' };
+            const back = LifeState.cachedState(state.characterId) || state, code = error?.message;
+            // The writer refused for money (the bag, or the step's place in the money queue): a
+            // purse short of the line, as the buyer's own check (funding_short).
+            if (GearMarks.fundingRefused(code)) {
+                MarketTelemetry.fundingShort();
+                return { state: back, purchased: false, blocked: true, reason: 'funding_short' };
+            }
+            // A refusal at the seller (the line, stock, price or record changed:
+            // GearMarks.SELLER_REFUSALS marks its quote), the board's or the meeting's other
+            // refusals, or another named writer refusal (its facts moved since the decision):
+            // under its own name. Anything else, a broken invariant included, failed.
+            if (GearMarks.sellerRefused(code) || BOARD_BUY_REFUSALS.has(code) || invoke('Database').refused(error))
+                return { state: back, purchased: false, reason: code };
+            FailureLog.note('economy.cold_board_buy', error);
+            return { state: back, purchased: false, reason: 'purchase_failed' };
         });
     }
     const reserved = !options.economyCommand;
@@ -250,10 +274,13 @@ function fundingTerms(options = {}) {
     return terms;
 }
 
-// A buy goal's funding terms for the native writer: its root's place in the
-// money queue (PurchaseFunding.goalTerms reads the same plan.valueRate).
+// A buy goal's funding terms for its buyer and the native writer: its root's place in the
+// money queue (PurchaseFunding.goalTerms reads the same plan.valueRate). The step is bought
+// in town, where the held step's own check reads its purse by that place alone, its value
+// per unit having chosen the seller (EconomyContext LEAF_CHECKS.shopping), as the hot buyer
+// does (CompanionEquipmentShopping): no value cap, or the buyer refuses what the check admits.
 function goalFunding(goal) {
-    return fundingTerms({ ...goal?.plan, r: goal?.plan?.valueRate });
+    return fundingTerms(PurchaseFunding.goalTerms(goal));
 }
 
 // The card's step for an arrival purchase: the plan's unit price, and the
@@ -839,11 +866,16 @@ const ColdMarketService = {
         // A missed step failed where it acts (after any return handling): the bot decides anew.
         // A buy that failed on its item here (GEAR_SOURCE_FAILED: a gear piece or a craft
         // material) is a failed errand: its item is marked (GearMarks), so the build it wakes does
-        // not send the bot for it again until its source changed (GearMarks.LIFETIME).
+        // not send the bot for it again until its source changed (GearMarks.LIFETIME). A refusal
+        // at the seller (GearMarks.SELLER_REFUSALS) marks the step's quote (this town, the card's
+        // unit price): the build skips it. Any other miss (a failed write, a busy meeting, a stock
+        // limit) marks nothing: the seller did not refuse.
         const refreshAfter = written => written.then(result => {
+            const key = Number(goal.target.itemId), reason = result?.reason;
+            const quote = arrival && GearMarks.sellerRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
-                GEAR_SOURCE_FAILED.has(result?.reason)
-                    ? { impossible: true, kind: 'gear_errand', key: Number(goal.target.itemId), reason: result.reason } : { impossible: true });
+                GEAR_SOURCE_FAILED.has(reason) ? { impossible: true, kind: 'gear_errand', key, reason }
+                    : quote ? { impossible: true, kind: 'gear_errand', key, ...quote, reason } : { impossible: true });
             return result;
         });
         const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));

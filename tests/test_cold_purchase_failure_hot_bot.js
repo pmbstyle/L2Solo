@@ -115,12 +115,13 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
             assert(!bought.wanted, 'no trade-chat wish for a hot bot');
 
-            // A cold bot's failed purchase is written as before: it returns to its field.
+            // A cold bot's failed purchase is written as before: it returns to its field. A trade
+            // whose cold state did not sync is a failure (counted), not a seller's refusal.
             MarketOpportunity.bestOffer = () => ({ ...afkOffer });
             const cold = bot(78);
             await BotLifeState.upsertState(cold, 'seed');
             const coldFailed = await ColdMarketService.tryPurchase(cold, goal);
-            assert.strictEqual(coldFailed.reason, 'offer_changed');
+            assert.strictEqual(coldFailed.reason, 'purchase_failed');
             assert.strictEqual(BotLifeState.snapshot(78).phase, 'cold');
             assert.strictEqual(BotLifeState.snapshot(78).activity, 'resting', 'a cold bot without its purchase ends its visit: the worker returns it to farming');
             assert.strictEqual(BotLifeState.snapshot(78).stats.lastReason, 'market_no_offer_return');

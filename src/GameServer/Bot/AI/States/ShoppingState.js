@@ -218,17 +218,20 @@ function deferEquipmentRetry(session, reason) {
         payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping), reason } });
 }
 
-// A purchase refused for money (the purse short of the step), counted as a cold buyer's
+// A purchase refused for money (the purse short of the step: GearMarks.FUNDING_REFUSALS), counted as a cold buyer's
 // funding_short: the build admits no step its buyer cannot pay, so each one is a disagreement.
-const FUNDING_REFUSALS = new Set(['Not enough Adena.', 'not_enough_adena', 'insufficient_adena', 'economy_funding_changed', 'npc_line_not_funded']);
-
 // A refused gear purchase names its cause: the bot only says it could not buy. The step failed
-// where it acts (the build decides anew) and marks nothing, as a cold buyer's: no seller at the
-// step's price (the line taken or changed, the NPC gone, a meeting cancelled) is the contest at
-// the seller lost and the purchase stays in the bot's wants; a purse short of it is the money's.
+// where it acts (the build decides anew), as a cold buyer's: no seller at the step's price (the
+// line taken or changed, the price changed, the NPC gone: GearMarks.SELLER_REFUSALS) is the
+// contest at that seller lost, the purchase stays in the bot's wants at other sellers and only
+// that quote is marked (GearMarks: the item at this seller's town and price); a purse short of
+// it is the money's, a failed write or a cancelled meeting no seller's: they mark nothing.
 function equipmentPurchaseFailed(session, bot, errand, error) {
-    if (FUNDING_REFUSALS.has(error?.message)) invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
-    raiseDecision(session, 'goal_failed', { impossible: true });
+    const Marks = require('../GearMarks');
+    if (Marks.fundingRefused(error?.message)) invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
+    const quote = Marks.sellerRefused(error?.message) && Marks.quoteOf({ town: errand.target?.town, price: errand.price });
+    raiseDecision(session, 'goal_failed', quote ? { impossible: true, payload: { kind: 'gear_errand', key: Number(errand.itemId),
+        ...quote, reason: error?.message || 'purchase_failed' } } : { impossible: true });
     session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
     utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
 }

@@ -83,6 +83,53 @@ async function run() {
         for (const name of ['arrived_town', 'died', 'goal_failed:visit', 'offer_posted']) {
             assert.deepEqual(Marks.keys(Situations.raise({ ...second, woken: 0 }, name)), [2566, 75], `${name} keeps the marks`);
         }
+        // A shop step refused at its seller marks only that quote (hot and cold raise alike): the
+        // item stays a purchase elsewhere, the gear plan is not woken (its items did not move), the
+        // build is; a posted offer the build wants ends the quote mark, not the item marks.
+        const quoted = Situations.raise({ ...second, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 75, town: 'Giran', price: 1000, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual([Marks.keys(quoted), Marks.quotes(quoted)], [[2566, 75], [[75, 'Giran', 1000]]], 'the refusal marks its quote');
+        assert(Marks.refused(quoted, { selfId: 75, town: 'Giran', price: 1000 }) && !Marks.refused(quoted, { selfId: 75, town: 'Giran', price: 900 }),
+            'only that quote is refused');
+        assert(Situations.woken(quoted, 'build') && !Situations.woken(quoted, 'gear_plan'), 'the refusal wakes the build, not the gear plan');
+        const posted = Situations.raise({ ...quoted, woken: 0 }, 'offer_posted');
+        assert.deepEqual([Marks.keys(posted), Marks.quotes(posted)], [[2566, 75], []], 'offer_posted ends the quote mark only');
+        // Refusals of nine items never push out an item mark (the gear plan would take the
+        // item again, unwoken): the quote the cap drops marks its item instead (a dropped quote
+        // would be taken and refused again while the bot stays in town), counted as a quote mark
+        // past its cap; the gear plan is woken.
+        const droppedOf = name => Number(Situations.counts().raised[`${name}:dropped`] || 0);
+        const [quotesBefore, itemsBefore] = [droppedOf('quote_mark'), droppedOf('gear_mark')];
+        let refusedAt = second;
+        for (let key = 101; key <= 109; key++) refusedAt = Situations.raise({ ...refusedAt, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key, town: 'Giran', price: 1000, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual(Marks.keys(refusedAt), [2566, 75, 101], 'the item marks stay, the dropped quote\'s item is marked');
+        assert.deepEqual(Marks.quotes(refusedAt).map(([key]) => key), [102, 103, 104, 105, 106, 107, 108, 109], 'the oldest quote went');
+        assert(Situations.woken(refusedAt, 'gear_plan'), 'the item mark wakes the gear plan');
+        assert.deepEqual([droppedOf('quote_mark') - quotesBefore, droppedOf('gear_mark') - itemsBefore], [1, 0], 'the drop is counted as a quote mark');
+        // Nine sellers of one item refused: the ninth drops the item's oldest quote, so the item
+        // is marked (its lifetime, the gear plan woken) in place of its quotes.
+        let oneItem = second;
+        for (let price = 1001; price <= 1008; price++) oneItem = Situations.raise({ ...oneItem, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 500, town: 'Giran', price, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual(Marks.quotes(oneItem).map(([key]) => key), Array(8).fill(500), 'eight refusals fill the quotes');
+        const ninth = Situations.raise({ ...oneItem, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 500, town: 'Giran', price: 1009, impossible: true, reason: 'no_affordable_offer' });
+        assert(Marks.marked(ninth, 500) && !Marks.quotes(ninth).length, 'the ninth marks the item in place of its quotes');
+        assert(Situations.woken(ninth, 'gear_plan'), 'the item mark wakes the gear plan');
+        assert.deepEqual(Marks.keys(Situations.raise({ ...ninth, woken: 0 }, 'offer_posted')), [2566, 75, 500], 'it lasts as an item mark');
+        // Seven sellers of one item and one of another refused, then an eighth seller of the
+        // first: the cap drops the first item's oldest quote, so that item is marked in place of
+        // all its quotes; its dropped seller is never taken and refused again.
+        let mixed = second;
+        for (let price = 2001; price <= 2007; price++) mixed = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 600, town: 'Giran', price, impossible: true, reason: 'no_affordable_offer' });
+        mixed = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 700, town: 'Giran', price: 3000, impossible: true, reason: 'no_affordable_offer' });
+        const eighth = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 600, town: 'Giran', price: 2008, impossible: true, reason: 'no_affordable_offer' });
+        assert(Marks.marked(eighth, 600) && !Marks.refused(eighth, { selfId: 600, town: 'Giran', price: 2008 }), 'the first item is marked');
+        assert.deepEqual(Marks.quotes(eighth), [[700, 'Giran', 3000]], 'the other item keeps its quote');
     }
     // A craft route stalls after STALL_KILLS kills that collect nothing, whatever the time.
     const killed = (value, kills) => ({ ...value, stats: { ...value.stats, fightsWon: kills } });

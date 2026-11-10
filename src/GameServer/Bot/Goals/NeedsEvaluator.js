@@ -86,8 +86,6 @@ function evaluate(state = {}, options = {}) {
                 ...(leaf.sourceType === 'afk' && leaf.unitPrice > 0 ? { priceSource: 'offer' } : {}),
                 // The root's own bids the buyer takes back to pay the step (WishNetwork).
                 ...(leaf.bids?.length ? { bids: leaf.bids } : {}),
-                ...(Number.isFinite(leaf.valueHours)
-                    ? { valueHours: leaf.amount > 0 ? leaf.valueHours * amount / leaf.amount : leaf.valueHours } : {}),
                 // Its funded root's place in the money queue (the card's r, or
                 // the full network's root) funds it: PurchaseFunding.goalTerms.
                 ...(ratio > 0 ? { valueRate: ratio } : {}),
