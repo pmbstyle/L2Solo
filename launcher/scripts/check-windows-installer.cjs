@@ -95,8 +95,10 @@ SectionEnd
         const result = probe(writable);
         assert.equal(result.error, 5);
         assert.equal(result.path, sentinel);
-        assert.equal(fs.readFileSync(sentinel, 'utf8'), 'keep these bytes');
     });
+    // Denied Windows write/delete masks can also prevent Node's synchronous
+    // file open. Verify preservation after the fixture restores normal ACLs.
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'keep these bytes');
     const linked = path.join(directory, 'linked');
     fs.symlinkSync(writable, linked, 'junction');
     try { assert.equal(probe(linked).error, 60002); }
@@ -112,9 +114,9 @@ SectionEnd
         withDeniedWrite(destination, () => {
             assert.throws(() => invoke(installer, ['/S', '--updated', '/currentuser', `/D=${destination}`]),
                 error => error.status === 5);
-            assert.equal(fs.readFileSync(marker, 'utf8'), original);
-            assert.ok(fs.existsSync(uninstaller));
         });
+        assert.equal(fs.readFileSync(marker, 'utf8'), original);
+        assert.ok(fs.existsSync(uninstaller));
         const literal = `'${marker.replaceAll("'", "''")}'`;
         const keeper = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command',
             `$file=[System.IO.File]::Open(${literal},'Open','Read','None');[Console]::WriteLine('locked');[Console]::ReadLine() > $null;$file.Dispose()`]);
