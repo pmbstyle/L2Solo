@@ -2996,8 +2996,9 @@ const PopulationService = {
         // The one place a far bot carries out its held improvement (reviewCold owns where it may:
         // an enchant anywhere, a henna or a smith's work in a town that has the NPC), first in
         // the step's work: a visit draws the henna it came for before it buys, sells and leaves
-        // (a review after the commit found the bot already on its way out of town). Consumed
-        // inputs retire the card; the rest of the visit runs on the improved bag and, as after a
+        // (a review after the commit found the bot already on its way out of town). The commit
+        // ends the held step (reviewCold raises goal_done:goal) and main's copy of the card is
+        // released; the rest of the visit runs on the improved bag and, as after a
         // purchase, the bot stays for one pass that replans from it (a crystallization's exchange).
         const decision = ColdSimulationCoordinator.economyDecisions.decided(updatedState);
         let improved = false;

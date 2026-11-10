@@ -13,6 +13,16 @@ let improvementDeferred = 0, improvementRetired = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
     'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'invalid_bot_luxury_exchange', 'soul_crystal_resonance']);
 const rejectedInput = error => INPUT_REJECTIONS.has(error?.message);
+// A committed improvement is its held step done: one goal_done:goal raised where the bot
+// is, as a purchase that landed, hot and cold: a far row's bits (DecisionEvents.raiseOn),
+// a near body's bag at once (raiseDecision), which holds its next run until the answer
+// (reviewHot). The leaf check reads an enchant or a conversion done from the bag, but a
+// henna or a quest start leaves it nothing to read: held on, the same step ran again on
+// the bot's next step and the native writer refused it (the slots full, the dye spent),
+// or drew the same symbol twice. Resolves the raised far row's state, null otherwise.
+const DONE = 'goal_done:goal';
+const stepDone = (characterId, session = null) => session
+    ? DecisionEvents.raiseDecision(session, DONE) : DecisionEvents.raiseOn(Number(characterId), DONE);
 function chosen(state, context) {
     const leaf = context.network.activity;
     return leaf?.activity === 'improving' ? { ...leaf.improvement } : null;
@@ -71,11 +81,12 @@ async function reviewCold(state, options = {}) {
         ...improvement, lossHours: improvement.riskHours * context.riskWeight
     }, { ...writeOptions, coldState: state, validate() {
         if (Life.cachedState(state.characterId) !== original || original && original !== state) throw Error('improvement_source_retired');
-    } }).then(result => {
+    } }).then(async result => {
         if (!result.coldLifeRow) throw Error('improvement_missing_native_snapshot');
         const current = Life.acceptLifecycleRow(result.coldLifeRow, 'improvement');
         invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);
-        return {state:current,changed:true,result};
+        // The step's later writes build on the raised row (its revision and mind).
+        return {state:await stepDone(state.characterId) || current,changed:true,result};
     }).catch(async error => {
         const current = Life.cachedState(state.characterId) || state;
         // Another write moved the bot's row between this review and its transaction: the
@@ -100,6 +111,8 @@ function reviewHot(session) {
     const actor = session?.actor;
     if (!actor || actor.isDead?.() || !String(session.accountId || '').startsWith('bot_')) return Promise.resolve(null);
     if (pendingHot.has(actor)) return pendingHot.get(actor);
+    // A step done waits for the worker's answer (stepDone): the held card still names it.
+    if (DecisionEvents.inBag(session, DONE)) return Promise.resolve(null);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const context = DecisionEvents.held(session);
     const improvement = chosen(context.state,context);
@@ -148,7 +161,7 @@ function reviewHot(session) {
         backpack.visibleLook = null; backpack.inventoryRevision = Number(backpack.inventoryRevision || 0) + 1;
         session.dataSendToMe?.(invoke('GameServer/Network/Response').itemsList(backpack.fetchItems()));
         session.dataSendToMe?.(invoke('GameServer/Network/Response').userInfo(actor));
-        Economy.forget(actor.fetchId()); return result;
+        Economy.forget(actor.fetchId()); stepDone(actor.fetchId(), session); return result;
     }).catch(error => {
         if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
         throw error;
