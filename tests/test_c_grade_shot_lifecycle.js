@@ -100,7 +100,7 @@ async function sell(state, id, price, count = 1) {
             const fund = s => Life.upsertState({ ...s, vitals: { ...s.vitals, mp: 424, maxMp: 424 },
                 stats: { ...s.stats, money: [500000, .000002, 0, 0] } }, 'c_shot_funding');
             state = await fund(state);
-            if (remote) state = await Life.upsertState({ ...state, activity: 'hunting' }, 'remote_recipe_start');
+            // A crafter selects its craft on a town visit (here Gludio's, the scroll is sold in Giran).
             const investment = Shots.recipeTarget(state, Shots.marketSnapshot(now), [], recipeId);
             assert(investment, `recipe ${recipeId}: finite public interest funds the scroll and inputs`);
             assert.equal(investment.route.exit.type, 'listing');
