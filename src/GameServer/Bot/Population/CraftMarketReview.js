@@ -11,6 +11,35 @@ const Packet = require('../Economy/StatsPacket');
 // review cannot spin, and a line that moves no best price wakes none.
 const bestQuotes = (board, id, ownerId) => [board.first?.(id, 1, { excludeOwner: ownerId })?.price ?? 0,
     board.first?.(id, 3, { excludeOwner: ownerId })?.price ?? 0];
+
+// An accepted shot series can wait for a missing scroll while its owner
+// hunts. Its procurement is separate from the equipment project's needs.
+function shotRecipeBidDue(state, record, board) {
+    if (state.activity !== 'hunting' || state.partyId || state.party?.partyId
+        || state.stats?.tradeMeeting || state.incomingPending || !record || !board) return false;
+    const wanted = state.stats?.shotRecipeDemand;
+    const recipe = wanted && invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+    if (!recipe || Number(recipe.recipeItemId) !== Number(wanted.itemId)
+        || !invoke('GameServer/Bot/Economy/ShotCraftPolicy').SHOT_RECIPE_ITEM_IDS.has(Number(wanted.itemId))
+        || !invoke('GameServer/Bot/Economy/CraftEligibility').canCraft(state, recipe)
+        || !(Number(wanted.maxSpend) > 0) || !Number.isFinite(wanted.maxSpend)
+        || !Number.isSafeInteger(wanted.batches) || wanted.batches < 1 || wanted.batches > 64
+        || !Number.isFinite(wanted.inputCash) || wanted.inputCash < 0) {
+        record.shotRecipeBidSeen = null;
+        return false;
+    }
+    const held = Number(state.inventory?.[wanted.itemId]?.amount || 0);
+    const incoming = Number(state.acceptedIncoming?.[wanted.itemId] || 0);
+    const offered = board.ownerLines(Number(state.characterId))
+        .filter(row => row.storeType === 3 && Number(row.selfId) === Number(wanted.itemId) && row.count > 0)
+        .reduce((sum, row) => sum + Number(row.count), 0);
+    const facts = JSON.stringify([wanted.itemId, wanted.recipeId, wanted.batches, wanted.maxSpend,
+        wanted.inputCash, held, incoming, offered, bestQuotes(board, Number(wanted.itemId), Number(state.characterId))]);
+    const moved = facts !== record.shotRecipeBidSeen;
+    record.shotRecipeBidSeen = facts;
+    return moved && (held > 0 || incoming + offered < 1);
+}
+
 function personalBidDue(state, record, board) {
     const plan = state.stats?.equipmentPlan;
     if (state.activity !== 'hunting' || !plan || plan.clanGoal && !plan.inputPreparation
@@ -65,4 +94,4 @@ function clanInputDue(state, record, board) {
     return facts === record.clanMarketSeen ? '' : facts;
 }
 
-module.exports = { personalBidDue, clanInputDue };
+module.exports = { personalBidDue, shotRecipeBidDue, clanInputDue };

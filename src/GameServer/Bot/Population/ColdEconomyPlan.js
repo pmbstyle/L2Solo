@@ -117,7 +117,7 @@ function edgesSince(baseline, after, options = {}) {
 // carries out for the bot. plan.shop only names the town of plan.sell, buyKit and
 // buyCaps go with buyAds; bidLimits ride every proposal and hold nothing.
 function acts(plan) {
-    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+    return !!plan && !!(plan.learnRecipe || plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
 }
 
 // Same native sale/bid policies as a town/remote review, with the worker's
@@ -148,6 +148,17 @@ function* measured(iterator) {
     }
 }
 function* prepareNative(state, economy, options) {
+    // Receipt completes an already accepted learning decision. Finish it
+    // before a showcase or another craft can advertise the paid scroll.
+    const wanted = state.stats?.shotRecipeDemand;
+    const recipe = wanted && invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(wanted.recipeId));
+    if (state.phase === 'cold' && !['dead', 'resting', 'traveling', 'crafting'].includes(state.activity)
+        && !state.stats?.tradeMeeting && !state.incomingPending
+        && recipe && Shots.SHOT_RECIPE_ITEM_IDS.has(Number(recipe.recipeItemId))
+        && Number(recipe.recipeItemId) === Number(wanted.itemId)
+        && Number(state.inventory?.[wanted.itemId]?.amount || 0) > 0
+        && invoke('GameServer/Bot/Economy/CraftEligibility').canCraft(state, recipe))
+        return { learnRecipe: Number(recipe.recipeId), sell: [], withdraw: [], travel: null };
     const canAct = !economy.intentPending
         && !['dead', 'resting', 'traveling', 'crafting'].includes(state.activity)
         && !state.stats?.tradeMeeting && !state.incomingPending

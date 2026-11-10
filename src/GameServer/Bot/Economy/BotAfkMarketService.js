@@ -789,6 +789,22 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     const heldAtDecision = itemId => Number(card?.itemId) === Number(itemId) && Number.isFinite(Number(card.heldAtDecision))
         ? Number(card.heldAtDecision) : ColdEconomyDecision.heldFor(preparedState, itemId);
     const filledSince = itemId => ColdEconomyDecision.heldFor(LifeState.cachedState(ownerId) || state, itemId) > heldAtDecision(itemId);
+    if (Object.hasOwn(plan, 'learnRecipe')) {
+        if (!stillPrepared()) return { state, buyPending: true };
+        const wanted = state.stats?.shotRecipeDemand;
+        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(plan.learnRecipe));
+        if (state.phase !== 'cold' || !Number.isSafeInteger(plan.learnRecipe)
+            || !recipe || !ShotCraftPolicy.SHOT_RECIPE_ITEM_IDS.has(Number(recipe.recipeItemId))
+            || Number(wanted?.recipeId) !== Number(recipe.recipeId)
+            || Number(wanted?.itemId) !== Number(recipe.recipeItemId)
+            || !(Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0))
+            throw Error('economy_plan_recipe_changed');
+        await run(async () => ({ state: await LifeState.learnCraftableRecipes(state,
+            { recipeIds: [Number(recipe.recipeId)] }) }));
+        // Consuming the scroll and publishing its book moves native authority.
+        // The worker's next card chooses production with the learned recipe.
+        return { state, ...(!stillPrepared() ? { buyPending: true } : {}) };
+    }
     if (plan.bidLimits?.length) await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
         if (!Array.isArray(plan.bidLimits) || plan.bidLimits.length > MAX_LINES + BoardRules.BOT_RECORDS.buy_ad) throw Error('economy_plan_bid_cap');
@@ -865,6 +881,70 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     }) : null;
     if (crafted?.stale) return { state, buyPending: true };
     if (TradeMeetingService.hasPreparation(ownerId)) return { state, pending: true };
+    // Publish the checked buy batch before independent sale custody writes.
+    // Moving surplus into a shop or withdrawing a listing advances the own
+    // revision too; it must not starve an unchanged recipe request forever.
+    // An empty desired list closes the old ads; it does not run another bid
+    // decision on main. The plan's quote remains the quote the worker made.
+    // An earlier native improvement/craft may have filled the root or
+    // changed its inputs. Publishing its old certificate at the new revision
+    // would manufacture fresh authority from stale need. Keep it pending.
+    const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
+    let buyPending = Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd());
+    const published = Object.hasOwn(plan, 'buyAds') && !buyPending ? await run(async () => {
+        if (!stillPrepared()) throw Error('economy_plan_need_changed');
+        if (filledAd()) return { state, buyPending: true };
+        // One read of the owner's records: nothing below writes before publishBuyAds.
+        const ads = buyAds(ownerId), escrow = buyOrderEscrow(ownerId);
+        if (Object.hasOwn(plan, 'buyCaps') && (!Array.isArray(plan.buyCaps) || plan.buyCaps.length !== plan.buyAds.length
+            || plan.buyCaps.some((cap, at) => cap !== null && (!Number.isSafeInteger(cap) || cap < 1 || plan.buyAds[at][2] > cap))))
+            throw Error('economy_plan_bid_cap');
+        // Unenchanted bids: their pricing state needs no forecast (see plan.sell).
+        const ctx = ListingPolicy.cardTraderContext(state);
+        if (Diagnostics.active()) Diagnostics.count('trader_context', 'card', 'plan_buy');
+        let money = PurchaseFunding.budget(state, escrow);
+        // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
+        // A survival item's ad may spend its kit cost from the survival
+        // reserve, as the meeting and the NPC restock do (each item once):
+        // the tranche the worker decided the bid with (plan.buyKit).
+        let wanted = (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).map((row, at) => {
+            const [selfId, count, price] = row;
+            const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
+            const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
+            if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
+                || count * price > PurchaseFunding.spendable(state, escrow,
+                    { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {
+                throw Error('economy_plan_bid_unfunded');
+            }
+            if (!intent) money -= count * price;
+            const item = ItemTemplateIndex.find(DataCache.items, selfId);
+            return { selfId, count, price, intent, survivalCost, purchaseCap: plan.buyCaps?.[at] ?? Infinity,
+                enchant: 0, name: item?.template?.name || `Item ${selfId}`,
+                slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
+                pricing: MarketPricing.lineState(selfId, ctx,
+                    { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
+        });
+        // A standing bid may have been repriced since worker preparation.
+        // Bound its prepared quantity at the price reconciliation will keep;
+        // this does not choose a new price or rebuild the worker's wishes.
+        const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
+        const owned = AfkTrade.boardIndex().ownerLines(ownerId);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
+        let town = buyAdTown(state, ads, wanted);
+        for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
+            wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
+            const nextTown = buyAdTown(state, ads, wanted);
+            if (!wanted.length || nextTown === town) break;
+            town = nextTown;
+        }
+        if (!wanted.length) {
+            if (ads.length) await publishBuyAds(ownerId, ads, [], ads[0].town, authority);
+            return { state: LifeState.cachedState(ownerId) || state };
+        }
+        await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
+        return { state: LifeState.cachedState(ownerId) || state };
+    }) : null;
+    buyPending ||= !!published?.buyPending;
     if (plan.withdraw?.length) await run(async () => {
         const own = new Map(AfkTrade.boardIndex().ownerLines(ownerId).map(line => [line.lineId, line]));
         const withdrawals = [];
@@ -939,68 +1019,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         return listSellAds(ownerId, state, listings, shop,
             () => Database.fetchItems(ownerId, 'market_execute_plan'), { planTowns });
     });
-    // An empty desired list closes the old ads; it does not run another bid
-    // decision on main. The plan's quote remains the quote the worker made.
-    // An earlier native improvement/craft/sale may have filled the root or
-    // changed its inputs. Publishing its old certificate at the new revision
-    // would manufacture fresh authority from stale need. Keep it pending.
-    const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
-    if (Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd())) return { state, buyPending: true };
-    const published = Object.hasOwn(plan, 'buyAds') ? await run(async () => {
-        if (!stillPrepared()) throw Error('economy_plan_need_changed');
-        if (filledAd()) return { state, buyPending: true };
-        // One read of the owner's records: nothing below writes before publishBuyAds.
-        const ads = buyAds(ownerId), escrow = buyOrderEscrow(ownerId);
-        if (Object.hasOwn(plan, 'buyCaps') && (!Array.isArray(plan.buyCaps) || plan.buyCaps.length !== plan.buyAds.length
-            || plan.buyCaps.some((cap, at) => cap !== null && (!Number.isSafeInteger(cap) || cap < 1 || plan.buyAds[at][2] > cap))))
-            throw Error('economy_plan_bid_cap');
-        // Unenchanted bids: their pricing state needs no forecast (see plan.sell).
-        const ctx = ListingPolicy.cardTraderContext(state);
-        if (Diagnostics.active()) Diagnostics.count('trader_context', 'card', 'plan_buy');
-        let money = PurchaseFunding.budget(state, escrow);
-        // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
-        // A survival item's ad may spend its kit cost from the survival
-        // reserve, as the meeting and the NPC restock do (each item once):
-        // the tranche the worker decided the bid with (plan.buyKit).
-        let wanted = (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).map((row, at) => {
-            const [selfId, count, price] = row;
-            const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
-            const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
-            if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
-                || count * price > PurchaseFunding.spendable(state, escrow,
-                    { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {
-                throw Error('economy_plan_bid_unfunded');
-            }
-            if (!intent) money -= count * price;
-            const item = ItemTemplateIndex.find(DataCache.items, selfId);
-            return { selfId, count, price, intent, survivalCost, purchaseCap: plan.buyCaps?.[at] ?? Infinity,
-                enchant: 0, name: item?.template?.name || `Item ${selfId}`,
-                slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
-                pricing: MarketPricing.lineState(selfId, ctx,
-                    { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
-        });
-        // A standing bid may have been repriced since worker preparation.
-        // Bound its prepared quantity at the price reconciliation will keep;
-        // this does not choose a new price or rebuild the worker's wishes.
-        const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
-        const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
-        let town = buyAdTown(state, ads, wanted);
-        for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
-            wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
-            const nextTown = buyAdTown(state, ads, wanted);
-            if (!wanted.length || nextTown === town) break;
-            town = nextTown;
-        }
-        if (!wanted.length) {
-            if (ads.length) await publishBuyAds(ownerId, ads, [], ads[0].town, authority);
-            return { state: LifeState.cachedState(ownerId) || state };
-        }
-        await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
-        return { state: LifeState.cachedState(ownerId) || state };
-    }) : null;
-    if (published?.buyPending) return { state, buyPending: true };
-    if (!reviewGoal) return { state };
+    if (!reviewGoal) return { state, ...(buyPending ? { buyPending: true } : {}) };
     await run(async () => {
         const snapshot = await invoke('GameServer/Bot/Goals/GoalService').review(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
         const goal = snapshot?.current;
@@ -1008,7 +1027,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         const travel = invoke('GameServer/Bot/Goals/GoalExecutor').beginMarketTravel(state, goal);
         return { state: travel ? await LifeState.upsertState(travel, 'worker_economy_market_travel') : state };
     });
-    return { state };
+    return { state, ...(buyPending ? { buyPending: true } : {}) };
 }
 
 async function reconcileOne(state, goal, candidates) {

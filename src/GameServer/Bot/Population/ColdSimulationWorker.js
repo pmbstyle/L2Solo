@@ -358,6 +358,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
                 showcaseOnly: input.mode === 'showcase', now: input.timestamp, board: input.board, tripCost: input.economy.trip,
                 saleHold: saleHold(input.state.characterId),
+                ...(input.mode === 'craft_market' ? { preparedCraft: null } : {}),
                 buyOrderEscrow: input.buyOrderEscrow,
                 npcOffersFor: OccupationSources.npcOffersFor,
                 findSpot: id => SpotIndex.spotById(planningSpots, id)
@@ -824,11 +825,14 @@ async function clanMarketPlan(state, economy, timestamp) {
     if (!board || !invoke('GameServer/Bot/Economy/ReadyTradeChoice').clanCraftPurchase(state, economy, board)) return null;
     return occupationFor(state, timestamp, { economy, caller: 'clan_market' }, 'craft_market');
 }
-// Missing B+ project bids must be published even if the current wish never
+// Missing shot-recipe and B+ project bids must be published even if the current wish never
 // generates a stock/loot edge, including projects retained behind a different
 // goal: reviewed when their facts move (CraftMarketReview).
 function personalCraftBidReviewDue(state) {
-    return require('./CraftMarketReview').personalBidDue(state, kernel.states.get(Number(state.characterId)), boardReady());
+    const Review = require('./CraftMarketReview'), record = kernel.states.get(Number(state.characterId)), board = boardReady();
+    const personal = Review.personalBidDue(state, record, board);
+    const recipe = Review.shotRecipeBidDue(state, record, board);
+    return personal || recipe;
 }
 // A build's workshop (the crafter's best recipe and its income per hour,
 // occupationFor mode occupation), counted by the caller that asks: only a

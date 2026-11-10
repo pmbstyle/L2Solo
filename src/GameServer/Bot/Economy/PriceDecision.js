@@ -78,11 +78,16 @@ function saleOutcome({ units, applicableUnits, willingUnits, cheaperUnits, price
         : { known: false, sold: NaN, residual: NaN, receipts: NaN, residualValue: NaN };
 }
 
-// The same finite willingness model serves an ask and a first production trial.
-function willingUnitsAt(belief, trader, { price, applicableUnits, landed = price, npcLanded = Infinity }) {
+// An ask/history uses the market belief. A public BUY quote already states
+// its price: centre its finite execution estimate there, rather than asking
+// the seller's old market prices to confirm the buyer's declared willingness.
+// The quote still promises neither payment nor its entire advertised count.
+function willingUnitsAt(belief, trader, { price, applicableUnits, landed = price, npcLanded = Infinity, quotedBid = false }) {
     const width = PriceBelief.sigma(belief);
     const centre = belief.mu + (trader.assertiveness - 0.5) * width;
-    const wants = 1 - phi((Math.log(price) - centre) / width);
+    // At the declared price the centred curve simplifies to this quantile;
+    // avoiding log-price cancellation also keeps equal quote confidence exact.
+    const wants = quotedBid ? phi(trader.assertiveness - 0.5) : 1 - phi((Math.log(price) - centre) / width);
     const chosen = Number.isFinite(npcLanded) ? 1 - phi(Math.log(landed / npcLanded) / PERCEPTION) : 1;
     return applicableUnits * wants * chosen;
 }
@@ -115,7 +120,7 @@ function prospectiveExit(state, exit, { board, persona, timestamp = Date.now(), 
     belief ||= PriceBelief.prior(id, { board, characterId: Number(state.characterId), timestamp,
         understanding: Number(persona.understanding ?? 0.3), marketTrades: state.marketTrades || {} });
     if (!belief || !Number.isFinite(belief.mu) || !(PriceBelief.sigma(belief) > 0)) return unsupported();
-    const willingUnits = willingUnitsAt(belief, traderOf(persona), { price: line.price, applicableUnits: line.count });
+    const willingUnits = willingUnitsAt(belief, traderOf(persona), { price: line.price, applicableUnits: line.count, quotedBid: true });
     if (!Number.isFinite(willingUnits) || willingUnits < 0) return unsupported();
     return { ...exit, trial: true, repeatable: false, residualUnitValue: buyback(id), prospective: {
         known: true, origin: 'public_bid', authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },
@@ -161,8 +166,8 @@ function exitCompetition(asks, { ownerId, price, enchant = 0, count }) {
 }
 
 // One finite sale of `units` more goods into one bid (MVP-5). A backed bid
-// buys its count; a conditional one only what its buyer is willing to pay
-// for, read from the seller's price belief (prospectiveExit). Cheaper
+// buys its count; a conditional one has finite uncertain execution at its
+// published price (prospectiveExit). Cheaper
 // foreign asks serve the buyer first and the seller's own unsold goods
 // (`oldUnits`) are counted once, so `gross` is only the gain of the new
 // units. `limit`: an uninspected cheaper tail may cover the bid.
@@ -252,7 +257,7 @@ function demandAtPrice(belief, market, trader, price) {
             ? willingUnitsAt(belief, trader, { price, applicableUnits: row.applicableUnits,
                 landed: price + market.ownTrip, npcLanded: market.npcLanded })
             : row.backedUnits + willingUnitsAt(belief, trader, { price, applicableUnits: conditional,
-                landed: price + market.ownTrip, npcLanded: market.npcLanded });
+                landed: price + market.ownTrip, npcLanded: market.npcLanded, quotedBid: true });
         if (Number.isFinite(willingUnits) && willingUnits >= 0) result.push({ source,
             applicableUnits: row.applicableUnits, willingUnits, delayHours: Number(source.delayHours || 0) });
     }

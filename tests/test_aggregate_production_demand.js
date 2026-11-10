@@ -89,7 +89,18 @@ const originalBoard = Afk.boardIndex;
     const duplicates = buyers.map(row => ({ ...row, ownerId: buyers[0].ownerId }));
     const duplicatePlan = await probe(state, { ...options,
         boardRows: [...duplicates, supplier].map(row => [row.id, rowOf(row)]) });
-    assert.equal(duplicatePlan.selected, null, 'forty copies of one buyer are not forty customers');
+    const singleBuyerPlan = await probe(state, { ...options,
+        boardRows: [duplicates[0], supplier].map(row => [row.id, rowOf(row)]) });
+    assert.deepEqual(duplicatePlan.selected, singleBuyerPlan.selected,
+        'forty copies of one buyer support only the same finite trial as one customer');
+    assert.notEqual(duplicatePlan.selected?.recipeRoute?.exit?.[0], -3,
+        'duplicate ads cannot manufacture an aggregate public-demand exit');
+    const tinyBids = buyers.slice(0, 2).map(row => ({ ...row,
+        lines: row.lines.map(line => ({ ...line, count: 1, price: 1000000000 })) }));
+    const tinyPlan = await probe(state, { ...options,
+        boardRows: [...tinyBids, supplier].map(row => [row.id, rowOf(row)]) });
+    assert.equal(tinyPlan.selected, null,
+        'two tiny unfunded orders cannot justify a minimum C-shot lot by inflating their prices');
     // The aggregate exit is shared by ordinary dwarven production too.
     board.clear();
     const equipment = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(79);

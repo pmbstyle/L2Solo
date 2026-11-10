@@ -497,6 +497,8 @@ async function dropRecipeDemand(state, keepItemId = 0) {
 }
 
 async function execute(state, step, now = Date.now()) {
+    // An unavailable preparation is not a decision to abandon procurement.
+    if (step?.unknown) return state;
     if (!Policy.eligible(state, now)) return craftsShots(state) ? state : dropRecipeDemand(await dropSeries(state));
     const recipeId = Number(step?.craft?.recipeId || step?.recipeTarget);
     state = await dropSeries(state,recipeId);

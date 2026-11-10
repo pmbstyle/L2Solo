@@ -124,6 +124,10 @@ async function sell(state, id, price, count = 1) {
                 assert(state.stats.shotRecipeDemand.inputCash >= 0 && Number.isFinite(state.stats.shotRecipeDemand.inputCash),
                     'recipe procurement carries the executable series capital into public pricing');
                 assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(row => row.recipeId === recipeId));
+                const unknownBefore = structuredClone(state);
+                const unknown = await Shots.execute(state, { unknown: true }, now);
+                assert.deepEqual(unknown, unknownBefore,
+                    'an unprepared craft cannot clear the accepted recipe request or move its authority');
                 const procurement = await probe({ ...state, persona: Persona.of(state) }, { timestamp: now,
                     marketPlan: true, marketWarm: beforeSeek, recipes: { recipeBook: Codec.pack([]), knownShotRecipes: [] },
                     tables: [{ name: 'board', from: null, to: 0, full: true, removed: [], rows: boardRows() },
@@ -139,8 +143,20 @@ async function sell(state, id, price, count = 1) {
                     'the funded recipe bid owns procurement without a second seek changing its revision');
                 state = await Life.upsertState({ ...state, stats: { ...state.stats,
                     ...procurement.statsPacket } }, 'shot_recipe_publication_fixture');
-                const published = await BotMarket.executePlan(state, procurement.economyPlan, { reviewGoal: false });
+                await Database.setItem(state.characterId, { selfId: 1864, name: 'Stem', amount: 2 });
+                state = await Life.refreshInventory(state);
+                await sell(state, 1864, 50, 2);
+                state = Life.cachedState(state.characterId);
+                const preparedRevision = state.simulation.revision;
+                const acceptedDemand = structuredClone(state.stats.shotRecipeDemand);
+                const published = await BotMarket.executePlan(state, { ...procurement.economyPlan,
+                    sell: [[1864, 1, 100, 'Giran', 0, 1000]], shop: 'Giran', buyShop: 0 }, { reviewGoal: false });
                 state = published.state;
+                assert(!published.buyPending, 'refreshing an unrelated sell shop cannot defer the accepted recipe bid');
+                assert(state.simulation.revision > preparedRevision, 'the real shop refresh moves native owner authority');
+                assert.equal(Afk.boardIndex().ownerLines(state.characterId).find(line => line.storeType === Afk.SELL
+                    && line.selfId === 1864)?.count, 1, 'the independent sale refresh also completes');
+                assert.deepEqual(state.stats.shotRecipeDemand, acceptedDemand, 'publication keeps the accepted procurement');
                 assert(Afk.boardIndex().ownerLines(state.characterId).some(line => line.storeType === Afk.BUY
                     && line.selfId === recipe.recipeItemId && line.count === 1),
                 'the native writer publishes the missing recipe bid before any seller exists');
@@ -165,10 +181,43 @@ async function sell(state, id, price, count = 1) {
                 assert(purchase.purchased, 'the shared errand pays for the selected scroll');
                 state = purchase.state;
                 assert.equal(held(await Database.fetchItems(state.characterId), recipe.recipeItemId), 1);
+                const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+                assert(!Disposition.saleCandidates(state, { unlimited: true })
+                    .some(item => item.selfId === recipe.recipeItemId),
+                'a paid accepted learning target cannot become surplus before the visit learns it');
+                const spare = { ...state, inventory: { ...state.inventory,
+                    [recipe.recipeItemId]: { ...state.inventory[recipe.recipeItemId], amount: 2 } } };
+                assert.equal(Disposition.saleCandidates(spare, { unlimited: true })
+                    .find(item => item.selfId === recipe.recipeItemId)?.count, 1,
+                'learning owns one scroll, while duplicate copies remain marketable');
+                const attempted = await BotMarket.executePlan(state, {
+                    sell: [[recipe.recipeItemId, 1, recipeCost, 'Giran', 0, 1000]] }, { reviewGoal: false });
+                state = attempted.state;
+                assert(!Afk.boardIndex().ownerLines(state.characterId).some(line => line.storeType === Afk.SELL
+                    && line.selfId === recipe.recipeItemId),
+                'the native transaction also refuses an old sale prepared before the learning target');
+                assert.equal(held(await Database.fetchItems(state.characterId), recipe.recipeItemId), 1);
                 await Life.learnCraftableRecipes({ ...state, stats: { ...state.stats, shotRecipeDemand: null } });
                 await Life.learnCraftableRecipes(state, { recipeIds: [] });
                 assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(r => r.recipeId === recipeId),
                     'unselected scrolls and an explicit empty selection are not learned automatically');
+                const receiptPlan = await probe({ ...state, persona: Persona.of(state) }, { timestamp: Date.now(),
+                    marketPlan: true, recipes: { recipeBook: Codec.pack([]), knownShotRecipes: [] }, boardRows: boardRows() });
+                assert.equal(receiptPlan.economyPlan.learnRecipe, recipeId,
+                    'the actual worker completes paid learning before preparing another sale or craft');
+                await assert.rejects(BotMarket.executePlan(state, { learnRecipe: 318 }, { reviewGoal: false }),
+                    /economy_plan_recipe_changed/, 'a learning command cannot substitute another recipe');
+                const prepared = state;
+                state = await Life.upsertState({ ...state, stats: { ...state.stats, receiptFence: true } }, 'recipe_receipt_fence');
+                const stale = await BotMarket.executePlan(state, receiptPlan.economyPlan,
+                    { preparedState: prepared, reviewGoal: false });
+                assert(stale.buyPending);
+                assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(r => r.recipeId === recipeId),
+                    'a stale learning command consumes nothing');
+                const learned = await BotMarket.executePlan(state, receiptPlan.economyPlan, { reviewGoal: false });
+                state = learned.state;
+                assert(learned.buyPending, 'learning asks for a fresh worker decision with the changed book');
+                assert((await Database.fetchCharacterRecipes(state.characterId)).some(r => r.recipeId === recipeId));
                 const visit = await invoke('GameServer/Bot/Economy/ColdMarketListingService').open(state);
                 state = visit.state;
                 assert.equal(state.stats.shotRecipeDemand, null, 'learning closes the paid recipe demand');
@@ -192,7 +241,16 @@ async function sell(state, id, price, count = 1) {
                 [itemId]: { selfId: itemId, amount: 1000000 } } }, craftStep.craft), null,
             'unsold output prevents more production');
             const cashBefore = held(await Database.fetchItems(state.characterId), 57);
-            state = await Shots.execute(state, craftStep, now + 1);
+            if (recipeId === 21) {
+                const result = await BotMarket.executePlan(state, { shot: Policy.packStep(craftStep),
+                    buyAds: [], sell: [[1864, 2, 100, 'Giran', 0, 1000]], shop: 'Giran', buyShop: 0 },
+                { reviewGoal: false });
+                state = result.state;
+                assert(result.buyPending, 'a real craft cannot re-author the old buy batch');
+                assert.equal(Afk.boardIndex().ownerLines(state.characterId).find(line => line.storeType === Afk.SELL
+                    && line.selfId === 1864)?.count, 2,
+                'deferring the old buy batch still completes an independent native sale');
+            } else state = await Shots.execute(state, craftStep, now + 1);
             const made = await Database.fetchItems(state.characterId), units = lot.batches * recipe.productCount;
             const inputCost = gearCost + lot.batches * ore.amount * orePrice;
             assert.equal(held(made, itemId), units);
