@@ -2851,11 +2851,10 @@ const BotLifeState = {
         if (shotActions > 0) {
             const Shots = invoke('GameServer/Inventory/ShotStock');
             const shot = Shots.planForState(state);
-            const beginnerId = invoke('GameServer/Items/C4BeginnerShots').selfIdFor(shot.kind, shot.rank);
             // The private combat inventory already contains exact consumption,
-            // including beginner exhaustion followed by ordinary charges. Carry
-            // only those decreases, preserving this resolve's new loot.
-            for (const selfId of [shot.selfId, beginnerId].filter(Boolean)) {
+            // including switches between blessed, ordinary and beginner charges.
+            // Carry only those decreases, preserving this resolve's new loot.
+            for (const selfId of Shots.combatShotIds(shot)) {
                 const stock = inventory[String(selfId)], original = state.inventory?.[selfId];
                 if (!stock || !original) continue;
                 const remaining = result.patch?.inventory?.[selfId]?.amount;

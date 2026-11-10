@@ -145,6 +145,69 @@ try {
         assert.equal(solo.debug.shotActions > 0, allowed, 'solo combat obeys the common retained-use choice');
         assert.equal(party.members[0].shotActions > 0, allowed, 'party combat obeys the same choice');
     }
+    // Bone Staff needs two spiritshots. One blessed remainder cannot hide
+    // the ordinary stack, including when a hot cast crosses that boundary.
+    const Backpack = invoke('GameServer/Actor/Backpack'), Item = invoke('GameServer/Item/Item');
+    const Attack = invoke('GameServer/Actor/Attack');
+    const caster = { ...state, level: 24, stats: { classId: 10, role: 'mage' }, inventory: {
+        178: { selfId: 178, amount: 1, equipped: true, slot: 14 },
+        3948: { selfId: 3948, amount: 3 }, 2510: { selfId: 2510, amount: 1000 }
+    } };
+    const pack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    pack.items = Object.values(caster.inventory).map((row, index) => {
+        const template = Data.items.find(item => item.selfId === row.selfId);
+        return new Item(1000 + index, { ...template.etc, ...row, kind: template.template.kind });
+    });
+    const hotCaster = { backpack: pack, fetchId: () => 78, fetchClassId: () => 10, fetchLevel: () => 24,
+        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, isDead: () => false };
+    const session = hotCaster.session = { actor: hotCaster, botSession: true, persistenceMode: 'ephemeral',
+        coldLifeState: caster, dataSendToMe() {}, dataSendToMeAndOthers() {} };
+    const capture = Economy.stateForActor, attack = new Attack();
+    try {
+        benefit = .5;
+        let captures = 0;
+        Economy.stateForActor = () => {
+            captures++;
+            return { ...caster, inventory: Object.fromEntries(pack.items.map(item => [item.fetchSelfId(), {
+                selfId: item.fetchSelfId(), amount: item.fetchAmount(), equipped: item.fetchEquipped(), slot: item.fetchSlot()
+            }])) };
+        };
+        Shots.enableAutoShot(hotCaster);
+        assert.equal(Shots.planForState(Economy.stateForActor()).selfId, 3948);
+        attack.chargeShotForSkill(session, hotCaster, true);
+        assert.equal(pack.fetchItemFromSelfId(3948).fetchAmount(), 1);
+        assert.equal(hotCaster.blessedSpiritshotLoaded, true);
+        hotCaster.spiritshotLoaded = hotCaster.blessedSpiritshotLoaded = false;
+        captures = 0;
+        assert.equal(Shots.planForState(Economy.stateForActor()).selfId, 2510, 'cold selects a complete ordinary charge');
+        assert.equal(Shots.planForActor(hotCaster).selfId, 2510, 'hot ignores the unusable blessed remainder');
+        captures = 0;
+        attack.chargeShotForSkill(session, hotCaster, true);
+        assert.equal(captures, 1, 'crossing below one charge refreshes hot auto mode once');
+        assert.deepEqual([...hotCaster.autoSoulshots], [2510]);
+        assert.equal(pack.fetchItemFromSelfId(3948).fetchAmount(), 1, 'the remainder is preserved');
+        assert.equal(pack.fetchItemFromSelfId(2510).fetchAmount(), 998, 'the next cast charges ordinary spiritshots');
+        assert.equal(hotCaster.spiritshotLoaded, true);
+        assert.equal(hotCaster.blessedSpiritshotLoaded, false);
+        hotCaster.spiritshotLoaded = false;
+        attack.chargeShotForSkill(session, hotCaster, true);
+        assert.equal(pack.fetchItemFromSelfId(2510).fetchAmount(), 996);
+        for (let read = 0; read < 100; read++) pack.fetchAutoSpiritshot(hotCaster);
+        assert.equal(captures, 1, 'spending ordinary charges while the stack stays usable builds no new policy');
+        pack.fetchItemFromSelfId(3948).setAmount(2);
+        assert.equal(pack.fetchAutoSpiritshot(hotCaster).selfId, 3948, 'one full blessed charge restores the preference');
+        assert.equal(captures, 2, 'crossing back above the charge boundary refreshes once');
+        const beginner = { ...caster, inventory: {
+            9: { selfId: 9, amount: 1, equipped: true, slot: 14 },
+            3947: { selfId: 3947, amount: 1 }, 5790: { selfId: 5790, amount: 300 }
+        } };
+        assert.equal(Shots.combatPlanForState(beginner).selfId, 5790,
+            'an unusable blessed remainder also yields to complete beginner charges');
+        const spentBeginner = structuredClone(beginner.inventory);
+        spentBeginner[5790].amount -= 2;
+        assert.equal(Hunt.consumedCost(beginner, spentBeginner), 0,
+            'using free beginner charges adds no replacement cost to hunt income');
+    } finally { Economy.stateForActor = capture; attack.destructor(); }
     assert.equal(invoke('Database').isReady(), false);
     console.log('PASS owned use / expensive replacement / retention / hot enable / cold solo-party choice');
 } finally {

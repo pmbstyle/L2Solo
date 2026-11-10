@@ -59,11 +59,11 @@ function netIncome(row, costs) {
         - Number(row.shots || 0) * costs.shots - Number(row.potions || 0) * costs.potions;
 }
 // What a round's shots and potions cost the bot, at the price the table's
-// rows pay for them (consumablePrices: the plan's shot, each potion its own).
+// rows pay for them, including both shot variants when a round switches.
 function consumedCost(state, after) {
     if (!after) return 0;
-    const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
-    const ids = [shots.selfId, ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const ids = [...Shots.combatShotIds(Shots.planForState(state)), ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
     return ids.reduce((total, id) => total + Math.max(0,
         Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0)) * botPrice(id), 0);
 }

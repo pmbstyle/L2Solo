@@ -36,7 +36,8 @@ try {
     const stock = Economy.basics(state,{spots:[],timestamp:1800000000000}).stock('shots');
     assert.equal(stock.itemId,1835,'purchases still target ordinary shots');
     assert.equal(stock.current,700); assert.equal(stock.beginnerCurrent,600);
-    assert.equal(stock.missing,0); assert.equal(Shots.keptAmounts(state,{stock:()=>stock})[1835],0);
+    assert.equal(stock.missing,0);
+    assert.equal(Shots.keptAmounts(state,{stock:()=>stock})[1835],100,'personal ordinary ammunition stays reserved while free shots are used');
     assert.equal(Shots.combatPlanForState(state).selfId,5789);
     const empty = structuredClone(state); empty.inventory[5789].amount=0;
     assert.equal(Shots.combatPlanForState(empty).selfId,1835);
@@ -54,8 +55,10 @@ try {
     assert.equal(Backpack.prototype.fetchAutoShot.call(actor.backpack,actor,'soulshot'),5789);
     // Native solo and party fights consume the beginner stack, lifecycle carries
     // the exact inventory delta and never debits the ordinary stack instead.
-    Profiles.npcForSpot=()=>({selfId:456,level:5,maxHp:100000,pAtk:1,pAtkRnd:0,pDef:20,mDef:10,accur:1,evasion:0,critical:0,atkSpd:500});
-    const spot={id:'beginner-policy',minLevel:5,maxLevel:5,avgLevel:5,density:1,rewards:{exp:100,sp:1,adenaMin:1,adenaMax:1}};
+    Profiles.npcForSpot=()=>({selfId:456,level:5,maxHp:100000,pAtk:1,pAtkRnd:0,pDef:20,mDef:10,accur:1,evasion:0,critical:0,atkSpd:500,
+        aggressiveInterruption:true});
+    // Keep the walk inside the short round so it actually crosses exhaustion.
+    const spot={id:'beginner-policy',minLevel:5,maxLevel:5,avgLevel:5,density:30,rewards:{exp:100,sp:1,adenaMin:1,adenaMax:1}};
     const make=()=>{const s=structuredClone(state),p=Profiles.profileFor(s,1800000000000);
         s.vitals={hp:p.maxHp,maxHp:p.maxHp,mp:p.maxMp,maxMp:p.maxMp};return s;};
     for (const party of [false,true]) {

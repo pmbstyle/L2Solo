@@ -115,16 +115,18 @@ function equippedWeapon(items) {
 // weapon, so no shot loads).
 // options.blessed: true Blessed Spiritshot (null for a soulshot class),
 // false the class's own kind; unset, a spiritshot class takes the blessed
-// one when it holds it, or holds no spiritshot and it pays (blessedPays).
+// one when it holds a full charge, or neither stack covers a charge and it
+// pays (blessedPays).
 function planForState(state, options = {}) {
     const weapon = equippedWeapon(state?.inventory);
     const classId = Number(state?.stats?.classId || state?.classId || 0), rank = weapon ? itemRank(weapon.selfId) : 'none';
     const spirit = classWantsSpiritshots(classId);
     if (options.blessed === true && !spirit) return null;
-    const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId)));
+    const count = weapon ? templateFor(weapon.selfId)?.etc?.[spirit ? 'spiritshot' : 'soulshot'] : 0;
+    const perAction = Math.max(0, Number(count) || 0);
+    const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId), perAction));
     const plan = blessed ? planForKind('blessedSpiritshot', rank) : planFor({ classId, rank });
-    const count = weapon ? templateFor(weapon.selfId)?.etc?.[plan.kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
-    return { ...plan, perAction: Math.max(0, Number(count) || 0) };
+    return { ...plan, perAction };
 }
 
 function heldAmount(state, selfId) {
@@ -133,10 +135,12 @@ function heldAmount(state, selfId) {
 
 // The one shot choice of a spiritshot class, cold (planForState) and hot
 // (planForActor): `held(selfId)` reads the bag; `roleState()` the role and
-// level inputs, read only when the bag holds neither shot.
-function choosesBlessed(roleState, rank, held) {
-    if (held(BLESSED_SPIRITSHOT_BY_RANK[rank]) > 0) return true;
-    if (held(SPIRITSHOT_BY_RANK[rank]) > 0) return false;
+// level inputs, read only when neither stack covers the weapon's charge.
+function choosesBlessed(roleState, rank, held, perAction) {
+    const charge = Math.max(1, Number(perAction) || 1);
+    if (held(BLESSED_SPIRITSHOT_BY_RANK[rank]) >= charge) return true;
+    const beginnerId = BeginnerShots.selfIdFor('spiritshot', rank);
+    if (held(SPIRITSHOT_BY_RANK[rank]) >= charge || (beginnerId && held(beginnerId) >= charge)) return false;
     const state = roleState();
     return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank);
 }
@@ -201,6 +205,14 @@ function combatPlanForState(state) {
     const selfId = BeginnerShots.selfIdFor(plan.kind, plan.rank);
     return selfId && plan.perAction > 0 && beginnerAmount(state, plan) >= plan.perAction
         ? { ...plan, selfId, name: itemName(selfId), price: 0 } : plan;
+}
+
+// The stacks one encounter can spend: its initial shot, then ordinary or
+// beginner charges after the initial stack falls below the weapon's cost.
+function combatShotIds(plan) {
+    const kind = plan.kind === 'blessedSpiritshot' ? 'spiritshot' : plan.kind;
+    const ordinaryId = kind === 'spiritshot' ? SPIRITSHOT_BY_RANK[normalizeRank(plan.rank)] : paidShotId(plan);
+    return [...new Set([plan.selfId, ordinaryId, BeginnerShots.selfIdFor(kind, plan.rank)].filter(Boolean))];
 }
 
 // The table rows of a plan's shots (SpotValueTable: 2 Blessed Spiritshot).
@@ -305,7 +317,8 @@ function planForActor(actor) {
     // lazy: cycle World loads the inventory stack.
     if (!invoke('GameServer/World/World').isBotSession(actor?.session)) return planForKind('spiritshot', rank);
     const held = selfId => Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.()) || 0);
-    return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held) ? 'blessedSpiritshot' : 'spiritshot', rank);
+    const perAction = actor?.backpack?.fetchEquippedWeapon?.()?.fetchSpiritshot?.();
+    return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held, perAction) ? 'blessedSpiritshot' : 'spiritshot', rank);
 }
 
 // The role and level inputs of a hot bot's shot choice, as its cold state
@@ -361,15 +374,15 @@ function autoInputs(actor, held) {
     const shotKind = classWantsSpiritshots(classId) ? 'spiritshot' : 'soulshot';
     const beginnerId = BeginnerShots.selfIdFor(shotKind, weaponRankFromActor(actor));
     const beginner = beginnerId ? actor.backpack?.fetchItemFromSelfId?.(beginnerId) : null;
-    const charge = shotKind === 'soulshot' ? weapon?.fetchSoulshot?.() : weapon?.fetchSpiritshot?.();
-    const beginnerReady = !!beginner && Number(beginner.fetchAmount?.()) >= Math.max(1, Number(charge) || 1);
+    const charge = Math.max(1, Number(shotKind === 'soulshot' ? weapon?.fetchSoulshot?.() : weapon?.fetchSpiritshot?.()) || 1);
+    const beginnerReady = !!beginner && Number(beginner.fetchAmount?.()) >= charge;
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
     // planForActor reads which spiritshots the bag holds (choosesBlessed): a
-    // stack running out switches the plan.
+    // stack falling below one complete charge switches the plan.
     const rank = weaponRankFromActor(actor);
-    const holds = kind => Number(actor.backpack?.fetchItemFromSelfId?.(planForKind(kind, rank).selfId)?.fetchAmount?.()) > 0;
+    const holds = kind => Number(actor.backpack?.fetchItemFromSelfId?.(planForKind(kind, rank).selfId)?.fetchAmount?.()) >= charge;
     const shotsHeld = shotKind === 'spiritshot' ? 2 * holds('blessedSpiritshot') + holds('spiritshot') : 0;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
         && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt
@@ -766,6 +779,7 @@ module.exports = {
     ensureStarterStock,
     beginnerAmount,
     combatPlanForState,
+    combatShotIds,
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,

@@ -160,6 +160,45 @@ async function checkStockRunsOut() {
     assert.strictEqual(Solo.resolveSolo({ state: empty, spot, elapsedMs: 12000, timestamp: at, rng: () => .5 }).debug.shotActions, 0,
         'fewer than one charge loads nothing');
 }
+async function checkSpiritshotRemainder() {
+    for (const grouped of [false, true]) {
+        const state = withSkills([windStrike], { classId: 10, equipment: { weaponKind: 'Weapon.Blunt' },
+            vitals: { mp: 100000, maxMp: 100000 }, inventory: {
+                129: undefined, 178: { selfId: 178, amount: 1, equipped: true, slot: 14 },
+                3948: { selfId: 3948, amount: 3 }, 2510: { selfId: 2510, amount: 1000 }
+            } });
+        delete state.inventory[129];
+        if (grouped) {
+            state.activity = 'grouped';
+            state.party = { partyId: 'spiritshot-remainder', role: 'mage' };
+        }
+        const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+        state.stats.huntEfficiency = [{ signature: Hunt.signature(state), spotId: state.spotId,
+            at, samples: 3, cycleMs: 3600000, adena: 1000000, loot: 0, costs: 0, exp: 100000, kills: 100 }];
+        assertNativeHeldPolicy(state);
+        const result = grouped
+            ? Party.resolve({ party: { partyId: state.party.partyId, leaderId: state.characterId,
+                memberIds: [state.characterId], spotId: spot.id, stats: {} },
+                members: [state], spot, elapsedMs: 12000, timestamp: at, rng: () => .5 }).memberResults[0].result
+            : Solo.resolveSolo({ state, spot, elapsedMs: 12000, timestamp: at, rng: () => .5 });
+        const actions = result.debug.shotActions;
+        const inventory = result.patch.inventory;
+        assert(actions > 1, 'cold combat keeps charging after the first blessed cast');
+        assert.strictEqual(inventory[3948].amount, 1, 'one unusable blessed spiritshot remains');
+        assert.strictEqual(inventory[2510].amount, 1000 - (actions - 1) * 2,
+            'later casts spend complete ordinary charges in the same fight');
+        const Prices = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+        assert.strictEqual(Hunt.consumedCost(state, inventory),
+            2 * Prices.botBuyPrice(3948) + (actions - 1) * 2 * Prices.botBuyPrice(2510),
+            'hunt income pays for both shot stacks used during the round');
+        result.materialize.items.push({ selfId: 2510, amount: 5 });
+        const projected = await Life.prepareResolve(state, result, { persist: false, timestamp: at, projectClassProgression: true });
+        assert.strictEqual(projected.inventory[3948].amount, 1);
+        assert.strictEqual(projected.inventory[2510].amount, inventory[2510].amount + 5,
+            'lifecycle carries both debits without losing newly looted shots');
+        assert.strictEqual(state.inventory[3948].amount, 3, 'simulation keeps its input inventory unchanged');
+    }
+}
 (async () => {
     assert.strictEqual(invoke('GameServer/ProgressionRates').profile().multiplier, 10);
     assertNativeHeldPolicy(base);
@@ -185,6 +224,7 @@ async function checkStockRunsOut() {
     checkHealBonus();
     checkGradeMismatch();
     await checkStockRunsOut();
+    await checkSpiritshotRemainder();
     console.log('Cold shots: solo excludes enemies, every party member pays own weapon cost; '
         + 'a cast, a skill or a landed hit spends, a miss does not; shots boost damage as hot, only the weapon grade loads, '
         + 'the debit equals the shots used');
