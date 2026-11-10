@@ -40,6 +40,7 @@ function purchaseOnCard(state, goal) {
 }
 
 DataCache.init();
+require('./helpers/huntingReturnFixture')('field', { locX: 100, locY: 200, locZ: -10 }, 'Field');
 
 const originals = {
     canTravelForPurchase: ColdMarketService.canTravelForPurchase,

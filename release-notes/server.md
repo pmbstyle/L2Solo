@@ -8,7 +8,9 @@
 🤖 **Bot recovery, inventory & trade**
 
 - Fixed background bots getting stuck without a valid hunting spot. They can complete economic tasks and select a suitable hunting ground again, including after market visits.
+- Completed market visits without a suitable hunting ground now wait in town and retry instead of remaining stuck shopping.
 - Background loot now preserves individual equipment copies, enchantments and equipped slots. Improved repair of affected inventories in older saves.
+- Fixed live-bot trading and warehouse cleanup when no saved background state is available.
 - Bot buy shops and purchase advertisements now share the actual available budget, so money reserved in a shop cannot also fund a separate purchase.
 
 ⚔️ **Combat & loot**

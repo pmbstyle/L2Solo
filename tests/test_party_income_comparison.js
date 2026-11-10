@@ -188,13 +188,19 @@ try {
             const armed = { ...rich, inventory: gear };
             const shot = invoke('GameServer/Inventory/ShotStock').combatPlanForState(armed).selfId;
             const stocked = { ...armed, inventory: { ...gear, [shot]: { selfId: shot, amount: 5000 } } };
-            assert.notDeepEqual(Sections.shotInputs(stocked, at), Sections.shotInputs(armed, at), 'fixture: the stock loads a shot');
-            ask([armed, other]);
-            const dry = judged;
-            ask([armed, other]);
-            assert.equal(judged, dry, 'the same dry fighter is held');
-            assert.deepEqual(ask([stocked, other]).formingAccepted, fresh([stocked, other]));
-            assert(judged > dry, 'restocked shots are judged again');
+            // This cache-invalidation case needs a hunt that pays for its
+            // owned shots at the current native replacement cost.
+            const syntheticHunt = Hunt.huntIncome;
+            Hunt.huntIncome = () => ({ perHour: 10000, expPerHour: 100 });
+            try {
+                assert.notDeepEqual(Sections.shotInputs(stocked, at), Sections.shotInputs(armed, at), 'fixture: the stock loads a shot');
+                ask([armed, other]);
+                const dry = judged;
+                ask([armed, other]);
+                assert.equal(judged, dry, 'the same dry fighter is held');
+                assert.deepEqual(ask([stocked, other]).formingAccepted, fresh([stocked, other]));
+                assert(judged > dry, 'restocked shots are judged again');
+            } finally { Hunt.huntIncome = syntheticHunt; }
             // The second pass prepares a sub-roster, whose own party samples it
             // reads: a member's samples of any roster at the spot move the key.
             const third = { ...peer, characterId: 990142, adena: 100000 };

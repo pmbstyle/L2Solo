@@ -102,6 +102,15 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
         townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
 }
 
+function restAfterVisit(state, timestamp) {
+    return {
+        ...state, activity: 'resting',
+        stats: { ...state.stats, marketReturn: null, partyMarketReturn: null,
+            townVisit: null, restUntil: timestamp + 30000 },
+        timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
+    };
+}
+
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     if (!state.stats?.partyMarketReturn?.warOperationId && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
@@ -123,11 +132,7 @@ function finishVisit(state, timestamp, options) {
             destination = { loc, spotId: fallback.id, regionName: fallback.name };
             clanReturn = false;
         }
-        else return {
-            ...state, activity: 'resting',
-            stats: { ...state.stats, marketReturn: null, partyMarketReturn: null, restUntil: timestamp + 30000 },
-            timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
-        };
+        else return restAfterVisit(state, timestamp);
     }
     if (!destination?.loc) return null;
 
@@ -167,7 +172,7 @@ function finishVisit(state, timestamp, options) {
     }
     // Stay in town when no eligible camp exists. Old return tickets can
     // remember town coordinates without any hunting spot.
-    if (!clanReturn && !selectedSpot) return null;
+    if (!clanReturn && !selectedSpot) return restAfterVisit(state, timestamp);
     const to = clanReturn ? { ...destination.loc } : selectedSpot
         ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
         : { ...destination.loc };

@@ -43,6 +43,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 
         DataCache.init();
+        require('./helpers/huntingReturnFixture')('field', { locX: 100, locY: 200, locZ: -10 }, 'Field');
 
         const originals = {
             execute: Database.execute,

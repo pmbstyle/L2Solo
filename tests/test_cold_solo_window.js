@@ -18,7 +18,11 @@ const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdS
 
 const T = 1_750_000_000_000, FLUSH_MS = 100;
 const fieldOf = level => {
-    const npc = Data.npcs.find(entry => Number(entry.template?.level) === level && entry.template?.kind === 'Monster');
+    const npc = Data.npcs.find(entry => Number(entry.template?.level) === level && entry.template?.kind === 'Monster'
+        && invoke('GameServer/Bot/AI/BotHuntingTargetPolicy').canHunt(entry)
+        && Data.npcRewards.find(reward => reward.selfId === entry.selfId)?.rewards
+            .some(group => group.items.some(item => item.selfId === 57)));
+    assert(npc, 'the window fixture needs a huntable NPC with authored Adena drops');
     return { id: 'field', name: 'Field', avgLevel: level, minLevel: level - 1, maxLevel: level + 1, density: 30, npcSelfIds: [npc.selfId],
         npcEntries: [{ selfId: npc.selfId, count: 30 }], center: { locX: 0, locY: 0, locZ: 0 },
         rewards: { exp: 40, sp: 4, adenaMin: 10, adenaMax: 20 } };

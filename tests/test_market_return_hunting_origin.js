@@ -86,9 +86,13 @@ try {
     }
     Spots.cache = Service.spots = [];
     Income.select = () => null;
-    assert.equal(Executor.finishMarketVisit({ ...shopper, stats: { ...shopper.stats,
-        marketReturn: { loc: shopper.loc, regionName: shopper.currentRegion, spotId: null } } }, timestamp), null,
-    'without any huntable camp the bot stays in town instead of inventing a hunting return');
+    const waiting = Executor.finishMarketVisit({ ...shopper, stats: { ...shopper.stats,
+        marketReturn: { loc: shopper.loc, regionName: shopper.currentRegion, spotId: null } } }, timestamp);
+    assert.equal(waiting.activity, 'resting', 'without a huntable camp the completed visit yields to replanning');
+    assert.deepEqual(waiting.loc, shopper.loc, 'the bot stays in town instead of inventing a hunting return');
+    assert.equal(waiting.stats.marketReturn, null);
+    assert.equal(waiting.stats.townVisit, null);
+    assert.equal(waiting.timing.nextResolveAt, timestamp + 30000, 'the bot has a bounded retry');
     Spots.cache = Service.spots = spots;
     Income.select = () => ({ spot: money });
     // A spot that filled during the visit, with no mark yet, is met by the

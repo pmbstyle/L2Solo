@@ -452,7 +452,7 @@ function productionInputAmounts(state, timestamp = Date.now()) {
     const setup = shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? shot : wealth;
     const inputs = setup && Number(setup.at) + 30 * 60 * 1000 > timestamp
         ? recipeInputAmounts(setup.recipeId, setup.batches) : {};
-    if (state.stats?.shotCraft?.series) {
+    if (state?.stats?.shotCraft?.series) {
         const batches = require('./ShotProductionHorizon').retainedBatches(state,boardSource(),timestamp);
         for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
             inputs[id] = Math.max(Number(inputs[id] || 0),amount);
