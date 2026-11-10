@@ -1,7 +1,8 @@
 'use strict';
 // The gear errands a bot failed where it acts (hot: a refused gear purchase, a failed
 // dual sword combination or unseal, ShoppingState; cold: a gear buy that failed on the
-// item, ColdMarketService.tryPurchase): each raises goal_failed { kind: 'gear_errand', key },
+// item, ColdMarketService.tryPurchase; both: a buy the purse could not pay, funding_short,
+// temporary until a shop step is admitted only at the terms its buyer pays): each raises goal_failed { kind: 'gear_errand', key },
 // its key (the item, else the product or recipe) kept in stats.gearMarks, owned here,
 // written by Situations' raise (raisedFacts), which wakes the gear plan with the build
 // (its source failed, Situations.delta). Read by the gear plan

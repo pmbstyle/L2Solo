@@ -46,6 +46,9 @@ function freeReader(state) {
 function free(state, id) {
     return freeReader(state)(id);
 }
+// The ways to make crystals of a rank: an owned or bought input per row (or a bundle of owned
+// spares), each with `free` { [input id]: units the bot may break now }, read by the one
+// reader the native command checks (freeReader): the wish network's command batch reads it.
 function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
     const self = canSelf(state, rank);
     if (!self && !trip?.known) return [];
@@ -73,7 +76,7 @@ function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
         const total = own ? 0 : offer.price + offer.tripFees;
         rows.push({ selfId: id, ...result, score: (total + (own ? 0 : offer.tripHours) * incomePerHour) / result.net,
             sourceType: own ? 'owned' : offer.sourceType,
-            batchLimit, hours: (own ? 0 : offer.tripHours) + operation.hours });
+            batchLimit, free: { [id]: own }, hours: (own ? 0 : offer.tripHours) + operation.hours });
     }
     rows.sort((a, b) => a.score - b.score || a.hours - b.hours || a.selfId - b.selfId);
     const reliable = rows.some(row => ['npc', 'luxury'].includes(row.sourceType))
@@ -93,7 +96,8 @@ function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
         if (selected.length === limit) break;
     }
     return bundle.length > 1
-        ? [{ inputs: bundle, net: bundleNet, batchLimit: 1 }, ...selected] : selected;
+        ? [{ inputs: bundle, net: bundleNet, batchLimit: 1,
+            free: Object.fromEntries(bundle.map(row => [row.selfId, readFree(row.selfId)])) }, ...selected] : selected;
 }
 function inputAmount(state, id) {
     const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);

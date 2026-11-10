@@ -218,16 +218,15 @@ function deferEquipmentRetry(session) {
         payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping) } });
 }
 
-// A purchase refused for money (the purse moved since the plan) is not its source failing:
-// its step fails and nothing is marked, as a cold buyer's funding_short.
+// A purchase refused for money (the purse short of the step), counted as a cold buyer's
+// funding_short. Its errand is marked as a cold buyer's funding_short is, temporary: until
+// the wish network admits a shop step only at the terms its buyer pays.
 const FUNDING_REFUSALS = new Set(['Not enough Adena.', 'not_enough_adena', 'insufficient_adena', 'economy_funding_changed', 'npc_line_not_funded']);
 
 // A refused gear purchase names its cause: the bot only says it could not buy.
 function equipmentPurchaseFailed(session, bot, errand, error) {
-    if (FUNDING_REFUSALS.has(error?.message)) {
-        invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
-        raiseDecision(session, 'goal_failed', { impossible: true });
-    } else deferEquipmentRetry(session);
+    if (FUNDING_REFUSALS.has(error?.message)) invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
+    deferEquipmentRetry(session);
     session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
     utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
 }

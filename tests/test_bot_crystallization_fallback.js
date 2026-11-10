@@ -175,6 +175,30 @@ async function run() {
             assert((await DB.fetchItems(id)).some(row => row.selfId === plan.target.selfId && row.equipped),
                 'the selected native chain ends with its C weapon physically equipped');
         }
+        // Inputs a deferred preparation holds are not the active exchange's to break: of six
+        // boots four are held for the ring, so the step breaks the two free ones, even while a
+        // shop sells more (the native command refuses more than are free; the build took the
+        // refused step again at once, 288 refusals in 30 min for one bot).
+        const BOOTS = 40, earring = Luxury.recipes().get(852), ring = Luxury.recipes().get(883);
+        let holder = await seed(9757, true, false, BOOTS, 6);
+        holder = await Life.upsertState({ ...holder, stats: { ...holder.stats, equipmentPlan: {
+            strategy: 'luxury_exchange', status: 'active', target: { selfId: 852, slot: 2 },
+            exchange: { kind: 'luxury_exchange', ...earring }, source: 'wish_network',
+            materials: [{ selfId: 1458, amount: 195 }, { selfId: BOOTS, amount: 6 }],
+            inputPreparation: { target: { selfId: 883, slot: 5 }, exchange: { kind: 'luxury_exchange', ...ring },
+                materials: [{ selfId: 1458, amount: 130 }, { selfId: BOOTS, amount: 4 }],
+                status: 'deferred', reason: 'wish_focus', strategy: 'none', next: null, heldInputs: { [BOOTS]: 4 } } } } },
+        'held_crystal_inputs');
+        assert.equal(Crystals.free(holder, BOOTS), 2, 'the deferred ring holds four boots');
+        Economy.reset();
+        const heldStep = Economy.forState(holder, { board: new BoardIndex(), spots: [], caller: 'meeting_prepare',
+            npcOffersFor: id => id === BOOTS ? [{ selfId: BOOTS, price: 25080, count: Infinity, town: 'Giran', sourceType: 'npc' }] : [],
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) }).network.activity;
+        assert.equal(heldStep?.kind, 'crystallize');
+        assert.equal(heldStep.improvement.amount, 2, 'only the free boots are stepped');
+        const heldBroken = await apply(holder, heldStep.improvement);
+        assert(heldBroken.changed, 'the native command breaks the step it was given');
+        assert.equal(heldBroken.state.inventory[BOOTS].amount, 4, 'the held boots stay');
         const shopping = { ...buyer, activity: 'shopping', currentRegion: 'Dion',
             loc: { locX: 15670, locY: 142983, locZ: -2705 },
             stats: { ...buyer.stats, townVisit: { completed: true }, marketReturn: { loc: field, spotId: 'field', regionName: 'Field' } } };

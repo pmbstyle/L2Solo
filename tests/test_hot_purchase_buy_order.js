@@ -85,7 +85,8 @@ async function buyWithStepBids(bids) {
     return order;
 }
 
-// A purchase refused for money is counted as a cold buyer's funding_short.
+// A purchase refused for money is counted as a cold buyer's funding_short, and its item is
+// marked: the bot does not walk back to the same shop for it until its money or gear moved.
 async function refusedForMoney() {
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -98,6 +99,9 @@ async function refusedForMoney() {
         const session = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
         await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
         assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'a hot refusal for money is counted');
+        // The mark every errand planner and the build's purchase reader skip (GearMarks).
+        assert(invoke('GameServer/Bot/AI/GearMarks').marked(session.coldLifeState.stats, SHORT_SWORD),
+            'the refused item is marked: the next plan does not send the bot for it again');
     } finally { Config.developerDiagnostics = diagnostics; }
 }
 

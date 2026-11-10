@@ -98,13 +98,13 @@ async function autonomousSale() {
 // the purchase was funded with: no bid for the root while its input is bought, and the
 // buyer reads the planner's purse (its own bids' escrow counted, paid from the bag), so
 // the higher-ranked stock bid's money is not subtracted twice. A purse short of the
-// step's price is refused for money: the visit ends, nothing is marked.
+// step's price is refused for money: the visit ends, its item is marked (the build would
+// fund it from the bag again at once).
 async function heldPurchaseVisit() {
     const Policy = invoke('GameServer/Bot/Economy/BuyAdPolicy');
     const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
     const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-    const GearMarks = invoke('GameServer/Bot/AI/GearMarks');
     const ROOT = 'power:854:4', INPUT = 90, STOCK = 1867, STOCK_PRICE = 400000, JEWEL_PRICE = 600000;
     const price = Number(invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffers(INPUT, 'Giran')[0].price);
     // The stock root ranks first (its bid's money is its funded row), the root next.
@@ -144,19 +144,18 @@ async function heldPurchaseVisit() {
         assert.equal(bought.purchased, true, 'the input is bought in the visit that posted the bids');
         assert.equal(Native.amount(await DB.fetchItems(9114), INPUT), 1);
 
-        // A bag short of the input: refused for money, the visit ends, nothing marked.
+        // A bag short of the input: refused for money, the visit ends, the input marked.
         raised.length = 0;
         const short = await visit(9115, price / 2);
         const refused = await ColdMarket.tryPurchase(short.state, goal);
         assert.equal(refused.purchased, false);
         assert.equal(refused.reason, 'funding_short');
         await new Promise(resolve => setImmediate(resolve));
-        assert.deepEqual(GearMarks.keys(Life.snapshot(9115).stats), [], 'a refusal for money marks no item');
-        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind]), [['goal_failed', undefined]],
-            'the step fails once, no source failure');
+        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind, payload?.key]), [['goal_failed', 'gear_errand', INPUT]],
+            'the step fails once and marks its input');
 
         // The root ranks above a stock bid whose escrow the purse counts: bag and escrow cover
-        // the input, the bag alone does not. The buyer refuses it for money and marks nothing
+        // the input, the bag alone does not. The buyer refuses it for money and marks it
         // (the build takes no shop step the bag cannot pay: test_wish_network).
         await bot(9116);
         const purse = (await DB.fetchItems(9116)).find(item => Number(item.selfId) === 57);
@@ -169,8 +168,10 @@ async function heldPurchaseVisit() {
         const rootFirst = [36000, 1e-6, 0, 0, 1, price + JEWEL_PRICE, 854, 0.5, price + JEWEL_PRICE + STOCK_PRICE, STOCK];
         const held = await Life.upsertState({ ...await Life.refreshInventory(Life.snapshot(9116)), adena: bag16,
             stats: { ...Life.snapshot(9116).stats, money: rootFirst } }, 'held_purchase_fixture');
+        raised.length = 0;
         assert.equal((await ColdMarket.tryPurchase(held, goal)).reason, 'funding_short', 'the buyer refuses it for money');
-        assert.deepEqual(GearMarks.keys(Life.snapshot(9116).stats), [], 'and marks nothing');
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(raised.map(([, , payload]) => payload?.key), [INPUT], 'and marks it');
         // The build that took no step for it waits on the bag (bagShort): a bid taken back moves
         // its money from the escrow to the bag, the wallet stays, and that wait wakes the build.
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');

@@ -284,8 +284,14 @@ async function run() {
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
-    // A purse short of the card's price is refused for money: no seller is looked up or marked.
+    // A purse short of the card's price is refused for money: no seller is looked up. The item
+    // is marked, so the build it wakes does not send the bot for it again at once (the build
+    // funds a shop step from the bag, the buyer at the root's queue place): 871 refusals in
+    // 73 s for one bot without it.
     assert.strictEqual(lowTierPlayerPurchase.reason, 'funding_short');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(88)?.stats, 2),
+        'the item refused for money is marked: the build does not send the bot for it again');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 0,

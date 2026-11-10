@@ -642,7 +642,7 @@ function buildProjection(state, ctx, deps) {
                     .map(row => ({ key: itemNode(row.selfId, depth + 1), amount: row.amount }));
                 if (requirements.some(row => !row.key)) continue;
                 paths.push({ kind: 'crystallize', activity: 'improving', itemId: Number(id),
-                    productCount: choice.net, batchLimit: choice.batchLimit,
+                    productCount: choice.net, batchLimit: choice.batchLimit, freeUnits: choice.free,
                     availableUnits: choice.net * choice.batchLimit,
                     costHours: 1 / 3600, quoted: true,
                     ...(self ? {} : { town: 'Giran', tripHours: trip.hours, tripFees: trip.fees }),

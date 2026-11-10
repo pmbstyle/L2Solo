@@ -37,11 +37,14 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
 const ERRAND_MS = CombinedErrands.ERRAND_MS;
 // The reasons a gear buy fails on the item itself: no offer at the step's price, the line
 // gone, the supply retired, the bot's gear rules refusing it (already held, a shield under
-// a two-hander). A price change, an arrow or war-ticket limit, a full bag or weight, a
-// failed write and a purse short of the step's price (funding_short) are not the item
-// failing: they mark nothing (their facts have other owners).
+// a two-hander). A price change, an arrow or war-ticket limit, a full bag or weight and a
+// failed write are not the item failing: they mark nothing (their facts have other owners).
+// A purse short of the step's price (funding_short) marks its item too, temporary: until the
+// wish network admits a shop step only at the terms its buyer pays. Until then the build that
+// funded the step from the bag takes it again at once; the mark holds it until the money or
+// the gear moved (GearMarks.LIFETIME).
 const GEAR_SOURCE_FAILED = new Set(['no_affordable_offer', 'low_tier_offer_missing', 'offer_changed',
-    'configured_supply_retired', 'already_owned', 'incompatible_loadout']);
+    'configured_supply_retired', 'already_owned', 'incompatible_loadout', 'funding_short']);
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
 // job awaited the trade the bot may have been activated: its row is hot and
@@ -860,8 +863,8 @@ const ColdMarketService = {
         const budget = activeMaterialPurchase ? 0 : goal.plan?.weaponBridge ? PurchaseFunding.budget(state) + stepBids
             : PurchaseFunding.payable(state, ownEscrow(state), PurchaseFunding.goalTerms(goal), null, stepBids);
         // A purse short of one unit at the card's price is refused for money, not for a
-        // missing seller: the visit ends and nothing is marked; the build it wakes reads the
-        // same purse (the planner's rule), so it funds the step again only once money moved.
+        // missing seller: the visit ends and its item is marked (GEAR_SOURCE_FAILED, temporary:
+        // the build funds a shop step from the bag, this buyer at the root's queue place).
         const fundingShort = money => {
             if (money >= arrival.unitPrice) return null;
             MarketTelemetry.fundingShort();
