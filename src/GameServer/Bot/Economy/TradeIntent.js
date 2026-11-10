@@ -7,7 +7,7 @@ const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const Funding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const { MAX_DEPTH } = require('./WishNetwork');
-const PartyAdmission = require('../Population/PartyAdmission');
+const { admits } = require('./OfferQuery');
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 // Selected NPC and configured shot quotes already have a native purchase owner.
 // Public BUY ads describe alternative player supply, not a duplicate store job.
@@ -146,7 +146,7 @@ function retainedProjectIntents(state, network, worth, board = null, routeDetail
             if (!Number.isSafeInteger(amount) || !amount) continue;
             let estimate = Number(worth(id)) || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id));
             if (board?.list) {
-                const allowed = PartyAdmission.personalOfferAllowed;
+                const allowed = admits;
                 const offers = board.list(id, 1), money = offers.length && routeDetails
                     ? Funding.spendable(state, 0, { r: Funding.significant(rate) }) : 0;
                 let quote = null;

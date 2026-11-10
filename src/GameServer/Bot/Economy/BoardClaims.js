@@ -1,8 +1,9 @@
 'use strict';
 // Board line claims: a bot that decides a trip for board lines claims what it will buy
 // of each, as a C4 buyer tells the seller "taking it, coming" and the seller holds it;
-// other bots' purchase decisions read those units as gone (unclaimed: main's
-// planPurchase, the worker's purchase preparation, through OfferQuery's countOf). Two
+// other bots' purchase decisions read those units as gone (unclaimed, read only through
+// OfferQuery.takeableUnits: the one admission, OfferQuery.admits, of the build's offer
+// reader and of every buyer, and the units a fill counts, countOf). Two
 // trips claim: an errand to the seller's town (ColdMarketService.acquire) and a gear
 // purchase's town visit (GoalExecutor.beginMarketTravel). A claim lives while its trip
 // does in the bot's state, read at every write of it (main's life state publications):

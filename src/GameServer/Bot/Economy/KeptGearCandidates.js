@@ -21,7 +21,9 @@
 // - per bag answer (an item held or not) and per offer asked (the arrow room,
 //   the NPC and fixed offers, the item's lines, and whether the build had
 //   asked it before; the offer it got is kept too, so a served list fills the
-//   build's offer memo as the weighing did);
+//   build's offer memo as the weighing did; a first ask is asked again and
+//   must give that offer, as its admission reads other bots' claims and the
+//   seller's state beside the lines, OfferQuery.admits);
 // - the wallet only through its comparisons: each price compared with the
 //   purchase budget and each cost with the adena, and the answer;
 // - each weighed item's market trend.

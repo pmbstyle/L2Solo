@@ -21,7 +21,6 @@ const OfferQuery = require('./OfferQuery');
 const Basket = require('./WealthCraftPolicy');
 const ShotFunding = require('./ShotProductionFunding');
 const Production = require('./ProductionPolicy');
-const { personalOfferAllowed } = require('../Population/PartyAdmission');
 // The one purchase path (a trip to the seller's town), loaded on use.
 const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
 
@@ -129,7 +128,7 @@ function recheck(state, selected, { physicalOnly = false } = {}) {
         const npcOffers = query.npc === true && Production.allowsNpcShot(id) ? Source.npcOffersFor(id) : [];
         const best = OfferQuery.cheapestTown(board, id, { amount, cost: trip, excludeOwner: state.characterId,
             quoteDepth: Price.QUOTE_DEPTH, towns: [here], npcOffers,
-            accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state) });
+            accept: line => !Number(line.enchant || 0) && OfferQuery.admits(line, state) });
         return best?.whole ? { ...best, tripDetails: trip.details?.(best.town), selfId: Number(id) } : null;
     };
     let gear = null;

@@ -1280,7 +1280,7 @@ function buildForState(state, deps) {
     // The held build's source facts (KeptSourceFacts) and gear candidates
     // (KeptGearCandidates): each judged by its own inputs.
     const projection = Providers.build(state, context, { ...deps, sourceGround: keptGround, keptFacts: held?.keptFacts || null,
-        keptGear: held?.keptGear || null,
+        keptGear: held?.keptGear || null, unwatchedBoard: sourceBoard,
         nodes: [...(deps.nodes || []), ...extra], soloProfiles: incomeRecord?.route?.matchupProfiles });
     context.projection = projection;
     const networkKey = key;

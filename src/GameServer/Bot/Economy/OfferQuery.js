@@ -3,9 +3,42 @@
 // city merchants), in the one order of OfferOrder (price plus the trip to the
 // offer's town, a player before a bot, an NPC last, a stable id). The main
 // thread asks it through MarketOpportunity.bestOffer; the planning workers
-// over the index they build from the board table. Static code only.
+// over the index they build from the board table. Its admission (admits) reads
+// the buyer's and the seller's states and other bots' claims beside the lines.
 const { SELL, offerFields } = require('../../AfkTrade/BoardIndex');
 const OfferOrder = require('./OfferOrder');
+const Production = require('./ProductionPolicy');
+const PartyAdmission = require('../Population/PartyAdmission');
+// lazy: BoardClaims loads the population config, which a planning worker reads later.
+let Claims = null;
+
+// Whether a bot may buy from a source at all: an NPC shop only for an item the
+// production rule leaves to NPCs, a configured city merchant only for its shots.
+// fixed: the offer is a configured merchant's (a live private store says so by
+// its name, MarketOpportunity.botCanBuy).
+function sourceAllowed(offer, fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed') {
+    if (offer.sourceType === 'npc' && !Production.allowsNpcShot(offer.selfId)) return false;
+    return !fixed || Production.allowsFixedShot(offer.selfId);
+}
+// The units of a sell line a buyer may take: a board line's count less what other
+// bots' trips claim (BoardClaims.unclaimed), another source's count.
+function takeableUnits(line, buyer) {
+    return line.recordId ? (Claims ||= require('./BoardClaims')).unclaimed(line, buyer?.characterId) : Number(line.count);
+}
+// May `buyer` (a bot's plain state; null for none) buy this sell line or offer:
+// the one admission of the build's offer reader (WishPurchaseEvidence) and of
+// the buyers that carry its step out (MarketOpportunity.bestOffer,
+// ColdMarketService.planPurchase), main and workers, so what a build quotes its
+// buyer takes. A source a bot buys from (sourceAllowed); a board line while
+// units are left beyond other bots' claims; a personal offer only where both
+// sides can meet (PartyAdmission.personalOfferAllowed: no party, a compatible
+// meeting town, a seller that can pay its way there; the other side's state
+// from the thread's trade lookups). session: a main buyer's live session.
+function admits(line, buyer, session = null) {
+    if (!line || !sourceAllowed(line)) return false;
+    if (line.recordId && !(takeableUnits(line, buyer) > 0)) return false;
+    return PartyAdmission.personalOfferAllowed(line, buyer, undefined, session);
+}
 
 // options: towns (a list; null: every town), excludeOwner (the buyer's own
 // records), budget, cost (OfferOrder.tripCost), accept(offer) (the caller's
@@ -242,4 +275,4 @@ function othersIn(towns, fixed = [], npc = []) {
     ].filter((offer) => offer.available !== false);
 }
 
-module.exports = { bestSellOffer, cheapestTown, townTable, cheapestIn, fill, topPrice, othersIn, pastDepthCount: () => pastDepth };
+module.exports = { admits, sourceAllowed, takeableUnits, bestSellOffer, cheapestTown, townTable, cheapestIn, fill, topPrice, othersIn, pastDepthCount: () => pastDepth };

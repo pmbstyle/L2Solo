@@ -77,7 +77,6 @@ function canSell(state, lines) {
 }
 
 const EconomicTrip = require('../Economy/EconomicTrip');
-const BoardClaims = require('../Economy/BoardClaims');
 const { regionalTown, details: tripDetails } = EconomicTrip;
 function recipeIndex(board) {
     initialise();
@@ -245,10 +244,10 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             const npcOffers = npc && here ? npcOffersFor(id).filter(offer => offer.town === here) : EMPTY;
             if (here && townOrdinal.has(here)) yield* ensureTrip(here);
             yield 'quote';
-            // The units other bots' errands claim are gone for this buyer (BoardClaims).
+            // The units other bots' trips claim are gone for this buyer (OfferQuery.takeableUnits).
             table = OfferQuery.townTable(board, id, { towns: [here], quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
-                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner),
-                countOf: line => BoardClaims.unclaimed(line, owner.characterId), npcOffers, cost: trip });
+                accept: line => !Number(line.enchant || 0) && OfferQuery.admits(line, owner),
+                countOf: line => OfferQuery.takeableUnits(line, owner), npcOffers, cost: trip });
             purchaseTables.set(tableKey, table);
         }
         const best = OfferQuery.cheapestIn(table, amount);
@@ -270,7 +269,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             for (const line of board?.list(gear.selfId, 1) || []) {
                 if (depth++ === QUOTE_DEPTH) break;
                 if (Number(line.ownerId) !== Number(state.characterId) && !Number(line.enchant || 0) && Number(line.price) > 0
-                    && personalOfferAllowed(line, state)) {
+                    && OfferQuery.admits(line, state)) {
                     yield { ...gear, source: 'afk', price: Number(line.price), cash: Number(line.price), count: Number(line.count),
                         town: line.town, ownerId: Number(line.ownerId), offer: line };
                 } else yield null;

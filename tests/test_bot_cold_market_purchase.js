@@ -742,10 +742,34 @@ async function run() {
             kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });
         const npcPlan = ColdMarketService.planPurchase(state, 1785, 1, { towns: [npcTown.town], cost: () => 0 });
         assert.strictEqual(npcPlan.npc, 1, 'a legal NPC remains available when the cheaper personal source is in a party');
+        // The build quotes only what its buyer takes: the shop step it holds is bought on arrival.
+        const quoteTrip = () => 0;
+        quoteTrip.details = () => ({ known: true, hours: 0, fees: 0 });
+        const quote = () => require('../src/GameServer/Bot/Economy/WishPurchaseEvidence')
+            .reader(state, { board: selectedBoard, trip: quoteTrip }, { tripCost: quoteTrip })(1864);
+        const bought = () => ColdMarketService.planPurchase(state, 1864, 1, { npc: false, cost: () => 0 });
+        const agree = (town, price, why) => {
+            assert.deepStrictEqual([quote()?.town, quote()?.price], [town, price], `the build quotes ${why}`);
+            assert.deepStrictEqual([bought()?.town, bought()?.lines[0].price], [town, price], `the buyer takes ${why}`);
+        };
+        agree('Giran', 100, 'the backed shop while the cheaper seller is in a party');
+        // A seller away from the ad's town whose money is all promised cannot pay its way there.
+        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
+            loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
+        agree('Giran', 100, 'the backed shop while the cheaper seller cannot pay the trip to its ad');
+        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
+        agree('Dion', 1, 'the cheaper ad once its seller can pay the trip');
+        // Units another bot's trip claimed are gone for this buyer.
+        const Claims = require('../src/GameServer/Bot/Economy/BoardClaims');
+        Claims.claimErrand(990150, { town: 'Dion', selfId: 1864, purpose: 'supply', at: Date.now() },
+            [{ line: selectedBoard.list(1864, Afk.SELL, 'Dion')[0], count: 3 }]);
+        try {
+            agree('Giran', 100, 'the backed shop while every unit of the cheaper ad is claimed');
+        } finally {
+            Claims.ownerChanged(990150, null);
+        }
         supplier = { characterId: 990101 };
-        assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
-            { npc: false, cost: () => 0 }).lines[0].line.recordId, 990001,
-        'the same public quote becomes legal immediately after the supplier leaves the party');
+        agree('Dion', 1, 'the same public quote immediately after the supplier leaves the party');
     } finally {
         Afk.boardIndex = nativeBoardIndex;
         Admission.configureTradeAdmission(id => BotLifeState.cachedState(Number(id)),

@@ -2,6 +2,7 @@
 // A compact execution of an already selected shared decision, not another
 // search/valuation/roll. Full need certificates stay in TradeIntent.project.
 const { personalOfferAllowed } = require('../Population/PartyAdmission');
+const { admits } = require('./OfferQuery');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const BotImprovementService = invoke('GameServer/Bot/Economy/BotImprovementService');
 const MAX_INSPECTED = 20;
@@ -29,7 +30,7 @@ function purchase(state, economy, board) {
     const count = require('../Population/ColdEconomyDecision').remainingToOrder(leaf, state, economy.state || state);
     if (!positive(count)) return null;
     const line = board.heads(leaf.itemId, SELL, { towns: [leaf.town], excludeOwner: state.characterId,
-        maxInspected: MAX_INSPECTED, accept: row => personalOfferAllowed(row, state) && !row.enchant && row.custodyPolicy === 1
+        maxInspected: MAX_INSPECTED, accept: row => admits(row, state) && !row.enchant && row.custodyPolicy === 1
             && !require('./MeetingPriceRefusals').rejects(row, count, state)
             && row.price === leaf.unitPrice && row.count >= count })[0];
     return line ? encode(SELL, line, count, state) : null;
@@ -53,7 +54,7 @@ function clanCraftPurchase(state, economy, board) {
         const line = board.heads(intent.itemId, SELL, { excludeOwner: state.characterId, maxInspected: MAX_INSPECTED,
             accept: row => {
                 const route = economy.trip.details(row.town);
-                return row.custodyPolicy === 1 && !row.enchant && personalOfferAllowed(row, state)
+                return row.custodyPolicy === 1 && !row.enchant && admits(row, state)
                     && !require('./MeetingPriceRefusals').rejects(row, Math.min(intent.amount, Number(row.count)), state)
                     && positive(Number(row.price)) && Number(row.price) <= worth && positive(Number(row.count))
                     && route?.known === true && Number.isFinite(route.fees) && route.fees >= 0

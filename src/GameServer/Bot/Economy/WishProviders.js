@@ -120,6 +120,13 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
     return result;
 }
 function rows(state) { return Object.values(state.inventory || {}); }
+// Two offer reader answers (WishPurchaseEvidence: flat rows) alike field by field.
+function sameOffer(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.is(a[key], b[key]));
+}
 // The remembered people the review reads: the first friend (trust) and the
 // first enemy (hostility) of the bot's memory, else of its saved relations.
 function relationTargets(state, deps = {}) {
@@ -403,13 +410,16 @@ function buildProjection(state, ctx, deps) {
     const offerRefs = id => ({ npc: need('./ProductionPolicy').allowsNpcShot(id) ? deps.npcOffersFor?.(id) || null : null,
         fixed: need('./ProductionPolicy').allowsFixedShot(id) ? need('./FixedShotOffers').offers(id) : null });
     const arrowRoom = id => need('../../Inventory/ArrowStock').admitted(state, id, Infinity);
+    // An item's offer as a first ask reads it now (reader: the build's, else a
+    // check's that notes no read).
+    const askPurchase = (id, reader = purchaseFor) => {
+        const item = crystalPurchaseFor && need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
+        const retail = crystalPurchaseFor && need('./BotCrystallization').reward(item) ? crystalPurchaseFor(id) : null;
+        return retail || reader(id);
+    };
     const observedPurchase = id => {
         const asked = purchases.has(id);
-        if (!asked) {
-            const item = crystalPurchaseFor && need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
-            const retail = crystalPurchaseFor && need('./BotCrystallization').reward(item) ? crystalPurchaseFor(id) : null;
-            purchases.set(id, retail || purchaseFor(id));
-        }
+        if (!asked) purchases.set(id, askPurchase(id));
         gearCapture?.offer({ id, room: arrowRoom(id), asked, ...offerRefs(id), offer: purchases.get(id) });
         return purchases.get(id);
     };
@@ -973,6 +983,7 @@ function buildProjection(state, ctx, deps) {
     const keptGear = Kept?.session(deps.keptGear, gearFields, !!ctx.heldGear) || null;
     // Whether the held list would be weighed again the same: why ('' it
     // would) and the bag answers its replay writes. Reads nothing into the build.
+    let checkPurchaseFor = null;
     const gearHolds = record => {
         const no = why => ({ why, raws: null });
         if (!Kept.boardHolds(record, offerBoard)) return no('board');
@@ -987,6 +998,12 @@ function buildProjection(state, ctx, deps) {
             if (arrowRoom(offer.id) !== offer.room || now.npc !== offer.npc || now.fixed !== offer.fixed
                 || !Kept.linesHold(offerBoard, offer)) return no('offer');
             if ((purchases.has(offer.id) || asked.has(offer.id)) !== offer.asked) return no('order');
+            // Whether its buyer takes an offer reads more than the item's lines (other
+            // bots' claims, the seller's state: OfferQuery.admits): a first ask is
+            // asked again and must give the same offer.
+            // The ask reads the board unwatched: a served list's reads are its replay's.
+            checkPurchaseFor ||= need('./WishPurchaseEvidence').reader(state, { board: deps.unwatchedBoard || offerBoard, trip: ctx.trip }, deps);
+            if (!offer.asked && !sameOffer(askPurchase(offer.id, checkPurchaseFor), offer.offer)) return no('offer');
             asked.add(offer.id);
         }
         if (Kept.cash(record).some(row => cashHolds(row.cost) !== row.holds)) return no('cash');

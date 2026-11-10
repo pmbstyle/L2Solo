@@ -862,6 +862,7 @@ async function run() {
     {
         const Kept = invoke('GameServer/Bot/Economy/KeptGearCandidates');
         const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+        const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
         const Recipes = invoke('GameServer/Items/C4RecipeItems');
         // Weighing asks of each candidate whether the bot may take it up at
         // its acquisition rank: whether the list was weighed.
@@ -897,6 +898,11 @@ async function run() {
         ];
         // The bot through every step, each a build after a money event; keep
         // false: the same steps with nothing kept.
+        // A seller of a conditional ad away from its town (Dion) whose money is all promised
+        // cannot pay its way to Giran (PartyAdmission.personalOfferAllowed); null: no state known.
+        const Admission = invoke('GameServer/Bot/Population/PartyAdmission');
+        const sellerShort = { characterId: 77, phase: 'cold', activity: 'hunting', adena: 1000000,
+            loc: { locX: 16750, locY: 144559, locZ: -3000 }, stats: { money: [1000, .001, 0, 500] } };
         const walk = (keep, bot = crafter, path = steps) => {
             Economy.forget(bot.characterId);
             const session = Kept.session;
@@ -905,10 +911,15 @@ async function run() {
             // Each build's kit rates are the bot's, as a step publishes them.
             let kitRates;
             try {
+                let lines = null;
                 for (const [at, [name, change]] of [['first', {}], ...path].entries()) {
-                    for (const id of [...gearBoard.records.keys()]) gearBoard.remove(id);
-                    if (change.line) gearBoard.put({ id: 9100, ownerId: change.owner || 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
+                    // The board as the step names it; the same lines stay the same records.
+                    const same = JSON.stringify([change.line, change.owner]) === lines;
+                    lines = JSON.stringify([change.line, change.owner]);
+                    if (!same) for (const id of [...gearBoard.records.keys()]) gearBoard.remove(id);
+                    if (change.line && !same) gearBoard.put({ id: 9100, ownerId: change.owner || 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
                         lines: [{ lineId: 1, selfId: change.line[0], count: 3, price: change.line[1] }] });
+                    Admission.configureTradeAdmission(id => change.seller && Number(id) === 77 ? sellerShort : null);
                     const state = { ...bot, adena: bot.adena + at * 1000 + (change.adena || 0), level: change.level || bot.level,
                         marketTrades: change.trades ? { [earringCounter]: change.trades } : undefined,
                         inventory: change.bag ? { ...bot.inventory, [change.bag]: { selfId: change.bag, amount: 1 } } : bot.inventory,
@@ -917,7 +928,9 @@ async function run() {
                         townName: 'Giran', loc: { locX: 81000, locY: 148000, locZ: -3500 }, capacityBatches: 5 }] : [];
                     const ids = [];
                     weighed = 0;
-                    const next = Economy.forState(state, { timestamp: T, spots, caller: 'step', fullReview: true, board: gearBoard, workshops,
+                    // giran: the bot's road to Giran is known (free): it can quote the town's ads.
+                    const routeRows = change.giran ? Trip.towns.map(town => town === 'Giran' ? [true, 0, 0] : [false, 0, 0]) : undefined;
+                    const next = Economy.forState(state, { timestamp: T, spots, caller: 'step', fullReview: true, board: gearBoard, workshops, routeRows,
                         knowledgeEnabled: true, ...(change.recipes ? { knownRecipes: change.recipes } : {}), onSourceRead: id => ids.push(id) });
                     kitRates = next.statsPacket.kitRates;
                     out.push({ name, weighed, decision: JSON.stringify({ nodes: next.projection.nodes, roots: next.projection.roots,
@@ -926,7 +939,12 @@ async function run() {
                         proof: next.eventProof(), ids },
                     (key, value) => typeof value === 'number' && !Number.isFinite(value) ? String(value) : value) });
                 }
-            } finally { Kept.session = session; Economy.forget(bot.characterId); }
+            } finally {
+                Kept.session = session; Economy.forget(bot.characterId);
+                Admission.configureTradeAdmission(id => invoke('GameServer/Bot/Population/BotLifeState').cachedState(Number(id)),
+                    id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session,
+                    id => invoke('GameServer/AfkTrade/TradeMeetingService').playerAnchor(id));
+            }
             return out;
         };
         const check = (bot, path) => {
@@ -957,6 +975,13 @@ async function run() {
             assert(piece, 'fixture: a C piece the preparation would wear');
             check(preparing, [['same', {}, false], ['wallet', { adena: 1 }, false], ['C piece in bag', { bag: Number(piece.selfId) }, true],
                 ['C piece back', {}, true]]);
+            // Whether its buyer takes an ad of a C piece it asks the market for (Demon's Boots)
+            // reads the seller's state beside the item's lines (OfferQuery.admits): a seller that
+            // can no longer pay its way to the ad's town, the lines the same, weighs the list
+            // again, and so does its return.
+            const ad = { line: [2435, 1000], giran: true };
+            check(preparing, [['C piece ad', ad, true], ['same ad', ad, false], ['seller short', { ...ad, seller: true }, true],
+                ['seller back', ad, true]]);
         } finally { Planner.considerable = considerable; }
         console.log('PASS kept gear candidates: same inputs served, each moved input weighed again, same decision, reads and proof');
     }

@@ -61,7 +61,7 @@ const stubs = new Map([
             excludeOwner: options.buyerCharacterId,
             budget: options.budget,
             cost: options.cost,
-            accept: offer => invoke('GameServer/Bot/Population/PartyAdmission').personalOfferAllowed(offer,
+            accept: offer => invoke('GameServer/Bot/Economy/OfferQuery').admits(offer,
                 kernel?.states.get(Number(options.buyerCharacterId))?.state) && (!options.accept || options.accept(offer))
         })
     }],

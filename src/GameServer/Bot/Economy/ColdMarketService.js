@@ -12,7 +12,6 @@ const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
 const TownVisitInterval = require('./TownVisitInterval');
 const NpcRestock = require('./NpcRestockPlan');
-const { personalOfferAllowed } = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const EconomicTrip = require('./EconomicTrip');
 const EconomicValuation = require('./EconomicValuation');
@@ -338,10 +337,11 @@ function planPurchase(state, selfId, amount, options = {}) {
         // personal wish certificate for a bilateral conditional advertisement.
         // Use backed shops and NPC stock; do not keep restaging an ineligible meeting.
         if (options.purpose === 'raid_supply' && (line?.conditional || line?.custodyPolicy === 1)) return false;
-        return personalOfferAllowed(line, state);
+        // The lines the bot's build quotes (OfferQuery.admits, the build's reader).
+        return OfferQuery.admits(line, state);
     };
-    // The units other bots' errands claim are gone for this buyer (BoardClaims).
-    const countOf = line => BoardClaims.unclaimed(line, state?.characterId);
+    // The units other bots' trips claim are gone for this buyer (OfferQuery.takeableUnits).
+    const countOf = line => OfferQuery.takeableUnits(line, state);
     const acceptFill = (line, count) => {
         const refused = priceRefused(state, line, count, board);
         if (refused) options.onPriceRefusal?.(line, count);
