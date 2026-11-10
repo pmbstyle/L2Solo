@@ -443,25 +443,8 @@ async function activate(partyId, reason = 'near_player', options = {}) {
             throw Error('party_floor_mismatch');
         }
         const leaderIndex = states.findIndex(s => s.characterId === party.leaderId);
-        // Cold members can have historical positions across their shared spot.
-        // Place the leader on the persisted safe anchor, then constrain the
-        // rest of the roster to a compact formation around that resolved
-        // point. Independent full-radius placement can scatter two valid
-        // members almost 2.8k apart and reject the whole visible party.
-        const leaderPlacement = Placement.resolve(states[leaderIndex], {
-            ...options,
-            preferAnchor: true,
-            placementRadius: 240
-        });
-        const placements = states.map((state, index) => index === leaderIndex
-            ? leaderPlacement
-            : Placement.resolve({ ...state, loc: leaderPlacement?.loc || states[leaderIndex].loc }, {
-                ...options,
-                placementRadius: 420
-            }));
-        const leaderLoc = leaderPlacement?.loc;
-        if (!leaderLoc || placements.some(p => !p || Math.hypot(p.loc.locX - leaderLoc.locX, p.loc.locY - leaderLoc.locY) > 1800
-            || Math.abs(p.loc.locZ - leaderLoc.locZ) > 500)) throw Error('party_no_safe_placement');
+        const placements = Placement.resolveGroup(states, leaderIndex, options, 1800);
+        if (!placements) throw Error('party_no_safe_placement');
         const raidBoss = raidBossForParty(party);
         if (raidBoss) party = { ...party, stats: { ...party.stats, hotRaidBoss: {
             instanceId: invoke('GameServer/RaidBoss/RaidEncounterScope').instanceId(raidBoss),

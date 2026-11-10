@@ -25,6 +25,9 @@ const Manager = invoke('GameServer/Bot/BotManager');
 const World = invoke('GameServer/World/World');
 const AI = invoke('GameServer/Bot/BotAI');
 const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
+const resolvePlacement = Placement.resolve;
+const Spots = invoke('GameServer/Bot/AI/SpotService');
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
@@ -186,6 +189,28 @@ async function run() {
     await enteredPromise;
     assert.strictEqual((await Lifecycle.activate(party.partyId)).reason, 'party_transition_pending');
     release(); assert((await first).ok); hook = null;
+    assert((await Lifecycle.cooldown(party.partyId, 'test', { ignoreVisibility: true })).ok);
+
+    // A party on its held spot turns hot together: a member stands by its leader, not by
+    // the nearest live mob of its species 3000 away (the formation's 1800 would refuse it).
+    const heldSpot = { id: 'test', center: { locX: 0, locY: 0, locZ: 0 }, npcEntries: [{ selfId: 10, count: 5, level: 20 }] };
+    const stubs = [[Placement, 'resolve', resolvePlacement], [Spots, 'findById', () => heldSpot],
+        [Spots, 'containsLocation', (_spot, loc) => Math.abs(loc.locX) < 6000 && Math.abs(loc.locY) < 6000],
+        [Spots, 'findCurrentSpot', () => heldSpot], [World, 'actorSessionsNear', () => []],
+        [World, 'fetchNpcsInRadius', () => [{ fetchSelfId: () => 10, isDead: () => false,
+            fetchLocX: () => 3000, fetchLocY: () => 0, fetchLocZ: () => 0 }]],
+        [Geo, 'hasGeo', () => true], [Geo, 'getHeight', () => 0], [Geo, 'getCellData', () => ({ z: 0, nswe: 15 })],
+        [Geo, 'hasLineOfSight', () => true]];
+    const unstubbed = stubs.map(([object, key, value]) => { const before = object[key]; object[key] = value; return () => { object[key] = before; }; });
+    spawnCount = 0;
+    try {
+        const onSpot = await Lifecycle.activate(party.partyId);
+        assert(onSpot.ok, JSON.stringify(onSpot));
+        const [leader, member] = [7, 8].map(id => Manager.sessions.find(s => s.actor.fetchId() === id).spawnData);
+        assert(Math.hypot(member.locX - leader.locX, member.locY - leader.locY) <= 1800, 'the member stands by its leader');
+    } finally {
+        unstubbed.reverse().forEach(restore => restore());
+    }
     assert((await Lifecycle.cooldown(party.partyId, 'test', { ignoreVisibility: true })).ok);
 
     party = await createParty(Array.from({ length: 9 }, (_, i) => i + 9)); spawnCount = 0;

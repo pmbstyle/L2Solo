@@ -79,11 +79,9 @@ async function activate(e, reason = 'near_player', options = {}) {
         if (options.playerLoc && floor.filterCandidates(states, { playerLoc: options.playerLoc, reason }).accepted.length !== states.length) {
             throw Error('encounter_floor_mismatch');
         }
-        const anchor = states.find(s => s.characterId === e.sides[0].principalId).loc;
-        const placements = states.map(s => invoke('GameServer/Bot/Population/ActivationPlacement').resolve({ ...s, loc: anchor }, options));
-        const origin = placements[0]?.loc;
-        if (!origin || placements.some(p => !p || Math.hypot(p.loc.locX - origin.locX, p.loc.locY - origin.locY) > 1500
-            || Math.abs(p.loc.locZ - origin.locZ) > 500)) throw Error('encounter_no_safe_placement');
+        const placements = invoke('GameServer/Bot/Population/ActivationPlacement').resolveGroup(states,
+            states.findIndex(s => s.characterId === e.sides[0].principalId), options, 1500);
+        if (!placements) throw Error('encounter_no_safe_placement');
         states = await transition(e, states, states.map((s, i) => ({ ...s, loc: placements[i].loc })), 'hot', reason);
         reserved = true;
         for (let i = 0; i < states.length; i++) {

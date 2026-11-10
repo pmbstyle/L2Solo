@@ -17,8 +17,14 @@ const ROAD_STEPS = 12;
 // its floor, the MOB_ANCHORS nearest; with none placed, within HUNTER_RADIUS of its cold
 // place. Any other bot (in town, a raid, off its spot) is placed within the wider
 // activationPlacementRadius, which leaves room past activationMinPlayerDistance from a
-// player standing on its anchor. Our choice. Temporary: until the territory rework
-// places the cold place and the body by territory.
+// player standing on its anchor. A group shown together (a party around its leader, a
+// PvP encounter's sides around the first side's principal; resolveGroup) stands in one
+// formation instead, never by its hunted mobs: its lead body on its own place (within
+// LEAD_RADIUS), every other body within GROUP_RADIUS of where the lead stands. Placed one
+// by one, two bodies around one point stand up to twice activationPlacementRadius apart,
+// two hunters by their own mobs up to MOB_SCAN apart, and the group's caller refuses
+// the whole group. Our choice. Temporary: until the territory rework places the cold
+// place and the body by territory.
 const MOB_NEAR = 150;
 const MOB_FAR = 400;
 const BODY_GAP = 100;
@@ -26,6 +32,9 @@ const MOB_SCAN = 6000;
 const MOB_FLOOR = 500;
 const MOB_ANCHORS = 4;
 const HUNTER_RADIUS = 600;
+const LEAD_RADIUS = 240;
+const GROUP_RADIUS = 420;
+const GROUP_FLOOR = 500;
 
 function finiteLocation(loc) {
     return !!loc && ['locX', 'locY', 'locZ'].every((key) =>
@@ -168,9 +177,11 @@ function resolve(state, options = {}) {
         if (!loc || (raid && !SpotService.containsLocation(savedSpot, loc)) || !connected(from, loc)) return null;
         return { loc, spot: SpotService.findCurrentSpot(loc) || null };
     };
-    // A solo hunter on its held spot (not a party rally, a raid, a store, a walker or a
-    // summoned bot): by a mob it hunts; else around its cold place below.
-    const hunter = !fixed && !summoned && !raid && !road && options.preferAnchor !== true && onHeldSpot(state, savedSpot);
+    // A hunter on its held spot, shown alone: by a mob it hunts; else around its cold place
+    // below. A body of a group, a raid, a store, a walker and a summoned bot are placed
+    // around their anchor.
+    const hunter = !fixed && !summoned && !raid && !road && options.group !== true
+        && onHeldSpot(state, savedSpot);
     const mobs = hunter ? huntedMobs(state, savedSpot) : [];
     for (let i = 0; mobs.length && i < Config.activationPlacementAttempts; i++) {
         const mob = grounded(mobs[i % mobs.length].locX, mobs[i % mobs.length].locY, mobs[i % mobs.length].locZ);
@@ -218,4 +229,18 @@ function resolve(state, options = {}) {
     return acceptable(anchor);
 }
 
-module.exports = { resolve };
+// Where each of `states` stands when the group turns hot together, the lead body at
+// `leadIndex` first; null when one has no place or stands more than `spread` from the
+// lead (or off its floor), as the caller then keeps the whole group cold. Through the
+// exported resolve, which tests stand in for.
+function resolveGroup(states, leadIndex, options, spread) {
+    const lead = module.exports.resolve(states[leadIndex],
+        { ...options, group: true, preferAnchor: true, placementRadius: LEAD_RADIUS });
+    if (!lead) return null;
+    const placements = states.map((state, index) => index === leadIndex ? lead
+        : module.exports.resolve({ ...state, loc: lead.loc }, { ...options, group: true, placementRadius: GROUP_RADIUS }));
+    return placements.every(p => p && distance(p.loc, lead.loc) <= spread
+        && Math.abs(p.loc.locZ - lead.loc.locZ) <= GROUP_FLOOR) ? placements : null;
+}
+
+module.exports = { resolve, resolveGroup };
