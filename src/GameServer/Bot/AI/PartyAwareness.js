@@ -3,6 +3,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
 const ActorQueries = require('../../World/ActorSpatialQueries');
+const { MAX_VERTICAL_GAP } = require('./BotTargetScorer');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
 // Hot companions are dispatched serially, but several services inside one
@@ -91,16 +92,25 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
+// Retained hate and target ids must obey the same height limit as hunting
+// candidates. A dungeon mob below a field cannot pin its surface hunter in
+// self-defense forever or keep the party's ground loot locked behind combat.
+function withinCombatHeight(actor, target) {
+    return Math.abs(Number(actor?.fetchLocZ?.() || 0) - Number(target?.fetchLocZ?.() || 0)) <= MAX_VERTICAL_GAP;
+}
+
 // The NPCs within radius of a member whose target is a member: the only ones a
 // party threat can be (both threat kinds below require it), kept while the
 // scans are walked instead of collecting every NPC around each member.
 function npcsTargetingMembers(actors, radius, memberIds) {
     const seen = new Set();
     const npcs = [];
+    const membersById = new Map(actors.map(actor => [Number(actorId(actor)), actor]));
 
     actors.forEach((actor) => {
         world().fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), radius).forEach((npc) => {
             if (!memberIds.has(Number(npc.fetchDestId?.()))) return;
+            if (!withinCombatHeight(membersById.get(Number(npc.fetchDestId())), npc)) return;
             const id = actorId(npc);
             if (seen.has(id)) return;
             seen.add(id);
@@ -143,6 +153,7 @@ function recentIncomingNpc(session, npcRadius = 2500) {
 
     const npc = NpcObjectIndex.find(world(), threatId);
     if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) return null;
+    if (!withinCombatHeight(session.actor, npc)) return null;
     if (distance2d(actorLoc(npc), actorLoc(session.actor)) > npcRadius) return null;
 
     return npc;
@@ -154,8 +165,9 @@ function liveAttackableNpc(npc) {
 }
 
 // An NPC hitting the actor directly (its target is the actor).
-function directlyAttacking(npc, id) {
-    return liveAttackableNpc(npc) && Number(npc.fetchDestId?.() || 0) === id;
+function directlyAttacking(npc, actor) {
+    return liveAttackableNpc(npc) && Number(npc.fetchDestId?.() || 0) === Number(actorId(actor))
+        && withinCombatHeight(actor, npc);
 }
 
 // The NPCs hitting the actor directly within radius. `near` is a world scan
@@ -166,7 +178,7 @@ function npcsAttackingActor(actor, radius, near = null) {
     const locX = actor.fetchLocX(), locY = actor.fetchLocY();
     const list = near ? near.filter(npc => Math.sqrt((npc.fetchLocX() - locX) ** 2 + (npc.fetchLocY() - locY) ** 2) <= radius)
         : (world().fetchNpcsInRadius?.(locX, locY, radius) || []);
-    return list.filter(npc => directlyAttacking(npc, id));
+    return list.filter(npc => directlyAttacking(npc, actor));
 }
 
 // `scan`, when given, receives the world scan it made (scan.near), so the
@@ -188,7 +200,7 @@ function npcThreateningActor(session, npcRadius = 2500, scan = null) {
         npcRadius
     ) || [];
     if (scan) scan.near = near;
-    return near.find((npc) => liveAttackableNpc(npc) &&
+    return near.find((npc) => liveAttackableNpc(npc) && withinCombatHeight(actor, npc) &&
         (Number(npc.fetchDestId?.() || 0) === id || Number(npc.getHating?.(actor) || 0) > 0)) || null;
 }
 
@@ -198,9 +210,8 @@ function underDirectNpcAttack(session, npcRadius = 2500) {
     if (!session?.actor) return false;
     if (recentIncomingNpc(session, npcRadius)) return true;
     const actor = session.actor;
-    const id = Number(actor.fetchId());
     return (world().fetchNpcsInRadius?.(actor.fetchLocX(), actor.fetchLocY(), npcRadius) || [])
-        .some(npc => directlyAttacking(npc, id));
+        .some(npc => directlyAttacking(npc, actor));
 }
 
 function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
@@ -408,6 +419,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
         const allowedRaidTarget = options.allowPlayerRaid === true &&
             BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc);
         return (!protectedRaidTarget || allowedRaidTarget) && npc.fetchAttackable?.() && !npc.isDead?.()
+            && withinCombatHeight(leader, npc)
             ? targetId
             : null;
     }
@@ -424,6 +436,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
 }
 
 module.exports = {
+    withinCombatHeight,
     underDirectNpcAttack,
     npcsAttackingActor,
     isDistantQuestCourier,

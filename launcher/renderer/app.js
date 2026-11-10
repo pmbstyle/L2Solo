@@ -68,7 +68,7 @@ function render(next) {
     $('reveal-folder').hidden = !state.root;
     $('manage-folder').textContent = state.root ? 'Change folder' : 'Choose folder';
     $('manage-folder').disabled = locked || running;
-    $('server-subtitle').textContent = state.developerMode ? 'Developer checkout · managed updates disabled' : state.updatePending ? 'Update installed · start to verify' : state.installed ? 'Local server · Chronicle 4' : state.root ? 'Ready to install the latest stable release.' : 'Select a server folder to get started.';
+    $('server-subtitle').textContent = state.updatePending ? 'Update installed · start to verify' : state.installed ? 'Local server · Chronicle 4' : state.root ? 'Ready to install the latest stable release.' : 'Select a server folder to get started.';
     $('server-version').textContent = state.version?.split(' ·')[0] || 'Not installed';
     $('server-version').title = state.version || '';
     $('geodata-status').textContent = state.geodata?.valid ? 'Verified · Chronicle 4' : state.installed ? 'Needs verification' : 'Not installed';
@@ -92,7 +92,7 @@ function render(next) {
     $('updates-check').disabled = locked;
     $('repair-geodata').disabled = locked || running || !state.installed;
     const serverDownload = state.serverDownload?.tag === state.latest?.tag ? state.serverDownload : null;
-    $('install-update').disabled = locked || !state.latest || state.latest.launcherUpdateRequired || state.developerMode || state.updatePending
+    $('install-update').disabled = locked || !state.latest || state.latest.launcherUpdateRequired || state.updatePending
         || serverDownload?.status === 'downloading' || running && (!state.latest.updateAvailable || serverDownload?.status === 'ready');
     $('install-update').textContent = serverDownload?.status === 'downloading' ? `Downloading… ${Math.floor(serverDownload.percent || 0)}%`
         : running && state.latest?.updateAvailable ? serverDownload?.status === 'ready' ? 'Stop server to apply' : 'Download server update'
@@ -108,7 +108,6 @@ function render(next) {
         $('update-description').textContent = !state.installed ? 'Choose a folder to install the server.' : state.latest.updateAvailable ? `Installed: ${state.version?.split(' ·')[0]}. Your database and settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
         if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Update the launcher above before installing this server release.';
         if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update.';
-        if (state.developerMode) $('update-description').textContent = 'Update this Git checkout with your development tools, or choose a separate folder for a managed installation.';
         if (serverDownload?.status === 'downloading') $('update-description').textContent = `${serverDownload.label || 'Downloading server release'}… The running world is unaffected.`;
         if (serverDownload?.status === 'ready') $('update-description').textContent = `${serverDownload.tag} is downloaded and verified. Stop the server to install it.`;
         if (serverDownload?.error) $('update-description').textContent = serverDownload.error;

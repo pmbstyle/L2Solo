@@ -107,6 +107,19 @@ try {
     assert.strictEqual(solo.mode, 'solo');
     assert.strictEqual(solo.spotId, targetSpot.id);
     assert.deepStrictEqual(solo.destinations['1'], destinationFor({ characterId: 1 }));
+    const crystals = invoke('GameServer/Bot/Economy/BotCrystallization');
+    const originalReady = crystals.ready;
+    try {
+        crystals.ready = () => true;
+        const lostGround = { characterId: 1, phase: 'cold', activity: 'hunting', level: 16,
+            spotId: null, loc: { locX: 1, locY: 2, locZ: 3 }, stats: {} };
+        assert.equal(BotRoute.trip({}, lostGround, { activity: 'hunting', spotId: targetSpot.id },
+            { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() })?.spotId, targetSpot.id,
+        'ready crystal inputs cannot prevent a selected hunting trip from recovering missing ground');
+        assert.equal(BotRoute.trip({}, lostGround, { activity: 'improving' },
+            { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() }), null,
+        'a selected native improvement still executes before any hunting trip');
+    } finally { crystals.ready = originalReady; }
 
     // The step's own hunting leaf names the trip when the bot may hunt there;
     // otherwise (raid profile, a spot avoided by its risk marks) the bot's

@@ -75,6 +75,26 @@ try {
         capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
         'an excluded (marked full) source is not chosen: the search replans');
+    for (const spotId of [null, 'retired-catalogue-spot']) {
+        const lostOrigin = { ...shopper, stats: { ...shopper.stats, marketReturn: {
+            loc: shopper.loc, regionName: shopper.currentRegion, spotId } } };
+        const recovered = Executor.finishMarketVisit(lostOrigin, timestamp);
+        assert.equal(recovered?.stats.travel.spotId, money.id,
+            'a saved town position without a valid hunting origin returns to a real camp');
+        assert(Service.containsLocation(money, recovered.stats.travel.to),
+            'the return travels to the selected camp instead of restoring the old town coordinates');
+    }
+    Spots.cache = Service.spots = [];
+    Income.select = () => null;
+    const waiting = Executor.finishMarketVisit({ ...shopper, stats: { ...shopper.stats,
+        marketReturn: { loc: shopper.loc, regionName: shopper.currentRegion, spotId: null } } }, timestamp);
+    assert.equal(waiting.activity, 'resting', 'without a huntable camp the completed visit yields to replanning');
+    assert.deepEqual(waiting.loc, shopper.loc, 'the bot stays in town instead of inventing a hunting return');
+    assert.equal(waiting.stats.marketReturn, null);
+    assert.equal(waiting.stats.townVisit, null);
+    assert.equal(waiting.timing.nextResolveAt, timestamp + 30000, 'the bot has a bounded retry');
+    Spots.cache = Service.spots = spots;
+    Income.select = () => ({ spot: money });
     // A spot that filled during the visit, with no mark yet, is met by the
     // worker (the room at arrival), one trip after the return.
     for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,

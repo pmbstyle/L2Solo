@@ -31,6 +31,12 @@ const state = {
     stats: {},
     vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 }
 };
+// This route test returns to a catalogued camp. A bare saved town position
+// without a hunting spot is recovered separately by the return regression.
+const origin = { id: 'travel-origin', name: 'Dion', center: { ...state.loc } };
+SpotService.spots = [origin];
+SpotProfiles.cache = [origin];
+state.spotId = origin.id;
 const goal = { type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for_weapon' } };
 const started = GoalExecutor.beginMarketTravel(state, goal, Date.now());
 assert.strictEqual(started.activity, 'traveling');
@@ -186,7 +192,7 @@ try {
         'a market return must persist the death cooldown before resetting the spot baseline');
 
     SpotProfiles.findForState = () => null;
-    assert.strictEqual(GoalExecutor.finishMarketVisit({
+    const waiting = GoalExecutor.finishMarketVisit({
         ...shoppingState,
         spotId: legacyMineSpot.id,
         stats: {
@@ -200,7 +206,11 @@ try {
                 loc: { ...legacyMineSpot.center }
             }
         }
-    }, 1000), null, 'a bot must wait in town when no safe replacement spot is available');
+    }, 1000);
+    assert.strictEqual(waiting.activity, 'resting', 'a bot must wait in town when no safe replacement spot is available');
+    assert.deepStrictEqual(waiting.loc, shoppingState.loc, 'waiting never starts a trip to the unsafe camp');
+    assert.strictEqual(waiting.stats.townVisit, null, 'the finished shopping visit is released');
+    assert.strictEqual(waiting.timing.nextResolveAt, 31000, 'the bot retries after a bounded rest');
 } finally {
     SpotService.findById = originalFindById;
     SpotService.arrivalPointForState = originalArrivalPointForState;

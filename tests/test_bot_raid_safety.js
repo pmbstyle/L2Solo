@@ -21,6 +21,7 @@ function actor(id, options = {}) {
         fetchId: () => id,
         fetchSelfId: () => options.selfId,
         fetchName: () => options.name || `actor_${id}`,
+        fetchTitle: () => options.title || '',
         fetchLocX: () => options.locX || 0,
         fetchLocY: () => options.locY || 0,
         fetchLocZ: () => options.locZ || 0,
@@ -102,6 +103,18 @@ const siegeGuard = actor(6005, {
     attackable: true,
     locX: 180
 });
+const questMonster = actor(6009, {
+    selfId: 5070,
+    name: 'Tumran Orc Brigand',
+    title: 'Quest Monster',
+    attackable: true,
+    locX: 80
+});
+
+assert.strictEqual(BotHuntingTargetPolicy.canHunt(questMonster), false,
+    'a live quest monster must not be chosen for ordinary farming');
+assert.strictEqual(BotHuntingTargetPolicy.canHunt({ model: { template: { title: 'Quest Monster' } } }), false,
+    'nested quest monster models must retain the same hunting restriction');
 
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(boss), true, 'a live raid boss must be protected');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(minion), true, 'a live linked raid minion must be protected');
@@ -122,8 +135,8 @@ assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan'
     'ordinary monster clans must remain eligible even when the NPC name contains Guard');
 
 registerSessions([leaderSession, companionSession]);
-World.npc = { spawns: [boss, minion, regular, siegeGuard], grid: {} };
-World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard];
+World.npc = { spawns: [boss, minion, regular, siegeGuard, questMonster], grid: {} };
+World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard, questMonster];
 
 const originalPartyFind = BackgroundPartyState.find;
 const autonomousRaidSession = {
@@ -185,12 +198,14 @@ const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const placed = (selfId, locX, locY, locZ) => ({ npc: DataCache.npcRow(selfId),
     spawn: { selfId, respawn: 60, total: 1, coords: [{ locX, locY, locZ, head: 0 }] }, bounds: [] });
 const fieldMobs = DataCache.npcs.filter((row) => row.template?.kind === 'Monster' && !row.template?.raidBoss
+    && row.template?.title !== 'Quest Monster'
     && !MinionManager.groupsByBoss.has(Number(row.selfId)) && row.template.level >= 20 && row.template.level <= 30).map((row) => row.selfId);
 const raidRow = DataCache.npcs.find((row) => row.template?.raidBoss === true && MinionManager.groupsByBoss.get(Number(row.selfId))?.length);
 const raidMinionId = MinionManager.groupsByBoss.get(Number(raidRow.selfId))[0].minionId;
 const fixtureNpc = World.npc;
 World.npc = { spawns: [], grid: {}, definitions: [placed(fieldMobs[0], 140, 0, 0), placed(raidRow.selfId, 100, 0, 0),
-    placed(siegeGuard.fetchSelfId(), 160, 0, 0), placed(fieldMobs[1], 18000, 111000, -12096),
+    placed(siegeGuard.fetchSelfId(), 160, 0, 0), placed(5070, 80, 0, 0), placed(5070, 60000, 60000, 0),
+    placed(fieldMobs[1], 18000, 111000, -12096),
     placed(fieldMobs[2], 18000, 111000, -3000)] };
 SpotService.reset();
 const spots = SpotService.ensureIndexed();
@@ -199,6 +214,14 @@ assert(indexedIds.includes(fieldMobs[0]), 'ordinary monsters must remain in hunt
 assert(!indexedIds.includes(raidRow.selfId), 'raid bosses must not create bot hunting grounds');
 assert(!indexedIds.includes(raidMinionId), 'raid minions must not create bot hunting grounds');
 assert(!indexedIds.includes(siegeGuard.fetchSelfId()), 'castle guards must not create bot hunting grounds');
+assert(!indexedIds.includes(5070), 'quest monsters must not contribute targets, density or standalone hunting grounds');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const questOnly = { npcEntries: [{ selfId: 5070, count: 7 }] };
+assert.strictEqual(ColdCombatProfile.npcForSpot(questOnly, () => 0), null,
+    'a saved quest-only spot must offer no new cold farming target');
+assert.strictEqual(ColdCombatProfile.npcForSpot({ npcEntries: [...questOnly.npcEntries,
+    { selfId: fieldMobs[0], count: 1 }] }, () => 0, { preferredNpcId: 5070 }).selfId, fieldMobs[0],
+    'an old preferred quest target must yield to ordinary prey on a mixed spot');
 const indexedCrumaInterior = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -12096 });
 const indexedCrumaSurface = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -3000 });
 assert.strictEqual(indexedCrumaInterior?.id, '3_18:cruma_tower',

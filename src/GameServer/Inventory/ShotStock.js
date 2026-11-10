@@ -157,21 +157,22 @@ function paidShotId(plan) {
 // Blessed Spiritshot over Spiritshot for a role, level and grade (user 10-29,
 // docs/game-decisions.md "Shots"): the farm it adds over the spiritshot (the
 // best spots' exp, as usePolicy's benefit) pays its extra cost per hour at
-// the bot's buy price (botShotPrice: the NPC's, else the template's, a D+
-// shot's craft materials) against the hour's money before shots. One answer
-// per table revision.
+// the bot's replacement price (public stock, paid trades, else native craft
+// value) against the hour's money before shots. Cache by table and both prices.
 const blessedChoices = new Map();
 function blessedPays(role, level, rank) {
-    const key = `${SpotValueTable.revision()}|${role}|${level}|${rank}`;
+    const spiritPrice = botShotPrice(SPIRITSHOT_BY_RANK[rank]);
+    const blessedPrice = botShotPrice(BLESSED_SPIRITSHOT_BY_RANK[rank]);
+    const key = `${SpotValueTable.revision()}|${role}|${level}|${rank}|${spiritPrice}|${blessedPrice}`;
     if (blessedChoices.has(key)) return blessedChoices.get(key);
     const none = SpotValueTable.best(role, level, false), spirit = SpotValueTable.best(role, level, true), blessed = SpotValueTable.best(role, level, 2);
     let pays = false;
     if (none && spirit && blessed) {
         const gain = row => 1 - Math.max(0, Number(none.exp) || 0) / Math.max(1, Number(row.exp) || 0);
-        const cost = (row, selfId) => Math.max(0, Number(row.shots) || 0) * botShotPrice(selfId);
+        const cost = (row, price) => Math.max(0, Number(row.shots) || 0) * price;
         const hour = Math.max(1, (Number(blessed.adena) || 0) + (Number(blessed.loot) || 0));
         pays = gain(blessed) - gain(spirit)
-            >= (cost(blessed, BLESSED_SPIRITSHOT_BY_RANK[rank]) - cost(spirit, SPIRITSHOT_BY_RANK[rank])) / hour;
+            >= (cost(blessed, blessedPrice) - cost(spirit, spiritPrice)) / hour;
     }
     if (blessedChoices.size > 4096) blessedChoices.clear();
     blessedChoices.set(key, pays);

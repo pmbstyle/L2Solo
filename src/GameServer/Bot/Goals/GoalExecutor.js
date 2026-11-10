@@ -102,6 +102,15 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
         townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
 }
 
+function restAfterVisit(state, timestamp) {
+    return {
+        ...state, activity: 'resting',
+        stats: { ...state.stats, marketReturn: null, partyMarketReturn: null,
+            townVisit: null, restUntil: timestamp + 30000 },
+        timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
+    };
+}
+
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     if (!state.stats?.partyMarketReturn?.warOperationId && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
@@ -123,26 +132,20 @@ function finishVisit(state, timestamp, options) {
             destination = { loc, spotId: fallback.id, regionName: fallback.name };
             clanReturn = false;
         }
-        else return {
-            ...state, activity: 'resting',
-            stats: { ...state.stats, marketReturn: null, partyMarketReturn: null, restUntil: timestamp + 30000 },
-            timing: { ...state.timing, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
-        };
+        else return restAfterVisit(state, timestamp);
     }
     if (!destination?.loc) return null;
 
     const from = { ...state.loc };
     const savedSpot = destination.spotId ? SpotService.findById(destination.spotId) : null;
-    const returnState = savedSpot
-        ? {
-            ...state,
-            activity: 'hunting',
-            currentRegion: destination.regionName || state.currentRegion,
-            loc: { ...destination.loc },
-            spotId: destination.spotId
-        }
-        : null;
-    const spotBackoff = returnState && !clanReturn
+    const returnState = {
+        ...state,
+        activity: 'hunting',
+        currentRegion: destination.regionName || state.currentRegion,
+        loc: { ...destination.loc },
+        spotId: savedSpot?.id || null
+    };
+    const spotBackoff = savedSpot && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
     // Where the bot hunts next is the worker's decision, read here: the card's
@@ -153,24 +156,23 @@ function finishVisit(state, timestamp, options) {
     // may no longer hunt by the worker's next trip start: one trip there
     // before the worker moves it.
     let selectedSpot = clanReturn ? savedSpot : null;
-    if (returnState && !clanReturn) {
+    if (!clanReturn) {
         const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
         const usable = spotId => spotId != null && !excluded.has(String(spotId));
         // lazy: cycle the coordinator loads PopulationService, which loads this module.
         const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
         const plan = state.stats?.equipmentPlan;
         selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
-            || (usable(savedSpot.id) ? savedSpot : null)
+            || (usable(savedSpot?.id) ? savedSpot : null)
             || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
                 .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
                 ? SpotProfiles.findById(plan.next.spotId) : null)
             || SpotProfiles.findForState(returnState, { timestamp })
             || (spotBackoff ? null : savedSpot);
     }
-    // Remaining in town is safer than silently returning to a spot that is
-    // already over the death threshold. A later lifecycle pass can retry
-    // once another suitable route becomes available.
-    if (spotBackoff && !selectedSpot) return null;
+    // Stay in town when no eligible camp exists. Old return tickets can
+    // remember town coordinates without any hunting spot.
+    if (!clanReturn && !selectedSpot) return restAfterVisit(state, timestamp);
     const to = clanReturn ? { ...destination.loc } : selectedSpot
         ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
         : { ...destination.loc };

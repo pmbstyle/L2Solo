@@ -12,9 +12,27 @@ function create({ all, write, inTransaction, bagRevisionSet, now }) {
             const inventory = InventorySummary.read(row.inventorySummary);
             let changed = false;
             for (const item of Object.values(inventory)) {
-                if (!Array.isArray(item.instances)) continue;
-                let itemChanged = false;
-                const instances = item.instances.flatMap(instance => {
+                const hasInstances = Array.isArray(item.instances);
+                // A cold loot merge could lose the instance list altogether.
+                // Bind that legacy count to the same repaired physical copies.
+                if (!hasInstances && ![...splitIds.values()].some(split => split.selfId === Number(item.selfId))) continue;
+                let itemChanged = !hasInstances;
+                let source = item;
+                if (!hasInstances) {
+                    // The count also includes untouched single copies. Bind all
+                    // physical identities before completing pending +0 loot.
+                    const copies = all(`SELECT id, enchant, equipped, slot FROM items
+                        WHERE characterId = ? AND selfId = ? ORDER BY id`, [characterId, Number(item.selfId)]);
+                    const worn = copies.filter(copy => copy.equipped && Number(copy.slot) > 0).map(copy => Number(copy.slot));
+                    const equippedSlots = Array.isArray(item.equippedSlots) ? item.equippedSlots
+                        : item.equipped === false || item.equippedCount === 0 ? []
+                            : worn.length ? worn : item.equipped && Number(item.slot) > 0 ? [Number(item.slot)] : [];
+                    source = { ...item, equippedSlots, instances: copies.map(copy => ({
+                        id: Number(copy.id), amount: 1, enchant: Number(copy.enchant || 0),
+                        equipped: !!copy.equipped, slot: Number(copy.slot || 0)
+                    })) };
+                }
+                const instances = source.instances.flatMap(instance => {
                     const split = splitIds.get(Number(instance.id));
                     if (!split || !(Number(instance.amount) > 1)) return [instance];
                     itemChanged = true;
@@ -28,7 +46,7 @@ function create({ all, write, inTransaction, bagRevisionSet, now }) {
                 // Older saves may already have expanded a stack into anonymous
                 // +0 placeholders. Bind those to the repaired physical copies
                 // before hydration can mistake them for newly acquired loot.
-                let repaired = InventorySummary.completeInstances({ ...item, stackable: false, instances });
+                let repaired = InventorySummary.completeInstances({ ...source, stackable: false, instances });
                 const heldIds = new Set(repaired.instances.map(instance => Number(instance.id)).filter(Boolean));
                 for (const split of splitIds.values()) {
                     if (Number(item.selfId) !== split.selfId) continue;
@@ -44,6 +62,12 @@ function create({ all, write, inTransaction, bagRevisionSet, now }) {
                     }
                 }
                 if (itemChanged) {
+                    if (!hasInstances) {
+                        const equippedSlots = repaired.instances.filter(copy => copy.equipped).map(copy => copy.slot);
+                        repaired = { ...repaired, equipped: equippedSlots.length > 0,
+                            equippedCount: equippedSlots.length, equippedSlots,
+                            slot: Number(item.slot || equippedSlots[0] || 0) };
+                    }
                     inventory[String(item.selfId)] = InventorySummary.completeInstances(repaired);
                     changed = true;
                 }

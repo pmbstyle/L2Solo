@@ -62,7 +62,8 @@ else {
             width: 1180, height: 800, minWidth: 960, minHeight: 680,
             backgroundColor: '#071012', title: applicationName, autoHideMenuBar: true,
             titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 15 },
-            titleBarOverlay: { color: '#0b1417', symbolColor: '#a9bbb3', height: 44 },
+            // Keep the 44px header's bottom border below the Windows caption buttons.
+            titleBarOverlay: { color: '#0b1417', symbolColor: '#a9bbb3', height: process.platform === 'win32' ? 43 : 44 },
             icon: path.join(assetsRoot, 'assets/logo.png'),
             webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true }
         });

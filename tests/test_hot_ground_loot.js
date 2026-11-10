@@ -11,6 +11,9 @@ const Loot = invoke('GameServer/Bot/AI/PartyCompanionService');
 const Rewards = invoke('GameServer/World/Generics/NpcRewards');
 const Pickup = invoke('GameServer/World/Generics/PickupItem');
 const Automation = invoke('GameServer/Automation');
+const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const Combat = invoke('GameServer/Bot/AI/PartyCombatState');
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const saved = [];
 const actors = [];
 function replace(object, key, value) {
@@ -46,6 +49,7 @@ function bot(id, x) {
         replace(Rates, 'selectDropItem', () => ({ selfId: 57 }));
         replace(Rates, 'rollDropAmount', () => 11);
         replace(Math, 'random', () => 0);
+        replace(Geo, 'getHeight', (_x, _y, z) => z);
         replace(World, 'items', { spawns: [], byLeader: new Map() });
         replace(World, 'npc', { spawns: [] });
         replace(World, 'fetchNpcsInRadius', () => []);
@@ -92,6 +96,25 @@ function bot(id, x) {
             leader.pvpDefense = {};
             assert.strictEqual(Loot.startQueuedGroundPickup(leader), false, 'PvP takes priority over collecting loot');
             leader.pvpDefense = null;
+            const enemy = { z: 0, fetchId: () => 1009000, fetchSelfId: () => 20,
+                fetchName: () => 'Dungeon mob', fetchAttackable: () => true, isDead: () => false,
+                fetchLocX: () => 100, fetchLocY: () => 0, fetchLocZ() { return this.z; },
+                fetchDestId: () => leader.actor.fetchId(), getHating: () => 349,
+                state: { fetchCombats: () => true }, fetchStateAttack: () => true };
+            replace(World, 'npc', { spawns: [enemy] });
+            replace(World, 'fetchNpcsInRadius', () => [enemy]);
+            leader.actor.fetchDestId = () => enemy.fetchId();
+            Awareness.invalidateThreatProjection(leader);
+            assert.strictEqual(Awareness.npcThreateningActor(leader), enemy, 'a real nearby attacker still triggers defense');
+            assert.strictEqual(Loot.startQueuedGroundPickup(leader), false, 'same-floor combat must still block loot');
+            enemy.z = -1689;
+            leader.incomingThreatId = enemy.fetchId();
+            leader.incomingThreatAt = Date.now();
+            Awareness.invalidateThreatProjection(leader);
+            assert.strictEqual(Awareness.npcThreateningActor(leader), null, 'underground hate cannot trigger surface defense');
+            assert.strictEqual(Awareness.underDirectNpcAttack(leader), false, 'a retained underground target is not direct pressure');
+            assert.deepStrictEqual(Awareness.npcsAttackingActor(leader.actor, 1500), []);
+            assert.strictEqual(Combat.isActive(leader), false, 'an underground selection cannot lock the loot queue');
             assert.strictEqual(Loot.startQueuedGroundPickup(leader), true, 'the closest bot (including a party leader) starts pickup');
             await wait(350);
             assert(leader.actor.x > 0 && leader.actor.x < item.fetchLocX(), 'native pickup interpolates the bot toward the item');

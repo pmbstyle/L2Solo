@@ -61,7 +61,7 @@ function activeActionTarget(session) {
     // aborted queue, so only treat them as combat when their current target
     // is still a living, attackable NPC.
     const target = npcById(actor?.fetchDestId?.());
-    return isHostileNpc(target) ? target : null;
+    return isHostileNpc(target) && PartyAwareness.withinCombatHeight(actor, target) ? target : null;
 }
 
 function combatState(leaderSession, options = {}) {
@@ -108,7 +108,8 @@ function combatState(leaderSession, options = {}) {
             npc.state?.fetchCombats?.() === true &&
             npc.fetchStateAttack?.() === true &&
             fallenIds.has(Number(npc.fetchDestId?.() || 0)) &&
-            fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE) &&
+            fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE
+                && PartyAwareness.withinCombatHeight(member.actor, npc)) &&
             !ignoredTargetIds.has(actorId(npc))
         ));
         if (attackingCorpse) {
