@@ -144,4 +144,10 @@ SectionEnd
     console.log('Interactive UAC consent/cancellation and same-account elevation still require a Windows walkthrough.');
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+    // Electron Builder's async cleanup hook can call process.exit(0).
+    // Keep a build/check failure fatal after those cleanup handlers finish.
+    process.on('exit', () => { process.exitCode = 1; });
+});
