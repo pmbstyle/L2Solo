@@ -39,6 +39,9 @@ function emptyCounters() {
         // arrival's or a budget cut's next scan places are not counted. Counted with or without
         // developerDiagnostics.
         lateInViewActivations: 0,
+        // Of those, walkers shown on their road (PopulationService.showWalkersNear); a walker
+        // that landed by a gatekeeper inside the view is not late.
+        lateInViewWalkers: 0,
         // Bodies placed by a recovery of a place off the ground (ActivationPlacement), by kind:
         // a walker by a step back toward its run's start, a bot on its spot (a raid included)
         // at one of the spot's spawn points or its centre.
@@ -292,8 +295,9 @@ const PopulationMetrics = {
         this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
     },
 
-    recordLateInViewActivation() {
+    recordLateInViewActivation(kind = null) {
         this.counters.lateInViewActivations += 1;
+        if (kind === 'walker') this.counters.lateInViewWalkers += 1;
     },
 
     recordWalkerRoadStepBack() {

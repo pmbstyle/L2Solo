@@ -161,7 +161,8 @@ try {
     const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
     const Manager = invoke('GameServer/Bot/BotManager');
     const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
-    const real = { near: LifeState.walkersNear, handoff: Owner.handoffToMain, spawn: Manager.loadAndSpawnBot,
+    const ActorQueries = require('../src/GameServer/World/ActorSpatialQueries');
+    const real = { near: LifeState.walkersNear, byId: ActorQueries.byId, handoff: Owner.handoffToMain, spawn: Manager.loadAndSpawnBot,
         accept: Coordinator.acceptColdState, upsert: LifeState.upsertState, hasGeo: Geo.hasGeo, cell: Geo.getCellData, height: Geo.getHeight,
         sight: Geo.hasLineOfSight };
     try {
@@ -340,6 +341,24 @@ try {
         assert.strictEqual((await PopulationService.showWalkersNear(landingPoint, [], [], Date.now())).length, 1,
             'a teleport arrival is shown though the player stands on its landing');
         assert.ok(gap(placedAt(spawned[0]), landingPoint) <= 300, 'at its landing');
+        // A settled player's scan (countInView): such a landing in his view is not late, C4 shows
+        // a teleport arrival as it appears; a walker shown in his view on a road that began
+        // outside it is late, counted as a walker.
+        const late = () => [Metrics.counters.lateInViewActivations, Metrics.counters.lateInViewWalkers];
+        ActorQueries.byId = (_world, id) => {
+            const body = spawned.find(data => data.coldLifeState.characterId === Number(id));
+            return body ? { actor: { fetchLocX: () => body.locX, fetchLocY: () => body.locY } } : null;
+        };
+        const lateBefore = late();
+        spawned = [];
+        cachedWalker(4211, {}, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - (gatekeeperTrip.run.startAt - T) - 500);
+        assert.strictEqual((await PopulationService.showWalkersNear(landingPoint, [], [], Date.now(), true)).length, 1);
+        assert.deepStrictEqual(late(), lateBefore, 'a landing in the player\'s view is not late');
+        spawned = [];
+        const fromAfar = ColdTrip.positionAt(cachedWalker(4212, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY),
+            Date.now() - Math.round(longMs * 0.5)), Date.now());
+        assert.strictEqual((await PopulationService.showWalkersNear(aside(fromAfar), [], [], Date.now(), true)).length, 1);
+        assert.deepStrictEqual(late(), [lateBefore[0] + 1, lateBefore[1] + 1], 'a walker from outside the view is late');
         // A walker that set out on foot, a player standing by the start of its run: kept cold,
         // never shown beside him (only a teleport arrival is).
         spawned = [];
@@ -357,6 +376,7 @@ try {
         assert.strictEqual(spawned.length, 0, 'a full activation budget shows no walker');
     } finally {
         LifeState.walkersNear = real.near;
+        ActorQueries.byId = real.byId;
         Owner.handoffToMain = real.handoff;
         Manager.loadAndSpawnBot = real.spawn;
         Coordinator.acceptColdState = real.accept;

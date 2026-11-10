@@ -115,14 +115,15 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
 }
 
 // A player's scan made these bots bodies; each one placed already inside that player's view
-// counts once (lateInViewActivations): the activation ring's lead past the view did not hold.
-// Called only for a settled player (activationSettled): right after an arrival or a budget cut
-// bodies land in the view by nature and say nothing of the lead.
-function countActivatedInView(result, playerLoc) {
+// counts once (lateInViewActivations; `kind` 'walker': a walker on its road, also counted apart):
+// the activation ring's lead past the view did not hold. Called only for a settled player
+// (activationSettled): right after an arrival or a budget cut bodies land in the view by nature
+// and say nothing of the lead.
+function countActivatedInView(result, playerLoc, kind = null) {
     const World = invoke('GameServer/World/World');
     for (const state of result.states || [result.state]) {
         const actor = state?.characterId ? ActorQueries.byId(World, state.characterId)?.actor : null;
-        if (actor && inClientView(actor.fetchLocX(), actor.fetchLocY(), playerLoc.locX, playerLoc.locY)) Metrics.recordLateInViewActivation();
+        if (actor && inClientView(actor.fetchLocX(), actor.fetchLocY(), playerLoc.locX, playerLoc.locY)) Metrics.recordLateInViewActivation(kind);
     }
 }
 
@@ -1857,7 +1858,9 @@ const PopulationService = {
 
     // Walkers near a player appear on their road within the same activation budget
     // (HotActivation). Only the small walker list is read. countInView: the player is settled
-    // (activationSettled), so a walker placed inside its view counts as late.
+    // (activationSettled), so a walker placed inside its view counts as late, unless it landed
+    // by a gatekeeper inside the view: C4 shows a teleport arrival as it appears, no lead past
+    // the view shows it sooner.
     showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now(), countInView = false) {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
@@ -1868,7 +1871,11 @@ const PopulationService = {
             return this.requestActivation(state, 'near_player', { readyOnActivation: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
-                    if (countInView) countActivatedInView(result, loc);
+                    const travel = state.stats?.travel;
+                    const landing = travel?.method === 'gatekeeper_spot' ? travel.run?.from : null;
+                    if (countInView && !(landing && inClientView(landing.locX, landing.locY, loc.locX, loc.locY))) {
+                        countActivatedInView(result, loc, 'walker');
+                    }
                     activated.push(result);
                     ambientActivated.push(result);
                 });
