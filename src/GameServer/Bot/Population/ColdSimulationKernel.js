@@ -462,7 +462,9 @@ function occupationRound(state, plan, timestamp, record) {
     if (record) record.heldOccupation = occupationDecision(state, plan);
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
-    return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+    // occupation: the round carries no fight, only the plan main carries out
+    // (PopulationService: it needs no hunting ground).
+    return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, occupation: activity,
         nextResolveAt: timestamp + 30000, debug: { activity, reason: 'selected_occupation' } };
 }
 

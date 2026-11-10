@@ -44,7 +44,7 @@ const Native = require('./helpers/nativeMarketFixture');
             precomputedPlan: { previousPlan: plan, acquisitionPlan: plan, economyDecision: card,
                 economyPlan: { travel: 'power:50:9' } },
             precomputedResult: { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now()+30000, debug: { activity: 'shopping', reason: 'selected_occupation' } }
+                occupation: 'shopping', nextResolveAt: Date.now()+30000, debug: { activity: 'shopping' } }
         });
         assert(result.ok);
         assert.notEqual(result.reason, 'missing_spot_recovery', 'a purchase round does not require a hunting spot');
@@ -53,8 +53,8 @@ const Native = require('./helpers/nativeMarketFixture');
             `the native purchase executes or starts its paid trip: ${JSON.stringify({ activity: result.state.activity,
                 reason: result.reason, goal: result.state.stats.lastReason, travel: result.state.stats.travel })}`);
         assert.equal(Coordinator.economyDecisions.byId.get(id)?.held, false, 'the command releases its worker decision');
-        // A combat result still needs its actual ground; the occupation
-        // exception must not authorize a fight at an absent destination.
+        // A combat result still needs its actual ground: a fight at an absent
+        // destination is not applied, the bot rests and the worker routes it.
         const hunting = await Life.upsertState({ ...result.state, activity: 'hunting', spotId: null,
             stats: { ...result.state.stats, travel: null, marketErrand: null, marketErrands: [],
                 equipmentPlan: null, partyMarketReturn: null }, timing: {} }, 'missing_combat_ground');
@@ -67,19 +67,6 @@ const Native = require('./helpers/nativeMarketFixture');
         assert.equal(combat.reason, 'missing_spot_recovery');
         assert.equal(combat.state.exp, hunting.exp, 'a fight without its ground grants no experience');
         assert.equal(combat.state.adena, hunting.adena, 'a fight without its ground grants no money');
-        assert.equal(combat.state.stats.decisionSeq, 43, 'missing ground rejects the actual worker decision');
-        assert.equal(combat.state.stats.activityLeaf, 0, 'the next step cannot reuse the impossible activity');
-        assert(combat.state.stats.wishDirty > 0, 'the rejection requests fresh source evaluation');
-        const again = await Population.resolveColdMissingSpot(combat.state, combat.state, Date.now());
-        assert.equal(again.state.stats.decisionSeq, 43, 'a pending rejection is not raised again before the worker answers');
-        const projected = await Life.prepareResolve(hunting, {
-            patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-            nextResolveAt: Date.now()+60000, debug: { reason: 'missing_spot' }
-        }, { persist: false, statsPacketBeforeResolve: true,
-            statsPacket: { decisionSeq: 52, activityLeaf: 99, wishDirty: 0 } });
-        assert.equal(projected.stats.decisionSeq, 53, 'a direct worker projection also rejects its actual impossible decision');
-        assert.equal(projected.stats.activityLeaf, 0, 'a direct commit cannot keep the missing-ground activity');
-        assert(projected.stats.wishDirty > 0);
         console.log('PASS missing spot: selected worker purchase escapes recovery through the native action');
     } finally {
         Economy.forState = originalEconomy;

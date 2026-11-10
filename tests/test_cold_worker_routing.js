@@ -116,6 +116,11 @@ try {
         assert.equal(BotRoute.trip({}, lostGround, { activity: 'hunting', spotId: targetSpot.id },
             { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() })?.spotId, targetSpot.id,
         'ready crystal inputs cannot prevent a selected hunting trip from recovering missing ground');
+        // A bot that holds a spot but stands off it (in town after a visit) with a gear
+        // plan's inputs ready goes to hunt there when its leaf says hunt.
+        assert.equal(BotRoute.trip({}, { ...lostGround, spotId: targetSpot.id }, { activity: 'hunting', spotId: targetSpot.id },
+            { spots: [currentSpot, targetSpot], currentSpot: null, timestamp: Date.now() })?.spotId, targetSpot.id,
+        'ready crystal inputs do not hold a bot off the spot its hunting leaf names');
         assert.equal(BotRoute.trip({}, lostGround, { activity: 'improving' },
             { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() }), null,
         'a selected native improvement still executes before any hunting trip');

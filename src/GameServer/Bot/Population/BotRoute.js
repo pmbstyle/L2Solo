@@ -33,7 +33,6 @@ const Situations = require('../Situations');
 const Trace = require('../DecisionTrace');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const ClanPartyDuty = invoke('GameServer/Bot/Population/ClanPartyDuty');
-const BotCrystallization = invoke('GameServer/Bot/Economy/BotCrystallization');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
@@ -48,13 +47,12 @@ const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 
 // The gates: a bot that may be routed now. Checked by choose and again by
 // record at every read (activity, travel and the duties move step by step).
+// Crystal inputs a gear plan prepared hold no bot here: the held leaf orders an
+// improvement before a hunt (trip: occupationHolds), a hunting leaf hunts.
 function routable(state, party, partyMembers) {
     if (!state || state.phase !== 'cold' || state.stats?.travel) return false;
     if (!party && ClanPartyDuty.waiting(state)) return false;
     if (!(state.activity === 'hunting' || (party && state.activity === 'grouped'))) return false;
-    // Prepared crystal inputs must not pin a bot with no hunting ground in
-    // town. A chosen improvement still owns the round in trip's leaf gate.
-    if (!party && state.spotId && BotCrystallization.ready(state)) return false;
     return !(party && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity)));
 }
 
