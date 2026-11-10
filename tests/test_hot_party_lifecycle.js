@@ -191,6 +191,18 @@ async function run() {
     release(); assert((await first).ok); hook = null;
     assert((await Lifecycle.cooldown(party.partyId, 'test', { ignoreVisibility: true })).ok);
 
+    // A party not yet gathered (a member still at its old place 50 000 away) stays cold beside a
+    // player: no member is moved to its leader across the world. Gathered, it turns hot (below).
+    const straggler = Life.cachedState(8);
+    await Life.upsertState({ ...straggler, loc: { ...straggler.loc, locX: straggler.loc.locX + 50000 } }, 'test_straggler');
+    spawnCount = 0;
+    const scattered = await Lifecycle.activate(party.partyId, 'near_player', { playerLoc: { locX: 1500, locY: 0, locZ: 0 } });
+    assert.deepStrictEqual([scattered.ok, scattered.reason, scattered.detail], [false, 'party_not_ready', 'party_not_gathered']);
+    assert(!spawnCount && !Manager.sessions.length && Parties.find(party.partyId).status === 'active');
+    assert([7, 8].every(id => Life.cachedState(id).phase === 'cold' && !Coordinator.fencedBots.has(id)));
+    assert.strictEqual(Life.cachedState(8).loc.locX, straggler.loc.locX + 50000, 'the straggler keeps its own place');
+    await Life.upsertState({ ...Life.cachedState(8), loc: { ...straggler.loc } }, 'test_gathered');
+
     // A party on its held spot turns hot together: a member stands by its leader, not by
     // the nearest live mob of its species 3000 away (the formation's 1800 would refuse it).
     const heldSpot = { id: 'test', center: { locX: 0, locY: 0, locZ: 0 }, npcEntries: [{ selfId: 10, count: 5, level: 20 }] };

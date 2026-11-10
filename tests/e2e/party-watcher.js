@@ -1,6 +1,6 @@
 'use strict';
 
-// A player finds a background party at its spot and stays within view of it: the party turns hot
+// A player finds a background party gathered at its spot and stays within view of it: the party turns hot
 // (HotPartyLifecycle.activate, near_player), its members are bodies near the player, and what they
 // raise there (a death, a full bag, a new grade, their need of the party ended) rides their bags
 // to the worker. A member's stay is its party step's decision (ColdSimulationKernel.partyStay), which
@@ -40,12 +40,17 @@ module.exports = {
         };
         const away = (a, b) => Math.hypot(a.locX - b.locX, a.locY - b.locY);
         const beside = loc => ({ locX: loc.locX + BESIDE, locY: loc.locY, locZ: loc.locZ });
+        // Gathered on its ground: a party still on its way to its members stays cold near a player.
+        const Assembly = invoke('GameServer/Bot/Population/PartyHuntingAssembly');
+        const Spots = invoke('GameServer/Bot/AI/SpotService');
+        const gathered = (row, spot = Spots.findById(row.spotId)) => !!spot && (row.memberIds || []).length >= 2
+            && Assembly.gathered(row.memberIds.map(id => Life.cachedState(Number(id)) || {}), spot);
         const hot = party => party?.status === 'hot' || (party?.memberIds || []).length > 0
             && party.memberIds.every(id => Life.cachedState(Number(id))?.phase === 'hot');
         for (let watched = 1; ; watched++) {
-            const party = await step(`an active background party at its spot (${watched})`, () => within(20 * 60000,
-                () => Parties.active().find(row => row.spotId != null && (row.memberIds || []).length >= 2 && locOf(row.leaderId)) || null,
-                { everyMs: 5000, what: 'an active background party of 2+ at a spot' }));
+            const party = await step(`an active background party gathered at its spot (${watched})`, () => within(20 * 60000,
+                () => Parties.active().find(row => row.spotId != null && !row.stats?.travel && gathered(row) && locOf(row.leaderId)) || null,
+                { everyMs: 5000, what: 'an active background party of 2+ gathered at its spot' }));
             await step(`the player goes beside it (${watched})`, async () => {
                 const target = beside(locOf(party.leaderId));
                 if (setup.teleport(player, target) === false) throw new Error('teleport refused');

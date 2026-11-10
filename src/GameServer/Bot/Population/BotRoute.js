@@ -295,8 +295,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
     const repairingPartyPosition = partyRoute && String(selected.id) === String(party.spotId || '')
         && partyMembers.every(member => member.phase === 'cold' && member.vitals?.hp > 0
             && !member.stats?.pvpEncounter && !member.stats?.travel)
-        && (!PartyHuntingAssembly.nearby(partyMembers)
-            || partyMembers.some(member => !SpotService.containsLocation(selected, member.loc)));
+        && !PartyHuntingAssembly.gathered(partyMembers, selected);
     const sharedSpot = party?.stats?.objective?.spotId;
     const materialEvacuation = partyRoute && !chosen.materialRoute
         && CraftMaterialParty.isObjective(party.stats?.objective) && String(selected.id) !== String(sharedSpot);

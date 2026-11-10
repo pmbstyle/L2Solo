@@ -235,6 +235,18 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
     }
 }
 
+// The ground a party hunts on: its grid spot or its raid's area (none: any ground).
+function groundOf(party) {
+    const spotId = party?.spotId;
+    if (!spotId) return null;
+    return /^raid:\d+$/.test(spotId) ? invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(spotId)
+        : invoke('GameServer/Bot/AI/SpotService').findById(spotId);
+}
+
+// Why the cold party cannot turn hot now (null: it can). A party turns hot where its
+// members stand, so it must have gathered on its ground first (party_not_gathered): one
+// shown hot before that would have its members placed around its leader, a jump across
+// the world for a member still at its old place.
 function readinessReason(party, states, timestamp = Date.now()) {
     if (party?.status !== 'active') return 'party_not_active';
     if (!states) return 'invalid_membership';
@@ -267,7 +279,7 @@ function readinessReason(party, states, timestamp = Date.now()) {
         || s.stats?.supplyErrand
         || s.stats?.warehouseWorkflow
         || (!(s.vitals.hp > 0) && !toleratedCorpse(s)));
-    if (!member) return null;
+    if (!member) return require('./PartyHuntingAssembly').gathered(states, groundOf(party)) ? null : 'party_not_gathered';
     if (member.phase !== 'cold') return `member_${member.characterId}_not_cold`;
     if (!member.accountName) return `member_${member.characterId}_missing_account`;
     if (!['grouped', 'hunting', 'resting'].includes(member.activity)) {
@@ -624,8 +636,8 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
         const arrived = Roster.exact(sessions.map(id), marker.memberIds)
             && sessions.every(session => World.registeredActorById(id(session))?.session === session
                 && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-            && require('./PartyHuntingAssembly').nearby(states)
-            && states.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+            && require('./PartyHuntingAssembly').gathered(states, spot)
+            && states.every(state => !state.stats?.travel);
         // A compact eligibility pass is cheap. The native gear/power assessor
         // runs in the already admitted clan planning worker, once on opening.
         const early = Roster.admission(party, states, spot, { owner, arrived, timestamp, phase: 'hot',
@@ -645,8 +657,8 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
             return { ok: false, reason: 'raid_roster_member_changed' };
         const freshArrived = sessions.every(session => World.registeredActorById(id(session))?.session === session
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-            && require('./PartyHuntingAssembly').nearby(fresh)
-            && fresh.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+            && require('./PartyHuntingAssembly').gathered(fresh, spot)
+            && fresh.every(state => !state.stats?.travel);
         const checked = Roster.admission(party, fresh, spot, { owner: Database.clanRaidOwner(marker), arrived: freshArrived, timestamp, phase: 'hot',
             assessment: { ready: true, eligible: fresh } });
         if (!checked.ok) { cancellation = checked.reason; return checked; }
@@ -676,8 +688,8 @@ function markedAttackInputs(party, sessions, paidActorId = null, paidCost = null
     const arrived = Roster.exact(sessions.map(id), marker.memberIds)
         && sessions.every(session => World.registeredActorById(id(session))?.session === session
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-        && require('./PartyHuntingAssembly').nearby(states)
-        && states.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+        && require('./PartyHuntingAssembly').gathered(states, spot)
+        && states.every(state => !state.stats?.travel);
     return arrived && states.length === 9 && states.every(state => state.phase === 'hot' && state.partyId === party.partyId
         && state.vitals.hp > 0 && !state.stats?.playerPartyTakeover && !state.stats?.tradeMeeting
         && invoke('GameServer/Bot/AI/RestPolicy').raidReady(state, state.vitals, state.openingPaidCost)

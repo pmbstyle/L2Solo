@@ -27,6 +27,16 @@ function wait(members, spot, timestamp) {
     return { at: at || null, absent };
 }
 
+// Does the party stand gathered on its ground: every member inside the spot (a raid's
+// area; any ground for a profile without one) and near the first member? The one answer
+// of "the party is together" for the cold step (ready), its route's repair (BotRoute),
+// a party turning hot (HotPartyLifecycle: a C4 party gathers before it hunts together,
+// so a party still on its way to its members stays cold) and a marked raid's opening.
+// Pure: worker and main.
+function gathered(members, spot) {
+    return nearby(members) && members.every(member => SpotService.containsLocation(spot, member.loc));
+}
+
 function meetingPending(members) {
     return members.some(member => !!member.stats?.tradeMeeting);
 }
@@ -38,9 +48,8 @@ function ready(party, members, spot) {
     // Non-grid profiles have caller-defined geometry. Production hunting
     // sectors use the shared grid and dungeon partition classification.
     if (!/^(-?\d+)_(-?\d+)(?::.+)?$/.test(String(spot?.id || '')) && spot?.raidBoss !== true) return true;
-    return party?.spotId === spot.id && members.length > 0 && nearby(members) && members.every(member =>
-        member.phase === 'cold' && ['grouped', 'hunting'].includes(member.activity)
-        && !member.stats?.travel && SpotService.containsLocation(spot, member.loc));
+    return party?.spotId === spot.id && gathered(members, spot) && members.every(member =>
+        member.phase === 'cold' && ['grouped', 'hunting'].includes(member.activity) && !member.stats?.travel);
 }
 
-module.exports = { ready, nearby, meetingPending, wait, REASON };
+module.exports = { ready, nearby, gathered, meetingPending, wait, REASON };
