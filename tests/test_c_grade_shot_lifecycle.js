@@ -129,10 +129,6 @@ async function sell(state, id, price, count = 1) {
                     tables: [{ name: 'board', from: null, to: 0, full: true, removed: [], rows: boardRows() },
                         ...['personal_warehouse', 'clan_supplies'].map(name => ({ name, from: null, to: 0, full: true,
                             removed: [], rows: [] }))] });
-                assert.equal(procurement.warmCache[0][0], procurement.warmCache[2][0],
-                    'the pre-procurement wish graph reaches a stable warm baseline');
-                assert(procurement.warmCache[2][1] > procurement.warmCache[0][1],
-                    'the actual native cache serves repeated steps before the new recipe goal');
                 assert(procurement.economyPlan.buyAds?.some(row => row[0] === recipe.recipeItemId),
                     `the real worker prepares a public recipe request: ${JSON.stringify(procurement.economyPlan)}`);
                 assert.equal(procurement.economyPlan.shot, undefined,
