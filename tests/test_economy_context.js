@@ -197,9 +197,14 @@ async function run() {
     assert.equal(Economy.basics(stocked, kitDeps).refillReserve, reserve, 'the refill stays reserved');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);
+    // The Gladiator buys shots, and on the spot it earns at they add more of its
+    // hour's exp than their price takes of its hour's adena (one spot's rows:
+    // the exp-best spot is often another one with other shot use).
+    assert(warriorStock.usePerHour > 0, 'a C-grade Gladiator at 46 buys shots');
     const without = Table.value(warriorContext.bestSpotId, 'dps', warrior.level, false);
-    const benefit = 1 - without.exp / warriorContext.hunt.expPerHour;
-    assert(benefit >= warriorStock.usePerHour * warriorStock.unitPrice / warriorContext.hourAdena);
+    const withShots = Table.value(warriorContext.bestSpotId, 'dps', warrior.level, true);
+    const benefit = 1 - without.exp / withShots.exp;
+    assert(benefit >= withShots.shots * warriorStock.unitPrice / warriorContext.hourAdena);
     const Craft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
     const originalOpportunities = Craft.opportunities;
     try {
