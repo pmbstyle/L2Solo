@@ -105,7 +105,6 @@ async function main() {
             const sale = Disposition.saleCandidates(state, { allowPreTradeCleanup: true });
             assert.equal(sale.find(row => row.selfId === 1049).count, 2, 'no bot reserves a skill book');
             assert.equal(Disposition.isNpcOnlyItem(state.inventory[1049], undefined, state), true);
-            assert.equal(Disposition.skillBookSlotCount(state, sale), 1);
         }
         for (const [account, classId] of [
             ['bot_free_solo', 12], ['bot_free_bishop', 16], ['bot_free_singer', 21],

@@ -376,11 +376,15 @@ assert.strictEqual(SurvivalFloor.forState(loadedBag(0.7, retryUntil), now)?.weig
     'a weight penalty 2 bag stays the floor during the sale retry');
 assert(!NeedsEvaluator.evaluate(loadedBag(0.55, retryUntil), { now }).some((candidate) => candidate.type === 'sell_inventory'),
     'the planner adds no sale goal for a weight penalty 1 bag during the retry');
-const npcJunk = { [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
-    kind: spellbook.template.kind, stackable: false, amount: 1,
-    instances: [{ id: 9100000, amount: 1, equipped: false, slot: 0 }] } };
-assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil, npcJunk), { now })?.reason,
-    'npc_only_inventory');
+// Skill books are NPC-only slots: one does not end the sale retry, as many as the
+// NPC-only threshold do.
+const npcJunk = count => ({ [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
+    kind: spellbook.template.kind, stackable: false, amount: count,
+    instances: Array.from({ length: count }, (_, i) => ({ id: 9100000 + i, amount: 1, equipped: false, slot: 0 })) } });
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil, npcJunk(1)), { now }), null,
+    'one skill book sends no bot to town during the sale retry');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil,
+    npcJunk(ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS)), { now })?.reason, 'npc_only_inventory');
 const huntSpot = { id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, density: 1, npcSelfIds: [1],
     rewards: { exp: 10, sp: 2, adenaMin: 7, adenaMax: 10 }, mob: { hp: 8, damage: 1 } };
 // Level 3: a weaponless level-1 bag holder would end no gremlin fight above its potion line (BotEncounterReadiness).
@@ -461,9 +465,8 @@ assert.deepStrictEqual(MarketListingPolicy.classify(chantState, chantDisposition
     { action: 'npc', reason: 'npc_only_item' }, 'an ordinary personal owner sells even mapped amulets to the NPC');
 assert(chantDisposition.decisions.every(row => row.reason === 'npc_only_item'));
 assert.strictEqual(ItemDisposition.npcOnlySlotCount(chantState), 1);
-assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), {
-    reason: 'npc_only_inventory', slots: 1, npcOnlySlots: 1, limit: ItemDisposition.INVENTORY_SLOT_LIMIT
-}, 'one ordinary NPC-only training book activates the native book cleanup rule');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), null,
+    'one NPC-only training book sends no bot to town: it counts toward the NPC-only slots');
 assert.deepStrictEqual(chantState, chantBefore, 'classification and listing cannot alter the original book');
 const stationChant = { ...chantState, stats: { ...chantState.stats, craftStationId: craftStation.id } };
 const stationChantBefore = structuredClone(stationChant);
@@ -473,9 +476,7 @@ assert.deepStrictEqual(MarketListingPolicy.classify(stationChant, stationChantDi
     { action: 'npc', reason: 'npc_only_item' }, 'infrastructure also receives free skills and cleans up mapped amulets');
 assert(stationChantDisposition.decisions.every(row => row.reason === 'npc_only_item'));
 assert.strictEqual(ItemDisposition.npcOnlySlotCount(stationChant), 1);
-assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(stationChant, { now }), {
-    reason: 'npc_only_inventory', slots: 1, npcOnlySlots: 1, limit: ItemDisposition.INVENTORY_SLOT_LIMIT
-});
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(stationChant, { now }), null);
 assert.deepStrictEqual(stationChant, stationChantBefore, 'the infrastructure quote retains original physical ownership');
 const npcState = {
     ...state,
@@ -595,7 +596,6 @@ assert.strictEqual(NeedsEvaluator.evaluate(bookHunter, { now }).some(goal => goa
     'an equipped weapon must not interrupt hunting with forced cleanup');
 const spareBook = { ...bookHunter, inventory: { 99: { ...equippedBook, amount: 2,
     instances: [...equippedBook.instances, { id: 100, equipped: false, slot: 7 }] } } };
-assert.strictEqual(ItemDisposition.skillBookSlotCount(spareBook), 0);
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(spareBook).find(item => item.selfId === 99)?.count, 1,
     'a spare low-grade weapon remains ordinary sellable equipment');
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Spellbook: Missing Kind' }), true);
