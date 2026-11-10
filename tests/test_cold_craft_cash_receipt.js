@@ -293,7 +293,8 @@ async function verifyAuthoredPhysicalCraft() {
             let exchanges = 0;
             Database.craftForCustomer = async (...args) => {
                 const result = await exchange(...args);
-                if (++exchanges === 1) throw Error('lost_native_reply');
+                // A lost reply after the commit: an unknown outcome, not a named refusal (a bare code).
+                if (++exchanges === 1) throw Error('lost native reply');
                 return result;
             };
             let recovered;

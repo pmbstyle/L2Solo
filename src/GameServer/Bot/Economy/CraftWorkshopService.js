@@ -1,6 +1,7 @@
 'use strict';
 const Profit = require('./CraftProfitPolicy');
 const Commit = require('./EconomyCommit');
+const FailureLog = require('../../../FailureLog');
 const Diagnostics = require('./EconomyDiagnostics');
 const ShotCraftPolicy = require('./ShotCraftPolicy');
 const { isMainThread } = require('node:worker_threads');
@@ -313,8 +314,9 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expe
         return result;
     } catch (error) {
         // The caller keeps this bounded original header when delivery fails;
-        // no new attempt is inferred from the leftover materials.
-        if (admitted && (!liveOrder || liveCommitted)) error.economyCommand = admitted.command;
+        // no new attempt is inferred from the leftover materials. A named refusal
+        // rolled back and spent nothing: its outcome is known, nothing to recover.
+        if (admitted && (!liveOrder || liveCommitted) && !FailureLog.refusal(error)) error.economyCommand = admitted.command;
         throw error;
     } finally {
         if (admitted) Commit.finish(customerId, admitted.command);
