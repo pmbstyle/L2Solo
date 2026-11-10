@@ -438,7 +438,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
 }
 
 function reconcileEquipmentInventory(state = {}) {
-    const inventory = require('../Economy/ShotCrystalInput').equip(state,state.inventory || {},GearAcquisitionPlanner.equipInventoryUpgrades);
+    const inventory = GearAcquisitionPlanner.equipInventoryUpgrades(state, state.inventory || {});
     return reconcileFulfilledEquipmentPlan({
         ...state,
         inventory,
@@ -2948,11 +2948,11 @@ const BotLifeState = {
         }
 
         if (consumeFacts) Consumption.attach(result, consumeFacts);
-        const equippedInventory = require('../Economy/ShotCrystalInput').equip({
+        const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
             ...state,
             level,
             stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
-        }, inventory,GearAcquisitionPlanner.equipInventoryUpgrades);
+        }, inventory);
         const nextActivity = result.patch?.activity || state.activity;
         const nextState = {
             ...state,
@@ -3488,7 +3488,7 @@ const BotLifeState = {
                 };
             });
             const equipped = options.equip === true
-                ? require('../Economy/ShotCrystalInput').equip(state,inventory,GearAcquisitionPlanner.equipInventoryUpgrades)
+                ? GearAcquisitionPlanner.equipInventoryUpgrades(state, inventory)
                 : inventory;
             const refreshed = {
                 ...state,

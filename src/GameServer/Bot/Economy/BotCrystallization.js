@@ -100,12 +100,11 @@ function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
             free: Object.fromEntries(bundle.map(row => [row.selfId, readFree(row.selfId)])) }, ...selected] : selected;
 }
 function inputAmount(state, id) {
-    const shot = require('./ShotCrystalInput').amount(state,id);
     const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);
     if (!(plan?.strategy === 'luxury_exchange' || plan?.crystalPreparation) || plan.status !== 'active'
-        || !reward(Index.find(invoke('GameServer/DataCache').items, id))) return shot;
-    return Math.max(shot,Math.min(BATCH_LIMIT, Number((plan.crystalPreparation?.materials || plan.materials)
-        ?.find(row => Number(row.selfId) === Number(id))?.amount || 0)));
+        || !reward(Index.find(invoke('GameServer/DataCache').items, id))) return 0;
+    return Math.min(BATCH_LIMIT, Number((plan.crystalPreparation?.materials || plan.materials)
+        ?.find(row => Number(row.selfId) === Number(id))?.amount || 0));
 }
 // Paid physical inputs can finish their conversion while another ingredient
 // of the final B recipe has no current route. That gap cannot release them

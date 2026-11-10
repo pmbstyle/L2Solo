@@ -491,10 +491,17 @@ function collectedEquipmentInputs(state, plan = state?.stats?.equipmentPlan) {
         .filter(([, amount]) => amount > 0));
 }
 
+// The one piece of gear a shot kit's crystals come from (shotCraft.preparing.crystalGear),
+// while the kit holds: bought, crafted or owned to be crystallized, it is the kit's,
+// neither sold (productionInputAmounts) nor worn (GearAcquisitionPlanner.equipInventoryUpgrades).
+// 0 with none.
+function kitGear(state, timestamp = Date.now()) {
+    const shot = state?.stats?.shotCraft?.preparing;
+    return shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? Number(shot.crystalGear || 0) : 0;
+}
 // A selected finite production kit survives the ingredient trips. Selling
 // and storage retain it; the production executor still reads its own inputs.
-// A shot kit also holds the one piece of gear its crystals come from (crystalGear):
-// bought to be crystallized, it is never offered for sale meanwhile.
+// A shot kit also holds its crystal gear (kitGear).
 function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
@@ -506,7 +513,7 @@ function productionInputAmounts(state, timestamp = Date.now()) {
         for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
             inputs[id] = Math.max(Number(inputs[id] || 0),amount);
     }
-    const gear = setup && Number(setup.at) + 30 * 60 * 1000 > timestamp ? Number(setup.crystalGear || 0) : 0;
+    const gear = kitGear(state, timestamp);
     if (gear > 0) inputs[gear] = Number(inputs[gear] || 0) + 1;
     return inputs;
 }
@@ -1062,6 +1069,7 @@ module.exports = {
     equipmentMaterialAmounts,
     collectedEquipmentInputs,
     productionInputAmounts,
+    kitGear,
     recipeInputAmounts,
     saleReservations,
     capDeferredInputs,

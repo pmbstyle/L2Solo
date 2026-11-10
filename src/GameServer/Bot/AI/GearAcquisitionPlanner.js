@@ -530,7 +530,27 @@ function plainCopy(value) {
 // (DataCache.items or newbieItems replaced or grown) drops them all.
 const EQUIP_ANSWERS = 16;
 let equipAnswers = { items: null, length: 0, newbie: null, rows: [] };
+// The gear a bot wears from its bag. The piece a shot kit holds to crystallize
+// (ItemDisposition.kitGear) is not worn: one unworn, unenchanted copy is kept out of
+// the choice and comes back as it was; a copy already worn stays worn.
 function equipInventoryUpgrades(state = {}, inventory = {}) {
+    const id = invoke('GameServer/Bot/Economy/ItemDisposition').kitGear(state), held = id ? inventory?.[id] : null;
+    if (!held || !(Number(held.amount) > Number(held.equippedCount || (held.equipped ? 1 : 0)))) return equipFrom(state, inventory);
+    const instances = held.instances;
+    const kept = Array.isArray(instances) ? instances.filter(row => !row.equipped && !Number(row.enchant))
+        .sort((a, b) => Number(b.id) - Number(a.id))[0] : !Number(held.enchant) ? {} : null;
+    if (!kept) return equipFrom(state, inventory);
+    const visible = { ...inventory };
+    if (Number(held.amount) === 1) delete visible[id];
+    else visible[id] = { ...held, amount: Number(held.amount) - 1,
+        ...(instances ? { instances: instances.filter(row => row.id !== kept.id) } : {}) };
+    const selected = equipFrom({ ...state, inventory: visible }, visible);
+    const chosen = selected[id] || { ...held, equipped: false, equippedCount: 0, equippedSlots: [] };
+    return { ...selected, [id]: { ...chosen, amount: Number(held.amount),
+        ...(instances ? { instances: instances.map(row => row.id === kept.id ? { ...row, equipped: false }
+            : chosen.instances?.find(item => item.id === row.id) || row) } : {}) } };
+}
+function equipFrom(state, inventory) {
     const role = roleFor(state);
     const classId = classIdFor(state);
     const entries = Object.entries(inventory || {});
