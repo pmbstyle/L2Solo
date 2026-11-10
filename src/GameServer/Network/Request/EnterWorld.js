@@ -47,7 +47,7 @@ function enterWorld(session, buffer) {
         session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
         session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
         // The bots around a player who logs in are shown now, not at the next activation scan.
-        invoke('GameServer/Bot/Population/PopulationService').requestPhaseScan();
+        invoke('GameServer/Bot/Population/PopulationService').requestPhaseScan(session.actor.fetchId());
         invoke('GameServer/AfkTrade/AfkTradeService').deliverNotifications(session)
             .catch((error) => utils.infoWarn('AfkTrade', 'notification delivery failed: %s', error.message));
     };

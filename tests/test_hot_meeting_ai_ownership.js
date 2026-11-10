@@ -56,6 +56,7 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
         for (const [name, keys] of Object.entries(noops)) for (const key of keys) stub(invoke(name), key, () => undefined);
         stub(invoke('GameServer/Bot/AI/BotPvpDefense'), 'tick', () => defending);
         const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+        const evaluate = lod.evaluate;
         stub(lod, 'evaluate', () => ({ tier: 'full', playerVisible: true }));
         stub(lod, 'shouldRefreshStatus', () => false);
         stub(lod, 'budgetExceeded', () => false);
@@ -103,15 +104,19 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
         session.tradeMeetingPresence = { id: 7, actorId: bot.fetchId() + 1 };
         AI.tick(session);
         assert.equal(shoppingTicks, 1, 'another character marker cannot hold the current actor');
-        // A hot bot out of every player's view: ambient ticks skip its hunt, a fight it is in runs it (it defends itself).
+        // A hot body out of the player's view but inside the radius bodies stay hot in hunts on out of
+        // combat (the cold simulation does not step it); past that radius it only waits to cool.
         let huntTicks = 0;
         stub(invoke('GameServer/Bot/AI/States/HuntingState'), 'tick', () => { huntTicks++; });
         session.tradeMeetingPresence = undefined;
-        for (const combat of [false, true]) {
-            lod.evaluate = () => ({ tier: 'full', playerVisible: false, combat });
-            session.plan = 'hunting'; AI.tick(session);
-        }
-        assert.equal(huntTicks, 1, 'an unseen bot hunts on only while it fights');
+        lod.evaluate = evaluate;
+        let playerDistance = 7000;
+        stub(invoke('GameServer/World/World'), 'nearestRealPlayer', () => ({ session: null, distance: playerDistance, count: 1 }));
+        session.plan = 'hunting'; AI.tick(session);
+        assert.equal(huntTicks, 1, 'an unseen body 7000 from the player hunts out of combat');
+        playerDistance = 12000;
+        session.plan = 'hunting'; AI.tick(session);
+        assert.equal(huntTicks, 1, 'a body beyond the keep radius does not hunt');
         console.log('PASS hot meeting AI ownership: walk, arrival wait, completion/cancellation, combat/death priority, actor binding and shopping continuation');
     } finally { for (const restore of restores.reverse()) restore(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -195,6 +195,34 @@ async function run() {
         'physical proximity must activate the local cold bot without a player-level filter');
     assert.strictEqual(budgetCuts(), cutsBefore + 1, 'a scan that showed every near row counts no budget cut');
 
+    // A body the scan placed already inside a settled player's view is counted (the ring's lead did
+    // not hold for it); one placed past the view is not.
+    const highBotFar = session('bot_high_far', actor(13, 7000, 45), { populationHotAt: Date.now() - 300000 });
+    publishSessions([highLevelPlayer, highBotA, highBotB, highBotFar]);
+    const inView = () => invoke('GameServer/Bot/Population/PopulationMetrics').counters.lateInViewActivations;
+    const inViewBefore = inView();
+    LifeState.coldNear = () => Promise.resolve([{ characterId: 11, name: 'BodyInView', level: 45 },
+        { characterId: 13, name: 'BodyPastView', level: 45 }]);
+    Config.maxActivationsPerScan = 2;
+    activated.length = 0;
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['BodyInView', 'BodyPastView']);
+    assert.strictEqual(inView(), inViewBefore + 1, 'only the body placed inside the player\'s view is counted');
+    // A teleport's scan places the crowd where the player landed: inside the view by nature, not late.
+    PopulationService.requestPhaseScan(9);
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 1, 'the scan after a teleport counts no late body');
+    // A scan its budget cut leaves near rows cold; the next scan places them in the view, not late.
+    Config.maxActivationsPerScan = 1;
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 2, 'a settled player\'s scan counts the late body before its cut');
+    LifeState.coldNear = () => Promise.resolve([{ characterId: 11, name: 'BodyInView', level: 45 }]);
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 2, 'the rows a budget cut held over are not counted late');
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 3, 'once every near row is placed the player counts late bodies again');
+    publishSessions([highLevelPlayer, highBotA, highBotB]);
+
     const grouped = Array.from({ length: 9 }, (_, i) => ({ characterId: 200 + i, name: `Group${i}`, level: 45,
         activity: 'grouped', party: { partyId: 'full-party' } }));
     Parties.find = () => ({ status: 'active', memberIds: grouped.map(s => s.characterId) });

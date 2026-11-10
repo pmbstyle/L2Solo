@@ -123,7 +123,7 @@ function cooldownEligible(e, roster, options) {
     return roster.every(s => s?.actor && !s.populationStaging && !s.partyCompanion && !s.followPlayerSession
         && Cooldown.canCooldown(s, { ...options, encounterKey: e.key }).ok
         && (options.drainActions || (!s.actor.state.fetchHits?.() && !s.actor.state.fetchCasts?.() && !s.actor.attack?.timers?.size))
-        && players.every(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) > Math.max(config.activationRadius, config.cooldownRadius))
+        && players.every(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) > config.keepHotRadius())
         && !invoke('GameServer/Bot/AI/PartyAwareness').npcThreateningActor(s)
         && Threats.context(s).threats.every(t => ids.includes(Number(t.actor.fetchId()))));
 }

@@ -439,7 +439,6 @@ const BotAI = {
 
         const World = invoke('GameServer/World/World');
         const nativeActors = ActorQueries.native(World);
-        const onlinePlayerCount = nativeActors ? World.actorPresenceCount() : (realPlayerSessions(World) || []).length;
         lodContext = HotActorLodPolicy.evaluate(session, nativeActors ? World : realPlayerSessions(World) || [], tickStartedAt);
         PopulationService.recordHotTick(session);
         invoke('GameServer/Bot/Population/BotGlobalChat').offerReply(session, tickStartedAt);
@@ -520,13 +519,6 @@ const BotAI = {
         if (!botDead && invoke('GameServer/Bot/Economy/BuffService').buyOnAnswer(session)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !lodContext.combat && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
-            // Far-away bot out of combat: light background event processing, skip everything else
-            if (Math.random() < 0.05) {
-                this.triggerFarAwayChatEvent(session, bot);
-            }
-            return;
-        }
 
         // Tiny chance to shout globally (e.g. 0.0005 chance per tick - roughly once every 2000 ticks or ~100 minutes per bot)
         if (Math.random() < 0.0005) {

@@ -63,8 +63,10 @@ try {
         player.actor.setLocX(4001);
         assert.equal(Policy.evaluate(bot, World, 22000).tier, 'visible');
         player.actor.setLocX(6400);
-        assert.equal(Policy.evaluate(bot, World, 23000).reason, 'outer_preload');
+        assert.equal(Policy.evaluate(bot, World, 23000).reason, 'out_of_view');
         assert.equal(Policy.evaluate(bot, World, 23000).playerVisible, false, 'no player sees the bot past the client view');
+        player.actor.setLocX(9400);
+        assert.equal(Policy.evaluate(bot, World, 23000).reason, 'outer_preload');
         far.actor.setDestId(bot.actor.fetchId());
         assert.equal(Policy.evaluate(bot, World, 24000).reason, 'player_selected');
         assert.deepEqual(World.actorPresenceSessions('onlineHuman', bot.actor.fetchId()), [far]);

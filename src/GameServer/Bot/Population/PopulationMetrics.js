@@ -33,6 +33,12 @@ function emptyCounters() {
         // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
         // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
+        // Bodies placed already inside a settled player's view (PopulationService.activationSettled:
+        // its last scan left no near row to the budget and it did not log in or teleport since):
+        // the ring's lead past the view (activationRadius) was too short for them. The bodies an
+        // arrival's or a budget cut's next scan places are not counted. Counted with or without
+        // developerDiagnostics.
+        lateInViewActivations: 0,
         // Bodies placed by a recovery of a place off the ground (ActivationPlacement), by kind:
         // a walker by a step back toward its run's start, a bot on its spot (a raid included)
         // at one of the spot's spawn points or its centre.
@@ -276,6 +282,10 @@ const PopulationMetrics = {
         this.counters.activationRefusals += 1;
         const key = String(reason || 'unknown');
         this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
+    },
+
+    recordLateInViewActivation() {
+        this.counters.lateInViewActivations += 1;
     },
 
     recordWalkerRoadStepBack() {

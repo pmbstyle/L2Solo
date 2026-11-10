@@ -8,8 +8,8 @@
 // the next scan, and a player sees them.
 const TableChannel = require('./ColdTableChannel').shared;
 
-// A move shorter than this keeps the published ring (an edge off by at most this much
-// against a 9000 radius); a longer one republishes it and reschedules the bots it crosses.
+// A move shorter than this keeps the published ring (its edge off by at most this much, against
+// the activation radius); a longer one republishes it and reschedules the bots it crosses.
 const RING_STEP = 1000;
 
 const rows = new Map();

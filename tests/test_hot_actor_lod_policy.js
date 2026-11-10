@@ -58,8 +58,23 @@ assert.strictEqual(visibleContext.tier, 'visible', '6000 remains server-visible 
 assert.strictEqual(Policy.nextTickDelay(visible, visibleContext), 7000, 'far-visible AI uses the bounded lower cadence');
 assert.strictEqual(visibleContext.playerVisible, true, 'the player sees a bot at the client view edge');
 visible.actor = actor(2002, 6001);
-assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'preload', 'outside server visibility is preload-only');
+assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'visible', 'out of view inside the keep radius it lives on at the far cadence');
 assert.strictEqual(Policy.evaluate(visible, [player], 2000).playerVisible, false);
+visible.actor = actor(2002, 9001);
+assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'preload', 'beyond the keep radius a body only waits to cool');
+// The launcher sets the activation radius alone: one at the cooldown radius still leaves a body
+// 1400 past the ring before it stops thinking, so it does not flip hot and cold at the edge.
+{
+    const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+    const savedActivation = PopulationConfig.activationRadius;
+    PopulationConfig.activationRadius = 9500;
+    visible.actor = actor(2002, 10900);
+    assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'visible', 'a wide activation ring keeps its hysteresis');
+    visible.actor = actor(2002, 10901);
+    assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'preload', 'and no more than the hysteresis');
+    PopulationConfig.activationRadius = savedActivation;
+    visible.actor = actor(2002, 9001);
+}
 assert.strictEqual(Policy.evaluate(botSession(2009, 100), [botSession(2010, 0), playerSession(1009, 0, { online: false })], 2000).playerVisible,
     false, 'other bots and offline players do not see it');
 assert.strictEqual(Policy.nextTickDelay(visible, { tier: 'preload' }), 30000, 'outer preload remains lightweight');
@@ -88,11 +103,11 @@ assert.strictEqual(Policy.evaluate(stance, [player], 2000).tier, 'visible', 'vis
 // that a mob hits answers it at the fight's cadence: before, it took no decision at all and died standing.
 const unseen = botSession(2011, 8000, { combat: true });
 const unseenContext = Policy.evaluate(unseen, [player], 1000);
-assert.deepStrictEqual([unseenContext.tier, unseenContext.playerVisible, unseenContext.combat], ['full', false, true],
+assert.deepStrictEqual([unseenContext.tier, unseenContext.playerVisible], ['full', false],
     'an unseen bot in combat thinks at full quality');
 assert.strictEqual(Policy.nextTickDelay(unseen, unseenContext, () => 0), 1000, 'at the fight\'s cadence');
 unseen.actor = actor(2011, 8000);
-assert.strictEqual(Policy.evaluate(unseen, [player], 2000).tier, 'preload', 'and drops back to preload when its fight ends');
+assert.strictEqual(Policy.evaluate(unseen, [player], 2000).tier, 'visible', 'and drops back to the far cadence when its fight ends');
 
 const targetingPlayer = botSession(2006, 5500, { session: { currentTargetId: 1001 } });
 assert.strictEqual(Policy.evaluate(targetingPlayer, [player], 1000).tier, 'full', 'a bot attacking or chasing a real player is promoted');
@@ -113,7 +128,7 @@ assert.strictEqual(HuntingState.limitTargetCandidates({ hotActorLod: { tier: 'fu
 const claimOwner = botSession(2050, 0, { session: { plan: 'hunting', currentTargetId: 4567 } });
 assert.deepStrictEqual([...HuntingState.claimedTargetIds(scanBot.session || {}, [claimOwner])], [4567], 'one pass builds the target claim set without rescanning every bot per NPC');
 
-const population = Array.from({ length: 300 }, (_, index) => botSession(5000 + index, 1000 + (index % 3) * 3000));
+const population = Array.from({ length: 300 }, (_, index) => botSession(5000 + index, 1000 + (index % 3) * 4500));
 const tierCounts = population.reduce((counts, session) => {
     const tier = Policy.evaluate(session, [player], 20000).tier;
     counts[tier] += 1;

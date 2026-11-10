@@ -1529,7 +1529,7 @@ class ColdSimulationCoordinator {
     // Within the activation's radius of a player, on its floor: the safety repair keeps
     // clear of a bot the activation may take.
     visibleToRealPlayer(state) {
-        const radius = Math.max(1, Number(Config.activationRadius) || 9000);
+        const radius = Math.max(1, Number(Config.activationRadius));
         if (!state || ['pk_hunting', 'traveling'].includes(state.activity) || state.stats?.supplyErrand) return false;
         const candidateLoc = state.stats?.craftShop?.loc || state.loc;
         if (!candidateLoc) return false;

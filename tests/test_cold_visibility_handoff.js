@@ -8,6 +8,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 function playerAt(locX, locY, locZ) {
     return {
         actor: {
+            fetchId: () => 1,
             fetchLocX: () => locX,
             fetchLocY: () => locY,
             fetchLocZ: () => locZ

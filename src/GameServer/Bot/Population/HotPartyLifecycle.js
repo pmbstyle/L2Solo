@@ -536,7 +536,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
             || s.actor.state.fetchHits?.() || s.actor.state.fetchCasts?.()
             || invoke('GameServer/Bot/AI/PartyAwareness').npcThreateningActor(s)
             || (!options.ignoreVisibility && (Date.now() - Number(s.populationHotAt || 0) < Config.cooldownGraceMs
-                || players.some(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) <= Math.max(Config.cooldownRadius, Config.activationRadius)))));
+                || players.some(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) <= Config.keepHotRadius()))));
         };
         if (!eligible()) {
             return { ok: false, reason: 'party_member_busy_or_visible' };

@@ -144,8 +144,13 @@ const DEFAULTS = {
     partyHistoryCleanupIntervalMs: 60 * 60 * 1000,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
-    cooldownRadius: 11000,
-    activationRadius: 9000,
+    // A body cools past cooldownRadius, at least the hysteresis (HOT_HYSTERESIS, keepHotRadius)
+    // beyond activationRadius.
+    cooldownRadius: 9000,
+    // A bot turns into a body within this radius of a player: the client's view (6000) plus
+    // one 10 s activation scan of a running player (160 u/s), so a bot is a body before the
+    // player sees it. Our choice: C4 characters act whether seen or not; the radii are ours.
+    activationRadius: 7600,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
@@ -318,6 +323,18 @@ Object.defineProperty(PopulationConfig, 'workerResourceLimits', {
         maxOldGenerationSizeMb: Math.max(128, Number(PopulationConfig[heapKey]) || DEFAULTS[heapKey]),
         maxYoungGenerationSizeMb: Math.max(48, Number(PopulationConfig[youngKey]) || DEFAULTS[youngKey])
     })
+});
+
+// How far a body cools beyond the activation ring at the least, so a body near the ring's edge
+// does not flip hot and cold as the player steps (our choice: one scan's run past the view).
+const HOT_HYSTERESIS = 1400;
+
+// How far from every player a hot body stays hot and thinks: cooldownRadius, and never closer
+// than the hysteresis past activationRadius (the launcher sets activationRadius alone, so a large
+// one would otherwise reach the cooldown ring and leave no hysteresis). Read at the call, not
+// normalised at load: tests set the radii directly. Not enumerable: the config stays data.
+Object.defineProperty(PopulationConfig, 'keepHotRadius', {
+    value: (config = PopulationConfig) => Math.max(Number(config.cooldownRadius) || 0, (Number(config.activationRadius) || 0) + HOT_HYSTERESIS)
 });
 
 module.exports = PopulationConfig;
