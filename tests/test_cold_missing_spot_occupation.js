@@ -49,8 +49,10 @@ const Native = require('./helpers/nativeMarketFixture');
         assert(result.ok);
         assert.notEqual(result.reason, 'missing_spot_recovery', 'a purchase round does not require a hunting spot');
         assert.equal(result.state.stats.routeRecovery.attempts, 1000, 'the command does not repeat fake recovery');
-        assert(result.state.inventory[50]?.amount > 0 || result.state.stats.travel?.arrivalActivity === 'shopping',
-            `the native purchase executes or starts its paid trip: ${JSON.stringify({ activity: result.state.activity,
+        // Its town is the one it stands in: the visit starts here (no trip), else a trip to it.
+        assert(result.state.inventory[50]?.amount > 0 || result.state.stats.travel?.arrivalActivity === 'shopping'
+            || result.state.activity === 'shopping',
+            `the native purchase executes or starts its visit: ${JSON.stringify({ activity: result.state.activity,
                 reason: result.reason, goal: result.state.stats.lastReason, travel: result.state.stats.travel })}`);
         assert.equal(Coordinator.economyDecisions.byId.get(id)?.held, false, 'the command releases its worker decision');
         // A combat result still needs its actual ground: a fight at an absent

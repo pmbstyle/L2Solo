@@ -115,7 +115,7 @@ const Native = require('./helpers/nativeMarketFixture');
         // A Rogue drawn to Hawkeye wears its dagger until it owns a bow: a second dagger looted
         // in a far round adds a copy and leaves the worn one on.
         const Progression = invoke('GameServer/Bot/BotClassProgression');
-        let rogue = 9405;
+        let rogue = 9410;
         while (Progression.futureClass(7, rogue) !== 9) rogue++;
         await Native.character(Database, rogue, 'LootedDagger', 'bot_looted_dagger');
         await Database.execute(['UPDATE characters SET classId = 7, level = 32 WHERE id = ?', [rogue]]);
