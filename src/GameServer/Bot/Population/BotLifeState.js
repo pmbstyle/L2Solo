@@ -1603,6 +1603,35 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     return merged;
 }
 
+// A body cooled on its way (a cooldown, a failed spawn's rollback) goes on cold as it was
+// going; null when it was on no way. On its walk or trip to a spot before the arrival: a
+// walker shown on its road (HotActivation) walks the rest of its run from where it stands,
+// any other trip (a town gatekeeper, a scroll, a hot walk) is a cold trip there from where
+// it stands, its arrival raised cold as its trip said. In the town of its town trip
+// (BotTownTravel: plan shopping, preShopLocation where it set out): that town's visit with
+// its way back, which the cold visit carries out and ends. Without these a body cooled in
+// town stands on no spot there and its trip or visit is lost. Only a body whose place is
+// where it stands (`physical`) has a way from there, a walker's run excepted.
+function bodyTrip(session, preserved, merged, physical, timestamp) {
+    const relocation = session.spotRelocation;
+    if (relocation?.coldTrip?.run && !relocation.arrivalPending) return invoke('GameServer/Bot/Population/ColdTrip')
+        .resumeRun({ ...merged, spotId: relocation.spotId }, relocation.coldTrip, timestamp);
+    if (!physical) return null;
+    // A preserved spot's trip goes to a waypoint (a quest NPC), no hunting ground.
+    if (relocation?.spotId && relocation.destination && !relocation.arrivalPending && relocation.preserveSpot !== true) {
+        const spotId = relocation.spotId;
+        return require('./HuntingTravel').beginHuntingTrip({ ...merged, spotId }, { needed: true, mode: 'solo', spotId,
+            regionName: SpotService.findById(spotId)?.name, to: relocation.destination }, timestamp);
+    }
+    if (session.plan !== 'shopping' || !session.preShopLocation) return null;
+    const { locX, locY, locZ } = merged.loc;
+    const town = invoke('GameServer/World/TownRespawn').getClosestTown(locX, locY, locZ);
+    // It keeps the spot it left while in town, as a far bot's visit does (beginMarketTravel).
+    const spotId = session.currentSpot?.id || preserved.spotId || null;
+    return invoke('GameServer/Bot/Goals/GoalExecutor').visitHere({ ...merged, spotId }, town.name, { loc: { ...session.preShopLocation },
+        regionName: SpotService.findById(spotId)?.name || preserved.currentRegion || null, spotId }, timestamp);
+}
+
 // A stale cold snapshot can retain the previous hunting region while its
 // physical coordinate is still on the Giran trading square.  Coordinates are
 // authoritative here: currentRegion is plan context, not a location proof.
@@ -2302,13 +2331,7 @@ const BotLifeState = {
                 // The hot time is lived: the first cold step's length starts now (T126).
                 lastResolvedAt: now()
             });
-            // A walker shown on its road (HotActivation) whose body cools before its walk
-            // ends (a failed spawn's rollback, a cooldown) stays a walker: the rest of its
-            // run from where it stands, its arrival raised cold as its trip said.
-            const walk = session.spotRelocation;
-            const nextState = walk?.coldTrip?.run && !walk.arrivalPending
-                ? invoke('GameServer/Bot/Population/ColdTrip').resumeRun({ ...merged, spotId: walk.spotId }, walk.coldTrip, now())
-                : merged;
+            const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
             return this.upsertState(nextState, reason, { releaseHot: true });

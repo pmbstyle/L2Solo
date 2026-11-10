@@ -239,6 +239,39 @@ try {
         list.set(4200, cooled);
         assert.strictEqual(list.walkers.size, 1, 'on the walker list: a player near its road sees it again');
 
+        // Its body, landed, read a Scroll of Escape to Heine for its held purchase and cools
+        // there: it does that visit cold in Heine and comes back to where it set out, never
+        // a bot in town on no spot that rests and comes back through the gatekeeper with
+        // its visit undone.
+        const heine = TownRespawn.towns.innadril_town;
+        const inHeine = { locX: heine.locX, locY: heine.locY, locZ: heine.locZ };
+        const coolInHeine = async (extra) => {
+            LifeState.upsertState = async (next) => (cooled = next);
+            await LifeState.writeColdRow({ accountId: 'bot_walker_4200', coldLifeState: body.coldLifeState,
+                populationLocationPolicy: body.populationLocationPolicy, ...extra,
+                actor: { fetchId: () => 4200, fetchName: () => 'Walker4200', fetchLevel: () => 40, fetchExp: () => 0,
+                    fetchSp: () => 0, fetchClassId: () => 0, fetchClanId: () => 0, fetchRace: () => 0, fetchKarma: () => 0,
+                    fetchLocX: () => inHeine.locX, fetchLocY: () => inHeine.locY, fetchLocZ: () => inHeine.locZ,
+                    fetchHp: () => 100, fetchMaxHp: () => 100, fetchMp: () => 50, fetchMaxMp: () => 50,
+                    backpack: { fetchItems: () => [] } } }, 'policy');
+            LifeState.upsertState = real.upsert;
+            return cooled;
+        };
+        let inTown = await coolInHeine({ plan: 'shopping', preShopLocation: stands });
+        assert.deepStrictEqual([inTown.activity, inTown.currentRegion, inTown.stats.townVisit?.town], ['shopping', 'Heine', 'Heine'],
+            'it does its visit in Heine');
+        assert.deepStrictEqual([inTown.stats.marketReturn?.loc, inTown.stats.marketReturn?.spotId], [stands, 'dv'],
+            'and goes back to where it set out, its spot');
+        assert.ok(inTown.timing.nextResolveAt <= Date.now(), 'its visit is due now');
+        // Done in town and on its way out through the gatekeeper to its spot when it cools:
+        // it goes on there cold from where it stands.
+        inTown = await coolInHeine({ plan: 'hunting', spotRelocation: { method: 'town_gatekeeper', spotId: 'dv',
+            destination: { ...NEAR_DRAGON_VALLEY }, startedAt: Date.now() } });
+        assert.strictEqual(inTown.activity, 'traveling', 'it travels on to its spot');
+        assert.deepStrictEqual([inTown.stats.travel.from, inTown.stats.travel.to, inTown.stats.travel.spotId,
+            inTown.stats.travel.arrivalEvent], [inHeine, NEAR_DRAGON_VALLEY, 'dv', 'arrived_hunting_ground'],
+            'from Heine to its spot, its arrival there as a trip\'s');
+
         // A long walk (karma: on foot all the way from where it set out). Two walkers of one
         // start at different progress, the player by each: each appears on its own stretch of
         // the road, never both at the start or the end.

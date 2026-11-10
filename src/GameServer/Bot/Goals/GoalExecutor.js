@@ -20,6 +20,19 @@ function marketTown(name = 'Giran') {
         || null;
 }
 
+// The visit of a bot standing in its town already (ColdTrip.townPlan: here), done where it
+// stands: no trip across the town, no second arrival (arrived_town); due now, its way back
+// `marketReturn`. Null when it stands in no town or in another one. Cold (beginMarketTravel)
+// and a body cooled in town on its trip (BotLifeState.writeColdRow) build the visit here.
+function visitHere(state, townName, marketReturn, timestamp = Date.now(), reason = null, extraStats = {}) {
+    const town = marketTown(townName);
+    if (!town || !ColdTrip.townPlan(state, town.center)?.here) return null;
+    const visit = CombinedErrands.visit(state, town.name, timestamp, reason);
+    return { ...visit, activity: 'shopping', currentRegion: town.name,
+        stats: { ...visit.stats, marketReturn, ...extraStats },
+        timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp } };
+}
+
 // A bot with karma travels only to Floran: ColdTrip.townPlan refuses the
 // other towns. The plan's step or errand travels as its decision weighed it
 // (EconomicValuation.visitPays, ColdMarketService.acquire): who sells what
@@ -56,13 +69,12 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         ...(shopTown ? { shopTown } : {})
     });
     const trip = (destination, shopTown = null) => {
-        const visit = CombinedErrands.visit(state, destination.name, timestamp, goal.type);
-        // A bot already in that town (ColdTrip.townPlan: resting there after a visit with no
-        // return) does the step there: no trip across the town, no second arrival (arrived_town).
-        if (ColdTrip.townPlan(state, destination.center)?.here) return { ...visit, activity: 'shopping', currentRegion: destination.name,
-            stats: { ...visit.stats, ...visitStats(shopTown) },
-            timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp } };
-        return ColdTrip.toTown(visit, {
+        // A bot already in that town (resting there after a visit with no return) does the
+        // step there.
+        const { marketReturn, ...extraStats } = visitStats(shopTown);
+        const here = visitHere(state, destination.name, marketReturn, timestamp, goal.type, extraStats);
+        if (here) return here;
+        return ColdTrip.toTown(CombinedErrands.visit(state, destination.name, timestamp, goal.type), {
             reason: buyingGear || buyingMaterial || buyingErrand || improving ? goal.plan.expectedBenefit : 'market_sale_inventory',
             from,
             to: { ...destination.center },
@@ -182,4 +194,4 @@ function finishVisit(state, timestamp, options) {
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
-module.exports = { beginMarketTravel, finishMarketVisit, townLooked, marketTownForSale: MarketTownPolicy.targetTownForSale };
+module.exports = { beginMarketTravel, visitHere, finishMarketVisit, townLooked, marketTownForSale: MarketTownPolicy.targetTownForSale };
