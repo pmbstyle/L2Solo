@@ -325,14 +325,15 @@ function operationName(sql, fallback = 'raw') {
 
 // The writer's named refusals: it refuses an act whose facts moved since its decision (a
 // unit the bot's reserves keep, money an earlier step spent, the economy step's sequence,
-// owner or intent, a recipe, an improvement's source, a board record or a bag line). An
-// outcome: counted apart from failures here, a refused decision at the cold command
-// boundary (ColdSimulationCoordinator). Any other throw, a bare code included (a missing
-// row or template, a broken invariant), is a failure with its stack.
+// owner or intent, a recipe, an improvement's source or the bot row it read, a board
+// record or a bag line). An outcome: counted apart from failures here, a refused decision
+// at the cold command boundary (ColdSimulationCoordinator). Any other throw, a bare code
+// included (a missing row or template, a broken invariant), is a failure with its stack.
 const REFUSALS = new Set(['economy_material_protected', 'economy_funding_changed', 'economy_sequence_changed',
     'economy_owner_changed', 'economy_intent_changed', 'economy_plan_need_changed',
     'craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed', 'craft_product_template_changed',
-    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_missing_materials',
+    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_source_retired',
+    'improvement_missing_materials',
     'soul_crystal_resonance', 'afk_trade_shop_changed', 'afk_trade_stock_changed', 'inventory_item_changed',
     'board_cap_reached', 'not_enough_adena']);
 const refused = error => FailureLog.refusal(error) && REFUSALS.has(error.message);

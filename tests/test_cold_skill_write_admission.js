@@ -266,11 +266,15 @@ async function refusalMetrics(){
     const before=Database.stats(),was=before.operations['bot:improvement']||{refusals:0,failures:0};
     const improve=error=>Database.applyBotImprovement(999999,{kind:'enchant'},{validate(){throw error;}}).then(()=>null,caught=>caught);
     assert.equal((await improve(Error('improvement_missing_materials')))?.message,'improvement_missing_materials');
+    // The bot's row moved after the review (another writer committed it): the cold
+    // improvement keeps its held step, an outcome, not a writer failure.
+    assert.equal((await improve(Error('improvement_source_retired')))?.message,'improvement_source_retired');
     assert.equal((await improve(TypeError('improvement broken')))?.message,'improvement broken');
+    assert.equal((await improve(Error('invalid_bot_henna')))?.message,'invalid_bot_henna');
     const after=Database.stats(),op=after.operations['bot:improvement'];
     assert(op,'the failing operation is counted under its own name');
-    assert.equal(op.refusals-was.refusals,1);assert.equal(op.failures-was.failures,1);
-    assert.equal(after.refusals-before.refusals,1);assert.equal(after.failures-before.failures,1);
+    assert.equal(op.refusals-was.refusals,2);assert.equal(op.failures-was.failures,2);
+    assert.equal(after.refusals-before.refusals,2);assert.equal(after.failures-before.failures,2);
 }
 async function check(name,work){try{await work();console.log('PASS',name);}catch(error){failures.push(name);console.error('FAIL',name,error.stack);}}
 (async()=>{
