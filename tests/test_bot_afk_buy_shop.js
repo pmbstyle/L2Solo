@@ -318,10 +318,56 @@ async function servedStepHoldsBids() {
     console.log('PASS served step holds bids: the build bids, a served step prepares none and writes no board, the next build bids again');
 }
 
+// Bot 2001600 (traced): its build bid 1463 x1310 in Dion; a cold town step that bought
+// nothing, with no build, then posted 1463 x1530 and 1458 x10 in Gludio, bids main read
+// from its card. Such a step reviews the bot's ads on main: it leaves the build's bids as
+// posted, and still takes them back when the goal is a purchase at an NPC (the trip pays
+// from the wallet).
+async function townStepKeepsBids() {
+    const Population = invoke('GameServer/Bot/Population/PopulationService');
+    const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+    const Town = invoke('GameServer/Bot/Economy/ColdMarketService');
+    const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const needs = Needs.needs, errands = Town.finishTownErrands, previousBid = Pricing.bid;
+    const goal = { type: 'buy_craft_material', status: 'active', target: { itemId: 1866, amount: 3 },
+        plan: { expectedBenefit: 'market_buy_craft_material', estimatedCost: 5000, wishKey: 'power:101:7' } };
+    let after = goal;
+    Needs.needs = () => [after];
+    Town.finishTownErrands = async state => state;
+    // The card's view would bid the goal's item: one ask the bot's worth covers.
+    Pricing.bid = (selfId, ctx, { cap }) => cap >= 100 ? { price: 100, count: 3, purchaseCap: 100,
+        pricing: Pricing.lineState(selfId, ctx, { price: 100, storeType: Afk.BUY, enchant: 0, count: 3 }) } : null;
+    try {
+        await bot(9122);
+        await apply(9122, [[1864, 2, 100], [1865, 2, 200]], 0);
+        const posted = () => records(9122).map(record => [record.id, record.revision,
+            record.lines.map(line => [line.selfId, line.count, line.price])]);
+        const held = posted();
+        assert.deepEqual(held.flatMap(row => row[2].map(line => line[0])).sort((a, b) => a - b), [1864, 1865],
+            'fixture: the build\'s bids stand');
+        assert(Market.canTradeRemotely(Life.snapshot(9122), goal), 'fixture: a goal the bot could bid on');
+        const step = () => {
+            const state = Life.snapshot(9122);
+            return Population.finishColdMarketStep(state, null, null, false, { state, closed: true },
+                { state, purchased: false }, after);
+        };
+        await step();
+        assert.deepEqual(posted(), held, 'a town step without a purchase leaves the build\'s bids as posted');
+        after = { ...goal, plan: { ...goal.plan, sourceType: 'npc' } };
+        await step();
+        assert.deepEqual(posted(), [], 'a purchase at an NPC takes the bids back');
+        assert.equal(await wallet(9122), 1000000, 'their escrow is back in the bag');
+    } finally {
+        Needs.needs = needs; Town.finishTownErrands = errands; Pricing.bid = previousBid;
+    }
+    console.log('PASS town step keeps bids: a cold town step without a purchase changes no bid; an NPC purchase takes them back');
+}
+
 async function run() {
     DB.init(); invoke('GameServer/DataCache').init(); await Life.init();
     await heldPurchaseVisit();
     await servedStepHoldsBids();
+    await townStepKeepsBids();
     await bot(9101);
     await apply(9101);
     assert.equal(shop(9101)?.storeType, Afk.BUY);

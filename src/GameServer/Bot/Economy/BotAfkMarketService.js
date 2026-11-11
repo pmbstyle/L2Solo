@@ -387,11 +387,6 @@ async function withdrawSourceInvalidBuyAds(ownerId) {
     return sourceChanged;
 }
 
-// The buy side of a review: the bot's buy ads follow its goal as the author's
-// single WTB order did. A buy goal the bot can trade remotely gets its ad
-// (replacing another one); a buy goal it travels for takes the ads back
-// first (the trip pays from the wallet); without a buy goal the ads stand
-// while the needs still ask for their items (standingBuyNeed), else go.
 async function reduceStandingBids(state, ads, { beforeWrite } = {}) {
     const hour = Number(Packet.hourAdena(state.stats?.money));
     if (state.phase !== 'cold' || !ads.length || !Number.isFinite(hour) || hour < 0
@@ -438,15 +433,19 @@ async function reviewPurchaseLimits(state, options = {}) {
     }
 }
 
+// The buy side of a review on main (a cold town step that bought nothing, a trip,
+// a remote sale): it never bids. Bids are the economy build's answer, posted from its
+// plan (executePlan); between builds they stand. A review only takes ads back: a buy
+// goal the bot travels for (an NPC or a listing: the trip pays from the wallet) or
+// cannot bid on takes them back first; without a buy goal they stand while the needs
+// still ask for their items (standingBuyNeed), else go.
 async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const checked = await reviewPurchaseLimits(state);
     if (checked.reason) return checked;
     state = checked.state;
     const ads = buyAds(ownerId), corrected = checked.changed;
-    // Only the core's buy step opens or widens an ad (MVP-1): a goal without
-    // a buy side never borrows the first watched item as a guessed target.
-    const side = desiredSide(goal);
+    if (!ads.length) return { state, changed: corrected };
     const lines = linesOf(ads);
     const retained = new Set(require('./TradeIntent').retainedProjectIntents(state, { moneyPrice: 1 }, () => 1)
         .map(row => Number(row.itemId)));
@@ -459,29 +458,11 @@ async function reconcileBuyAds(state, goal, candidates) {
         }
         return { state: current, changed };
     };
-    if (side !== AfkTrade.BUY) {
-        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: corrected };
-        if (state.phase !== 'cold') return { state, changed: false };
-        return withdrawUnrelated();
-    }
-    if (!canTradeRemotely(state, goal)) {
-        if (!ads.length || state.phase !== 'cold') return { state, changed: false };
-        return withdrawUnrelated();
-    }
-    // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
-    const escrow = buyOrderEscrow(ownerId);
-    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
-        { money: BuyAdPolicy.goalMoney(state, goal, escrow) });
-    const town = buyAdTown(state, ads, wanted);
-    if (!wanted.length) return ads.length ? withdrawUnrelated() : { state, changed: false };
-    let published;
-    try {
-        published = await publishBuyAds(ownerId, ads, wanted, town, null, desiredSide(goal));
-    } catch (error) {
-        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
-        throw error;
-    }
-    return { ...await finishPublish(ownerId, state, published.shop), changed: corrected || published.changed };
+    const side = desiredSide(goal);
+    if (side === AfkTrade.BUY ? canTradeRemotely(state, goal) : !side && standingBuyNeed(state, lines, candidates))
+        return { state, changed: corrected };
+    if (state.phase !== 'cold') return { state, changed: false };
+    return withdrawUnrelated();
 }
 
 // Retain authored prices, then divide prepared needs between the physical
@@ -1175,7 +1156,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { executePlan, applyReview, buyOrderEscrow, stepBidMoney, freeStepBids, buyLines, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
+module.exports = { executePlan, applyReview, buyOrderEscrow, stepBidMoney, freeStepBids, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     planBidRefused: () => ({ ...planBidRefused }),
