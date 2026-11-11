@@ -197,8 +197,12 @@ const economyDiagnostics = require('../Economy/EconomyDiagnostics');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const Trace = require('../DecisionTrace');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
+// The board's situations on a bot (the buyers' offer_posted, the own lines' line_undercut
+// and goal_done:line), far or near: the kernel's situationWake; a near body's is answered by
+// its near decision (kernel.states.set below).
+const boardWake = (ownerId, name, payload = null) => kernel?.situationWake(ownerId, name, payload) === true;
 const buyerWaiters = new MarketBuyerWaiters({
-    wake: (id, offer) => kernel?.stepWake(id, 'offer_posted', offer) === true,
+    wake: (id, offer) => boardWake(id, 'offer_posted', offer),
     capped: () => Situations.note('board:wait:capped')
 });
 // The bot's board wants follow its held card (record.wishAdvisory): a card held anew (a
@@ -939,18 +943,6 @@ function changedItems(previous, next) {
         occupationPlanner.sourceChanged(id); occupationPlanner.groupChanged(MarketCounters.counterOf(id));
     }
 }
-// An own line's situation (line_undercut, goal_done:line) on its bot owner: a far
-// bot hears it at its next step (kernel.stepWake); a near body's mind, the worker's,
-// takes it now and the body's decision answers it on the post it asks.
-function lineWake(ownerId, name) {
-    const entry = kernel?.states.get(ownerId);
-    if (entry?.state.phase !== 'hot') return kernel?.stepWake(ownerId, name) === true;
-    const stats = Situations.raise({ ...entry.state.stats }, name, null, Situations.bodyPlace(entry.state), ownerId);
-    if (stats.situationSeq === entry.state.stats?.situationSeq) return false;
-    entry.state = { ...entry.state, stats };
-    occupationOwnerChanged(ownerId);
-    return true;
-}
 // A bot's buy-order escrow: the sum of its board records' escrow (row[9]),
 // kept as the board rows apply (BotAfkMarketService.buyOrderEscrow on main).
 const escrowByRecord = new Map(), escrowByOwner = new Map();
@@ -1034,7 +1026,7 @@ tables.watch('board', {
         if (!boardReplacing && tables.ready('board')) {
             const record = recordOf(row);
             buyerWaiters.recordChanged(record, previous);
-            lineEvents(record, previous, boardIndex, lineWake, () => Situations.note('board:undercut:capped'));
+            lineEvents(record, previous, boardIndex, boardWake, () => Situations.note('board:undercut:capped'));
         }
     },
     remove: (key) => {
@@ -2223,13 +2215,15 @@ function startKernel(config = {}) {
     const nativeClear = kernel.states.clear.bind(kernel.states);
     // ownOutput (kernel upsert): the state is the step's own output echoed back
     // by main ('commit' or 'review'); the step already built its economy on it.
+    // 'situation' (kernel situationWake): another owner's raise on a near body's
+    // mind, no post (nearEvents reads posts); its near decision is asked below.
     kernel.states.set = (id, entry, ownOutput = null) => {
         const previousEntry = kernel.states.get(Number(id)), previous = previousEntry?.state;
         // A new life starts from no record (activations fence the bot first),
         // so the raises applied are this life's.
         // A bot that leaves the far simulation sends no arrival outcome after it.
         if (entry.state.phase !== 'cold') outbox?.drop(id, 'stale');
-        if (previous && previous !== entry.state && entry.state.phase === 'hot') {
+        if (previous && previous !== entry.state && entry.state.phase === 'hot' && ownOutput !== 'situation') {
             nearEvents(id, previous, entry, Number(previousEntry.raiseSeq || 0));
             nearArrival(id, previous, entry.state);
         }
@@ -2260,7 +2254,7 @@ function startKernel(config = {}) {
             }
             // Own outputs are not inputs: no page for the own commit or
             // review; economyPending stays for main's next write.
-            if (ownOutput && entry.economyPending) economyDiagnostics.count('occupation', 'page',
+            if (ownOutput && ownOutput !== 'situation' && entry.economyPending) economyDiagnostics.count('occupation', 'page',
                 ownOutput === 'review' ? 'own_review_skipped' : 'own_commit_skipped');
             occupationOwnerChanged(id, !ownOutput && Boolean(entry.economyPending));
         }

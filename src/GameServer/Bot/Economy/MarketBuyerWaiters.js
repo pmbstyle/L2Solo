@@ -4,18 +4,18 @@
 // registered while the card is held (register, from the worker's held card: a build
 // taken, a card restored on a record's first row) and dropped with it, no clock. A new
 // SELL line, or a cheaper one, wakes at most five buyers of its item whose budget
-// reaches its price (recordChanged → wake: offer_posted, which wakes the build); a
-// woken want leaves the index until the build it wakes holds its next card, a want
-// whose wake is refused (a bot that cannot take it now) stays. At most MAX_WANTS per
-// bot (the rest counted: board:wait:capped). Beside it the owners' own lines
-// (lineEvents): the same record change raises their own-line situations.
+// reaches its price, far and near together (recordChanged → wake: offer_posted, which
+// wakes the build); a woken want leaves the index until the build it wakes holds its
+// next card, a want whose wake is refused (a bot that cannot take it now) stays. At most
+// MAX_WANTS per bot (the rest counted: board:wait:capped). Beside it the owners' own
+// lines (lineEvents): the same record change raises their own-line situations.
 const MAX_WANTS = 8;
 const WAKES_PER_RECORD = 5;
 
 // Each item keeps an indexed max-heap of budgets. Publication visits only
 // this owner's wants; a new record wakes at most five: a want refused (its own
-// record's owner, a near, fenced or failed bot) is passed over without spending
-// one, so buyers below it still hear the offer.
+// record's owner, a bot that cannot take it now: the wake's false) is passed over
+// without spending one, so buyers below it still hear the offer.
 class ItemWaiters {
     constructor() { this.nodes = []; }
     before(a, b) { return a.budget > b.budget || (a.budget === b.budget && a.sequence < b.sequence); }

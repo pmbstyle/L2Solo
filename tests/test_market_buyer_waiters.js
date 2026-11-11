@@ -1,13 +1,15 @@
 'use strict';
 // The board's buyers: a bot's held card registers what it wants from player supply
 // (its watch rows), a new or cheaper SELL line wakes at most five buyers of its item
-// within their budgets (offer_posted at the bot's next solo step), a woken want waits
-// for the next card and a refused one stays. No clock.
+// within their budgets, far and near together (offer_posted at a far bot's next solo
+// step, on a near body's mind at once, which asks its near decision), a woken want
+// waits for the next card and a refused one stays. No clock.
 require('../src/Global');
 const assert = require('node:assert/strict');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { MarketBuyerWaiters, MAX_WANTS, lineEvents } = require('../src/GameServer/Bot/Economy/MarketBuyerWaiters');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const Situations = require('../src/GameServer/Bot/Situations');
 
 async function main() {
     const now = 100000;
@@ -16,7 +18,13 @@ async function main() {
         resolveSolo: () => ({ patch: {}, events: [], materialize: { items: [] }, nextResolveAt: now + 60000 }),
         emit: () => true });
     let capped = 0;
-    const waiters = new MarketBuyerWaiters({ wake: (id, offer) => kernel.stepWake(id, 'offer_posted', offer), capped: () => capped++ });
+    // The worker's wiring: the kernel delivers the offer far or near; a near body's record is
+    // replaced through the states' setter as a situation (written: the worker's observer asks
+    // its near decision on it).
+    const written = [], set = kernel.states.set.bind(kernel.states);
+    kernel.states.set = (id, entry, how = null) => { if (how === 'situation') written.push(Number(id)); return set(id, entry, how); };
+    const waiters = new MarketBuyerWaiters({ wake: (id, offer) => kernel.situationWake(id, 'offer_posted', offer),
+        capped: () => capped++ });
     kernel.buyerEvents = waiters;
     const state = (id, overrides = {}) => ({ characterId: id, phase: 'cold', activity: 'hunting', level: 1,
         adena: 2000, inventory: {}, vitals: { hp: 100 }, stats: {},
@@ -33,7 +41,6 @@ async function main() {
     try {
         for (let id = 1; id <= 12; id++) { kernel.upsert(state(id)); waiters.register(id, [{ itemId: 99, budget: 1500 }]); }
         for (let id = 100; id < 104; id++) { kernel.upsert(state(id)); waiters.register(id, [{ itemId: 1000 + id, budget: 1500 }]); }
-        kernel.upsert(state(21, { phase: 'hot' })); waiters.register(21, [{ itemId: 99, budget: 1500 }]);
         assert.deepEqual(publish(record(1)), [1, 2, 3, 4, 5], 'a new offer wakes five buyers of its item');
         assert.deepEqual(kernel.states.get(1).stepWake, { seq: 1, raises: { offer_posted: { itemId: 99, price: 100 } },
             heard: { offer_posted: 1 } }, 'raised at the next step: the offer');
@@ -44,13 +51,36 @@ async function main() {
         assert.deepEqual(publish(record(2, 10000)), [], 'an offer above every budget wakes none');
         assert.deepEqual(publish(record(3, 100, 10, [{ lineId: 1, selfId: 99, count: 5, price: 100 },
             { lineId: 2, selfId: 1100, count: 5, price: 100 }])), [11, 12, 100], 'one record wakes at most five');
-        assert.deepEqual(publish(record(4, 100, 10, [{ lineId: 3, selfId: 99, count: 5, price: 100 }])), [],
-            'a hot body is not woken: its wants are not a far bot\'s');
-        assert(waiters.owners.has(21), 'a refused wake keeps the want: it wakes once the bot can take it');
-        for (let id = 22; id <= 27; id++) { kernel.upsert(state(id, { phase: 'hot' })); waiters.register(id, [{ itemId: 77, budget: 5000 }]); }
+        // A near body holding its build (nothing woken), a stall's refused quote of the item and an item mark.
+        kernel.upsert(state(21, { phase: 'hot', activity: 'shopping', stats: { woken: 0, wishSections: {}, earning: {},
+            gearMarks: [{ key: 5 }, { key: 99, town: 'Giran', price: 120 }] } }));
+        waiters.register(21, [{ itemId: 99, budget: 1500 }]);
+        const body = kernel.states.get(21).state;
+        assert.deepEqual(publish(record(4, 100, 10, [{ lineId: 3, selfId: 99, count: 5, price: 100 }])), [21],
+            'a near body hears the offer its held build wants');
+        const near = kernel.states.get(21).state.stats;
+        assert.equal(body.stats.woken, 0, 'its state is replaced, never edited in place');
+        assert(Situations.woken(near, 'build'), 'raised on its near mind now: its build is woken');
+        assert.deepEqual(near.gearMarks, [{ key: 5 }], 'the refused quote is forgotten (the stall may stand again), the item mark stays');
+        assert.deepEqual(written, [21], 'written as a situation: its near decision is asked');
+        assert(!kernel.states.get(21).stepWake, 'no far wake: a body hears it on its mind');
+        assert(!waiters.owners.has(21), 'its want leaves the index until its next card');
+        // Near bodies whose build is already woken (a decision pending: the raise is no news)
+        // and a bot neither far nor near refuse the offer: they keep their wants and do not use
+        // up the other buyers' wakes.
+        for (let id = 22; id <= 26; id++) { kernel.upsert(state(id, { phase: 'hot' })); waiters.register(id, [{ itemId: 77, budget: 5000 }]); }
+        kernel.upsert(state(27, { phase: 'activating' })); waiters.register(27, [{ itemId: 77, budget: 5000 }]);
         kernel.upsert(state(28)); waiters.register(28, [{ itemId: 77, budget: 1500 }]);
         assert.deepEqual(publish(record(8, 100, 10, [{ lineId: 4, selfId: 77, count: 5, price: 100 }])), [28],
-            'near bots that cannot take the offer do not use up the far buyers\' wakes');
+            'bots that cannot take the offer do not use up the far buyers\' wakes');
+        assert.deepEqual(written, [21], 'a refused near raise writes nothing and asks no decision');
+        for (let id = 22; id <= 27; id++) assert(waiters.owners.has(id), 'a refused wake keeps the want: it wakes once the bot can take it');
+        // A near body's wake is one of the record's five.
+        kernel.upsert(state(31, { phase: 'hot', stats: { woken: 0, wishSections: {}, earning: {} } }));
+        waiters.register(31, [{ itemId: 66, budget: 3000 }]);
+        for (let id = 32; id <= 37; id++) { kernel.upsert(state(id)); waiters.register(id, [{ itemId: 66, budget: 1500 }]); }
+        assert.deepEqual(publish(record(9, 100, 10, [{ lineId: 5, selfId: 66, count: 5, price: 100 }])), [31, 32, 33, 34, 35],
+            'at most five a record, near and far together');
         // A woken want waits for the next build: the same offer again wakes nobody.
         assert.deepEqual(publish(record(5, 80, 10)), [], 'woken wants left the index until the next build');
         waiters.register(1, [{ itemId: 99, budget: 1500 }]);

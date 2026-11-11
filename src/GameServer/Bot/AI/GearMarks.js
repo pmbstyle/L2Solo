@@ -28,11 +28,10 @@
 // seller did not refuse, their facts have other owners. The build's purchase reader and every
 // buyer skip that offer (OfferQuery.admits), so the build that failure wakes moves to the next
 // seller or holds rather than taking the same step again; the gear plan does not read it. A
-// quote mark lives as an item mark does (LIFETIME); for a cold bot it ends too when a seller
-// posts an offer its held build wants (offer_posted, QUOTE_LIFETIME: the stall may stand
-// again); a hot bot hears no offer_posted, its quote marks last until LIFETIME. An offer at
-// another price or town is another quote. Our choice after C4 play: a player turned away at a
-// stall tries the next one, and looks again when someone shouts WTS.
+// quote mark lives as an item mark does (LIFETIME); it ends too when a seller posts an offer
+// its held build wants (offer_posted, far or near: QUOTE_LIFETIME, the stall may stand
+// again). An offer at another price or town is another quote. Our choice after C4 play: a
+// player turned away at a stall tries the next one, and looks again when someone shouts WTS.
 // [{ key } | { key, town, price }]: at most MAX_MARKS item marks and MAX_QUOTES quote marks,
 // each kind dropping only its own oldest (dropped('gear_mark' | 'quote_mark'), counted by the
 // caller), so refused quotes never push out an item mark. A quote the cap drops marks its item

@@ -153,8 +153,9 @@ const SITUATIONS = Object.freeze({
     'goal_affordable:potions': link(NOW),
     'goal_affordable:focus': link(NOW),
     // A board offer its held build wants (MarketBuyerWaiters: a new SELL line, or a cheaper
-    // one, within the want's budget), raised at the bot's next step (payload { itemId,
-    // price }): it answers the trade it hears, as a C4 player answers a WTS shout.
+    // one, within the want's budget), raised at a far bot's next step, on a near body's mind
+    // at once (payload { itemId, price }): it answers the trade it hears, as a C4 player
+    // answers a WTS shout.
     offer_posted: link(NOW),
     // Its own board lines (the worker's board diff): a SELL line of the same item posted
     // or repriced below its own in its town (an unplaced ad counts in every town), as a

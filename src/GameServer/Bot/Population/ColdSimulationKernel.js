@@ -1022,7 +1022,8 @@ class ColdSimulationKernel {
 
     // entry.ownOutput: the state is this thread's own output echoed back by
     // main, 'commit' (onCommitAck: the proposal) or 'review' (completeCommand:
-    // the review that ran the plan sent), handed to states.set for its observers.
+    // the review that ran the plan sent), handed to states.set for its observers
+    // (beside 'situation': situationWake's raise on a near body).
     upsert(entry = {}) {
         let state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
@@ -1240,6 +1241,24 @@ class ColdSimulationKernel {
             this.raiseWakeups.add(id);
             if (!this.busy(id)) this.requeue(id, this.now());
         }
+        return true;
+    }
+    // A situation another owner raises on a bot, far or near (the worker's board diff:
+    // offer_posted on a buyer, line_undercut and goal_done:line on an own line's owner): a far
+    // bot hears it at its next step (stepWake: refused while this kernel stops or the bot's
+    // checkpoint failed); a near body's mind, this thread's, takes it now at the body's place
+    // (Situations.raise: the decisions it wakes, the quote marks it forgets), its record
+    // replaced with the raised mind and handed to the states' observers as 'situation', not a
+    // body's post (the worker asks the body's near decision, which answers it on the post it
+    // holds). True when taken; false for no record, a far refusal, or a raise that is no news
+    // (what it wakes already woken, no mark to forget).
+    situationWake(characterId, name, payload = null) {
+        const id = Number(characterId), record = this.states.get(id), state = record?.state;
+        if (state?.phase !== 'hot') return this.stepWake(id, name, payload);
+        Situations ||= require('../Situations');
+        const stats = Situations.raise({ ...state.stats }, name, payload, Situations.bodyPlace(state), id);
+        if (stats.situationSeq === state.stats?.situationSeq) return false;
+        this.states.set(id, { ...record, state: { ...state, stats } }, 'situation');
         return true;
     }
     // The step wake a committed step raised is answered (its seq): the names heard
