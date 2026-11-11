@@ -242,7 +242,7 @@ function assessment(members, spot, { timestamp = Date.now(), maxFightSeconds = 7
         fail('raid_consumables_funds');
     return result({ seconds, grossDps, regen, shotPlans, healing, healingRequired, defense,
         ...(supplies ? { supplies } : {}),
-        ...(!reasons.length ? { kits: members.map(s => [id(s), Combat.kitHash(Combat.combatView(s)).join(':')]) } : {}) });
+        ...(!reasons.length ? { kits: members.map(s => [id(s), Combat.kitEvents(s).join(':')]) } : {}) });
 }
 
 module.exports = { prepared, fightersFor, tankArmor, equipmentFailures, attack, guardProfiles, damageEstimate, assessment };

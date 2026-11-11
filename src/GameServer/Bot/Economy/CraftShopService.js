@@ -308,6 +308,31 @@ function profileFor(state = {}) {
     };
 }
 
+// A crafter's service listing, the workshop decision's offer (the worker when it takes
+// the decision; main at a station's seeding): the recipes of its book (ids or { recipeId })
+// it can craft, a station its own list only, at most MAX_PUBLIC_RECIPES. Each fee is the
+// market pricing's (MarketPricing.serviceFee over rivalFees(recipeId): every rival's
+// listed fee) and a station's its fixed fee; an entry keeps its own fills and earnings.
+// The record the bot holds (stats.workshop): the one it holds when nothing moved, none
+// when it offers nothing and held none.
+function listing(state, book, rivalFees = () => []) {
+    const held = state.stats?.workshop, previous = held?.entries || [];
+    const prior = new Map(previous.map(entry => [Number(entry.recipeId), entry]));
+    const fees = isStationService(state) ? new Map(profileFor(state).entries.map(entry => [Number(entry.recipeId), entry.price])) : null;
+    const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const entries = (book || []).map(row => C4RecipeItems.resolveByRecipeId(Number(row?.recipeId ?? row)))
+        .filter(recipe => recipe && canCraft(state, recipe) && (!fees || fees.has(Number(recipe.recipeId))))
+        .slice(0, MAX_PUBLIC_RECIPES).map(recipe => {
+            const entry = prior.get(Number(recipe.recipeId)), fee = fees?.get(Number(recipe.recipeId));
+            return { ...entry, recipeId: recipe.recipeId, price: fees ? fee : Pricing.serviceFee(recipe, entry, rivalFees(recipe.recipeId)),
+                firstPrice: fees ? fee : productPrice(recipe) };
+        });
+    if (!entries.length && !previous.length) return held;
+    if (entries.length === previous.length && entries.every((entry, i) => Number(entry.recipeId) === Number(previous[i].recipeId)
+        && ['price', 'firstPrice', 'earned', 'fills'].every(key => Number(entry[key] || 0) === Number(previous[i][key] || 0)))) return held;
+    return { title: `${state.name}'s workshop`, entries, town: state.currentRegion, loc: state.loc };
+}
+
 function ensureRecipes(characterId, profile) {
     const recipeIds = [...new Set((profile?.entries || []).map((entry) => Number(entry.recipeId)).filter(Number.isSafeInteger))];
     return recipeIds.reduce((chain, recipeId) => (
@@ -320,6 +345,7 @@ function ensureRecipes(characterId, profile) {
 
 module.exports = {
     productPrice,
+    listing,
     MAX_PUBLIC_RECIPES,
     GiranCraftStalls,
     CraftStations,

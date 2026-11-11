@@ -1,10 +1,11 @@
 const Policy = require('../../Social/ResourceCompetitionPolicy');
 const Visible = require('../../Social/VisibleStrength');
+const { coldStanding } = require('../../Social/PvpAggression');
 const Pvp = require('./ColdPvpResolver');
 
 // A forecast lives for a few seconds. Reassess it against current participants
 // before taking leases; never turn ordinary state writes into cancelled meetings.
-// The worker decided the contest (ColdCompetitionMonitor) on the state, party and
+// The worker decided the contest (SpotContest, at the arrival) on the state, party and
 // memory revisions the event carries: while main holds the same ones, that
 // verdict stands as delivered. Only a participant written since the scan is
 // decided again here, on the original draws, so a retry cannot fish for a PvP roll.
@@ -49,14 +50,14 @@ function refresh(event, { life, parties, memory, personaFor }, timestamp) {
         let index = 0;
         // Carried willingness replaces can-I-win, so the sides' strength is not read.
         const carried = Array.isArray(event.willing);
-        const look = side => carried ? side.participant : { ...side.participant,
-            own: Pvp.ownSide(side.members, timestamp), seen: Visible.stateSide(side.members, timestamp) };
+        const look = side => carried ? { ...side.participant, ...coldStanding(side.state, timestamp) } : { ...side.participant,
+            own: Pvp.ownSide(side.members, timestamp), seen: Visible.stateSide(side.members, timestamp), ...coldStanding(side.state, timestamp) };
         decision = Policy.decide({ pressure: event.pressure, actor: look(a), peer: look(b),
             actorPersona: personaFor(a.state), peerPersona: personaFor(b.state),
             towardPeer: ab, towardActor: ba, rng: () => rolls[index++], key: event.key, willing: event.willing });
         if (decision.action !== 'contest') return { reason: 'decision_changed', decision: decision.action, recomputed: true };
     }
-    // Revenge has its own saved roll and is re-evaluated by ColdPartyConflict.
+    // A meeting (revenge, a clan war) has its own saved roll and is re-evaluated by ColdPartyConflict.
     return { event: { ...event, ...decision, actor: a.participant, peer: b.participant }, refreshed: true, recomputed: event.action === 'contest' };
 }
 

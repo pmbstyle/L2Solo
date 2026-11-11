@@ -82,7 +82,7 @@ function normalAttackMs(bot) {
 
 // MP a resting bot wins back per ms: the adapter's cold rest rate, else the
 // hot Automation's regeneration per its 3 s tick in the faster posture
-// (seated, or standing: RestPolicy.sitsToRest, user 10-29).
+// (seated, or standing: RestPolicy.sitsToRest).
 function seatedMpPerMs(bot) {
     if (bot?.fetchSeatedMpPerMs) return bot.fetchSeatedMpPerMs();
     const amount = (options) => Number(bot?.automation?.fetchRevMpAmount?.(bot, options)) || 0;
@@ -94,13 +94,13 @@ function seatedHpPerMs(bot) {
     return Math.max(0, Number(bot?.automation?.fetchRevHpAmount?.(bot, { seated: true })) || 0) / Formulas.REGEN_TICK_MS;
 }
 
-// The seated ms one spent MP costs a bot that sits for mana (T100), else 0.
+// The seated ms one spent MP costs a bot that sits for mana, else 0.
 function restMsPerMp(bot, party = false) {
     const seated = seatedMpPerMs(bot);
     return seated > 0 && RestPolicy.sitsForMana(bot, party) ? restShare(bot.fetchMp?.(), bot.fetchMaxMp?.()) / seated : 0;
 }
 
-// T100 (docs/game-decisions.md, Bot behaviour): MP is priced in rest time.
+// MP is priced in rest time.
 // A damage skill's worth is its damage, capped at the target's HP, per ms of
 // its cast plus the seated rest that wins its MP back; the alternative is the
 // normal attack's hit, capped alike, per attack time - nothing for a staff
@@ -311,7 +311,7 @@ function select(bot, target, role, policy = {}) {
 
     const decisions = candidates.map((skill) => evaluate(bot, target, skill, role, policy)).filter(Boolean);
     if (!pricesMana(policy, target)) return decisions.sort((a, b) => b.score - a.score)[0] || null;
-    // Priced (T100): the paying skill with the best damage rate; a skill
+    // Priced: the paying skill with the best damage rate; a skill
     // without a price (no numbers) keeps its place by score after them.
     const context = decisions.length ? priceContext(bot, target, policy) : null;
     const priced = decisions.map((decision) => ({ decision, verdict: manaPrice(context, decision) }))

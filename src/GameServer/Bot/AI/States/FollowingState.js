@@ -185,9 +185,7 @@ function companionTownErrand(session, bot, player, BotAI) {
         };
     }
 
-    const equipmentRetryReady = timestamp >= Number(session.companionEquipmentRetryAt || 0);
-    if (equipmentRetryReady
-        && timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
+    if (timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
         session.lastCompanionEquipmentCheckAt = timestamp;
         const purchase = CompanionEquipmentShopping.planErrand(session, bot, town);
         if (purchase) return purchase;
@@ -1274,7 +1272,7 @@ const FollowingState = {
 
     // Vitals, return after support, resting with the leader, low HP/MP recovery.
     tickRest(ctx) {
-        const { session, bot, BotAI, playerSession, player, role, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
+        const { session, bot, BotAI, playerSession, player, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
         const botVitals = {
             hpRatio: ratio(bot.fetchHp(), bot.fetchMaxHp()),
             mpRatio: ratio(bot.fetchMp(), bot.fetchMaxMp())
@@ -1337,27 +1335,6 @@ const FollowingState = {
         // make the puller sit in front of the mob it is returning with.
         const needsMpRecovery = BotRoles.shouldRestForMana(bot) && botVitals.mpRatio < 0.15;
         if (!partyThreat && !leaderTargetId && !isActiveBotPuller && (botVitals.hpRatio < 0.30 || needsMpRecovery)) {
-            // Do not leave a hunting field just to recover.  This shortcut is
-            // available only when the companion is already in a starter town
-            // with a Newbie Guide, where characters through level 20 can
-            // recover and renew their blessing before returning to the party.
-            if (HotTownRebuff.recoveryGuide(session, bot, BotAI)) {
-                beginNewbieGuideVisit(session, bot, playerSession, role, hotTownRebuffVisit);
-                recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'newbie_guide_recovery');
-                BotPartyChat.announce(session, {
-                    priority: 'coordination',
-                    key: `recover-guide:${bot.fetchId()}`,
-                    templates: [
-                        'HP/MP is low. Recovering at the Newbie Guide, then returning.',
-                        'Short Newbie Guide stop for HP/MP; I will return after.',
-                        'I need a quick recovery at the guide before we continue.',
-                        'Using the town stop to restore HP/MP, then I am back.',
-                        'Low on resources — heading to the guide for a brief recovery.'
-                    ]
-                });
-                return true;
-            }
-
             session.plan = 'resting';
             delete session.explicitRestOrder;
             session.currentTargetId = undefined;

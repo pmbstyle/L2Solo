@@ -40,7 +40,7 @@ function ownSide(states, timestamp, coarse = false) {
         strength: states.reduce((sum, s) => sum + condition(s) + Visible.statePeople(s, timestamp) - 1, 0) };
 }
 
-// The start gate (U26, the user's choice, 2026-10-05). Character already decided
+// The start gate (the user's choice, 2026-10-05). Character already decided
 // at the author's escalation (the PvP intent) or revenge roll; here the opener
 // only declines when it clearly looks weaker: visibly worse gear, fewer people,
 // or its own condition at least CLEAR_GAP below the other side's seen one
@@ -76,7 +76,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                 kills: [], attacks: 0, skills: 0, heals: 0, preparations: 0 };
         }));
     // Resource retaliation opens on side 1; an independent grievance opens on side 0.
-    // Can I win? The opener knows its own side exactly, the other only by look (U26).
+    // Can I win? The opener knows its own side exactly, the other only by look.
     if (!step?.resuming) {
         const involved = side => fighters.filter(f => f.side === side).map(f => f.state);
         const weaker = clearlyWeaker(involved(openingSide), involved(1 - openingSide), timestamp);

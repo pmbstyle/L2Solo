@@ -201,7 +201,7 @@ Potions.tryUseInCombat = () => false;
     assert(own.pendingPvpProvocation && !own.pvpRevenge, 'a busy conflict budget queues the warning and holds the attack');
     const packetCount = own.packets.length;
     now += Chat.AREA_MS + 1;
-    assert(Revenge.tryStart(own, now, () => { throw new Error('do not reroll a queued decision'); }));
+    assert(Revenge.flushPending(own, now), 'the queued warning goes when the budget allows, on its own decision');
     assert.strictEqual(own.packets.length, packetCount + 1);
     assert(own.pvpRevenge && !own.pendingPvpProvocation);
     Defense.clear(own);

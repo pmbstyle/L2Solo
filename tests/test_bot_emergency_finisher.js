@@ -151,8 +151,9 @@ session.currentTargetId = 9999;
 assert.strictEqual(Finisher.evaluate(session, bot, mob), null, 'a cast on another target cannot be counted as finishing this mob');
 bot.state.fetchCasts = () => false;
 session.currentTargetId = mob.fetchId();
+// The body stands on catacomb ground (the spot under it).
 session.currentSpot = { id: 'test_catacomb', tags: ['catacomb'], minLevel: 1, maxLevel: 10 };
-invoke('GameServer/Bot/AI/SpotService').findCurrentSpot = () => null;
+invoke('GameServer/Bot/AI/SpotService').findCurrentSpot = () => session.currentSpot;
 Hunting.tick(session, bot, output, BotAI);
 assert.strictEqual(session.plan, 'fleeing', 'unsafe hunting ground wins over a lethal skill');
 Math.random = originalRandom;

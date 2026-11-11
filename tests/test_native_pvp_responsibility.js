@@ -142,5 +142,50 @@ try {
     assert.strictEqual(Facts.assess(bot, player, later).responsibility, 'unknown');
     assert(Threats.record(player, bot, later));
     assert.strictEqual(Facts.assess(bot, player, later).responsibility, 'aggression', 'after inactivity a new first action starts a new conflict');
-    console.log('Native PvP responsibility: real damage, misses/control, retaliation, party defense, third parties, aid, summons, managed sides, expiry and bounded writes passed');
+    // Who opened a fight reaches its kill and its death: A strikes B unprovoked, B kills A
+    // in defense. The kill's journal row says B defended; A's death trace names A as opener.
+    {
+        const fs = require('fs'), vm = require('vm'), { createRequire } = require('node:module');
+        const traces = [], journal = invoke('PvpJournal');
+        const filename = require.resolve('../src/GameServer/Actor/Generics/Die.js');
+        const dieDeps = {
+            'GameServer/Network/Response': { die: () => Buffer.from([0]) },
+            'GameServer/Effects/EffectStore': { prune() {} }, 'GameServer/Effects/EffectTicker': { clearAll() {}, refreshEffects() {} },
+            'GameServer/Actor/Generics/CalculateStats': () => {}, 'GameServer/Skills/ChargeLifecycle': { clear() {} },
+            'GameServer/Clan/ClanAllianceService': { onDeath() {} },
+            'GameServer/Bot/Population/BotLifeState': { cachedState: () => null, notifyNearFacts() {} },
+            'GameServer/Bot/DecisionTrace': { on: () => true, record: r => traces.push(r) },
+            'GameServer/Bot/AI/PartyAwareness': { npcsAttackingActor: () => [] },
+            'GameServer/Bot/AI/BotPvpThreats': Threats, 'GameServer/Social/PvpResponsibility': Facts,
+            'GameServer/Bot/AI/BotEventJournal': { record() {} }
+        };
+        const box = { exports: {} };
+        vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { module: box, require: createRequire(filename),
+            invoke: name => dieDeps[name] || {}, Buffer });
+        patch(invoke(path.actor), 'die', box.exports);
+        for (const key of ['userInfo', 'charInfo', 'relationChanged']) patch(invoke('GameServer/Network/Response'), key, () => Buffer.from([0]));
+        patch(invoke('Database'), 'updateCharacterPvpPkKarma', () => Promise.resolve());
+        patch(invoke('GameServer/Social/CombatHelpMemory'), 'recordDefeat', () => {});
+        const fighter = () => {
+            const a = Object.assign(actor(), { pvp: 0, pk: 0, karma: 0, fetchLevel: () => 40, isDead: () => false, destructor() {},
+                fetchKarma() { return this.karma; }, setKarma(v) { this.karma = v; }, fetchPk() { return this.pk; }, setPk(v) { this.pk = v; },
+                fetchPvp() { return this.pvp; }, setPvp(v) { this.pvp = v; }, setPvpFlag(v) { this.flag = v; } });
+            Object.assign(a.state, { destructor() {}, setDead() {} });
+            Object.assign(a.session, { dataSendToMe() {}, dataSendToOthers() {}, dataSendToMeAndOthers() {} });
+            return a;
+        };
+        const opener = fighter(), defender = fighter();
+        hit(opener, defender);
+        opener.flag = 1; opener.hp = 1;
+        hit(defender, opener);
+        const kill = journal.snapshot().findLast(row => row.source === 'hot' && row.targetId === opener.fetchId());
+        assert.strictEqual(kill?.initiatorId, defender.fetchId(), 'the defender\'s kill is journalled');
+        assert.strictEqual(kill.reason, 'defense:unprovoked', 'the kill row says the killer defended against an unprovoked opener');
+        const death = traces.find(r => r.kind === 'death' && r.bot === opener.fetchId());
+        assert.strictEqual(death?.killer, `char:${defender.fetchId()}`);
+        assert.strictEqual(death.opener, `char:${opener.fetchId()}`, 'the death names who opened the fight');
+        assert.strictEqual(death.role, 'aggression', 'and the dead one\'s part in it');
+        assert.strictEqual(death.why, 'unprovoked');
+    }
+    console.log('Native PvP responsibility: real damage, misses/control, retaliation, party defense, third parties, aid, summons, managed sides, expiry, bounded writes, opener at kill and death passed');
 } finally { restores.reverse().forEach(restore => restore()); }

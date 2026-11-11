@@ -74,7 +74,7 @@ function worldRevision(session) {
 }
 
 // Actions the registry refuses to a PK-hunting bot. BotAgentTools keeps its
-// own availability set; the two sets differ on purpose (U59), only the check
+// own availability set; the two sets differ on purpose, only the check
 // that applies a set is shared.
 const PK_LOCKED_REGISTRY_ACTIONS = new Set([
     'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',

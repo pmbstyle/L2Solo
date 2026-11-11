@@ -1,5 +1,5 @@
 'use strict';
-// One table of the places where a private store may stand, per town (U19).
+// One table of the places where a private store may stand, per town.
 //
 // Each row is a trading square captured in-game. Places are the points of a
 // square grid, SPACING apart, inside the square and at least `margin` from its
@@ -86,7 +86,7 @@ const PLAZAS = Object.freeze({
         locZ: -240,
         travelCenter: Object.freeze({ locX: -44600, locY: -112400, locZ: -240 })
     }),
-    // Floran, the town where a PK trades (design 5.8). The author's square
+    // Floran, the town where a PK trades. The author's square
     // captured in-game, data as is (FLORAN_MARKET_PLAZA, commit e77e0540):
     // outline including the central inset, corner heights, stall padding.
     'Floran Village': Object.freeze({
@@ -109,7 +109,7 @@ const PLAZAS = Object.freeze({
     }),
     // The author's five squares captured in-game (commit 2fa4508b), data as
     // is: outline, stall padding, captured centre and ground level. He
-    // recorded them for market routing; group F opens them to bot shops.
+    // recorded them for market routing; bot shops now use them too.
     // Oren: the concave inset stays outside the trading area.
     Oren: Object.freeze({
         boundary: Object.freeze([
@@ -478,7 +478,7 @@ const stateOwner = (characterId) => `state:${Number(characterId)}`;
 const afkOwner = (ownerId) => `afk:${Number(ownerId)}`;
 
 // Where a bot life state's store stands: a crafting bot's craft shop, in any
-// town (the bots' sale stalls went with the board, step 3.3).
+// town (the bots' sale stalls went with the board).
 function placeOfState(state = {}) {
     const stats = state.stats || {};
     if (state.activity === 'crafting' && stats.craftShop?.town) {

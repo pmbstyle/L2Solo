@@ -14,7 +14,7 @@ const Rest = invoke('GameServer/Bot/AI/RestPotion');
 const SpotEconomics = invoke('GameServer/Bot/Economy/SpotEconomics');
 const IncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const HuntCycle = invoke('GameServer/Bot/AI/HuntCycle');
-const PartyIncome = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+const PartyIncome = invoke('GameServer/Bot/Population/PartyProgressComparison');
 const PartyGoals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
 const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
@@ -87,19 +87,18 @@ try {
     Match.stateProfiles = () => [];
     Match.spotMatchup = () => ({ eligible: true });
     Rewards.value = () => null;
+    Table.cycle = (id, role, level, shots) => ({ fight: shots === 2 ? 180 : 360, rest: 0, kph: shots === 2 ? 20 : 10, cap: 1000 });
     const prepared = PartyIncome.prepare([blessed, fighter], { spots: [spot], timestamp: deps.timestamp });
-    assert.equal(prepared.rows.get(blessed.characterId)?.income, 3627,
-        'party throughput and personal shot costs both come from the blessed row');
+    const partyRow = prepared.rows.get(blessed.characterId);
+    assert(partyRow?.shots > 0, 'the party forecast carries the blessed consumption');
+    const partyValue = SpotEconomics.create(blessed, { deathHours: 0, persona: deps.persona, spotHunters: () => 1 });
+    const blessedCosts = partyValue(spot, true, partyRow).costs;
+    assert.equal(blessedCosts, partyRow.shots * price(3948), 'personal costs price the blessed consumption');
     const ordinary = { ...blessed, inventory: { 178: blessed.inventory[178], 2510: { selfId: 2510, amount: 30 } } };
     const ordinaryForecast = PartyIncome.prepare([ordinary, fighter], { spots: [spot], timestamp: deps.timestamp });
-    assert.notEqual(ordinaryForecast.rows.get(ordinary.characterId)?.income, 3627,
+    assert.notEqual(ordinaryForecast.rows.get(ordinary.characterId)?.shots, partyRow.shots,
         'changing the shot variant changes the party forecast');
-    const party = { spotId: spot.id, stats: {} }, key = PartyGoals.incomeReviewKey(party, [blessed, fighter]);
-    assert.notEqual(PartyGoals.incomeReviewKey(party, [ordinary, fighter]), key,
-        'a changed shot variant invalidates the held party income review');
-    const spent = { ...blessed, inventory: { ...blessed.inventory, 3948: { selfId: 3948, amount: 28 } } };
-    assert.equal(PartyGoals.incomeReviewKey(party, [spent, fighter]), key,
-        'ordinary consumption within the same variant does not force another review');
+    Table.cycle = (id, role, level, shots) => { cycleMode = shots; return null; };
     Hunt.huntIncome = () => ({ perHour: 2000, expPerHour: 1000, spotId: spot.id, source: 'route', useShots: false });
     const uncharged = Economy.basics(blessed, deps);
     assert.equal(uncharged.bestTable.shots, 0);

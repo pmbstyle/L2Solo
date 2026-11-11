@@ -4,7 +4,7 @@
 //
 // Varangka's Tracker is a transient quest spawn, exactly as the reference's
 // addSpawn is: it belongs to the character who provoked it and is not restored
-// across a restart. See docs/c4/quests/imported-quests.md.
+// across a restart.
 const TANTUS = 7567;
 const DARKWING_BAT = 316;
 const VARANGKA_TRACKER = 5043;

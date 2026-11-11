@@ -5,19 +5,41 @@ const SearchWork = require('./RaidSearchWork');
 const Priority = require('./RaidRosterPriority');
 const { RaidRosterCoverage } = require('./RaidRosterCoverage');
 const { RaidSearchCounters, LIMITS } = require('./RaidSearchCounters');
+const Trace = require('../DecisionTrace');
 
 // An indexed adventurer pool, one bounded proposal per opportunity, and the
 // native party lifecycle. No boss sweep creates recruitment requests.
+// A search runs at its situations (wake), never on a clock: the director's start,
+// a raid boss spawned (RaidEntityIndex), a raid party ended, the pacing end
+// (lastFormedAt + opportunisticRaidIntervalMs, armed once), and raid_opportunity (the
+// available pool grew by a roster, 9, since the last search that formed nothing). A
+// search starts only with its whole forecast CPU allowance (a rate: it refills by
+// LIMITS.forecastCpuMs per forecastWindowMs); one busy main or that allowance cut stays
+// due and goes on with its deferred rosters only (draining: fresh rosters wait for the
+// next situation, raid_opportunity among them) once main is free or the allowance full
+// again, and ends when that queue is empty; one the forecast cap (count, deadline) cut
+// ends there. A boss whose encounter
+// could not be placed is held out until its next spawn. Member cooldowns are reads.
+const ROSTER = 9;
+const BUDGET_CUT = new Set(['busy', 'forecast_cpu_budget']);
 class OpportunisticRaidDirector {
     constructor(deps) {
         Object.assign(this, deps);
         this.pool = new Map();
         this.cooldowns = new Map();
         this.encounters = new Map();
-        this.blockedBosses = new Map();
+        this.unreachableBosses = new Set();
+        this.spawnedBosses = new Set();
         this.placementFailures = new Map();
         this.lastFormedAt = 0;
-        this.nextSearchAt = 0;
+        // due: the reason of the pending search (null: none); pacingAt: the pacing
+        // end's wake, armed once; poolAtFailure: the pool after a search that formed
+        // nothing (null: none since).
+        this.due = null;
+        this.pacingAt = 0;
+        this.poolAtFailure = null;
+        // draining: the due search was cut after proposing its rosters; it goes on with them.
+        this.draining = false;
         this.nextForecastAt = 0;
         this.pendingSearch = null;
         this.now = deps.now || Date.now;
@@ -52,29 +74,43 @@ class OpportunisticRaidDirector {
         }
         this.unsubscribeLife = this.life.subscribePublications(packet => {
             if (!this.active) return;
-            if (packet.kind === 'reset') { this.finishSearch('interrupted'); this.nextSearchAt = 0; this.searchEpoch++; this.pool.clear(); this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0; return; }
+            if (packet.kind === 'reset') { this.finishSearch('interrupted'); this.wake('start'); this.searchEpoch++; this.pool.clear(); this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0; return; }
             const state = this.life.cachedState(Number(packet.characterId));
             if (state && Policy.available(state)) this.pool.set(state.characterId, state);
             else this.pool.delete(Number(packet.characterId));
+            if (this.poolAtFailure !== null && this.pool.size >= this.poolAtFailure + ROSTER) this.wake('raid_opportunity');
         }, { replay: true });
         this.unsubscribeParty = this.parties.subscribeChanges(party => {
             if (!Policy.isObjective(party.stats?.objective)) return;
             this.lastFormedAt = Math.max(this.lastFormedAt, Number(party.startedAt));
             this.remember(party.memberIds, party.status === 'dissolved' ? Date.now() : party.startedAt);
+            if (party.status === 'dissolved') this.wake('raid_ended');
         });
+        // Told inside the index's writes: the boss is looked up at the next pulse.
+        this.unsubscribeBoss = this.onBossChanged?.(templateId => { if (this.active) this.spawnedBosses.add(Number(templateId)); });
         await this.preparations?.start();
         for (const plan of this.preparations?.snapshot() || []) {
             this.lastFormedAt = Math.max(this.lastFormedAt, plan.startedAt);
             this.remember(plan.memberIds, plan.startedAt);
         }
+        this.wake('start');
+    }
+
+    // A search is due (its situation: reason). Held until a search runs it.
+    wake(reason) {
+        if (!this.active) return;
+        this.due ||= reason;
+        this.poolAtFailure = null;
+        this.draining = false;
     }
 
     stop() {
         this.finishSearch('interrupted');
         this.preparations?.stop();
         this.searchEpoch++;
-        this.active = false; this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.pool.clear();
-        this.encounters.clear(); this.blockedBosses.clear(); this.placementFailures.clear();
+        this.active = false; this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.unsubscribeBoss?.(); this.pool.clear();
+        this.encounters.clear(); this.unreachableBosses.clear(); this.spawnedBosses.clear(); this.placementFailures.clear();
+        this.due = null; this.pacingAt = 0; this.poolAtFailure = null; this.draining = false;
         this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0;
     }
 
@@ -84,7 +120,7 @@ class OpportunisticRaidDirector {
     }
 
     snapshot() { return { pool: this.pool.size, lastFormedAt: this.lastFormedAt,
-        nextSearchAt: this.nextSearchAt, lastResult: this.lastResult,
+        due: this.due, pacingAt: this.pacingAt, lastResult: this.lastResult,
         preparations: this.preparations?.snapshot() || [], search: this.searchCounters.snapshot() }; }
 
     room(spot, catalog, alive, admitted) {
@@ -96,7 +132,14 @@ class OpportunisticRaidDirector {
     }
 
     finishSearch(status) {
-        if (this.pendingSearch) this.searchCounters.finish(status);
+        if (status !== 'interrupted' || this.pendingSearch) this.searchCounters.finish(status);
+        if (Trace.on()) Trace.record({ kind: 'raid', phase: 'search', reason: String(this.due || ''), outcome: status });
+        const cut = BUDGET_CUT.has(status);
+        if (cut) this.draining = true;
+        if (!cut || !this.deferredRosters.length) {
+            this.due = null; this.draining = false;
+            if (!['formed', 'preparing'].includes(status)) this.poolAtFailure = this.pool.size;
+        }
         this.pendingSearch = null;
         this.searchCounters.pendingRosters = this.deferredRosters.length;
     }
@@ -132,9 +175,9 @@ class OpportunisticRaidDirector {
 
     async discover(timestamp, admitted, scheduling) {
         const current = scheduling.current, yieldNow = scheduling.yieldNow || SearchWork.yieldToLoop;
-        this.searchCounters.begin(timestamp);
+        this.searchCounters.begin(timestamp, this.due);
         const shortlist = await SearchWork.run(Policy.candidateSteps([...this.pool.values()],
-            this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters), scheduling);
+            this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters, this.draining), scheduling);
         if (!shortlist || !current()) return;
         this.tankCursor = shortlist.tankCursor;
         for (const [reason, count] of Object.entries(shortlist.rejected))
@@ -143,7 +186,7 @@ class OpportunisticRaidDirector {
         if (shortlist.candidates.length < 9) {
             this.searchCounters.reject('assembly', 'raid_candidates_small');
             this.lastResult = { reason: 'raid_candidates_small', count: shortlist.candidates.length };
-            this.searchCounters.finish('no_candidates'); return;
+            this.finishSearch('no_candidates'); return;
         }
         const members = [];
         for (let offset = 0; offset < shortlist.candidates.length; offset += 16) {
@@ -164,10 +207,9 @@ class OpportunisticRaidDirector {
         this.searchCounters.pendingRosters = this.deferredRosters.length;
         if (!rosters.length) {
             this.lastResult = { reason: 'raid_compatible_roster_missing' };
-            this.searchCounters.finish('no_roster'); return;
+            this.finishSearch('no_roster'); return;
         }
         const catalog = this.catalog.all(), alive = this.catalog.liveTemplateIds();
-        for (const [id, until] of this.blockedBosses) if (until <= timestamp) this.blockedBosses.delete(id);
         const claimed = new Set(admitted.map(p => Number(p.stats?.objective?.raidBossTemplateId || 0)));
         const start = shortlist.priorityKey ? (this.rosterCursor || 0) % rosters.length : 0;
         const ordered = [...rosters.slice(start), ...rosters.slice(0, start)];
@@ -183,7 +225,7 @@ class OpportunisticRaidDirector {
             const ids = roster.map(s => s.characterId), priority = ids.join(':') === shortlist.priorityKey;
             const key = `${priority ? 'priority:' : ''}${Math.min(...roster.map(s => s.level))}:${Math.max(...roster.map(s => s.level))}`;
             const all = catalog.filter(s => alive.has(s.raidBossTemplateId) && !claimed.has(s.raidBossTemplateId)
-                && !this.blockedBosses.has(s.raidBossTemplateId) && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
+                && !this.unreachableBosses.has(s.raidBossTemplateId) && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
                 .sort((a,b) => score(a) - score(b) || a.avgLevel - b.avgLevel || a.raidBossTemplateId - b.raidBossTemplateId);
             const offset = (this.bossCursors.get(key) || 0) % Math.max(1, all.length);
             if (!all.length) { this.searchCounters.reject('target', 'raid_no_eligible_boss'); this.retireRoster(ids); }
@@ -192,7 +234,7 @@ class OpportunisticRaidDirector {
         // Keep IDs and immutable target definitions only. Every paced check
         // re-reads current native members and diplomacy before asking the worker.
         this.pendingSearch = { queues, cursor: 0, remaining: LIMITS.forecasts,
-            assessed: new Set(), expiresAt: timestamp + this.config.opportunisticRaidSearchIntervalMs };
+            assessed: new Set() };
     }
 
     async forecastOne(timestamp, admitted, current) {
@@ -274,6 +316,9 @@ class OpportunisticRaidDirector {
                 const party = needsSupplies ? await this.preparations?.reserve(roster, objective, timestamp)
                     : await this.form(roster, objective);
                 if (!current()) return;
+                if (Trace.on()) Trace.record({ kind: 'raid', bot: Number(roster[0]?.characterId), phase: 'forming',
+                    outcome: !party ? 'refused' : needsSupplies ? 'preparing' : 'formed',
+                    party: party?.partyId ? String(party.partyId) : undefined, npcId: Number(spot.raidBossTemplateId), members: roster.length });
                 if (party) {
                     if (needsSupplies) this.searchCounters.add('preparationsStarted');
                     this.lastFormedAt = Math.max(timestamp, Number(party.startedAt || 0));
@@ -298,21 +343,31 @@ class OpportunisticRaidDirector {
         const epoch = this.searchEpoch, current = () => this.active && this.searchEpoch === epoch;
         try {
             await this.maintain(timestamp);
-            if (!current() || timestamp < this.nextForecastAt) return;
-            if (timestamp - this.lastFormedAt < this.config.opportunisticRaidIntervalMs) return;
+            if (!current()) return;
+            for (const id of this.spawnedBosses) {
+                this.spawnedBosses.delete(id);
+                if (!this.bossAlive?.(id)) continue;
+                this.unreachableBosses.delete(id);
+                this.wake('boss_spawned');
+            }
+            if (this.pacingAt && timestamp >= this.pacingAt) { this.pacingAt = 0; this.wake('pacing_end'); }
+            if (!this.due || timestamp < this.nextForecastAt) return;
+            if (timestamp - this.lastFormedAt < this.config.opportunisticRaidIntervalMs) {
+                this.pacingAt = this.lastFormedAt + this.config.opportunisticRaidIntervalMs;
+                this.due = null; return;
+            }
             const admitted = [...this.parties.admitted(), ...(this.preparations?.admitted() || [])];
-            if (admitted.filter(p => Policy.isObjective(p.stats?.objective)).length >= this.config.opportunisticRaidMaxParties) return;
-            if (this.pendingSearch && timestamp >= this.pendingSearch.expiresAt) this.finishSearch('window_expired');
-            if (!this.pendingSearch && timestamp < this.nextSearchAt) return;
+            if (admitted.filter(p => Policy.isObjective(p.stats?.objective)).length >= this.config.opportunisticRaidMaxParties) {
+                this.due = null; return;
+            }
             if (!this.forecastAdmission(timestamp)) return;
             this.refillForecastBudget(timestamp);
-            if (this.forecastCpuTokens <= 0) {
+            if (this.forecastCpuTokens <= 0 || !this.pendingSearch && this.forecastCpuTokens < LIMITS.forecastCpuMs) {
                 this.searchCounters.cpuBudget.deferredSearches++;
                 this.nextForecastAt = this.forecastCpuAt + LIMITS.forecastWindowMs;
                 this.lastResult = { reason: 'raid_forecast_cpu_rest' }; return;
             }
             if (!this.pendingSearch) {
-                this.nextSearchAt = timestamp + this.config.opportunisticRaidSearchIntervalMs;
                 await this.discover(timestamp, admitted, { ...this.searchScheduling, current });
                 if (!current() || !this.pendingSearch) return;
             }
@@ -398,7 +453,7 @@ class OpportunisticRaidDirector {
                     const failures = (this.placementFailures.get(party.partyId) || 0) + 1;
                     this.placementFailures.set(party.partyId, failures);
                     if (failures >= 3) {
-                        this.blockedBosses.set(objective.raidBossTemplateId, timestamp + 30 * 60000);
+                        this.unreachableBosses.add(Number(objective.raidBossTemplateId));
                         this.lastResult.reason = 'raid_boss_unreachable';
                         await this.dissolve(party, 'raid_boss_unreachable');
                     }
@@ -424,8 +479,9 @@ class OpportunisticRaidDirector {
             }
             if (party.stats?.raidEncounter?.status === 'failed') continue;
             const progress = this.observeProgress(party, boss, sessions, timestamp);
+            // In the fight only the stall insurance: 8 min with no boss, minion or buff progress.
             const stalled = timestamp - progress.progressAt > 8 * 60000;
-            if (stalled || timestamp - progress.startedAt > 25 * 60000 || objective.expiresAt <= timestamp
+            if (stalled || objective.expiresAt <= timestamp
                 || sessions.some(s => s.actor.fetchLevel() > objective.sourceLevel + 8
                     || Number(s.actor.fetchKarma?.()) > 0 || Number(s.actor.fetchPk?.()) > 0)) {
                 if (sessions[0]) await this.hot.abandonRaid(sessions[0], stalled ? 'raid_no_progress' : 'raid_admission_expired', timestamp);

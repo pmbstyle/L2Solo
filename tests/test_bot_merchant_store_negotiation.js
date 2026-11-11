@@ -131,7 +131,7 @@ async function main() {
         });
 
         // A merchant's live store that is not a board shop has fixed prices:
-        // the bots' stalls that haggled went with the board (step 3.3); a
+        // the bots' stalls that haggled went with the board; a
         // board shop haggles through its projection (test_bot_afk_sell_reprice).
         assert.strictEqual(BotNegotiationService.storeContext(bot, player), null);
         const quoted = BotAgentTools.execute(
@@ -166,8 +166,8 @@ async function main() {
         assert.strictEqual(actor.fetchPrivateStore(), null, 'party transition must remove the stale store object too');
         assert.strictEqual(actor.state.fetchSeated(), false, 'the bot must stand before joining its player');
         assert.strictEqual(bot.plan, 'hunting');
-        assert.strictEqual((bot.coldLifeState?.stats || bot.decisionStats).decisionSeq, 1,
-            'closing the own store raises one town decision');
+        assert(invoke('GameServer/Bot/Situations').woken({ woken: 0, ...(bot.coldLifeState?.stats || bot.decisionStats) }, 'build'),
+            'closing the own store wakes its town decision');
         assert.strictEqual(viewer.activeMerchantTrade, null, 'old client purchase windows are invalidated');
         assert.strictEqual(savedStates.length, 0, 'a live store has nothing persisted to withdraw');
 

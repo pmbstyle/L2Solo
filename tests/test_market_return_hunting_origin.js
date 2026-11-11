@@ -11,7 +11,7 @@ const Income = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const Errands = invoke('GameServer/Bot/Population/CombinedErrandPolicy');
 const Executor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
-const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const timestamp = 1793485080000;
 const inventory = {};
 // A Falchion, not the starter Broadsword: a level 24 knight with the latter does not
@@ -43,74 +43,58 @@ const leaf = { activity: 'hunting', spotId: source.id, npcId: 1133, itemId: 167,
 const shopper = { ...state, activity: 'shopping', currentRegion: 'Dwarven Village',
     loc: { locX: 115072, locY: -178176, locZ: -880 },
     stats: { ...state.stats, townVisit: { town: 'Dwarven Village', completed: true },
-        marketReturn: { spotId: source.id, regionName: source.name, loc: source.center } } };
-const saved = { spots: Spots.cache, service: Service.spots, select: Income.select, pending: Errands.pending };
+        marketReturn: { spotId: source.id, regionName: source.name, loc: source.center },
+        // Its held earning answer is where it hunts (the worker decided it; main reads it, never searches).
+        earning: { spotId: source.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 } } };
+const holding = spot => ({ spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 2 });
+// The row as the worker's step leaves it: the spot its route goes to when sent to hunt
+// published in the mind (huntSpot, BotRoute.huntSpotHeld), which main's visit end reads.
+const published = (row, leaf = null) => ({ ...row, stats: { ...row.stats,
+    ...BotRoute.huntSpotHeld(null, row, leaf, { spots, timestamp }) } });
+const saved = { spots: Spots.cache, service: Service.spots, pending: Errands.pending };
 try {
     Spots.cache = Service.spots = spots;
     Errands.pending = () => [];
-    Income.select = () => ({ spot: money });
-    assert.equal(Spots.findForState(state, { profiles: spots, timestamp })?.id, money.id,
-        'fixture: a fresh earning search would choose a different camp');
-    const returned = Executor.finishMarketVisit(shopper, timestamp);
-    assert.equal(returned.stats.travel.spotId, source.id,
-        'a shopping visit returns directly to the valid material source');
-    const arrived = { ...returned, activity: 'hunting', spotId: source.id, loc: returned.stats.travel.to,
-        stats: { ...returned.stats, travel: null } };
+    assert.equal(Income.heldSpot(shopper, spots)?.id, source.id, 'fixture: the held earning answer is its source');
+    // A solo visit's end hands the bot back to the worker: it rests in town, due now, with no
+    // trip of main's choosing, whatever spot it hunted before (marketReturn) or the worker holds.
+    const back = row => {
+        const next = Executor.finishMarketVisit(row, timestamp);
+        assert.equal(next.activity, 'resting', 'the visit ends in town');
+        assert.equal(next.stats.travel ?? null, null, 'main starts no trip');
+        assert.equal(next.timing.nextResolveAt, timestamp, 'the worker\'s next step is due now');
+        assert.equal(next.stats.marketReturn, null);
+        assert.equal(next.spotId, null, 'it stands on no spot in town');
+        // The worker's next step ends its rest, due now again: the step after it starts the
+        // trip (BotRoute.trip), not half a minute later.
+        const rest = Resolver.resolveSolo({ state: next, spot: null, elapsedMs: 0, timestamp });
+        assert.equal(rest.patch.activity, 'hunting', 'its rest is over');
+        assert.equal(rest.nextResolveAt, timestamp, 'with no ground under it, it is routed at once');
+        return { ...next, activity: rest.patch.activity, stats: { ...next.stats, ...rest.patch.stats } };
+    };
+    const tripOf = (row, leaf = null) => BotRoute.trip({}, row, leaf, { spots, timestamp: timestamp + 1000 })?.spotId;
+    const returned = back(published(shopper));
+    assert.equal(tripOf(returned), source.id, 'the worker sends it to the valid material source it holds');
+    const arrived = { ...returned, spotId: source.id, loc: source.center, currentRegion: source.name };
     assert.equal(BotRoute.trip({}, arrived, leaf, { spots, timestamp: timestamp + 30000,
-        currentSpot: source, hasRoom: () => true }), null, 'the worker needs no second trip to its source');
+        currentSpot: source }), null, 'the worker needs no second trip to its source');
 
-    const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: {
-        status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
-        next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } } } };
-    // The spot the bot hunted before the trip comes before its plan's source
-    // (a recovery or a party-wait plan may name a source it does not hunt
-    // now); the worker's leaf moves it from there.
-    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, source.id,
-        'an active plan elsewhere does not override the spot the bot hunted');
-    const away = { ...changed, stats: { ...changed.stats, capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(away, timestamp).stats.travel.spotId, money.id,
-        'with that spot excluded, the viable plan source');
-
-    const excluded = { ...shopper, stats: { ...shopper.stats,
-        capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
-    assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
-        'an excluded (marked full) source is not chosen: the search replans');
-    for (const spotId of [null, 'retired-catalogue-spot']) {
-        const lostOrigin = { ...shopper, stats: { ...shopper.stats, marketReturn: {
-            loc: shopper.loc, regionName: shopper.currentRegion, spotId } } };
-        const recovered = Executor.finishMarketVisit(lostOrigin, timestamp);
-        assert.equal(recovered?.stats.travel.spotId, money.id,
-            'a saved town position without a valid hunting origin returns to a real camp');
-        assert(Service.containsLocation(money, recovered.stats.travel.to),
-            'the return travels to the selected camp instead of restoring the old town coordinates');
-    }
-    Spots.cache = Service.spots = [];
-    Income.select = () => null;
-    const waiting = Executor.finishMarketVisit({ ...shopper, stats: { ...shopper.stats,
-        marketReturn: { loc: shopper.loc, regionName: shopper.currentRegion, spotId: null } } }, timestamp);
-    assert.equal(waiting.activity, 'resting', 'without a huntable camp the completed visit yields to replanning');
-    assert.deepEqual(waiting.loc, shopper.loc, 'the bot stays in town instead of inventing a hunting return');
-    assert.equal(waiting.stats.marketReturn, null);
-    assert.equal(waiting.stats.townVisit, null);
-    assert.equal(waiting.timing.nextResolveAt, timestamp + 30000, 'the bot has a bounded retry');
-    Spots.cache = Service.spots = spots;
-    Income.select = () => ({ spot: money });
-    // A spot that filled during the visit, with no mark yet, is met by the
-    // worker (the room at arrival), one trip after the return.
-    for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,
-        characterName: 'SourceHunter', level: 24, phase: 'cold', activity: 'hunting', spotId: source.id,
-        statsJson: '{}', inventorySummary: '{}' });
-    assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, source.id,
-        'a source that filled during the visit: the return goes home, the room is read at arrival');
-    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
-    const activity = decisions.activity;
-    try {
-        decisions.activity = () => ({ activity: 'hunting', spotId: money.id });
-        assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, money.id,
-            'the worker\'s hunting leaf names the return spot');
-    } finally { decisions.activity = activity; }
+    // The plan as its review publishes it: with the route's verdict on its source.
+    const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: invoke('GameServer/Bot/AI/GearPlanSelection')
+        .withRoutedSource(shopper, { status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
+            next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
+    // A gear plan's source the route takes comes before the held answer while its step farms the
+    // plan's item (BotRoute.huntSpot); a step that does not hunts the held answer.
+    const farm = { activity: 'hunting', kind: 'drop', rootKey: 'power:45:6', itemId: 45 };
+    assert.equal(tripOf(back(published(changed)), farm), money.id, 'an active plan\'s viable source, as the route takes it');
+    assert.equal(tripOf(back(published(changed))), source.id, 'with no step farming it, the held earning answer');
+    // The held answer comes before the spot it hunted before the trip.
+    const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
+    assert.equal(tripOf(back(published(heldElsewhere))), money.id, 'the held earning answer, not the saved spot');
+    assert.equal(tripOf(back(published(shopper)), { activity: 'hunting', spotId: money.id }), money.id,
+        'the worker\'s hunting leaf names the spot');
 } finally {
     Spots.cache = saved.spots; Service.spots = saved.service;
-    Income.select = saved.select; Errands.pending = saved.pending;
+    Errands.pending = saved.pending;
 }
 console.log('test_market_return_hunting_origin: ok');

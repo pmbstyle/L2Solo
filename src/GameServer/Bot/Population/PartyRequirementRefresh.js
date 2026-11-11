@@ -30,8 +30,35 @@ function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
     };
 }
 
-function plan(state, options) {
-    return require('../AI/GearPlanSelection').selectAcquisitionPlan(state, state.stats?.equipmentPlan, options);
+// A plan the member's row takes in place of its own: neither its clan-locked plan
+// stands against it (GearAcquisitionPlanner.clanPlanKeptAgainst) nor does it serve
+// another clan's goal (ClanMembershipPolicy.foreignGoal). A clan write landing after
+// the worker read moves the member's revision: the commit carrying the plan is refused.
+function mayHold(member, plan) {
+    return !require('../AI/GearAcquisitionPlanner').clanPlanKeptAgainst(member, plan)
+        && !require('../../Clan/ClanMembershipPolicy').foreignGoal(member, plan);
 }
 
-module.exports = { acquisitionRequirementKey, acquisitionFallbackEvent, plan };
+// The member's plan at its party's re-plan: the selection's, unless the member may
+// not hold it; then its current plan stands (nothing to write, the party's objective
+// follows the plans held). A refused selection carries no replan context: its failure
+// belongs to the plan not taken.
+function plan(state, options) {
+    const current = state.stats?.equipmentPlan;
+    const selection = require('../AI/GearPlanSelection').selectAcquisitionPlan(state, current, options);
+    return mayHold(state, selection.acquisitionPlan) ? selection : { acquisitionPlan: current };
+}
+
+// The party's objective after its members' re-plan: the one of the first member whose
+// plan needs a party, else of the first holding one (PartyRequestPlanner.memberObjective:
+// its open request, its clan's call, its plan); none when no member holds one.
+// acquisitionGoal: that member's active plan.
+function partyObjective(members) {
+    const Request = require('./PartyRequestPlanner'), Stay = require('./PartyStay');
+    const owner = members.find(member => Stay.needsParty(member.stats?.equipmentPlan) && Request.memberObjective(member))
+        || members.find(member => Request.memberObjective(member));
+    return { objective: owner ? Request.memberObjective(owner) : null,
+        acquisitionGoal: owner?.stats?.equipmentPlan?.status === 'active' ? owner.stats.equipmentPlan : null };
+}
+
+module.exports = { acquisitionRequirementKey, acquisitionFallbackEvent, mayHold, plan, partyObjective };

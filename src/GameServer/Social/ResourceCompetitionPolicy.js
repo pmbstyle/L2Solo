@@ -1,6 +1,6 @@
 // Shared social decisions. A forecast is not an accepted encounter or a memory event.
 const Config = require('../Bot/Population/PopulationConfig');
-const { scaleChance, retreatChance } = require('./PvpAggression');
+const { scaleChance, retreatChance, karmaCost } = require('./PvpAggression');
 const Visible = require('./VisibleStrength');
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, Number(value) || 0));
 function traits(persona = {}) {
@@ -22,6 +22,11 @@ function feeling(relation) {
     if (sameClan(relation)) result.warmth = Math.max(result.warmth, CLANMATE_WARMTH);
     return result;
 }
+// Clanmates or friends both ways (each at least the clanmate warmth toward the other):
+// they share a spot instead of holding it against each other (SpotContest).
+function friendly(towardPeer, towardActor) {
+    return Math.min(feeling(towardPeer).warmth, feeling(towardActor).warmth) >= CLANMATE_WARMTH;
+}
 function disciplineRestraint(persona, relation) {
     const stage = relation?.clanSocial?.selfDiscipline?.stage;
     const weight = { concern: 0.2, warned: 0.4, probation: 0.7, expulsion_pending: 0.85 }[stage] || 0;
@@ -30,22 +35,27 @@ function disciplineRestraint(persona, relation) {
 }
 // An accepted dispute has the same escalation policy in both simulation modes.
 // Intent is not attack permission; live combat must still validate its context.
-function escalationChance(persona, towardOpponent) {
+// standing: what the attack costs in C4 standing (PvpAggression.karmaCost); missing:
+// a white unflagged opponent.
+function escalationChance(persona, towardOpponent, standing = {}) {
     if (!towardOpponent?.ready) return 0;
     const t = traits(persona), relation = feeling(towardOpponent);
     // This is a response to an actual resource offense, not aggression on sight.
     // Ordinary strangers can stand their ground; friendship and fear still calm them.
     const chance = clamp(0.45 + t.assertiveness * 0.4 + relation.hostility * 0.6
         - t.caution * 0.15 - t.resilience * 0.1 - t.empathy * 0.22
-        - Math.max(0, relation.warmth) * 0.7 - relation.fear * 0.5, 0, 0.8) * disciplineRestraint(persona, towardOpponent);
+        - Math.max(0, relation.warmth) * 0.7 - relation.fear * 0.5, 0, 0.8) * disciplineRestraint(persona, towardOpponent)
+        * (1 - karmaCost(persona, standing));
     return scaleChance(chance, Config.pvpAggression);
 }
-// Can I win? Only by what a player sees (U26). A unit may carry own (how it
+// Can I win? Only by what a player sees. A unit may carry own (how it
 // knows itself) and seen (how others see it); otherwise its look and size.
 function view(unit, field) {
     return unit[field] || { look: unit.look, people: unit.people ?? unit.size };
 }
 
+// actor, peer: each may carry its C4 standing { karma, flagged } (PvpAggression's
+// coldStanding/hotStanding; missing: white, unflagged), read by the peer's escalation.
 // key: the encounter's key; each side's can-I-win is rolled once here and
 // returned as willing [actor, peer], carried on to give-way and the PvP start.
 // willing: the rolls already taken for this encounter (a re-check reuses them).
@@ -74,10 +84,19 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
     const contest = clamp(shortage * (0.3 + a.ambition * 0.35 + a.assertiveness * 0.4
         + ab.hostility * 0.25 - a.empathy * 0.12 - a.caution * 0.1 - Math.max(0, ab.warmth) * 0.6), 0, 0.85) * disciplineRestraint(actorPersona, towardPeer);
     if (rng() < contest) {
-        const escalation = escalationChance(peerPersona, towardActor);
+        const escalation = escalationChance(peerPersona, towardActor, { ownKarma: peer.karma, targetKarma: actor.karma,
+            targetFlagged: actor.flagged === true, war: towardActor?.war?.mutual === true });
         return { action: 'contest', pvpIntent: rng() < escalation, reason: 'resource_dispute', willing: sides };
     }
     return { action: 'yield', pvpIntent: false, reason: 'tolerate_competition', willing: sides };
 }
+// How crowded a spot a unit that yields shares rather than moves on (pressure: hunters per
+// place): the sociable and empathic bear more, the ambitious less; capped well under twice
+// the room so a shared camp stays near its room. C4 has no number for it: our choice.
+const TOLERANCE_MAX = 1.15;
+function tolerance(persona) {
+    const t = traits(persona);
+    return 1 + (TOLERANCE_MAX - 1) * clamp((t.sociability + t.empathy + 1 - t.ambition) / 3);
+}
 
-module.exports = { decide, escalationChance };
+module.exports = { decide, escalationChance, friendly, tolerance, TOLERANCE_MAX };

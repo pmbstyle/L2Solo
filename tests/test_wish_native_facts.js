@@ -41,7 +41,7 @@ for (const plan of drawn(64)) near(plan.successProbability, .5, 'workshop or col
     assert.equal(plan.price, 40, 'two batches x ten inputs x 2 adena');
 }
 
-// Held units are worth their exit value (Q1 A), never the belief price.
+// Held units are worth their exit value, never the belief price.
 {
     const held = { ...buy(202, 5), exitValue: 1 };
     const root = rootFor(301, 100, 'item:202', 4);

@@ -275,23 +275,21 @@ function stateHasSameClanObjective(state, objective) {
         && sameRosterRequirement(state?.stats?.clanPartyObjective, objective)
         && sameRosterRequirement(state?.stats?.partyRequest, objective)
         && state?.stats?.partyRequest?.status === objective.status
-        && state?.stats?.clanPartyObjective?.status === objective.status
+        && state?.stats?.clanPartyObjective?.status === 'open'
         && state.stats.partyRequest.priority === objective.priority;
 }
 
-function memberObjective(state, objective, timestamp = Date.now()) {
+// The member's own request for the clan's call: the call itself (its clanPartyObjective
+// stays open), carrying the attempts of the same call's earlier request. A request the
+// same call closed (forming found no roster, its assembly gave up: PartyRequestPlanner.closed)
+// stays closed until the member's next build asks again: a clan review does not reopen it.
+function memberObjective(state, objective) {
     if (!objective) return null;
     const prior = state.stats?.partyRequest;
     if (!prior || prior.clanGoalKey !== objective.clanGoalKey || prior.objectiveKey !== objective.objectiveKey) return objective;
-    if (prior.status === 'deferred') {
-        return Number(prior.deferredUntil) > timestamp
-            ? { ...objective, status: 'deferred', requestedAt: prior.requestedAt || objective.requestedAt,
-                deferredUntil: prior.deferredUntil, expiredAt: prior.expiredAt, deferReason: prior.deferReason,
-                attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null }
-            : objective;
-    }
-    return { ...objective, requestedAt: prior.requestedAt || objective.requestedAt,
-        attempts: prior.attempts || 0, lastMatchedAt: prior.lastMatchedAt || null };
+    return { ...objective, status: prior.status === 'closed' ? 'closed' : objective.status,
+        requestedAt: prior.requestedAt || objective.requestedAt, attempts: prior.attempts || 0,
+        lastMatchedAt: prior.lastMatchedAt || null };
 }
 
 async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
@@ -303,7 +301,7 @@ async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
     const parties = BackgroundPartyState.activeByGoalKey(previousGoalKey, 'clan_beneficiary');
     let releasedMembers = 0;
     for (const party of parties) {
-        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved', 'clan_equipment_goal_rotated');
         if (dissolved) {
             releasedMembers += number(await LifeState.releaseDissolvedPartyMembers(
                 party.partyId,
@@ -352,7 +350,7 @@ async function releaseConflictingRosterParties(assignedMemberIds, goal, expected
     });
     let releasedMembers = 0;
     for (const party of parties) {
-        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+        const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved', 'clan_equipment_party_reformed');
         if (!dissolved) continue;
         releasedMembers += number(await LifeState.releaseDissolvedPartyMembers(
             party.partyId,
@@ -447,7 +445,7 @@ function goalPurchaseFailed(code, result = {}) {
 }
 
 // The clan buys a market goal item for its beneficiary on the one purchase
-// path of a cold bot (б5, ColdMarketService.acquire, as ClanMarketService
+// path of a cold bot (ColdMarketService.acquire, as ClanMarketService
 // buys): the clan credits the member the price above its free money, and the
 // member buys in the seller's town, at once when it stands there, else on a
 // clan errand it goes on and buys on arrival (a real NPC sells only to a bot in
@@ -542,11 +540,12 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
             invoke('GameServer/Bot/Economy/ColdMarketService'), claimed) : { ok: true, marker: null };
     if (!supply.ok) return { ...supply, memberId: id };
     if (stateHasSameClanObjective(current, objective) && !supply.marker) return { ok: true, changed: false, memberId: id };
-    const nextObjective = { ...objective, clanId: number(clan.id) };
-    const partyRequest = nextObjective;
+    const partyRequest = { ...objective, clanId: number(clan.id) };
+    const nextObjective = { ...partyRequest, status: 'open' };
     const saved = await LifeState.upsertState({
         ...current,
-        activity: current.phase === 'cold' && current.activity === 'hunting' ? 'party_wait' : current.activity,
+        activity: current.phase === 'cold' && current.activity === 'hunting' && partyRequest.status === 'open'
+            ? 'party_wait' : current.activity,
         stats: {
             ...(current.stats || {}),
             clanId: number(clan.id),
@@ -567,9 +566,11 @@ async function assignPlan(member, plan, clan, goal) {
     await LifeState.init();
     const current = await LifeState.findByCharacterId(id);
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
+    // The member's request for this goal closed (its party never formed): the goal's
+    // route waits for the member's next build, no reassignment hands it back meanwhile.
     if (current.stats?.partyRequest?.clanGoalKey === goal.goalKey
-        && require('../Bot/Population/PartyAssemblyRecovery').coolingDown(current)) {
-        return { ok: true, changed: false, coolingDown: true, memberId: id };
+        && require('../Bot/Population/PartyRequestPlanner').closed(current)) {
+        return { ok: true, changed: false, closedRequest: true, memberId: id };
     }
 
     const handoff = await handoffWarehouseMaterials(current, plan, clan, goal);
@@ -610,7 +611,7 @@ async function assignPlan(member, plan, clan, goal) {
             clanId: number(clan.id),
             equipmentPlan: clanPlan(plan, clan, goal),
             clanMaterialDemand: plan.clanMaterialDemand,
-            clanPartyObjective: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id)),
+            clanPartyObjective: clanPartyObjective(plan, goal, 'required', clan.id),
             // A stale personal request must not hide the new clan objective.
             partyRequest: memberObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id))
         }
@@ -1051,14 +1052,17 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
     };
 }
 
+// How long a clan raid's selected roster stays committed (ours; temporary: until
+// the clan planners' pass ends a raid assembly on its events, not on age). An
+// assembly its events would still hold but its age releases is counted
+// (`raid_assembly_bound`, each check that finds it).
+const RAID_ASSEMBLY_COMMIT_MS = 15 * 60 * 1000;
 function raidAssemblyCommitted(clan, goal) {
     const Roster = require('./ClanRaidRoster');
     const marker = goal?.fullRoster;
     if (ClanRaidFailurePolicy.blockedSpotIds(goal, clan.state).has(marker?.sourceId)) return false;
     if (clan.state?.mode !== 'autonomous' || goal?.status !== 'executing' || !Roster.valid(marker)
-        || number(marker.clanId) !== number(clan.id) || marker.goalKey !== goal.goalKey
-        || Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt))
-            > require('../Bot/Population/PartyRequestPlanner').maxAgeMs('required')) return false;
+        || number(marker.clanId) !== number(clan.id) || marker.goalKey !== goal.goalKey) return false;
     const profile = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(marker.sourceId);
     const source = profile && RaidEncounterScope.projectSource(profile);
     if (!source || source.raidWorldAvailable === false || marker.raidInstanceId !== source.raidInstanceId
@@ -1077,7 +1081,7 @@ function raidAssemblyCommitted(clan, goal) {
     }
     if (members.some(member => {
         if (!Roster.same(member.stats?.clanPartyObjective?.fullRoster, marker)
-            || require('../Bot/Population/PartyAssemblyRecovery').coolingDown(member)) return true;
+            || require('../Bot/Population/PartyRequestPlanner').closed(member)) return true;
         const partyId = member.partyId || member.party?.partyId;
         if (!partyId) return member.stats?.partyRequest?.status !== 'open';
         const party = BackgroundPartyState.find(partyId);
@@ -1085,9 +1089,12 @@ function raidAssemblyCommitted(clan, goal) {
             || !Roster.exact(party.memberIds, marker.memberIds) || ClanEquipmentPartyPolicy.abandonedRaid(party)
             || ['failed', 'defeated'].includes(party.stats?.raidEncounter?.status);
     })) return false;
-    return ClanRaidPolicy.assessment({ ...clan, members }, source, goal,
+    if (!ClanRaidPolicy.assessment({ ...clan, members }, source, goal,
         { desiredMembers: 9, preferredMemberIds: marker.memberIds, allowHelpers: false,
-            ...(marker.coreMemberIds ? { coreMemberIds: marker.coreMemberIds, unchargedHelperIds: marker.unchargedHelperIds || [] } : {}) }).ready;
+            ...(marker.coreMemberIds ? { coreMemberIds: marker.coreMemberIds, unchargedHelperIds: marker.unchargedHelperIds || [] } : {}) }).ready) return false;
+    if (Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt)) <= RAID_ASSEMBLY_COMMIT_MS) return true;
+    recordReason('raid_assembly_bound');
+    return false;
 }
 
 async function resolveClan(clan, previousGoal = null, options = {}) {

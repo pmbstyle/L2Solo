@@ -132,7 +132,7 @@ function stand(session, bot) {
     session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
 }
 
-function applyMoveToSpot(session, bot, spotId) {
+function applyMoveToSpot(session, bot, spotId, player = null) {
     if (session.partyCompanion === true && session.followPlayerSession) {
         return false;
     }
@@ -143,8 +143,13 @@ function applyMoveToSpot(session, bot, spotId) {
     const assignedSpot = SpotService.assignSpot(session, spot);
     const targetLoc = SpotService.randomPointNear(spot);
     session.initialSpawnCoord = { ...assignedSpot.center };
-    session.lastSpotMoveAt = Date.now();
     session.noTargetTicks = 0;
+    // The player named the spot: it is the held earning answer (a
+    // player_command; no search), so the spot held before no longer pulls the bot
+    // back. Raised after the move's own post, whose moved_by_world it answers. by: the
+    // player who gave it, told if a stronger arrival displaces the bot there.
+    invoke('GameServer/Bot/AI/DecisionEvents').raiseDecision(session, 'player_command',
+        { payload: { spotId: String(spot.id), at: Date.now(), by: Number(player?.actor?.fetchId?.()) || 0 } });
 
     bot.moveTo({
         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
@@ -324,7 +329,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
         }
         clearChatArrival(session, 'shop');
         const travelMode = invoke('GameServer/Bot/AI/BotTownTravel').request(
-            session, bot, invoke('GameServer/Bot/BotAI'), 'player_chat_restock', { announce: false });
+            session, bot, invoke('GameServer/Bot/BotAI'), 'player_chat_restock', { announce: false, forced: true });
         if (!['escape', 'walk', 'deferred'].includes(travelMode)) return { applied: false, reason: 'restock_unavailable' };
         const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: true, reason: travelMode === 'deferred' ? 'shop_after_combat' : 'shop',
@@ -336,7 +341,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
         }
         clearChatArrival(session, 'move_to_spot');
 
-        const applied = applyMoveToSpot(session, bot, decision.spotId);
+        const applied = applyMoveToSpot(session, bot, decision.spotId, requestContext?.playerSession || targetSession);
         const reply = applied ? replyOutcome(session, decision.reply, targetSession, requestContext) : { replyDelivered: false, playerVisibleReply: null };
         return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot',
             ...(applied ? { outcome: 'pending', effect: 'travel_requested' } : {}), ...reply };

@@ -25,6 +25,35 @@ function coordinatorWithWorker() {
 }
 
 (async () => {
+    // Main prices a near party member's funded bridge (PopulationService's bridgeReason)
+    // from the NPC offers the worker was last sent, not from the catalogue it saw on its
+    // first read: a Warrior without a Warrior weapon, able to pay for one, leaves to buy
+    // it once the sent catalogue has the shops' offers.
+    {
+        const Catalog = require('../src/GameServer/Bot/Population/ColdNpcPlanningCatalog');
+        const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+        const { npcPlanningLookup } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const warrior = { characterId: 9400010, level: 20, adena: 1000000, stats: { classId: 1 },
+            inventory: {
+                2: { selfId: 2, amount: 1, equipped: true, equippedSlots: [7], slot: 7 },
+                57: { selfId: 57, amount: 1000000 }
+            } };
+        const buildRows = Catalog.buildRows;
+        Catalog.buildRows = () => [];
+        try {
+            assert.strictEqual(Gear.equipmentBridgeReason(warrior, npcPlanningLookup().plannerOptions), null,
+                'fixture: no shop offers, no bridge to buy');
+        } finally {
+            Catalog.buildRows = buildRows;
+        }
+        const { coordinator } = coordinatorWithWorker();
+        const ensure = SpotProfiles.ensure;
+        SpotProfiles.ensure = () => [];
+        try { coordinator.sendPlanningCatalog(); } finally { SpotProfiles.ensure = ensure; }
+        assert.strictEqual(Gear.equipmentBridgeReason(warrior, npcPlanningLookup().plannerOptions), 'weapon_bridge',
+            'main reads the offers of the catalogue the worker was sent');
+    }
+
     // The planning catalog reaches the worker whole and in order, each page within
     // the message limit, sized by counting each row once.
     {

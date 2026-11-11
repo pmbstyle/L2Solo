@@ -1,5 +1,5 @@
 'use strict';
-// L136: a restart shifts every persisted due time by the downtime (the world
+// A restart shifts every persisted due time by the downtime (the world
 // was paused), bots and active parties, in the row and the cache alike, so the
 // worker's first command checkpoint and the party commit fence still match
 // the row. updatedAt moves too, so a second boot with no write in between
@@ -157,7 +157,7 @@ async function run() {
     assert.equal(Number(hotRow.nextResolveAt), staleHot[2] + pause, 'stale hot: row due time moves by the downtime');
     assert.equal(hotState.timing.nextResolveAt, staleHot[2] + pause, 'stale hot: cached due time moves by the downtime');
     assert.equal(Number(hotRow.lastResolvedAt), staleHot[3] - 1000 + pause, 'stale hot: lastResolvedAt moves by the downtime');
-    // PER-7: the record wins. The row and the cache the worker starts from
+    // The record wins. The row and the cache the worker starts from
     // keep the hot session's gain and spending, so its first commit cannot
     // write the activation-time EXP, potions or Adena back.
     assert.equal(Number(hotRow.level), hotRecord.level, 'stale hot: the row keeps the level gained hot');

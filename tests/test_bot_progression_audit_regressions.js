@@ -167,12 +167,11 @@ async function checkWorkerSafety() {
     assert(proposals.every(p => !p.nextState.party.partyId && !p.nextState.stats.clanPartyObjective));
     assert(proposals.every(p => p.nextState.stats.partyBreakReason === 'clan_party_unsafe'));
 }
-async function checkMissingSpotRecovery() {
+async function checkColdCommands() {
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Events = invoke('GameServer/Bot/Population/BotLifeEvents');
-    const Goals = invoke('GameServer/Bot/Goals/GoalService');
     invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => Spots.ensure());
     const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
     const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -200,7 +199,6 @@ async function checkMissingSpotRecovery() {
         const goals = Needs.evaluate(buyer, { now: at, decisions });
         assert.strictEqual(goals.length, 1, 'one accepted native shopping leaf produces one voluntary goal');
         selectedGoal = goals[0];
-        assert.strictEqual(selectedGoal.priority, 50);
         assert.strictEqual(selectedGoal.plan.wishKey, leaf.rootKey);
         assert.strictEqual(selectedGoal.plan.economyActivity, leaf.activity);
         assert.strictEqual(selectedGoal.target.itemId, leaf.itemId);
@@ -220,31 +218,16 @@ async function checkMissingSpotRecovery() {
         Economy.forState = build;
         decisions.forget(buyer.characterId);
     }
-    assert(Population.canResumeAffordableMarketPlan(buyer, at),
-        'the original funded compatible bridge remains eligible for a market review before another fight');
     const originals = { ensure: Spots.ensure, find: Spots.findForState,
-        save: Life.upsertState, cachedState: Life.cachedState };
-    const state = { ...polearm, characterId: 100, phase: 'cold', activity: 'hunting', inventory: {},
-        adena: 0, stats: { classId: 3 }, timing: { nextResolveAt: 1 } };
+        save: Life.upsertState, apply: Life.applyResolve, cachedState: Life.cachedState };
     let savedReason;
     let saves = 0;
     const originalEvents = Events.recordMany;
-    const originalReview = Goals.review;
     try {
         Spots.ensure = () => [];
         Spots.findForState = () => null;
         Life.upsertState = async (next, reason) => { savedReason = reason; saves += 1; return next; };
         Events.recordMany = async () => [];
-        const before = Date.now();
-        const result = await Population.resolveColdState(state, { precomputedPlan: {
-            acquisitionPlan: { status: 'complete', strategy: 'none' }
-        } });
-        assert(result.ok);
-        assert.strictEqual(savedReason, 'missing_spot_recovery');
-        assert.strictEqual(result.state.activity, 'resting');
-        assert(result.state.timing.nextResolveAt >= before + 30000, 'a missing route must not remain perpetually overdue');
-        assert.strictEqual(result.state.stats.equipmentPlan.status, 'complete', 'the recalculated plan is persisted');
-        assert.strictEqual(result.state.stats.routeRecovery.attempts, 1);
         const craftResult = await Population.executeWorkerLifecycleCommand(supplied, {
             precomputedPlan: { acquisitionPlan: decorated },
             precomputedResult: { patch: { activity: 'traveling', stats: { travel: {
@@ -257,36 +240,22 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(craftResult.state.stats.travel.reason, 'component_craft',
             'a stale worker hunt must not overwrite an executable component craft trip');
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);
-        Goals.review = async () => ({ current: selectedGoal });
-        const purchasedTrip = await Population.executeWorkerLifecycleCommand(buyer, {
-            precomputedResult: { patch: { activity: 'resting' }, materialize: { exp: 100 } }
+        // The funded buyer's trip is its build's card (the worker's town leaf): main's
+        // lifecycle command starts no market trip of its own.
+        savedReason = null;
+        Life.applyResolve = async (next, result) => ({ ...next, ...result.patch });
+        const command = await Population.executeWorkerLifecycleCommand(buyer, {
+            precomputedResult: { patch: { activity: 'resting' }, events: [], materialize: { exp: 100 } }
         });
-        assert(purchasedTrip.ok);
-        assert.strictEqual(savedReason, 'goal_market_travel_before_combat');
-        assert.strictEqual(purchasedTrip.state.stats.travel.reason, selectedGoal.plan.expectedBenefit,
-            'the funded buyer leaves stale party wait for its native chosen market goal before another worker fight');
-        const savesBeforeStaleTrip = saves;
-        let current = buyer;
-        Life.cachedState = () => current;
-        Goals.review = async () => {
-            current = { ...buyer, inventory: { ...buyer.inventory, newlyAcquired: { amount: 1 } } };
-            return { current: selectedGoal };
-        };
-        const staleTrip = await Population.executeWorkerLifecycleCommand(buyer, {
-            precomputedResult: { patch: { activity: 'resting' } }
-        });
-        assert.strictEqual(staleTrip.reason, 'state_changed',
-            'a concurrent state update during goal review must prevent stale market travel');
-        assert.strictEqual(staleTrip.state, current);
-        assert.strictEqual(saves, savesBeforeStaleTrip, 'the stale market trip must not write another lifecycle state');
+        assert.notStrictEqual(command.state?.activity, 'traveling', 'main sends the buyer nowhere on its own');
+        assert.notStrictEqual(savedReason, 'goal_market_travel_before_combat');
     } finally {
         Spots.ensure = originals.ensure;
         Spots.findForState = originals.find; Life.upsertState = originals.save;
-        Life.cachedState = originals.cachedState;
+        Life.applyResolve = originals.apply; Life.cachedState = originals.cachedState;
         Events.recordMany = originalEvents;
-        Goals.review = originalReview;
     }
 }
-checkWorkerSafety().then(checkMissingSpotRecovery).then(() => console.log('Bot progression audit regressions passed'))
+checkWorkerSafety().then(checkColdCommands).then(() => console.log('Bot progression audit regressions passed'))
     .catch(error => { console.error(error); process.exitCode = 1; })
     .finally(() => require('node:fs').rmSync(isolated.directory, { recursive: true, force: true }));

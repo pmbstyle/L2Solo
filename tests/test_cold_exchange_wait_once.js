@@ -9,6 +9,7 @@ require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
@@ -52,7 +53,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         };
 
         // No worker answers with an improving card: the first pass waits for it.
-        await Population.resolveColdState(Life.cachedState(botId));
+        await Population.resolveColdState(Life.cachedState(botId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(botId) }) });
         await settle();
         const first = Life.cachedState(botId);
         assert.equal(first.activity, 'shopping', `the first pass waits in town for the exchange card: ${view()}`);
@@ -60,7 +61,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         assert(Number(first.timing.nextResolveAt) <= Date.now() + 5000, 'the wait is a short one');
 
         // Still no card: the same exchange does not hold the visit again.
-        await Population.resolveColdState(Life.cachedState(botId));
+        await Population.resolveColdState(Life.cachedState(botId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(botId) }) });
         await settle();
         const second = Life.cachedState(botId);
         assert.notEqual(second.activity, 'shopping', `the visit never ends while the exchange waits: ${view()}`);

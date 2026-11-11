@@ -6,8 +6,6 @@ invoke('GameServer/DataCache').init();
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-const Look = invoke('GameServer/Bot/Economy/BoardLook');
-const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
 const { BUY, SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 // E90: a buy ad nobody answers never moves while no deal happens. A town look
@@ -40,11 +38,10 @@ if (done) {
 }
 assert.strictEqual(GoalExecutor.finishMarketVisit({ ...state, activity: 'hunting' }, at), null);
 
-// Both hot and cold consumers call lookOwn. The visit passes through that
-// existing bounded owner and is consumed once, without a second event map.
-const original = { counter: Counters.counter, look: Pricing.look };
+// The own_lines look of a town arrival is a visit's (its arrival step, the worker's
+// ownLines): the buy line it looks at carries the visit; another look does not.
+const original = { look: Pricing.look };
 try {
-    Counters.counter = () => ({ deals: 7 });
     const inspected = [];
     Pricing.look = (_, selected, context) => {
         inspected.push({ lines: selected.map(row => row.lineId), visit: context.visit,
@@ -52,23 +49,14 @@ try {
         return null;
     };
     const lines = [{ ...line(BUY), lineId: 1, count: 1 }, { ...line(SELL), lineId: 2, count: 1 }];
-    const seenLines = new Look.SeenLines();
-    const owner = { characterId: 1, stats: { townLook: { n: 0 } } };
-    const context = { characterId: 1, timestamp: at };
-    Pricing.lookOwn(owner, lines, context, seenLines);
-    assert.strictEqual(inspected.length, 0, 'first snapshot establishes the visit baseline');
-    const visited = { ...owner, stats: { townLook: { n: 1 } } };
-    Pricing.lookOwn(visited, lines, context, seenLines);
-    assert.deepStrictEqual(inspected, [{ lines: [1], visit: true, reasons: [8] }],
-        'one new visit inspects the unanswered buy line without any deal');
-    Pricing.lookOwn(visited, lines, context, seenLines);
-    assert.strictEqual(inspected.length, 1, 'same visit is never consumed twice');
-    assert.strictEqual(seenLines.size, 2, 'both unchanged owned rows retain their exact baseline');
-    assert.strictEqual(seenLines.townVisit, 1);
-    Pricing.lookOwn(visited, lines, context, new Look.SeenLines());
-    assert.strictEqual(inspected.length, 1, 'worker restart does not invent a historical visit');
+    const owner = { characterId: 1, stats: {} };
+    const context = { characterId: 1, timestamp: at, adena: 1e6 };
+    Pricing.lookOwn(owner, lines, context, { visit: true });
+    assert.deepStrictEqual(inspected.pop(), { lines: [1, 2], visit: true, reasons: [9, 1] },
+        'an arrival\'s look takes the unanswered buy line as a visit\'s pass');
+    Pricing.lookOwn(owner, lines, context);
+    assert.deepStrictEqual(inspected.pop(), { lines: [1, 2], visit: false, reasons: [1, 1] }, 'a look away from an arrival is no visit');
 } finally {
-    Counters.counter = original.counter;
     Pricing.look = original.look;
 }
 

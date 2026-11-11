@@ -1,5 +1,6 @@
 const Policy = require('../../Social/ResourceCompetitionPolicy');
 const Visible = require('../../Social/VisibleStrength');
+const { hotStanding } = require('../../Social/PvpAggression');
 const WAIT_MS = 15000, COOLDOWN_MS = 120000;
 const report = { decisions: {}, yields: 0, avoids: 0, parties: 0, recruits: 0, rejected: 0, recent: [] };
 const id = s => Number(s?.actor?.fetchId?.() || 0);
@@ -122,7 +123,7 @@ function beforeAttack(session, mob, now = Date.now(), rng = Math.random) {
         const seen = Visible.actorSide(s.sessions.map(m => m.actor));
         return { partyId: s.party?.partyId, size: s.sessions.length,
             level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length,
-            own: { look: seen.look, people: seen.people }, seen };
+            own: { look: seen.look, people: seen.people }, seen, ...hotStanding(s.principal.actor) };
     };
     const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
     const actorPersona = Voice.profile(session), peerPersona = Voice.profile(claimant.session);

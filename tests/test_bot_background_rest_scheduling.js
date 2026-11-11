@@ -95,8 +95,11 @@ const combatSpot = { ...spot, avgLevel: combatNpc.template.level,
     npcSelfIds: [combatNpc.selfId], npcEntries: [{ selfId: combatNpc.selfId, count: 1 }] };
 let observedCombat;
 const nativeFight = BackgroundResolver.resolvePartyFight;
-BackgroundResolver.resolvePartyFight = function () {
-    const result = nativeFight.apply(this, arguments);
+// These unequipped members may not take the monster (the party's pick refuses
+// it: test_bot_cold_combat pins that); the case pins the rest rule in a live
+// fight, so its pick takes the monster regardless.
+BackgroundResolver.resolvePartyFight = function (options) {
+    const result = nativeFight.call(this, { ...options, partyProfiles: null });
     observedCombat = { input: arguments[0], result };
     return result;
 };

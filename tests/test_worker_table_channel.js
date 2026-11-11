@@ -12,7 +12,7 @@ const { PAGE_BYTES } = require('../src/GameServer/Bot/Population/ColdMessagePage
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const { ClanPlanningCoordinator } = require('../src/GameServer/Clan/ClanPlanningCoordinator');
 
-// The table channel (step 1.7): the main thread registers a table, reports
+// The table channel: the main thread registers a table, reports
 // changed and removed rows, and flush() sends each table's changes as one
 // new version to every attached worker, whose TableMirror applies them in
 // order. A gap makes the worker ask for the whole table; a new worker epoch

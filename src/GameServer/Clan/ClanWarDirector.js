@@ -13,7 +13,7 @@ class ClanWarDirector {
         canWork = () => true, canContinue = () => true, now = Date.now }) {
         Object.assign(this, { database, life, parties, clans, war, social, memory, personaFor, form, actions, updateDemand, formationStatus, canWork, canContinue, now });
         this.states = new Map(); this.bySpot = new Map(); this.locations = new Map();
-        this.plans = new Map(); this.autonomous = new Set(); this.cursor = 0; this.running = null; this.active = false;
+        this.plans = new Map(); this.autonomous = new Set(); this.reviewedId = 0; this.reviewKey = null; this.reviewIds = []; this.running = null; this.active = false;
         this.assemblyQueue = new Map(); this.assemblyCursor = 0; this.assemblyCandidates = [];
         this.assemblyChecks = new Map(); this.assemblyMetrics = { checks: 0, attempts: 0 };
     }
@@ -358,6 +358,21 @@ class ClanWarDirector {
             else this.syncAssemblyDemand();
         }
     }
+    // The ids of the clans the war review visits, in id order (the pulse resumes
+    // after the last one reviewed). Inputs: the war rows (`war.view.revision`) and the
+    // autonomous clans' rosters, levels and dissolution (a roster change or a reload,
+    // which a bot clan's level-up runs, bumps `membershipRevision`; the autonomous set
+    // is re-read on it).
+    reviewable() {
+        const key = `${this.war.view.revision}:${this.membershipRevision}`;
+        if (this.reviewKey !== key) {
+            this.reviewKey = key;
+            const atWar = new Set(this.war.view.all().filter(r => r.active).flatMap(r => [r.fromClanId, r.toClanId]));
+            this.reviewIds = this.clans.all().filter(c => this.autonomous.has(c.id)
+                && (atWar.has(c.id) || Rules.canWage(c, c.members.length))).map(c => c.id).sort((a, b) => a - b);
+        }
+        return this.reviewIds;
+    }
     pulse(at = this.now()) {
         if (!this.active || !Config.enabled || !this.canContinue()) { this.clearAssembly(); return this.running; }
         if (this.running) return this.running;
@@ -378,10 +393,16 @@ class ClanWarDirector {
                 if (!this.active || !this.canWork()) break;
                 await this.maintain(party, at);
             }
-            const clans = this.clans.all().filter(c => this.autonomous.has(c.id));
-            for (let n = 0; n < Math.min(4, clans.length) && this.active && this.canWork(); n++) {
-                const clan = clans[(this.cursor++) % clans.length];
-                await this.review(clan, at);
+            // Reviewed: a clan C4 lets wage war (lv 3, 15 members) or one in a war row
+            // (its withdrawal, losses and incoming answers); no other clan has a war
+            // decision to take. Temporary: until the war review is taken on its events.
+            const reviewed = this.reviewable();
+            let start = reviewed.findIndex(id => id > this.reviewedId);
+            if (start < 0) start = 0;
+            for (let n = 0; n < Math.min(4, reviewed.length) && this.active && this.canWork(); n++) {
+                this.reviewedId = reviewed[(start + n) % reviewed.length];
+                const clan = this.clans.findById(this.reviewedId);
+                if (clan) await this.review(clan, at);
             }
         })().finally(() => { this.running = null; });
         return this.running;

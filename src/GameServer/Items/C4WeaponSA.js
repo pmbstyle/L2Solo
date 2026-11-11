@@ -46,7 +46,7 @@ function bowMpCost(weapon, rng = Math.random) {
     return cheap && rng() * 100 < cheap.chance ? Math.min(normal, cheap.mp) : normal;
 }
 // The mean MP of one shot of a bow (selfId, its normal cost): bowMpCost's
-// cheap-shot SA by its chance. The cold fight pays it per shot (T106).
+// cheap-shot SA by its chance. The cold fight pays it per shot.
 function expectedBowMp(selfId, normal) {
     const mp = Math.max(0, Number(normal) || 0);
     const cheap = catalog.weapons[Number(selfId)]?.cheapShot;

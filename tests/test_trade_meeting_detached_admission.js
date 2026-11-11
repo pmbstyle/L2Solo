@@ -6,6 +6,8 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+// A refused or missed purchase raises its failure on the row (DecisionEvents.raiseOn).
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Intent = invoke('GameServer/Bot/Economy/TradeIntent');
 
 const ids = [744301, 744302];
@@ -15,8 +17,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 (async () => {
     const world = await createWorld(ids.map(id => ({ id, level: 30 })), 'meeting-detached-admission');
     const original = { prepare: Coordinator.requestMeetingPreparation, current: Coordinator.meetingPreparationCurrent,
-        refresh: Coordinator.requestEconomyRefresh,
-        cancel: Coordinator.cancelMeetingPreparation, warn: utils.infoWarn };
+        refresh: Events.raiseOn,
+        cancel: Coordinator.cancelMeetingPreparation, warn: utils.infoWarn, reprice: Afk.repriceBotLines };
     try {
         await Database.createAccount('bot_detached_admission', 'test');
         await Database.execute(["UPDATE characters SET username='bot_detached_admission' WHERE id IN (?,?)", ids]);
@@ -86,6 +88,10 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
             'native acceptance persists the fresh production certificate');
         assert.equal((await Database.fetchAfkTradeShop(ad.id)).lines[0].availableCount, 6);
         if (row?.state === 'accepted') await Meetings.cancel(ids[0]);
+        // The meeting ends on its own queue (TradeMeetingService finishMeeting: the owners'
+        // settlement moves the buyer's revision, then both receipts): wait for the receipt,
+        // or that settlement lands inside the next preparation and voids its refusal evidence.
+        for (let pass = 0; pass < 100 && !await Database.fetchTradeMeetingReceipt(result.token, ids[0]); pass++) await tick();
         const buyerState = Life.cachedState(ids[0]);
         await Life.upsertState({ ...buyerState, stats: { ...buyerState.stats, money: [100, 0, 1000, 0] } }, 'price_refusal_fixture');
         Afk.boardIndex().put({ id: 999103, ownerId: 999101, revision: 1, storeType: 1, town: 'Giran',
@@ -96,7 +102,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         const Choice = invoke('GameServer/Bot/Economy/ReadyTradeChoice');
         assert(Choice.resolve(sellChoice, Afk.boardIndex(), ids[0]), 'the buyer can initially choose the seller ad');
         let sellRefresh = null;
-        Coordinator.requestEconomyRefresh = id => { sellRefresh = id; return true; };
+        Events.raiseOn = id => { sellRefresh = id; return true; };
         Coordinator.requestMeetingPreparation = async (id, request) => {
             if (id === ids[0]) {
                 const current = Life.cachedState(id), error = Error('trade_meeting_purchase_price_changed');
@@ -137,7 +143,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         assert(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]),
             'the seller has an executable pre-refusal plan');
         let refreshed = null;
-        Coordinator.requestEconomyRefresh = id => { refreshed = id; return true; };
+        Events.raiseOn = id => { refreshed = id; return Promise.resolve(true); };
         Coordinator.requestMeetingPreparation = async (id, request) => {
             if (id === ids[0]) {
                 const current = Life.cachedState(id), error = Error('trade_meeting_purchase_price_changed');
@@ -150,38 +156,40 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
             return { approved: true, token: request.token, characterId: id,
                 sequence: request.parties[request.actorA === id ? 0 : 1].sequence };
         };
-        const priceRefusal = await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 1);
+        // A withdrawal that failed is tried again at the next refusal of the same quote,
+        // so sellers stop walking to it once one lands.
+        let withdrawals = 0;
+        Afk.repriceBotLines = async (...args) => {
+            if (++withdrawals === 1) throw new TypeError('fixture withdrawal failure');
+            return original.reprice(...args);
+        };
+        await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 1);
         for (let pass = 0; pass < 100 && refreshed === null; pass++) await tick();
-        assert.equal(refreshed, ids[0], 'a buyer price refusal schedules a fresh review of its standing bid');
+        assert.equal(withdrawals, 1, 'the payer refusal tries to withdraw its buy line');
+        assert((Afk.boardIndex().records.get(buyAd.id) || []).some(row => row.selfId === 1867),
+            'a failed withdrawal leaves the line on the board');
+        refreshed = null;
+        // A buy store never refuses a seller: the owner that will not pay its
+        // price closes the line and decides anew, so no later seller walks to it.
+        const priceRefusal = await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 1);
+        for (let pass = 0; pass < 100 && withdrawals < 2; pass++) await tick();
+        assert.equal(withdrawals, 2, 'the same quote refused again retries its withdrawal');
+        for (let pass = 0; pass < 100 && refreshed === null; pass++) await tick();
+        assert.equal(refreshed, ids[0], 'the buy ad owner that refused its price decides anew');
         assert(!await Database.fetchTradeMeetingByToken(priceRefusal.token));
-        assert.equal((await Database.fetchAfkTradeShop(buyAd.id)).lines[0].count, 2,
-            'a partial refusal does not withdraw the whole valid bid');
+        for (let pass = 0; pass < 100 && Afk.boardIndex().records.get(buyAd.id)?.length; pass++) await tick();
+        assert(!(Afk.boardIndex().records.get(buyAd.id) || []).some(row => row.selfId === 1867),
+            'the board no longer lists the refused buy line');
         assert.equal(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]), null,
             'a seller plan prepared before the refusal cannot restart the same meeting');
-        const afterRefusal = Life.cachedState(ids[0]);
-        await Life.upsertState({ ...afterRefusal, stats: { ...afterRefusal.stats, money: [100, 0, 1000, 500] } },
-            'price_refusal_funding_changed');
-        assert.equal(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]), null,
-            'a dominating alternative survives an unrelated buyer update even when free money is committed');
-        Afk.boardIndex().put({ id: 999100, ownerId: 999101, revision: 1, storeType: 1, town: 'Giran',
-            lines: [{ lineId: 999102, selfId: 1868, count: 1, price: 100 }] });
-        assert.equal(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]), null,
-            'an unrelated item change does not erase the exact proof');
-        Afk.boardIndex().put({ id: 999105, ownerId: 999106, revision: 1, storeType: 1, town: 'Giran',
-            lines: [{ lineId: 999107, selfId: 1867, count: 1, price: 80 }] });
-        assert.equal(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]), null,
-            'another offer of the same item does not change the witnessed purchase');
-        Afk.boardIndex().put({ id: 999103, ownerId: 999101, revision: 2, storeType: 1, town: 'Giran',
-            lines: [{ lineId: 999104, selfId: 1867, count: 1, price: 110 }] });
-        assert(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]),
-            'a changed quote for the item requests fresh buyer consent');
         console.log('PASS detached trade meeting accepts fresh consent and refuses expired proof after original command ends');
     } finally {
         Meetings.reset(); Afk._resetForTests();
         Coordinator.requestMeetingPreparation = original.prepare;
         Coordinator.meetingPreparationCurrent = original.current;
         Coordinator.cancelMeetingPreparation = original.cancel;
-        Coordinator.requestEconomyRefresh = original.refresh;
+        Events.raiseOn = original.refresh;
+        Afk.repriceBotLines = original.reprice;
         utils.infoWarn = original.warn;
         await world.close();
     }

@@ -97,7 +97,7 @@ const HotCrowd = {
         const Config = invoke('GameServer/Bot/Population/PopulationConfig');
         const own = this.script?.place?.() || null;
         this.stops = own ? [own] : crowdLocations(LifeState.everyState(), Math.max(this.count, this.routeStops),
-            2 * Number(Config.activationRadius || 9000));
+            2 * Number(Config.activationRadius));
         if (!this.stops.length) throw new Error('no cold hunting bot to stand by');
         utils.infoSuccess('Perf', '%s: %d player(s), %d place(s)%s: %s', this.script ? `script ${this.script.name}` : 'hot scenario',
             this.count, this.stops.length, this.routeStops ? `, moving every ${this.routeMs / 60000} min` : '',

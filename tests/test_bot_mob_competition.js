@@ -111,9 +111,14 @@ try {
         aggressive.session.persona.traits = { assertiveness: 0.9, empathy: 0.1, caution: 0.1 };
         gentle.session.persona.traits = { assertiveness: 0.1, empathy: 0.9, caution: 0.9 };
         assert(Competition.attackChance(aggressive.session, gentle) > Competition.attackChance(gentle.session, aggressive) * 5);
-        // Same accepted claim and same roll; only previously committed memory differs.
+        // A white rival weighs turning red (PvpAggression.karmaCost); a red PK costs nothing.
+        const standing = setup(), white = Competition.attackChance(standing.bot.session, standing.rival, now);
+        standing.rival.fetchKarma = () => 240;
+        assert(Competition.attackChance(standing.bot.session, standing.rival, now) > white, 'escalating on a white rival weighs turning red');
+        // Same accepted claim and same roll; only previously committed memory differs (a red rival: nothing at stake).
         for (const variant of ['neutral', 'grievance', 'friendly', 'unloaded']) {
             const x = setup();
+            x.rival.fetchKarma = () => 240;
             if (variant === 'unloaded') InteractionMemory.forget(x.bot.id);
             if (['grievance', 'friendly'].includes(variant)) {
                 const remembered = MemoryPolicy.apply(MemoryPolicy.empty(x.bot.id), {

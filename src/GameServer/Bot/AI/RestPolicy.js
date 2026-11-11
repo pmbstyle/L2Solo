@@ -7,7 +7,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 // longer than a solo bot; a bot that already retreated (recovery locked)
 // rests until it is nearly full. rested: where a solo rest ends (restOver):
 // high in the bar, as a player sits once and then chains kills on a full bar,
-// not kill-sit-kill-sit at the edge of the next fight (maintainer 11-04; our
+// not kill-sit-kill-sit at the edge of the next fight (our
 // choice, C4 leaves it to the player). 0.95 is the old hot wake line and the
 // party's: the last few percent are a long wait for nothing a fight reads.
 const THRESHOLDS = {
@@ -26,7 +26,7 @@ function restsForMana(subject, party = false) {
     return party ? BotRoles.needsPartyManaRecovery(subject) : BotRoles.shouldRestForMana(subject);
 }
 
-// T106 (docs/game-decisions.md "Self-heal and MP"): alone, a bot that heals
+// Alone, a bot that heals
 // itself with MP sits for MP too, so its heals pay the rest time they assume
 // (SoloSelfHeal.betweenFights, BotCombatUtility.restMsPerMp). The rest rule
 // (needsRest, ColdRest, the MP price) reads this; restsForMana stays the
@@ -36,7 +36,7 @@ function sitsForMana(subject, party = false) {
 }
 
 // Does a rest under way last until MP is back? Alone by sitsForMana; a party
-// member keeps the author's wake line (T107: the mana rule is solo only), the
+// member keeps the author's wake line (the mana rule is solo only), the
 // role's own mana rule as FollowingState's botRecovering reads it. A tank or a
 // music fighter sits for MP at a party's low line (needsRest) but gets up at
 // whole HP and follows: Recharge and the leader's camp see to the rest.
@@ -71,7 +71,7 @@ function healsWithMana(subject) {
 }
 
 // options.pet: a summoner's living pet, { ratio, healable } (PetHealRule.restView):
-// the summoner keeps its pet alive (docs/game-decisions.md, 10-30), so a pet
+// the summoner keeps its pet alive, so a pet
 // below the bot's own HP line that its owner cannot heal now (no heal, no MP
 // for it, silenced) sends the owner to rest as its own HP would; a heal on
 // its reuse does not (the bot walks on and casts it when ready).
@@ -135,7 +135,7 @@ function raidReady(subject, vitals = subject?.vitals || {}, paidCost = null) {
     return !needsRest(subject, hp / maxHp, mp / maxMp, { party: true, locked: true });
 }
 
-// The rest's posture (user 10-29, T106): a bot sits only when sitting
+// The rest's posture: a bot sits only when sitting
 // refills what it lacks faster than standing does (C4: a Sorcerer's Clear
 // Mind, 1297, regenerates MP standing only, past its seated rate from 48).
 // seated, standing: the two postures' { hp, mp } per regen tick; mana: the

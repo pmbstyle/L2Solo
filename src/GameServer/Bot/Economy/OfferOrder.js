@@ -1,4 +1,4 @@
-// The order in which a buyer considers sell offers (U20, б5). Used by the main
+// The order in which a buyer considers sell offers. Used by the main
 // thread and the planning workers, so it reads only static tables (the towns,
 // the gatekeeper routes) and the buyer's own state.
 const { towns } = require('../../World/TownRespawn');
@@ -39,7 +39,7 @@ function fromPlayer(offer) {
     return offer.playerPriority === true || offer.sellerKind === 'player';
 }
 
-// What the trip to each town costs the buyer in Adena (б5): the round trip's
+// What the trip to each town costs the buyer in Adena: the round trip's
 // time at the buyer's hour value plus the gatekeeper fee, for a trip from
 // `origin` (its farming place, else its position) as the bot's trip builder
 // plans it (ColdTrip.townPlan) and back to that place (ColdTrip.spotPlan).

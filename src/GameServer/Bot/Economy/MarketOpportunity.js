@@ -121,11 +121,8 @@ function npcOffersAll(selfId) {
 // Ordinary NPC shops stay; configured city stores provide reserve shots.
 // Execution applies the same policy, including the optional shot switch.
 function botCanBuy(offer) {
-    if (!offer) return false;
-    const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
-        || (offer.sourceType === 'private_store' && MerchantStoreConfigs[offer.sourceName]);
-    if (offer.sourceType === 'npc' && !ProductionPolicy.allowsNpcShot(offer.selfId)) return false;
-    return !fixed || ProductionPolicy.allowsFixedShot(offer.selfId);
+    return !!offer && OfferQuery.sourceAllowed(offer, offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
+        || (offer.sourceType === 'private_store' && !!MerchantStoreConfigs[offer.sourceName]));
 }
 
 // A live private store's line as an offer: a configured city merchant is
@@ -185,10 +182,24 @@ const fixedStoreOffers = require('./FixedShotOffers').offers;
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const PartyAdmission = require('../Population/PartyAdmission');
 
+// The buyer an offer admission (OfferQuery.admits) reads on main: { state, session }.
+// state: the bot's cached row (its meeting, phase and party, which the trade
+// admission reads), with the quote marks (stats.gearMarks) of its live body when it
+// has one: a body's marks are written on its session (DecisionEvents.statsFor) while
+// the row keeps its activation snapshot, so the row's would admit a quote the body was
+// refused and hide one whose mark the body forgot. session: the body's live session.
+function buyerOf(characterId) {
+    const id = Number(characterId);
+    const row = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(id) || null;
+    const session = World.registeredActorById(id)?.session || null;
+    if (!row || !session) return { state: row, session };
+    const marks = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session).gearMarks;
+    return { state: marks === row.stats?.gearMarks ? row : { ...row, stats: { ...row.stats, gearMarks: marks } }, session };
+}
+
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
-    const ownState = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
-    const ownSession = World.registeredActorById(Number(options.buyerCharacterId))?.session;
+    const buyer = buyerOf(options.buyerCharacterId);
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
@@ -196,44 +207,42 @@ function hotOffers(selfId, options = {}) {
     ].filter((offer) => offer.available && Number(offer.sourceId) !== Number(options.buyerCharacterId)
         && Number(offer.price) <= (options.budget ?? Infinity)
         && (!options.accept || options.accept(offer))
-        && PartyAdmission.personalOfferAllowed(offer,
-        ownState, undefined, ownSession))
+        && OfferQuery.admits(offer, buyer.state, buyer.session))
         .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
 // The one offer query (OfferQuery) for a buyer on the main thread: what a
 // cold bot can buy without meeting anyone (board records, NPC shops and the
 // configured shot merchants; a player's or a bot's live private store trades
-// face to face only, E14, E22), in `town`, in each of `towns` or in every
+// face to face only), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
+// The offers are the ones the bot's build quotes (OfferQuery.admits, the build's reader).
 function bestOffer(selfId, options = {}) {
     const towns = options.town ? [options.town] : options.towns || null;
     const fixed = fixedStoreOffers(selfId);
     const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
+    const buyer = buyerOf(options.buyerCharacterId);
     return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
         towns,
         excludeOwner: options.buyerCharacterId,
         budget: options.budget,
         cost: options.cost,
-        accept: (offer) => botCanBuy(offer)
-            && PartyAdmission.personalOfferAllowed(offer,
-                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId)),
-                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(offer.sourceId)),
-                World.registeredActorById(Number(options.buyerCharacterId))?.session,
-                World.registeredActorById(Number(offer.sourceId))?.session) && (!options.accept || options.accept(offer)),
+        accept: (offer) => OfferQuery.admits(offer, buyer.state, buyer.session) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
 }
 
 // Keep the indexed board/NPC query for the existing sources; a visible actor
-// may also choose a public live shop in the town it physically visits.
+// may also choose a public live shop in the town it physically visits, under the
+// same admission (OfferQuery.admits: not a quote it was refused there).
 function bestHotOffer(selfId, options = {}) {
     const indexed = module.exports.bestOffer(selfId, options);
+    const buyer = buyerOf(options.buyerCharacterId);
     const live = privateOffers(selfId, options.town).filter(offer => offer.store?.kind === 'player'
         && Number(offer.sourceId) !== Number(options.buyerCharacterId)
-        && (!options.accept || options.accept(offer)));
+        && (!options.accept || options.accept(offer)) && OfferQuery.admits(offer, buyer.state, buyer.session));
     return OfferOrder.best([...(indexed ? [indexed] : []), ...live], options);
 }
 
@@ -279,7 +288,7 @@ function liveBuyBoard(town, excludeOwner = 0) {
 
 // The buy records of the board (escrow held), best first in the board's own
 // order (BoardIndex.compareLines: the bid, a player before a bot, the record):
-// the budget-backed buy stores whose money stayed in the wallet are gone (E24).
+// the budget-backed buy stores whose money stayed in the wallet are gone.
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
     return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })
@@ -354,7 +363,7 @@ function supplyCatalog(limit = 96, origin = null) {
 
 // Where a hot bot goes to deal with an offer: a stall's actor (a shop, a
 // live private store), or a board record without a stall (an ad), dealt
-// with by record at its place (D6: hot bots take ads by records like cold
+// with by record at its place (hot bots take ads by records like cold
 // ones). { actorId, recordId, sourceId, name, locX, locY, locZ, town }.
 function offerTarget(offer, town = null) {
     const actor = offer?.projection?.actor || offer?.session?.actor || null;

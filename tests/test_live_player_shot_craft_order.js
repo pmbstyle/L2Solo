@@ -28,9 +28,9 @@ function refillContext(state) {
     const network = new WishNetwork().build({ ...context.projection, roots: ['stock:shots'],
         actorKey: 'native-shot-refill', inputKey: 'native-shot-refill', remembered: false,
         stockFor: context.stockFor, wallet: state.adena, hourAdena: context.hourAdena,
-        survivalReserve: context.survivalReserve, persona: context.persona });
+        refillReserve: context.refillReserve, persona: context.persona });
     return { ...context, network, statsPacket: { ...context.statsPacket,
-        money: Funding.packetFor(network, context.hourAdena, context.survivalReserve) } };
+        money: Funding.packetFor(network, context.hourAdena, context.refillReserve) } };
 }
 // The decision a near body holds: the worker's build with the fields it
 // attaches (DecisionEvents.nearFields), as DecisionEvents.receive keeps it.
@@ -52,7 +52,8 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     // Half the shot target held, read from the table the bot hunts by: the refill
     // then needs several whole batches at any table's shot use (the one combat
     // core's tables put a level-30 Warrior's two-hour target under the 2500 once held).
-    const heldShots = Math.floor(Economy.basics(customer.coldLifeState).stock('shots').target / 2);
+    // Below its line (one hour of use): only then is the refill a field need.
+    const heldShots = Math.floor(Economy.basics(customer.coldLifeState).stock('shots').line / 2);
     await stock(customer, 1463, heldShots);
     // Materials for every batch the shot target needs: a refill never exceeds the target, and the
     // material stacks only shorten the bag interval the target is sized on.

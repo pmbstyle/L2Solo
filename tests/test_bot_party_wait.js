@@ -16,11 +16,12 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 
 const originals = {
+    findById: SpotProfiles.findById,
     ensure: SpotProfiles.ensure,
     findForState: SpotProfiles.findForState,
     planFor: GearPlanner.planFor,
@@ -30,9 +31,9 @@ const originals = {
     resolveSolo: BackgroundResolver.resolveSolo,
     reconcileInventory: ColdMarketListingService.reconcileInventory,
     resolveListing: ColdMarketListingService.resolve,
-    currentGoal: GoalService.current,
+    goal: NeedsEvaluator.goal,
     tryPurchase: ColdMarketService.tryPurchase,
-    reviewGoal: GoalService.review,
+    needs: NeedsEvaluator.needs,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
     recordMany: LifeEvents.recordMany
 };
@@ -102,7 +103,6 @@ async function run() {
         inventory: {}
     };
     let applied = null;
-    let resolverOptions = null;
     let spotSelectionStates = [];
     const fallbackSpot = {
         id: 'safe_fallback',
@@ -136,7 +136,6 @@ async function run() {
     let retiredPlannerCalls = 0;
     GearPlanner.planFor = () => { retiredPlannerCalls++; throw Error('main must defer without the worker plan'); };
     BackgroundResolver.resolveSolo = (options) => {
-        resolverOptions = options;
         return {
             patch: { activity: 'hunting', spotId: options.state.spotId, vitals: options.state.vitals || {} },
             materialize: { exp: 1, sp: 1, adena: 1, items: [] },
@@ -158,14 +157,22 @@ async function run() {
     LifeState.upsertState = (next) => Promise.resolve(next);
     ColdMarketListingService.reconcileInventory = (current) => Promise.resolve({ state: current, closed: false });
     ColdMarketListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || applied || state, closed: false });
-    GoalService.current = () => Promise.resolve({ current: null });
+    NeedsEvaluator.goal = () => null;
     ColdMarketService.tryPurchase = (current) => Promise.resolve({ state: current, purchased: false });
-    GoalService.review = () => Promise.resolve({ current: null });
+    NeedsEvaluator.needs = () => null;
     GoalExecutor.beginMarketTravel = () => null;
     LifeEvents.recordMany = () => Promise.resolve();
 
+    // In game every lifecycle command carries the worker's round
+    // (executeWorkerLifecycleCommand refuses one without): main hunts the
+    // worker's spot and chooses none. The worker's safe
+    // fallback for a waiting requester is pinned in test_party_wait_fallback,
+    // its delevel recovery in test_bot_leveling_recovery.
+    SpotProfiles.findById = id => ({ ...fallbackSpot, id, name: String(id) });
+    const worker = (current, extra = {}) => ({ ...extra,
+        precomputedResult: BackgroundResolver.resolveSolo({ state: current, targetNpcId: 0 }) });
     const beforeDeferred = Number(PopulationService.planDeferred || 0);
-    const missingWorker = await PopulationService.resolveColdState(state);
+    const missingWorker = await PopulationService.resolveColdState(state, worker(state));
     assert.strictEqual(missingWorker.ok, true);
     assert.strictEqual(missingWorker.state.spotId, state.spotId, 'no worker cannot invent an acquisition fallback route');
     assert.strictEqual(missingWorker.state.stats.equipmentPlan, undefined);
@@ -177,108 +184,11 @@ async function run() {
     const workerRequest = { status: 'open', priority: 'required', objectiveKey: 'farm:unsafe_target:77', spotId: 'unsafe_target',
         npcId: 77, itemId: 88, targetId: 88, requestedAt: Date.now(), attempts: 3 };
     const fromWorker = await PopulationService.resolveColdState(state,
-        { precomputedPlan: { acquisitionPlan: requiredPlan, partyRequest: workerRequest } });
+        worker(state, { precomputedPlan: { acquisitionPlan: requiredPlan, partyRequest: workerRequest } }));
     assert.strictEqual(fromWorker.ok, true);
     assert.deepStrictEqual(applied.stats.partyRequest, workerRequest, 'main keeps the worker\'s request as sent');
-    // Historical already-admitted acquisition metadata, not a fabricated
-    // current worker leaf: without a worker plan main keeps the saved request
-    // (the worker builds it), and the fallback reader routes on it.
-    const historicalRequired = { ...state, stats: { ...state.stats, equipmentPlan: requiredPlan,
-        partyRequest: { status: 'open', priority: 'required', objectiveKey: 'farm:unsafe_target:77', spotId: 'unsafe_target',
-            npcId: 77, itemId: 88, targetId: 88, requestedAt: Date.now(), attempts: 0 } } };
-    const result = await PopulationService.resolveColdState(historicalRequired);
-    assert.strictEqual(result.ok, true);
-    assert.strictEqual(applied.activity, 'hunting', 'a required party request must keep the bot progressing solo');
-    assert.strictEqual(applied.spotId, fallbackSpot.id, 'an unmatched requester must use a safe fallback spot');
-    assert.strictEqual(applied.stats.partyRequest.priority, 'required');
-    assert.strictEqual(applied.stats.partyWaitUntil, undefined, 'the non-blocking request must not create a wait deadline');
-    assert(applied.timing.nextResolveAt > Date.now(), 'the fallback hunt must retain a normal combat deadline');
-    assert.strictEqual(resolverOptions.targetNpcId, 0, 'fallback combat must not pretend to farm the unsafe acquisition target');
-
-    resolverOptions = null;
-    spotSelectionStates = [];
-    const deferredState = {
-        ...state,
-        characterId: 9103,
-        stats: {
-            travel: null,
-            equipmentPlan: requiredPlan,
-            partyRequest: {
-                status: 'deferred',
-                priority: 'required',
-                objectiveKey: 'farm:unsafe_target:77',
-                spotId: 'unsafe_target',
-                npcId: 77,
-                itemId: 88,
-                targetId: 88,
-                deferredUntil: Date.now() + 60000,
-                attempts: 1
-            }
-        }
-    };
-    const deferredResult = await PopulationService.resolveColdState(deferredState);
-    assert.strictEqual(deferredResult.ok, true);
-    assert.strictEqual(resolverOptions.targetNpcId, 0,
-        'a deferred party request must keep using safe fallback combat instead of returning to the unsafe target');
-    assert.strictEqual(deferredResult.state.spotId, fallbackSpot.id,
-        'a deferred party request must not send the bot back to the stale gear spot');
-    assert.strictEqual(deferredResult.state.stats.partyRequest.status, 'deferred');
-    assert(spotSelectionStates.some((entry) => entry.spotId === null && entry.hasEquipmentPlan === false),
-        'deferred fallback selection must evaluate level routing without the stale equipment plan');
-
-    // Replanning belongs to the worker; main continues the historical safe
-    // route and cooldown until it receives a new admitted plan.
-    const recoveryResult = await PopulationService.resolveColdState({
-        ...state,
-        characterId: 9105,
-        stats: {
-            travel: null,
-            equipmentPlan: {
-                status: 'active',
-                grade: 'd',
-                plannedForLevel: 30,
-                strategy: 'direct_drop',
-                partyNeed: 'required',
-                requiresParty: true,
-                target: { selfId: 88 },
-                next: { spotId: 'unsafe_target', npcId: 77, itemId: 88 },
-                targetProgress: { npcId: 77, resolves: 0, targetKills: 0 }
-            },
-            partyRequest: {
-                status: 'deferred',
-                priority: 'required',
-                objectiveKey: 'direct_drop:unsafe_target:77',
-                spotId: 'unsafe_target',
-                npcId: 77,
-                itemId: 88,
-                targetId: 88,
-                deferredUntil: Date.now() + 60000,
-                attempts: 2
-            }
-        }
-    });
-    assert.strictEqual(recoveryResult.ok, true);
-    assert.strictEqual(recoveryResult.state.stats.partyRequest.status, 'deferred',
-        'without a worker replacement main retains the recruitment cooldown');
-    assert.strictEqual(recoveryResult.state.stats.equipmentPlan.strategy, 'direct_drop',
-        'main must not manufacture the retired planner market replacement');
-    assert.strictEqual(resolverOptions.targetNpcId, 0, 'the historical required source still uses its safe fallback');
-    assert.strictEqual(retiredPlannerCalls, 0);
-
-    const preferredPlan = {
-        status: 'active',
-        partyNeed: 'preferred',
-        requiresParty: false,
-        target: { selfId: 88 },
-        next: { spotId: 'preferred_target', npcId: 77, itemId: 88 },
-        strategy: 'direct_drop'
-    };
-    resolverOptions = null;
-    const preferredResult = await PopulationService.resolveColdState({ ...state, characterId: 9102,
-        stats: { ...state.stats, equipmentPlan: preferredPlan } });
-    assert.strictEqual(preferredResult.ok, true);
-    assert.strictEqual(resolverOptions.state.spotId, 'cruma', 'a preferred request must keep its planned route while looking for a party');
-    assert.strictEqual(resolverOptions.targetNpcId, 77, 'a preferred request must continue targeting its planned dropper');
+    assert.strictEqual(applied.spotId, state.spotId, 'main hunts the worker\'s spot, it chooses none');
+    assert.equal(spotSelectionStates.length, 0, 'main searches no spot');
 
     const timestamp = Date.now();
     const requestPlan = {
@@ -300,57 +210,41 @@ async function run() {
                 npcId: 77,
                 itemId: 88,
                 targetId: 88,
-                requestedAt: timestamp - Config.partyRequestMaxAgeMs - 1,
+                requestedAt: timestamp - 60 * 60 * 1000,
                 attempts: 2
             }
         }
     };
-    const deferred = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan(oldRequestState, requestPlan, timestamp, { economy: { worth: () => 0 } });
-    assert.strictEqual(deferred.status, 'deferred', 'an unmatched request must leave the open queue after its TTL');
-    assert(deferred.deferredUntil > timestamp, 'deferred request must carry a cooldown deadline');
+    // A party request is held with no clock: an hour unanswered it stays open
+    // (C4 has no LFG timeout), and its next build keeps it.
+    const Planner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+    const held = Planner.partyRequestForPlan(oldRequestState, requestPlan, timestamp, { economy: { worth: () => 0 } });
+    assert.strictEqual(held.status, 'open', 'an unanswered request stays open: no age closes it');
+    assert.strictEqual(held.requestedAt, oldRequestState.stats.partyRequest.requestedAt, 'its ask time is kept');
+    // Forming's no closes it: forming skips it until the bot's next build asks again.
+    const closed = { ...held, status: 'closed', lastReason: 'no_compatible_level_match' };
     assert.strictEqual(
-        PopulationService.partyObjectiveForState({ stats: { partyRequest: deferred, equipmentPlan: requestPlan } }),
+        PopulationService.partyObjectiveForState({ stats: { partyRequest: closed, equipmentPlan: requestPlan } }),
         null,
-        'deferred requests must not keep a formation objective alive'
+        'a closed request keeps no formation objective alive'
     );
-    const duringCooldown = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan({
+    // A plan needing a party whose build issued no request (built while travelling: it
+    // could not ask) asks for nothing: no required asker anchors a roster or names its
+    // objective. Inside a party its plan speaks for it (a member holds no request).
+    const travelling = { activity: 'traveling', stats: { equipmentPlan: requestPlan } };
+    assert.strictEqual(Planner.partyRequestForPlan(travelling, requestPlan, timestamp, { economy: { worth: () => 0 } }), null,
+        'fixture: a travelling bot\'s build issues no request');
+    assert.strictEqual(PopulationService.partyObjectiveForState(travelling), null,
+        'an objective the build never issued is no party request');
+    assert.strictEqual(Planner.memberObjective({ ...travelling, party: { partyId: 'p' } })?.objectiveKey, 'farm:unsafe_target:77',
+        'a party member\'s plan still names its party\'s objective');
+    const reopened = Planner.partyRequestForPlan({
         ...oldRequestState,
-        stats: { ...oldRequestState.stats, partyRequest: deferred }
+        stats: { ...oldRequestState.stats, partyRequest: closed }
     }, requestPlan, timestamp + 1000, { economy: { worth: () => 0 } });
-    assert.strictEqual(duringCooldown.status, 'deferred', 'a request must stay deferred during its cooldown');
-    const reopened = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan({
-        ...oldRequestState,
-        stats: { ...oldRequestState.stats, partyRequest: deferred }
-    }, requestPlan, deferred.deferredUntil + 1, { economy: { worth: () => 0 } });
-    assert.strictEqual(reopened.status, 'open', 'a deferred request must be eligible for a fresh formation attempt');
-
-    SpotProfiles.findForState = (candidate) => {
-        assert.strictEqual(candidate.stats.equipmentPlan.phase, 'leveling');
-        return fallbackSpot;
-    };
-    const deleveled = { ...state, level: 29, exp: 90, stats: {
-        equipmentPlan: { status: 'active', strategy: 'direct_drop', grade: 'd',
-            plannedForLevel: 30, target: { selfId: 88 },
-            next: { spotId: 'unsafe_target', npcId: 77, itemId: 88 },
-            partyNeed: 'required', requiresParty: true },
-        deathExperience: { expBeforeDeath: 100, expLost: 10, penaltyAppliedAt: timestamp }
-    } };
-    // Invoke the native public finalizer on the original delevel/death facts.
-    // Its actual recovery output is historical admitted metadata here; main
-    // does not pretend to have performed the worker's planner build.
-    const recoveryPlan = GearPlanner.finalizePlan(deleveled, deleveled.stats.equipmentPlan, {}, {}, timestamp);
-    assert.strictEqual(GearPlanner.levelingRecoveryFor(deleveled).reason, 'level_regression');
-    const admittedRecovery = { ...deleveled, stats: { ...deleveled.stats, equipmentPlan: recoveryPlan } };
-    const recovered = await PopulationService.resolveColdState(admittedRecovery);
-    assert.strictEqual(recovered.ok, true);
-    assert.strictEqual(recovered.state.stats.equipmentPlan.reason, 'level_regression');
-    assert.strictEqual(resolverOptions.targetNpcId, 0,
-        'the production solo resolve must stop forcing the acquisition NPC after delevel');
-    assert.strictEqual(resolverOptions.spot.id, fallbackSpot.id);
-    assert.strictEqual(recovered.state.stats.partyRequest, undefined);
-    const nextTick = await PopulationService.resolveColdState(recovered.state);
-    assert.strictEqual(nextTick.state.stats.equipmentPlan.phase, 'leveling',
-        'a subsequent production resolve must not immediately recreate the failed objective');
+    assert.strictEqual(reopened.status, 'open', 'the next build asks again');
+    assert.strictEqual(reopened.attempts, 2, 'a reopened request keeps its attempts');
+    assert.strictEqual(reopened.requestedAt, timestamp + 1000, 'a reopened request asks anew');
 
     console.log('Bot party request fallback checks passed');
 }
@@ -361,6 +255,7 @@ run().catch((err) => {
 }).finally(() => {
     SpotProfiles.ensure = originals.ensure;
     SpotProfiles.findForState = originals.findForState;
+    SpotProfiles.findById = originals.findById;
     GearPlanner.planFor = originals.planFor;
     LifeState.upsertState = originals.upsertState;
     LifeState.applyResolve = originals.applyResolve;
@@ -368,9 +263,9 @@ run().catch((err) => {
     BackgroundResolver.resolveSolo = originals.resolveSolo;
     ColdMarketListingService.reconcileInventory = originals.reconcileInventory;
     ColdMarketListingService.resolve = originals.resolveListing;
-    GoalService.current = originals.currentGoal;
+    NeedsEvaluator.goal = originals.goal;
     ColdMarketService.tryPurchase = originals.tryPurchase;
-    GoalService.review = originals.reviewGoal;
+    NeedsEvaluator.needs = originals.needs;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     LifeEvents.recordMany = originals.recordMany;
     fs.rmSync(isolated.directory, { recursive: true, force: true });

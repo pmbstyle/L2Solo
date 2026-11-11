@@ -3,11 +3,26 @@ const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
 const DecisionEvents = require('../AI/DecisionEvents');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
+// lazy: the town catalogue reads main's NPC data; the worker loads this module too.
+const catalog = () => invoke('GameServer/Bot/Economy/TownServiceCatalog');
+// The town NPC each improvement kind is done at (the catalogue's improvement roles).
+const ROLE_OF = Object.freeze({ sa: 'SMITH', crystal_quest: 'SOUL_CRYSTAL', henna: 'SYMBOL_MAKER' });
+const roleOf = kind => ROLE_OF[kind] ? catalog().IMPROVEMENT_ROLES[ROLE_OF[kind]] : null;
 const pendingCold = new Map(), pendingHot = new WeakMap();
-let improvementDeferred = 0;
+let improvementDeferred = 0, improvementRetired = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
     'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'invalid_bot_luxury_exchange', 'soul_crystal_resonance']);
 const rejectedInput = error => INPUT_REJECTIONS.has(error?.message);
+// A committed improvement is its held step done: one goal_done:goal raised where the bot
+// is, as a purchase that landed, hot and cold: a far row's bits (DecisionEvents.raiseOn),
+// a near body's bag at once (raiseDecision), which holds its next run until the answer
+// (reviewHot). The leaf check reads an enchant or a conversion done from the bag, but a
+// henna or a quest start leaves it nothing to read: held on, the same step ran again on
+// the bot's next step and the native writer refused it (the slots full, the dye spent),
+// or drew the same symbol twice. Resolves the raised far row's state, null otherwise.
+const DONE = 'goal_done:goal';
+const stepDone = (characterId, session = null) => session
+    ? DecisionEvents.raiseDecision(session, DONE) : DecisionEvents.raiseOn(Number(characterId), DONE);
 function chosen(state, context) {
     const leaf = context.network.activity;
     return leaf?.activity === 'improving' ? { ...leaf.improvement } : null;
@@ -35,8 +50,8 @@ function acquisitionTravel(state, leaf, timestamp = Date.now()) {
     if (travel && state.stats?.marketReturn) travel.stats.marketReturn = state.stats.marketReturn;
     return travel;
 }
-// options.decide(): the worker's decision made on exactly this state, or null
-// (L25); without one the wish network is built here.
+// options.decide(): the worker's decision made on exactly this state, or null;
+// without one the wish network is built here.
 async function reviewCold(state, options = {}) {
     if (!state?.characterId || state.phase !== 'cold' || ['dead','traveling'].includes(state.activity)) return Promise.resolve({state,changed:false});
     if (pendingCold.has(state.characterId)) return pendingCold.get(state.characterId);
@@ -52,25 +67,42 @@ async function reviewCold(state, options = {}) {
     if (!improvement || improvement.kind !== 'enchant' && !selfCrystallization(improvement) && !inTown(state)) return Promise.resolve({state,changed:false});
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)
         && !selfCrystallization(improvement) && state.currentRegion !== 'Giran') return { state, changed: false };
+    // A smith's special ability, the soul crystal quest and a henna only in a town where
+    // such an NPC stands (C4 spawns, where a near body finds one: stationTarget). An enchant
+    // scroll is read from the bag anywhere (C4: no NPC). A town without one refuses the held
+    // step for good: counted, goal_failed {impossible} drops it from the next build.
+    const role = roleOf(improvement.kind);
+    if (role && !catalog().improvementTowns(role).has(String(state.currentRegion))) {
+        const raised = await DecisionEvents.rejectOnRow(state, state, `improvement:${improvement.kind}:no_station`);
+        return { state: raised || state, changed: false, reason: 'no_station' };
+    }
     const original = Life.cachedState(state.characterId);
     const work = invoke('Database').applyBotImprovement(state.characterId, {
         ...improvement, lossHours: improvement.riskHours * context.riskWeight
     }, { ...writeOptions, coldState: state, validate() {
         if (Life.cachedState(state.characterId) !== original || original && original !== state) throw Error('improvement_source_retired');
-    } }).then(result => {
+    } }).then(async result => {
         if (!result.coldLifeRow) throw Error('improvement_missing_native_snapshot');
         const current = Life.acceptLifecycleRow(result.coldLifeRow, 'improvement');
         invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);
-        return {state:current,changed:true,result};
+        // The step's later writes build on the raised row (its revision and mind).
+        return {state:await stepDone(state.characterId) || current,changed:true,result};
     }).catch(async error => {
-        // These native refusals describe the selected input, never a stale
-        // revision, location, MP or uncertain transaction-delivery retry.
-        if (!rejectedInput(error)) throw error;
         const current = Life.cachedState(state.characterId) || state;
+        // Another write moved the bot's row between this review and its transaction: the
+        // held improvement stands (no failed goal) and the next review takes it on the new
+        // row. Counted (developer counters: improvementRetired), not a fault.
+        if (error?.message === 'improvement_source_retired') {
+            if (DiagnosticConfig.developerDiagnostics) improvementRetired++;
+            return { state: current, changed: false, reason: 'source_retired' };
+        }
+        // These native refusals describe the selected input, never a stale
+        // revision, location, MP or uncertain transaction-delivery retry. Counted
+        // by the improvement's kind and the reason (DecisionEvents.rejections).
+        if (!rejectedInput(error)) throw error;
         if (current.phase !== 'cold') return { state: current, changed: false };
-        const rejected = DecisionEvents.rejectedState(current, state, `improvement:${error.message}`);
-        const saved = rejected === current ? current : await Life.upsertState(rejected, 'improvement_source_rejected') || current;
-        return { state: saved, changed: false, reason: error.message };
+        const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${improvement.kind}:${error.message}`);
+        return { state: raised || current, changed: false, reason: error.message };
     }).finally(() => pendingCold.delete(state.characterId));
     pendingCold.set(state.characterId,work); return work;
 }
@@ -79,6 +111,8 @@ function reviewHot(session) {
     const actor = session?.actor;
     if (!actor || actor.isDead?.() || !String(session.accountId || '').startsWith('bot_')) return Promise.resolve(null);
     if (pendingHot.has(actor)) return pendingHot.get(actor);
+    // A step done waits for the worker's answer (stepDone): the held card still names it.
+    if (DecisionEvents.inBag(session, DONE)) return Promise.resolve(null);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const context = DecisionEvents.held(session);
     const improvement = chosen(context.state,context);
@@ -102,7 +136,9 @@ function reviewHot(session) {
     const work = invoke('Database').applyBotImprovement(actor.fetchId(),improvement,{beforeWrite() {
         if (!current()) throw Error('improvement_actor_retired');
     }}).then(result => {
-        if (!current()) return result;
+        // A body gone during the write (cooled, logged off, dead) took its bag along: the
+        // committed step still ends once, on the row where the bot is now (raiseOn).
+        if (!current()) return stepDone(actor.fetchId()).then(() => result);
         const backpack = actor.backpack, before = new Map(backpack.fetchItems().map(item => [item.fetchId(),item]));
         const ids = new Set(result.changedIds || []);
         const after = new Map(result.items.map(item => [item.id,item]));
@@ -127,18 +163,17 @@ function reviewHot(session) {
         backpack.visibleLook = null; backpack.inventoryRevision = Number(backpack.inventoryRevision || 0) + 1;
         session.dataSendToMe?.(invoke('GameServer/Network/Response').itemsList(backpack.fetchItems()));
         session.dataSendToMe?.(invoke('GameServer/Network/Response').userInfo(actor));
-        Economy.forget(actor.fetchId()); return result;
+        Economy.forget(actor.fetchId()); stepDone(actor.fetchId(), session); return result;
     }).catch(error => {
-        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted);
+        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
         throw error;
     }).finally(() => pendingHot.delete(actor));
     pendingHot.set(actor,work); return work;
 }
 function stationMatches(npc, improvement) {
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)) return Number(npc.fetchSelfId()) === Number(improvement.npcId);
-    if (improvement.kind === 'sa') return [7300,7471,7678,7688,7846,7898,8271,8316].includes(npc.fetchSelfId());
-    if (improvement.kind === 'crystal_quest') return [7115,7194,7856].includes(npc.fetchSelfId());
-    return /symbol maker/i.test(String(npc.fetchTitle?.() || ''));
+    return catalog().improvementRoles(Number(npc.fetchSelfId()), String(npc.fetchTitle?.() || ''))
+        .includes(roleOf(improvement.kind));
 }
 function stationTarget(actor, improvement) {
     const town = invoke('GameServer/World/TownRespawn').getClosestTown(actor.fetchLocX(),actor.fetchLocY(),actor.fetchLocZ());
@@ -149,4 +184,4 @@ function stationTarget(actor, improvement) {
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
 module.exports = { reviewCold, reviewHot, chosen, inTown, selfCrystallization, acquisitionTravel, Policy, stationTarget,
-    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred }) : { enabled: false } };
+    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred, improvementRetired }) : { enabled: false } };

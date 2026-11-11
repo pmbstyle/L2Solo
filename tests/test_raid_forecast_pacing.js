@@ -54,7 +54,8 @@ function harness(workMs = 20) {
         assert(report.total.hydratedBots <= 72 && report.total.socialChecks <= 288);
         assert.equal(report.total.revalidatedBots, 54, 'each paced forecast reads the current nine');
         await h.pulse(55000); assert.equal(h.calls.length, 6);
-        await h.pulse(60000); assert.equal(h.calls.length, 7, 'the next minute refills its allowance');
+        h.service.wake('raid_opportunity');
+        await h.pulse(60000); assert.equal(h.calls.length, 7, 'a new opportunity runs on the refilled allowance');
     } finally { h.service.stop(); }
 
     const busy = harness(); await busy.service.start();
@@ -99,7 +100,8 @@ function harness(workMs = 20) {
         assert.equal(oversized.service.snapshot().search.cpuBudget.debtMs, 180);
         for (const ms of [60000,120000]) await oversized.pulse(ms);
         assert.equal(oversized.calls.length, 1, 'a single overrun is paced and repaid across future windows');
-        await oversized.pulse(150000); assert.equal(oversized.calls.length, 2);
+        oversized.service.wake('raid_opportunity');
+        await oversized.pulse(180000); assert.equal(oversized.calls.length, 2);
     } finally { oversized.service.stop(); }
     console.log('Raid 120 ms/minute budget, measured pacing, worker pressure, fresh admission and no catch-up bursts passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

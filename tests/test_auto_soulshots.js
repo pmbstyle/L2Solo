@@ -183,6 +183,14 @@ assert.strictEqual(ShotStock.planForActor(playerCaster).selfId, ShotStock.planFo
 const workerPlan = ShotStock.planForState({ level: 50, stats: { classId: 12 },
     inventory: { 5: { selfId: 5, equipped: true, slot: 7 }, 3947: { selfId: 3947, amount: 500 } } });
 assert.strictEqual(workerPlan.selfId, 3947, 'the cold choice: the held Blessed Spiritshot');
+// Holding neither shot, the bot fires and buys the kind its held earning answer
+// chose (the earning decision owns it; a reader weighs no shot price).
+const emptyCaster = shotKind => ShotStock.planForState({ level: 50, stats: { classId: 12, ...(shotKind ? { earning: { shotKind } } : {}) },
+    inventory: { 5: { selfId: 5, equipped: true, slot: 7 } } }).kind;
+assert.strictEqual(emptyCaster('blessedSpiritshot'), 'blessedSpiritshot', 'an empty bag follows the held answer\'s Blessed Spiritshot');
+assert.strictEqual(emptyCaster('spiritshot'), 'spiritshot', 'an empty bag follows the held answer\'s Spiritshot');
+assert.strictEqual(emptyCaster(null), ShotStock.decidedKind({ level: 50, stats: { classId: 12 },
+    inventory: { 5: { selfId: 5, equipped: true, slot: 7 } } }), 'an answer that names no kind (held from before): the earning decision\'s own rule');
 assert.strictEqual(ShotStock.enableAutoShot(blessedActor, { stock: { itemId: workerPlan.selfId, ownedUsePerHour: 100,
     beginnerUsePerHour: 100, paidUsePerHour: 100 } }).selfId, 3947, 'the hot plan enables the worker\'s blessed shot');
 assert.deepStrictEqual([...blessedActor.autoSoulshots], [3947], 'only the Blessed Spiritshot is enabled');

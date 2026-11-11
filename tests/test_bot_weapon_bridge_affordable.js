@@ -88,4 +88,39 @@ assert(Number(cheapBridge.market.price) + Number(cheapBridge.market.reserve) <= 
     'a bot with a little more than the cheapest usable weapon costs buys it now');
 assert.strictEqual(Gear.combatReadiness(armed(nearlyBroke, cheapBridge.target.selfId)).hasWeapon, true);
 
+// A party member leaves for its bridge only when it can buy it now: a C4
+// player without a proper weapon still parties and earns there. Before, any
+// bridge plan (also one saved for) released the member at once, and the party
+// dissolved and re-formed every half minute (2026-11-05 diagnostics run).
+const warrior = (adena) => ({
+    characterId: 9400002, level: 20, adena, stats: { classId: 1 },
+    inventory: {
+        2: { selfId: 2, amount: 1, equipped: true, equippedSlots: [7], slot: 7 },
+        57: { selfId: 57, amount: adena }
+    }
+});
+const poorWarrior = warrior(5000);
+assert.strictEqual(Gear.combatReadiness(poorWarrior).hasWeapon, false, 'fixture: a one-handed sword is not a Warrior weapon');
+const savedBridge = Gear.npcWeaponBridgePlan(poorWarrior);
+assert(savedBridge?.weaponBridge && Number(savedBridge.market.price) > poorWarrior.adena,
+    'an unfunded Warrior still plans to save for its bridge');
+assert.strictEqual(Gear.equipmentBridgeReason(poorWarrior), null, 'a bridge it cannot pay for keeps the Warrior in its party');
+const paidWarrior = warrior(Number(savedBridge.market.price));
+assert.strictEqual(Gear.npcWeaponBridgePlan(paidWarrior)?.target?.selfId, savedBridge.target.selfId);
+assert.strictEqual(Gear.equipmentBridgeReason(paidWarrior), 'weapon_bridge', 'a Warrior that can buy its bridge leaves to buy it');
+
+// An unfunded weapon bridge does not hide a funded armour one: a Gladiator
+// with neither a dual sword nor a Warrior weapon, in light armour, cannot pay
+// for the two blades yet but can buy its heavy body armour now.
+const gladiator = { characterId: 9400003, level: 30, adena: 150000, stats: { classId: 2, role: 'dps' },
+    inventory: {
+        2: { selfId: 2, amount: 1, equipped: true, equippedSlots: [7], slot: 7 },
+        391: { selfId: 391, amount: 1, equipped: true, equippedSlots: [10], slot: 10 }, // Puma Skin Shirt
+        57: { selfId: 57, amount: 150000 }
+    } };
+const dualBridge = Gear.npcWeaponBridgePlan(gladiator);
+assert(dualBridge?.combine && Number(dualBridge.bridgeCost) > gladiator.adena, 'fixture: an unfunded dual-sword bridge');
+assert.strictEqual(Gear.equipmentBridgeReason(gladiator), 'class_armor_bridge',
+    'a member that can buy its class armour leaves to buy it while saving for the weapon');
+
 console.log('Affordable weapon bridge checks passed');

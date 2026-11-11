@@ -144,10 +144,13 @@ async function run() {
         return Promise.resolve({ ok: true, state });
     };
 
+    const budgetCuts = () => Number(invoke('GameServer/Bot/Population/PopulationMetrics').interval.activationRefusalReasons.get('activation_budget') || 0);
+    const cutsBefore = budgetCuts();
     await PopulationService.activateNearPlayers();
     assert.strictEqual(coldLimit, 100, 'activation must inspect the complete local service row');
     assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree', 'ColdA'],
         'craft services must not be capped by the ambient budget and the uncapped local population must ramp one ambient bot');
+    assert.strictEqual(budgetCuts(), cutsBefore + 1, 'a scan whose budget left near rows cold is counted once, not per row left out');
     const ambientRequest = activationRequests.find((entry) => entry.state.name === 'ColdA');
     assert.strictEqual(ambientRequest.reason, 'near_player');
     assert.strictEqual(ambientRequest.options.readyOnActivation, true,
@@ -190,6 +193,35 @@ async function run() {
     await PopulationService.activateNearPlayers();
     assert.deepStrictEqual(activated, ['ColdLevel45'],
         'physical proximity must activate the local cold bot without a player-level filter');
+    assert.strictEqual(budgetCuts(), cutsBefore + 1, 'a scan that showed every near row counts no budget cut');
+
+    // A body the scan placed already inside a settled player's view is counted (the ring's lead did
+    // not hold for it); one placed past the view is not.
+    const highBotFar = session('bot_high_far', actor(13, 7000, 45), { populationHotAt: Date.now() - 300000 });
+    publishSessions([highLevelPlayer, highBotA, highBotB, highBotFar]);
+    const inView = () => invoke('GameServer/Bot/Population/PopulationMetrics').counters.lateInViewActivations;
+    const inViewBefore = inView();
+    LifeState.coldNear = () => Promise.resolve([{ characterId: 11, name: 'BodyInView', level: 45 },
+        { characterId: 13, name: 'BodyPastView', level: 45 }]);
+    Config.maxActivationsPerScan = 2;
+    activated.length = 0;
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['BodyInView', 'BodyPastView']);
+    assert.strictEqual(inView(), inViewBefore + 1, 'only the body placed inside the player\'s view is counted');
+    // A teleport's scan places the crowd where the player landed: inside the view by nature, not late.
+    PopulationService.requestPhaseScan(9);
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 1, 'the scan after a teleport counts no late body');
+    // A scan its budget cut leaves near rows cold; the next scan places them in the view, not late.
+    Config.maxActivationsPerScan = 1;
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 2, 'a settled player\'s scan counts the late body before its cut');
+    LifeState.coldNear = () => Promise.resolve([{ characterId: 11, name: 'BodyInView', level: 45 }]);
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 2, 'the rows a budget cut held over are not counted late');
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(inView(), inViewBefore + 3, 'once every near row is placed the player counts late bodies again');
+    publishSessions([highLevelPlayer, highBotA, highBotB]);
 
     const grouped = Array.from({ length: 9 }, (_, i) => ({ characterId: 200 + i, name: `Group${i}`, level: 45,
         activity: 'grouped', party: { partyId: 'full-party' } }));
@@ -207,10 +239,101 @@ async function run() {
     assert.strictEqual(activated[0], 'Group0',
         'a visible party must be activated before standalone cold simulation can consume the scan budget');
 
+    // A row the scan cannot show (refused for any reason) takes no place in the scan's
+    // budget: the next nearest rows are tried and shown; past the budget no row is tried.
+    Parties.find = id => id === 'cut-party' ? { status: 'active', memberIds: [401, 402, 403] } : null;
+    Config.maxActivationsPerScan = 2;
+    const cutParty = { characterId: 401, name: 'CutLeader', level: 45, activity: 'grouped', party: { partyId: 'cut-party' } };
+    LifeState.coldNear = async () => [cutParty, ...[301, 302, 303, 304, 305]
+        .map(id => ({ characterId: id, name: `Row${id}`, level: 45, activity: 'hunting' }))];
+    activated.length = 0;
+    const requested = [];
+    PopulationService.requestActivation = async state => {
+        requested.push(state.name);
+        if (state.characterId === 401) return { ok: false, reason: 'activation_pending', state };
+        if (state.characterId === 301) return { ok: false, reason: 'no_safe_activation_placement', state };
+        if (state.characterId === 302) return { ok: false, reason: 'missing_account', state };
+        activated.push(state.name);
+        return { ok: true, state };
+    };
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['Row303', 'Row304'],
+        'rows that cannot be shown do not use up the scan: the next nearest are shown, within the budget');
+    assert.deepStrictEqual(requested, ['CutLeader', 'Row301', 'Row302', 'Row303', 'Row304'], 'a row past the budget is not tried');
+    // Two parties and a solo row, budget 4: the first party shows 3, the second (3) does
+    // not fit and is left whole, the solo row still fits.
+    Parties.find = id => ({ 'party-a': { status: 'active', memberIds: [501, 502, 503] },
+        'party-b': { status: 'active', memberIds: [601, 602, 603] } })[id] || null;
+    LifeState.coldNear = async () => [{ characterId: 501, name: 'A1', level: 45, activity: 'grouped', party: { partyId: 'party-a' } },
+        { characterId: 602, name: 'B2', level: 45, activity: 'grouped', party: { partyId: 'party-b' } },
+        { characterId: 306, name: 'Row306', level: 45, activity: 'hunting' }];
+    activated.length = 0;
+    PopulationService.requestActivation = async state => { activated.push(state.name); return { ok: true, state, count: state.party ? 3 : 1 }; };
+    Config.maxActivationsPerScan = 4;
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['A1', 'Row306']);
+    Parties.find = originalFindParty;
+
+    // A crowd around a player fills in one go: a scan its budget cut goes on at the next
+    // turn while main keeps up, 6 bodies a batch, until every near row is shown; with main
+    // lagging only the first batch is shown and the rest waits for the interval scan. A
+    // player's teleport or login asks a scan at once, never two at a time.
+    const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+    const realLag = Metrics.currentEventLoopLag;
+    const realTimer = PopulationService.phasePolicyTimer;
+    let lag = 0;
+    Metrics.currentEventLoopLag = () => lag;
+    PopulationService.phasePolicyTimer = { scanning: true };
+    publishSessions([session('player_crowd', actor(12, 0))]);
+    BotManager.sessions = [];
+    Config.maxActivationsPerScan = 6;
+    let crowd = [];
+    LifeState.coldNear = async () => crowd.filter(state => !state.hot);
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    PopulationService.requestActivation = async state => {
+        concurrent++;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise(setImmediate);
+        concurrent--;
+        state.hot = true;
+        return { ok: true, state };
+    };
+    const shown = () => crowd.filter(state => state.hot).length;
+    const settled = async () => {
+        for (let turn = 0; turn < 200 && (PopulationService.phasePolicyRunning || PopulationService.phasePolicyNext); turn++) {
+            await new Promise(setImmediate);
+        }
+    };
+    const newCrowd = (base) => Array.from({ length: 20 }, (_, i) => ({ characterId: base + i, name: `Crowd${base + i}`,
+        level: 20, activity: 'hunting' }));
+    try {
+        crowd = newCrowd(700);
+        await PopulationService.tickPhasePolicy();
+        assert.strictEqual(shown(), 6, 'one batch a turn');
+        await settled();
+        assert.strictEqual(shown(), 20, 'the rest of the crowd is shown in the next turns, not at the next interval scan');
+
+        crowd = newCrowd(800);
+        lag = 50;
+        await PopulationService.tickPhasePolicy();
+        await settled();
+        assert.strictEqual(shown(), 6, 'a lagging main leaves the rest to the interval scan');
+
+        lag = 0;
+        crowd = newCrowd(900);
+        PopulationService.requestPhaseScan();
+        PopulationService.requestPhaseScan();
+        await settled();
+        assert.strictEqual(shown(), 20, 'a teleport or login shows the crowd without waiting for the interval');
+        assert.strictEqual(maxConcurrent, 1, 'requested scans never overlap');
+    } finally {
+        Metrics.currentEventLoopLag = realLag;
+        PopulationService.phasePolicyTimer = realTimer;
+    }
+
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
-    assert.strictEqual(PopulationService.partyFormationPending, true,
-        'a resolving pass must leave a bounded party formation retry pending');
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = true;
 }

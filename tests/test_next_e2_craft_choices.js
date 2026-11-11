@@ -23,8 +23,6 @@ assert(finite);
 assert.equal(finite.batches, 1, 'finite marginal output stops after the first saturating batch');
 assert.equal(finite.expectedSold, 6, 'cap success output before mixing the 60% physical outcome');
 assert.equal(finite.expectedProfit, 57);
-assert.equal(finite.repeatable, false);
-assert(Number.isNaN(finite.incomePerHour), 'a finite buyer supplies no occupation clock');
 const stock = Policy.opportunityFor(state, recipe, purchase, [exit], id => id === 1463
     ? { count: 10, unitValue: 10 } : null, context);
 assert.equal(stock, null, 'old goods satisfy the same bid in the without-case');
@@ -54,14 +52,6 @@ assert.equal(trial.batches, 1);
 const unknownClock = Policy.chooseQuantity({ state, recipe: deterministic, planFor: purchase,
     exits: [{ price: 20, count: 1000 }], context: { hourAdena: 1000 } });
 assert.equal(unknownClock, null);
-const zeroClock = Policy.chooseQuantity({ state, recipe: { ...deterministic, mpCost: 0 },
-    planFor: (id, n) => ({ ...purchase(id, n), npc: n }), exits: [{ price: 20, count: 1000, repeatable: true }], context,
-    mode: 'occupation' });
-assert.equal(zeroClock, null, 'zero MP alone is no repeatable full-cycle clock');
-const recurring = Policy.chooseQuantity({ state, recipe: deterministic,
-    planFor: (id, n) => ({ ...purchase(id, n), npc: n }), exits: [{ price: 20, count: 1000, repeatable: true }],
-    context, mode: 'occupation' });
-assert(recurring?.incomePerHour > 0);
 assert(Funding.forOpportunity(state, finite.valuation) > 0);
 const purseBefore = structuredClone(state);
 assert.equal(Funding.forOpportunity(state, finite.valuation),

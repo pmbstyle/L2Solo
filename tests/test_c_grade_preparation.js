@@ -35,7 +35,7 @@ function review(state, board = new BoardIndex(), extra = {}, forget = true) {
     Economy.reset(); if (forget) Profile.forgetBuild(state.characterId);
     return Economy.forState(state, { spots: [], board, timestamp, npcOffersFor: () => [],
         routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
-            () => [true, 0, 0]), workshop: { known: true, recipeId: 0, incomePerHour: 0 }, ...extra });
+            () => [true, 0, 0]), ...extra });
 }
 const source = bot(), before = structuredClone(source);
 assert.equal(Progression.assess(source).required, false);

@@ -10,6 +10,7 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ColdShotEconomyService = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
+const ratedKit = require('./helpers/ratedKit');
 
 DataCache.init();
 
@@ -18,11 +19,17 @@ const D_SOULSHOT = 1463;
 const NG_SOULSHOT = 1835;
 const WARRIOR = 1;
 
-function stateWith(ownShots, extra = {}) {
+// The bot's kit as its build published it (stats.kitRates and the earning answer's
+// per-spot use): an unrated bot buys and keeps no shots by target.
+const rated = state => {
+    const { kitRates, earning } = ratedKit(state).stats;
+    return { kitRates, earning };
+};
+function stateWith(ownShots, extra = {}, kit = warriorKit) {
     return {
         characterId: 9600001, name: 'ShotKeeper', level: 40, adena: 10000000,
         phase: 'cold', activity: 'shopping',
-        stats: { classId: WARRIOR, ...(extra.stats || {}) },
+        stats: { classId: WARRIOR, ...kit, ...(extra.stats || {}) },
         inventory: {
             57: { selfId: 57, amount: 10000000 },
             [D_SWORD]: { selfId: D_SWORD, amount: 1, equipped: true, equippedCount: 1, slot: 7, stackable: false },
@@ -32,6 +39,7 @@ function stateWith(ownShots, extra = {}) {
     };
 }
 
+const warriorKit = rated(stateWith(0, {}, {}));
 const counts = (lines) => new Map(lines.map((line) => [Number(line.selfId), Number(line.count)]));
 
 // ARCH-NOTE: E5/E9 replaces 3000 with ceil(native use/h * bag-fill hours).
@@ -84,12 +92,15 @@ assert.strictEqual(hotSale.get(NG_SOULSHOT), 2000, 'a hot bot offers its old-gra
 // A shot crafter's surplus of its own shot starts above the same target.
 // T106 table (class vitals): this crafter's D shots pay (have a purchase target) at every level from 51,
 // only at some below (not at 49-50).
-const crafter = (amount) => ({ ...stateWith(amount, { stats: { classId: 57, shotCraft: { productId: D_SOULSHOT } } }), level: 52 });
+const crafterOf = (amount, kit) => ({ ...stateWith(amount, { stats: { classId: 57, shotCraft: { productId: D_SOULSHOT } } }, kit), level: 52 });
+const crafter = (amount) => crafterOf(amount, crafterKit);
 const crafterWithout = (state) => {
     const inventory = { ...state.inventory };
     delete inventory[NG_SOULSHOT];
     return { ...state, inventory };
 };
+// Its kit rated by its build on the bag the surplus decision reads.
+const crafterKit = rated(crafterWithout(crafterOf(0, {})));
 // Removing an old-grade stack increases native bag room; derive this
 // crafter's target from the same inventory used by the surplus decision.
 const crafterTarget = ShotStock.keptAmounts(crafterWithout(crafter(0)))[D_SOULSHOT];
@@ -156,11 +167,9 @@ for (const custodyPolicy of [0, 1]) {
     if (custodyPolicy === 0) delete owner.inventory[D_SOULSHOT];
     const ctx = Pricing.traderContext(owner, { economy, board, tripCost: trip });
     assert.strictEqual(ctx.canSell(legacyLine), false);
-    const seen = new (invoke('GameServer/Bot/Economy/BoardLook').SeenLines)();
-    const withdrawals = [];
-    for (let step = 0; step < 2; step++) withdrawals.push(...(Pricing.lookOwn(owner, [legacyLine], ctx, seen)?.withdrawals || []));
+    const withdrawals = Pricing.lookOwn(owner, [legacyLine], ctx)?.withdrawals || [];
     assert(withdrawals.some(row => row.lineId === legacyLine.lineId),
-        'natural review withdraws both backed and conditional legacy personal shots without a new fill');
+        'an own lines look withdraws both backed and conditional legacy personal shots without a new fill');
 }
 
 console.log('test_bot_own_shot_reserve: ok');

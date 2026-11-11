@@ -151,9 +151,33 @@ function selectionPlansFromHuntingSpot() {
     const huntCenter = { locX: -14225, locY: 123540, locZ: 0 };
     const spots = [{ id: 'origin-spot', center: huntCenter }];
     const original = { ...npcKitState(townCenters['Dwarven Village']), spotId: 'origin-spot', phase: 'cold', activity: 'hunting' };
-    assert.strictEqual(selectAcquisitionPlan(original, null, { spots, occupancy: {} }).acquisitionPlan.status, 'deferred',
-        'the original unarmed actor cannot force shopping over its native activity');
     const lookup = ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows());
+    // An unarmed bot's NPC weapon is a survival wish of its build: funded
+    // from the whole wallet it is the step, and the gear plan buys it (the weapon bridge).
+    const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+    const unarmed = (adena) => {
+        const state = { ...original, adena, inventory: { 57: { selfId: 57, amount: adena } } };
+        Context.forget(state.characterId);
+        const economy = Context.forState(state, { spots, timestamp: Date.now(), npcOffersFor: id => lookup.offersFor(id),
+            routeRows: require('./fixtures/native_gear_economy').prepareRoutes(state) });
+        return { state, economy, plan: selectAcquisitionPlan(state, null, { spots, preparedEconomy: economy,
+            planningOptions: lookup.plannerOptions }).acquisitionPlan };
+    };
+    const armedWith = unarmed(100000);
+    assert.strictEqual(armedWith.economy.network.activity?.activity, 'shopping', 'the funded bridge is the step');
+    assert.strictEqual(armedWith.plan.status, 'active');
+    assert.strictEqual(armedWith.plan.strategy, 'market');
+    assert(armedWith.plan.weaponBridge, 'the gear plan is the weapon bridge');
+    assert.strictEqual(armedWith.economy.network.activity.rootKey, `power:${armedWith.plan.target.selfId}:${armedWith.plan.target.slot}`);
+    // A broke unarmed bot hunts for it: the wallet's threshold is the bridge's price (goal_affordable:focus).
+    const broke = unarmed(100);
+    const afford = broke.economy.statsPacket.wishSections.affordAt;
+    assert.strictEqual(afford?.kind, 'focus', 'a broke bot waits for its weapon bridge first');
+    assert(afford.at > 100);
+    const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+    const raised = wallet => Sections.moneyCrossings(wallet, broke.economy.statsPacket.wishSections).includes('goal_affordable:focus');
+    assert.strictEqual(raised(afford.at - 1), false);
+    assert.strictEqual(raised(afford.at), true, 'its price in the wallet raises goal_affordable:focus');
     const kit = require('./fixtures/profitable_stock_state').kitFor(0, original.level);
     const wanderer = { ...original, exp: Number(DataCache.experience[13]), currentRegion: 'Dwarven Village',
         loc: { ...original.loc, locZ: 0 }, stats: { ...original.stats }, inventory: structuredClone(kit.inventory) };
@@ -167,7 +191,6 @@ function selectionPlansFromHuntingSpot() {
     const timestamp = Date.now();
     // Each review is a fresh look at the state this test set: a far bot at work holds its
     // plan through a change of its kit or bag (Reaction), and these are the test's edits.
-    const Context = invoke('GameServer/Bot/Economy/EconomyContext');
     const review = () => {
         Context.forget(wanderer.characterId);
         return Context.forState(wanderer, { spots, timestamp,
@@ -179,13 +202,15 @@ function selectionPlansFromHuntingSpot() {
     if (shot.survivalMissing > 0) {
         assert(Number.isFinite(shot.survivalMissing) && Number.isInteger(shot.survivalMissing));
         assert.strictEqual(shot.itemId, invoke('GameServer/Inventory/ShotStock').planForState(wanderer).selfId);
-        assert.strictEqual(shot.ownedUsePerHour, shot.usePerHour);
+        // The owned use (ShotStock.usePolicy) and the kit rate's use are two numbers, not one yet: both positive.
+        assert(shot.ownedUsePerHour > 0 && shot.usePerHour > 0);
+        // The shots a fight loads: the paid ones and the beginner grant.
         const current = Number(wanderer.inventory[shot.itemId]?.amount || 0);
-        assert.strictEqual(shot.current, current);
+        assert.strictEqual(shot.current, current + Number(shot.beginnerCurrent || 0));
         wanderer.inventory[shot.itemId] = { ...(wanderer.inventory[shot.itemId] || {}),
             selfId: shot.itemId, amount: current + shot.survivalMissing, stackable: true, equipped: false };
         economy = review();
-        assert.strictEqual(economy.stock('shots').current, current + shot.survivalMissing);
+        assert.strictEqual(economy.stock('shots').current, current + shot.survivalMissing + Number(shot.beginnerCurrent || 0));
     }
     assert.strictEqual(economy.stock('shots').survivalMissing, 0);
     const activity = economy.network.activity;

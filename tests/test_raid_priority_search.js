@@ -58,7 +58,7 @@ async function run() {
     const targets = catalog.all().filter(s => s.avgLevel >= 43 && s.avgLevel <= 48);
     const dependencies = {
         now: () => at,
-        config: { opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidIntervalMs: 900000,
+        config: { opportunisticRaidIntervalMs: 900000,
             opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidAliveFraction: .5,
             opportunisticRaidMaxParties: 2, opportunisticRaidExpeditionMs: 2700000 },
         database: { execute: async () => [] },

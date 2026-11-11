@@ -8,7 +8,7 @@ const { npcHtml, bypasses, carries, objectIdAt, within } = require('./PlayerClie
 // failed, with the server packets around a failure); "e2e-done" closes the scenario. A script module:
 //   module.exports = { name, players: 1, place(ctx) -> { locX, locY, locZ } | null, async run(ctx) }
 // ctx: { players: [PlayerClient], player, step(name, fn), within, npcHtml, bypasses, carries, objectIdAt,
-//        world: { npcsNear, bots, botsNear, crowd, failures }, setup: { giveAdena, teleport } }.
+//        world: { npcsNear, bots, botsNear, crowd, failures }, setup: { giveAdena, setLevel, fullBuff, revive, teleport } }.
 // Steps act through client packets only; `setup` prepares a player the way the game's own owner of that
 // grant does (the GM's give-adena), for what a test needs but a level-1 character does not have.
 
@@ -51,6 +51,24 @@ const setup = {
     async giveAdena(client, amount) {
         await invoke('GameServer/World/Generics/NpcBypasses/AdminGiveAdena')(client.session,
             ['admin_give_adena', client.actor.fetchName(), String(amount)]);
+    },
+
+    // A level for a fight a script stages (the GM's set-level): the level-1 character a login creates
+    // dies to any mob of a hunting field.
+    async setLevel(client, level) {
+        await invoke('GameServer/World/Generics/NpcBypasses/AdminSetLevel').setOwnLevel(client.session, level);
+    },
+
+    // The GM's full buff: a character given a level by setLevel has no gear, and dies to a mob of its
+    // level before it kills one.
+    fullBuff(client) {
+        return invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff')(client.session);
+    },
+
+    // A player killed in a staged fight stands up where it fell (as one back from town would), as the
+    // hot scenario's route revives its players.
+    revive(client) {
+        invoke(global.path.actor).revive(client.session, client.actor, { delayMs: 0 });
     },
 
     // Travel: the gatekeeper's teleport (tests/e2e/gatekeeper.js checks that one through its window).

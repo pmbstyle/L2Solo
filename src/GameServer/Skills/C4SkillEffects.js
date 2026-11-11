@@ -640,7 +640,7 @@ function applyGiveSp(session, actor, target, skill, semantic, magicSkill, attack
     if (typeof target.setSp === 'function') {
         target.setSp(currentSp + amount);
     }
-    refreshUserInfo(session, target);
+    EffectTicker.sendUserInfo(session, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return amount;
 }
@@ -1279,28 +1279,14 @@ function refreshCp(session, actor, target) {
     }
 }
 
-function refreshUserInfo(session, target) {
-    const packet = ServerResponse.userInfo(target);
-    if (target?.session?.dataSendToMe) {
-        target.session.dataSendToMe(packet);
-    } else if (target === session?.actor && session?.dataSendToMe) {
-        session.dataSendToMe(packet);
-    }
-}
-
 function refreshEffects(session, target) {
     // One refresh for skills and expiry: EffectTicker also skips NpcInfo for dead/removed NPCs.
     EffectTicker.refreshEffects(session, target);
 }
 
+// One stat refresh for skills and expiry.
 function refreshStats(session, target) {
-    if (!target) return;
-    if (target?.session) {
-        try {
-            invoke(path.actor).calculateStats(target?.session || session, target);
-        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
-    }
-    target.statusUpdateVitals?.(target);
+    EffectTicker.refreshStats(session, target);
 }
 
 function hasStats(effect) {

@@ -46,21 +46,33 @@ function clearExpiry(actor, key) {
     return true;
 }
 
+// The target's own client, the receiver of the packets that describe the
+// receiver's own character (AbnormalStatusUpdate, UserInfo): its session, or
+// the caster's when the caster is the target. An NPC cast session forwards to
+// a nearby player, so its actor is not the receiver; an NPC (a summon among
+// them) has no own client: the players who see it get its NpcInfo.
+function ownClient(session, target) {
+    if (!target || target.fetchKind) return null;
+    if (target.session?.dataSendToMe) return target.session;
+    return session?.actor === target && session.dataSendToMe ? session : null;
+}
+
+// C4 UserInfo (broadcastUserInfo's own half) after a character's effects,
+// stats or SP changed: to its own client only, and only for a character (its
+// paperdoll is the backpack's).
+function sendUserInfo(session, target) {
+    const owner = ownClient(session, target);
+    if (owner && target.backpack?.fetchPaperdollSelfId) owner.dataSendToMe(invoke('GameServer/Network/Response').userInfo(target));
+}
+
 function refreshEffects(session, target) {
     const ServerResponse = invoke('GameServer/Network/Response');
-    // NPC cast sessions forward to a nearby player; their actor is not the receiver.
-    // Personal effect packets must never describe an NPC, including summons.
-    const owner = !target?.fetchKind && (target?.session?.dataSendToMe
-        ? target.session : session?.actor === target ? session : null);
-    const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
-    if (owner?.dataSendToMe) {
-        owner.dataSendToMe(packet);
+    const owner = ownClient(session, target);
+    if (owner) {
+        owner.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(target));
         owner.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     }
-
-    if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {
-        target.session.dataSendToMe(ServerResponse.userInfo(target));
-    }
+    sendUserInfo(session, target);
 
     const removedNpc = target?.fetchKind && (
         target.state?.fetchDead?.() === true ||
@@ -110,6 +122,10 @@ function scheduleExpiry(session, target, effect) {
             refreshStats(target.session || session, target);
         }
         refreshEffects(session, target);
+        // A bot's last hunting buff ended: its rebuff decision hears it (HotTownRebuff).
+        try {
+            if (invoke('GameServer/Bot/AI/BotBuffs').rebuffable(effect)) invoke('GameServer/Bot/AI/HotTownRebuff').buffEnded(target);
+        } catch (error) { FailureLog.note('effect.buffs_expired', error); }
     }, Math.max(1, delay + 25));
     if (typeof timers[effect.key].unref === 'function') {
         timers[effect.key].unref();
@@ -241,10 +257,7 @@ function applyManaDot(session, source, target, effect) {
         }
 
         applyManaDamage(target, consume);
-        if (manaDot.toggle) {
-            refreshStats(target.session || session, target);
-            return;
-        }
+        if (manaDot.toggle) return;
 
         remaining -= 1;
         if (remaining <= 0) {
@@ -343,22 +356,18 @@ function applyManaDamage(target, damage) {
     else if (target.broadcastVitals) target.broadcastVitals();
 }
 
+// A stat effect came or went: the character's stats are rebuilt and its
+// vitals sent (StatusUpdate). Its UserInfo goes with the effect refresh that
+// follows (refreshEffects, by the own-client rule). A toggle's MP tick sends
+// only the StatusUpdate of its MP loss (applyManaDamage), as C4's
+// EffectMpConsumePerLevel.
 function refreshStats(session, target) {
     if (target?.session) {
         try {
             invoke(path.actor).calculateStats(target?.session || session, target);
         } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
-    if (target?.statusUpdateVitals) {
-        target.statusUpdateVitals(target);
-    }
-
-    if (target && session?.dataSendToMe) {
-        try {
-            const ServerResponse = invoke('GameServer/Network/Response');
-            session.dataSendToMe(ServerResponse.userInfo(target));
-        } catch (error) { FailureLog.note('combat.user_info', error); }
-    }
+    target?.statusUpdateVitals?.(target);
 }
 
 function applyManaHeal(target, heal) {
@@ -387,6 +396,8 @@ module.exports = {
     applyHot,
     scheduleExpiry,
     refreshEffects,
+    refreshStats,
+    sendUserInfo,
     clear,
     clearAll
 };

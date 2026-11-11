@@ -113,11 +113,11 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
             simulation: { revision: 0 } };
         send('snapshot_page', { rows: [{ state }], done: true, ack: true });
         await until(message => message.type === 'ready' && message.payload.phase === 'state_loaded');
-        const request = (token, price) => ({ token, actorA: 42, actorB: 43, seqA: 1, seqB: 1, town: 'Giran', point,
+        const request = (token, price, adId = 100) => ({ token, actorA: 42, actorB: 43, seqA: 1, seqB: 1, town: 'Giran', point,
             parties: [0, 1].map(() => ({ phase: 'cold', hotAt: 0,
                 revision: 0, sequence: 1, needRevision: 0, route: { fee: 0, scroll: false, method: 'walk', durationMs: 0 } })),
             lines: [1, 2].map(itemId => ({ payer: 0, selfId: 413, enchant: 0, itemId, count: 1, price,
-                adId: 100, adRevision: 1 })) });
+                adId, adRevision: 1 })) });
         const prepare = input => {
             for (const frame of Codec.pages(input)) send('command_request', { requests: [{
                 kind: 'meeting', characterId: 42, commandId: input.token, frame }] });
@@ -135,19 +135,15 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
             'a funded NPC alternative needs no unrelated market-category dependency');
         assert.equal(refused.payload.results[0].priceEvidence.fundingDominance, true,
             'a cheaper alternative is proven even when free money is fully committed');
-        const memo = await until(message => message.priceMemo !== undefined);
-        assert.equal(memo.priceMemo, true, 'the real buyer worker records the rejected physical quantity');
         assert.equal(received.some(message => message.type === 'command_request'), false,
             'an expensive purchase produces no consent for native reservation');
-        const expensiveSell = request('expensive-seller-ad', 188565);
-        expensiveSell.lines.forEach(line => { line.adId = 101; });
-        prepare(expensiveSell);
+        prepare(request('expensive-seller-ad', 188565, 101));
         const refusedSell = await until(message => message.type === 'command_ack'
             && message.payload.results?.some(row => row.commandId === 'expensive-seller-ad'));
         assert.equal(refusedSell.payload.results[0].reason, 'trade_meeting_purchase_price_changed');
         assert.equal(refusedSell.payload.results[0].priceEvidence?.purchase.units, 2);
         const sellMemo = await until(message => message.token === 'expensive-seller-ad' && message.priceMemo !== undefined);
-        assert.equal(sellMemo.priceMemo, true, 'the real buyer worker records the same proof for a seller ad');
+        assert.equal(sellMemo.priceMemo, true, 'the real buyer worker records the rejected physical quantity of a seller ad');
         prepare(request('oversized-purchase-proof', 188565));
         const oversized = await until(message => message.type === 'command_ack'
             && message.payload.results?.some(row => row.commandId === 'oversized-purchase-proof'));
@@ -164,7 +160,7 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
         for (const mode of ['exact', 'broad']) {
             worker.postMessage({ ...Protocol.envelope('snapshot_page', epoch, { rows: [] }), priceProofMode: mode });
             await until(message => message.proofMode === mode);
-            const token = mode + '-purchase-proof'; prepare(request(token, 188565));
+            const token = mode + '-purchase-proof'; prepare(request(token, 188565, 101));
             const result = await until(message => message.type === 'command_ack'
                 && message.payload.results?.some(row => row.commandId === token));
             const evidence = result.payload.results[0].priceEvidence;

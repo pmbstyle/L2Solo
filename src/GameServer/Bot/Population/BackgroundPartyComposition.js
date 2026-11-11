@@ -163,12 +163,14 @@ function selectMembers(candidates = [], options = {}) {
     const levelRange = Math.max(0, Number(options.levelRange ?? DEFAULT_LEVEL_RANGE));
     const unique = Array.from(new Map((candidates || [])
         .filter((state) => state?.characterId && !state.stats?.coldCompetition?.wait
-            && !require('./PartyAssemblyRecovery').coolingDown(state, options.timestamp))
+            && !invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state))
         .map((state) => [Number(state.characterId), state])).values());
     if (unique.length < minSize) return [];
     const memoryPreference = PartyMemoryPreference.create(options);
+    // anchorIds: the bots the roster is built around (forming: the ones that asked for a party).
+    const anchors = options.anchorIds?.size ? unique.filter(state => options.anchorIds.has(Number(state.characterId))) : unique;
 
-    const best = unique.reduce((current, anchor) => {
+    const best = anchors.reduce((current, anchor) => {
         const candidate = buildAround(anchor, unique, maxSize, levelRange, memoryPreference);
         if (candidate.members.length < minSize) return current;
         if (!current || candidate.score > current.score) return candidate;
@@ -193,7 +195,7 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     const eligible = (candidates || []).filter((state) => (
         state?.characterId &&
         !state.stats?.coldCompetition?.wait &&
-        !require('./PartyAssemblyRecovery').coolingDown(state, options.timestamp) &&
+        !invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state) &&
         !used.has(Number(state.characterId)) &&
         Math.abs(levelOf(state) - levelOf(leader)) <= levelRange
     ));

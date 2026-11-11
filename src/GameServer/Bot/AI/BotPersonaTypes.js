@@ -1,7 +1,7 @@
 'use strict';
 const TendencyRoll = require('./TendencyRoll');
 
-// Persona types (market-sim step 3.1, N6a): a fixed table, pure functions, no
+// Persona types: a fixed table, pure functions, no
 // game state. Each type has a drive, a share of the world, a circle of class
 // families it fits (a weight, not a ban), trait centres and inclination
 // centres. A bot's traits and inclinations are its type's centres plus a
@@ -147,7 +147,7 @@ function rollValues(centres, names, prefix, seed, salt = '') {
 function rollTraits(typeId, seed, salt = '') { return rollValues(TYPES[typeId].traits, TRAITS, 't', seed, salt); }
 function rollInclinations(typeId, seed, salt = '') { return rollValues(TYPES[typeId].inclinations, INCLINATIONS, 'i', seed, salt); }
 
-// Combat talents (combat-skills brief B): 0.5 + 0.5 x the mean of two traits.
+// Combat talents: 0.5 + 0.5 x the mean of two traits.
 function talents(traits) {
     const talent = (a, b) => 0.5 + 0.25 * (traits[a] + traits[b]);
     return {
@@ -157,7 +157,7 @@ function talents(traits) {
     };
 }
 
-// Market understanding (N45): how exactly a bot reads prices and demand, one
+// Market understanding: how exactly a bot reads prices and demand, one
 // number from 0 to 1, fixed at creation: its wealth motive, speculation and
 // caution, plus one roll of its own (+-0.15). The error of its price guess
 // starts at 3% + 17% x (1 - understanding), then uses shared learning.

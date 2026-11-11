@@ -2,10 +2,21 @@ const MeetingFare = require('../../AfkTrade/MeetingFare');
 const MeetingAnchor = require('../../AfkTrade/MeetingAnchor');
 const { isMainThread } = require('node:worker_threads');
 
+// The safety bound on background parties, derived from the population: a quarter
+// of maxPlayingPopulation (half the bots in two-member parties; 425 at 1700). A
+// party's round costs the worker about its members' solo rounds (measured: ~134 vs
+// ~123 ms per simulated member-hour), so the bound guards against a runaway, not a
+// CPU budget: the party decisions never reach it. A hit is counted (onCap).
+const BOTS_PER_PARTY_SLOT = 4;
+function limit(config) {
+    return Math.max(0, Math.floor((Number(config?.maxPlayingPopulation) || 0) / BOTS_PER_PARTY_SLOT));
+}
+
 // All formation paths share this admission budget. Historical origin labels
 // never grant slots or protect a party; reservations include in-flight commits.
+// onCap: called on each reservation the bound refuses (the caller counts it).
 class PartyAdmission {
-    constructor() { this.pending = 0; this.warWaiters = new Map(); this.managedWars = new Set(); }
+    constructor({ onCap = null } = {}) { this.pending = 0; this.warWaiters = new Map(); this.managedWars = new Set(); this.onCap = onCap; }
     // The director refreshes these from cached roster readiness every five
     // seconds. Its FIFO survives slow diplomatic reviews and capacity waits.
     syncWarRequests(clanIds) {
@@ -22,18 +33,18 @@ class PartyAdmission {
     canReclaim(parties, config) {
         // Reclaiming cannot satisfy an ordinary request while the next slots
         // belong to ready armies. Avoid dissolving unrelated parties in vain.
-        return !this.warWaiters.size && parties.length + this.pending >= Math.max(0, Math.floor(Number(config.maxBackgroundParties) || 0));
+        return !this.warWaiters.size && parties.length + this.pending >= limit(config);
     }
     reserve(parties, config, { warClanId = null, now = Date.now() } = {}) {
         for (const [id, until] of this.warWaiters) if (until <= now) this.warWaiters.delete(id);
-        const limit = Math.max(0, Math.floor(Number(config.maxBackgroundParties) || 0));
-        if (parties.length + this.pending >= limit) return null;
+        const bound = limit(config);
+        if (parties.length + this.pending >= bound) { this.onCap?.(); return null; }
         // Accepted military demand waits for a real free slot. It cannot
         // exceed the shared cap or interrupt an existing required contract.
         if (warClanId !== null) {
             if (this.warWaiters.keys().next().value !== warClanId) return null;
             this.warWaiters.delete(warClanId);
-        } else if (limit - parties.length - this.pending <= this.warWaiters.size) return null;
+        } else if (bound - parties.length - this.pending <= this.warWaiters.size) return null;
         this.pending++;
         let released = false;
         return () => { if (!released) { released = true; this.pending--; } };
@@ -51,7 +62,7 @@ function priority(objectives, timestamp) {
         return urgency + Math.min(6, age / 120000);
     }));
 }
-// E169: admission only. Existing group reviews and accepted trade receipts
+// admission only. Existing group reviews and accepted trade receipts
 // keep their native owner; no departure/return policy is introduced here.
 function partyTradeAllowed(direction, state = {}, session = null, preparing = false, accepted = false) {
     if (direction === 'party') return !preparing && !accepted && !state?.stats?.tradeMeeting;
@@ -86,5 +97,4 @@ function personalOfferAllowed(offer, ownState, otherState, ownSession = null, ot
             MeetingAnchor.of(otherState, otherState ? null : playerAnchorFor(otherId))])
         && MeetingFare.sellerCanReach(offer, seller);
 }
-module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission,
-    counterpartyState: id => tradeStateFor(Number(id)) };
+module.exports = { PartyAdmission, limit, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission };

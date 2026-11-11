@@ -529,7 +529,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         if (now >= Number(owner.nextBackgroundTargetScanAt || 0)) {
             owner.nextBackgroundTargetScanAt = now + 2000;
             const npcId = PartyTarget.npcId(party, owner.coldLifeState);
-            // The near members take only a pull they survive (E72): the target
+            // The near members take only a pull they survive: the target
             // with its helpers, aggressive neighbours and minions; smaller first.
             const profiles = TargetMatchup.actorProfiles(near.map(s => s.actor));
             const around = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius);

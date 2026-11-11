@@ -5,7 +5,6 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Listing = invoke('GameServer/Bot/Economy/MarketListingPolicy');
-const Goals = invoke('GameServer/Bot/Goals/GoalService');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
 const Offers = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -140,7 +139,7 @@ async function groupedReplacement() {
 (async () => {
     const world = await createWorld([{ id: owner, classId: 0, level: 30 }, { id: buyer, level: 30 },
         { id: partsOwner, level: 30 }, { id: partsBuyer, level: 30 }], 'afk-showcase');
-    const saved = { evaluate: Listing.evaluate, review: Goals.review };
+    const saved = { evaluate: Listing.evaluate };
     try {
         await Life.init();
         await groupedReplacement();
@@ -162,7 +161,6 @@ async function groupedReplacement() {
         // Fix only the already selected sale prices. The worker plan, native
         // writers, index, projections, custody and purchase remain real.
         Listing.evaluate = () => ({ listings, decisions: [], answers: [] });
-        Goals.review = async () => null;
         const prepare = () => Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null } },
             { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null });
         const originalBag = await Database.fetchItems(owner);
@@ -172,12 +170,24 @@ async function groupedReplacement() {
         assert.equal(Afk.ownerRecords(owner).filter(row => row.kind === 'sell_ad').length, 5);
         assert.equal(Afk.findOwnerProjection(owner), null, 'field quoting opens no physical shop');
         assert.deepEqual(await Database.fetchItems(owner), originalBag);
+        // A build taken in the field posts its bids and starts its leaf only: what to sell and a
+        // craft are its town visit's, so its plan keeps the standing ads and lists nothing new.
+        const built = Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null } },
+            { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null, build: true });
+        assert.deepEqual([built.sell, built.withdraw, built.shot, built.take], [[], [], undefined, undefined],
+            'a build in the field lists, withdraws, sells and crafts nothing');
         state = await Life.upsertState({ ...Life.cachedState(owner), activity: 'shopping' }, 'showcase_visit');
         const visit = prepare();
         assert.equal(visit.shop, 'Giran');
         assert.deepEqual(visit.sell.slice(0, 3).map(row => row[0]), [79, 1101, 1786],
             'unit value beats the much larger material and shot stack totals');
         assert(Buffer.byteLength(JSON.stringify(visit)) <= Plan.MAX_PLAN_PAYLOAD_BYTES);
+        // A visit's showcase carries the craft step its held decision prepared: the crafter crafts in town.
+        assert.equal(Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null } }, { board: Afk.boardIndex(),
+            now: Date.now(), npcOffersFor: () => [], findSpot: () => null, visit: true }).shot, undefined);
+        const heldCraft = { wealth: [90001, 2] };
+        assert.deepEqual(Plan.decide(state, { ...Decision.economyFor(state), network: { activity: null }, shot: heldCraft },
+            { board: Afk.boardIndex(), now: Date.now(), npcOffersFor: () => [], findSpot: () => null, visit: true }).shot, heldCraft);
         const adsBefore = await Database.fetchAfkTradeShops(owner);
         const ad = adsBefore.find(row => row.lines.some(line => line.selfId === 79));
         const weapon = originalBag.find(row => row.selfId === 79);
@@ -287,5 +297,5 @@ async function groupedReplacement() {
         assert.deepEqual(shieldAds.sort((a, b) => a.enchant - b.enchant),
             [{ enchant: 0, town: 'Dion' }, { enchant: 1, town: 'Elven Village' }], 'each enchant retains its own planned town');
         console.log('PASS town showcase: promotion/rollback, purchase/restore, mixed-enchant replacement, exact custody and ad towns');
-    } finally { Listing.evaluate = saved.evaluate; Goals.review = saved.review; await world.close(); }
+    } finally { Listing.evaluate = saved.evaluate; await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

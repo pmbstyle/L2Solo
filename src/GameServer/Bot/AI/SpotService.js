@@ -3,20 +3,21 @@ const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 // The farthest hunting spot a hot bot reaches on foot; beyond it, SoE or a gatekeeper.
 const MAX_WALK_SPOT_DISTANCE = 12000;
+// A walk to a spot ends this close to its point (HuntingState's relocation), and a
+// body this close to a spot's center, or on its ground, has arrived there (arrivedAt).
+const SPOT_ARRIVAL_RADIUS = 1000;
 // The fewest spawns of a bot's band a spot is suitable with (isSuitable). A
-// cell piece with fewer spawns is an edge fragment (T123): it joins the
+// cell piece with fewer spawns is an edge fragment: it joins the
 // field of its species in a neighbour cell.
 const MIN_ELIGIBLE_DENSITY = 3;
 // Spot ids: the cell `x_y`, `:area` inside a partitioned dungeon, `:f<n>` for
-// a floor of a cell split by height (T123).
+// a floor of a cell split by height.
 const GRID_SPOT_ID = /^(-?\d+)_(-?\d+)(?::.+)?$/;
-const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
-const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const GameTime = invoke('GameServer/World/GameTime');
 
 const anonymousStateIds = new WeakMap();
@@ -43,7 +44,7 @@ function spotName(spot) {
     return `${primary} fields`;
 }
 
-// A spot's level mix (T123): the band its spawns' levels fill, their mean
+// A spot's level mix: the band its spawns' levels fill, their mean
 // plus and minus their standard deviation, from its level counts; a spot
 // with only min/max metadata (fixtures, older profiles): min..max. One answer
 // per counts object (spawn data, never written after the catalogue builds it).
@@ -99,7 +100,7 @@ function identitySeedForState(state) {
 
 // The area the spawns of a spot cover: a uniform spread over a w x h
 // rectangle has sigma w / sqrt(12), so 12 sigmaX sigmaY; at least the area
-// their own spacing gives under the walk rule that reads it (T123): the
+// their own spacing gives under the walk rule that reads it: the
 // solo walk (BackgroundResolver.soloWalkMs) takes the mean distance to the
 // nearest of n spawns over an area A as 1 / (2 sqrt(n / A)), so the spawns'
 // measured mean nearest distance d gives A = 4 n d^2. Two or three spawns on
@@ -126,7 +127,7 @@ function spawnArea(records = [], cells = 1) {
 }
 
 // A point drawn around a spawn of a grid spot stays in that spawn's cell (a
-// spot of several cells, T123, keeps each anchor's own).
+// spot of several cells keeps each anchor's own).
 function constrainToSpotGrid(spot, anchor, locX, locY) {
     if (!GRID_SPOT_ID.test(String(spot?.id || ''))) return { locX, locY };
     const gridX = Math.floor(Number(anchor.locX) / SPOT_CELL_SIZE);
@@ -152,7 +153,7 @@ function cellAt(loc) {
     return { key: `${gx}_${gy}${area ? `:${area.id}` : ''}`, gx, gy, area };
 }
 
-// T123 (docs/game-decisions.md "Spot cutting"): a cell's spawns on floors
+// Spot cutting: a cell's spawns on floors
 // apart by more than `bound` in height are separate spots. The floors of the
 // spawns sorted by height, each spawn on its floor in its own order.
 function floorsOf(items, bound) {
@@ -169,8 +170,9 @@ function floorsOf(items, bound) {
 }
 
 // The cell pieces of the catalogue: one per floor of each cell. The floor
-// with the most spawns keeps the cell key as its id (the spot id saved by
-// bots before T123), the others are `<cell>:f<n>`, n from the bottom. A
+// with the most spawns keeps the cell key as its id (the spot id bots saved
+// before cells were split by height), the others are `<cell>:f<n>`, n the
+// floor counted from the bottom. A
 // split piece's band reaches halfway to the next floor (SpotIndex.spotAt).
 function cellPieces(cells, bound) {
     const pieces = [];
@@ -193,7 +195,7 @@ function cellPieces(cells, bound) {
     return pieces;
 }
 
-// T123: an edge fragment (a piece with fewer spawns than MIN_ELIGIBLE_DENSITY)
+// an edge fragment (a piece with fewer spawns than MIN_ELIGIBLE_DENSITY)
 // joins the piece of a neighbour cell (the same area partition) holding the
 // most of its spawns' species within `reach` and on its floor (`bound` in
 // height), ties to the nearest; a fragment of no such field stays alone. A
@@ -297,7 +299,7 @@ function spotOfPieces(root, members) {
         density: sector.count,
         npcNames: nameEntries.slice(0, 3).map((item) => item.name),
         npcSelfIds: selfIdEntries.slice(0, 8).map((item) => item.selfId),
-        // `production`: the group's mobs per hour from its respawns (E69).
+        // `production`: the group's mobs per hour from its respawns.
         npcEntries: Object.values(sector.npcs)
             .sort((a, b) => b.count - a.count)
             .map((entry) => ({ ...entry, production: Math.round(entry.production * 100) / 100 })),
@@ -305,10 +307,10 @@ function spotOfPieces(root, members) {
         levelCounts: { ...sector.levels },
         dominantLevels: levelEntries.slice(0, 3),
         partitionedAreaId: root.area?.id || null,
-        // T123: the floor band of a cell split by height, the pieces taken in.
+        // the floor band of a cell split by height, the pieces taken in.
         floor: root.floor,
         joins: joins.length ? joins : null,
-        // The square its spawns cover (T106, the solo walk): a uniform
+        // The square its spawns cover (the solo walk): a uniform
         // spread's 12 sigmaX sigmaY, at most the cells of the spot.
         spawnArea: spawnArea(sector.records, new Set(members.map((member) => member.key)).size),
         records: sector.records
@@ -358,11 +360,11 @@ function levelFit(spot, targetLevel, options = {}) {
     };
 }
 
-// Mobs per hour one spawn gives back (E69): 3600 / its respawn seconds. The
+// Mobs per hour one spawn gives back: 3600 / its respawn seconds. The
 // respawn spread is symmetric (SpawnNpcs.respawnDelayMs), so its mean is
 // `respawn`; a leader's minions come back with their leader. A day or night
 // spawn gives back only in its period: over the game day, its share of the
-// day (GameTime.periodShare, T123).
+// day (GameTime.periodShare).
 function respawnsPerHour(npc) {
     const spawn = (npc?.spawnDefinition || npc?.minionLeader?.spawnDefinition)?.spawn;
     const respawn = Number(spawn?.respawn) || 0;
@@ -379,6 +381,7 @@ function isSuitable(spot, targetLevel, options = {}) {
 
 const SpotService = {
     MAX_WALK_SPOT_DISTANCE,
+    SPOT_ARRIVAL_RADIUS,
     respawnsPerHour,
     spots: null,
 
@@ -395,11 +398,11 @@ const SpotService = {
         const SocialAggro = invoke('GameServer/Npc/SocialAggro');
         const NpcAggro = invoke('GameServer/Npc/NpcAggro'); // lazy: worker as SocialAggro above.
         const MinionManager = invoke('GameServer/World/RaidBossMinionManager'); // lazy: worker as SocialAggro above.
-        // T123: spawns farther apart in height than a mob assists or aggroes
+        // spawns farther apart in height than a mob assists or aggroes
         // (SocialAggro, NpcAggro) share no fight: another floor.
         const floorBound = Math.max(SocialAggro.MAX_ASSIST_Z_DIFFERENCE, NpcAggro.MAX_AGGRO_Z_DIFFERENCE);
         const cells = new Map();
-        // Every spawn of the game day (T123) at its seeded catalogue point
+        // Every spawn of the game day at its seeded catalogue point
         // (SpawnNpcs.catalogueSpawns): the same spots at every start, the
         // ones the spot table measures.
         const spawns = invoke('GameServer/World/Generics/SpawnNpcs').catalogueSpawns(World); // lazy: the worker's SpotService never indexes
@@ -432,7 +435,7 @@ const SpotService = {
 
         // A hunter of a field sees a spawn within the client's visibility
         // radius: an edge fragment's spawn of a species the neighbour field
-        // holds that close belongs to that field (T123).
+        // holds that close belongs to that field.
         const pieces = cellPieces(cells, floorBound);
         const roots = joinedPieces(pieces, floorBound, CLIENT_VISIBILITY_RADIUS);
         const members = new Map();
@@ -489,14 +492,33 @@ const SpotService = {
         return SpotIndex.spotAt(spots || this.ensureIndexed(), cellAt(loc).key, Number(loc.locZ));
     },
 
-    // The spot a bot stands at, in `spots`: a declared raid profile first (it
-    // is virtual and sits inside an ordinary sector; the party resolver needs
-    // the boss profile, not the field around it), else the spot under its
-    // position, else its declared spot.
-    standingSpot(state, spots) {
-        const declared = SpotIndex.spotById(spots, state?.spotId || '');
-        if (declared?.raidBoss === true) return declared;
-        return this.findCurrentSpot(state?.loc, spots) || declared;
+    // The spot a bot stands at, one rule for the hot body and the cold worker:
+    // its declared spot when its position is unknown, else a declared raid
+    // profile once the body has arrived there (it is virtual and sits inside an
+    // ordinary sector; the party resolver needs the boss profile, not the field
+    // around it), else the spot under its position, else its declared spot when
+    // the body has arrived there (arrivedAt: a walk ends within the arrival
+    // radius, often on a neighbouring cell with no spot). A body far from its
+    // declared spot (in town after a visit or a raid) stands on none.
+    // `spots`: the catalogue (the worker's), else the live index.
+    standingSpot(state, spots = null) {
+        const catalog = spots || this.ensureIndexed();
+        const declared = SpotIndex.spotById(catalog, state?.spotId || '');
+        const loc = state?.loc;
+        const placed = !!loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY));
+        if (!placed) return declared;
+        if (declared?.raidBoss === true && this.arrivedAt(declared, loc)) return declared;
+        return this.findCurrentSpot(loc, catalog) || (declared && this.arrivedAt(declared, loc) ? declared : null);
+    },
+
+    // Has a body at loc arrived at spot: on its ground (floor-aware, containsLocation)
+    // or within the arrival radius of its center? The one arrival rule of a walk's end
+    // and of "on the planned spot" (BotDecisionService), never an exact cell match.
+    // A profile with no ground of its own (not a grid spot or a raid's) is the radius alone.
+    arrivedAt(spot, loc) {
+        if (!spot?.center) return false;
+        const ground = spot.raidBoss === true || GRID_SPOT_ID.test(String(spot.id || ''));
+        return (ground && this.containsLocation(spot, loc)) || distance2d(spot.center, loc) <= SPOT_ARRIVAL_RADIUS;
     },
 
     containsLocation(spot, loc) {
@@ -511,93 +533,6 @@ const SpotService = {
         // A copy without its pieces (a session's spot) reads the catalogue's.
         const own = spot.floor || spot.joins ? spot : SpotIndex.spotById(this.spots, spot.id) || spot;
         return SpotIndex.covers(own, cellAt(loc).key, Number(loc.locZ));
-    },
-
-    findBestSpot(status, options = {}) {
-        const loc = status.loc;
-        const targetLevel = options.level || status.level || 1;
-        // The coarse spot filter must include the same lower-level mobs as
-        // isSuitable. A symmetric +/-3 search hid safe camps in the -7 band.
-        const band = options.levelRange === undefined ? huntBand(targetLevel, options)
-            : { min: targetLevel - options.levelRange, max: targetLevel + options.levelRange };
-        const currentSpotId = status.spot?.id;
-        const minDistance = options.minDistance || 1200;
-        const maxDistance = options.maxDistance || (options.walkOnly === true ? MAX_WALK_SPOT_DISTANCE : 90000);
-        const routeState = {
-            characterId: status.characterId,
-            name: status.name,
-            level: targetLevel,
-            stats: {
-                ...(status.stats || {}),
-                role: status.role ?? status.stats?.role,
-                classId: status.classId ?? status.stats?.classId,
-                starterRegion: status.starterRegion || status.stats?.starterRegion
-            }
-        };
-        const routeOptions = {
-            ...options,
-            mode: options.mode || 'solo',
-            role: options.role || status.role,
-            equipment: options.equipment
-        };
-        // The stand-in state carries the bot's id without its bag: a what-if
-        // for the kit profile store.
-        routeOptions.matchupProfiles = BotTargetMatchup.stateProfiles(routeState, { ...routeOptions, store: false });
-
-        const candidates = this.ensureIndexed()
-            .filter((spot) => !(Number(options.spotRetryAfter?.[spot.id]) > Date.now()))
-            .filter((spot) => spot.density >= (options.minDensity || 4))
-            .filter((spot) => spot.minLevel <= band.max && spot.maxLevel >= band.min)
-            .filter((spot) => isSuitable(spot, targetLevel, options))
-            .filter((spot) => LevelingRoutes.isSpotAllowedForState(spot, routeState, routeOptions))
-            .filter((spot) => {
-                const dist = distance2d(loc, spot.center);
-                return dist >= minDistance && dist <= maxDistance;
-            })
-            .map((spot) => {
-                const fit = levelFit(spot, targetLevel, options);
-                const levelGap = fit.averageGap;
-                const dist = distance2d(loc, spot.center);
-                const sameSpotPenalty = currentSpotId && currentSpotId === spot.id ? 100 : 0;
-                const peacePenalty = utils.isInPeaceZone(spot.center.locX, spot.center.locY) ? 40 : 0;
-
-                return {
-                    spot,
-                    score: (fit.eligibleDensity * 5) + (fit.eligibleRatio * 30)
-                        - (levelGap * 18)
-                        - (fit.dangerousLevelSpan * 3)
-                        - (dist / 2500)
-                        - sameSpotPenalty
-                        - peacePenalty,
-                    distance: dist,
-                    levelGap,
-                    eligibleDensity: fit.eligibleDensity,
-                    eligibleRatio: fit.eligibleRatio
-                };
-            })
-            .map((candidate) => {
-                const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, routeState, routeOptions);
-                const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
-                return {
-                    ...candidate,
-                    spot: decoratedSpot,
-                    score: candidate.score + routeMatch.routeScore + routeMatch.variation
-                        - routeMatch.localityPenalty - routeMatch.targetMatchup.penalty,
-                    route: decoratedSpot.route || null,
-                    routeScore: routeMatch.routeScore,
-                    localityPenalty: routeMatch.localityPenalty,
-                    huntingGroundPenalty: routeMatch.huntingGroundPenalty,
-                    variation: routeMatch.variation
-                };
-            })
-            .sort((a, b) => b.score - a.score);
-
-        if (!candidates.length && options.allowEasierSpots && options.levelRange === undefined
-            && band.min > Math.max(1, targetLevel - 15)) {
-            return this.findBestSpot(status, { ...options, allowEasierSpots: false, minLevelGap: -15,
-                matchupProfiles: routeOptions.matchupProfiles });
-        }
-        return candidates[0] || null;
     },
 
     assignSpot(session, spot) {
@@ -620,10 +555,20 @@ const SpotService = {
             joins: spot.joins || null,
             route: spot.route || null
         };
-        // The arrival after the choice is the same spot: no second post.
+        // The arrival after the choice is the same spot: no second post. The post is the
+        // spot aggregate's arrival on the background thread (its hot arrival hook).
         // lazy: cycle BotLifeState invokes SpotService at its top.
         if (moved) invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'near_spot');
         return session.currentSpot;
+    },
+
+    // The body leaves its spot (a respawn in town, a karma reset, a clan hall
+    // departure): its post tells the background thread's spot aggregate it left
+    // (near_left, spotId null). One with no spot posts nothing.
+    leaveSpot(session) {
+        const had = session.currentSpot != null;
+        session.currentSpot = null;
+        if (had) invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'near_left');
     },
 
     randomPointNear(spot, radius = 900) {

@@ -2,7 +2,7 @@ const assert = require('assert');
 
 require('../src/Global');
 
-// L13: the two feeds to the cold worker, the full snapshot and the orphan
+// The two feeds to the cold worker, the full snapshot and the orphan
 // party check, see every cached state, the oldest too (past 2,000).
 
 const ClanService = invoke('GameServer/Clan/ClanService');

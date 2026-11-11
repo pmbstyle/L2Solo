@@ -235,6 +235,18 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
     }
 }
 
+// The ground a party hunts on: its grid spot or its raid's area (none: any ground).
+function groundOf(party) {
+    const spotId = party?.spotId;
+    if (!spotId) return null;
+    return /^raid:\d+$/.test(spotId) ? invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(spotId)
+        : invoke('GameServer/Bot/AI/SpotService').findById(spotId);
+}
+
+// Why the cold party cannot turn hot now (null: it can). A party turns hot where its
+// members stand, so it must have gathered on its ground first (party_not_gathered): one
+// shown hot before that would have its members placed around its leader, a jump across
+// the world for a member still at its old place.
 function readinessReason(party, states, timestamp = Date.now()) {
     if (party?.status !== 'active') return 'party_not_active';
     if (!states) return 'invalid_membership';
@@ -267,7 +279,7 @@ function readinessReason(party, states, timestamp = Date.now()) {
         || s.stats?.supplyErrand
         || s.stats?.warehouseWorkflow
         || (!(s.vitals.hp > 0) && !toleratedCorpse(s)));
-    if (!member) return null;
+    if (!member) return require('./PartyHuntingAssembly').gathered(states, groundOf(party)) ? null : 'party_not_gathered';
     if (member.phase !== 'cold') return `member_${member.characterId}_not_cold`;
     if (!member.accountName) return `member_${member.characterId}_missing_account`;
     if (!['grouped', 'hunting', 'resting'].includes(member.activity)) {
@@ -384,7 +396,7 @@ async function releaseUnsafeHunt(partyId) {
             s.currentTargetId = undefined;
             s.actor.unselect?.();
             s.lastDecision = { action: 'leave_unsafe_party', reason, at: timestamp };
-            require('../AI/DecisionEvents').raiseDecision(s, 'relations');
+            require('../AI/DecisionEvents').raiseDecision(s, 'party_left');
         }
         require('../../World/PartyMembershipPublication')(sessions, invoke);
         invoke('GameServer/Bot/Population/PopulationMetrics').recordPartyDissolution();
@@ -444,25 +456,8 @@ async function activate(partyId, reason = 'near_player', options = {}) {
             throw Error('party_floor_mismatch');
         }
         const leaderIndex = states.findIndex(s => s.characterId === party.leaderId);
-        // Cold members can have historical positions across their shared spot.
-        // Place the leader on the persisted safe anchor, then constrain the
-        // rest of the roster to a compact formation around that resolved
-        // point. Independent full-radius placement can scatter two valid
-        // members almost 2.8k apart and reject the whole visible party.
-        const leaderPlacement = Placement.resolve(states[leaderIndex], {
-            ...options,
-            preferAnchor: true,
-            placementRadius: 240
-        });
-        const placements = states.map((state, index) => index === leaderIndex
-            ? leaderPlacement
-            : Placement.resolve({ ...state, loc: leaderPlacement?.loc || states[leaderIndex].loc }, {
-                ...options,
-                placementRadius: 420
-            }));
-        const leaderLoc = leaderPlacement?.loc;
-        if (!leaderLoc || placements.some(p => !p || Math.hypot(p.loc.locX - leaderLoc.locX, p.loc.locY - leaderLoc.locY) > 1800
-            || Math.abs(p.loc.locZ - leaderLoc.locZ) > 500)) throw Error('party_no_safe_placement');
+        const placements = Placement.resolveGroup(states, leaderIndex, options, 1800);
+        if (!placements) throw Error('party_no_safe_placement');
         const raidBoss = raidBossForParty(party);
         if (raidBoss) party = { ...party, stats: { ...party.stats, hotRaidBoss: {
             instanceId: invoke('GameServer/RaidBoss/RaidEncounterScope').instanceId(raidBoss),
@@ -554,7 +549,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
             || s.actor.state.fetchHits?.() || s.actor.state.fetchCasts?.()
             || invoke('GameServer/Bot/AI/PartyAwareness').npcThreateningActor(s)
             || (!options.ignoreVisibility && (Date.now() - Number(s.populationHotAt || 0) < Config.cooldownGraceMs
-                || players.some(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) <= Math.max(Config.cooldownRadius, Config.activationRadius)))));
+                || players.some(p => Math.hypot(p.actor.fetchLocX() - s.actor.fetchLocX(), p.actor.fetchLocY() - s.actor.fetchLocY()) <= Config.keepHotRadius()))));
         };
         if (!eligible()) {
             return { ok: false, reason: 'party_member_busy_or_visible' };
@@ -644,8 +639,8 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
         const arrived = Roster.exact(sessions.map(id), marker.memberIds)
             && sessions.every(session => World.registeredActorById(id(session))?.session === session
                 && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-            && require('./PartyHuntingAssembly').nearby(states)
-            && states.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+            && require('./PartyHuntingAssembly').gathered(states, spot)
+            && states.every(state => !state.stats?.travel);
         // A compact eligibility pass is cheap. The native gear/power assessor
         // runs in the already admitted clan planning worker, once on opening.
         const early = Roster.admission(party, states, spot, { owner, arrived, timestamp, phase: 'hot',
@@ -673,8 +668,8 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
         })) return { ok: false, reason: 'raid_shot_reserve' };
         const freshArrived = sessions.every(session => World.registeredActorById(id(session))?.session === session
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-            && require('./PartyHuntingAssembly').nearby(fresh)
-            && fresh.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+            && require('./PartyHuntingAssembly').gathered(fresh, spot)
+            && fresh.every(state => !state.stats?.travel);
         const checked = Roster.admission(party, fresh, spot, { owner: Database.clanRaidOwner(marker), arrived: freshArrived, timestamp, phase: 'hot',
             assessment: { ready: true, eligible: fresh } });
         if (!checked.ok) { cancellation = checked.reason; return checked; }
@@ -704,8 +699,8 @@ function markedAttackInputs(party, sessions, paidActorId = null, paidCost = null
     const arrived = Roster.exact(sessions.map(id), marker.memberIds)
         && sessions.every(session => World.registeredActorById(id(session))?.session === session
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
-        && require('./PartyHuntingAssembly').nearby(states)
-        && states.every(state => !state.stats?.travel && invoke('GameServer/Bot/AI/SpotService').containsLocation(spot, state.loc));
+        && require('./PartyHuntingAssembly').gathered(states, spot)
+        && states.every(state => !state.stats?.travel);
     return arrived && states.length === marker.memberIds.length && states.every(state => state.phase === 'hot' && state.partyId === party.partyId
         && state.vitals.hp > 0 && !state.stats?.playerPartyTakeover && !state.stats?.tradeMeeting
         && invoke('GameServer/Bot/AI/RestPolicy').raidReady(state, state.vitals, state.openingPaidCost)

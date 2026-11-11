@@ -8,11 +8,12 @@ const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const TableFingerprint = require('./TableFingerprint');
 
-// The world spot table (market-sim step 3.3(c), N44): what an hour of solo
+// The world spot table: what an hour of solo
 // hunting on a spot gives a bot of a role and level, with shots or without.
 // scripts/generate-spot-table.js measures it offline with the author's cold
-// combat and writes data/Bots/spot-table.json; each thread (main and the cold
-// worker) loads that file once on first use. A lookup is O(1).
+// combat and writes data/Bots/spot-table.json; main loads that file once on
+// first use and the cold and clan workers attach its rows (sharedDescriptor).
+// A lookup is O(1).
 //
 // Per spot, role and shots the file keeps one row measured at a reference
 // level; per role and spot level band a curve says how each value changes
@@ -42,12 +43,12 @@ const incomeRows = new Map();
 const incomeBases = new Map();
 // Four doubles and one index per cell, in typed arrays outside the V8 heap:
 // at most 19 MiB per thread. The bound is cells, what the memory is; measured
-// (T139, one key per class line x level x shots): 388947 cells held, no drop
+// (one key per class line x level x shots): 388947 cells held, no drop
 // at a scratch 1M bound. An entry cap of 256, from the role keys, read ~100%
 // misses, 14 ms a read against 0.126.
 const MAX_INCOME_BASE_CELLS = 524288;
 let incomeBaseCells = 0;
-// Cache use for the cold worker heartbeat (L104); counted only with developer diagnostics.
+// Cache use for the cold worker heartbeat; counted only with developer diagnostics.
 // memoEvictions, incomeEvictions, baseEvictions count the oldest-row drops at their caps; resets the
 // wholesale clears that dropped rows (catalog, table or rate change).
 const stats = { memoHits: 0, memoMisses: 0, memoEvictions: 0, incomeEvictions: 0, baseEvictions: 0, resets: 0,
@@ -72,7 +73,7 @@ function useSpots(source) {
     spotSource = typeof source === 'function' ? source : () => source || EMPTY_SPOTS;
 }
 
-// rates: the profile the caller has just read (one rate read per call, L75).
+// rates: the profile the caller has just read (one rate read per call).
 function refreshCatalog(rates) {
     const spots = spotSource() || EMPTY_SPOTS;
     const revision = Rewards.revision(rates);
@@ -114,8 +115,8 @@ function checkCatalog(spots) {
 }
 
 // The table against the files it was simulated by (TableFingerprint):
-// one line at the first read of a table, on the main thread only (the worker
-// reads the same file on the same code). A stale table stays in use: bots
+// one line at the first read of a table, on the main thread only (the
+// workers read main's table). A stale table stays in use: bots
 // choose by the fight it measured until it is rebuilt; `npm run check` fails.
 // Costs one read and sha1 of its ~20 MB of inputs, once per process.
 let fingerprintChecked = null, currentInputs = null, unknownLogged = false;
@@ -187,7 +188,7 @@ let valueMemoTail = 0;
 function clearValueMemo() { valueMemo.clear(); valueMemoOrder.length = 0; valueMemoTail = 0; }
 // The Map holds a key's slot; the row lives at that slot as 13 numbers in a slab and a flag
 // byte. A new row drops the key filed at its slot, so a slot holds its key's row while the key
-// lives. L104: at the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
+// lives. At the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
 // with object rows, 1.0 MB so, plus the slab's 3 MB outside the JS heap (arrayBuffers). The ring fills
 // its slots in order before it wraps, so the slab grows by doubling and a small memo stays small.
 const ROW_NUMBERS = 13;
@@ -264,11 +265,11 @@ function spotSlot(t, spotId) {
     return named === undefined ? undefined : t.spotIndex.get(String(named));
 }
 
-// The table key of a bot. A table by class lines (header roleLines, user
-// 10-29): its class's line (a third class its second's; a base or first
+// The table key of a bot. A table by class lines (header roleLines):
+// its class's line (a third class its second's; a base or first
 // class the line of its role's alias when that line holds the class, else
 // the first line that does; a split-kit first class its future second
-// class's line, user 10-30). An older table by roles: BotRoles.tableRoleFor.
+// class's line). An older table by roles: BotRoles.tableRoleFor.
 function roleFor(state = {}) {
     const role = BotRoles.tableRoleFor(state);
     const inputs = load().header.inputs;
@@ -292,7 +293,7 @@ function shotKey(shots) {
     return shots === 2 ? 2 : shots ? 1 : 0;
 }
 
-// The rows as columns (T128): a JSON row is an array of ~22 numbers with two
+// The rows as columns: a JSON row is an array of ~22 numbers with two
 // nested arrays, ~61 MB of JS objects per thread (10-30 heap snapshot);
 // packed they are typed arrays with the same values. cells[spot * width +
 // cell]: the row's index or -1; numbers: its fields at index * fields (mix and
@@ -301,6 +302,9 @@ function shotKey(shots) {
 // gap (null for a table before the column); mix: [selfId, share, ...] from
 // mixStart[index] to mixStart[index + 1]. A row is a view of its numbers
 // (tableRow): row[field] reads as before; rowMix and gateAt read its index.
+// All columns are views of one SharedArrayBuffer (~34 MB), written once here
+// before any worker sees it: the cold and clan workers attach it (attachShared)
+// instead of holding their own ~33 MB copy.
 function packRows(raw) {
     const fields = raw.rowFields.length, gaps = raw.gaps.length;
     const mixField = raw.rowFields.indexOf('mix'), gateField = raw.rowFields.indexOf('gate');
@@ -312,12 +316,12 @@ function packRows(raw) {
         count += 1;
         if (mixField >= 0 && Array.isArray(row[mixField])) mixLength += row[mixField].length;
     }
-    const cells = new Int32Array(raw.rows.length * width).fill(-1);
-    const numbers = new Float64Array(count * fields).fill(NaN);
-    const gates = gateField >= 0 ? new Float64Array(count * gaps) : null;
-    const gateShares = gateShareField >= 0 ? new Float64Array(count * gaps) : null;
-    const hasGate = new Uint8Array(count);
-    const mix = new Float64Array(mixLength), mixStart = new Int32Array(count + 1);
+    const layout = { width, fields, gaps, count, spots: raw.rows.length, mixLength,
+        gates: gateField >= 0, gateShares: gateShareField >= 0 };
+    const rows = rowViews(new SharedArrayBuffer(rowBytes(layout)), layout);
+    const { cells, numbers, gates, gateShares, hasGate, mix, mixStart } = rows;
+    cells.fill(-1);
+    numbers.fill(NaN);
     let index = 0, at = 0;
     raw.rows.forEach((spotCells, spot) => (spotCells || []).forEach((row, cell) => {
         if (!row) return;
@@ -338,7 +342,35 @@ function packRows(raw) {
         index += 1;
     }));
     mixStart[count] = at;
-    return { width, fields, gaps, cells, numbers, gates, gateShares, hasGate, mix, mixStart };
+    return rows;
+}
+
+// The columns' order in the buffer: doubles first (8-byte aligned), then the
+// int32 indexes, then the gate flags. numbers at offset 0 (rowIndex).
+function rowColumns(layout) {
+    const { width, fields, gaps, count, spots, mixLength } = layout;
+    return [['numbers', Float64Array, count * fields],
+        ['gates', Float64Array, layout.gates ? count * gaps : -1],
+        ['gateShares', Float64Array, layout.gateShares ? count * gaps : -1],
+        ['mix', Float64Array, mixLength],
+        ['cells', Int32Array, spots * width],
+        ['mixStart', Int32Array, count + 1],
+        ['hasGate', Uint8Array, count]];
+}
+function rowBytes(layout) {
+    let bytes = 0;
+    for (const [, Type, length] of rowColumns(layout)) if (length >= 0) bytes += length * Type.BYTES_PER_ELEMENT;
+    return bytes;
+}
+function rowViews(buffer, layout) {
+    const rows = { width: layout.width, fields: layout.fields, gaps: layout.gaps, layout, buffer };
+    let offset = 0;
+    for (const [name, Type, length] of rowColumns(layout)) {
+        if (length < 0) { rows[name] = null; continue; }
+        rows[name] = new Type(buffer, offset, length);
+        offset += length * Type.BYTES_PER_ELEMENT;
+    }
+    return rows;
 }
 
 // The row of a spot's cell (spot index s, cell r * shots + shots slot), or null.
@@ -347,24 +379,15 @@ function tableRow(t, s, cell) {
     return index >= 0 ? rows.numbers.subarray(index * rows.fields, (index + 1) * rows.fields) : null;
 }
 function rowIndex(t, row) {
-    return row.byteOffset / Float64Array.BYTES_PER_ELEMENT / t.rows.fields;
+    return (row.byteOffset - t.rows.numbers.byteOffset) / Float64Array.BYTES_PER_ELEMENT / t.rows.fields;
 }
 
-function load() {
-    if (table) return table;
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    checkFingerprint(raw.header);
-    const field = (fields, name) => {
-        const index = fields.indexOf(name);
-        if (index < 0) throw new Error(`spot table: missing field ${name}`);
-        return index;
-    };
-    const roleIndex = new Map(raw.roles.map((role, index) => [role, index]));
-    // A table by class lines answers a role name by its alias line.
-    for (const [alias, line] of Object.entries(raw.header.inputs?.roleLines || {})) {
-        if (roleIndex.has(line)) roleIndex.set(alias, roleIndex.get(line));
-    }
-    const spotIndex = new Map(raw.spots.map((spot, index) => [String(spot[0]), index]));
+// The table as it crosses to a worker (workerData.spotTable): the packed rows'
+// buffer and layout plus the small parts (~0.7 MB as JSON: header, spots,
+// curves by band, kit surface) a structured clone copies. Built once per file
+// on the thread that parses it; a worker that attached one never reads the file.
+let shared = null;
+function describe(raw) {
     // A role without any measured curve keeps its rows' values at every gap.
     const neutral = Object.fromEntries(raw.curveFields.map((name) => [name, raw.gaps.map(() => (name === 'deaths' ? 0 : 1))]));
     const maxBand = Math.max(0, ...raw.spots.map((spot) => Math.floor(spot[1] / raw.header.inputs.bandLevels)));
@@ -384,38 +407,85 @@ function load() {
         }
         return out;
     });
+    const rows = packRows(raw);
+    return { version: 1, header: raw.header, roles: raw.roles, spots: raw.spots, shots: raw.shots,
+        rowFields: raw.rowFields, gaps: raw.gaps, kitSurface: raw.kitSurface || null, maxBand, curves,
+        rows: { buffer: rows.buffer, layout: rows.layout } };
+}
+
+function validDescriptor(d) {
+    return d?.version === 1 && d.rows?.buffer instanceof SharedArrayBuffer && d.rows.layout
+        && d.rows.buffer.byteLength === rowBytes(d.rows.layout) && Array.isArray(d.roles) && Array.isArray(d.spots)
+        && Array.isArray(d.rowFields) && Array.isArray(d.gaps) && Array.isArray(d.curves) && d.header?.inputs;
+}
+
+function load() {
+    if (table) return table;
+    if (!shared) {
+        const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+        checkFingerprint(raw.header);
+        shared = describe(raw);
+    }
+    const d = shared;
+    const field = (fields, name) => {
+        const index = fields.indexOf(name);
+        if (index < 0) throw new Error(`spot table: missing field ${name}`);
+        return index;
+    };
+    const roleIndex = new Map(d.roles.map((role, index) => [role, index]));
+    // A table by class lines answers a role name by its alias line.
+    for (const [alias, line] of Object.entries(d.header.inputs?.roleLines || {})) {
+        if (roleIndex.has(line)) roleIndex.set(alias, roleIndex.get(line));
+    }
+    const spotIndex = new Map(d.spots.map((spot, index) => [String(spot[0]), index]));
+    const rowFields = d.rowFields;
     table = {
-        header: raw.header,
-        roles: raw.roles,
+        header: d.header,
+        roles: d.roles,
         roleIndex,
         spotIndex,
-        spots: raw.spots,
-        rows: packRows(raw),
-        curves,
-        kitSurface: raw.kitSurface || null,
-        maxBand,
-        gaps: raw.gaps,
-        shotsIndex: new Map(raw.shots.map((shots, index) => [shotKey(shots), index])),
-        bandLevels: raw.header.inputs.bandLevels,
-        maxLevel: raw.header.inputs.maxLevel,
+        spots: d.spots,
+        rows: rowViews(d.rows.buffer, d.rows.layout),
+        curves: d.curves,
+        kitSurface: d.kitSurface,
+        maxBand: d.maxBand,
+        gaps: d.gaps,
+        shotsIndex: new Map(d.shots.map((shots, index) => [shotKey(shots), index])),
+        bandLevels: d.header.inputs.bandLevels,
+        maxLevel: d.header.inputs.maxLevel,
         f: {
-            minGap: field(raw.rowFields, 'minGap'), refGap: field(raw.rowFields, 'refGap'), kph: field(raw.rowFields, 'kph'),
-            busy: field(raw.rowFields, 'busy'), deaths: field(raw.rowFields, 'deaths'), exp: field(raw.rowFields, 'exp'),
-            sp: field(raw.rowFields, 'sp'), adena: field(raw.rowFields, 'adena'), loot: field(raw.rowFields, 'loot'),
-            shots: field(raw.rowFields, 'shots'), potions: field(raw.rowFields, 'potions'),
-            stacks: raw.rowFields.indexOf('stacks'),
+            minGap: field(rowFields, 'minGap'), refGap: field(rowFields, 'refGap'), kph: field(rowFields, 'kph'),
+            busy: field(rowFields, 'busy'), deaths: field(rowFields, 'deaths'), exp: field(rowFields, 'exp'),
+            sp: field(rowFields, 'sp'), adena: field(rowFields, 'adena'), loot: field(rowFields, 'loot'),
+            shots: field(rowFields, 'shots'), potions: field(rowFields, 'potions'),
+            stacks: rowFields.indexOf('stacks'),
             // The hunt cycle columns (cycle); a table before them has none.
-            fight: raw.rowFields.indexOf('fight'), rest: raw.rowFields.indexOf('rest'), taken: raw.rowFields.indexOf('taken'),
-            spellTaken: raw.rowFields.indexOf('spellTaken'),
+            fight: rowFields.indexOf('fight'), rest: rowFields.indexOf('rest'), taken: rowFields.indexOf('taken'),
+            spellTaken: rowFields.indexOf('spellTaken'),
             // Per-mob rows (pull, cap, mix); a table before them counts fights.
-            pull: raw.rowFields.indexOf('pull'), cap: raw.rowFields.indexOf('cap'), mix: raw.rowFields.indexOf('mix'),
+            pull: rowFields.indexOf('pull'), cap: rowFields.indexOf('cap'), mix: rowFields.indexOf('mix'),
             // The gate per curve gap (cap and admitted mix); a table before it reads the reference's.
             // gateShare: per gap, the admitted part of the masked species' production; a table before it 1.
-            gate: raw.rowFields.indexOf('gate'), gateShare: raw.rowFields.indexOf('gateShare'),
-            hpLost: raw.rowFields.indexOf('hpLost'), mpLost: raw.rowFields.indexOf('mpLost')
+            gate: rowFields.indexOf('gate'), gateShare: rowFields.indexOf('gateShare'),
+            hpLost: rowFields.indexOf('hpLost'), mpLost: rowFields.indexOf('mpLost')
         }
     };
     return table;
+}
+
+// The table for a worker (main: ColdSimulationCoordinator, ClanPlanningCoordinator).
+function sharedDescriptor() {
+    load();
+    return shared;
+}
+
+// A worker takes main's table (workerData.spotTable) at boot, before its first read.
+function attachShared(descriptor) {
+    if (!validDescriptor(descriptor)) throw new Error('Invalid shared spot table descriptor');
+    if (shared?.rows.buffer === descriptor.rows.buffer) return;
+    shared = descriptor;
+    table = null;
+    dropRows();
 }
 
 // A curve's value at any gap: linear between the measured gaps, flat beyond.
@@ -619,7 +689,7 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
     return held.cap;
 }
 
-// The mobs per hour a bot may take of a spot's spawns at its gap (E69, the
+// The mobs per hour a bot may take of a spot's spawns at its gap (the
 // one owner of the rule): the production of the species it may fight
 // (productionCap) times the part of it it may fight, as
 // BackgroundResolver.soloShareMobs counts each spawn group's production times
@@ -658,7 +728,7 @@ function killGapFactor(t, row, level, spotLevel, mask = ALL_SPECIES) {
 // A row's kills per hour at the bot's gap with the walk of that gap: the
 // row measured the walk to its reference's admitted spawns (a cap is 3600 /
 // the walk per mob, BackgroundResolver.soloWalkMs) inside its hour; the bot
-// of the gap walks to its own (T106). The level curve (measured: the row's
+// of the gap walks to its own. The level curve (measured: the row's
 // kills at the gap) moves the rest of a kill's time, the fight, the rest and
 // the deaths; a walk to a mob takes the same time at any level. Without a
 // gate, the kills as measured.
@@ -678,6 +748,19 @@ function rowCap(t, row, spot, gate) {
     return gate ? gate.cap : t.f.cap >= 0 ? row[t.f.cap] : spot[3] * spot[4];
 }
 
+// Spots down to the first deep-blue level only (below it the C4 drop falls to
+// 30% and less, ProgressionRates' deep-blue gap): a spot further
+// below the bot is no candidate (combat), and a held one is outleveled.
+const beyondDeepBlue = gap => gap > ProgressionRates.DEEP_BLUE_LEVEL_GAP;
+// Did the bot outlevel this spot (its monsters past the deep-blue gap below its
+// level, the level the table reads)? 1 or 0; 0 for no spot or one the table lacks.
+// The earning spot's fact (DecisionSections.stateView: spot_outleveled).
+function outleveled(spotId, level) {
+    if (spotId == null) return 0;
+    const t = load(), s = spotSlot(t, spotId);
+    return s !== undefined && beyondDeepBlue(Math.min(t.maxLevel, Number(level)) - t.spots[s][1]) ? 1 : 0;
+}
+
 // The table-only part of a spot's hour (no rewards): the measured row, the level curve and the kills, or
 // null when the bot finds no target it may fight alone there at this level. s, r: the spot's and role's
 // table indexes.
@@ -688,9 +771,7 @@ function combat(t, s, r, level, shots) {
     const botLevel = Math.min(t.maxLevel, Number(level));
     const gap = botLevel - spotLevel;
     if (!(gap >= row[t.f.minGap])) return null;
-    // Spots down to the first deep-blue level only (user 10-29: below it the
-    // C4 drop falls to 30% and less).
-    if (gap > ProgressionRates.DEEP_BLUE_LEVEL_GAP) return null;
+    if (beyondDeepBlue(gap)) return null;
     const gate = gateAt(t, row, gap);
     if (gate === null) return null;
     const mask = gate?.mask ?? ALL_SPECIES;
@@ -805,7 +886,7 @@ function cycle(spotId, role, level, shots = true, rewardOptions = {}) {
     const { row, curve, gap, refGap } = c, f = t.f, spot = t.spots[s];
     const fight = ratio(curve.fight, t.gaps, refGap, gap), taken = ratio(curve.taken, t.gaps, refGap, gap);
     // kph: the hour's kills, value()'s (combat: the walk at the bot's gap, at
-    // most the cap); cap: the spawns' and their production's (T127 D3).
+    // most the cap); cap: the spawns' and their production's.
     return { spotId: spot[0], kph: kills, cap: c.cap, pull: 1,
         fight: row[f.fight] * fight, rest: row[f.rest] * ratio(curve.rest, t.gaps, refGap, gap),
         taken: row[f.taken] * taken, spellTaken: f.spellTaken < 0 ? 0 : row[f.spellTaken] * taken, hpLost: row[f.hpLost] * taken, mpLost: row[f.mpLost] * fight,
@@ -923,25 +1004,31 @@ function rankedIncome(role, level, costs = { shots: 0, potions: 0 }, minGap = -7
 // prices consumables with the bot's own beliefs: those prices are no key of
 // the shared shortlist (every bot would add its own row and evict the shared
 // game-data rows), and only the ids are read, so no row objects are built.
-// cuts: an array that takes the ranking's cut (a record only cutStands
-// reads), for a caller that holds its answer over the prices it stands on.
-function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}, cuts = null) {
+function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}) {
     const { t, rates } = incomeSource();
     const skill = rewardOptions.spoilSkillLevel ?? roleSpoilLevel(role, level);
     DiagnosticConfig.developerDiagnostics && (stats.spotIdRanks += 1);
-    return rankIncome(t, rates, role, level, costs, minGap, shots, skill, cuts).map(({ index }) => t.spots[index][0]);
+    return rankIncome(t, rates, role, level, costs, minGap, shots, skill).map(({ index }) => t.spots[index][0]);
+}
+// rankedSpotIds with the value each is ranked by (rankIncome's held income): [{ spotId, value }], for a
+// search that compares values (SpotSearch's leveling goal: its habit band).
+function rankedSpotValues(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}) {
+    const { t, rates } = incomeSource();
+    const skill = rewardOptions.spoilSkillLevel ?? roleSpoilLevel(role, level);
+    DiagnosticConfig.developerDiagnostics && (stats.spotIdRanks += 1);
+    return rankIncome(t, rates, role, level, costs, minGap, shots, skill).map(({ index, held }) => ({ spotId: t.spots[index][0], value: held }));
 }
 // The positive incomes of the role/level band at these consumable prices,
 // best first, ties to the spot whose level is closest to the bot's, then by
 // spot id; the first 64: [{ index, income }]. Best by what one bot gets on
-// the spot when it holds all the bots it has room for (T123, user 10-30:
-// a spot ranks by what it gives with the bots it holds, not one bot's
+// the spot when it holds all the bots it has room for
+// (a spot ranks by what it gives with the bots it holds, not one bot's
 // kills): the row's kills at most the production of its spawns over that
 // room (fullShare); `income` stays the one bot's row. One basis per role and level
 // spans the widest band any reader asks (BASIS_MIN_GAP, the income route's);
 // a narrower minGap filters its rows, so the readers share one basis.
 const BASIS_MIN_GAP = -15;
-function rankIncome(t, rates, role, level, costs, minGap, shots, skill, cuts = null) {
+function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
     const basisGap = Math.min(minGap, BASIS_MIN_GAP);
     const basisKey = `${role}:${level}:${basisGap}:${shotKey(shots)}:${skill}`;
     let basis = incomeBases.get(basisKey);
@@ -988,166 +1075,12 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill, cuts = n
         if (t.spots[basis.indexes[index]][1] - level < minGap) continue;
         const income = basis.values[index * 3] - basis.values[index * 3 + 1] * costs.shots
             - basis.values[index * 3 + 2] * costs.potions;
-        if (income > 0) rows.push({ index: basis.indexes[index], income, held: income * basis.shares[index], at: index });
+        if (income > 0) rows.push({ index: basis.indexes[index], income, held: income * basis.shares[index] });
     }
     rows.sort((a, b) => b.held - a.held
         || Math.abs(t.spots[a.index][1] - level) - Math.abs(t.spots[b.index][1] - level)
         || String(t.spots[a.index][0]).localeCompare(String(t.spots[b.index][0])));
-    const cut = rows.slice(0, 64);
-    cuts?.push({ t, basis, level, minGap, costs, positives: rows.length, cut });
-    return cut;
-}
-// The prices over which rankIncome's cuts (rankedSpotIds' records) keep their
-// place for the spots that matter to the caller (matters(spotId); others may
-// come and go), each price with the other as read, narrowing ranges
-// ({ shots: [low, high], potions: [low, high] } around the prices read): a spot's income (values: adena + loot, shots,
-// potions an hour) and its held income (× its share) are lines in each price,
-// so the cut is a set of line comparisons. A spot that matters in the cut
-// stays above zero and above every spot out of it (with at most 64 positive
-// spots, the cut takes them all: only once more come could it be pushed out);
-// one out of it stays out: at or below zero while the cut takes every
-// positive spot, else below every spot in it. Ties at the read price stand
-// only there; each comparison keeps a margin of a few roundings of its terms
-// at the price it reaches (keepAbove, firstMeet's grow).
-// The comparisons are linear in both prices at once: the cut stands anywhere
-// inside the hull of the two ranges (a convex set). Cost per cut and price:
-// O(n) (n: the band's spots) and, for "above every spot", the meeting of two
-// envelopes (firstMeet), O(n) per envelope corner passed inside the range.
-function cutStands(cuts, matters, ranges) {
-    for (const { t, basis, level, minGap, costs, positives, cut } of cuts) cutStand(t, basis, level, minGap, costs, positives, cut, matters, ranges);
-}
-// Scratch rows of cutStand, grown to the largest band (no allocation per call).
-let cutScratch = { inCut: new Uint8Array(0), held: new Float64Array(0), heldError: new Float64Array(0), slope: new Float64Array(0) };
-function cutStand(t, basis, level, minGap, costs, positives, cut, matters, stand) {
-    const n = basis.indexes.length, values = basis.values, shares = basis.shares;
-    if (cutScratch.inCut.length < n) {
-        cutScratch = { inCut: new Uint8Array(n), held: new Float64Array(n), heldError: new Float64Array(n), slope: new Float64Array(n) };
-    }
-    const { inCut, held, heldError, slope } = cutScratch;
-    inCut.fill(0, 0, n);
-    for (const row of cut) inCut[row.at] = 1;
-    const income = at => values[at * 3] - values[at * 3 + 1] * costs.shots - values[at * 3 + 2] * costs.potions;
-    const error = at => 8 * Number.EPSILON * (values[at * 3] + values[at * 3 + 1] * costs.shots + values[at * 3 + 2] * costs.potions);
-    // The band's spots in and out of the cut; whether one matters is asked
-    // only where its comparison would narrow a range (counts).
-    const inAll = [], outAll = [];
-    const counts = at => matters(t.spots[basis.indexes[at]][0]);
-    for (let at = 0; at < n; at++) {
-        const spot = t.spots[basis.indexes[at]];
-        if (spot[1] - level < minGap) continue;
-        (inCut[at] ? inAll : outAll).push(at);
-        const v = at * 3, gross = values[v + 1] * costs.shots + values[v + 2] * costs.potions;
-        held[at] = (values[v] - values[v + 1] * costs.shots - values[v + 2] * costs.potions) * shares[at];
-        heldError[at] = 8 * Number.EPSILON * (values[v] + gross) * shares[at];
-    }
-    const inMatters = inAll.filter(counts);
-    const full = positives > cut.length, crowdable = full || outAll.length > 0;
-    const most = list => { let top = 0; for (const at of list) if (heldError[at] > top) top = heldError[at]; return top; };
-    // [A, B, the B lines that take part]: every spot that matters in the cut
-    // above every one out of it; with a full cut every one in it above every
-    // out one that matters.
-    const pairs = [crowdable ? [inMatters, outAll, null] : null, full ? [inAll, outAll, counts] : null]
-        .filter(Boolean).map(([A, B, admit]) => ({ A, B, admit, margin: 2 * (most(A) + most(B)) }));
-    // A margin grows with the price's move: the roundings of a spot's costs at the price it reaches.
-    const growth = (list, slot) => { let top = 0; for (const at of list) top = Math.max(top, values[at * 3 + slot] * shares[at]); return 8 * Number.EPSILON * top; };
-    for (const [name, slot] of [['shots', 1], ['potions', 2]]) {
-        const x0 = costs[name];
-        let low = stand[name][0], high = stand[name][1];
-        const keep = (a, b, e, g) => { [low, high] = keepAbove(x0, low, high, a, b, e, g); };
-        for (const at of inMatters) if (low < high) keep(income(at), -values[at * 3 + slot], error(at), 8 * Number.EPSILON * values[at * 3 + slot]);
-        // With the cut taking every positive spot, one out of it that matters stays at or below zero.
-        if (!full) for (const at of outAll) {
-            if (!(low < high)) break;
-            const a = -income(at), b = values[at * 3 + slot], e = error(at), g = 8 * Number.EPSILON * b;
-            const [l, h] = keepAbove(x0, low, high, a, b, e, g);
-            if ((l !== low || h !== high) && counts(at)) { low = l; high = h; }
-        }
-        for (const list of [inAll, outAll]) for (const at of list) slope[at] = values[at * 3 + slot] * shares[at];
-        // Every spot that matters in the cut above every one out of it; with a full cut every one in it above every out one that matters.
-        for (const { A, B, admit, margin } of pairs) {
-            if (!(low < high)) continue;
-            // The B lines that come within the margin of A's least anywhere in the range (lines: their ends).
-            const grow = 2 * (growth(A, slot) + growth(B, slot));
-            let floor = Infinity;
-            const up0 = high - x0, down0 = x0 - low, ends = Number.isFinite(up0) && Number.isFinite(down0);
-            if (ends) for (const k of A) floor = Math.min(floor, held[k] - slope[k] * up0, held[k] + slope[k] * down0);
-            const near = [];
-            for (const k of B) {
-                if (ends && !(Math.max(held[k] - slope[k] * up0, held[k] + slope[k] * down0) > floor - margin - grow * Math.max(up0, down0))) continue;
-                if (!admit || admit(k)) near.push(k);
-            }
-            const up = firstMeet(A, near, held, slope, 1, margin, grow, up0), down = firstMeet(A, near, held, slope, -1, margin, grow, down0);
-            if (up === 0 || down === 0) { low = high = x0; continue; }
-            high = Math.min(high, x0 + up * (1 - 1e-9));
-            low = Math.max(low, x0 - down * (1 - 1e-9));
-        }
-        stand[name] = [Math.min(low, x0), Math.max(high, x0)];
-    }
-}
-// The range [low, high] around x0, narrowed so that a + b·d stays above
-// 2(e + g·|d|) for every move d from x0 in it (e: a few roundings of the
-// comparison's terms at x0, g: their growth per unit of the price); a
-// comparison inside its margin at x0 stands only there.
-function keepAbove(x0, low, high, a, b, e, g) {
-    if (!(a > 2 * e)) return [x0, x0];
-    const up = b - 2 * g, down = -b - 2 * g;
-    if (up < 0) high = Math.min(high, x0 + (a - 2 * e) / -up);
-    if (down < 0) low = Math.max(low, x0 - (a - 2 * e) / -down);
-    return [low, high];
-}
-// The first move u ≥ 0 (the price up for sign 1, down for -1) at which the
-// least of A's lines (held - sign·slope·u) comes within margin + grow·u of
-// the most of B's: 0 when it is there already, Infinity when never. It
-// follows the two envelopes corner by corner (the least of A, the most of B,
-// each line taking over where it crosses the one before, the steeper one of
-// lines crossing at one point), up to the move limit (Infinity past it: the
-// caller's range ends there; a line of B that stays below A's least up to it
-// never takes part). A line enters an envelope once: at most |A| + |B|
-// corners (past them, rounding: the move reached, no meeting found below it).
-function firstMeet(A, B, held, slope, sign, margin, grow, limit) {
-    if (!A.length || !B.length) return Infinity;
-    // Slopes in the move's direction: a line is held - fall·u.
-    let a = A[0], b = -1, floor = Infinity;
-    for (const k of A) {
-        const v = held[k], fall = sign * slope[k], va = held[a];
-        if (v < va || (v === va && fall > sign * slope[a])) a = k;
-        if (Number.isFinite(limit)) floor = Math.min(floor, v, v - fall * limit);
-    }
-    // Only a line of B that comes within the margin of A's least somewhere up to the limit can meet it.
-    let near = B;
-    if (Number.isFinite(limit)) {
-        near = [];
-        const reach = floor - margin - grow * limit;
-        for (const k of B) if (Math.max(held[k], held[k] - sign * slope[k] * limit) > reach) near.push(k);
-        if (!near.length) return Infinity;
-    }
-    for (const k of near) {
-        if (b < 0 || held[k] > held[b] || (held[k] === held[b] && sign * slope[k] < sign * slope[b])) b = k;
-    }
-    let u = 0;
-    for (let corner = 0; corner <= A.length + near.length && u <= limit; corner++) {
-        const fa = sign * slope[a], fb = sign * slope[b];
-        const gap = (held[a] - fa * u) - (held[b] - fb * u), room = gap - margin - grow * u;
-        if (!(room > 0)) return u;
-        const closing = fa - fb + grow;
-        const meets = closing > 0 ? u + room / closing : Infinity;
-        let nextA = Infinity, na = a, nextB = Infinity, nb = b;
-        for (const k of A) {
-            const falls = sign * slope[k] - fa;
-            if (!(falls > 0)) continue;
-            const cross = (held[k] - held[a]) / falls;
-            if (cross >= u && (cross < nextA || (cross === nextA && sign * slope[k] > sign * slope[na]))) { nextA = cross; na = k; }
-        }
-        for (const k of near) {
-            const rises = fb - sign * slope[k];
-            if (!(rises > 0)) continue;
-            const cross = (held[b] - held[k]) / rises;
-            if (cross >= u && (cross < nextB || (cross === nextB && sign * slope[k] < sign * slope[nb]))) { nextB = cross; nb = k; }
-        }
-        if (meets <= nextA && meets <= nextB) return meets > limit ? Infinity : meets;
-        if (nextA <= nextB) { u = nextA; a = na; } else { u = nextB; b = nb; }
-    }
-    return u > limit ? Infinity : u;
+    return rows.slice(0, 64);
 }
 // The share of its row's kills one bot keeps on a spot full of hunters
 // (huntShare): the bots the spot has room for (LevelingRoutes.roomForSpot,
@@ -1164,7 +1097,7 @@ function roles() {
     return load().roles;
 }
 
-// The kit surface of a table key at a level (user 10-29): { fight, taken }
+// The kit surface of a table key at a level: { fight, taken }
 // coefficients over HuntCycle.KIT_FEATURES, measured on its band's curve
 // spots (the nearest measured band, lower first), or null (an older table, a
 // band without enough fights).
@@ -1191,10 +1124,11 @@ function revision() {
 function useFile(next = DEFAULT_FILE) {
     file = next;
     table = null;
+    shared = null;
     tableRevision++;
     bestRows.clear();
     clearValueMemo();
     clearIncomeBases();
 }
 
-module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, cutStands, keepAbove, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, outleveled, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, rankedSpotValues, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };

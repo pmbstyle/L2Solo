@@ -47,7 +47,7 @@ assert.strictEqual(dispute(solo(40), solo(40), wary).reason, 'outmatched', 'the 
 assert.strictEqual(dispute(solo(40), solo(40), calm, { ready: true, personal: { fear: 6, affinity: 0, trust: 0, hostility: 0 } }).reason,
     'outmatched', 'fear of him: outmatched by an even look');
 
-// A far pair's contest is decided once, by the worker (ColdCompetitionMonitor): main
+// A far pair's contest is decided once, by the worker (SpotContest, at the arrival): main
 // takes the delivered verdict while the participants are at the revisions the worker
 // read. A participant written since the scan is asked again on the saved rolls and the
 // willingness rolled once at the dispute (one decision per encounter, user 2026-10-05).

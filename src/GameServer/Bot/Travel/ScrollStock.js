@@ -1,15 +1,15 @@
-// A bot keeps a few Scrolls of Escape for its town trips (part of H13, user
-// 2026-10-05): on a town visit it buys up to the target at the local NPC, as it
-// restocks healing potions (HealingPotionStock.restockPlan: what is missing,
-// from the Adena above the consumables reserve), and the sale keeps that many
-// (H12 narrowed: the stock is no longer NPC junk; a surplus is sold).
+// A bot carries a Scroll of Escape for its trip back to town when the walk it
+// saves is worth its price (the kit rule in
+// EconomyContext.kitReader: one per outing, no survival line, a broke bot
+// walks): on a town visit it buys the one missing at the local NPC from the
+// money its queue does not hold (a side purchase the writer checks against the
+// bot's hour), and the sale keeps every scroll it holds (each saves a walk;
+// none is junk). Our rule, not C4.
 const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const TripPayment = require('./TripPayment');
 const Funding = require('../Economy/PurchaseFunding');
 
-// Temporary carried target (user, 2026-10-08), pending travel-based stock planning.
-const TARGET_AMOUNT = 10;
 const SCROLL = Object.freeze({ selfId: TripPayment.SCROLL_OF_ESCAPE, name: 'Scroll of Escape' });
 
 function heldAmount(value, inventory = value?.inventory) {
@@ -17,39 +17,41 @@ function heldAmount(value, inventory = value?.inventory) {
     return Math.max(0, Number(value?.backpack?.fetchItemFromSelfId?.(SCROLL.selfId)?.fetchAmount?.() || 0));
 }
 
-// What the sale keeps: the scrolls up to the target.
+// What the sale keeps: every scroll the bot holds.
 function keptAmounts(value) {
-    const kept = Math.min(TARGET_AMOUNT, heldAmount(value));
+    const kept = heldAmount(value);
     return kept > 0 ? { [SCROLL.selfId]: kept } : {};
 }
 
 function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
-    // Main reads the plan's published kit (keptKit: a near bot's decision is taken in the background).
+    // Main reads the build's kit rates (keptKit: a near bot's decision is taken in the background).
     const onMain = require('node:worker_threads').isMainThread;
     const context = options.context || (onMain ? Economy.keptKit(state) : Economy.forState(state));
+    // kit: the visit's own amounts (NpcRestockPlan.collect at the local quote, a hot visit's held kit);
+    // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
+    const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'scrolls');
     const currentAmount = heldAmount(value, options.inventory || value?.inventory);
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice) || 0);
-    const reserve = Math.max(0, Number(options.reserve ?? context.survivalReserve) || 0);
-    const desired = Math.max(0, TARGET_AMOUNT - currentAmount);
+    const reserve = Math.max(0, Number(options.reserve ?? context.refillReserve) || 0);
+    const desired = Math.max(0, stock.target - currentAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(SCROLL.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const stock = context.stock('scrolls');
     // No row in the money queue (the kit comes first): the time a scroll saves
     // buys it from the money the queue does not hold.
     const funding = wish || !(unitPrice > 0) || Funding.itemRate(fundedState.stats?.money, SCROLL.selfId) !== undefined
         ? {} : { side: stock.benefitPerUnit / unitPrice };
     const allowance = Funding.stockAllowance(fundedState, wish, SCROLL.selfId, Funding.survivalTranche(context, SCROLL.selfId, unitPrice),
-        Funding.quoteScale(stock.unitPrice, unitPrice), funding);
+        Funding.quoteScale(estimate, unitPrice), funding);
     const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
         selfId: SCROLL.selfId,
         name: SCROLL.name,
-        targetAmount: TARGET_AMOUNT,
+        targetAmount: stock.target,
         currentAmount,
         amount,
         unitPrice,
@@ -83,4 +85,4 @@ function purchaseActorRestock(actor, options = {}) {
         : { ok: false, reason: bought.reason, ...plan }));
 }
 
-module.exports = { TARGET_AMOUNT, keptAmounts, restockPlan, localNpcPrice, coldPurchasePatch, purchaseActorRestock };
+module.exports = { keptAmounts, restockPlan, localNpcPrice, coldPurchasePatch, purchaseActorRestock };

@@ -34,16 +34,16 @@ for (const phase of ['hot', 'cold']) {
 }
 Admission.configureTradeAdmission(() => null);
 {
-    const seller = { characterId: 99, phase: 'cold', activity: 'hunting', adena: 1000000,
+    const seller = { characterId: 99, phase: 'cold', activity: 'hunting', adena: 1,
         loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
     Admission.configureTradeAdmission(id => id === 99 ? seller : null);
-    assert.equal(Choice.purchase(state, economy, board), null, 'a seller cannot offer a paid trip using protected funds');
+    assert.equal(Choice.purchase(state, economy, board), null, 'a seller cannot offer a paid trip its wallet cannot pay');
     assert.equal(Choice.resolve([1, 1869, 2, 77, 78, 4, 237], board, 42), null, 'the main thread also skips the unaffordable quote');
-    seller.stats.money = [1000, .001, 0, 0];
-    assert(Choice.purchase(state, economy, board), 'the unchanged ad becomes available when the owner can pay');
-    seller.stats.money = [1000, .001, 0, 500];
+    seller.adena = 1000000;
+    assert(Choice.purchase(state, economy, board), 'the unchanged ad becomes available when the owner\'s wallet pays, its wish unfunded');
+    seller.adena = 1;
     seller.loc = { locX: 115072, locY: -178176, locZ: -800 };
-    assert(Choice.purchase(state, economy, board), 'a free local trip remains possible even with protected funds');
+    assert(Choice.purchase(state, economy, board), 'a free local trip remains possible with any wallet');
     Admission.configureTradeAdmission(() => null);
 }
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
@@ -123,14 +123,14 @@ try {
 console.log('PASS trade detour preserves and resumes the selected purchase');
 
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-// The personal shot target is the plan's published one (stats.stockTargets,
+// The personal shot target is an outing of the build's published use (stats.kitRates,
 // EconomyContext.keptTargets), the same the listing keeps.
 const stockBare = { ...state, level: 30, activity: 'hunting' };
 const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
 const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
-    stats: { stockTargets: Packet.stockTargets({ potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId,
-        potionTarget: 0, shotId, shotTarget: 60, shotCurrentAtBuild: 100, potionSurvivalTarget: 0, gapHorizonHours: 0, shotsCanRestock: true,
-        shotSurvivalTarget: 0, scrollHours: 0 }) } };
+    stats: { earning: { shotsPerHour: 30, potionsPerHour: 0 }, kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, outingHours: 2, gapHorizonHours: 0,
+        potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId, potionUse: 0, potionRestUse: 0,
+        potionBenefit: 0, scrollHours: 0 }) } };
 // A review's own stock reader (here a different target) does not decide it.
 const stockEconomy = { hourAdena: 1000, moneyPrice: .001, persona: { traits: {}, understanding: .3 },
     network: {}, stock: kind => kind === 'shots' ? { itemId: shotId, target: 0 } : { itemId: 1060, target: 0 } };

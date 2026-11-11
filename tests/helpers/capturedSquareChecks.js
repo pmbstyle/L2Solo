@@ -11,8 +11,8 @@ const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const distance = (a, b) => Math.hypot(a.locX - b.locX, a.locY - b.locY);
 
 module.exports = function checkCapturedSquare(town, { useful, groundZ = null }) {
-    // C4 market routing was approved for the five authored captured towns
-    // (handoff plan 3.3, user decision 2026-10-05). Geometry stays authored.
+    // Bots trade in the five authored captured towns (our choice).
+    // Geometry stays authored.
     assert(ShopPlaces.SHOP_TOWNS.includes(town), `${town} is an enabled bot shop town`);
 
     ShopPlaces._resetForTests();

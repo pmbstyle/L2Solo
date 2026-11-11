@@ -33,8 +33,8 @@ near(Table.value('S', 'dps', 18).kills, 100, 'at the spot\'s level the curve hal
 near(Table.value('S', 'dps', 18).deaths, 100 * (0.001 + 0.01), 'deaths per kill add the curve\'s difference');
 near(Table.value('S', 'dps', 19).kills, 200 * 0.625, 'between measured gaps the curve is linear');
 near(Table.value('S', 'dps', 27).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
-// Spots down to the first deep-blue level only (user 10-29: 9 levels below
-// the bot, past it the C4 drop is 30% and less).
+// Spots down to the first deep-blue level only (9 levels below the bot;
+// past it the C4 drop is 30% and less).
 assert(Table.value('S', 'dps', 27), 'nine levels above the spot: read');
 assert.strictEqual(Table.value('S', 'dps', 28), null, 'ten levels above: not read');
 near(Table.value('T', 'dps', 24).kills, 48, 'kills never exceed what the spot\'s monster count allows');
@@ -88,7 +88,7 @@ try {
     fs.rmSync(scratch, { recursive: true, force: true });
 }
 
-// A per-mob table (user 10-29): a row's kills reach its own cap (the spawns
+// A per-mob table: a row's kills reach its own cap (the spawns
 // its bot may fight), are priced by the species it killed, and take their
 // exp gap from those species' levels, not the spot's other mobs.
 const mixScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-mix-'));
@@ -478,7 +478,7 @@ useRate('x1');
     } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
 }
 {
-    // One kills-per-hour answer (T127 D3): the hunt cycle's kph is value()'s
+    // One kills-per-hour answer: the hunt cycle's kph is value()'s
     // kills, the production cap included; its cap is the cap the kills meet.
     const offline = require('../data/Bots/spot-reward-npcs.json');
     const spotId = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 })[0];
@@ -494,4 +494,38 @@ useRate('x1');
         near(cycle.cap, production, 'its cap is the production');
     } finally { Table.useSpots([]); }
 }
-console.log('Spot value table lookups, curves, caps, rates and the committed table passed');
+(async () => {
+    // A worker reads main's table (the cold and clan workers): the same
+    // answers with no file of its own to read.
+    const os = require('os');
+    const { Worker } = require('worker_threads');
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'spot-table-')), 'shared.json');
+    fs.copyFileSync(Table.DEFAULT_FILE, file);
+    Table.useFile(file);
+    const spotIds = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 }).slice(0, 3).concat(['-15_42', '11_6']);
+    const roles = Table.roles();
+    const ask = (T) => spotIds.flatMap(spotId => roles.slice(0, 6).flatMap(role => [8, 24, 50].map(level => ({
+        spotId, role, level, value: T.value(spotId, role, level, true), cycle: T.cycle(spotId, role, level, true),
+        production: T.production(spotId, role, level, true) }))));
+    const expected = JSON.parse(JSON.stringify(ask(Table)));
+    const spotTable = Table.sharedDescriptor();
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    const code = `
+        const { parentPort, workerData } = require('worker_threads');
+        require(${JSON.stringify(path.join(__dirname, '../src/Global'))});
+        invoke('GameServer/DataCache').init({ validate: false });
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        Table.useFile(workerData.file);
+        Table.attachShared(workerData.spotTable);
+        const spotIds = workerData.spotIds, roles = Table.roles();
+        parentPort.postMessage(JSON.stringify((${ask.toString()})(Table)));`;
+    const answers = await new Promise((resolve, reject) => {
+        const worker = new Worker(code, { eval: true, workerData: { spotTable, file, spotIds } });
+        worker.once('message', resolve);
+        worker.once('error', reject);
+    });
+    assert(expected.some(row => row.value) && expected.some(row => row.cycle?.cap > 0), 'the sample reads rows and their gates');
+    assert.deepStrictEqual(JSON.parse(answers), expected, 'the worker answers as main from the shared rows');
+    Table.useFile();
+})().then(() => console.log('Spot value table lookups, curves, caps, rates and the committed table passed'),
+    (error) => { console.error(error); process.exit(1); });

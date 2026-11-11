@@ -88,6 +88,12 @@ async function bodyMoney(id) {
         await Life.upsertState(fixtureState(near, 'MindColumn2', 'hot', { money: NEW_MONEY }), 'mind_column_near');
         assert.deepEqual(JSON.parse((await row(near)).mindJson).money, NEW_MONEY, 'a hot save writes the new mind');
         assert.equal(await bodyMoney(near), null, 'the body still holds no money');
+        // The woken decisions (Situations' store) are the mind's too.
+        const STORE = { woken: 1, waiting: 256, situationSeq: 4 };
+        await Life.upsertState(fixtureState(near, 'MindColumn2', 'hot', { money: NEW_MONEY, ...STORE }), 'mind_column_store');
+        const stored = await row(near), storedMind = JSON.parse(stored.mindJson), storedBody = JSON.parse(stored.statsJson);
+        assert.deepEqual([storedMind.woken, storedMind.waiting, storedMind.situationSeq], [1, 256, 4], 'the store is saved in the mind');
+        assert.equal(['woken', 'waiting', 'situationSeq'].some(key => Object.hasOwn(storedBody, key)), false, 'not in the body');
         // The hot->cold hand-off carries main's mind into the far row.
         const HANDOFF_MONEY = [99000, 0, 17000, 0];
         await Life.upsertState(fixtureState(near, 'MindColumn2', 'cold', { money: HANDOFF_MONEY }), 'mind_column_handoff',
@@ -128,6 +134,58 @@ async function bodyMoney(id) {
         const memberAfter = await row(member);
         assert.equal(JSON.parse(memberAfter.statsJson).goalRepairProbe, true, 'the goal write writes the body');
         assert.equal(memberAfter.mindJson, memberBefore.mindJson, 'the goal write leaves the mind');
+
+        // (5) Main's raise on a far row (BotLifeState.raiseOnRow) survives a worker
+        // commit in flight: the commit built before it is refused and the bits stay;
+        // main's whole-row save of an older copy keeps them too.
+        const raisedId = await create('cold', { money: OLD_MONEY, woken: 0, activityLeaf: 5 });
+        const inFlight = Life.cachedState(raisedId), flightRevision = inFlight.simulation.revision;
+        const raised = await Life.raiseOnRow(raisedId, [{ name: 'goal_failed', payload: { impossible: true } }], 'mind_column_raise');
+        assert(raised && raised.simulation.revision > flightRevision, 'the raise moves the far revision');
+        const [late] = await Owner.commitBatch([{ revision: flightRevision, proposal: { revision: flightRevision },
+            nextState: { ...inFlight, stats: { ...inFlight.stats, money: NEW_MONEY, woken: 0 } } }]);
+        assert.equal(late.reason, 'stale_revision', 'the worker commit begun before the raise is refused');
+        await Life.upsertState(fixtureState(raisedId, 'MindColumn5', 'cold', { money: OLD_MONEY, woken: 0 }), 'mind_column_old_copy');
+        const raisedMind = JSON.parse((await row(raisedId)).mindJson);
+        assert(raisedMind.woken & 2, 'the raised bits stay on the row');
+        assert.equal(raisedMind.activityLeaf, 0, 'and its impossible mark dropped the held step');
+        assert.equal(raisedMind.situationSeq, 1, 'one raise');
+        assert.equal(await Life.raiseOnRow(await create('hot'), [{ name: 'goal_failed' }]), null, 'a row that is not far takes no row raise');
+        // A raise whose only effect is a member's stay writes nothing on a solo row: the
+        // revision stays, no worker step is refused.
+        const quietRevision = (await row(raisedId)).simulationRevision;
+        assert(await Life.raiseOnRow(raisedId, [{ name: 'party_outleveled' }]), 'a stay-only raise on a solo row lands');
+        assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision on a solo row');
+        // The facts a raise carries land in the mind with its bits: a spot the body could not
+        // reach is marked, and a player's command is the held earning answer, decided as its caller: the bit its
+        // move woke and one waiting for a stop both cleared.
+        await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: { spotId: 'far', reason: 'walk_timeout' } }]);
+        let factMind = JSON.parse((await row(raisedId)).mindJson);
+        assert.deepEqual(factMind.spotMarks.map(mark => [mark.spotId, mark.reason]), [['far', 'spot_unreachable']],
+            'the unreachable spot is marked on the row');
+        assert(factMind.woken & 1, 'and it woke the earning spot');
+        // A raise that adds no bit writes nothing (the same walk failed again on a spot
+        // already marked): the revision stays.
+        const markedRevision = (await row(raisedId)).simulationRevision;
+        const sameWalk = { spotId: 'far', reason: 'walk_timeout' };
+        const again = await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: sameWalk }]);
+        assert(again, 'a raise that adds nothing still lands');
+        assert.equal((await row(raisedId)).simulationRevision, markedRevision, 'and moves no revision');
+        const Situations = invoke('GameServer/Bot/Situations');
+        const takenBefore = Situations.counts().decided.earning_spot?.[0] || 0;
+        await Life.raiseOnRow(raisedId, [{ name: 'grade_changed' }, { name: 'moved_by_world' },
+            { name: 'player_command', payload: { spotId: 'near', at: 5 } }]);
+        factMind = JSON.parse((await row(raisedId)).mindJson);
+        assert.equal(factMind.earning.spotId, 'near', 'a command is the held answer');
+        assert.equal(factMind.woken & 1, 0, 'and it took the earning spot\'s bit');
+        assert.equal(factMind.waiting & (1 | 1 << 8), 0, 'on every waiting plane too');
+        assert.equal(Situations.counts().decided.earning_spot[0], takenBefore + 1, 'counted as a decision taken');
+        // A rejection whose row is not far and whose body is not in the world is counted, not lost silently.
+        const Events = invoke('GameServer/Bot/AI/DecisionEvents'), FailureLog = require('../src/FailureLog');
+        const lostBefore = FailureLog.snapshot()?.['situations.raise_lost'] || 0;
+        const gone = Life.cachedState(await create('hot'));
+        await Events.rejectOnRow(gone, gone, 'mind_column');
+        assert.equal(FailureLog.snapshot()?.['situations.raise_lost'], lostBefore + 1, 'a raise that lands nowhere is counted');
         console.log('PASS the mind column: refused far commits write nothing, main saves write a far row\'s only on its revision');
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });

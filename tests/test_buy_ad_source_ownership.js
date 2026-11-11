@@ -10,7 +10,7 @@ const imports = {
     'GameServer/DataCache': { items: [{ selfId: 736, template: { price: 400 }, etc: {} },
         { selfId: 1121, template: { price: 8 }, etc: {} }] },
     'GameServer/Bot/Economy/PurchaseFunding': { budget: state => state.adena, spendable: () => 50000,
-        goalTerms: (goal, itemId) => ({ itemId }) },
+        goalTerms: (goal, itemId) => ({ itemId }), intentTerms: intent => ({ r: intent.valueRate }) },
     'GameServer/Bot/Economy/ItemDisposition': { isQuestItem: () => false },
     'GameServer/Bot/Economy/MarketListingPolicy': { traderContext: () => context },
     'GameServer/Bot/Economy/MarketTownPolicy': { targetTownForItems: () => 'Giran' },
@@ -73,7 +73,6 @@ assert.deepEqual(alternatives.map(row => row.count), [5, 5],
     'conditional alternatives each use their root allowance without reserving cash for another ad');
 const Intent = require('../src/GameServer/Bot/Economy/TradeIntent');
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-const Look = require('../src/GameServer/Bot/Economy/BoardLook');
 const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
 const npc = { sourceType: 'npc', quoted: true, executable: true };
 const economy = { network: { plans: new Map([['item:736', npc]]) }, watchList: [],
@@ -97,16 +96,16 @@ const line = { ownerId: 42, lineId: 7, recordId: 8, selfId: 736, enchant: 0,
 const original = Counters.counter;
 try {
     Counters.counter = () => ({ deals: 0 });
-    const seen = new Look.SeenLines();
-    const moved = Pricing.lookOwn(state, [line], ctx, seen);
+    const moved = Pricing.lookOwn(state, [line], ctx);
     assert.deepEqual(moved.withdrawals.map(row => row.lineId), [7],
         'source ownership itself retires a stale bid without price movement, deals or a new roll');
     assert.equal(moved.withdrawals[0].expectedRevision, 4);
     assert.deepEqual(moved.withdrawals[0].previousPricing, line.pricing);
     const unknown = Pricing.traderContext(state, { economy: { ...economy, intentPending: true },
         board, tripCost: trip, persona: { traits: {} }, findSpot: () => null, timestamp: ctx.timestamp });
-    assert.equal(Pricing.lookOwn(state, [line], unknown, new Look.SeenLines()), null,
-        'pending source preparation cannot withdraw or reprice a line');
+    // (A bid above a confirmed cheaper purchase is still lowered: MarketPricing.look's cap rule.)
+    assert.equal(Pricing.lookOwn(state, [line], unknown)?.withdrawals?.length || 0, 0,
+        'pending source preparation cannot withdraw a line');
 } finally { Counters.counter = original; }
 const Listing = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const priorContext = Listing.traderContext, priorBid = Pricing.bid;

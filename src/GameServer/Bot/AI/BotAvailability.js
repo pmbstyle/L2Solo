@@ -144,7 +144,7 @@ const BotAvailability = {
         const timestamp = Number(options.timestamp ?? Date.now());
         if (!player || !state) return result;
 
-        // A trip is no "busy" reason (design 5.9): the traveller answers from
+        // A trip is no "busy" reason: the traveller answers from
         // where it is now on its road.
         const traveller = state.activity === 'traveling';
         result.distance = distance(actorLocation(player), traveller

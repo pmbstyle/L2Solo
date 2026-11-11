@@ -31,7 +31,7 @@ function closesTowns(karma) {
     return Number(karma) > 0;
 }
 
-// Floran is the town where a PK trades without a fight (design 5.8): for a
+// Floran is the town where a PK trades without a fight: for a
 // character with karma "the town" of a trip, a shop or an ad is Floran.
 const TOWN_NAME = 'Floran Village';
 function townFor(karma, town) {

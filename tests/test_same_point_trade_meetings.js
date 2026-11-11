@@ -32,7 +32,12 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         };
         const accept = request => Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => true });
         const funds = async id => (await Database.fetchItems(id)).find(row => row.selfId === 57).amount;
+        // The seller's unfunded wish leaves it no free money; it pays the
+        // gatekeeper from its wallet, as every trip.
+        await Database.execute(["UPDATE bot_life_state SET mindJson=json_set(mindJson,'$.money[3]',5000) WHERE characterId=?", [ids[1]]]);
         const first = await accept(await prepare()), a = first.meeting.id;
+        assert.equal(first.meeting.routeReserveB, 20, 'the seller\'s fare is reserved');
+        assert.equal(await funds(ids[1]), 119980, 'the seller pays its fare from its wallet');
         const secondRequest = await prepare(ids[2]), second = await accept(secondRequest), b = second.meeting.id;
         assert.equal(second.meeting.routeReserveA, 0, 'shared actor reserves one trip');
         assert.equal(await funds(ids[0]), 119580, 'two independent purchases plus one trip');
@@ -49,7 +54,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.equal(await funds(ids[0]), balance, 'incompatible point, double stock and route forgery roll back');
         const delivered = await Database.arriveTradeMeeting(b);
         assert.equal(delivered.meeting.state, 'completed');
-        assert.deepEqual(delivered.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 4 }, 'pending physical delivery remains incoming until settled');
+        assert.deepEqual(delivered.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 2 }, 'the delivery is in the bag; only the earlier meeting\'s stays incoming');
         assert.deepEqual(JSON.parse(delivered.coldLifeRows[ids[0]].statsJson).tradeMeeting, [a, 1, 'Giran', point.locX, point.locY, point.locZ]);
         for (const actor of [ids[0], ids[2]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(b, actor); }
         assert.deepEqual((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming, { 1867: 2 });
@@ -101,7 +106,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.equal((await Database.fetchAfkTradeShops(ids[1])).some(row => row.id === ad.id), false, 'a filled advertisement is closed');
         assert.deepEqual(sold.closed.map(row => [row.id, row.status, row.lines[0].count]), [[ad.id, 'filled', 0]], 'the closed record reaches board memory');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(filled, actor); }
-        // ECO-14: a seller committed to a meeting in Giran cannot meet in Dion.
+        // A seller committed to a meeting in Giran cannot meet in Dion.
         // A Dion buyer is not offered its Dion ad (so it never picks or retries
         // it), and finds it again once that meeting ends.
         const adopt = result => { for (const row of Object.values(result.coldLifeRows || {})) Life.acceptLifecycleRow(row); return result; };
@@ -180,6 +185,24 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         const survival = (await accept(kit)).meeting.id;
         await Database.cancelTradeMeeting(survival, 'fixture');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(survival, actor); }
+        // A board sale leaves the far seller's 150 adena on the board; its next
+        // accept takes them into the wallet it pays from (100 free above the
+        // reserve, 220 due), once, instead of being refused for them.
+        const stems = await Database.setItem(ids[0], { selfId: 1864, name: 'Stem', amount: 3, slot: 0 });
+        const stemShop = await Database.createAfkTradeShop(ids[0], { storeType: 1, kind: 'shop', town: 'Giran', title: 'Stems',
+            lines: [{ objectId: stems.insertId, selfId: 1864, name: 'Stem', count: 3, price: 50, stackable: true }] });
+        await Database.buyFromAfkTradeShop(ids[2], { shopId: stemShop.shop.id, ownerId: ids[0], lineId: stemShop.shop.lines[0].id,
+            amount: 3, expectedPrice: 50, expectedRevision: stemShop.shop.revision });
+        assert.deepEqual(Database.boardSettlementOwners(), [ids[0]], 'fixture: the sale waits on the board');
+        const beforeSale = await funds(ids[0]);
+        const settledAccept = await accept(await prepare());
+        assert.equal(settledAccept.meeting.state, 'accepted', 'a delivery on the board does not refuse the accept');
+        assert.equal(await funds(ids[0]), beforeSale + 150 - 220, 'the sale joins the wallet once and pays the meeting');
+        assert.deepEqual(Database.boardSettlementOwners(), [], 'nothing waits on the board');
+        assert.equal(Number(settledAccept.coldLifeRows[ids[0]].adena), beforeSale + 150 - 220, 'the accept\'s row carries the wallet');
+        await Database.cancelTradeMeeting(settledAccept.meeting.id, 'fixture');
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(settledAccept.meeting.id, actor); }
+        assert.equal(await funds(ids[0]), beforeSale + 150, 'the cancelled meeting refunds; the sale stays, once');
         // A world saved before that fix holds such records; they close once.
         const sellAd = async seller => {
             const stock = (await Database.fetchItems(seller)).find(row => row.selfId === 1867);

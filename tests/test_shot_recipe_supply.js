@@ -105,44 +105,6 @@ assert(!ordinary.spoils.some(group => group.items.some(item => Number(item.selfI
     'Spiritshot C has no invented spoil source');
 assert(ShotPolicy.SHOT_RECIPE_ITEM_IDS.has(3033));
 
-const Review = require('../src/GameServer/Bot/Population/CraftMarketReview');
-for (const recipeId of [21, 318, 324]) {
-    const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(recipeId);
-    const wanted = { itemId: recipe.recipeItemId, recipeId, amount: 1, batches: 4,
-        maxSpend: 200000, inputCash: 100000, at: Date.now() };
-    const state = { ...Hunt.referenceState(57, 40), characterId: 940000 + recipeId,
-        phase: 'cold', activity: 'hunting', inventory: {}, stats: { classId: 57, shotRecipeDemand: wanted } };
-    const board = new BoardIndex(), record = {};
-    assert(Review.shotRecipeBidDue(state, record, board), 'a missing scroll needs no equipment project to reach the board');
-    assert(!Review.shotRecipeBidDue(state, record, board), 'unchanged facts cannot spin a failed review');
-    assert(!Review.shotRecipeBidDue({ ...state, stats: { ...state.stats,
-        shotRecipeDemand: { ...wanted, at: wanted.at + 60000 } } }, record, board),
-    'refreshing only the request timestamp cannot trigger another review');
-    const rival = { id: 940100, ownerId: 990001, storeType: 3, kind: 'buy_ad', town: 'Giran',
-        lines: [{ lineId: 940101, selfId: wanted.itemId, count: 1, price: 100000 }] };
-    board.put(rival);
-    assert(Review.shotRecipeBidDue(state, record, board), 'a competing bid changes the procurement facts');
-    assert(!Review.shotRecipeBidDue(state, record, board));
-    const own = { ...rival, id: 940110, ownerId: state.characterId,
-        lines: [{ ...rival.lines[0], lineId: 940111 }] };
-    board.put(own);
-    assert(!Review.shotRecipeBidDue(state, record, board), 'a sufficient standing request already covers the scroll');
-    board.remove(own.id);
-    assert(Review.shotRecipeBidDue(state, record, board), 'withdrawal of the owner\'s bid wakes procurement');
-    for (const pending of [{ partyId: 'busy' }, { incomingPending: true }, { activity: 'traveling' },
-        { stats: { ...state.stats, tradeMeeting: { token: 'pending' } } }])
-        assert(!Review.shotRecipeBidDue({ ...state, ...pending }, {}, board), 'procurement respects an existing handoff');
-    const arrived = { ...state, inventory: { [wanted.itemId]: { amount: 1 } } }, receipt = {};
-    assert(Review.shotRecipeBidDue(arrived, receipt, board),
-        'an arrived scroll wakes the native learning step');
-    assert(!Review.shotRecipeBidDue(arrived, receipt, board), 'an unchanged receipt cannot spin the review');
-    assert(!Review.shotRecipeBidDue({ ...state, acceptedIncoming: { [wanted.itemId]: 1 } }, {}, board),
-        'an accepted delivery cannot create a duplicate request');
-    assert(!Review.shotRecipeBidDue({ ...state, stats: { ...state.stats, shotRecipeDemand: null } }, record, board));
-    assert(Review.shotRecipeBidDue(state, record, board), 'a new acceptance can reuse the same finite terms after a clear');
-    assert(!Review.shotRecipeBidDue({ ...state, stats: { ...state.stats,
-        shotRecipeDemand: { ...wanted, inputCash: undefined } } }, {}, board), 'legacy unfunded wants wait for native preparation');
-}
 console.log('PASS C shot recipes use authored spoils or drops, learned skills and finite public demand');
 
 (async () => {

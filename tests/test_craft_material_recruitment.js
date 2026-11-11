@@ -7,7 +7,7 @@ const DB = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeS
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+const Income = require('../src/GameServer/Bot/Population/PartyProgressComparison');
 const Material = require('../src/GameServer/Bot/Population/CraftMaterialParty');
 const Agreement = require('../src/GameServer/Bot/Population/PartyAgreement');
 const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');

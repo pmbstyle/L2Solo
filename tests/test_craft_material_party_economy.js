@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache'); Data.init();
-const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+const Income = require('../src/GameServer/Bot/Population/PartyProgressComparison');
 const Material = require('../src/GameServer/Bot/Population/CraftMaterialParty');
 const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -15,19 +15,24 @@ const objective = { status: 'open', priority: 'required', reason: 'craft_materia
 const core = { characterId: 910001, level: 65, phase: 'cold', activity: 'hunting', spotId: 'solo', adena: 20000000,
     inventory: {}, stats: { classId: 8, role: 'dps', wishFocus: ['power:5726:12', 0, 1000000],
         equipmentPlan: { target: { selfId: 5726 } }, partyRequest: objective } };
-const helper = { ...core, characterId: 910002, stats: { classId: 8, role: 'dps', wishFocus: ['power:97:14', 0, 1000000] } };
+// The helper saves for its own piece (the price its build armed, affordAt): money counts for it.
+const helper = { ...core, characterId: 910002, adena: 0, stats: { classId: 8, role: 'dps', wishFocus: ['power:97:14', 0, 10000000],
+    wishSections: { affordAt: { at: 10000000, kind: 'focus' } } } };
 const members = [core, helper];
 const agreement = Material.agreement(members, objective);
 const spot = { id: objective.spotId, avgLevel: 60, npcEntries: [{ selfId: source, count: 1 }] };
+// Each member's party hour on the camp (PartyProgressComparison.prepare), valued by its own reader.
 const prepared = { spots: [spot], spot, timestamp: at, rows: new Map(members.map(member => [member.characterId,
-    { income: 100000, kills: 100, source: 'table_party', travelHours: 0 }])) };
-const original = { search: Route.search, allowed: Routes.isSpotAllowedForState, share: Hunt.onSpotShare,
+    { kills: 100, exp: 100000, adena: 100000, loot: 0, shots: 0, potions: 0, deaths: 0, source: 'table_party', travelHours: 0 }])) };
+// The fixture's one NPC is no knowledge curriculum: no belief error on the rows.
+invoke('GameServer/Bot/Population/PopulationConfig').knowledgeErrorsEnabled = false;
+const original = { search: Route.search, held: Route.heldRoute, allowed: Routes.isSpotAllowedForState, share: Hunt.onSpotShare,
     forState: Economy.forState, forGroup: Economy.forGroup, npc: Data.npcs, rewards: Data.npcRewards };
 let scans = 0, exact = 0;
 try {
-    // The solo side's own search: its route over every money weight.
-    Route.search = () => { scans++; return { route: { spot: { id: 'solo' }, row: { income: 1000000, kills: 100 }, earning: 1000000 },
-        weights: { low: 0, high: 1, hour: null } }; };
+    // The solo side: the member's held earning answer at the inputs now; no admission searches.
+    Route.search = () => { scans++; throw Error('a material admission searched the earning spot'); };
+    Route.heldRoute = () => ({ spot: { id: 'solo' }, row: { income: 1000000, exp: 100000, kills: 100 }, earning: 1000000 });
     Routes.isSpotAllowedForState = () => { exact++; return false; };
     Hunt.onSpotShare = () => 1;
     Economy.forState = Economy.forGroup = () => { throw Error('material admission rebuilt wishes'); };
@@ -68,7 +73,7 @@ try {
     assert.equal(Income.itemHours(core, spot, 100, { ...objective, amount: 12 }, [core, secondOwner], shared), alone * 2,
         'two owners conservatively forecast delivery of the combined physical need');
     const materialRoute = require('../src/GameServer/Bot/Population/CraftMaterialPartyRoute');
-    const spoilSpot = { ...spot, id: 'spoil-camp' }, spoilOwner = { ...core, spotId: spoilSpot.id };
+    const spoilSpot = { ...spot, id: 'spoil-camp' }, spoilOwner = { ...core, spotId: spoilSpot.id, exp: Data.experience[core.level] }; // at its level's end: the piece alone
     const spoiler = { ...helper, spotId: spoilSpot.id, stats: { ...helper.stats, classId: 54, role: 'spoiler',
         coldCombat: { classId: 54, skillSource: 'database', skills: [{ selfId: 254, level: 9 }] } } };
     const spoilParty = materialRoute.retarget({ stats: { objective, agreement } }, [{
@@ -113,7 +118,7 @@ try {
     console.log(`MATERIAL_ADMISSION_WARM_P95_MS ${durations[950].toFixed(4)}`);
     console.log('PASS material admission: physical completion, real market alternative, conservative ownership, paid helper and no wish builds');
 } finally {
-    Route.search = original.search; Routes.isSpotAllowedForState = original.allowed; Hunt.onSpotShare = original.share;
+    Route.search = original.search; Route.heldRoute = original.held; Routes.isSpotAllowedForState = original.allowed; Hunt.onSpotShare = original.share;
     Economy.forState = original.forState; Economy.forGroup = original.forGroup;
     Data.npcs = original.npc; Data.npcRewards = original.rewards;
 }

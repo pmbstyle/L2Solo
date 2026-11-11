@@ -25,8 +25,10 @@ function assess(state = {}, minimumRank = null) {
     const Compatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
     const classId = Number(state.stats?.classId ?? state.classId ?? 0), role = Planner.roleFor(state);
     const level = Math.max(1, Number(state.level) || 1);
-    const baseline = Gear.planFor({ classId, level: minimumRank === 3 ? 52 : level < 20 ? 10 : level < 40 ? 20 : 40 });
-    const starters = StarterItemCatalog.ids(Data.newbieItems, true);
+    // Both read only: the shared plan of the band, the equipped starter ids per
+    // newbie table object (a reload replaces it; none edits it in place).
+    const baseline = Gear.planFor({ classId, level: minimumRank === 3 ? 52 : level < 20 ? 10 : level < 40 ? 20 : 40 }, { shared: true });
+    const starters = StarterItemCatalog.snapshotIds(Data.newbieItems, assess, true);
     const equipped = new Map();
     for (const row of Object.values(state.inventory || {})) {
         const item = Index.find(Data.items, row.selfId);

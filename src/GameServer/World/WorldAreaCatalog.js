@@ -81,8 +81,7 @@ const AREAS = Object.freeze([
             maxZ: -6320
         })]),
         tags: Object.freeze(['dungeon', 'tower', 'construct', 'party_required']),
-        tagsAuthoritative: true,
-        spotCapacity: 48
+        tagsAuthoritative: true
     }),
     Object.freeze({
         id: 'tower_of_insolence',
@@ -100,8 +99,7 @@ const AREAS = Object.freeze([
             maxZ: 8250
         })]),
         tags: Object.freeze(['dungeon', 'tower', 'party_required', 'deep_party']),
-        tagsAuthoritative: true,
-        spotCapacity: 72
+        tagsAuthoritative: true
     }),
     Object.freeze({
         id: 'antharas_lair',
@@ -119,8 +117,7 @@ const AREAS = Object.freeze([
             maxZ: -3300
         })]),
         tags: Object.freeze(['dungeon', 'lair', 'dvc', 'party_required', 'deep_party']),
-        tagsAuthoritative: true,
-        spotCapacity: 72
+        tagsAuthoritative: true
     }),
     Object.freeze({
         id: 'elven_ruins',
@@ -139,8 +136,7 @@ const AREAS = Object.freeze([
         tags: Object.freeze(['dungeon', 'undead', 'ruins']),
         tagsAuthoritative: true,
         localStarterRegions: Object.freeze(['human']),
-        localUntilLevel: 20,
-        spotCapacity: 64
+        localUntilLevel: 20
     }),
     Object.freeze({
         id: 'mithril_mines',
@@ -162,8 +158,7 @@ const AREAS = Object.freeze([
         tags: Object.freeze(['dungeon', 'undead', 'construct', 'mine']),
         tagsAuthoritative: true,
         localStarterRegions: Object.freeze(['dwarf']),
-        localUntilLevel: 20,
-        spotCapacity: 48
+        localUntilLevel: 20
     }),
     ...C4SevenSignsDungeonTeleports.DUNGEONS.map(sevenSignsArea)
 ]);
@@ -247,7 +242,6 @@ function decorateSpot(spot = {}) {
         area: publicArea(area),
         tags: [...area.tags],
         tagsAuthoritative: area.tagsAuthoritative === true,
-        capacity: Number(area.spotCapacity || spot.capacity || 0) || null,
         localStarterRegions: [...(area.localStarterRegions || [])],
         localUntilLevel: Number(area.localUntilLevel || 0) || null
     };

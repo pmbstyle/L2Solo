@@ -375,7 +375,7 @@ const partyBlockedState = {
             }
         },
         partyRequest: {
-            status: 'deferred',
+            status: 'closed',
             priority: 'required',
             targetId: failedTarget.selfId,
             npcId: 450,
@@ -389,15 +389,15 @@ const partyBlockedContext = GearAcquisitionPlanner.replanContextFor(
     20 * 60 * 1000
 );
 assert.strictEqual(partyBlockedContext.failure.reason, 'party_route_unavailable',
-    'a repeatedly deferred required party route must become a planner recovery, not an endless direct-drop objective');
+    'a required party route closed by forming\'s no too often must become a planner recovery, not an endless direct-drop objective');
 const partySetAside = partyBlockedContext.recoveryTargets.find(entry => entry.reason === 'party_route_unavailable');
-assert(Array.isArray(partySetAside.wake) && partySetAside.until === 20 * 60 * 1000 + 3600000,
-    'a party route set aside wakes on its inputs, and after a window for the recruit pool, which has no event');
+assert(Array.isArray(partySetAside.wake) && partySetAside.until === undefined,
+    'a party route set aside wakes on its inputs only, no clock');
 const asidePlan = { ...partyBlockedPlan, status: 'complete', recoveryTargets: partyBlockedContext.recoveryTargets };
-assert(GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000 - 1)
-    .excludedTargetIds.includes(partySetAside.targetId));
-assert(!GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000)
-    .excludedTargetIds.includes(partySetAside.targetId), 'the recruit pool window ends the set-aside party route');
+assert(GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 24 * 3600000)
+    .excludedTargetIds.includes(partySetAside.targetId), 'a day later, its inputs unmoved, the route stays set aside');
+assert(!GearAcquisitionPlanner.replanContextFor({ ...partyBlockedState, level: Number(partyBlockedState.level || 1) + 1 }, asidePlan,
+    20 * 60 * 1000 + 1).excludedTargetIds.includes(partySetAside.targetId), 'a new level wakes it');
 assert(!GearAcquisitionPlanner.replanContextFor({ ...partyBlockedState, party: { partyId: 'formed' } }, asidePlan, 20 * 60 * 1000 + 1)
     .excludedTargetIds.includes(partySetAside.targetId), 'joining a party wakes it at once');
 const partyBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
@@ -476,7 +476,7 @@ const craftBlockedContext = GearAcquisitionPlanner.replanContextFor(
     20 * 60 * 1000
 );
 assert.strictEqual(craftBlockedContext.failure.reason, 'party_route_unavailable',
-    'a repeatedly deferred required craft route must become a planner recovery too');
+    'a required craft route closed by forming\'s no too often must become a planner recovery too');
 const craftBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
     spots: [],
     ...craftBlockedContext,
@@ -859,6 +859,18 @@ const bowAndShieldInventory = GearAcquisitionPlanner.equipInventoryUpgrades({ le
 });
 assert.strictEqual(bowAndShieldInventory[starterBow.selfId].equipped, true, 'the cold inventory should retain its two-handed bow');
 assert.strictEqual(bowAndShieldInventory[starterShield.selfId].equipped, false, 'the cold inventory must unequip a shield when a two-handed bow is equipped');
+// An archer wearing nothing wears the dagger it owns rather than fight barehanded,
+// and the bow once it owns one.
+const archerWithDagger = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 10, stats: { role: 'archer' } }, {
+    10: { selfId: 10, amount: 1, equipped: false, slot: 7 }
+});
+assert.strictEqual(archerWithDagger[10].equipped, true, 'an archer with only a dagger must wear it, not fight barehanded');
+const archerWithBow = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 10, stats: { role: 'archer' } }, {
+    ...archerWithDagger,
+    13: { selfId: 13, amount: 1, equipped: false, slot: 14 }
+});
+assert.strictEqual(archerWithBow[13].equipped, true, 'an archer given a bow must wear the bow');
+assert.strictEqual(archerWithBow[10].equipped, false, 'the dagger must come off once the archer wears its bow');
 const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
     && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
 const dRing = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
@@ -1084,7 +1096,7 @@ const nativeMaterialState = { ...structuredClone(mage), characterId: 71002, aden
     phase: 'cold', activity: 'hunting', updatedAt: 1000,
     vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
     stats: { ...mage.stats, exp: DataCache.experience[39] + 1, equipmentPlan: {
-        status: 'active', strategy: 'craft', marketFallback: true,
+        status: 'active', strategy: 'craft',
         recipeId: target.recipe.recipeId, next: { itemId: 1869 },
         materials: [{ selfId: 1869, missing: 4 }]
     } } };
@@ -1331,7 +1343,6 @@ async function verifyWorkerSelectedGoals() {
             const goals = NeedsEvaluator.evaluate(state, { now: 1000, decisions });
             assert.strictEqual(goals.length, leaf ? 1 : 0);
             if (leaf) {
-                assert.strictEqual(goals[0].priority, 50);
                 assert.strictEqual(goals[0].plan.wishKey, leaf.rootKey);
                 assert.strictEqual(goals[0].plan.economyActivity, leaf.activity);
                 if (leaf.activity === 'shopping') {

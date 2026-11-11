@@ -1,6 +1,7 @@
 'use strict';
 const Profit = require('./CraftProfitPolicy');
 const Commit = require('./EconomyCommit');
+const FailureLog = require('../../../FailureLog');
 const Diagnostics = require('./EconomyDiagnostics');
 const ShotCraftPolicy = require('./ShotCraftPolicy');
 const { isMainThread } = require('node:worker_threads');
@@ -99,6 +100,15 @@ const crafters = new Map();
 const knownRecipes = new Map();
 const encodedRecipes = new Map();
 function recipesChanged(id) { knownRecipes.delete(Number(id)); encodedRecipes.delete(Number(id)); }
+// A bot learned a recipe (hot: BotWarehouseService.learnActorRecipes; cold: BotLifeState.
+// learnCraftableRecipes, a clan station's craft): its cached book goes and recipe_learned
+// wakes its build where the bot is (DecisionEvents.raiseOn: its far row or its body). Main only.
+// Resolves the raised far row's state (raiseOn's), which a learner that writes the row next
+// (a craft of the learned recipe) builds on.
+function recipeLearned(id) {
+    recipesChanged(id);
+    return invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(id), 'recipe_learned');
+}
 let inputIds = null;
 function watchedInputs() {
     if (!inputIds) {
@@ -233,21 +243,6 @@ function find(recipeId, customer) {
     return best;
 }
 
-function servicePrice(recipe, previous, state) {
-    const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
-    const first = invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe);
-    const belief = { mu: Math.log(Math.max(1, first)), K: Belief.S0 };
-    const observations = [];
-    for (const [id, peer] of byRecipe.get(Number(recipe.recipeId)) || []) {
-        if (id === Number(state.characterId) || life().cachedState(id) !== peer) continue;
-        const price = peer.stats.workshop.entries.find(entry => Number(entry.recipeId) === Number(recipe.recipeId))?.price;
-        if (price > 0) observations.push([Math.log(price), 1]);
-    }
-    const paid = Number(previous?.earned || 0), filled = Number(previous?.fills || 0);
-    if (paid > 0 && filled > 0) observations.push([Math.log(paid / filled), filled]);
-    Belief.learn(belief, observations);
-    return { ...previous, price: Math.max(1, Math.round(Math.exp(belief.mu))), firstPrice: first };
-}
 async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expectedRevision = null,
     batches = 1, original = null, random = Math.random, funding = { r: 1 } } = {}) {
     const database = invoke('Database');
@@ -319,8 +314,9 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expe
         return result;
     } catch (error) {
         // The caller keeps this bounded original header when delivery fails;
-        // no new attempt is inferred from the leftover materials.
-        if (admitted && (!liveOrder || liveCommitted)) error.economyCommand = admitted.command;
+        // no new attempt is inferred from the leftover materials. A named refusal
+        // rolled back and spent nothing: its outcome is known, nothing to recover.
+        if (admitted && (!liveOrder || liveCommitted) && !FailureLog.refusal(error)) error.economyCommand = admitted.command;
         throw error;
     } finally {
         if (admitted) Commit.finish(customerId, admitted.command);
@@ -359,37 +355,21 @@ const recipeRow = id => ({ characterId: Number(id), ...knowledgeFor(id) });
 // takes its row away.
 if (isMainThread) TableChannel.register('recipes', { key: row => row.characterId,
     allRows: () => [...knownRecipes.keys()].map(recipeRow) });
-async function review(state) {
+// A station's listing, written on main at its seeding (GeneratedColdSeeder): a station takes
+// no step (ColdSimulationKernel schedules it event-driven), so no workshop decision lists it.
+// Its book read and the workshop's listing rule (CraftShopService.listing), the row written
+// only when it moved. Every other crafter's listing is its workshop decision's, on the worker.
+async function publishListing(state) {
     init();
     const rules = invoke('GameServer/Bot/Economy/CraftShopService');
-    if (!state || !rules.isServiceCrafter(state) || state.phase !== 'cold') {
-        if (state) register(state);
-        return state;
-    }
-    const id = Number(state.characterId);
-    const known = await knownFor(id);
+    if (!state || state.phase !== 'cold' || !rules.isServiceCrafter(state)) return state;
+    const known = await knownFor(state.characterId);
     const current = life().cachedState(state.characterId);
     if (current && current !== state) return current;
-    const prior = new Map((state.stats?.workshop?.entries || []).map(entry => [Number(entry.recipeId), entry]));
-    // A Giran station is a workshop for bots as for the player (E212): its
-    // own station list at the station fee, never a learned price.
-    const fees = rules.isStationService(state)
-        ? new Map(rules.profileFor(state).entries.map(entry => [Number(entry.recipeId), entry.price])) : null;
-    const entries = known.map(id => recipes().resolveByRecipeId(id)).filter(recipe => recipe
-        && rules.canCraft(state, recipe) && (!fees || fees.has(Number(recipe.recipeId))))
-        .slice(0, rules.MAX_PUBLIC_RECIPES).map(recipe => ({ recipeId: recipe.recipeId, ...(fees
-            ? { ...prior.get(recipe.recipeId), price: fees.get(Number(recipe.recipeId)), firstPrice: fees.get(Number(recipe.recipeId)) }
-            : servicePrice(recipe, prior.get(recipe.recipeId), state)) }));
-    const previous = state.stats?.workshop?.entries || [];
-    if (!entries.length && !previous.length) { remove(state.characterId, { recipes: false }); return state; }
-    if (entries.length === previous.length && entries.every((entry, i) =>
-        Number(entry.recipeId) === Number(previous[i].recipeId)
-        && ['price', 'firstPrice', 'earned', 'fills'].every(key => Number(entry[key] || 0) === Number(previous[i][key] || 0)))) {
-        register(state); return state;
-    }
-    const next = { ...state, stats: { ...state.stats, workshop: { title: `${state.name}'s workshop`,
-        entries, town: state.currentRegion, loc: state.loc } } };
-    const saved = await life().upsertState(next, 'workshop_updated') || state;
+    const workshop = rules.listing(state, known,
+        recipeId => [...publicCandidates.fees(recipeId, Number(state.characterId))]);
+    if (workshop === state.stats?.workshop) { register(state); return state; }
+    const saved = await life().upsertState({ ...state, stats: { ...state.stats, workshop } }, 'workshop_updated') || state;
     register(saved);
     return saved;
 }
@@ -468,4 +448,4 @@ function boardRecords() {
             entries: state.stats.workshop.entries, revision: state.simulation?.revision || 0 }];
     });
 }
-module.exports = { init, register, registerPlayer, remove, recipesChanged, knownFor, cachedRecipes, bookFor, knowledgeFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates };
+module.exports = { init, register, registerPlayer, remove, recipesChanged, recipeLearned, knownFor, cachedRecipes, bookFor, knowledgeFor, publishListing, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates };

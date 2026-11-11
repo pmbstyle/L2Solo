@@ -21,31 +21,33 @@ const members = [1, 2].map(characterId => ({ characterId, name: `Hunter${charact
 const resolve = (roster, overrides = {}) => Resolver.resolve({ party, members: roster, spot,
     timestamp: at, elapsedMs: 45000, rng: () => 0.5, ...overrides });
 const scattered = [members[0], { ...members[1], loc: { locX: 48000, locY: 210000, locZ: -3400 } }];
-function assertWaiting(result) {
+// An assembly nothing more comes to (no member on its way): no fight, no reward; the
+// members off the ground leave (assemblyAbsent), or the roster breaks up whole.
+function assertAssembling(result, absent) {
     assert.strictEqual(result.debug.reason, 'party_assembling');
     assert.strictEqual(result.debug.fights, 0);
-    assert.strictEqual(result.nextResolveAt, at + 30000);
     assert.deepStrictEqual(result.events, []);
     assert.strictEqual(result.partyPatch.stats.lastResolveAt, at);
     assert.strictEqual(result.partyPatch.stats.fightsResolved, undefined);
+    if (absent) assert.deepStrictEqual(result.assemblyAbsent, absent);
+    else assert.strictEqual(result.partyPatch.status, 'dissolved');
     result.memberResults.forEach(({ result: member }) => {
         assert.deepStrictEqual(member.materialize, { exp: 0, sp: 0, adena: 0, items: [] });
         assert.deepStrictEqual(member.patch, {});
         assert.deepStrictEqual(member.memoryEvents, []);
-        assert.strictEqual(member.nextResolveAt, at + 30000);
     });
 }
 async function main() {
-    for (const [roster, overrides] of [
-        [scattered, {}],
-        [[members[0], { ...members[1], loc: { ...point, locX: point.locX + 3100 } }], {}],
-        [[members[0], { ...members[1], loc: { ...point, locZ: 160 } }], {}],
-        [[members[0], { ...members[1], loc: null }], {}],
-        [members, { party: { ...party, spotId: 'elsewhere' } }],
-        [[members[0], { ...members[1], activity: 'traveling', stats: { travel: { spotId: spot.id } } }], {}]
+    for (const [roster, overrides, absent] of [
+        [scattered, {}, [2]],
+        [[members[0], { ...members[1], loc: { ...point, locX: point.locX + 3100 } }], {}, [2]],
+        [[members[0], { ...members[1], loc: { ...point, locZ: 160 } }], {}, [2]],
+        [[members[0], { ...members[1], loc: null }], {}, [2]],
+        [members, { party: { ...party, spotId: 'elsewhere' } }, null],
+        [[members[0], { ...members[1], activity: 'traveling', stats: { travel: { spotId: spot.id } } }], {}, [2]]
     ]) {
         const before = JSON.stringify(roster);
-        assertWaiting(resolve(roster, { ...overrides, rng: () => { throw Error('assembly must precede combat'); } }));
+        assertAssembling(resolve(roster, { ...overrides, rng: () => { throw Error('assembly must precede combat'); } }), absent);
         assert.strictEqual(JSON.stringify(roster), before);
     }
     const service = invoke('GameServer/Bot/AI/SpotService');
@@ -100,7 +102,34 @@ async function main() {
     assert(batch, JSON.stringify(messages));
     assert(batch.payload.proposals.every(p => p.nextState.exp === scattered.find(s => s.characterId === p.characterId).exp));
     assert.deepStrictEqual(batch.payload.proposals.map(p => p.nextState.loc), scattered.map(s => s.loc));
-    assert.strictEqual(batch.payload.proposals.find(p => p.partyResolution).partyResolution.party.nextResolveAt, at + 30000);
+    // The far member nothing brings leaves; one left is under the minimum: the party ends.
+    const ended = batch.payload.proposals.find(p => p.partyResolution).partyResolution.party;
+    assert.strictEqual(ended.status, 'dissolved');
+    assert(batch.payload.proposals.every(p => !p.nextState.party?.partyId));
+
+    // A member on the party's road arrives at the party's step once its trip has ended,
+    // even when the party's own trip row is gone (a recruit routed after it): no stranded
+    // traveller, the party hunts.
+    const late = [members[0], { ...members[1], activity: 'traveling', loc: { locX: 48000, locY: 210000, locZ: -3400 },
+        stats: { ...members[1].stats, travel: { reason: 'party_spot_replan', spotId: spot.id, to: { ...point },
+            startedAt: at - 60000, arrivalAt: at - 1 } } }];
+    const lateMessages = [];
+    const lateKernel = new ColdSimulationKernel({ now: () => at,
+        resolveSolo: () => { throw Error('party must not become solo combat'); },
+        resolveParty: options => Resolver.resolve(options),
+        emit: (type, payload) => lateMessages.push({ type, payload }),
+        projectResolve: (state, result) => ({ ...state, ...result.patch, exp: state.exp + Number(result.materialize?.exp || 0) }) });
+    for (const state of late) {
+        lateKernel.upsert({ state });
+        lateKernel.inFlight.set(state.characterId, { state, startedAt: at, partyId: party.partyId });
+    }
+    lateKernel.partyRuns.set(party.partyId, { party, members: late, spot, startedAt: at });
+    await lateKernel.resolvePartyStep(party.partyId);
+    const lateBatch = lateMessages.find(m => m.type === 'proposal_batch');
+    const arrivedLate = lateBatch.payload.proposals.find(p => p.characterId === 2).nextState;
+    assert.strictEqual(arrivedLate.party.partyId, party.partyId, 'the late member stays in its party');
+    assert.deepStrictEqual(arrivedLate.loc, point);
+    assert(!arrivedLate.stats.travel);
 
     const route = { needed: true, reason: 'party_spot_replan', spotId: spot.id,
         travelMs: 25000, to: point, destinations: { 1: point, 2: point } };

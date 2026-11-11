@@ -77,11 +77,7 @@ function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
         cleanupReason: forcedCleanup.cleanupReason || 'inventory_cleanup',
         town: clearedState.currentRegion || null,
         at: timestamp
-    }).then(async (cleanedState) => {
-        if (cleanedState) {
-            const ads = await invoke('Database').reconcileConditionalSellAds(state.characterId);
-            for (const ad of ads) invoke('GameServer/AfkTrade/AfkTradeService').refreshRecord(ad);
-        }
+    }).then((cleanedState) => {
         return { state: cleanedState || clearedState,
             listed: false, cleaned: !!cleanedState, reason: 'pre_trade_npc_cleanup',
             cleanup: forcedCleanup, liquidated: candidates };
@@ -146,7 +142,7 @@ function open(state, options = {}) {
     const initialMarket = market;
     // An answer may stage a trade meeting, which records the seller's revision:
     // a later main save of the seller would discard it. The sale retry every
-    // outcome below sets is on the row before the answers run (E311).
+    // outcome below sets is on the row before the answers run.
     const answerTown = town?.name ?? state.currentRegion;
     const answering = market.answers.some((answer) => answer.line.town === answerTown)
         ? LifeState.upsertState(deferSellRetry(state), 'market_sale_retry').then((saved) => saved || deferSellRetry(state))
@@ -155,7 +151,7 @@ function open(state, options = {}) {
         return BuyStoreService.sellToBestBuyer(state, answerTown, { answers: market.answers }); }).then((dynamicBuyerSale) => {
     // A deal through a trade meeting ends the sale like every other outcome:
     // the retry keeps a later pass from answering the same ad again when the
-    // payer refuses it (E311).
+    // payer refuses it.
     if (dynamicBuyerSale.pending) return { ...dynamicBuyerSale, state: deferSellRetry(dynamicBuyerSale.state || state), listed: false };
     return StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
     const saleState = buyerSale.state || dynamicBuyerSale.state || state;
@@ -184,7 +180,7 @@ function open(state, options = {}) {
             market
         }));
     }
-    // The board replaced the stall (step 3.3): the listings go to the bot's
+    // The board replaced the stall: the listings go to the bot's
     // shop and, past its lines, to sell ads; their items leave the bag into
     // the records. The bot then goes back to its hunt.
     return invoke('GameServer/Bot/Economy/BotAfkMarketService').listOnBoard(marketState, { ...options, decided: market }).then((board) => {
@@ -239,7 +235,7 @@ function travelToShopTown(state, board, timestamp) {
     // Scroll of Escape reaches (GoalExecutor.beginMarketTravel), from a town
     // this same town: only a trip to the shop town counts. Otherwise the lines
     // wait in the bag behind the sale retry, as every other ended sale visit,
-    // instead of a new sale trip each resolve (E304 (a)).
+    // instead of a new sale trip each resolve.
     const trip = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);
     const travel = trip?.stats?.travel?.townName === board.shopTown ? trip : null;
     if (travel) travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
@@ -251,7 +247,7 @@ function travelToShopTown(state, board, timestamp) {
             reason: travel ? 'shop_town_trip' : 'shop_town_unreached', shopTown: board.shopTown }));
 }
 
-// A merchant without a stall: the board replaced the stalls (step 3.3), and
+// A merchant without a stall: the board replaced the stalls, and
 // an old state can still say merchant. There is no
 // expiry event to release it: it goes back to its trip or its hunt.
 function resolve(state, timestamp = Date.now()) {

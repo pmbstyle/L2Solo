@@ -1,6 +1,5 @@
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
 const ClassProgression = invoke('GameServer/ClassProgression');
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Shared         = invoke('GameServer/Network/Shared');
 const DataCache      = invoke('GameServer/DataCache');
@@ -106,12 +105,8 @@ function awardBaseSkills(id, classId) {
 }
 
 function awardBaseGear(id, classId) {
-    const items = StarterItemCatalog.firstClassRow(DataCache.newbieItems, classId)?.items;
-
-    return Promise.all((items ?? []).map((item) => {
-        item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
-        return Database.setItem(id, item);
-    }));
+    return Promise.all(StarterItemCatalog.starterRows(DataCache.newbieItems, classId, DataCache.items)
+        .map((row) => Database.setItem(id, row)));
 }
 
 function awardBaseShots(id, classId) {

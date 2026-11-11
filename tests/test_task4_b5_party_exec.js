@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N11 (E169 on the Task 4 execution paths): the cold arrival buy
+// The execution paths and a party bot: the cold arrival buy
 // (ColdMarketService.tryPurchase: gear bestOffer and material buyHere) and
 // BotAfkMarketService.executePlan take never trade a conditional line with a party
 // bot (seller or buyer); a backed line is still bought; a party bot's own ad stays.
@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
-const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+// A refused or missed purchase raises its failure on the row (DecisionEvents.raiseOn).
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Cold = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -42,7 +43,7 @@ const ad = (ownerId, selfId, price, custodyPolicy) => {
         }
         const bought = [], refreshes = [];
         stub(Afk, 'buyFromShop', async (id, store, selfId, qty) => { bought.push([id, store.shopId ?? store.id, selfId, qty]); return { pending: true, meetingId: 5 }; });
-        stub(Coordinator, 'requestEconomyRefresh', id => refreshes.push(id));
+        stub(Events, 'raiseOn', id => refreshes.push(id));
         const partyOre = ad(partySeller, ORE, 200, 1), backedOre = ad(backedSeller, ORE, 250, 0);
         const partyGloves = ad(partySeller, GLOVES, 100, 1), backedGloves = ad(backedSeller, GLOVES, 150, 0);
         const lineOf = id => Afk.boardIndex().records.get(id)[0];

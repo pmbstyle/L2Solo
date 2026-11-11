@@ -6,7 +6,7 @@ const World = invoke('GameServer/World/World');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 
 // A cold bot that found no offer for its goal shouts WTB in the trade chat
-// once per interval (the bots' stall ads went with the stalls, step 3.3).
+// once per interval (bots have no stalls to advertise; the board replaced them).
 const originalUser = World.user;
 const packets = [];
 

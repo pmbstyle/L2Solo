@@ -42,8 +42,10 @@ assert.strictEqual(
 // potions and shots for an hour) buys only the survival bottles, at the NPC's
 // price the reserve held (one price for the reserve and the counter).
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const reserveOf = state => Economy.basics(state).survivalReserve;
-const walletFor = adena => ({ level: 20, adena, stats: { classId: 0 }, inventory: inventory([[57, adena]]) });
+const reserveOf = state => Economy.basics(state).refillReserve;
+// Main reads the kit rates the bot's build publishes (stats.kitRates).
+const rated = require('./helpers/ratedKit');
+const walletFor = adena => rated({ level: 20, adena, stats: { classId: 0 }, inventory: inventory([[57, adena]]) });
 const reserve = reserveOf(walletFor(0));
 const cautiousState = walletFor(reserve);
 const basics = Economy.basics(cautiousState);
@@ -56,7 +58,7 @@ assert.strictEqual(cautiousRestock.reserve, reserve);
 assert.strictEqual(cautiousRestock.amount, stock.survivalMissing, 'restocking spends of the operational wallet reserve only its survival bottles');
 assert.strictEqual(cautiousRestock.cost, basics.kitCost(stock.itemId));
 
-const affordableState = { level: 20, adena: 10000, stats: { classId: 0 }, inventory: inventory([[57, 10000], [1061, 2]]) };
+const affordableState = rated({ level: 20, adena: 10000, stats: { classId: 0 }, inventory: inventory([[57, 10000], [1061, 2]]) });
 const affordableRestock = HealingPotionStock.restockPlan(affordableState, { unitPrice: 330, targetAmount: 8 });
 // ARCH-NOTE: explicit target isolates the original purchase/conservation fixture from the table-driven stock rule.
 assert.strictEqual(affordableRestock.amount, 6, 'melee restocking must stop at its small target stock');

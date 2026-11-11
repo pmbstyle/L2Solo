@@ -23,13 +23,13 @@ Config.staticShotsDisabled=true;
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
     if(message.queryProbe==='enable-static-shots') Config.staticShotsDisabled=false;
-    if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-refresh') {
-        const mode=message.queryProbe==='hold-meeting'?'meeting':'refresh';
+    if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-page') {
+        const mode=message.queryProbe==='hold-meeting'?'meeting':'page';
         const held={id:701,mode,input:{mode,state:kernel.states.get(701).state}};
         occupationPlanner.waiting.set(occupationPlanner.keyOf(701,mode),held);
         module.exports.heldMeeting=held;
     }
-    if(message.queryProbe==='release-meeting'||message.queryProbe==='release-refresh') {
+    if(message.queryProbe==='release-meeting'||message.queryProbe==='release-page') {
         const key=occupationPlanner.keyOf(701,module.exports.heldMeeting.mode);
         assert.strictEqual(occupationPlanner.waiting.get(key),module.exports.heldMeeting);
         occupationPlanner.waiting.delete(key);
@@ -75,14 +75,10 @@ function post(type, payload, id) {
     post('init', { config: { pvpAggression: 0 } }, 'init');
     await wait(message => message.type === 'ready' && message.payload.phase === 'running');
     post('pause', {}, 'pause');
-    // An older 'recipes' row the query's own knowledge must replace.
-    post('table_page', { tables: [{ name: 'recipes', from: null, to: 0, full: true, removed: [], last: true,
-        rows: members.map(state => [state.characterId, { characterId: state.characterId, recipeBook: null, knownShotRecipes: [999] }]) }] });
     post('snapshot_page', { rows: members.map(state => ({ state })),
         initial: true, done: true, ack: true }, 'snapshot');
     await wait(message => message.msgId === 'snapshot');
-    const request = { party, members, escrows: [0, 0], recipeKnowledge: members.map(() => ({ recipeBook: null, knownShotRecipes: [] })),
-        timestamp, replyBy: Date.now() + 5000 };
+    const request = { party, members, escrows: [0, 0], timestamp, replyBy: Date.now() + 5000 };
     post('party_goal_request', request, 'goals');
     const response = await wait(message => message.type === 'party_goal_result' && message.msgId === 'goals');
     assert.equal(response.payload.ok, true, response.payload.reason);
@@ -116,12 +112,10 @@ function post(type, payload, id) {
     forming('material-admission', materialMembers, materialObjective);
     const admission = await verdict('material-admission');
     assert.deepEqual(admission.formingAccepted, [], 'a missing camp forecast refuses unsafe formation in the worker');
-    assert.equal(admission.incomeReviews.length, 2);
     worker.postMessage({ queryProbe: 'canonical' });
     const prepared = await wait(message => message.probe === 'canonical');
-    assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 2);
-    assert(prepared.slots.filter(row => row.mode !== 'wish').every(row => row.knownShotRecipes.length === 0),
-        'current query knowledge replaces the worker\'s recipes row');
+    assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 0,
+        'a party goal asks no workshop: each member\'s held answer is read');
     // A crafter at its station that requires the party joins without weighing income.
     const required = { status: 'open', priority: 'required', spotId: 'execution-ground', requestedAt: timestamp };
     const stationed = (member, at) => ({ ...member, updatedAt: timestamp + at,
@@ -141,20 +135,7 @@ function post(type, payload, id) {
         replyBy: Date.now() + 5000 }, 'income');
     const income = await wait(message => message.type === 'party_goal_result' && message.msgId === 'income');
     assert.equal(income.payload.ok, true, income.payload.reason);
-    assert.equal(income.payload.joint.lastIncomeReviewAt, timestamp);
-    assert.equal(income.payload.joint.incomeReviews.length, members.length);
     assert(Protocol.validateEnvelope(income, 'worker').ok, 'native worker income packet is admitted on main');
-    assert(Number.isSafeInteger(income.payload.joint.incomeReviewKey), 'the review carries the hash of its inputs');
-    const unreviewed = { ...income.payload.joint };
-    delete unreviewed.lastIncomeReviewAt; delete unreviewed.incomeReviews;
-    assert.equal(Protocol.validateEnvelope({ ...income, payload: { ...income.payload, joint: unreviewed } }, 'worker').ok, false,
-        'a review key without its review is refused');
-    assert(income.payload.joint.incomeReviews.every(row => row.partySource === 'table_party'),
-        'the worker uses its planning catalogue for native party forecasts');
-    const meleeIncome = structuredClone(income);
-    for (const row of meleeIncome.payload.joint.incomeReviews) row.partySource = 'native_party_forecast';
-    assert(Protocol.validateEnvelope(meleeIncome, 'worker').ok,
-        'a safe starter melee forecast crosses the worker boundary too');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };
     post('party_goal_request', { ...request, members: changed, replyBy: Date.now() + 5000 }, 'changed');
     const fresh = await wait(message => message.type === 'party_goal_result' && message.msgId === 'changed');
@@ -171,13 +152,13 @@ function post(type, payload, id) {
     assert.equal(blocked.payload.reason,'party_goal_member_busy','party advice cannot cancel native trade preparation');
     worker.postMessage({queryProbe:'release-meeting'});
     await wait(message=>message.probe==='release-meeting');
-    worker.postMessage({queryProbe:'hold-refresh'});
-    await wait(message=>message.probe==='hold-refresh');
+    worker.postMessage({queryProbe:'hold-page'});
+    await wait(message=>message.probe==='hold-page');
     post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-refresh');
     const refresh=await wait(message=>message.type==='party_goal_result'&&message.msgId==='during-refresh');
-    assert.equal(refresh.payload.reason,'party_goal_member_busy','party advice cannot drop pending economic refresh');
-    worker.postMessage({queryProbe:'release-refresh'});
-    await wait(message=>message.probe==='release-refresh');
+    assert.equal(refresh.payload.reason,'party_goal_member_busy','party advice cannot drop a pending plan page');
+    worker.postMessage({queryProbe:'release-page'});
+    await wait(message=>message.probe==='release-page');
     worker.postMessage({queryProbe:'hold-lifecycle'});
     await wait(message=>message.probe==='hold-lifecycle');
     post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-lifecycle');

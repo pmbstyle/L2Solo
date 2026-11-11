@@ -738,4 +738,18 @@ const BotRemoteChat = {
     }
 };
 
-module.exports = { ...BotRemoteChat, personaForState, fallbackReply };
+// A far bot a stronger arrival displaced off the spot a player commanded (the worker's
+// spot_command command_lost, its displace): it tells that player, by tell, who pushed it out
+// and that it hunts elsewhere (its command ends at its next step). A player not online is
+// told nothing. Counted command_lost:told/offline. Our choice: C4 bots take no commands.
+function commandLost(command) {
+    const Situations = invoke('GameServer/Bot/Situations');
+    const World = invoke('GameServer/World/World');
+    const player = require('../../World/ActorSpatialQueries').byId(World, Number(command.playerId));
+    const text = `${command.holder || 'Someone stronger'} pushed me out of ${command.spotName}. I'll hunt elsewhere.`;
+    const told = !!player?.actor && deliverReply(player, { characterId: command.botId, name: command.botName }, text, player.actor);
+    Situations.note(told ? 'command_lost:told' : 'command_lost:offline');
+    return told;
+}
+
+module.exports = { ...BotRemoteChat, personaForState, fallbackReply, commandLost };

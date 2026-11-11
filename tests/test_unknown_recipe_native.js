@@ -58,7 +58,8 @@ async function seed(id, money) {
         assert((await Database.fetchCharacterRecipes(producerId)).some(row => row.recipeId === recipe.recipeId));
         assert.equal(Native.amount(await Database.fetchItems(producerId), recipe.recipeItemId), 0, 'learning consumed exactly the purchased scroll');
         assert.equal(Native.amount(await Database.fetchItems(producerId), 57), before - 10 + 1000000, 'actual purse paid recipe once and received actual gear sale');
-        assert.equal(Native.amount(await Database.fetchItems(buyerId), recipe.productId), recipe.productCount);
+        const [owed] = await Database.execute(['SELECT SUM(amount) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = ?', [buyerId, recipe.productId]]);
+        assert.equal(Number(owed.amount), recipe.productCount, 'the far buyer\'s gear waits on the board for its own commit');
         state = result.state;
         assert((await Service.acquireRecipe(state, opportunity)).ready);
         assert.equal(Native.amount(await Database.fetchItems(producerId), 57), before - 10 + 1000000, 'learned recipe re-entry cannot charge again');

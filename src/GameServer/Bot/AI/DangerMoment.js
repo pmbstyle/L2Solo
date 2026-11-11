@@ -8,7 +8,7 @@ const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 
-// The hot adapter of DangerRule, for a live fight (E70): it reads the actor, the
+// The hot adapter of DangerRule, for a live fight: it reads the actor, the
 // mobs on it and the held economy.
 // Melee and nearby casters hitting the bot; farther mobs are not in this fight.
 const ATTACKER_RADIUS = 900;
@@ -42,8 +42,8 @@ function decidedDanger(session) {
         ? { economy, deathHours, riskWeight: packet ? Packet.riskWeight(packet) : economy.riskWeight } : null;
 }
 
-// The mobs on the bot as one mob with their HP left and attack summed (minimum.md #3).
-// An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
+// The mobs on the bot as one mob with their HP left and attack summed.
+// An area skill hits each of them (as BotTargetMatchup reads `pull`).
 // They are in the fight: no opening before they close in (engaged).
 function enemyOn(actor, target, attackers = attackersOf(actor, target)) {
     const view = TargetMatchup.targetView(target);
@@ -102,8 +102,8 @@ function counted(action) {
     return action;
 }
 
-// The moment a fight in progress takes, hunting (E70) or resting and attacked
-// (E71): 'drank', 'flee', 'fight', or null when
+// The moment a fight in progress takes, hunting or resting and attacked
+// 'drank', 'flee', 'fight', or null when
 // the bot has no received decision or the matchup is unknown (the author's retreat
 // rule then). A potion it could not drink leaves the moment to the other
 // options. A bot at full HP has nothing to drink and takes the author's rule

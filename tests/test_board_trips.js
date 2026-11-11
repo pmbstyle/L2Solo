@@ -1,4 +1,4 @@
-// Trading on the board by trips (market-sim step 3.3 group C): what a trip
+// Trading on the board by trips: what a trip
 // costs, where a bot with karma may go, and the decisions built on them.
 const assert = require('assert');
 const fs = require('node:fs');
@@ -61,7 +61,7 @@ Config.staticShotsDisabled = false;
     assert.strictEqual(Karma.townFor(0, 'Giran'), 'Giran');
 }
 
-// 3. The shop town (б7, Q6): one weighted roll over the towns with shop
+// 3. The shop town: one weighted roll over the towns with shop
 // places, by the item's buyers there less the trip; the author's grade table
 // seeds it while its counter has no deals.
 {
@@ -106,7 +106,7 @@ Config.staticShotsDisabled = false;
     MarketCounters.reset();
 }
 
-// 4. A buy ad is answered by the side that acts (E45, user Q3 C): a seller
+// 4. A buy ad is answered by the side that acts: a seller
 // chooses it in its sale decision when the ad's price less its trip there
 // beats listing, the NPC and keeping; it sells only in the ad's town.
 {
@@ -145,7 +145,7 @@ Config.staticShotsDisabled = false;
     AfkTrade._resetForTests();
 }
 
-// 5. The cheapest town for a stack (user Q1 A): the board's lines of each
+// 5. The cheapest town for a stack: the board's lines of each
 // town, then its NPC as one more offer, plus the trip; the whole amount first.
 {
     const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');
@@ -193,20 +193,22 @@ Config.staticShotsDisabled = false;
     const goal = NeedsEvaluator.evaluate(state, { now: 1000 }).find((candidate) => candidate.type === 'market_errand');
     assert(goal, 'the errand is a goal');
     assert.strictEqual(goal.plan.marketTown, 'Dion');
+    // On a visit to another town the errand waits for the visit's end: this town's stops come first.
+    const visiting = { ...state, activity: 'shopping', currentRegion: 'Giran' };
+    assert(!NeedsEvaluator.evaluate(visiting, { now: 1000, economy: { network: { activity: null } } })
+        .some(candidate => candidate.type === 'market_errand'), 'a Giran visit is not spent on the Dion errand');
     assert.strictEqual(goal.target.itemId, 1463);
-    // The errand's town and arrival are the subject here. Whether the trip
-    // pays for itself (24512a44) has its own fixture
-    // (test_acquisition_trip_value.js); this hunter has no weapon to value shots.
-    const canTravel = ColdMarketService.canTravelForPurchase;
-    ColdMarketService.canTravelForPurchase = () => true;
-    let travel;
-    try {
-        travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
-    } finally {
-        ColdMarketService.canTravelForPurchase = canTravel;
-    }
+    // The errand's town and arrival are the subject here (its road was weighed when it was taken).
+    // A bot in the field travels to Dion and shops on arrival.
+    const field = { ...state, loc: { locX: 30000, locY: 140000, locZ: -3000 } };
+    const travel = GoalExecutor.beginMarketTravel(field, { ...goal, status: 'active' }, 1000);
+    assert.strictEqual(travel.activity, 'traveling');
     assert.strictEqual(travel.stats.travel.townName, 'Dion');
     assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
+    // A bot standing in Dion (its spot here is inside the town) does the errand there: no trip, no arrival.
+    const here = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
+    assert(here.activity === 'shopping' && here.currentRegion === 'Dion' && !here.stats.travel,
+        'a bot standing in the errand\'s town shops there');
     assert.deepStrictEqual(ColdMarketService.errandGoal(errand).plan.marketTown, 'Dion');
 }
 
@@ -344,16 +346,14 @@ Config.staticShotsDisabled = false;
 await (async () => {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    const GoalState = invoke('GameServer/Bot/Goals/GoalState');
     const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
     const Database = invoke('Database');
     const kept = { upsertState: LifeState.upsertState, refreshInventory: LifeState.refreshInventory,
-        clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
+        buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
     const buys = [];
     try {
         Database.init();
         LifeState.upsertState = async (state) => state;
-        GoalState.clear = async () => null;
         AfkTrade.buyFromShop = async (_id, _store, selfId, amount, options) => {
             buys.push(['line', amount, options.expectedPrice]);
             return kept.buyFromShop.call(AfkTrade, _id, _store, selfId, amount, options);
@@ -396,7 +396,6 @@ await (async () => {
     } finally {
         Object.assign(LifeState, { upsertState: kept.upsertState, refreshInventory: kept.refreshInventory });
         Database.purchaseNpcInventoryItem = kept.npc;
-        GoalState.clear = kept.clear;
         AfkTrade.buyFromShop = kept.buyFromShop;
         AfkTrade._resetForTests();
         await Database.close();

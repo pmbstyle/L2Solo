@@ -39,7 +39,7 @@ function isolateOrdinaryAI() {
         'GameServer/Bot/BotTradeService': ['activeTradeSummary'],
         'GameServer/Bot/Economy/BuffServiceChat': ['onDuty'],
         'GameServer/Bot/AI/ChatArrivalState': ['tick'],
-        'GameServer/Bot/Economy/BuffService': ['maybeAutoBuy'],
+        'GameServer/Bot/Economy/BuffService': ['buyOnAnswer'],
         'GameServer/Bot/AI/BotEquipmentUpgrade': ['applyBestUpgrades'],
         'GameServer/ClanHall/BotVisit': ['tick'],
         'GameServer/Bot/AI/HotResourceCompetition': ['tick']

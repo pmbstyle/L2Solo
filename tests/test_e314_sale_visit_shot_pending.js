@@ -7,7 +7,8 @@
 // row revision) and the staging pass ends there: the NPC basket runs on the next
 // pass; a busy refusal (no meeting staged) leaves the shortfall to the basket.
 // A goal purchase and a visit that did not come to sell keep the author's
-// path: a pending meeting returns at once, with no cooldown.
+// path: a pending meeting returns at once, with no cooldown; a busy seller is a line
+// the bot could not buy.
 const assert = require('node:assert/strict');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
@@ -64,7 +65,6 @@ const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', l
         const first = await ColdMarket.finishTownErrands(bot('sell_inventory'), { saleVisit: true });
         assert.equal(meetings.length, 1, 'the sale visit answered the shot ad through a trade meeting');
         assert.equal(first.stats.townVisit.completed, true, 'E314: a pending shot deal ends the sale visit');
-        assert.equal(first.stats.marketRetryAfter, undefined, 'no goal retry is set by the shot deal');
         assert.equal(baskets, 0, 'the staging pass ends with the meeting: no NPC basket on it');
         assert.deepEqual(savedBeforeBuy, [true], 'the ended visit is saved before the meeting is staged');
         assert.equal(saved.stats.townVisit.completed, true, 'the saved row is the ended visit');
@@ -98,8 +98,15 @@ const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', l
         const bought = await ColdMarket.tryPurchase(bot('sell_inventory'), goal);
         assert.equal(meetings.at(-1), WEAPON, 'the goal purchase answered the ad through a trade meeting');
         assert.equal(bought.pending, true, 'the goal purchase is pending');
-        assert.equal(bought.state?.stats?.marketRetryAfter, undefined, 'a pending goal purchase sets no cooldown');
         assert.notEqual(bought.state?.stats?.townVisit?.completed, true, 'a pending goal purchase does not end the visit');
+        // A seller busy with another buyer's preparation: the line is not for sale now. The
+        // goal purchase fails as on any line it could not buy, not pending: a pending answer
+        // left the row unchanged and the bot stepped again at once until that preparation ended.
+        busy = true;
+        const busyGoal = await ColdMarket.tryPurchase(bot('sell_inventory'), goal);
+        busy = false;
+        assert.equal(busyGoal.pending, undefined, 'a busy seller is no pending purchase');
+        assert.equal(busyGoal.purchased, false, 'and buys nothing');
         console.log('E314 pending shot deal ends the sale visit: passed');
     } finally {
         World.user = kept.user;

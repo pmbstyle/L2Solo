@@ -51,9 +51,9 @@ const sellGoal = {
     target: { cleanupReason: 'inventory_capacity', itemCount: 81 },
     plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', cleanupReason: 'inventory_capacity' }
 };
-const competition = (retreat) => (state) => CompetitionValidation.member(state, state.characterId,
+const competition = (state) => CompetitionValidation.member(state, state.characterId,
     { id: state.characterId, partyId: null }, { spotId: 'home', npcId: 1 }, {
-        party: true, retreat, at: now, memory: { revision: () => 1 },
+        party: true, at: now, memory: { revision: () => 1 },
         participantAllowed: () => true, contestContextAllowed: () => true
     }) !== null;
 
@@ -71,28 +71,27 @@ const copies = {
     }, now) === null,
     marketTrip: (state) => GoalExecutor.beginMarketTravel(state, sellGoal, now) === null,
     clanPartyRescue: (state) => !ClanPartyRescue.eligible(state, objective),
-    competitionMember: competition(false),
-    competitionRetreat: competition(true)
+    competitionMember: competition
 };
 
 const T = true;
 const F = false;
 const columns = Object.keys(copies);
-//                    owner kernel visit mammon market rescue compet retreat
+//                    owner kernel visit mammon market rescue compet
 const expected = {
-    warehouseWorkflow: [T, T, T, F, F, T, T, T],
-    warehouseErrand: [T, T, F, F, F, T, F, F],
-    marketReturn: [T, T, T, T, F, F, T, T],
-    partyMarketReturn: [F, T, T, T, T, T, F, F],
-    craftShop: [T, T, F, F, F, T, F, F],
-    craftStationId: [T, T, F, T, F, T, F, F],
-    craftReturn: [F, F, T, T, F, F, F, F],
-    supplyErrand: [T, T, T, T, F, T, T, T],
-    mammonReturn: [T, T, T, F, F, F, F, F],
-    clanPartyObjective: [F, F, T, F, F, F, F, F],
-    clanGoal: [F, F, T, F, F, F, F, F],
-    clanAllianceQuest: [F, F, T, F, F, F, F, F],
-    pvpEncounter: [F, F, T, T, F, T, F, T]
+    warehouseWorkflow: [T, T, T, F, F, T, T],
+    warehouseErrand: [T, T, F, F, F, T, F],
+    marketReturn: [T, T, T, T, F, F, T],
+    partyMarketReturn: [F, T, T, T, T, T, F],
+    craftShop: [T, T, F, F, F, T, F],
+    craftStationId: [T, T, F, T, F, T, F],
+    craftReturn: [F, F, T, T, F, F, F],
+    supplyErrand: [T, T, T, T, F, T, T],
+    mammonReturn: [T, T, T, F, F, F, F],
+    clanPartyObjective: [F, F, T, F, F, F, F],
+    clanGoal: [F, F, T, F, F, F, F],
+    clanAllianceQuest: [F, F, T, F, F, F, F],
+    pvpEncounter: [F, F, T, T, F, T, F]
 };
 
 for (const [name, copy] of Object.entries(copies)) {

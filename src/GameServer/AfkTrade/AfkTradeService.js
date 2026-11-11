@@ -27,8 +27,9 @@ const entriesById = new Map();
 const entriesByOwner = new Map();
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const ColdOccupationSources = require('../Bot/Population/ColdOccupationSources');
-const EconomyDiagnostics = require('../Bot/Economy/EconomyDiagnostics');
 const PartyAdmission = require('../Bot/Population/PartyAdmission');
+const Trace = require('../Bot/DecisionTrace');
+const FailureLog = require('../../FailureLog');
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 MarketCounters.publish(TableChannel.shared);
 // The board goes to the planning workers as the 'board' table (ColdTableChannel):
@@ -45,12 +46,7 @@ function boardRows() {
     for (const entry of entriesById.values()) if (entry.boardRow) rows.push(entry.boardRow);
     return rows;
 }
-// Records close by events only (user, 2026-10-05): no deadline. What a deal
-// left on the board for cold bots the worker does not lease is merged every
-// SETTLE_TICK_MS on the main thread, one run at a time.
-const SETTLE_TICK_MS = 5000;
-let settleTimer = null;
-let settling = false;
+// Records close by events only (user, 2026-10-05): no deadline.
 const boardChangeListeners = new Set();
 let boardReady = false;
 let boardChangeDepth = 0;
@@ -65,7 +61,7 @@ function notifyBoardChange(change) {
     else for (const id of change.selfIds || []) production.update(id);
     for (const listener of boardChangeListeners) {
         try { listener(change); }
-        catch (error) { utils.infoWarn('AfkTrade', 'board listener failed: %s', error.message); }
+        catch (error) { FailureLog.note('board.listener', error); }
     }
 }
 
@@ -603,23 +599,22 @@ function committedTrade(trade, characterId) {
     return { committed: false, hot: false, state: null };
 }
 
-// What a deal left for bots on the board reaches them now: a main-thread
-// save of each (Database settleBoardOwner moves the revision, so a far bot's
-// step under way is refused and rebases on the settled row).
+// What a deal left for bots on the board reaches a bot main holds now; a far
+// bot's waits for its own step commit (Database settleBoardOwner), skipped
+// here on its cached row without a database round.
 async function settleOwners(ownerIds = []) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     for (const ownerId of new Set((ownerIds || []).map(Number).filter(Boolean))) {
+        if (LifeState.cachedState(ownerId)?.phase === 'cold') continue;
         let result;
         try {
             result = await Database.settleBoardOwner(ownerId);
         } catch (error) {
-            // It stays on the board; the next tick tries again.
-            utils.infoWarn('AfkTrade', 'settlement for %d waits: %s', ownerId, error.message);
+            // It stays on the board for the bot's next hand-over or far step commit.
+            FailureLog.note('board.settle', error);
             continue;
         }
-        if (!result.settled) continue;
-        if (result.row) LifeState.acceptLifecycleRow(result.row);
-        syncOnlineInventory(ownerId, result.ownerInventory);
+        if (result.settled) syncOnlineInventory(ownerId, result.ownerInventory);
     }
 }
 
@@ -650,9 +645,7 @@ async function finalizeTrade(result, kind, counterpartyId) {
     if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(result.line?.selfId))) {
         const buyer = onlineSession(kind === 'sale' ? counterpartyId : result.shop.ownerId);
         if (buyer && isBotSession(buyer)) {
-            await invoke('GameServer/Bot/BotSkillTraining').review(buyer).catch((error) => {
-                utils.infoWarn('BotSkills', 'training after book purchase failed: %s', error.message);
-            });
+            await invoke('GameServer/Bot/BotSkillTraining').review(buyer).catch(error => FailureLog.note('skills.book_training', error));
         }
     }
     if (String(result.shop?.ownerAccount || '').startsWith('bot_')
@@ -702,24 +695,30 @@ async function publishBot(ownerId, config) {
 }
 
 // The owner's own move took from or gave back to its bag: the actor and the
-// bot's cold state follow (the author's sync after a publish).
+// bot's cold state follow (the author's sync after a publish). Returns ownRow's.
 function syncOwnerAfterMove(ownerId, result) {
     syncOnlineInventory(ownerId, result.ownerInventory);
-    acceptFenced(result, ownerId);
+    return ownRow(result, ownerId, acceptFenced(result, ownerId));
+}
+// The bot's row this move wrote, as accepted: null when it wrote none or a newer
+// row stands already (a caller's economy plan hands on only its own write).
+function ownRow(result, ownerId, accepted) {
+    const row = result.coldLifeRows?.[Number(ownerId)];
+    return row && accepted && Number(accepted.simulation?.revision) === Number(row.simulationRevision) ? accepted : null;
 }
 
 // A bot's records of one kind become `configs` in one move (its buy ads
 // follow its goal). `expected` maps the records it saw to their revisions.
 async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     const characterId = Number(ownerId);
-    const observed = kind === 'buy_ad' && EconomyDiagnostics.enabled(characterId);
+    const observed = kind === 'buy_ad' && Trace.detailed(characterId);
     const reserve = observed ? () => board.ownerLines(characterId).filter(line => line.kind === 'buy_ad' && line.custodyPolicy !== 1)
         .reduce((sum, line) => sum + line.count * line.price, 0) : null;
     const oldReserve = observed ? reserve() : 0;
     let result;
     try { result = await Database.replaceBoardRecords(characterId, kind, configs, options); }
     catch (error) {
-        if (observed) EconomyDiagnostics.push({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
+        if (observed) Trace.detail({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
             reason: /^(economy_[a-z_]+|shop_changed|board_[a-z_]+|not_enough_adena)$/.test(error.message) ? error.message : 'native_refused',
             reserveDelta: 0 });
         throw error;
@@ -727,7 +726,7 @@ async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     result.closed.forEach(refreshRecord);
     (result.changed || result.opened).forEach(refreshRecord);
     if (result.ownerInventory) syncOwnerAfterMove(characterId, result);
-    if (observed) EconomyDiagnostics.push({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
+    if (observed) Trace.detail({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
         reason: result.closed.length || result.opened.length || result.changed?.length ? 'changed' : 'unchanged',
         reserveDelta: reserve() - oldReserve, recordId: result.retained?.[0]?.id || result.opened?.[0]?.id,
         revision: result.retained?.[0]?.revision || result.opened?.[0]?.revision });
@@ -739,8 +738,8 @@ async function openBotRecords(ownerId, kind, configs) {
     const characterId = Number(ownerId);
     const result = await Database.openBoardRecords(characterId, kind, configs);
     result.opened.forEach(refreshRecord);
-    syncOwnerAfterMove(characterId, result);
-    return result;
+    const written = syncOwnerAfterMove(characterId, result);
+    return written ? { ...result, state: written } : result;
 }
 
 // The owner withdraws one of its records; what it holds comes back.
@@ -753,7 +752,7 @@ async function closeBotRecord(ownerId, recordId, options = {}) {
     return result;
 }
 
-// The leave rule (design 2.7): an owner leaving the game closes all its
+// The leave rule: an owner leaving the game closes all its
 // records; items and escrow go back to it.
 async function leave(ownerId) {
     const characterId = Number(ownerId);
@@ -778,7 +777,7 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
     return entriesById.get(Number(result.shop?.id))?.shop || null;
 }
 
-// A bot's look reprices several of its lines (E59): one transaction, and the
+// A bot's look reprices several of its lines: one transaction, and the
 // syncs only when an item or Adena moved. Returns { changed, skipped }.
 async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updates = [],
     coldAuthority = null, hotAuthority = null, canCommitReview = null } = {}) {
@@ -794,22 +793,23 @@ async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updat
         skipped: reprices.length + withdrawals.length + updates.length };
     const result = await Database.repriceBoardLines(ownerId, owned,
         { withdrawals: leaving, updates: observations, coldAuthority, hotAuthority, canCommitReview });
-    syncAfterReprice(ownerId, result);
+    const written = syncAfterReprice(ownerId, result);
     result.shops.forEach(refreshRecord);
     return { changed: result.changed, updated: result.updated,
         skipped: reprices.length - owned.length + withdrawals.length - leaving.length
-            + updates.length - observations.length + result.skipped.length };
+            + updates.length - observations.length + result.skipped.length, ...(written ? { state: written } : {}) };
 }
 
 // A reprice that moved an item or Adena: the actor and the bot's cold state
 // follow its bag (the author's sync after a publish). A price-only change
-// moved nothing: no inventory to read, no state to save.
+// moved nothing: no inventory to read, no state to save. Returns ownRow's.
 function syncAfterReprice(ownerId, result) {
-    if (!result.ownerInventory) return;
+    if (!result.ownerInventory) return null;
     syncOnlineInventory(ownerId, result.ownerInventory);
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    acceptFenced(result, ownerId);
+    const written = ownRow(result, ownerId, acceptFenced(result, ownerId));
     invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId, LifeState.snapshot(ownerId));
+    return written;
 }
 
 // A failed publish or relocation leaves the owner's shop as it was: its place
@@ -821,7 +821,7 @@ function restorePlace(ownerId) {
 }
 
 // Every record on the board: shops and ads (an ad is a shout heard in every
-// town, design 4.2).
+// town).
 function activeShops() {
     return [...entriesById.values()].map((entry) => entry.shop);
 }
@@ -829,8 +829,10 @@ function activeShops() {
 async function begin(session, storeType) {
     const actor = session?.actor;
     if (!actor || isBotSession(session) || ![SELL, BUY].includes(Number(storeType))) return false;
-    if (!utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
-        commandMessage(session, 'AFK trade can only be opened in a peace zone.');
+    // A shop opens in a town, Floran included: a red name trades there, as
+    // karma bots open their shops in Floran.
+    if (!utils.isInTownZone(actor.fetchLocX(), actor.fetchLocY())) {
+        commandMessage(session, 'AFK trade can only be opened in a town.');
         return false;
     }
     if (actor.isDead?.() || actor.fetchMounted?.() || actor.state?.fetchCasts?.() || actor.state?.fetchHits?.()) {
@@ -893,12 +895,13 @@ async function activate(session, store) {
         session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
         session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
         spawnProjection(created.shop);
-        // A deal needs someone in the town (design 4.4, 4.6, E45): bots who
+        // A deal needs someone in the town: bots who
         // want this shop's lines travel to it, nothing crosses from afar.
         commandMessage(session, 'AFK trade is active. Use .afkstop to close it remotely.');
         return true;
     } catch (error) {
-        utils.infoWarn('AfkTrade', 'failed to activate shop for %s: %s', actor.fetchName(), error.message);
+        // A refusal code is the player's answer; anything else is a failure.
+        if (!FailureLog.refusal(error)) FailureLog.note('board.activate', error);
         commandMessage(session, `AFK trade could not be opened: ${error.message}`);
         return false;
     }
@@ -976,7 +979,7 @@ async function deliverTrade(result, kind, characterId) {
     catch (error) {
         // The physical transaction already committed. Auxiliary delivery may
         // wait, but a counter/notification failure cannot become a new debit.
-        utils.infoWarn('AfkTrade', 'postcommit delivery waits for %d: %s', characterId, error.message || error);
+        FailureLog.note('board.postcommit_delivery', error);
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const coldState = acceptFenced(result, characterId) || LifeState.cachedState(characterId);
         return { ...result, coldState, deliveryPending: true };
@@ -1048,7 +1051,6 @@ function activeDemandSelfIds() {
 function clearBoard() {
     boardReady = false;
     notifyBoardChange({ reset: true, ready: false });
-    stopTimers();
     for (const entry of entriesById.values()) {
         if (entry.indexedRecordId) TableChannel.shared.changed('board', { key: entry.indexedRecordId, removed: true });
     }
@@ -1065,8 +1067,39 @@ function clearBoard() {
 
 // Restores the board at start. The old world's bot records close once
 // (Database.migrateBoardWorld); then every record comes back into memory.
+// A conditional sell ad keeps its goods in the owner's bag: any write that takes them out
+// (an NPC or fixed-buyer sale, a sale into a buy ad, a deposit, a craft, hot or cold)
+// leaves the ad offering more than the owner holds. The owner's own bag change (a new
+// bag on its published life state) trims its ads to the bag (Database.reconcileConditionalSellAds,
+// which also keeps its reserves). Only an owner the board shows with a line over its bag
+// pays the trim. Goods a meeting holds left the bag and still back their ad: the board
+// line counts only the units not held (the record's availableCount), refreshed by an
+// accept before it publishes the seller's bag (TradeMeetingService.accepted). Trims run,
+// by whether they changed an ad (developer diagnostics).
+let unsubscribeOwnStock = null;
+let unsubscribeHandOver = null;
+// The unworn units of a bag summary's item at one enchant level.
+function unwornAt(item, enchant) {
+    if (!item) return 0;
+    if (!Array.isArray(item.instances)) return Number(item.enchant || 0) === Number(enchant)
+        ? Number(item.amount || 0) - Number(item.equippedCount || 0) : 0;
+    return item.instances.reduce((sum, row) => sum + (!row.equipped && Number(row.enchant || 0) === Number(enchant) ? Number(row.amount || 0) : 0), 0);
+}
+function reconcileOwnStock({ characterId, state, previousState }) {
+    const id = Number(characterId), bag = state?.inventory;
+    if (!bag || bag === previousState?.inventory || !board.owners.has(id)) return;
+    if (!board.ownerLines(id).some(line => line.kind === 'sell_ad' && line.custodyPolicy === 1
+        && line.count > unwornAt(bag[line.selfId], line.enchant))) return;
+    Database.reconcileConditionalSellAds(id).then(ads => {
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('board', 'own_stock_trim', ads.length ? 'changed' : 'same');
+        ads.forEach(refreshRecord);
+    }).catch(error => FailureLog.note('board.own_stock_trim', error));
+}
+
 async function init() {
     clearBoard();
+    unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnStock);
+    unsubscribeHandOver ||= invoke('GameServer/Bot/Population/BotLifeState').subscribeMarketReviewChanges(settleHandedOver);
     const migrated = await Database.migrateBoardWorld();
     // A cached bot state follows the bags and states the migration changed.
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -1104,9 +1137,9 @@ async function init() {
         .map(shop => Number(shop.ownerId)));
     for (const ownerId of buyOwners) {
         try { await BotMarket.withdrawSourceInvalidBuyAds(ownerId); }
-        catch (error) { utils.infoWarn('AfkTrade', 'source-invalid buy ads of %d stay: %s', ownerId, error.message); }
+        catch (error) { FailureLog.note('board.source_invalid_buy_ads', error); }
     }
-    // The market counters learn the board's last deals again (group E, E58).
+    // The market counters learn the board's last deals again.
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
     MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }),
@@ -1114,32 +1147,17 @@ async function init() {
     boardReady = true;
     await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });
-    startTimers();
+    // Bots main took before the board was ready get theirs now.
+    await settleOwners(Database.boardSettlementOwners()).catch(error => FailureLog.note('board.settle', error));
     return shops.length;
 }
 
-function startTimers() {
-    stopTimers();
-    settleTimer = setInterval(() => {
-        if (settling) return;
-        settling = true;
-        settlePending()
-            .catch((error) => utils.infoWarn('AfkTrade', 'board settlement failed: %s', error.message))
-            .finally(() => { settling = false; });
-    }, SETTLE_TICK_MS);
-    settleTimer.unref?.();
-}
-
-function stopTimers() {
-    clearInterval(settleTimer);
-    settleTimer = null;
-}
-
-// The owners with settlements still on the board (a lease ended without a
-// commit, a settle that failed) get them merged.
-function settlePending() {
-    const owners = Database.boardSettlementOwners();
-    return owners.length ? settleOwners(owners) : Promise.resolve();
+// A far bot handed to main (its row turned hot: activation, a hand-over) gets
+// what deals left for it on the board at that event; a far bot's waits for its
+// own step commit (Database settleBoardOwner).
+function settleHandedOver(characterId) {
+    if (!boardReady || invoke('GameServer/Bot/Population/BotLifeState').cachedState(characterId)?.phase === 'cold') return;
+    settleOwners([characterId]).catch(error => FailureLog.note('board.settle', error));
 }
 
 module.exports = {
@@ -1150,6 +1168,7 @@ module.exports = {
     boardIndex: () => board,
     isBoardReady: () => boardReady,
     subscribeBoardChanges,
+    reconcileOwnStock,
     offerOf,
     itemName,
     activeDemandSelfIds,
@@ -1177,7 +1196,6 @@ module.exports = {
     sellToShop,
     settleOwners,
     syncOnlineInventory,
-    settlePending,
     stop,
     _resetForTests() {
         require('./TradeMeetingService').reset();

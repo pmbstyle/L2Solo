@@ -26,6 +26,7 @@ const point = { locX: 145224, locY: 120001, locZ: -4500 };
 // The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
 // A C4 Warrior's kit weapon is two-handed (slot 14), not a one-hand (slot 7).
 const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => [7, 14].includes(Number(item.slot)));
+const Situations = require('../src/GameServer/Bot/Situations');
 const base = (characterId, adena) => ({
     characterId, name: `Buyer${characterId}`, accountName: `bot_${characterId}`, level: 30, exp: Number(DataCache.experience[29]), sp: 0,
     phase: 'cold', activity: 'hunting', loc: { ...point },
@@ -36,7 +37,8 @@ const base = (characterId, adena) => ({
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { hennas: [1, 13, 17], generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 });
-const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) / 3) }, (_, i) => packet[6 + i * 3]);
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+const fundedIds = packet => Array.from({ length: Packet.fundedRows(packet) }, (_, row) => Packet.fundedItem(packet, row));
 
 (async () => {
     // The original incomplete kit and 60k wallet do not prove a funded gear
@@ -62,8 +64,9 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
     'own escrow adds exactly the physically posted quote to the native available funds');
     // Derive the scarce boundary from the native reserve and higher-priority
     // commitments, rather than choosing an amount until the test passes.
+    // The published packet holds the reserve rounded to the adena: the build's own may lie up to half above.
     const mandatory = accepted.adena - available;
-    const wallet = Math.ceil(price + mandatory), afterPosting = wallet - price;
+    const wallet = Math.ceil(price + mandatory + 0.5), afterPosting = wallet - price;
     assert(price > 0 && afterPosting >= 0);
     const beforePosting = { ...native.member, adena: wallet,
         inventory: { ...native.member.inventory, 57: { ...native.member.inventory[57], amount: wallet } } };
@@ -142,8 +145,11 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
         const partyRows = (partyId, leaderId, wallet) => {
             const party = { partyId, leaderId, memberIds: [leaderId, leaderId + 1], status: 'active', spotId: spot.id,
                 nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10 } };
+            // Its wallet reached the bridge's threshold (goal_affordable:focus heard in the party): its stay is woken.
             const member = (characterId, adena, body) => ({ ...base(characterId, adena), activity: 'grouped',
                 spotId: spot.id, timing, party: { partyId, leaderId, role: 'dps' },
+                stats: { ...base(characterId, adena).stats, backgroundPartyId: partyId,
+                    woken: Situations.FIRST | Situations.BITS.party_stay },
                 inventory: {
                     [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 },
                     [body]: { selfId: body, amount: 1, equippedCount: 1, equipped: 1 }

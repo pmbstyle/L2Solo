@@ -30,7 +30,7 @@ async function seed(recipe, crafter = false, copies = 3) {
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         vitals: { hp: 1000, maxHp: 1000, mp: 1000000, maxMp: 1000000 },
         stats: { classId: crafter ? 57 : 0, generatedCold: true, money: [36000, 0, 0, 0] }, timing: {} }, 'receipt_fixture');
-    if (crafter) state = await Workshop.review(state);
+    if (crafter) state = await Workshop.publishListing(state);
     return state;
 }
 async function image(ids) {
@@ -72,11 +72,11 @@ async function run() {
         calls++;
         command = args[2].economyCommand;
         await native(...args);
-        throw Error('lost_delivery');
+        throw Error('lost delivery');
     };
     try {
         await assert.rejects(Workshop.craft(owner.characterId, successRecipe.recipeId, buyer.characterId), error => {
-            assert.equal(error.message, 'lost_delivery');
+            assert.equal(error.message, 'lost delivery');
             assert.equal(error.economyCommand, command);
             return true;
         });
@@ -131,7 +131,8 @@ async function run() {
     let visibleCommits = 0;
     Database.craftForCustomer = async (...args) => {
         const result = await actualCraft(...args);
-        if (++visibleCommits === 1) throw Error('hot_adapter_lost_response');
+        // A lost reply after the commit: an unknown outcome, not a named refusal (a bare code).
+        if (++visibleCommits === 1) throw Error('hot adapter lost response');
         return result;
     };
     try { await Shopping.craftAtWorkshop(session, actor, selected); }

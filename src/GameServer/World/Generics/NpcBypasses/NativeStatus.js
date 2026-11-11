@@ -62,10 +62,9 @@ function hot(session, target, tab) {
 function cold(state, tab) {
     const stats = state.stats || {}, travel = stats.travel, lead = stats.marketLead, wanted = stats.marketWanted;
     const persona = invoke('GameServer/Bot/AI/BotPersona').of(state);
-    const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
-    const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
-        ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
-        : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
+    // The goal over the card the bot holds, its floor and errands.
+    const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').shownGoal(state);
+    const goalLabel = !goal ? 'none' : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
     const overview = [['Activity', words(state.activity)], ['Role', words(state.party?.role || stats.role || 'dps')],
         ['Region', state.currentRegion || 'unknown'], ['Party', state.party?.partyId || 'none'], ['Goal', goalLabel], ...personality(persona)];
     const details = [['Region / spot', `${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`], ['Goal', goalLabel],

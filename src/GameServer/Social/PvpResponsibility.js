@@ -17,7 +17,10 @@ function entries(actor, at) {
                 && ['aggression', 'provoked'].includes(row.aggressionRole)
                 && typeof row.episode === 'string' && row.episode.length <= 96
                 && Number.isSafeInteger(row.at) && Number.isSafeInteger(row.startedAt) && row.startedAt <= row.at) {
-                session.pvpIncidents.set(row.opponentId, { ...row });
+                const { openerId, why, ...kept } = row;
+                session.pvpIncidents.set(row.opponentId, { ...kept,
+                    ...(Number.isSafeInteger(openerId) && openerId > 0 ? { openerId } : {}),
+                    ...(typeof why === 'string' && why.length <= 32 ? { why } : {}) });
             }
         }
     }
@@ -27,11 +30,13 @@ function entries(actor, at) {
     return session.pvpIncidents;
 }
 
+// A managed fight's side that opened it: the first for revenge, the second (provoked) otherwise.
 function managed(attacker, victim) {
     for (const encounter of [attacker?.session?.pvpEncounter, victim?.session?.pvpEncounter]) {
         const side = encounter?.sides?.findIndex(s => s.memberIds.includes(id(attacker)));
         if (!(side >= 0) || !encounter.sides.some((s, i) => i !== side && s.memberIds.includes(id(victim)))) continue;
-        return { episode: encounter.key, startedAt: encounter.startedAt,
+        const opener = Number(encounter.sides[encounter.reason === 'revenge' ? 0 : 1]?.principalId) || undefined;
+        return { episode: encounter.key, startedAt: encounter.startedAt, openerId: opener, why: encounter.reason,
             aggressionRole: encounter.reason === 'revenge' ? 'aggression' : 'provoked',
             responsibility: side === (encounter.reason === 'revenge' ? 0 : 1)
             ? encounter.reason === 'revenge' ? 'aggression' : 'provoked' : 'defense' };
@@ -55,7 +60,7 @@ function store(actor, otherId, fact, at, changed) {
     if (!actor?.session || !otherId || otherId === id(actor)) return;
     const rows = entries(actor, at), previous = rows.get(otherId);
     const row = { opponentId: otherId, episode: fact.episode, responsibility: fact.responsibility,
-        aggressionRole: fact.aggressionRole, startedAt: fact.startedAt ?? at, at };
+        aggressionRole: fact.aggressionRole, openerId: fact.openerId, why: fact.why, startedAt: fact.startedAt ?? at, at };
     rows.delete(otherId); rows.set(otherId, row);
     while (rows.size > LIMIT) rows.delete(rows.keys().next().value);
     if (previous?.episode !== row.episode || previous?.responsibility !== row.responsibility) changed.add(actor.session);
@@ -66,9 +71,16 @@ function record(attacker, victim, defenders = [], at = Date.now()) {
     if (!id(attacker) || !id(victim) || attacker === victim) return changed;
     let fact = assess(attacker, victim, at);
     if (fact.responsibility === 'unknown') {
-        const revenge = attacker.session?.pvpRevenge;
-        fact = { episode: `native:${id(attacker)}:${id(victim)}:${at}`, startedAt: at,
-            responsibility: revenge?.target === victim && revenge.reason === 'mob_competition' ? 'provoked' : 'aggression' };
+        // The first hit opens the episode: its opener and why it struck (its revenge or
+        // provocation objective, a PK, else nothing that provoked it), which a death or
+        // a kill names (Die's trace, the kill's journal row).
+        const revenge = attacker.session?.pvpRevenge?.target === victim ? attacker.session.pvpRevenge : null;
+        // Striking a red (karma) or flagged victim is no PK: it hunts a PK or answers a fighter.
+        const victimMarked = Number(victim.fetchKarma?.()) > 0 || Number(victim.fetchPvpFlag?.()) > 0;
+        const why = revenge?.reason || (victimMarked ? 'pk_victim'
+            : attacker.session?.plan === 'pk_hunting' || Number(attacker.fetchKarma?.()) > 0 ? 'pk' : 'unprovoked');
+        fact = { episode: `native:${id(attacker)}:${id(victim)}:${at}`, startedAt: at, openerId: id(attacker), why,
+            responsibility: revenge?.reason === 'mob_competition' ? 'provoked' : 'aggression' };
         fact.aggressionRole = fact.responsibility;
     }
     store(attacker, id(victim), fact, at, changed);

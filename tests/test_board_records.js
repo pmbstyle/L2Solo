@@ -1,4 +1,4 @@
-// The board's records (step 3.3, group A): a move between a bag and a record
+// The board's records: a move between a bag and a record
 // is one transaction (a failure moves nothing, a replay moves nothing twice);
 // per-bot caps refuse a record and leave the item or the money where it was;
 // the leave rule closes every record of an owner; a record has no deadline
@@ -15,6 +15,8 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const World = invoke('GameServer/World/World');
+const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 
 const databasePath = path.join(process.cwd(), 'tmp', 'test-board-records.sqlite');
 const HOUR = 60 * 60 * 1000;
@@ -161,9 +163,8 @@ async function run() {
     assert.strictEqual((await Database.fetchAfkTradeShops(shopper)).length, 0);
     assert.strictEqual(AfkTrade.ownerRecords(mover).length, 0);
     assert.strictEqual(AfkTrade.findOwnerProjection(shopper), null);
-    assert.deepStrictEqual(await bag(mover), start, 'the leaving bot has all its items and money back');
-    assert.deepStrictEqual(Database.boardSettlementOwners(), []);
-    assert.strictEqual(LifeState.cachedState(mover).adena, start[57], 'its cold state follows');
+    assert.deepStrictEqual(await holdings(mover), start, 'the leaving bot has all its items and money back');
+    assert(Database.boardSettlementOwners().includes(mover), 'a far bot\'s returns wait for its own next commit');
 
     // No lifetime: a record older than 12 hours of uptime stays open, across
     // a restart too; a deadline a world ran with is gone (migration 56).
@@ -179,30 +180,34 @@ async function run() {
         'and stays on the board');
     assert.strictEqual((await bag(keeper))[1864], 10, 'the continuing conditional quote holds no extra stock');
 
-    // What the board owes a bot survives a restart: a far seller's deal
-    // credits a settlement the board merges at once; when that merge fails
-    // the money waits on the board and, after a restart, the board merges it.
+    // What the board owes a far bot waits for the bot's own step commit and
+    // survives a restart: main never merges it (that would move the row under
+    // the step in flight and refuse it); the step from the row it started on
+    // commits and merges the price exactly once.
     const holder = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
     const buyer = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }], true);
     const holderAd = await AfkTrade.publishBot(holder, { ...await sellAd(holder, 1864, 10, 100), kind: 'shop' });
-    await Database.execute([`CREATE TEMP TRIGGER inject_board BEFORE DELETE ON main.board_settlements
-        BEGIN SELECT RAISE(ABORT, 'injected settlement failure'); END`]);
-    try {
-        await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(holderAd.id), 1864, 3);
-    } finally {
-        await Database.execute(['DROP TRIGGER IF EXISTS temp.inject_board']);
-    }
-    assert.deepStrictEqual(Database.boardSettlementOwners(), [holder], 'the far seller\'s 300 adena wait on the board');
-    assert.strictEqual((await bag(holder))[57], undefined);
+    const stepFrom = LifeState.cachedState(holder);
+    await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(holderAd.id), 1864, 3);
+    assert(Database.boardSettlementOwners().includes(holder), 'the far seller\'s 300 adena wait on the board');
     await AfkTrade._resetForTests();
     await Database.close();
     Database.init();
-    assert.deepStrictEqual(Database.boardSettlementOwners(), [holder], 'the settlement is still known after a restart');
+    assert(Database.boardSettlementOwners().includes(holder), 'the settlement is still known after a restart');
     await AfkTrade.init();
-    await AfkTrade.settlePending();
-    assert.strictEqual((await bag(holder))[57], 300, 'the seller gets its price at its next save');
-    assert.strictEqual(LifeState.cachedState(holder).adena, 300);
-    assert.deepStrictEqual(Database.boardSettlementOwners(), []);
+    assert.strictEqual((await bag(holder))[57], undefined, 'the board does not merge a far bot\'s settlement');
+    const [row] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [holder]]);
+    assert.strictEqual(Number(row.simulationRevision), stepFrom.simulation.revision, 'the deal and the board left the seller\'s row alone');
+    const step = () => Owner.commitBatch([{ revision: stepFrom.simulation.revision, nextState: stepFrom,
+        proposal: InventorySummary.bagChange(stepFrom.inventory, stepFrom.inventory) }], { timestamp: Date.now() });
+    const [committed] = await step();
+    assert(committed.ok && committed.settled, 'the step started before the deal commits and merges the price');
+    assert.strictEqual((await bag(holder))[57], 300, 'the seller gets its price at its next commit');
+    assert.strictEqual(LifeState.cachedState(holder).adena, 300, 'and its far row carries it');
+    assert(!Database.boardSettlementOwners().includes(holder));
+    const [replayed] = await step();
+    assert(!replayed.ok, 'a replay of that step is refused');
+    assert.strictEqual((await bag(holder))[57], 300, 'the price is merged once');
 
     await AfkTrade._resetForTests();
     await Database.close();

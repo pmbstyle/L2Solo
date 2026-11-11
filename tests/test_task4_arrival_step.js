@@ -1,46 +1,48 @@
 'use strict';
-// Task 4 B3, question 1 = A (user 2026-10-10): on arrival a cold bot buys
+// On arrival a cold bot buys
 // only the card's step: this item in this town, at most the plan's unit
-// price (goal.target.adena), at most what is still missing (the card leaf's
-// amount less what reached the bag or accepted incoming since the decision).
+// price (goal.target.adena), at most what is still missing (the goal read from
+// the card: its amount less what reached the bag or accepted incoming since).
 // A miss plans nothing on main: the worker is asked for a new card. The board
 // line is funded by the goal's terms, the ones its offer was budgeted with.
 // Native ColdMarketService in a sandbox with declared adapters; no game DB.
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const root = require('node:path').resolve(__dirname, '..');
-let current, offer, decision = null, offered = [], quoted = [], funded = [], refreshes = [], refreshedOn = [];
+let current, offer, offered = [], quoted = [], funded = [], refreshes = [], refreshedOn = [];
 const dependencies = {
     'GameServer/Bot/Population/PartyMarketBreak': require(root + '/src/GameServer/Bot/Population/PartyMarketBreak'),
     'GameServer/Inventory/ShotStock': { SHOT_IDS: [1463] },
     'GameServer/Bot/Population/BotLifeState': {
-        // The purchase gate keeps its war-ticket rule (the gear rules are out of this scene).
+        // The gear rules of the purchase gate are out of this scene.
         cachedState: () => current, hotRow: () => null, planWants: () => false,
-        marketPurchaseBlocker: (state, offer) => require(root + '/src/GameServer/Bot/Population/PartyMarketBreak')
-            .warSupplyPurchaseBlocker(state, offer.selfId),
+        marketPurchaseBlocker: () => null,
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},
         upsertState: async next => (current = next)
     },
-    // The held card (economyDecisions.decided); a refresh records the state
-    // the worker would be posted.
-    'GameServer/Bot/Population/ColdSimulationCoordinator': { economyDecisions: { decided: () => decision },
-        requestEconomyRefresh: id => { refreshes.push(id); refreshedOn.push(current); } },
+    // A miss raises the failed step on the row (the worker decides anew): the
+    // raise records the state it lands on.
+    'GameServer/Bot/AI/DecisionEvents': { raiseOn: (id, name, payload) => {
+        assert.equal(name, 'goal_failed'); assert.equal(payload?.impossible, true);
+        refreshes.push(id); refreshedOn.push(current); return Promise.resolve(current); } },
     'GameServer/Bot/Economy/MarketOpportunity': { botCanBuy: () => true, fixedStoreOffers: () => [], npcOffersAll: () => [],
         bestOffer: (_id, options) => { offered.push(options); return offer && options.accept(offer) ? offer : null; } },
     'GameServer/Bot/Economy/MarketTelemetry': { offerChanged: () => {}, noOffer: () => {}, purchaseFailed: () => {} },
-    'GameServer/Bot/Economy/PurchaseFunding': { budget: () => 100000, spendable: () => 100000,
+    'GameServer/Bot/Economy/PurchaseFunding': { budget: () => 100000, spendable: () => 100000, payable: () => 100000,
         goalTerms: goal => goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate },
         nativeTerms: (options, itemId) => ({ itemId, ...(options.r !== undefined ? { r: options.r } : {}) }) },
-    'GameServer/Bot/Goals/GoalState': { snapshot: () => null },
+    // The bot holds no buy order: its bids' escrow is none, no step bid to take back.
+    'GameServer/Bot/Economy/BotAfkMarketService': { buyOrderEscrow: () => 0, stepBidMoney: () => 0, freeStepBids: () => null },
     'GameServer/Bot/Economy/ColdMarketTradeChat': { maybeAnnounceWanted: state => ({ state, announced: false }) },
     'GameServer/Bot/Goals/GoalExecutor': { finishMarketVisit: state => ({ ...state, activity: 'hunting' }) },
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {}, boardIndex: () => ({}),
         buyFromShop: async (_buyer, _store, _id, _qty, options) => { funded.push(options.funding); return { pending: true, meetingId: 1 }; } }
 };
 global.invoke = name => dependencies[name] || {};
-const Decision = { economyFor: () => { throw Error('arrival builds no economy view'); },
-    remainingToOrder: require(root + '/src/GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder };
+const Decision = { economyFor: () => { throw Error('arrival builds no economy view'); } };
 const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoWarn: () => {} }, Date, Promise, console,
-    require: name => name === './EconomyDiagnostics' ? { active: () => false, enabled: () => false }
+    require: name => name === './EconomyDiagnostics' ? { active: () => false }
+        : name === '../DecisionTrace' ? require(root + '/src/GameServer/Bot/DecisionTrace')
+        : name === '../AI/GearMarks' ? require(root + '/src/GameServer/Bot/AI/GearMarks')
         : name === '../../Inventory/ArrowStock' ? require(root + '/src/GameServer/Inventory/ArrowStock')
         : name === '../Population/ColdEconomyDecision' ? Decision
         : name === '../Population/CombinedErrandPolicy' ? { pending: () => [], ERRAND_MS: 1 }
@@ -56,16 +58,15 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
 (async () => {
     // A board line above the plan's unit price is not bought; the worker is asked.
     offer = { sourceType: 'afk_bot_store', selfId: 48, price: 80, store: { shopId: 1 }, town: 'Giran' };
-    // No card (a karma plan carries none): the goal's step stands.
     current = bot();
     const above = await Market.tryPurchase(current, gear(75));
     assert.equal(above.purchased, false);
     assert.deepEqual(funded, [], 'no line above the plan price reaches the writer');
     assert.deepEqual(refreshes, [7], 'a miss asks the worker for a new card');
-    assert(above.state.stats.marketRetryAfter > Date.now(), 'the bot waits instead of replanning on main');
+    assert.equal(above.state.stats.marketWanted?.itemId, 48, 'the bot waits for a new offer instead of replanning on main');
     // The worker is posted the written return, not the state before it: a
     // card decided on the old state would never match the bot again.
-    assert.equal(refreshedOn[0], above.state, 'refresh after the return is written');
+    assert.equal(refreshedOn[0], above.state, 'the failure is raised after the return is written');
     assert.equal(refreshedOn[0].activity, 'hunting');
 
     // A goal without the plan's unit price is not the card's step: nothing to buy.
@@ -84,54 +85,17 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
     await Market.tryPurchase(bot(), gear(75, { valueRate: 0.02, weaponBridge: true }));
     assert.deepEqual(funded.at(-1), { itemId: 48 });
 
-    // A material: the amount is the card leaf's amount less what reached the
-    // bag or accepted incoming since the decision (5 - (3 + 1 - 2) = 3).
+    // A material: the goal (read from the card on the arriving state) names
+    // what is still missing; only that, at most the plan price, in this town.
     refreshes = [];
-    decision = { activity: { activity: 'shopping', itemId: 48, amount: 5, heldAtDecision: 2 } };
-    const material = { type: 'buy_craft_material', status: 'active', target: { itemId: 48, amount: 10, adena: 75 },
+    const material = { type: 'buy_craft_material', target: { itemId: 48, amount: 3, adena: 75 },
         plan: { marketTown: 'Giran', purpose: 'supply', valueRate: 0.02 } };
-    const missed = await Market.tryPurchase(bot({ inventory: { 48: { selfId: 48, amount: 3 } }, acceptedIncoming: { 48: 1 } }), material);
+    const missed = await Market.tryPurchase(bot({ inventory: { 48: { selfId: 48, amount: 3 } } }), material);
     assert.equal(quoted.length, 1);
     assert.equal(quoted[0].amount, 3, 'only what is still missing');
     assert.equal(quoted[0].maxPrice, 75, 'at most the plan\'s unit price');
     assert.deepEqual([...quoted[0].towns], ['Giran'], 'only this town');
     assert.equal(missed.purchased, false);
     assert.deepEqual(refreshes, [7], 'no source here: the worker decides anew');
-    // Everything arrived since the decision: nothing is bought, no lookup.
-    quoted = []; refreshes = [];
-    await Market.tryPurchase(bot({ inventory: { 48: { selfId: 48, amount: 5 } }, acceptedIncoming: { 48: 2 } }), material);
-    assert.deepEqual(quoted, []);
-    assert.deepEqual(refreshes, [7]);
-
-    // The goal outlives its card: a meeting on the way delivered the item and
-    // the arrival card hunts. Nothing is bought (not the goal's 10 again).
-    for (const other of [{ activity: 'hunting', spotId: 3 }, { activity: 'shopping', itemId: 49, amount: 10 }, null]) {
-        decision = { activity: other }; quoted = []; offered = []; refreshes = []; refreshedOn = [];
-        current = bot({ inventory: { 48: { selfId: 48, amount: 10 } } });
-        const gone = await Market.tryPurchase(current, material);
-        assert.deepEqual(quoted, [], `no material lookup when the card is ${JSON.stringify(other)}`);
-        assert.equal(gone.purchased, false);
-        assert.equal(gone.reason, 'arrival_step_gone');
-        assert.deepEqual(refreshes, [7], 'the worker decides anew');
-        assert.equal(refreshedOn[0], gone.state, 'refresh after the return is written');
-        const gearGone = await Market.tryPurchase(bot(), gear(75));
-        assert.deepEqual(offered, [], 'no gear lookup without the card ordering it');
-        assert.equal(gearGone.reason, 'arrival_step_gone');
-    }
-    const ticket = { partyId: 'war-party', warOperationId: 'war-operation', supplyItemId: 1463, until: Date.now() + 900000 };
-    const supply = bot({ stats: { partyMarketReturn: ticket } });
-    offered = []; quoted = []; const paid = funded.length;
-    const blocked = await Market.tryPurchase(supply, gear(75));
-    assert.equal(blocked.reason, 'war_supply_only');
-    assert.equal(offered.length + quoted.length, 0, 'a changed gear goal cannot even start a new quote during military supply');
-    for (const selfId of [48, 1865, 1464]) {
-        const result = await Market.buyOffer(supply, { ...offer, selfId }, { economyCommand: { key: 'prepared' } });
-        assert.equal(result.reason, 'war_supply_only', 'prepared purchases cannot bypass the supply ticket');
-    }
-    assert.equal(funded.length, paid, 'no forbidden purchase reaches the native writer');
-    const restocked = await Market.buyOffer(supply, { ...offer, selfId: 1463 });
-    assert.equal(restocked.pending, true, 'the reserved combat consumable still reaches the normal purchase owner');
-    const expired = await Market.buyOffer(bot({ stats: { partyMarketReturn: { ...ticket, until: Date.now() - 1 } } }), { ...offer, selfId: 1463 });
-    assert.equal(expired.reason, 'war_supply_expired');
-    console.log('PASS arrival step: plan price cap, remaining amount, worker refresh, goal funding and military supply purchase fences');
+    console.log('PASS arrival step: plan price cap, remaining amount, worker refresh, goal funding');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

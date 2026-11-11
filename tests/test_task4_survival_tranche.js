@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B4: a survival item's buy ad may spend its kit cost from the survival
+// A survival item's buy ad may spend its kit cost from the survival
 // reserve, as the meeting and the NPC restock do. The worker decides the
 // tranche once with the bid (its own unit price estimate); the plan carries
 // it and the main executePlan check and the native conditional bid check
@@ -58,16 +58,29 @@ async function run() {
     // (EconomyContext.basics) is 0: a second computation on main refuses.
     assert.equal(Economy.basics(Life.cachedState(owner)).kitCost(SHOT), 0);
     {
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7]] }),
-            /economy_plan_bid_unfunded/, 'no tranche: the shot ad is refused on main');
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7]] })).stale, true,
+            'no tranche: the shot ad is refused on main');
+        assert.equal(Market.planBidRefused().economy_plan_bid_unfunded, 1, 'the refusal is counted in the status');
+        assert.equal((await records()).length, 0);
+        // The writer's own allowance check finds the bid's money gone (an earlier step
+        // spent it): an outcome, the plan's bids stale for the next build, never a fault.
+        const Shop = invoke('GameServer/Bot/Economy/BotBuyShopService'), publish = Shop.publish;
+        Shop.publish = async () => { throw Error('economy_funding_changed'); };
+        try {
+            assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[OTHER, 1, 300]] })).stale, true,
+                'a bid the writer finds unfunded is refused');
+        } finally { Shop.publish = publish; }
+        assert.equal(Market.planBidRefused().economy_funding_changed, 1);
         assert.equal((await records()).length, 0);
         await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7], [OTHER, 1, 300]], buyKit: [1000, 0] });
         ads = await records();
         assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count]).sort((a, b) => a[0] - b[0]),
             [[SHOT, 100], [OTHER, 1]].sort((a, b) => a[0] - b[0]));
         assert.equal(await wallet(), 10000);
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]], buyKit: [500] }),
-            /economy_plan_bid_unfunded/, 'a bid above queue + tranche is refused');
+        const before = await records();
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]], buyKit: [500] })).stale, true,
+            'a bid above queue + tranche is refused');
+        assert.deepEqual(await records(), before, 'the refused bid changes no ad');
         await Afk.replaceBotRecords(owner, 'buy_ad', [], { expected: expected(await records()) });
     }
 
@@ -76,7 +89,9 @@ async function run() {
     // shots buys floor(1000 / price) (e.g. 7: 142 = 994): the worker, main
     // and the native check must all allow it, not 100 x price (700).
     const kitCost = (id, unitPrice = null) => Number(id) === SHOT ? 100 * (unitPrice > 0 ? unitPrice : 10) : 0;
-    const economy = { kitCost, worth: () => 7, moneyPrice: 0 };
+    // A meeting in the bot's own town: no fare (a bid pays its own trip, MarketPricing.bid).
+    const trip = Object.assign(() => 0, { details: () => ({ known: true, hours: 0, fees: 0 }) });
+    const economy = { kitCost, worth: () => 7, moneyPrice: 0, trip };
     const goal = { type: 'buy_craft_material', target: { itemId: SHOT, amount: 250, adena: 7 },
         plan: { estimatedCost: 7, priceSource: 'market' } };
     const poor = Life.cachedState(owner);
@@ -103,7 +118,7 @@ async function run() {
     const lines = BuyAdPolicy.linesFor(poor, goal, { economy, board: null, watchList: [], money });
     assert.deepEqual(lines.map(line => [line.selfId, line.count, line.price, line.survivalCost]), [[SHOT, bid.count, bid.price, 1000]]);
     const batch = invoke('GameServer/Bot/Population/ColdEconomyPlan').buyBatch(lines);
-    assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyKit: [1000] });
+    assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyCaps: [bid.purchaseCap], buyKit: [1000] });
     await Market.executePlan(Life.cachedState(owner), batch);
     ads = await records();
     assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count, ad.lines[0].price]), [[SHOT, bid.count, bid.price]]);

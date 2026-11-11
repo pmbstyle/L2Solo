@@ -38,9 +38,36 @@ near.stats.coldCombat.equipment.mDef += 16;
 near.inventory[856].enchant = 0;
 near.inventory[856].instances = [1, 2].map(slot => ({ id: 100 + slot, amount: 1, equipped: true, slot, enchant: 0 }));
 const Sections = require('../src/GameServer/Bot/Economy/DecisionSections');
-assert.deepEqual(Profile.kitHash(Profile.combatView(far)), Profile.kitHash(Profile.combatView(near)),
+assert.deepEqual(Profile.kitEvents(far), Profile.kitEvents(near),
     'database/hot skill provenance, empty tattoos and physical item instances do not change the kit');
+// The kit hashes are one hash per combatView part, read again after each kit input moves.
+const { fnv1a32 } = require('../src/GameServer/Bot/Fnv1a');
+const partHashes = row => Profile.combatView(row).map(part => fnv1a32(String(part)));
+const moving = structuredClone(near);
+for (const move of [() => {}, row => { row.inventory = { ...row.inventory, 856: { ...row.inventory[856], enchant: 3, instances: undefined } }; },
+    row => { row.stats = { ...row.stats, coldCombat: { ...row.stats.coldCombat, skills: row.stats.coldCombat.skills.slice(1) } }; },
+    row => { row.stats = { ...row.stats, coldCombat: { ...row.stats.coldCombat, skillSource: 'tree' } }; },
+    row => { row.level = 70; }, row => { row.stats = { ...row.stats, hennas: [1, 2, 3] }; }, row => { row.inventory = undefined; }]) {
+    const before = Profile.kitEvents(moving);
+    move(moving);
+    assert.deepEqual(Profile.kitEvents(moving), partHashes(moving), 'kit hashes follow their parts');
+    if (move.length) assert.notDeepEqual(Profile.kitEvents(moving), before, 'a moved input moves the kit');
+}
 assert.equal(Sections.kit(far), Sections.kit(near), 'activation is not a build event');
+{
+    // A worn row edited in place breaks the bag rule: developer diagnostics see it.
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig'), Failures = require('../src/FailureLog');
+    const diagnostics = Config.developerDiagnostics, stale = () => Failures.snapshot()?.['kit_cache.stale'] || 0;
+    const breaching = structuredClone(near), held = Profile.kitEvents(breaching);
+    try {
+        Config.developerDiagnostics = true;
+        const before = stale();
+        breaching.inventory[856] = { ...breaching.inventory[856], enchant: 4, instances: undefined };
+        assert.deepEqual(Profile.kitEvents(breaching), partHashes(breaching), 'the fresh kit under diagnostics');
+        assert.notDeepEqual(Profile.kitEvents(breaching), held);
+        assert.equal(stale(), before + 1, 'the breach is counted');
+    } finally { Config.developerDiagnostics = diagnostics; }
+}
 const fields = profile => ['pAtk', 'mAtk', 'pDef', 'mDef', 'maxHp', 'maxMp'].map(key => profile[key]);
 Profile.forgetBuild(state.characterId);
 const farNumbers = fields(Profile.profileFor(far, timestamp));

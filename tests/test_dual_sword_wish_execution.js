@@ -46,7 +46,7 @@ function buyer(classId, productId) {
 
 function review(state) {
     return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [],
-        npcOffersFor: () => [], workshop: null, knownRecipes: [], withNodes: true,
+        npcOffersFor: () => [], knownRecipes: [], withNodes: true,
         knowledgeEnabled: false, routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: () => [], caller: 'meeting_prepare' });
 }
@@ -145,8 +145,8 @@ async function run() {
     assert.equal(result.changed, false);
     assert.equal(result.reason, 'invalid_bot_luxury_exchange', 'a refused exchange returns an ordinary outcome');
     assert.equal(result.state.stats.activityLeaf, 0, 'the impossible selected action is invalidated');
-    assert.equal(result.state.stats.decisionSeq, 8, 'the refusal requests a new decision instead of fault backoff');
-    assert(result.state.stats.wishDirty, 'the affected economy sections are reconsidered');
+    assert(invoke('GameServer/Bot/Situations').woken(result.state.stats, 'build'),
+        'the refusal wakes the build instead of a fault backoff');
     assert.deepEqual(await Database.fetchItems(refused.characterId), beforeRefusal, 'refusal preserves the physical bag');
 
     for (const [classId, productId] of [[2, 2516], [34, 2523]]) {

@@ -123,7 +123,6 @@ const originalBoard = Afk.boardIndex;
     assert(lowerWallet.bid?.price > 0 && lowerWallet.moneyPrice > lowerWallet.oldMoneyPrice,
         'the recipe was biddable before a higher-priority wish raised the price of money');
     assert.equal(lowerWallet.before[0], lowerWallet.after[0], 'the wallet review reuses the native source graph');
-    assert(lowerWallet.after[3] > lowerWallet.before[3], 'the funding change is tested through a read of the held graph');
     assert.equal(lowerWallet.spendable, 0, 'the recipe cannot spend the higher-priority reserve');
     assert.deepEqual(lowerWallet.current, lowerWallet.fresh, 'the held view reprices the recipe against its current money queue');
     assert(lowerWallet.cardWorth < lowerWallet.bid.price && lowerWallet.review?.withdrawals?.length === 1,

@@ -24,7 +24,6 @@ const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
 const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
-const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');
 const SkillBooks = invoke('GameServer/Skills/SkillBookCatalog');
 DataCache.init();
@@ -109,33 +108,33 @@ function publicPrice(id, buyer, context) {
 
 // E1: an SoE plus the actual missing one-hour kit, not a wallet percentage.
 // The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
+// The Scroll of Escape is no part of it.
 function kitReserve(buyer, context) {
-    const escape = context.stock('scrolls').survivalPrice * Math.max(0, 1 - Number(buyer.inventory?.[736]?.amount || 0));
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);
         const held = Number(buyer.inventory?.[stock.itemId]?.amount || 0);
         // Whole units since 080f085b: the survival stock is ceil(use per hour).
         return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.survivalPrice;
-    }, escape);
+    }, 0);
 }
 
 // E3's consumer equation over a genuine producer packet. A selected item's
 // own ratio allows only wallet - R - the higher-ratio cumulative cost.
 function itemBudget(buyer, itemId) {
-    const packet = buyer.stats.money;
+    const packet = buyer.stats.money, rows = Packet.fundedRows(packet);
     let ratio = 0;
-    for (let index = 4; index + 2 < packet.length; index += 3) {
-        if (packet[index + 2] === itemId) {
-            ratio = packet[index];
+    for (let row = 0; row < rows; row++) {
+        if (Packet.fundedItem(packet, row) === itemId) {
+            ratio = Packet.fundedRatio(packet, row);
             break;
         }
     }
-    if (ratio < packet[1]) return 0;
+    if (ratio < Packet.moneyPrice(packet)) return 0;
     let earlier = 0;
-    for (let index = 4; index + 2 < packet.length; index += 3) {
-        if (packet[index] > ratio) earlier = packet[index + 1];
+    for (let row = 0; row < rows; row++) {
+        if (Packet.fundedRatio(packet, row) > ratio) earlier = Packet.fundedCumulative(packet, row);
     }
-    return Math.max(0, buyer.adena - packet[2] - earlier);
+    return Math.max(0, buyer.adena - Packet.refillReserve(packet) - earlier);
 }
 
 // This is the real hot producer. The original synthetic state has no cold
@@ -152,7 +151,7 @@ function purchaseFor(buyer) {
     // executable shopping. The henna catalog remains covered by npcPrice below.
     // The forecast only finds which candidates to stock; it is a probe, not
     // the bot's decision. Held as a decision, the new lines on its read items
-    // would be a soft market change that waits 10 min (L70, principles 3.5).
+    // would be a soft market change that waits 10 min.
     const forecast = Economy.forState(buyer, { ...deps, caller: 'meeting_prepare' });
     for (const wish of forecast.network.queue) {
         const id = Number(wish.object?.itemId);
@@ -181,8 +180,8 @@ function purchaseFor(buyer) {
     assert(economy.network.queue.some((wish) => wish.key === goal.plan.wishKey && wish.funded),
         'a native shopping leaf comes from the funded queue');
     const reserve = kitReserve(buyer, economy);
-    close(economy.survivalReserve, reserve, 'one-hour survival reserve');
-    assert.strictEqual(Packet.survivalReserve(economy.statsPacket.money), Math.round(reserve), 'native saved reserve rounding');
+    close(economy.refillReserve, reserve, 'one-hour survival reserve');
+    assert.strictEqual(Packet.refillReserve(economy.statsPacket.money), Math.round(reserve), 'native saved reserve rounding');
     const funded = { ...buyer, stats: { ...buyer.stats, ...economy.statsPacket } };
     const allowed = itemBudget(funded, id);
     assert.strictEqual(Funding.spendable(funded, 0, { itemId: id }), allowed);
@@ -317,7 +316,7 @@ try {
 
     const materialBuyer = withIncome({ characterId: 2004011, level: 50, adena: 10000000,
         inventory: {}, stats: { equipmentPlan: { status: 'active', strategy: 'craft',
-            recipeId: 1, marketFallback: false, clanGoal: { clanId: 1 }, materials: [
+            recipeId: 1, clanGoal: { clanId: 1 }, materials: [
                 { selfId: 2068, amount: 3, missing: 3, farmEffort: 1000 }
             ], next: { itemId: 2068 } } } }, 12500);
     const authored = Recipes.resolveByRecipeId(materialBuyer.stats.equipmentPlan.recipeId);
@@ -376,16 +375,6 @@ try {
     const poor = { ...materialBuyer, adena: 200000 };
     noAuthoredComponentWish(poor);
     assert.strictEqual(materialQuote(poor, 3), null, 'the original 200k wallet cannot fill a 3M component quote');
-    noAuthoredComponentWish({ ...materialBuyer, stats: { ...materialBuyer.stats, marketRetryAfter: 1001 } });
-
-    // The material profile has no authored wish to travel for. Exercise the
-    // actual retry consumer with the same timestamp and a genuine native hot
-    // gear goal instead; this is a refusal, not a successful-trip claim.
-    const retryBuyer = { ...native.buyer, stats: { ...native.buyer.stats, marketRetryAfter: 1001 } };
-    const retryBefore = structuredClone(retryBuyer);
-    assert.strictEqual(GoalExecutor.beginMarketTravel(retryBuyer, native.goal, 1000), null,
-        'a genuine native purchase respects a future retry deadline');
-    assert.deepStrictEqual(retryBuyer, retryBefore, 'retry refusal spends no money or inventory');
 
     const enchanted = { ...pricingItem(178), enchant: 3 };
     assert.strictEqual(Pricing.npcPrice(enchanted), Infinity, 'ordinary NPC stock must not cap enchanted gear');

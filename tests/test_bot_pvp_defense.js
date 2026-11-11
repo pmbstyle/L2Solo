@@ -150,7 +150,7 @@ for (const hp of [100, 20]) {
     enemy.flag = 0;
     bot.moveTo = () => ({ usable: true });
     own.pendingPvpProvocation = { target: enemy, expiresAt: now + 10000 };
-    assert.strictEqual(invoke('GameServer/Bot/AI/BotRevenge').tryStart(own, now, () => 0), false,
+    assert.strictEqual(invoke('GameServer/Bot/AI/BotRevenge').flushPending(own, now), false,
         'karma washing takes priority over starting revenge');
     assert.strictEqual(own.pendingPvpProvocation, undefined);
     assert.strictEqual(Threats.canDefendWhileChaotic(own, enemy, now), false);
@@ -369,7 +369,6 @@ function skill(id, type, target, effect, power = 100) {
         upgrade: Upgrade.applyBestUpgrades, now: Date.now };
     const count = site => FailureLog.snapshot()?.[site] || 0;
     const logged = [], before = count('ai.state.resting'), leftBefore = count('ai.state_left');
-    const seqBefore = Number(DecisionEvents.statsFor(own).decisionSeq || 0);
     let clock = saved.now(), restTicks = 0, huntTicks = 0;
     try {
         Date.now = () => clock;
@@ -394,7 +393,7 @@ function skill(id, type, target, effect, power = 100) {
         assert.strictEqual(count('ai.state.resting') - before, 5, 'every fault is counted');
         assert.strictEqual(own.plan, 'hunting', 'the fifth fault in a row leaves the plan for the bot\'s own');
         assert.strictEqual(count('ai.state_left') - leftBefore, 1, 'leaving the plan is counted');
-        assert(Number(DecisionEvents.statsFor(own).decisionSeq || 0) > seqBefore, 'the held decision is taken again');
+        assert(invoke('GameServer/Bot/Situations').woken({ woken: 0, ...DecisionEvents.statsFor(own) }, 'build'), 'the held decision is taken again');
         BotAI.tick(own);
         assert.strictEqual(huntTicks, 1, 'the bot\'s own plan runs at once');
         assert.strictEqual(own.stateFault, null, 'a state tick that returns ends the run');

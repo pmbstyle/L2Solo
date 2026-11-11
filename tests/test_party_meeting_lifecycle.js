@@ -6,7 +6,7 @@ const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Assembly = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
 const { ColdSimulationKernel, lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 // The facts a kernel gives lifecycleKind for a bot that leads `led` (its parties table).
-const leading = led => ({ leaderParty: () => led, partyMembers: () => [], buyOrderEscrow: () => 0,
+const leading = led => ({ leaderParty: () => led, partyMembers: () => [],
     hallNeeded: () => false, playerWaiting: () => false });
 const at = Date.now();
 const party = { partyId: 'meeting-roster', leaderId: 1, memberIds: [1, 2], status: 'active',
@@ -66,7 +66,7 @@ async function main() {
         resolveParty: input => Resolver.resolve(input),
         projectResolve: (state, resolution) => ({ ...state, ...resolution.patch }),
         planPartyRequirement: () => { throw Error('held meeting cannot start another economic plan'); },
-        partyRoute: () => ({ needed: true, travelMs: 60000, spotId: 'wrong-spot', to: { locX: 9000, locY: 0, locZ: 0 } }),
+        partyRoute: () => ({ route: { needed: true, travelMs: 60000, spotId: 'wrong-spot', to: { locX: 9000, locY: 0, locZ: 0 } } }),
         emit: (type, payload) => messages.push({ type, payload }) });
     for (const state of members) {
         kernel.upsert({ state });
@@ -86,8 +86,7 @@ async function main() {
     assert.equal(proposal.nextState.activity, 'shopping');
     assert(proposal.atomicGroup && batch.payload.proposals.every(entry => entry.atomicGroup.id === proposal.atomicGroup.id));
     assert.equal(proposal.options.allowParty, true);
-    assert.equal(batch.payload.proposals.find(entry => entry.partyResolution).partyResolution.reviewGoals, false);
-    assert(!batch.payload.proposals.some(entry => entry.partyResolution?.memberPlans));
+    assert(!batch.payload.proposals.some(entry => entry.partyResolution?.requirementRefreshedAt), 'a pending meeting holds the re-plan');
 
     const selected = [];
     let selectorAt = at;
@@ -156,7 +155,7 @@ async function main() {
             resolveSolo: () => { throw Error('completed roster resolves under group ownership'); },
             resolveParty: input => Resolver.resolve(input),
             projectResolve: (state, resolution) => ({ ...state, ...resolution.patch }),
-            partyRoute: () => ({ needed: true, travelMs: 60000, spotId: 'wrong-spot' }),
+            partyRoute: () => ({ route: { needed: true, travelMs: 60000, spotId: 'wrong-spot' } }),
             emit: (type, payload) => raidMessages.push({ type, payload }) });
         for (const state of raidMembers) {
             terminalKernel.upsert({ state });

@@ -9,8 +9,8 @@ const AT = 1800000000000;
 async function fixture(count = 2, membersPerClan = 3) {
     const admission = new PartyAdmission(), view = new View(), states = new Map(), clans = new Map(), parties = [];
     const counters = { writes: 0, reads: 0, forms: 0, reviews: 0 };
-    const f = { admission, view, states, clans, parties, counters, allowed: false, failFormation: false, now: AT,
-        config: { maxBackgroundParties: 2 } };
+    const f = { admission, view, states, clans, parties, counters, allowed: false, failFormation: false, now: AT, membership: 1,
+        config: { maxPlayingPopulation: 8 } };
     for (let n = 0; n < count; n++) {
         const id = 10 + n, enemy = 10 + (n ^ 1), members = [];
         for (let m = 0; m < membersPerClan; m++) {
@@ -30,7 +30,7 @@ async function fixture(count = 2, membersPerClan = 3) {
             for (const characterId of states.keys()) listener({ characterId }); return () => {};
         } },
         parties: { active: () => parties, admitted: () => parties },
-        clans: { all: () => [...clans.values()], findById: id => clans.get(id), membershipRevision: () => 1 },
+        clans: { all: () => [...clans.values()], findById: id => clans.get(id), membershipRevision: () => f.membership },
         war: { view, refresh: async () => {} },
         updateDemand: ids => admission.syncWarRequests(ids), canWork: () => f.allowed, now: () => f.now,
         form: async (members, operation) => {
@@ -159,7 +159,35 @@ async function run() {
     assert.equal(quiet.director.plans.get(10).intel[0]?.enemyClanId, 11);
     quiet.director.stop();
 
-    const a = new PartyAdmission(), cap = { maxBackgroundParties: 1 };
+    // A clan C4 lets wage no war (under level 3 or 15 members) and in no war row has
+    // no war review; one that grows into it, or is drawn into a war row, has.
+    const gate = await fixture(2, 3); gate.allowed = true;
+    const reviewed = new Set();
+    gate.director.review = async clan => { reviewed.add(clan.id); };
+    const small = { id: 30, level: 2, members: Array.from({ length: 20 }, (_, n) => ({ id: 3000 + n })), leaderId: 3000 };
+    gate.clans.set(30, small); gate.director.autonomous.add(30);
+    for (let n = 0; n < 3; n++) await gate.pulse();
+    assert.deepEqual([...reviewed].sort(), [10, 11], 'a clan that cannot wage war takes no war review');
+    small.level = 3; gate.membership++; reviewed.clear(); // a level-up reloads the clans
+    for (let n = 0; n < 3; n++) await gate.pulse();
+    assert(reviewed.has(30), 'a level 3 clan with a full roster is reviewed');
+    small.level = 1; small.members = small.members.slice(0, 3); gate.membership++; reviewed.clear();
+    gate.view.accept({ fromClanId: 10, toClanId: 30, active: 1, revision: 9, declaredAt: AT });
+    for (let n = 0; n < 3; n++) await gate.pulse();
+    assert(reviewed.has(30), 'a clan in a war row is reviewed whatever its size');
+    gate.director.stop();
+    // The review resumes after the last clan it visited, whatever left the list.
+    const turn = await fixture(8, 3); turn.allowed = true;
+    const order = [];
+    turn.director.review = async clan => { order.push(clan.id); };
+    await turn.pulse();
+    turn.view.accept({ fromClanId: 10, toClanId: 11, active: 0, revision: 20, declaredAt: AT });
+    turn.view.accept({ fromClanId: 11, toClanId: 10, active: 0, revision: 21, declaredAt: AT });
+    await turn.pulse();
+    assert.deepEqual(order, [10, 11, 12, 13, 14, 15, 16, 17], 'no clan is skipped or reviewed twice when the list changes');
+    turn.director.stop();
+
+    const a = new PartyAdmission(), cap = { maxPlayingPopulation: 4 };
     a.syncWarRequests([10]); const inFlight = a.reserveWar([], cap, 10, AT);
     assert(inFlight); a.syncWarRequests([11]);
     assert.equal(a.reserveWar([], cap, 11, AT + 1), null, 'persistent priority still counts in-flight native commits');

@@ -15,11 +15,11 @@ const profiles = Planner.STARTER_REGIONS.map((region) => ({
 const initial = Planner.plan(profiles, [], 1700, 30);
 assert.strictEqual(initial.averageLevel, 0);
 assert.strictEqual(initial.wave, 1);
-assert.strictEqual(initial.missing.length, 150, 'first start must create 30 bots at each of five racial spawns');
+assert.strictEqual(initial.missing.length, 150, 'first start must create a 150-bot cohort (5 x 30) across the racial spawns');
 assert.deepStrictEqual(
     initial.missing.reduce((counts, spot) => ({ ...counts, [spot.starterRegion]: (counts[spot.starterRegion] || 0) + 1 }), {}),
-    { human: 30, elf: 30, dark_elf: 30, orc: 30, dwarf: 30 },
-    'the first wave must be balanced between racial spawn regions'
+    { human: 33, elf: 33, dark_elf: 35, orc: 31, dwarf: 18 },
+    'the first wave splits across the racial spawn regions by their races\' share of the class mix'
 );
 assert.strictEqual(Planner.seedBatchSize(initial, 2), 150,
     'the first wave must not be split by the normal seed batch limit');

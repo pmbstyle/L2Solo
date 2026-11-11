@@ -1,4 +1,4 @@
-// The board's offer index (б8), one module for the main thread and the
+// The board's offer index, one module for the main thread and the
 // background workers: every line of every record with stock, by side (sell
 // or buy), item and town, each list sorted best first. The main thread feeds
 // it from its records (AfkTradeService), a worker from its 'board' table

@@ -70,8 +70,6 @@ const native = require('./helpers/workerEconomyDecision');
         equipmentPlan: { status: 'deferred', strategy: 'none', reason: 'wish_focus', target: { selfId: 95, slot: 14 },
             recipeId: Recipes.resolveByProductId(95).recipeId,
             materials: [{ selfId: 1459, amount: 353 }], heldInputs: { 1459: 25 } } } };
-    inputState.stats = invoke('GameServer/Bot/AI/DecisionEvents').applyRaise(inputState.stats,
-        invoke('GameServer/Bot/Economy/DecisionSections').sectionMask(['sources', 'benefits', 'money']));
     const crystalRows = [...boardRows, [8002, [8002, 'sell_ad', 1, 910812, 'Giran', 1,
         [[9002, 1459, 0, 100, 2000, null, 0]], 1, 1, 0]]];
     const inputKit = { ...input, recipes: { recipeBook: Codec.pack([20, 21]), knownShotRecipes: [20, 21] },

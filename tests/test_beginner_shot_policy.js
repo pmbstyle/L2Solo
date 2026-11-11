@@ -63,7 +63,7 @@ try {
         s.vitals={hp:p.maxHp,maxHp:p.maxHp,mp:p.maxMp,maxMp:p.maxMp};return s;};
     for (const party of [false,true]) {
         const s=make(); const outcome=party ? Cold.resolvePartyFight({members:[s],spot,timestamp:1800000000000,rng:()=>.5})
-            : Cold.resolveSolo({state:s,spot,timestamp:1800000000000,elapsedMs:12000,rng:()=>.5});
+            : Cold.resolveSolo({state:s,spot,timestamp:1800000000000,elapsedMs:120000,rng:()=>.5});
         const actions=party?outcome.members[0].shotActions:outcome.debug.shotActions;
         const inventory=party?outcome.members[0].state.inventory:outcome.patch.inventory;
         assert(actions>0); assert.equal(inventory[5789].amount,600-actions);
@@ -78,7 +78,7 @@ try {
     for (const party of [false,true]) {
         const s=make(); s.inventory[5789].amount=2;
         const outcome=party ? Cold.resolvePartyFight({members:[s],spot,timestamp:1800000000000,rng:()=>.5})
-            : Cold.resolveSolo({state:s,spot,timestamp:1800000000000,elapsedMs:12000,rng:()=>.5});
+            : Cold.resolveSolo({state:s,spot,timestamp:1800000000000,elapsedMs:120000,rng:()=>.5});
         const actions=party?outcome.members[0].shotActions:outcome.debug.shotActions;
         const inventory=party?outcome.members[0].state.inventory:outcome.patch.inventory;
         assert(actions>2, 'fight crosses beginner exhaustion');

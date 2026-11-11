@@ -72,11 +72,11 @@ async function run() {
     assert.equal(Floor.forActor(actor).reason, 'no_mp');
     assert.equal(Floor.forState(mage).reason, 'no_mp');
     const mandatoryRest = Needs.evaluate(mage)[0];
-    assert.deepEqual({ type: mandatoryRest.type, priority: mandatoryRest.priority, kind: mandatoryRest.plan.kind },
-        { type: 'recover', priority: 100, kind: 'rest' }, 'the native no-MP floor selects mandatory rest');
+    assert.deepEqual({ type: mandatoryRest.type, kind: mandatoryRest.plan.kind },
+        { type: 'recover', kind: 'rest' }, 'the native no-MP floor selects mandatory rest');
     assert.equal(Background.resolveSolo({ state: mage, timestamp: Date.now(), elapsedMs: 1000 }).patch.activity, 'resting');
     const lowHp = { ...mage, vitals: { ...mage.vitals, hp: 1, mp: profile.maxMp } };
-    assert.equal(Needs.evaluate(lowHp).some(goal => goal.type === 'recover' && goal.priority === 100), false,
+    assert.equal(Needs.evaluate(lowHp).some(goal => goal.type === 'recover'), false,
         'alive low HP retains ordinary recovery rather than a mandatory death floor');
     console.log('PASS hot/cold actual skill and live HP floor');
 
@@ -115,7 +115,7 @@ async function run() {
         { selfId: 86, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }];
     // Its healing potions at the stock's own target as it arrives (EXP 0: level 1),
     // whatever use the table gives them: the errands alone decide what the visit buys.
-    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor({ ...await seed(buyerItems), level: 1 }, 'potions');
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics({ ...await seed(buyerItems), level: 1 }).stock('potions');
     let buyer = await seed([...buyerItems, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target }]);
     const now = Date.now();
     // A trip must pay for itself before travel (24512a44); a planned errand
@@ -199,10 +199,29 @@ async function run() {
     console.log('PHYSICAL_EXECUTION_SEAM', JSON.stringify({ inputLevel: buyer.level, arrivalLevel: arrived.level,
         exp: arrived.exp, policyWallet: policyFinished.adena, executedWallet: finished.adena,
         healing: physical(bag, 1060), scrolls: physical(bag, 736), shots: physical(bag, shotPlan.selfId) }));
-    const returning = Goals.finishMarketVisit(finished);
-    assert(returning && returning.activity === 'traveling');
-    assert.equal(held(returning, 736), held(finished, 736), 'return consumes no second departure scroll');
-    console.log('PASS native one-town queue, changed quote, supplies and one return');
+    // The visit's end goes on to the errand left for another town, then back from there.
+    const onward = Goals.finishMarketVisit(finished);
+    assert(onward && onward.activity === 'traveling');
+    assert.equal(onward.stats.travel.townName, 'Giran', 'the errand pending elsewhere is the next trip');
+    assert.deepEqual(onward.stats.marketReturn, originalReturn, 'the way back stays the field it left');
+    const done = { ...finished, stats: Errands.complete(finished, Errands.pending(finished)[0], Date.now()).stats };
+    const returning = Goals.finishMarketVisit(done);
+    assert(returning && returning.activity === 'resting', 'with no errand left it is handed back to the worker in town');
+    assert.equal(held(returning, 736), held(finished, 736), 'the visit\'s end consumes no second departure scroll');
+    // The held step's purchase the visit deferred to another town is its next stop too:
+    // town to town, the way back still the field it left.
+    const heldGoal = Needs.goal;
+    Needs.goal = () => ({ type: 'upgrade_gear', target: { itemId: 2386, itemName: 'Wooden Breastplate', amount: 1 },
+        plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
+    try {
+        const deferred = Goals.finishMarketVisit(done);
+        assert.equal(deferred?.stats.travel.townName, 'Giran', 'the purchase deferred to another town is the next trip');
+        assert.deepEqual(deferred.stats.marketReturn, originalReturn);
+        Needs.goal = () => ({ type: 'upgrade_gear', target: { itemId: 2386, amount: 1 },
+            plan: { expectedBenefit: 'market_search_for_gear', marketTown: done.currentRegion } });
+        assert.equal(Goals.finishMarketVisit(done)?.activity, 'resting', 'one of this town ends the visit here');
+    } finally { Needs.goal = heldGoal; }
+    console.log('PASS native one-town queue, changed quote, supplies, onward errand and one return');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     await Database.close();

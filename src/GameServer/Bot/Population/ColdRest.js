@@ -98,7 +98,7 @@ function restRegenPerTick(state, missingHp, missingMp, options = {}) {
 }
 
 // The MP a rest for mana wins back per tick, in its faster posture (the
-// T100 MP price's rate: a bot short of MP only).
+// MP price's rate: a bot short of MP only).
 function restMpPerTick(state, options = {}) {
     return Math.max(coldRestRegenPerTick(state, options).mp, coldRestRegenPerTick(state, { ...options, standing: true }).mp);
 }

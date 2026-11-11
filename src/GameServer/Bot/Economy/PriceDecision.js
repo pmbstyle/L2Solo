@@ -1,6 +1,5 @@
-// One pricing decision for selling and buying (group E, user 2026-10-05;
-// market-sim step 3.3, tools/market-sim/n0/step33/groupE: e10 belief, e12
-// loss, e13 competition): the best expected outcome over a grid of prices on
+// One pricing decision for selling and buying (belief, loss
+// and competition): the best expected outcome over a grid of prices on
 // the bot's belief (PriceBelief), one roll among the near-best ones. One
 // module for the main thread and the cold worker.
 //
@@ -24,7 +23,7 @@ const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 // 19 prices from 2 widths under the centre to 2.5 over it.
 const GRID = Object.freeze(Array.from({ length: 19 }, (_, at) => -2 + at * 0.25));
 const NEAR_BEST = 0.02;
-// How differently buyers see the same offers (e13: their understanding error).
+// How differently buyers see the same offers (their understanding error).
 const PERCEPTION = 0.08;
 const RIVALS_SEEN = 20;
 // Waiting costs the gap's urgency spread over that wish's own horizon (1/hour).
@@ -165,7 +164,7 @@ function exitCompetition(asks, { ownerId, price, enchant = 0, count }) {
     return { cheaperUnits, limit: tail && cheaperUnits < count };
 }
 
-// One finite sale of `units` more goods into one bid (MVP-5). A backed bid
+// One finite sale of `units` more goods into one bid. A backed bid
 // buys its count; a conditional one has finite uncertain execution at its
 // published price (prospectiveExit). Cheaper
 // foreign asks serve the buyer first and the seller's own unsold goods
@@ -404,7 +403,7 @@ function chooseByValue(options, rollKey) {
 }
 
 // One roll among options [{ action, value }] in proportion to their values
-// (a weighted roll, Q6: variety over the best one): a value at or below 0
+// (a weighted roll: variety over the best one): a value at or below 0
 // weighs nothing but every option keeps a floor, together TendencyRoll.MIN
 // of the whole weight, so none is impossible. When no value is above 0 (all
 // are losses), the weights are how much less each loses than the worst.

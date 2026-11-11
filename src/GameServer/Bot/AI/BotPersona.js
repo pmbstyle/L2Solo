@@ -1,4 +1,4 @@
-// ARCH-NOTE: C1/E3 the clan worker's missing-money survival fallback reads
+// ARCH-NOTE: the clan worker's missing-money survival fallback reads
 // an existing persona or null. Resolve the live database only at an actual
 // SQL operation so that pure lookup keeps the worker dependency guard intact.
 let database;
@@ -10,7 +10,7 @@ const TableChannel = require('../Population/ColdTableChannel');
 
 const TABLE = 'bot_personas';
 // 2: eleven types chosen by class and share, +-0.2 triangular spread,
-// inclinations (step 3.1, N6a; migration 52 rewrote the v1 rows).
+// inclinations (migration 52 rewrote the v1 rows).
 const VERSION = 2;
 const TRAITS = Types.TRAITS;
 const INCLINATIONS = Types.INCLINATIONS;
@@ -109,7 +109,7 @@ function dialogueVoice(persona) {
 
 // Values derived from the stored traits when a persona is cached, never
 // stored: the text card when the row has none, the dialogue voice, the
-// combat talents (combat-skills brief B) and the market understanding (N45).
+// combat talents and the market understanding.
 function withDerived(persona) {
     return {
         ...persona,

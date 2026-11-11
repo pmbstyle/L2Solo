@@ -105,7 +105,7 @@ const byId = new Map(fixture.members.map(row => [row.characterId, { ...row,
 const members = fixture.expected.map(id => byId.get(id));
 const orc = members[2];
 orc.stats.classId = orc.stats.coldCombat.classId = 52;
-// A Warcryer keeps the Orc Shaman melee kit (user 10-29): blunt, heavy armour and a shield.
+// A Warcryer keeps the Orc Shaman melee kit: blunt, heavy armour and a shield.
 const worn = (selfId, slot, kind, rank = 'c') => ({ selfId, amount: 1, equipped: true, equippedCount: 1,
     equippedSlots: [slot], stackable: false, slot, rank, kind, enchant: 0 });
 delete orc.inventory[325]; delete orc.inventory[437]; delete orc.inventory[466];

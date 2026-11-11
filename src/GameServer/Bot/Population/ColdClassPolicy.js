@@ -67,7 +67,7 @@ function adapter(profile) {
     const state={};
     const skills=(profile.skills||[]).map(skillModel);
     let seatedMp=null,seatedHp=null;
-    // The numbers BotCombatUtility's MP price reads (T100): the cold normal
+    // The numbers BotCombatUtility's MP price reads: the cold normal
     // attack time and the rate the cold rest (resolveRest) refills MP at.
     const actor={
         // A bot's id (ColdCombatProfile): a split-kit first class fights for
@@ -108,7 +108,7 @@ function select(profile,{hp,mp,cooldowns,time,charges=0,mob,mobHp=null,party=fal
 // Compile full-health solo priorities once per hunting profile, on the scale
 // the matchup adds a target's resistance on (BotTargetMatchup.soloChannels:
 // 180 x log2 of the effectiveness): 180 x log2 of the skill's priced damage
-// rate at full HP and MP (BotCombatUtility.manaPrice, T100), cast after cast:
+// rate at full HP and MP (BotCombatUtility.manaPrice), cast after cast:
 // a skill's reuse bounds its rate, so the fight's channel is the skill the bot
 // keeps casting, not a long-reuse opener. Transient planning data.
 const NEUTRAL_TARGET = Object.freeze({ fetchHp: () => 1e12, fetchPDef: () => 1000, fetchMDef: () => 1000,

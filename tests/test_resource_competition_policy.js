@@ -1,7 +1,7 @@
 const assert = require('assert');
 const Policy = require('../src/GameServer/Social/ResourceCompetitionPolicy');
 const ColdPolicy = require('../src/GameServer/Bot/Population/ColdCompetitionPolicy');
-const { ColdCompetitionMonitor, INTERVAL_MS } = require('../src/GameServer/Bot/Population/ColdCompetitionMonitor');
+const SpotContest = require('../src/GameServer/Bot/Population/SpotContest');
 const { seeded } = require('../src/GameServer/Bot/AI/TendencyRoll');
 const Memory = require('../src/GameServer/Social/InteractionMemory');
 const P = require('../src/GameServer/Social/InteractionMemoryPolicy');
@@ -35,20 +35,24 @@ for (const absent of [undefined, null, {}, { traits: null }]) {
     }
 }
 
-// Exercise the actual worker entry point with a lookup returning null.
+// Exercise the worker's arrival contest (SpotContest) with a lookup returning null.
+require('../src/Global');
+invoke('GameServer/DataCache').init();
 const at = 1800000000000;
 const memory = new Memory();
 const spot = { id: 'null-persona', npcEntries: [{ selfId: 10, count: 1 }] };
-const entries = Array.from({ length: 8 }, (_, i) => ({ state: { characterId: i + 1, name: `Bot${i + 1}`,
-    phase: 'cold', activity: 'hunting', level: 40, spotId: spot.id, vitals: { hp: 100 }, stats: {} } }));
-entries.forEach(e => memory.accept(P.empty(e.state.characterId)));
+const units = Array.from({ length: 8 }, (_, i) => {
+    const state = { characterId: i + 1, name: `Bot${i + 1}`, phase: 'cold', activity: 'hunting', level: 40, spotId: spot.id,
+        vitals: { hp: 100 }, stats: {} };
+    memory.accept(P.empty(i + 1));
+    return { key: `solo:${i + 1}`, id: i + 1, name: state.name, partyId: null, size: 1, hunters: 1, level: 40, members: [state], state, npcId: 10, hot: false };
+});
 function forecast(persona) {
-    const monitor = new ColdCompetitionMonitor({ capacityForSpot: () => 1, personaFor: () => persona, spotOf: () => spot });
-    for (let i = 0; i <= 60; i++) monitor.sample(entries, memory, at + i * INTERVAL_MS);
-    return monitor.snapshot();
+    return Array.from({ length: 60 }, (_, step) => SpotContest.contest({ spot, npcId: 10, arriving: units[0], standing: units.slice(1),
+        at, step, memory, personaFor: () => persona, capacityForSpot: () => 1, pvp: true })).map(v => [v.action, v.reason, v.event?.key]);
 }
 const expected = forecast(neutral);
-assert(expected.evaluated > 0, 'test must reach an actual resource competition decision');
-assert.deepStrictEqual(forecast(null), expected, 'null persona cannot abort worker competition sampling');
+assert(expected.some(([action]) => action !== 'coexist'), 'test must reach an actual resource competition decision');
+assert.deepStrictEqual(forecast(null), expected, 'null persona cannot abort the worker\'s arrival contest');
 assert.deepStrictEqual(forecast(undefined), expected, 'null and missing lookup results have identical worker outcomes');
 console.log('Resource competition missing-persona decisions, RNG and native worker parity passed');

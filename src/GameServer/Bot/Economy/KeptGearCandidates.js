@@ -2,7 +2,7 @@
 // The gear candidates of a bot's wish review (WishProviders: the items the
 // review weighs, each with its value and gain), kept with the bot's held build
 // (EconomyContext, beside its source facts) and served to the next build while
-// everything the weighing read is the same (decision links step 5, S4): it is
+// everything the weighing read is the same: it is
 // a pure function of what it reads, so the same reads give the same list.
 // Two lists are held, one for a full review and one for a quiet build (it
 // weighs only the followed gear). Owns the record's layout: the build notes
@@ -15,19 +15,21 @@
 //   kit of the preparation it plans for, as the weighing reads them, its
 //   progression, the gear a quiet build holds, the hours its value is weighed
 //   over, death hours, money hour, trip rows, reserve, persona, the crystal
-//   shop), one digest per build (KeptSourceFacts.inputDigest);
+//   shop, the failed gear errands' marks), one digest per build (KeptSourceFacts.inputDigest);
 // - per item priced: its price (the weighing reads the board only through
 //   prices and offers), and whether and how it was compared with the budget;
 // - per bag answer (an item held or not) and per offer asked (the arrow room,
 //   the NPC and fixed offers, the item's lines, and whether the build had
 //   asked it before; the offer it got is kept too, so a served list fills the
-//   build's offer memo as the weighing did);
+//   build's offer memo as the weighing did; a first ask is asked again and
+//   must give that offer, as its admission reads other bots' claims and the
+//   seller's state beside the lines, OfferQuery.admits);
 // - the wallet only through its comparisons: each price compared with the
 //   purchase budget and each cost with the adena, and the answer;
 // - each weighed item's market trend.
-// A kept list replays its reads (prices through the price reader), its bag
-// answers into the quantity proof and its thresholds into the decision's
-// wallet bounds, so the build reads, proves and decides as a fresh one.
+// A kept list replays its reads (prices through the price reader), so the
+// build reads and decides as a fresh one; its bag and cash answers are what
+// it is checked on.
 // A list of more than RECORD_SLOTS numbers is not kept.
 // Counted with diagnostics on: projection:gear:<kept | absent | unkeyed |
 // moved:<input> | <read that moved>>, projection:gear_unkept:<size | shape>,

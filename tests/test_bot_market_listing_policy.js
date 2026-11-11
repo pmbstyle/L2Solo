@@ -119,12 +119,13 @@ const spareShirt = { ...wornStarter, inventory: { 1146: { ...wornStarter.invento
         { id: 9060001, amount: 1, equipped: false, slot: 0, enchant: 6 }]
 } } };
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const PartyMarketBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
 for (const marketSellSeen of [null, { items: [1146], buyers: null }]) {
     const singleSpare = { ...spareShirt, stats: { ...spareShirt.stats, marketSellSeen } };
     assert.strictEqual(ItemDisposition.inventoryCleanupNeed(singleSpare, { now }), null,
         'one spare starter piece does not interrupt hunting, with or without a market cooldown');
-    assert.strictEqual(PopulationService.prepareInventoryCleanupProposal(singleSpare, now), null,
-        'the cold resolve keeps hunting instead of starting a trip for one spare starter piece');
+    assert.strictEqual(PartyMarketBreak.cleanupDecision(singleSpare, now), null,
+        'the build keeps hunting instead of deciding a trip for one spare starter piece');
 }
 const accumulatedStarters = { ...spareShirt, inventory: { 1146: { ...spareShirt.inventory[1146],
     amount: ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS + 1,
@@ -137,9 +138,11 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(accumulatedStarters,
     reason: 'npc_only_inventory', slots: ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS + 1,
     npcOnlySlots: ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS, limit: ItemDisposition.INVENTORY_SLOT_LIMIT
 }, 'accumulated unused starter gear still starts NPC cleanup despite the market cooldown');
-assert.strictEqual(PopulationService.prepareInventoryCleanupProposal(accumulatedStarters, now)
-    ?.stats.forcedMarketCleanup.npcOnlySlots, ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS,
-    'the cold resolve schedules a town cleanup with the accumulated NPC-only stock');
+// The build decides the bag's trip (held as stats.cleanupDue) and the cold resolve starts it.
+const decidedTrip = PartyMarketBreak.cleanupDecision(accumulatedStarters, now);
+assert(decidedTrip, 'the build sends the bot to town with the accumulated NPC-only stock');
+assert.strictEqual(PopulationService.prepareInventoryCleanupProposal(accumulatedStarters, now, null, accumulatedStarters, decidedTrip)
+    ?.stats.forcedMarketCleanup.cleanupReason, decidedTrip.reason, 'the cold resolve starts the decided town cleanup');
 
 const starterBoard = new BoardIndex({ groupOf: MarketCounters.counterOf });
 for (const [index, item] of starterGear.entries()) starterBoard.put({ id: 970000 + index,
@@ -158,15 +161,10 @@ const starterCtx = MarketListingPolicy.traderContext(starterBag, starterOptions)
 const legacyLines = starterGear.map((item, index) => ({ ownerId: state.characterId,
     lineId: 991000 + index, recordId: 992000 + index, selfId: Number(item.selfId), storeType: 1,
     count: 1, price: 1000000, revision: 1, pricing: { seenCounter: 0, seenAt: now } }));
-const seenStarters = new (invoke('GameServer/Bot/Economy/BoardLook').SeenLines)();
-const withdrawnStarters = new Set();
-for (let step = 0; step < 2; step++) {
-    const reviewStarters = invoke('GameServer/Bot/Economy/MarketPricing').lookOwn(starterBag, legacyLines,
-        starterCtx, seenStarters);
-    for (const move of reviewStarters?.withdrawals || []) withdrawnStarters.add(move.selfId);
-}
+const reviewStarters = invoke('GameServer/Bot/Economy/MarketPricing').lookOwn(starterBag, legacyLines, starterCtx);
+const withdrawnStarters = new Set((reviewStarters?.withdrawals || []).map(move => move.selfId));
 assert.strictEqual(withdrawnStarters.size, starterGear.length,
-    'a natural board review withdraws legacy starter sell lines without waiting for deals');
+    'an own lines look withdraws legacy starter sell lines without waiting for deals');
 
 const equippedRows = starterGear.map((item, index) => ({ id: 993000 + index,
     selfId: Number(item.selfId), name: item.template.name, amount: 1,

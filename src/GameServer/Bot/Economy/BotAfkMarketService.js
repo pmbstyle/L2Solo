@@ -1,4 +1,5 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
+const FailureLog = require('../../../FailureLog');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Packet = require('./StatsPacket');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -36,7 +37,6 @@ const reviewedInventory = new Map();
 const pending = new Map();
 
 function desiredSide(goal) {
-    if (goal?.status && goal.status !== 'active') return 0;
     if (goal?.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory'
         && !goal.target?.cleanupReason && !goal.plan?.cleanupReason) return AfkTrade.SELL;
     if (goal?.type === 'upgrade_gear'
@@ -89,10 +89,10 @@ function canTradeRemotely(state, goal) {
         const existing = linesOf(buyAds(state.characterId));
         const reserved = buyOrderEscrow(state.characterId);
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
-        // The offer as the buyer weighs it: its price and its trip there (б5, C7).
+        // The offer as the buyer weighs it: its price and its trip there.
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
-            budget: PurchaseFunding.spendable(state, reserved, PurchaseFunding.goalTerms(goal)),
+            budget: PurchaseFunding.payable(state, reserved, PurchaseFunding.goalTerms(goal)),
             buyerCharacterId: state.characterId,
             cost: invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state)
         });
@@ -107,27 +107,6 @@ function canTradeRemotely(state, goal) {
 
 function hasShop(characterId) {
     return Number(AfkTrade.findOwnerProjection(characterId)?.shop?.storeType) === AfkTrade.SELL;
-}
-
-// A buy order stands through a goal without a trade side, such as a rest,
-// while the needs evaluation still asks to buy one of its items: a sell shop
-// already persists the same way. `candidates` is that evaluation when the
-// caller has just made it (a goal review). Near death the evaluation only
-// asks to recover and judges nothing else, so the order waits like a rest.
-function standingBuyNeed(state, lines, candidates) {
-    // Own buy-ad lines passed source admission when they opened (BuyAdPolicy);
-    // saved ones from before that rule close at board start.
-    const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
-    if (!items.size) return false;
-    const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
-    // NeedsEvaluator's survival floor carries rest/revive in plan.kind.
-    // Recovery defers wish judgement, while a native store plan holds no WTB.
-    if (needs.length === 1 && needs[0].type === 'recover' && ['rest', 'revive'].includes(needs[0].plan?.kind)) {
-        return !isNativeSource(state.stats?.equipmentPlan?.market?.sourceType);
-    }
-    // A purchase planned at a native store never holds a WTB, rest or not.
-    return needs.some((need) => desiredSide(need) === AfkTrade.BUY && !isNativeSource(need.plan?.sourceType)
-        && items.has(Number(need.target?.itemId)));
 }
 
 // The bag a sell-shop review read (MarketListingPolicy.evaluate): every stack but
@@ -387,11 +366,6 @@ async function withdrawSourceInvalidBuyAds(ownerId) {
     return sourceChanged;
 }
 
-// The buy side of a review: the bot's buy ads follow its goal as the author's
-// single WTB order did. A buy goal the bot can trade remotely gets its ad
-// (replacing another one); a buy goal it travels for takes the ads back
-// first (the trip pays from the wallet); without a buy goal the ads stand
-// while the needs still ask for their items (standingBuyNeed), else go.
 async function reduceStandingBids(state, ads, { beforeWrite } = {}) {
     const hour = Number(Packet.hourAdena(state.stats?.money));
     if (state.phase !== 'cold' || !ads.length || !Number.isFinite(hour) || hour < 0
@@ -438,50 +412,13 @@ async function reviewPurchaseLimits(state, options = {}) {
     }
 }
 
-async function reconcileBuyAds(state, goal, candidates) {
-    const ownerId = Number(state.characterId);
-    const checked = await reviewPurchaseLimits(state);
-    if (checked.reason) return checked;
-    state = checked.state;
-    const ads = buyAds(ownerId), corrected = checked.changed;
-    // Only the core's buy step opens or widens an ad (MVP-1): a goal without
-    // a buy side never borrows the first watched item as a guessed target.
-    const side = desiredSide(goal);
-    const lines = linesOf(ads);
-    const retained = new Set(require('./TradeIntent').retainedProjectIntents(state, { moneyPrice: 1 }, () => 1)
-        .map(row => Number(row.itemId)));
-    const withdrawUnrelated = async () => {
-        if (!retained.size) return withdrawBuyAds(ownerId, null, state);
-        let current = state, changed = corrected;
-        for (const id of new Set(lines.map(line => Number(line.selfId)).filter(id => !retained.has(id)))) {
-            const result = await withdrawBuyAds(ownerId, id, current);
-            current = result.state || current; changed ||= result.changed;
-        }
-        return { state: current, changed };
-    };
-    if (side !== AfkTrade.BUY) {
-        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: corrected };
-        if (state.phase !== 'cold') return { state, changed: false };
-        return withdrawUnrelated();
-    }
-    if (!canTradeRemotely(state, goal)) {
-        if (!ads.length || state.phase !== 'cold') return { state, changed: false };
-        return withdrawUnrelated();
-    }
-    // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
-    const escrow = buyOrderEscrow(ownerId);
-    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
-        { money: BuyAdPolicy.goalMoney(state, goal, escrow) });
-    const town = buyAdTown(state, ads, wanted);
-    if (!wanted.length) return ads.length ? withdrawUnrelated() : { state, changed: false };
-    let published;
-    try {
-        published = await publishBuyAds(ownerId, ads, wanted, town, null, desiredSide(goal));
-    } catch (error) {
-        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
-        throw error;
-    }
-    return { ...await finishPublish(ownerId, state, published.shop), changed: corrected || published.changed };
+// The buy side of a review on main (a cold town step that bought nothing, a trip,
+// a remote sale): it never bids and never takes bids back. Bids are the economy
+// build's answer, posted from its plan (executePlan); between builds they stand,
+// and a trip that needs their Adena frees it from the plan's own bids (freeStepBids).
+// A review only reprices a bid whose own limits are violated.
+function reconcileBuyAds(state) {
+    return reviewPurchaseLimits(state);
 }
 
 // Retain authored prices, then divide prepared needs between the physical
@@ -543,6 +480,38 @@ async function openBuyAd(state, goal) {
     return { state: saved, opened: !!store, item: wanted[0], store };
 }
 
+// The money the bot's own backed bids on a shop step's `bids` hold (its card's: its root's
+// bids, WishNetwork), as the network counted it.
+function stepBidMoney(ownerId, bids) {
+    return bids?.length ? PurchaseFunding.stepBids(PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId))), bids) : 0;
+}
+// A shop step may spend its root's own bids: when the bag alone is short of its cost and
+// those bids cover the rest, its buyer takes them back before it pays (their escrow returns
+// to the bag). C4: a player at the shop with his money in a buy store for the same project
+// closes that store to pay. Only the bids the bag needs: each one taken back is closed and
+// posted again by the next bid plan (a write, and the bid's place on the board), so they
+// go largest first (ties by item), the fewest that cover the cost. Hot and cold buyers
+// call it once a seller is chosen. Null when nothing is taken back, else a promise of the
+// owner's state after.
+function freeStepBids(ownerId, bids, cost, bag) {
+    if (!bids?.length || !(Number(cost) > Number(bag))) return null;
+    const own = PurchaseFunding.ownBids(AfkTrade.boardIndex().ownerLines(Number(ownerId)));
+    const held = [...new Set(bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number))].filter(id => own.has(id)).sort((a, b) => own.get(b) - own.get(a) || a - b);
+    const taken = [];
+    let money = Number(bag);
+    for (const id of held) {
+        if (money >= Number(cost)) break;
+        taken.push(id);
+        money += own.get(id);
+    }
+    if (money < Number(cost)) return null;
+    return (async () => {
+        let state = null;
+        for (const id of taken) state = (await withdrawBuyAds(ownerId, id, state)).state || state;
+        return state;
+    })();
+}
+
 // Takes the bot's buy ads back (all, or those for one item): the escrow
 // returns to its bag.
 async function withdrawBuyAds(ownerId, selfId = null, state = null) {
@@ -571,7 +540,7 @@ async function withdrawBuyAds(ownerId, selfId = null, state = null) {
 
 // The sell side of a review: the bot's shop (the author's AFK sell shop),
 // reviewed from afar once it stands. It changes when the bag changed or a
-// line is no longer a lot, and never moves (N51, E46); what is listed past
+// line is no longer a lot, and never moves; what is listed past
 // its lines goes to sell ads, which need no trip. The prices of its lines
 // come from the bot's event review (MarketPricing.look), not a fixed review
 // period. A bot without a shop opens one in town (listOnBoard).
@@ -619,6 +588,18 @@ async function reconcileSellShop(state, goal) {
 
 // A deal or another move changed the record after the review read it: the
 // move is refused (its idempotency key) and the next review starts afresh.
+// The refusals of a plan's buy step that are outcomes, not faults, and their counts
+// since start (always counted; the set bounds the keys).
+// economy_funding_changed: the writer's own allowance check (Database
+// reconcileBotPurchasesUnsafe, reconcileBotBuyAdsUnsafe) finds the money gone.
+const PLAN_BID_REFUSALS = new Set(['economy_plan_bid_unfunded', 'economy_plan_need_changed', 'afk_trade_shop_changed',
+    'board_cap_reached', 'not_enough_adena', 'economy_funding_changed']);
+const planBidRefused = {};
+// A plan's town trip main does not start, since start: goal_moved (main's goal no longer
+// names the planned wish), refused (GoalExecutor.beginMarketTravel: remote trade, a sale
+// retry, a busy errand, no town). The bot goes on hunting; its build is not asked again.
+const townTripRefused = { goal_moved: 0, refused: 0 };
+
 function staleMove(error) {
     return error?.message === 'afk_trade_shop_changed';
 }
@@ -653,7 +634,7 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
     }
 }
 
-// The record-backed equivalent of the author's market stall (step 3.3): a
+// The record-backed equivalent of the author's market stall: a
 // bot in a market town lists what the listing policy would put on a stall.
 // Its shop takes up to MAX_LINES lines (kept lines first, as a review keeps
 // them); each listing past the shop becomes a sell ad, up to the bot's cap;
@@ -760,7 +741,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
     if (!configs.length) return { listed: 0 };
     try {
         const result = await AfkTrade.openBotRecords(ownerId, 'sell_ad', configs);
-        return { listed: result.opened.length };
+        return { listed: result.opened.length, ...(result.state ? { state: result.state } : {}) };
     } catch (error) {
         const reason = listingRefusal(error);
         if (reason) return { listed: 0, reason };
@@ -771,14 +752,40 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // Executes only the worker's quoted lines. The native writers validate
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
-async function executePlan(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
+// A plan whose bids or purchase could not stand (buyPending) raises its outcome where the
+// bot is, on every path that carries a plan out (a town visit, a review, a refresh): units
+// reached the bag since the decision (its goal is done), or the plan went stale or was
+// refused on main (its step failed: the next build decides anew).
+async function executePlan(state, plan, options = {}) {
+    const result = await executePlanSteps(state, plan, options);
+    if (result?.buyPending) invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(state.characterId),
+        result.stale ? 'goal_failed' : 'goal_done:goal');
+    return result;
+}
+async function executePlanSteps(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
     if (state.stats?.tradeMeeting || invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
-    const authority = EconomyCommit.authority(preparedState);
-    const stillPrepared = () => EconomyCommit.sameAuthority(EconomyCommit.authority(LifeState.cachedState(ownerId) || state), authority);
+    let authority = EconomyCommit.authority(preparedState);
+    const current = () => EconomyCommit.authority(LifeState.cachedState(ownerId) || state);
+    const stillPrepared = () => EconomyCommit.sameAuthority(current(), authority);
+    // The plan's own steps write the row (a craft, a withdrawal, a listing): what they
+    // moved is its own output, not a change of the need its later steps were prepared on.
+    // A step that began on the prepared row hands on the row its own write returned (its
+    // result's state: same phase and hot time, a newer revision), and only while that row
+    // is still the current one. A write by anyone else (or a phase change) before the step
+    // or after its write leaves the plan stale; a step that returns no row hands on nothing.
     const run = async (work) => {
-        const result = await step(() => Database.withMutationAdmission(beforeWrite, work));
+        let own = null;
+        const result = await step(() => Database.withMutationAdmission(beforeWrite, async () => {
+            const began = stillPrepared() ? authority : null;
+            const value = await work();
+            const wrote = began && value?.state?.simulation ? EconomyCommit.authority(value.state) : null;
+            if (wrote && wrote.phase === began.phase && wrote.hotAt === began.hotAt && wrote.revision > began.revision
+                && EconomyCommit.sameAuthority(current(), wrote)) own = wrote;
+            return value;
+        }));
         state = LifeState.cachedState(ownerId) || result?.state || state;
+        if (own) authority = own;
         return result;
     };
     // No native writer reads accepted incoming. Units that reached the bag or
@@ -872,14 +879,23 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (shot.wealth) {
             const Wealth = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
             if (!Wealth.eligible(state)) return { state };
-            const refusal = {};
-            const opportunity = Wealth.recheck(state, shot.wealth, undefined, refusal);
-            return opportunity ? Wealth.execute(state, opportunity, { stillPrepared })
-                : { state: await Wealth.rejectAccepted(state, state, refusal) };
+            // A failed craft leaves the visit's other steps to run: a fault is counted
+            // (a refusal is an outcome), the row stays as it stands.
+            try {
+                const book = await invoke('GameServer/Bot/Economy/CraftWorkshopService').knownFor(ownerId);
+                const refusal = {};
+                const opportunity = Wealth.recheck(state, shot.wealth, book, refusal);
+                return opportunity ? await Wealth.execute(state, opportunity, { stillPrepared })
+                    : { state: await Wealth.rejectAccepted(state, state, refusal) };
+            } catch (error) {
+                if (!FailureLog.refusal(error)) FailureLog.note('economy.visit_craft', error);
+                return { state: LifeState.cachedState(ownerId) || state, crafted: false, reason: 'error' };
+            }
         }
         return { state: await ColdShotEconomyService.execute(state, shot) };
     }) : null;
-    if (crafted?.stale) return { state, buyPending: true };
+    // A craft whose preparation went stale cannot run (stale: the coordinator raises its failure).
+    if (crafted?.stale) return { state, buyPending: true, stale: true };
     if (TradeMeetingService.hasPreparation(ownerId)) return { state, pending: true };
     // Publish the checked buy batch before independent sale custody writes.
     // Moving surplus into a shop or withdrawing a listing advances the own
@@ -913,7 +929,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
             const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
                 || count * price > PurchaseFunding.spendable(state, escrow,
-                    { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {
+                    { ...(intent ? PurchaseFunding.intentTerms(intent) : { itemId: selfId }), survivalCost })) {
                 throw Error('economy_plan_bid_unfunded');
             }
             if (!intent) money -= count * price;
@@ -929,7 +945,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // this does not choose a new price or rebuild the worker's wishes.
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
         const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow,
+            BuyAdPolicy.heldPurchaseRoot(invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state)));
         let town = buyAdTown(state, ads, wanted);
         for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
@@ -943,6 +960,14 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         }
         await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
         return { state: LifeState.cachedState(ownerId) || state };
+    }).catch((error) => {
+        // An outcome refusal (the money the worker funded a bid with was spent by an
+        // earlier step, a need or a record that moved, a full board) is counted, the
+        // plan's bids go stale (the next build bids again) and the step goes on. Anything
+        // else (a plan main and the worker disagree on, a retired worker) is a fault.
+        if (!PLAN_BID_REFUSALS.has(error?.message) || !FailureLog.refusal(error)) throw error;
+        planBidRefused[error.message] = (planBidRefused[error.message] || 0) + 1;
+        return { state: LifeState.cachedState(ownerId) || state, buyPending: true, stale: true };
     }) : null;
     buyPending ||= !!published?.buyPending;
     if (plan.withdraw?.length) await run(async () => {
@@ -1019,22 +1044,23 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         return listSellAds(ownerId, state, listings, shop,
             () => Database.fetchItems(ownerId, 'market_execute_plan'), { planTowns });
     });
-    if (!reviewGoal) return { state, ...(buyPending ? { buyPending: true } : {}) };
+    if (buyPending) return { state, buyPending: true, ...(!stillPrepared() || published?.stale ? { stale: true } : {}) };
+    if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {
-        const snapshot = await invoke('GameServer/Bot/Goals/GoalService').review(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
-        const goal = snapshot?.current;
-        if (!plan.travel || goal?.plan?.wishKey !== plan.travel) return { state };
+        const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
+        if (goal?.plan?.wishKey !== plan.travel) { townTripRefused.goal_moved += 1; return { state }; }
         const travel = invoke('GameServer/Bot/Goals/GoalExecutor').beginMarketTravel(state, goal);
+        if (!travel) townTripRefused.refused += 1;
         return { state: travel ? await LifeState.upsertState(travel, 'worker_economy_market_travel') : state };
     });
     return { state, ...(buyPending ? { buyPending: true } : {}) };
 }
 
-async function reconcileOne(state, goal, candidates) {
+async function reconcileOne(state, goal) {
     const ownerId = Number(state.characterId);
     const shop = AfkTrade.findOwnerProjection(ownerId)?.shop || null;
     if (shop && await repairStoreTitle(shop)) state = LifeState.snapshot(ownerId) || state;
-    const buy = await reconcileBuyAds(state, goal, candidates);
+    const buy = await reconcileBuyAds(state);
     if (desiredSide(goal) === AfkTrade.BUY) return buy;
     const sell = await reconcileSellShop(buy.state || state, goal);
     return {
@@ -1063,11 +1089,11 @@ async function repairStoreTitle(shop) {
     return true;
 }
 
-function reconcile(state, goal, candidates = null) {
+function reconcile(state, goal) {
     const ownerId = Number(state?.characterId || 0);
     if (!ownerId) return Promise.resolve({ state, changed: false });
     const previous = pending.get(ownerId) || Promise.resolve();
-    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal, candidates));
+    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal));
     const tracked = next.then(() => null, () => null);
     tracked.then(() => {
         if (pending.get(ownerId) === tracked) pending.delete(ownerId);
@@ -1106,7 +1132,9 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
+module.exports = { executePlan, applyReview, buyOrderEscrow, stepBidMoney, freeStepBids, reconcileBuyAds, reviewPurchaseLimits, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
+    planBidRefused: () => ({ ...planBidRefused }),
+    townTripRefused: () => ({ ...townTripRefused }),
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };

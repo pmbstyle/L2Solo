@@ -37,6 +37,7 @@ const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const OfferOrder = require('../Economy/OfferOrder');
 const SpotIndex = require('./SpotIndex');
+const SpotSearch = require('./SpotSearch');
 const SpotEconomics = require('../Economy/SpotEconomics');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
@@ -47,6 +48,7 @@ const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
+const Trace = require('../DecisionTrace');
 
 const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
@@ -58,10 +60,6 @@ const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT = 2;
-// A party route set aside waits on who could join it, which has no event (the
-// recruit pool, bots near the bot's level coming online): its entry also ends
-// after this window (limits.md "Party route set aside").
-const PARTY_ROUTE_RETRY_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 
@@ -252,13 +250,21 @@ function combatReadiness(state = {}) {
 function computeCombatReadiness(state = {}) {
     const role = roleFor(state);
     const equipped = equippedInventoryItems(state.inventory);
-    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classIdFor(state));
-    const interimState = interimClassId
-        ? { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } }
-        : null;
-    const weapon = equipped.find((item) => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
-        && (suitable(item, state, role, item.etc?.rank)
-            || (interimState && suitable(item, interimState, roleFor(interimState), item.etc?.rank))));
+    const classId = classIdFor(state);
+    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classId);
+    // The bot as its interim profession, built on the first weapon its own
+    // role rejects that is an interim kind (isInterimWeaponKind).
+    let interim = null;
+    const weapon = equipped.find((item) => {
+        if (!BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))) return false;
+        if (suitable(item, state, role, item.etc?.rank)) return true;
+        if (!BotEquipmentCompatibility.isInterimWeaponKind(item.template?.kind || '', classId)) return false;
+        if (!interim) {
+            const interimState = { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } };
+            interim = { state: interimState, role: roleFor(interimState) };
+        }
+        return suitable(item, interim.state, interim.role, item.etc?.rank);
+    });
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
         && suitable(item,state,role,item.etc?.rank));
     const weaponRank = rankIndex(weapon?.etc?.rank);
@@ -524,7 +530,27 @@ function plainCopy(value) {
 // (DataCache.items or newbieItems replaced or grown) drops them all.
 const EQUIP_ANSWERS = 16;
 let equipAnswers = { items: null, length: 0, newbie: null, rows: [] };
+// The gear a bot wears from its bag. The piece a shot kit holds to crystallize
+// (ItemDisposition.kitGear) is not worn: one unworn, unenchanted copy is kept out of
+// the choice and comes back as it was; a copy already worn stays worn.
 function equipInventoryUpgrades(state = {}, inventory = {}) {
+    const id = invoke('GameServer/Bot/Economy/ItemDisposition').kitGear(state), held = id ? inventory?.[id] : null;
+    if (!held || !(Number(held.amount) > Number(held.equippedCount || (held.equipped ? 1 : 0)))) return equipFrom(state, inventory);
+    const instances = held.instances;
+    const kept = Array.isArray(instances) ? instances.filter(row => !row.equipped && !Number(row.enchant))
+        .sort((a, b) => Number(b.id) - Number(a.id))[0] : !Number(held.enchant) ? {} : null;
+    if (!kept) return equipFrom(state, inventory);
+    const visible = { ...inventory };
+    if (Number(held.amount) === 1) delete visible[id];
+    else visible[id] = { ...held, amount: Number(held.amount) - 1,
+        ...(instances ? { instances: instances.filter(row => row.id !== kept.id) } : {}) };
+    const selected = equipFrom({ ...state, inventory: visible }, visible);
+    const chosen = selected[id] || { ...held, equipped: false, equippedCount: 0, equippedSlots: [] };
+    return { ...selected, [id]: { ...chosen, amount: Number(held.amount),
+        ...(instances ? { instances: instances.map(row => row.id === kept.id ? { ...row, equipped: false }
+            : chosen.instances?.find(item => item.id === row.id) || row) } : {}) } };
+}
+function equipFrom(state, inventory) {
     const role = roleFor(state);
     const classId = classIdFor(state);
     const entries = Object.entries(inventory || {});
@@ -582,16 +608,26 @@ function equipUpgradesOf(state, inventory, role, classId) {
         return selected;
     }, new Map());
     if (!best.has('weapon')) {
-        // Legacy starter saves can have both a spare sword and training fists
-        // worn before the bot owns its preferred weapon. Resolve the conflict
-        // without stripping its last usable weapon or equipping new off-build gear.
+        // No role weapon owned: a worn weapon stays (legacy starter saves can wear
+        // both a spare sword and training fists: keep one, never strip the last),
+        // and a bot wearing none wears the best one it owns (stopgapWeapon).
         const worn = Object.values(inventory || {}).flatMap((entry) => {
             const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
             return String(item?.template?.kind || '').startsWith('Weapon.')
                 && equippedSlotsFor(entry, item.etc?.slot).some(slot => slot === 7 || slot === 14)
                 ? [{ entry, item }] : [];
         });
-        if (worn.length > 1) {
+        if (!worn.length) {
+            const grade = rankIndex(gradeForLevel(state.level));
+            const pick = BotWeaponCompatibility.stopgapWeapon(Object.values(inventory || {}).flatMap((entry) => {
+                const item = Number(entry?.amount || 0) >= 1 ? ItemTemplateIndex.find(DataCache.items, entry.selfId) : null;
+                return item && BotEquipmentCompatibility.isWeaponSlot(item.etc?.slot) && isRealCatalogItem(item)
+                    && rankIndex(item.etc?.rank) <= grade
+                    ? [{ entry, item, kind: item.template?.kind, pAtk: item.stats?.pAtk, mAtk: item.stats?.mAtk,
+                        price: Number(item.template?.price || 0), id: Number(entry.selfId) }] : [];
+            }), role, classId);
+            if (pick) best.set('weapon', pick);
+        } else if (worn.length > 1) {
             const starters = require('../../Knowledge/StarterItemCatalog').ids(DataCache.newbieItems, 'strict', classId);
             worn.sort((left, right) => Number(starters.has(Number(right.entry.selfId)))
                 - Number(starters.has(Number(left.entry.selfId)))
@@ -1050,12 +1086,14 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 }
 
 // What a bot may spend on NPC gear: its purchase budget (wallet plus its own
-// buy-order escrow) above the operating reserve.
+// buy-order escrow: a bid for the target holds its money) above the operating reserve.
+// The shop step is paid from the bag (PurchaseFunding.payable: the network's step rule).
 function npcPurchaseBudget(state = {}, options = {}) {
-    // ARCH-NOTE: a missing usable weapon is survival; its bridge may spend the whole wallet.
+    // ARCH-NOTE: a missing usable weapon is survival; its bridge, bought at an NPC only,
+    // may spend the whole bag, as its buyer pays (the money bids hold buys nothing there).
     const reserveOptions = { upperBound: true };
     return { reserve: options.weaponBridge ? 0 : operationalAdenaReserve(state),
-        spendable: options.weaponBridge ? PurchaseFunding.budget(state, options.buyOrderEscrow)
+        spendable: options.weaponBridge ? PurchaseFunding.budget(state)
             : PurchaseFunding.spendable(state, options.buyOrderEscrow, reserveOptions) };
 }
 
@@ -1089,7 +1127,7 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
             // blades. It is this class's kit weapon under the same rule.
             const dual = dualSwordBridgePlan(state, options);
             if (!dual) continue;
-            if (dualSwordFunded(dual, state, options)) return dual;
+            if (weaponBridgeFunded(dual, state, options)) return dual;
             saving = saving || dual;
             continue;
         }
@@ -1180,7 +1218,7 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         // An interim weapon leaves an unfunded dual sword in the kit order
         // instead of a bridge that would hold back every other purchase.
         const dual = dualSwordBridgePlan(state, options);
-        return dual && (!armed || dualSwordFunded(dual, state, options)) ? dual : null;
+        return dual && (!armed || weaponBridgeFunded(dual, state, options)) ? dual : null;
     }
     if (armed || !GearLifecycle.isGearFocusActive(state)) return null;
     const slot = desiredNpcSlots(state).find((entry) => BotEquipmentCompatibility.isWeaponSlot(entry));
@@ -1200,9 +1238,13 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         weaponBridge: true, partyNeedReason: 'weapon_bridge' };
 }
 
-// Funded = the bot can pay for every blade the combination still needs.
-function dualSwordFunded(plan, state, options = {}) {
-    return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state, options).spendable;
+// Funded = the bot can pay now for what its weapon bridge still needs: every
+// blade of a dual-sword combination (a plan with `combine`: bridgeCost, above
+// the operating reserve, as dualSwordBridgePlan chose it), or the single NPC weapon (the whole wallet,
+// as npcWeaponBridgePlan chose it).
+function weaponBridgeFunded(plan, state, options = {}) {
+    if (plan.combine) return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state, options).spendable;
+    return Number(plan.market?.price || 0) <= npcPurchaseBudget(state, { ...options, weaponBridge: true }).spendable;
 }
 
 // Bridge choice over candidates sorted by cost: keep the bridge already
@@ -1216,9 +1258,8 @@ function chooseBridge(candidates, spendable, bridgeRank, keepId = 0) {
         || null;
 }
 
-function npcEquipmentBridgePlan(state = {}, options = {}) {
-    const weapon = npcWeaponBridgePlan(state, options);
-    if (weapon) return weapon;
+// Body armour of the wrong class: the kit's next NPC purchase when it is a body piece.
+function npcClassArmorBridgePlan(state = {}, options = {}) {
     const role = roleFor(state);
     const incompatibleBody = equippedInventoryItems(state.inventory).some(item => (
         [10, 11, 15].includes(Number(item.etc?.slot))
@@ -1230,15 +1271,38 @@ function npcEquipmentBridgePlan(state = {}, options = {}) {
         ? { ...plan, equipmentBridge: true, partyNeedReason: 'class_armor_bridge' } : null;
 }
 
+// The bridges in their order: a usable weapon before armour of the class.
+const NPC_BRIDGES = [npcWeaponBridgePlan, npcClassArmorBridgePlan];
+
+// The bridge the bot's gear plan follows, funded or saved for.
+function npcEquipmentBridgePlan(state = {}, options = {}) {
+    for (const bridge of NPC_BRIDGES) {
+        const plan = bridge(state, options);
+        if (plan) return plan;
+    }
+    return null;
+}
+
+// Funded = the bot can pay for the bridge now (weaponBridgeFunded for a
+// weapon; the armour from what it may spend on that item, escrow included: its own order
+// for it holds its money, taken back by its buyer: BotAfkMarketService.freeStepBids).
+function bridgeFunded(plan, state, options = {}) {
+    return plan.weaponBridge ? weaponBridgeFunded(plan, state, options)
+        : Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId });
+}
+
 // Why a party member leaves its party to fix its kit: it has no usable
-// weapon, or it wears body armour of the wrong class and can pay for the
-// NPC replacement now.
+// weapon, or it wears body armour of the wrong class, and it can pay for the
+// NPC replacement now. A C4 player without a proper weapon still parties and
+// earns his share there; leaving helps only when he can buy the weapon now.
+// An unfunded bridge stays the gear plan (saving for it), not a reason to
+// leave; the next bridge in order still is, when funded.
 function equipmentBridgeReason(state = {}, options = {}) {
-    const plan = npcEquipmentBridgePlan(state, options);
-    if (plan?.weaponBridge) return 'weapon_bridge';
-    return plan?.equipmentBridge
-        && Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId })
-        ? 'class_armor_bridge' : null;
+    for (const bridge of NPC_BRIDGES) {
+        const plan = bridge(state, options);
+        if (plan && bridgeFunded(plan, state, options)) return plan.partyNeedReason;
+    }
+    return null;
 }
 
 function marketPlanForTarget(state = {}, targetId, options = {}) {
@@ -1347,6 +1411,22 @@ function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
         );
 }
 
+// Whether the clan-locked plan held (clanGoalPlanLocked on `held`, whose plan and
+// facts count) stands against another plan: the one owner of the answer for a gear
+// selection, a save and a party re-plan. `bag` is the state whose inventory is true
+// for this write (a save's incoming bag; else the held copy). It gives way to a plan
+// carrying the same clan goal, to a weapon bridge while the bag holds no usable
+// weapon (a C4 player without a weapon buys one first; the clan goal returns at the
+// clan's next goal review), and once the bag wears the clan's target.
+function clanPlanKeptAgainst(held = {}, plan = null, bag = held) {
+    const current = held?.stats?.equipmentPlan;
+    if (!isClanOwnedPlan(current)) return false;
+    if (String(plan?.clanGoal?.goalKey || '') === String(current.clanGoal.goalKey)) return false;
+    if (plan?.weaponBridge === true && !combatReadiness(bag).hasWeapon) return false;
+    if (equipmentTargetFulfilled(bag, current)) return false;
+    return clanGoalPlanLocked(held, current);
+}
+
 function isBotEligibleSourceNpcId(npcId) {
     const npc = catalogNpc(npcId);
     return !!npc && BotHuntingTargetPolicy.canHunt(npc);
@@ -1367,9 +1447,25 @@ function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
     if (source?.sourceKind === 'raid' || source?.raidBoss === true) return true;
     const botLevel = Number(state.level || 0);
     const sourceLevel = Number(source.npcLevel || source.spotLevel || 0);
-    if (!botLevel || !sourceLevel) return true;
-    const economic = state.economicLower || invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state);
-    return sourceLevel - botLevel >= sourceMinLevelGap(economic);
+    return gapWithinVoluntaryBand(state, botLevel && sourceLevel ? sourceLevel - botLevel : null);
+}
+
+// Whether an npc-minus-bot level gap (null: nothing to judge) lies in the bot's voluntary
+// hunt band: the equipment earning route's floor while the bot is on it, else the
+// ordinary hunt's (sourceMinLevelGap). The route is read only for a gap to judge.
+function gapWithinVoluntaryBand(state = {}, gap = null) {
+    return gap === null || gap >= sourceMinLevelGap(state.economicLower
+        || invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state));
+}
+
+// The plan's source npc level minus the bot's; null for a raid, a plan with no npc or
+// an unknown level.
+function planSourceLevelGap(state = {}, plan = {}) {
+    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return null;
+    const npcId = Number(plan?.next?.npcId || 0);
+    const npc = npcId ? catalogNpc(npcId) : null;
+    const npcLevel = Number(npc?.template?.level || npc?.level || 0), botLevel = Number(state.level || 0);
+    return npcLevel && botLevel ? npcLevel - botLevel : null;
 }
 
 // The lowest npc-minus-bot level gap a bot hunts voluntarily: an equipment
@@ -1378,15 +1474,23 @@ function sourceMinLevelGap(economicLower) {
     return economicLower ? -15 : BotTargetScorer.MIN_LEVEL_GAP;
 }
 
+// How many of the voluntary hunt floors (sourceMinLevelGap: the ordinary hunt's,
+// then the equipment earning route's) the plan's source npc stands below the bot's
+// level: 0, 1 or 2; a raid or a plan with no npc 0. Read without the bot's wish
+// focus (which route it is on), so a focus change moves nothing. The bands are our
+// choice, not C4.
+function sourceFloorsBelow(state = {}, plan = {}) {
+    const gap = planSourceLevelGap(state, plan);
+    if (gap === null) return 0;
+    return Number(gap < sourceMinLevelGap(false)) + Number(gap < sourceMinLevelGap(true));
+}
+
 function isPlanSourceViableForState(state = {}, plan = {}, options = {}) {
     if (!isPlanSourceEligible(plan)) return false;
     if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return true;
     const npcId = Number(plan?.next?.npcId || 0);
     if (!npcId) return true;
-    const npc = catalogNpc(npcId);
-    if (!sourceWithinVoluntaryHuntBand(state, {
-        npcLevel: Number(npc?.template?.level || npc?.level || 0)
-    })) return false;
+    if (!gapWithinVoluntaryBand(state, planSourceLevelGap(state, plan))) return false;
     const allowed = options.spots && soloPlanSourceReader(state, plan, options.spots, options);
     return !allowed || allowed(SpotIndex.spotById(options.spots, plan.next.spotId), npcId);
 }
@@ -1426,7 +1530,7 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
     if (plan.partyNeed !== 'required' && plan.requiresParty !== true) return null;
 
     const request = state.stats?.partyRequest;
-    if (request?.status !== 'deferred'
+    if (request?.status !== 'closed'
         || Number(request.attempts || 0) < PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT) return null;
 
     const targetId = Number(plan.target?.selfId || (plan.strategy === 'direct_drop' ? plan.next?.itemId : 0) || 0);
@@ -1449,11 +1553,11 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
     };
 }
 
-// Keep the failure on the acquisition plan so it survives travel, idle ticks
-// and restarts, including ticks where there is no alternative equipment.
-function acquisitionCooldown(state) {
-    return (120 + Math.abs(Number(state.characterId || 0)) % 121) * 60000;
-}
+// A craft route's stall (GearStall: equipmentPlan.stall { kills, kind }), stamped by
+// finalizePlan, judged by craftPlanFailure; kept on the plan so it survives travel,
+// idle steps and restarts.
+const { killsOf, stallFor } = require('./GearStall');
+const GearMarks = require('./GearMarks');
 
 function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'market_unfilled') {
     const plan = state.stats?.equipmentPlan;
@@ -1493,10 +1597,10 @@ function craftProgress(state, plan) {
     )));
 }
 
-function craftPlanFailure(state, plan, timestamp) {
+function craftPlanFailure(state, plan) {
     if (plan?.status !== 'active' || plan.strategy !== 'craft' || isClanOwnedPlan(plan)) return null;
     const progress = plan.acquisitionProgress;
-    if (!progress || timestamp - Number(progress.at) < acquisitionCooldown(state)) return null;
+    if (!progress || !(killsOf(state) >= Number(plan.stall?.kills ?? Infinity))) return null;
     const amounts = craftProgress(state, plan);
     if (Object.entries(amounts).some(([id, amount]) => amount > Number(progress.amounts?.[id] || 0))) return null;
     return { targetId: Number(plan.target?.selfId), itemId: Number(plan.next?.itemId),
@@ -1535,7 +1639,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
         && entry.reason === 'combat_unviable' && Number(entry.targetId) === Number(previousPlan?.target?.selfId));
     const failure = (!recordedFailure && directPlanFailure(state, previousPlan, timestamp))
             || partyRouteFailure(state, previousPlan, timestamp)
-            || craftPlanFailure(state, previousPlan, timestamp);
+            || craftPlanFailure(state, previousPlan);
     if (failure) {
         const recovery = {
             targetId: failure.targetId,
@@ -1545,8 +1649,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
             failedAt: timestamp,
             // ARCH-NOTE: dormantWishes does not exclude a gear target yet;
             // keep its numeric wake inputs in the planner's recovery list (max4).
-            wake,
-            ...(failure.reason === 'party_route_unavailable' ? { until: timestamp + PARTY_ROUTE_RETRY_MS } : {})
+            // Held until its wake moves (level, weapon grade, a party: the gear plan's
+            // situations), however long: a party route set aside has no clock.
+            wake
         };
         const index = recoveryTargets.findIndex((entry) => Number(entry.targetId) === failure.targetId);
         if (index >= 0) recoveryTargets[index] = recovery;
@@ -1585,8 +1690,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
                 : null,
         failure,
         recoveryTargets,
-        excludedTargetIds: recoveryTargets.map((entry) => Number(entry.targetId)),
-        excludedMaterialIds: recoveryTargets.map((entry) => Number(entry.itemId || 0)).filter(Boolean),
+        // The gear errands it failed where it acts (GearMarks): this review plans without them.
+        excludedTargetIds: [...recoveryTargets.map((entry) => Number(entry.targetId)), ...GearMarks.keys(state.stats)],
+        excludedMaterialIds: [...recoveryTargets.map((entry) => Number(entry.itemId || 0)).filter(Boolean), ...GearMarks.keys(state.stats)],
         forceMarketTargetId: Number(failure?.targetId || currentMarketRecovery?.targetId || 0) || null
     };
 }
@@ -1643,7 +1749,8 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     return {
         ...rawPlan,
         grade: rawPlan.grade || gradeForLevel(state.level),
-        ...(amounts ? { acquisitionProgress: progressed ? { at: timestamp, amounts } : previousProgress } : {}),
+        ...(amounts ? { acquisitionProgress: progressed ? { at: timestamp, amounts } : previousProgress,
+            stall: progressed || !previousPlan?.stall ? stallFor(state, 'craft') : previousPlan.stall } : {}),
         // Clan-owned gear objectives must survive the normal solo replan. The
         // route/item may be refreshed, but ownership of the beneficiary goal
         // remains durable until the target is equipped.
@@ -1858,25 +1965,29 @@ function targetHasAvailableRoute(target, state = {}, options = {}) {
     );
 }
 
-function sourceIsExcluded(source, options = {}) {
-    if (Number.isFinite(options.maxSourceLevel) && !(source?.sourceKind === 'raid' || source?.raidBoss)
-        && sourceTargetLevel(source) > options.maxSourceLevel) return true;
-    const excluded = options.excludedSpotIds;
-    if (!excluded || !source?.spotId) return false;
-    return excluded instanceof Set
-        ? excluded.has(String(source.spotId)) || excluded.has(source.spotId)
-        : Array.isArray(excluded) && excluded.map(String).includes(String(source.spotId));
-}
-
+// An item's source for the bot: the one spot search's source goal (SpotSearch.rank) over the item's sources,
+// ranked by this bot's value: the list's order (sourceForItem) is the effort of the bot that filled its
+// shared cache, whose key holds no readiness (sourceEffort's solo-safe factor), nor a raid's estimate.
+// The goal's window: a clan operation's level cap (maxSourceLevel), the bot's voluntary hunt band; a
+// source the bot holds solo first, else one that needs a party (a clan's crafting takes either). The
+// value: yield per effort, so the habit band (a solo bot's favourite camp among sources within it) holds
+// the pick across searches while the sources stay in it; a clan's operation has no habit.
+// options.sourceAllowed: the caller's verdict (a route's ground, target and kit), asked in value order.
+// The excluded spots (options.excludedSpotIds) are the search's exclusions. options.countHabit: the pick
+// is the route's answer (SpotSearch.rank count).
 function bestSourceForState(sources = [], state = {}, options = {}) {
-    const allowedSources = sources
-        .filter((source) => !sourceIsExcluded(source, options))
-        .filter((source) => sourceWithinVoluntaryHuntBand(state, source));
-    const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
-    // A route caller can refuse ground, targets or full camps before choosing
-    // the first source. Keep walking the ordered sources after a refusal.
-    const pick = rows => options.sourceAllowed ? rows.find(options.sourceAllowed) || null : rows[0] || null;
-    return options.clanCrafting ? pick(allowedSources) : pick(safeSources) || pick(allowedSources);
+    const listed = options.excludedSpotIds;
+    const excluded = listed instanceof Set ? listed : Array.isArray(listed) ? new Set(listed.map(String)) : null;
+    const capped = Number.isFinite(options.maxSourceLevel);
+    const goal = safe => ({ candidates: sources, raid: true, spot: source => source, id: source => source.spotId,
+        fits: source => !(capped && !(source?.sourceKind === 'raid' || source?.raidBoss)
+            && sourceTargetLevel(source) > options.maxSourceLevel)
+            && sourceWithinVoluntaryHuntBand(state, source) && (!safe || soloSafeForSource(state, source)),
+        value: source => 1 / sourceEffort(source, state, options) });
+    const ctx = { excluded, allowed: options.sourceAllowed || null, verdicts: new Map(), mode: options.mode,
+        count: options.countHabit === true, ...(options.clanCrafting ? { habit: false } : {}) };
+    return options.clanCrafting ? SpotSearch.rank(state, goal(false), ctx).pick
+        : SpotSearch.rank(state, goal(true), ctx).pick || SpotSearch.rank(state, goal(false), ctx).pick;
 }
 
 function itemIdForPlan(plan = {}) {
@@ -1900,24 +2011,33 @@ function soloPlanSourceReader(state, plan, spots, options = {}) {
         || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
         || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
     const allowed = sourceRouteReader(state, { ...options, spots });
-    // The crowd is read at arrival (design rules): only the spot search asks for room.
-    return (spot, npcId) => !!spot && allowed(spot, npcId)
-        && (!options.hasRoom || String(state.spotId) === String(spot.id)
-            && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
-            || options.hasRoom(spot.id));
+    // The crowd is read at arrival (design rules), never at the choice.
+    return (spot, npcId) => !!spot && allowed(spot, npcId);
 }
 
+// The plan's source now: none for a plan in leveling recovery (the bot hunts for its lost level), a craft
+// plan whose material is in the bag, or a target the bot may not acquire; else the item's best source
+// (bestSourceForState). options.unlisted (the solo route, BotRoute.huntSpot): with no source picked, the
+// plan's own source when the item's list misses it (another level's yield, a spoil source picked with a
+// partner), under the same verdict and exclusions; one the list holds was refused by the search (its
+// window, the verdict, the marks): none.
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
     if (!acquisitionTargetAllowed(state, plan)) return null;
     if (levelingRecoveryFor(state, plan, options.timestamp)) return null;
     if (plan?.status !== 'active' || plannedMaterialAcquired(state, plan)) return null;
     const itemId = itemIdForPlan(plan);
     if (!itemId) return null;
-    const allowed = soloPlanSourceReader(state, plan, spots, options);
-    const sourceAllowed = options.sourceAllowed;
-    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, allowed ? { ...options,
-        sourceAllowed: source => allowed(SpotIndex.spotById(spots, source.spotId), source.npcId)
-            && (!sourceAllowed || sourceAllowed(source)) } : options);
+    // A caller's own verdict (a solo bot's route, BotRoute.huntSpot: the same source route reader; a party's
+    // ground) stands in for the solo plan's.
+    const reader = options.sourceAllowed ? null : soloPlanSourceReader(state, plan, spots, options);
+    const allowed = reader ? source => reader(SpotIndex.spotById(spots, source.spotId), source.npcId) : options.sourceAllowed;
+    const sources = sourceForItem(itemId, spots, state, options);
+    const best = bestSourceForState(sources, state, reader ? { ...options, sourceAllowed: allowed } : options);
+    const next = plan.next;
+    if (best || !options.unlisted || next?.spotId == null
+        || sources.some(source => String(source.spotId) === String(next.spotId) && Number(source.npcId) === Number(next.npcId))) return best;
+    if (new Set([...(options.excludedSpotIds || [])].map(String)).has(String(next.spotId))) return null;
+    return !allowed || allowed({ spotId: next.spotId, npcId: next.npcId }) ? next : null;
 }
 
 function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -2098,6 +2218,9 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const sourceCache = options.sourceCache;
     const spoilCapable = options.spoilCapable === true || roleFor(state) === 'spoiler';
     const allowRaidSources = options.allowRaidSources === true;
+    // The list's members and yields read the item, the killer's level, spoil and raid admission (and the
+    // rates: resolvedKey). Its order (effort) also reads the filling bot's readiness and a raid's estimate,
+    // not keyed: a reader that needs its own best ranks by its own value (bestSourceForState).
     const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}:${spoilCapable ? 1 : 0}:${allowRaidSources ? 1 : 0}`;
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);
@@ -2152,7 +2275,7 @@ function sourceYieldReaderFor(killerLevel) {
         source.npcLevel, killerLevel, ratesKey);
 }
 
-// Finite farm and spoil facts of one item for one bot (Task 2, D4-D7, D9):
+// Finite farm and spoil facts of one item for one bot:
 // every known source, eligible by the rules the bot hunts and spoils by, or
 // with the reason it is not. Hours for `units` come from the spot's kills
 // per hour (the same SpotEconomics row the bot chooses spots by) times the
@@ -2197,9 +2320,9 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // moves (the spot's raid flag, the level fit, the kit matchup of the bot
 // alone), 2 bits per spot at its ordinal in `spots` (SpotIndex.ordinalFor):
 // 0 unknown, 1 allowed, 2 refused, filled as the walk asks. The wish build
-// keeps the record with the bot's held build (EconomyContext, dropped when a
-// step's sections hit COMPUTED.sourceGround); kept = that record, or null.
-// The reads no section of that mask names are checked by each reader against
+// keeps the record with the bot's held build (EconomyContext, dropped when its
+// kit fact moved: PIECE_FACTS.ground); kept = that record, or null.
+// The reads the kit fact does not name are checked by each reader against
 // the copies beside the bits: the list's length, the economic hunt (the
 // bot's wish focus), the matchup's highest target level (LevelingRoutes
 // safetyOptions: the recovery penalty, whose clean wins move no section, and
@@ -2275,7 +2398,7 @@ function sourceRouteReader(state, options = {}) {
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
     if (diagnostic && options.ground && !reused) Diagnostics.count('source_route', 'ground_moved', moved);
     // A sampled reader notes the ordinals it checked or filled itself.
-    const shadow = diagnostic && reused && (Diagnostics.enabled(state.characterId) || (++groundShadows & 63) === 0)
+    const shadow = diagnostic && reused && (Trace.detailed(state.characterId) || (++groundShadows & 63) === 0)
         ? new Set() : null;
     // An excluded spot counts once per reader, as each refusal used to.
     const countedExcluded = diagnostic ? new Set() : null;
@@ -2478,7 +2601,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
                 : rules.expected[ordinal];
             let status = 'ineligible', reason = rule === FACT_RULE_RAID ? 'raid' : null;
             if (!reason && kind === 'spoil') {
-                // The executor's rule: a learned Spoil, not the class (E189).
+                // The executor's rule: a learned Spoil, not the class.
                 if (spoiler === undefined) spoiler = sourceSpoilerFor(state);
                 if (!spoiler) reason = 'spoil_skill';
             }
@@ -2627,7 +2750,7 @@ function sourceFactRulesFor(entries, itemId, ratesKey) {
     if (Diagnostics.active()) Diagnostics.count('source_bound', 'row', 'built');
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
         // The rule reads only the level, the raid flag and the NPC id of a
-        // record: no source target object per record (L130).
+        // record: no source target object per record.
         const entry = entries[ordinal], npcLevel = sourceRecordNpcLevel(entry);
         // Killer level 0 has no deep-blue penalty; nothing else of a reward
         // roll reads the killer level, so this is every bot's penalty-free yield.
@@ -2739,7 +2862,7 @@ function rankedKind(levels) {
 // Without a deep-blue penalty (every fact the hunt band admits) the pair is
 // keyed by numbers, not a five-part string: the same bound, a cheaper read.
 // A deep-blue drop or spoil with a whole penalty is keyed by numbers too, in
-// its own map (L129): its string key was built and hashed on every read.
+// its own map: its string key was built and hashed on every read.
 const PLAIN_YIELD_ITEMS = 2 ** 20;
 // npc, item, kind and a 7-bit penalty (0..100) stay below 2 ** 53.
 const DEEP_YIELD_NPCS = 2 ** 24;
@@ -3238,7 +3361,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, clanPlanKeptAgainst, sourceFloorsBelow, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 // One decision outside this module (a wish review) that judges a bot against
 // many sources shares its readiness the same way.

@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const Database = invoke('Database');
 const Policy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
 const Planner = invoke('GameServer/Bot/AI/BotSupportPlanner');
@@ -10,8 +11,6 @@ const QUOTE_MS = 2 * 60 * 1000;
 const MAX_DISTANCE = 900;
 const quotes = new Map();
 const busy = new Set();
-const lastAutoAttempt = new Map();
-const lastAutoPurchase = new Map();
 
 function id(session) { return Number(session?.actor?.fetchId?.() || 0); }
 function tell(provider, player, message) {
@@ -323,7 +322,12 @@ function command(playerSession, text) {
     return true;
 }
 
-function maybeAutoBuy(session, timestamp = Date.now()) {
+// A body's rebuff answered a buffer (Bot/AI/Rebuff): at a free moment it takes the
+// answer (once: held done) and buys from the cheapest buffer near it that serves it
+// within its price read (BuffServicePolicy.affordable); none near holds it done, counted
+// rebuff:buffer:none. Main's sessions are the buffers a body sees (a far bot's are read
+// by its decision, ColdBuffOffer.providerFor).
+function buyOnAnswer(session) {
     const buyer = session?.actor;
     const buyerId = id(session);
     if (session?.buffServicePending) return true;
@@ -332,26 +336,21 @@ function maybeAutoBuy(session, timestamp = Date.now()) {
         || ['merchant', 'shopping', 'pk_hunting'].includes(session.plan)
         || buyer.isDead?.() || buyer.state?.fetchCombats?.() || buyer.state?.fetchCasts?.()
         || buyer.state?.fetchMoves?.()) return false;
-    if (timestamp - Number(lastAutoAttempt.get(buyerId) || 0) < 60000
-        || timestamp - Number(lastAutoPurchase.get(buyerId) || 0) < 10 * 60000) return false;
-    lastAutoAttempt.set(buyerId, timestamp);
+    if (!invoke('GameServer/Bot/AI/HotTownRebuff').takeAnswer(session, 'buffer')) return false;
     const wallet = Number(buyer.backpack?.fetchItemFromSelfId(57)?.fetchAmount?.() || 0);
     const providers = invoke('GameServer/Bot/BotManager').sessions || [];
     const offer = providers.filter(candidate => candidate !== session && candidate?.actor && !candidate.partyCompanion
             && Policy.serviceClass(candidate.actor) && distance(buyer, candidate.actor) <= MAX_DISTANCE)
         .map(candidate => buildQuote(session, candidate))
-        .filter(candidate => candidate.ok && candidate.price <= wallet * 0.25
-            && candidate.price <= Policy.incomeForTenMinutes(buyer) * 0.8)
+        .filter(candidate => candidate.ok && Policy.affordable(candidate.price, wallet, buyer))
         .sort((a, b) => a.price - b.price)[0];
-    if (!offer) return false;
+    if (!offer) { invoke('GameServer/Bot/Situations').note('rebuff:buffer:none'); return false; }
     quotes.set(buyerId, offer);
     session.buffServicePending = true;
-    buy(session).then(result => {
-        if (result.ok) lastAutoPurchase.set(buyerId, Date.now());
-    }).catch(error => utils.infoWarn('BuffService', 'bot purchase failed: %s', error.message))
+    buy(session).catch(error => FailureLog.note('buff.bot_purchase', error))
         .finally(() => { session.buffServicePending = false; });
     return true;
 }
 
-module.exports = { buildQuote, quote, buy, command, clearQuote, townFor, maybeAutoBuy,
+module.exports = { buildQuote, quote, buy, command, clearQuote, townFor, buyOnAnswer,
     reserveNativeTrade, releaseNativeTrade, completeNativeTrade };

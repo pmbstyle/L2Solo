@@ -12,7 +12,7 @@ const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const originalWarehouseRelease = Warehouse.releaseCold;
 const originalFinishTownErrands = invoke('GameServer/Bot/Economy/ColdMarketService').finishTownErrands;
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -32,8 +32,8 @@ const originals = {
     upsertState: LifeState.upsertState,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
-    current: GoalService.current,
-    review: GoalService.review,
+    goal: NeedsEvaluator.goal,
+    needs: NeedsEvaluator.needs,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
 };
@@ -86,15 +86,14 @@ async function run() {
     LifeState.upsertState = (value) => Promise.resolve(value);
     ListingService.resolve = (value) => Promise.resolve({ state: value, closed: false });
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
-    GoalService.current = () => Promise.resolve(null);
-    GoalService.review = () => Promise.resolve(null);
+    NeedsEvaluator.goal = () => null;
+    NeedsEvaluator.needs = () => null;
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
 
-    // The worker's request carries no trip (its route): the bot fights on
-    // its old ground.
+    // The worker's step carries no trip: the bot fights on its old ground.
     const commanded = await PopulationService.resolveColdState(hunter(7401),
-        { precomputedResult: workerFight(), route: { needed: false, spotId: oldSpot.id } });
+        { precomputedResult: workerFight() });
     assert.strictEqual(commanded.ok, true);
     assert.strictEqual(applied.length, 1, 'the worker fight is applied');
     assert.notStrictEqual(applied[0].activity, 'traveling', 'main begins no hunting trip under a worker result');
@@ -122,7 +121,7 @@ async function run() {
         tailReads++;
         return { state: value, closed: false };
     };
-    const request = { precomputedResult: workerFight(), route: { needed: false, spotId: oldSpot.id },
+    const request = { precomputedResult: workerFight(),
         precomputedPlan: { previousPlan: commandState.stats.equipmentPlan, acquisitionPlan: commandState.stats.equipmentPlan,
             statsPacket: packet, economyDecision: commandDecision } };
     assert.strictEqual((await PopulationService.resolveColdState(commandState, request)).ok, true);
@@ -140,7 +139,7 @@ async function run() {
     const prior = { status: 'complete', strategy: 'none', target: { selfId: 391 } };
     const deferredBefore = Number(PopulationService.planDeferred || 0);
     const deferred = await PopulationService.resolveColdState(hunter(7406, { equipmentPlan: prior }),
-        { precomputedResult: workerFight(), route: { needed: false, spotId: oldSpot.id } });
+        { precomputedResult: workerFight() });
     assert.strictEqual(deferred.state.stats.equipmentPlan, prior, 'no worker plan keeps previous plan');
     assert.strictEqual(PopulationService.planDeferred, deferredBefore + 1);
     Coordinator.economyDecisions.forget(7405);
@@ -158,22 +157,18 @@ async function run() {
         loc: { locX: 83396, locY: 147904, locZ: -3400 } };
     const townResult = { ...workerFight(), patch: { activity: 'shopping', loc: town.loc, stats: {} } };
     assert.strictEqual((await PopulationService.resolveColdState(town,
-        { precomputedResult: townResult, route: { needed: false, spotId: oldSpot.id } })).ok, true);
+        { precomputedResult: townResult })).ok, true);
     assert.deepStrictEqual(visitOrder, ['warehouse', 'listings'], 'one town release precedes listing');
     visitOrder.length = 0;
     await PopulationService.resolveColdState(hunter(7421),
-        { precomputedResult: workerFight(), route: { needed: false, spotId: oldSpot.id } });
+        { precomputedResult: workerFight() });
     assert.deepStrictEqual(visitOrder, ['listings'], 'field command never releases the warehouse');
     Warehouse.releaseCold = originalWarehouseRelease;
     MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
 
-    // Without a worker result main still starts and resolves the trip itself.
-    applied.length = 0;
-    const unworked = await PopulationService.resolveColdState(hunter(7402));
-    assert.strictEqual(unworked.ok, true);
-    assert.strictEqual(applied[0].activity, 'traveling');
-    assert.strictEqual(applied[0].stats.travel.spotId, newSpot.id);
+    // Main starts no trip of its own: every lifecycle command carries the worker's result
+    // (executeWorkerLifecycleCommand refuses one without it).
 
     // Bots already stranded: the next resolve drops the leftover trip; a trip
     // in progress or started by the resolve is kept.
@@ -213,7 +208,7 @@ run().catch((error) => {
     MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
-    Object.assign(GoalService, { current: originals.current, review: originals.review });
+    Object.assign(NeedsEvaluator, { goal: originals.goal, needs: originals.needs });
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;
 });

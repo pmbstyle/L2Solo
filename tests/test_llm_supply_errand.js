@@ -294,13 +294,12 @@ async function exhaustedSupplyRouteReturnsVisibly() {
     const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
     const Chatter = invoke('GameServer/Bot/AI/TownChatter');
     const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-    const HotBoard = invoke('GameServer/Bot/Economy/HotBoardReviewService');
     const Response = invoke('GameServer/Network/Response');
     const originals = {
         charInfo: Response.charInfo, relationChanged: Response.relationChanged,
         move: Recovery.move, resolveTargetActor: Recovery.resolveTargetActor, refreshTarget: Recovery.refreshTarget,
         approachPlan: Approach.plan, say: Chatter.say, markHot: PopulationService.markHot,
-        naturalBreak: HotBoard.naturalBreak, setTimeout: global.setTimeout
+        setTimeout: global.setTimeout
     };
     const timers = [];
     const hot = [];
@@ -315,7 +314,6 @@ async function exhaustedSupplyRouteReturnsVisibly() {
         Approach.plan = () => null;
         Chatter.say = (_session, _ai, key) => { said.push(key); };
         PopulationService.markHot = async (_session, reason) => { hot.push(reason); return { phase: 'hot' }; };
-        HotBoard.naturalBreak = () => {};
         Response.charInfo = () => 'charInfo';
         Response.relationChanged = () => 'relationChanged';
         global.setTimeout = (callback, delay) => { timers.push({ callback, delay }); return timers.length; };
@@ -381,7 +379,6 @@ async function exhaustedSupplyRouteReturnsVisibly() {
         Approach.plan = originals.approachPlan;
         Chatter.say = originals.say;
         PopulationService.markHot = originals.markHot;
-        HotBoard.naturalBreak = originals.naturalBreak;
         Response.charInfo = originals.charInfo;
         Response.relationChanged = originals.relationChanged;
         global.setTimeout = originals.setTimeout;

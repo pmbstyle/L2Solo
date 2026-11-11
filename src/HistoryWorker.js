@@ -13,8 +13,9 @@ const { DatabaseSync } = require('node:sqlite');
 const HistoryStore = require('./HistoryStore');
 const { heapRecord, observe } = require('./GameServer/Bot/Population/WorkerHeapTelemetry');
 if (workerData.developerDiagnostics === true) observe(); // major-GC window for the v8Heap record (WorkerHeapTelemetry)
-const diagnosticWriter = workerData.developerDiagnostics === true && workerData.diagnostics ? new (require('./EconomyDiagnosticWriter').EconomyDiagnosticWriter)(
-    require('node:path').join(require('node:path').dirname(workerData.worldPath), 'logs'), workerData.diagnostics, { enabled: true }) : null;
+// The decision trace's writer (decisionTrace on): its records come from main (decision_trace messages).
+const traceWriter = workerData.trace ? new (require('./DecisionTraceWriter').DecisionTraceWriter)(
+    require('node:path').join(require('node:path').dirname(workerData.worldPath), 'logs'), workerData.trace, { enabled: true }) : null;
 
 const TRANSFER_MS = Math.max(10, Number(workerData?.transferMs) || 200);
 const RETENTION_MS = 60 * 1000;
@@ -57,7 +58,7 @@ function tick(withRetention = false) {
         }
         if (withRetention) {
             HistoryStore.retention(history);
-            diagnosticWriter?.cleanup();
+            traceWriter?.cleanup();
         }
     } catch (error) {
         parentPort.postMessage({ type: 'error', error: error?.message || String(error) });
@@ -80,14 +81,17 @@ parentPort.on('message', (message = {}) => {
         scheduleTick();
         return;
     }
-    if (message.type === 'economy_diagnostics') {
-        if (!diagnosticWriter) return;
-        let written = 0;
+    if (message.type === 'decision_trace') {
+        if (!traceWriter) return;
+        let written = 0, failed = null;
         try {
-            // Canonical history always goes first; telemetry never aborts it.
-            tick(); written = diagnosticWriter?.write(message.records) || 0;
-        } catch { /* Count the loss in the main buffer, never stop the world. */ }
-        parentPort.postMessage({ type: 'economy_diagnostics_ack', id: message.id, written, writer: diagnosticWriter.snapshot() }); return;
+            // Canonical history always goes first; the trace never aborts it.
+            tick(); written = traceWriter.write(message.records) || 0;
+        } catch (error) {
+            // The unwritten records count as lost in main's trace; main counts the failure (this thread has no FailureLog).
+            failed = String(error?.stack || error).slice(0, 2000);
+        }
+        parentPort.postMessage({ type: 'decision_trace_ack', id: message.id, written, failed, writer: traceWriter.snapshot() }); return;
     }
     if (message.type !== 'flush' && message.type !== 'stop') return;
     let reply;

@@ -73,9 +73,17 @@ function itemRank(selfId) {
     return normalizeRank(templateFor(selfId)?.etc?.rank);
 }
 
+// Whether a class fires spiritshots, by class id: inferRole of a bare class id
+// reads only the static class tables, so one answer per class id.
+const spiritClasses = new Map();
 function classWantsSpiritshots(classId) {
-    const role = BotRoles.inferRole(Number(classId || 0));
-    return BotWeaponCompatibility.isCasterRole(role, classId);
+    const id = Number(classId || 0);
+    let wants = spiritClasses.get(id);
+    if (wants === undefined) {
+        wants = BotWeaponCompatibility.isCasterRole(BotRoles.inferRole(id), id);
+        spiritClasses.set(id, wants);
+    }
+    return wants;
 }
 
 function actorClassId(actor) {
@@ -114,35 +122,88 @@ function equippedWeapon(items) {
 // per charge (perAction, the weapon's count as hot charges it; 0 without a
 // weapon, so no shot loads).
 // options.blessed: true Blessed Spiritshot (null for a soulshot class),
-// false the class's own kind; unset, a spiritshot class takes the blessed
-// one when it holds a full charge, or neither stack covers a charge and it
-// pays (blessedPays).
+// false the class's own kind; unset, a spiritshot class fires a complete charge its bag
+// holds, else the kind its held earning answer chose (choosesBlessed).
 function planForState(state, options = {}) {
-    const weapon = equippedWeapon(state?.inventory);
+    const weapon = stateWeapon(state?.inventory);
     const classId = Number(state?.stats?.classId || state?.classId || 0), rank = weapon ? itemRank(weapon.selfId) : 'none';
     const spirit = classWantsSpiritshots(classId);
     if (options.blessed === true && !spirit) return null;
-    const count = weapon ? templateFor(weapon.selfId)?.etc?.[spirit ? 'spiritshot' : 'soulshot'] : 0;
-    const perAction = Math.max(0, Number(count) || 0);
-    const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId), perAction));
-    const plan = blessed ? planForKind('blessedSpiritshot', rank) : planFor({ classId, rank });
-    return { ...plan, perAction };
+    const perAction = weaponPlan('spiritshot', weapon).perAction;
+    const blessed = spirit && (options.blessed ?? choosesBlessed(state?.stats?.earning, rank, selfId => heldAmount(state, selfId),
+        () => decidedKind(state) === 'blessedSpiritshot', perAction));
+    return weaponPlan(blessed ? 'blessedSpiritshot' : spirit ? 'spiritshot' : 'soulshot', weapon);
+}
+// The shot kind the earning decision chooses for the bot (EquipmentIncomeRoute.spotRates, held as
+// stats.earning.shotKind): a spiritshot class's Blessed Spiritshot when it pays at its role, level
+// and grade (blessedPays), else its class's own kind. Taken only when that decision is taken.
+function decidedKind(state) {
+    const classId = Number(state?.stats?.classId || state?.classId || 0);
+    if (!classWantsSpiritshots(classId)) return 'soulshot';
+    const weapon = stateWeapon(state?.inventory), rank = weapon ? itemRank(weapon.selfId) : 'none';
+    return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank) ? 'blessedSpiritshot' : 'spiritshot';
+}
+
+// The equipped weapon of a cold inventory, per inventory object: it reads only
+// the rows' selfId, slot and equipped marks. Rule: a worn row is never edited
+// in place; a gear change writes a new bag (cold updates replace the inventory
+// object, as VisibleStrength.stateLook and ItemDisposition's sale walks rely
+// on); the one bag edited in place, a fight's own copy
+// (BackgroundResolver.spendColdShot), changes only shot amounts. A breach is
+// seen under developer diagnostics: each hit is checked against a fresh walk,
+// a mismatch counted (FailureLog kit_cache.stale) and answered fresh.
+const stateWeapons = new WeakMap();
+let diagnosticConfig = null;
+function stateWeapon(inventory) {
+    if (!inventory || typeof inventory !== 'object') return null;
+    let weapon = stateWeapons.get(inventory);
+    if (weapon !== undefined && (diagnosticConfig ||= invoke('GameServer/Bot/Population/PopulationConfig')).developerDiagnostics) {
+        const fresh = equippedWeapon(inventory);
+        if (fresh?.selfId !== weapon?.selfId) {
+            FailureLog.note('kit_cache.stale', new Error(`ShotStock weapon ${weapon?.selfId} held, ${fresh?.selfId} worn`));
+            weapon = undefined;
+        }
+    }
+    if (weapon === undefined) stateWeapons.set(inventory, weapon = equippedWeapon(inventory));
+    return weapon;
+}
+
+// A plan of a shot kind for a weapon (none: no weapon), with the weapon's
+// shots per charge: keyed by exactly (kind, weapon selfId) over the item
+// templates (DataCache.items: a reload or a page grown into it clears it).
+// Bounded by the weapon templates x 3 kinds. Shared and frozen: callers only
+// read it.
+let weaponPlans = new Map(), weaponPlansOf = null, weaponPlansLength = 0;
+function weaponPlan(kind, weapon) {
+    if (weaponPlansOf !== DataCache.items || weaponPlansLength !== DataCache.items?.length) {
+        weaponPlans = new Map(); weaponPlansOf = DataCache.items; weaponPlansLength = DataCache.items?.length;
+    }
+    const selfId = weapon ? Number(weapon.selfId) : 0, key = `${kind}|${selfId}`;
+    let plan = weaponPlans.get(key);
+    if (!plan) {
+        const count = selfId ? templateFor(selfId)?.etc?.[kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
+        plan = Object.freeze({ ...planForKind(kind, selfId ? itemRank(selfId) : 'none'), perAction: Math.max(0, Number(count) || 0) });
+        weaponPlans.set(key, plan);
+    }
+    return plan;
 }
 
 function heldAmount(state, selfId) {
     return Math.max(0, Number(state?.inventory?.[selfId]?.amount) || 0);
 }
 
-// The one shot choice of a spiritshot class, cold (planForState) and hot
-// (planForActor): `held(selfId)` reads the bag; `roleState()` the role and
-// level inputs, read only when neither stack covers the weapon's charge.
-function choosesBlessed(roleState, rank, held, perAction) {
+// The one shot read of a spiritshot class, cold (planForState) and hot
+// (planForActor): it fires what its bag holds (`held(selfId)`), Blessed first;
+// holding neither, the kind its held earning answer chose (earning.shotKind,
+// decidedKind). An answer held from before the decision named its kind has none:
+// the earning decision's own rule answers it (`decided()`: decidedKind) until its
+// next answer names one. A reader never weighs the kind otherwise.
+function choosesBlessed(earning, rank, held, decided, perAction) {
     const charge = Math.max(1, Number(perAction) || 1);
     if (held(BLESSED_SPIRITSHOT_BY_RANK[rank]) >= charge) return true;
     const beginnerId = BeginnerShots.selfIdFor('spiritshot', rank);
     if (held(SPIRITSHOT_BY_RANK[rank]) >= charge || (beginnerId && held(beginnerId) >= charge)) return false;
-    const state = roleState();
-    return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank);
+    return earning?.shotKind ? earning.shotKind === 'blessedSpiritshot' : decided();
 }
 
 // What a bot pays for a shot (StaticMerchantPricing.botBuyPrice): the one
@@ -158,8 +219,8 @@ function paidShotId(plan) {
     return byRank[normalizeRank(plan.rank)];
 }
 
-// Blessed Spiritshot over Spiritshot for a role, level and grade (user 10-29,
-// docs/game-decisions.md "Shots"): the farm it adds over the spiritshot (the
+// Blessed Spiritshot over Spiritshot for a role, level and grade (our
+// choice, C4 leaves it to the player): the farm it adds over the spiritshot (the
 // best spots' exp, as usePolicy's benefit) pays its extra cost per hour at
 // the bot's replacement price (public stock, paid trades, else native craft
 // value) against the hour's money before shots. Cache by table and both prices.
@@ -270,10 +331,10 @@ function isPersonalShot(state, selfId) {
         && !invoke('GameServer/Bot/Economy/CraftEligibility').isServiceCrafter(state);
 }
 
-function keptAmounts(state, basics = null, row = null) {
-    // The stock rule needs no wish network (L25); row: a shots stock row
-    // already read (itemId, target, beginnerCurrent).
-    const stock = row || (basics || invoke('GameServer/Bot/Economy/EconomyContext').basics(state)).stock('shots');
+function keptAmounts(state, kit = null, row = null) {
+    // The kit rates over the bag (EconomyContext.keptTargets: no wish network);
+    // kit: a review's kit reader; row: a shots stock row already read (itemId, target, beginnerCurrent).
+    const stock = row || (kit ? kit.stock('shots') : invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state).shots);
     const kept = { [stock.itemId]: Math.max(0, stock.target - (stock.beginnerCurrent || 0)) };
     const plan = planForState(state);
     if (isPersonalShot(state, plan.selfId)) {
@@ -309,28 +370,32 @@ function planForKind(kind, rank = 'none') {
 }
 
 // A hot bot's shot: the one its cold state takes (planForState), Blessed
-// Spiritshot by the same choice (choosesBlessed) over the actor's bag, so
-// hot auto shots enable the shot the worker's stock names. A player keeps
-// its class's shot (bought or crafted; a new character starts with CreateNewChar.awardBaseShots).
+// Spiritshot by the same read (choosesBlessed) over the actor's bag and its
+// held earning answer, so hot auto shots enable the shot the worker's stock
+// names. A player keeps its class's shot (bought or crafted; a new character
+// starts with CreateNewChar.awardBaseShots).
 function planForActor(actor) {
     const classId = actorClassId(actor), rank = weaponRankFromActor(actor);
     if (!classWantsSpiritshots(classId)) return planForKind('soulshot', rank);
     // lazy: cycle World loads the inventory stack.
     if (!invoke('GameServer/World/World').isBotSession(actor?.session)) return planForKind('spiritshot', rank);
     const held = selfId => Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.()) || 0);
-    const perAction = actor?.backpack?.fetchEquippedWeapon?.()?.fetchSpiritshot?.();
-    return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held, perAction) ? 'blessedSpiritshot' : 'spiritshot', rank);
+    // lazy: cycle BotLifeState loads the inventory stack.
+    const row = () => invoke('GameServer/Bot/Population/BotLifeState').cachedState(actor?.fetchId?.());
+    return planForKind(choosesBlessed(heldEarning(actor?.session), rank, held,
+        () => decidedKind(row() || actorRoleState(actor, classId)) === 'blessedSpiritshot',
+        actor?.backpack?.fetchEquippedWeapon?.()?.fetchSpiritshot?.()) ? 'blessedSpiritshot' : 'spiritshot', rank);
 }
-
-// The role and level inputs of a hot bot's shot choice, as its cold state
-// (EconomyContext.stateForActor) carries them.
 function actorRoleState(actor, classId) {
     const session = actor?.session, stored = session?.coldLifeState;
-    // lazy: cycle DecisionEvents requires this module at its top.
     const role = invoke('GameServer/Bot/AI/DecisionEvents').decisionStatsFor(session).role;
     return { characterId: actor?.fetchId?.(), level: actor?.fetchLevel?.(), classId, stats: { classId, role },
+        inventory: stored?.inventory,
         party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored?.party?.role } : null };
 }
+// A body's held earning answer (its row's stats, DecisionEvents.statsFor).
+// lazy: cycle DecisionEvents requires this module at its top.
+const heldEarning = session => session ? invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session).earning : null;
 
 function planForActorKind(kind, actor) {
     return planForKind(kind, weaponRankFromActor(actor));
@@ -380,15 +445,18 @@ function autoInputs(actor, held) {
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
-    // planForActor reads which spiritshots the bag holds (choosesBlessed): a
-    // stack falling below one complete charge switches the plan.
+    // planForActor reads which spiritshots the bag holds, else the held answer's
+    // kind, else the earning rule's over its row (choosesBlessed, decidedKind): the
+    // key holds the kind it resolves, so a stack running out or a new answer switches the plan.
     const rank = weaponRankFromActor(actor);
     const holds = kind => Number(actor.backpack?.fetchItemFromSelfId?.(planForKind(kind, rank).selfId)?.fetchAmount?.()) >= charge;
     const shotsHeld = shotKind === 'spiritshot' ? 2 * holds('blessedSpiritshot') + holds('spiritshot') : 0;
+    const heldKind = shotKind === 'spiritshot' && !shotsHeld ? heldEarning(session)?.shotKind
+        ?? decidedKind(invoke('GameServer/Bot/Population/BotLifeState').cachedState(actor?.fetchId?.())) : null;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
         && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt
-        && held.shotsHeld === shotsHeld) return held;
-    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt, shotsHeld };
+        && held.shotsHeld === shotsHeld && held.heldKind === heldKind) return held;
+    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt, shotsHeld, heldKind };
 }
 function refreshAutoShot(actor) {
     const held = autoUse.get(actor), inputs = autoInputs(actor, held);
@@ -550,19 +618,21 @@ function restockPlan(value, options = {}) {
     // packet and targets are already in its state (its held decision), a far bot's in its row.
     const onMain = require('node:worker_threads').isMainThread;
     const context = options.context || (onMain ? Economy.keptKit(state) : Economy.forState(state));
-    const stock = context.stock('shots');
+    // kit: the visit's own amounts (NpcRestockPlan.collect at the local quote, a hot visit's held kit);
+    // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
+    const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
-    const reserve = context.survivalReserve;
+    const reserve = context.refillReserve;
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
     const wish = options.targetAmount === undefined ? context.network?.queue?.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
     const fundedState = !onMain && options.targetAmount === undefined && context.statsPacket
         ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    // The wish's rank at the price each source asks (E187): the board lines
+    // The wish's rank at the price each source asks: the board lines
     // at the cheapest line's price, the NPC remainder at the NPC's.
     const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
-        PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(stock.unitPrice, price));
+        PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(estimate, price));
     const allowance = allowanceAt(npcPrice);
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
@@ -603,7 +673,7 @@ function restockPlan(value, options = {}) {
 
 // The NPC part of a restock (restockPlan): the remaining hours of stock with the money
 // left after the players' shops, within the wish's allowance at the NPC's
-// price (npcBudget, E187). `bought` and `spent` are what the shop lines
+// price (npcBudget). `bought` and `spent` are what the shop lines
 // bought, so a line that fails at purchase leaves its shots and money to the NPC.
 function npcRestockAmount(restock, bought = 0, spent = 0) {
     if (!restock.needed || !(restock.unitPrice > 0)) return 0;
@@ -621,7 +691,7 @@ async function purchaseActorRestock(actor, options = {}) {
 
     const plan = options.plan || planForActor(actor);
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    // The board's lines of the town the bot stands in (б5: a deal is made in
+    // The board's lines of the town the bot stands in (a deal is made in
     // the seller's town); away from a town, only the merchant's price.
     const town = options.town ?? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
     const botActor = actor.session?.actor === actor
@@ -639,7 +709,7 @@ async function purchaseActorRestock(actor, options = {}) {
     ] : [];
     const restock = restockPlan(actor, { plan, targetAmount: options.targetAmount,
         unitPrice: options.unitPrice ?? localQuote?.price, potionUnitPrice: options.potionUnitPrice,
-        offers });
+        offers, kit: options.kit });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {
         return { ok: false, reason: 'not_enough_adena', plan, adena: restock.adena,
@@ -712,17 +782,23 @@ function restockAfterWeaponChange(actor, slots = [], logTag = 'BotGear') {
         .catch((error) => utils.infoWarn(logTag, 'failed to refresh shots for %s: %s', actor.fetchName?.(), error.message));
 }
 
-// Whether the decision the body holds wants a shot restock the money queue
-// funds (DecisionEvents.nearFields, taken in the background thread).
+// Whether a body's shots (the paid shot and the beginner grant) stand below
+// their line, one hour of use, and its kit would buy some at its money: the
+// kit rule over the decision it holds (EconomyContext.keptKit: the target above
+// the bag) and at least one unit within the shots' allowance. A companion's
+// errand for them (FollowingState) goes only for a purchase it can make.
 function needsActorRestock(actor) {
-    // lazy: cycle DecisionEvents requires this module at its top.
-    return invoke('GameServer/Bot/AI/DecisionEvents').held(actor.session)?.shotRestock === true;
+    // lazy: cycle EconomyContext requires this module at its top.
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const state = Economy.stateForActor(actor), kit = Economy.keptKit(state), stock = kit.stock('shots');
+    if (!(stock.current < stock.line) || !(stock.target > stock.current) || !(stock.unitPrice > 0)) return false;
+    return PurchaseFunding.stockAllowance(state, null, stock.itemId, PurchaseFunding.survivalTranche(kit, stock.itemId)) >= stock.unitPrice;
 }
 
 // Where a hot bot goes for its shots in `town`: the best seller there, a
 // city merchant's or a shop's stall, or an ad dealt with by record at its
-// place (D6). The purchase itself is the restock (purchaseActorRestock).
-function restockTarget(actor, town, excludedIds = []) {
+// place, as a cold bot does. The purchase itself is the restock (purchaseActorRestock).
+function restockTarget(actor, town, excludedIds = [], kit = undefined) {
     const excluded = new Set(excludedIds.map(Number));
     const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
     const offers = MarketOpportunity.hotOffers(planForActor(actor).selfId, { town, buyerCharacterId: actor.fetchId() });
@@ -732,7 +808,7 @@ function restockTarget(actor, town, excludedIds = []) {
         if (offer.sellerKind !== 'fixed' && !String(offer.sourceType).startsWith('afk_') && offer.store?.kind !== 'player') continue;
         if (offer.sellerKind === 'fixed' && !offer.session?.actor) continue;
         if (offer.store?.kind === 'player') {
-            fundedLive ||= new Set(restockPlan(actor, { offers }).shops.map(line => line.offer));
+            fundedLive ||= new Set(restockPlan(actor, { offers, kit }).shops.map(line => line.offer));
             if (!fundedLive.has(offer)) continue;
         }
         return MarketOpportunity.offerTarget(offer, town);
@@ -742,7 +818,7 @@ function restockTarget(actor, town, excludedIds = []) {
 
 // Ordinary shops keep their stock in the owner's bag. Walk to an affordable
 // seller before the restock; an actor in another part of town cannot pay it remotely.
-function liveRestockTarget(actor, town) {
+function liveRestockTarget(actor, town, kit = undefined) {
     if (!town) return null;
     // lazy: cycle MarketOpportunity reads ShotStock at load
     const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -752,7 +828,7 @@ function liveRestockTarget(actor, town) {
     if (!offers.some(offer => offer.store?.kind === 'player')) return null;
     // lazy: cycle NpcRestockPlan reads ShotStock at load
     const quote = invoke('GameServer/Bot/Economy/NpcRestockPlan').quoteFor(plan.selfId, town);
-    const restock = restockPlan(actor, { plan, offers, unitPrice: quote?.price });
+    const restock = restockPlan(actor, { plan, offers, unitPrice: quote?.price, kit });
     const line = restock.shops[0];
     return line?.offer.store?.kind === 'player' ? Market.offerTarget(line.offer, town) : null;
 }
@@ -776,6 +852,7 @@ module.exports = {
     planForActor,
     planForActorKind,
     planForState,
+    decidedKind,
     starterPlanFor,
     ensureStarterStock,
     beginnerAmount,

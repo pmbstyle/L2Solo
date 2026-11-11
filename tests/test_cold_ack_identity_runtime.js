@@ -231,12 +231,11 @@ async function leafCommit(rowLeaf, proposalLeaf, proposalId) {
         try {
             sent.length = 0;
             const oldEpoch = coordinator.workerEpoch, lateAt = Date.now();
-            const refused = () => Object.values(coordinator.refusals.commitRefused).reduce((sum, count) => sum + count, 0);
-            const refusedBefore = refused();
             const lateState = { ...Life.cachedState(lateId), updatedAt: lateAt,
                 timing: { ...Life.cachedState(lateId).timing, lastResolvedAt: lateAt } };
+            const lateBase = stepRevision(lateId);
             const lateBatch = Protocol.envelope('proposal_batch', oldEpoch, { proposals: [{ proposalId: `${lateId}:${lateAt}`,
-                characterId: lateId, revision: stepRevision(lateId), priority: 'P0', enqueuedAt: lateAt,
+                characterId: lateId, revision: lateBase, priority: 'P0', enqueuedAt: lateAt,
                 nextState: lateState, result: { events: [] } }] });
             assert(Protocol.validateEnvelope(lateBatch, 'worker', { workerEpoch: oldEpoch }).ok);
             coordinator.onMessage(lateBatch, worker, oldEpoch);
@@ -253,7 +252,7 @@ async function leafCommit(rowLeaf, proposalLeaf, proposalId) {
             assert.equal(sent.filter(message => message.type === 'commit_ack').length, 0);
             sent.length = 0;
             replacement.postMessage = replacementPost;
-            assert.equal(refused(), refusedBefore + 1, 'the old step reached its commit result');
+            assert.notEqual((await row(lateId)).simulationRevision, lateBase, 'the old step reached its commit');
         } finally { resume(); coordinator.prepareProposal = nativePrepare; }
         console.log('Actual Worker replacement during a native commit suppresses the old-source ACK: PASS');
         worker.postMessage = post;

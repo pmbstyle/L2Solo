@@ -1,4 +1,4 @@
-// Steps shared by the hand-written profession quests (U48). The quest service
+// Steps shared by the hand-written profession quests. The quest service
 // is resolved on each call, as the quests themselves do, so load order and
 // test replacements of QuestService methods behave as before.
 const MIDDLE = "ItemSound.quest_middle";
@@ -24,7 +24,7 @@ async function collect(state, selfId, needed, chance = 1) {
 }
 
 // Take each listed item in order, then give one `give` and set the step.
-// A failed take stops there: earlier takes stay done (V26), nothing is given.
+// A failed take stops there: earlier takes stay done, nothing is given.
 async function exchange(state, remove, give, condition) {
   const quest = service();
   for (const item of remove) {

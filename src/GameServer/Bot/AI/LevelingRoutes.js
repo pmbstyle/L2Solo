@@ -471,16 +471,28 @@ function bestSpot(spots, state = {}, options = {}) {
         .find((candidate) => candidate.huntingGround?.allowed !== false && candidate.targetMatchup?.eligible !== false) || null;
 }
 
-// One spot: the reader's checks without its closure (L131 review).
+// May this bot hunt this ground (party-only ground alone needs its exceptional kit):
+// the one ground rule, BotHuntingGroundPolicy over plain data (state: level, worn
+// gear or options.equipment; options.mode) and the spot's tags: its canonical ones
+// and the ones it carries (the searches read the first, the bodies and the cold
+// round read the second: either marks the ground). The worker's spot searches
+// (isSpotAllowedForState, spotAllowedReaderFor), the cold round (BackgroundResolver)
+// and the hot body's ground checks (HuntingState) ask it.
+function groundVerdict(spot, state = {}, options = {}) {
+    const own = Array.isArray(spot?.tags) && spot.tagsAuthoritative !== true ? spot.tags : null;
+    const tags = own?.length ? uniq([...tagsForSpot(spot), ...own]) : tagsForSpot(spot);
+    return BotHuntingGroundPolicy.evaluate(spot, state, { ...options, tags });
+}
+
+// One spot: the reader's checks without its closure (the source route reader).
 function isSpotAllowedForState(spot, state = {}, options = {}) {
-    const tags = tagsForSpot(spot);
-    return BotHuntingGroundPolicy.evaluate(spot, state, { ...options, tags }).allowed
+    return groundVerdict(spot, state, options).allowed
         && TargetMatchup.spotMatchup(spot, TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) }),
             safetyOptions(state, options)).eligible;
 }
 
 // A spot search asks this for many spots of one bot with one state and
-// options (L131). The matchup profiles and safety options depend only on
+// options. The matchup profiles and safety options depend only on
 // those, so they are read once, on the first spot that passes the hunting
 // ground check. Exact only while state and options stay unchanged; without
 // options.matchupProfiles or options.timestamp the profiles read the clock
@@ -489,8 +501,7 @@ function spotAllowedReaderFor(state = {}, options = {}) {
     let profiles = null;
     let safety = null;
     return (spot) => {
-        const tags = tagsForSpot(spot);
-        if (!BotHuntingGroundPolicy.evaluate(spot, state, { ...options, tags }).allowed) return false;
+        if (!groundVerdict(spot, state, options).allowed) return false;
         if (profiles === null) {
             profiles = TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) });
             safety = safetyOptions(state, options);
@@ -526,6 +537,7 @@ module.exports = {
     roomForSpot,
     localityPenaltyForSpot,
     isSpotAllowedForState,
+    groundVerdict,
     safetyOptions,
     spotAllowedReaderFor,
     readySpotReaderFor,

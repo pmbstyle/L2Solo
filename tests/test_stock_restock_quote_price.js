@@ -26,7 +26,7 @@ assert.equal(Funding.stockAllowance(state, { ratio: 1.5e-5 }, 1835, 3000, .5), 3
 const plan = Shot.planForKind('soulshot', 'none');
 const context = price => ({
     stock: () => ({ target: 3000, survivalTarget: 1000, unitPrice: 50 }),
-    survivalReserve: 10000,
+    refillReserve: 10000,
     network: { queue: [{ ratio: 1.5e-5, object: { itemId: plan.selfId } }] },
     statsPacket: { money: packet },
     // The kit's 100 missing units: at a quote, or (none) at the list price the reserve holds them at.

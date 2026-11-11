@@ -14,8 +14,11 @@ const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity'
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const ColdRaidEncounter = require('./ColdRaidEncounter');
+const { RUN_SPEED } = require('./ColdTrip');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 const RAID_RESOLVE_INTERVAL_MS = 15000;
 // A hunting party resolves again 45-135 s after a fight.
@@ -41,25 +44,49 @@ function memberVitals(state) {
     };
 }
 
-function estimateFightCount({ party, members, spot, elapsedMs }) {
-    // Windows are counted from at most the longest resolve interval: like a
-    // solo bot, a party does not catch up on a long gap such as a server stop.
-    const baseWindows = Math.max(1, Math.floor(Math.min(elapsedMs, PARTY_RESOLVE_MAX_MS) / 12000));
-    const densityFactor = clamp(Number(spot.density || 1) / 3, 0.7, 2.2);
-    const cohesionFactor = clamp(Number(party.cohesion || 0.65), 0.35, 1.15);
-
-    // Party actions are individually simulated, so party size must not
-    // multiply work.  Keep the same short active window as solo combat:
-    // at most one fight per 12-second window of the elapsed time, as solo.
-    return Math.max(1, Math.min(baseWindows, Math.round(baseWindows * densityFactor * cohesionFactor)));
+// A hunting party's round lives the time behind it as a solo round does
+// (BackgroundResolver.resolveSolo, the same walk and share rules): each new mob
+// costs the walk to it, each fight its simulated time, at the members' damage
+// together (two damage dealers kill a mob in about half the time, as in C4),
+// and the gap heals theirs; a rest ends the round (the rest is its own step).
+// At most the longest resolve interval: like a solo bot, a party does not
+// catch up on a long gap such as a server stop. The mobs it hunts are the ones
+// the party may fight, judged by its strength together (the party matchup
+// verdict, as its forecast reads it: TargetMatchup.spotShares over the members'
+// buffed profiles), so they may hold mobs a member skips alone and leave out
+// what is too dangerous for the party. The walk is the shortest of the
+// members' (the first to reach a mob engages it) at those mobs' density; the
+// kills are at most one hunter's share of their production per member
+// (soloShareMobs over the spot's bots), its fraction carried to the next round
+// on the spot (stats.coldShare). fights: the CPU bound, one per walk that
+// starts in the round, as solo's, 48 actions each. profiles: the pick's (its
+// fights take only those mobs).
+function partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp }) {
+    const budgetMs = Math.min(Math.max(0, elapsedMs), PARTY_RESOLVE_MAX_MS);
+    const profiles = TargetMatchup.stateProfiles(members[0], { capacityStates: members, buffed: true, timestamp });
+    const admitted = TargetMatchup.spotShares(profiles, spot, { soloSafety: true });
+    const density = BackgroundResolver.admittedDensity(spot, admitted);
+    let walkMs = Infinity;
+    for (const state of members) {
+        const profile = ColdCombatProfile.fightProfile(state, timestamp);
+        walkMs = Math.min(walkMs, BackgroundResolver.soloWalkMs(density, profile.runSpd || RUN_SPEED,
+            spot.spawnArea || undefined, ColdCombatProfile.attackReach(profile)));
+    }
+    const fights = Math.ceil(budgetMs / Math.max(1, walkMs)) + 1;
+    const share = BackgroundResolver.soloShareMobs(spot, budgetMs, spotHunters, admitted);
+    const carry = share !== null && String(party.stats?.coldShare?.spotId) === String(spot.id)
+        ? Number(party.stats.coldShare.carry) || 0 : 0;
+    return { budgetMs, walkMs, fights, actions: fights * 48, share, profiles,
+        shareMobs: share === null ? Infinity : share * members.length + carry };
 }
 
-function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
+// kills: the mobs the round killed, every mob of a won pull one.
+function distributeRewards({ members, spot, kills: killCount, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
     const rates = ProgressionRates.profile();
     const levels = members.map((state) => Number(state.level || 1));
     const profiles = members.map((state) => ColdCombatProfile.fightProfile(state, timestamp));
     const spoilerIndex = members.findIndex((state) => BotRoles.isSpoiler(state));
-    const kills = Array.from({ length: wins }, (_, index) => ({
+    const kills = Array.from({ length: killCount }, (_, index) => ({
         npcSelfId: defeatedNpcIds[index],
         overhitContext: overhitContexts[index]
     }));
@@ -113,6 +140,41 @@ function completedRaidResult(party, members, completed, timestamp) {
     };
 }
 
+// An assembling party (not all on its ground): it steps at its members' latest known
+// end, a trip's arrival; with none on its way the members off its ground leave it
+// (assemblyAbsent: the party step releases them, party_assembly_timeout). A roster that
+// cannot start whoever arrives (short of its objective's minimum, a raid roster missing a
+// role) and a raid roster missing anyone break up whole. No poll and no clock: a C4 party
+// waits for the members on their way and goes on without the one nothing brings.
+// Counted: party:assembly:wait (a step that waits), :end_moved (the end it waited for
+// passed and a later one stands), :failed (members released), :done (gathered after a wait),
+// :stuck (all on the ground, none on the way, yet not gathered: the party breaks up whole).
+let Situations = null;
+function assembling(party, members, spot, timestamp, reason, short = false) {
+    Situations ||= require('../Situations');
+    const wait = short ? { at: null, absent: [] } : Assembly.wait(members, spot, timestamp);
+    const absent = wait.at ? [] : !short && wait.absent.length ? wait.absent : members.map(member => Number(member.characterId));
+    // A raid roster starts only whole: one member missing ends it (dissolved: every member released).
+    const whole = absent.length && (absent.length === members.length || spot.raidBoss === true);
+    const before = Number(party.stats?.assemblyAt) || 0;
+    if (wait.at) {
+        Situations.note('party:assembly:wait');
+        if (before && before <= timestamp) Situations.note('party:assembly:end_moved');
+    } else Situations.note(short || wait.absent.length ? 'party:assembly:failed' : 'party:assembly:stuck');
+    const nextResolveAt = wait.at || (whole ? null : timestamp + 1000);
+    return {
+        memberResults: members.map(state => ({ state, result: {
+            patch: {}, events: [], memoryEvents: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: nextResolveAt || timestamp + 1000
+        } })),
+        events: [], nextResolveAt,
+        ...(absent.length && !whole ? { assemblyAbsent: absent } : {}),
+        partyPatch: { ...(whole ? { status: 'dissolved', nextResolveAt: null } : {}),
+            stats: { lastResolveAt: timestamp, assemblyAt: wait.at, ...(whole ? { partyBreakReason: Assembly.REASON } : {}) } },
+        debug: { reason, fights: 0, wins: 0, spotId: spot.id }
+    };
+}
+
 const BackgroundPartyResolver = {
     resolveMeetingLifecycle({ party, members, timestamp = Date.now(), episodeId = null, assessRelationship = null }) {
         if (!party || !members?.length || !Assembly.meetingPending(members)) return null;
@@ -148,8 +210,9 @@ const BackgroundPartyResolver = {
     },
 
     // lastFight: the party's next act waits for the engaged fight: it starts no new one (PveEncounter.holdsTrip).
-    resolve({ party, members, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
-        episodeId = null, assessRelationship = null, raidOwner = null }) {
+    // spotHunters: the bots on the spot, from the caller's occupancy (the kill share).
+    resolve({ party, members, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random,
+        timestamp = Date.now(), episodeId = null, assessRelationship = null, raidOwner = null }) {
         const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp, episodeId, assessRelationship });
         if (meeting) return meeting;
         if (!party || !members?.length || !spot) {
@@ -185,12 +248,26 @@ const BackgroundPartyResolver = {
             && members.some(member => member.activity === 'resting') && !party.stats?.raidEncounter?.encounter;
         if (marked && (!admission.ok && !recoveringAssembly || !admission.held && party.stats?.raidEncounter?.status === 'defeated')) {
             const reason = admission.reason || 'raid_roster_not_opened';
-            const cancelled = Roster.CANCEL_REASONS.includes(reason);
-            const nextResolveAt = cancelled ? null : timestamp + 30000;
+            // The owner's snapshot (raidOwner) is read when the party row is published: a
+            // roster the members moved past since (a level, a class, a reservation, the
+            // composition) is refused on a snapshot behind them. It waits for the next one,
+            // which this step's commit publishes (party:assembly:recheck): due at once, its
+            // step runs on that row (its publication moves the leader's due, partyPut);
+            // refused again on it, or gathering, or short of a member, it waits as any assembly.
+            if (!Roster.CANCEL_REASONS.includes(reason) && !['party_assembling', 'raid_roster_incomplete'].includes(reason)
+                && party.stats?.rosterRecheck !== reason && !Assembly.wait(members, spot, timestamp).at) {
+                (Situations ||= require('../Situations')).note('party:assembly:recheck');
+                return { atomic: true, memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp } })), events: [],
+                nextResolveAt: timestamp, partyPatch: { stats: { lastResolveAt: timestamp, rosterRecheck: reason } },
+                debug: { reason, fights: 0, wins: 0, spotId: spot.id } };
+            }
+            // A roster its clan no longer stands behind ends; one not yet gathered or
+            // admitted waits as any assembly.
+            if (!Roster.CANCEL_REASONS.includes(reason)) return { atomic: true, ...assembling(party, members, spot, timestamp, reason) };
             return { atomic: true, memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
-                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt } })), events: [], nextResolveAt,
-            partyPatch: { ...(cancelled ? { status: 'dissolved' } : {}), stats: { assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp),
-                lastResolveAt: timestamp, ...(cancelled ? { partyBreakReason: reason } : {}) } }, debug: { reason, fights: 0, wins: 0 } };
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: null } })), events: [], nextResolveAt: null,
+            partyPatch: { status: 'dissolved', stats: { lastResolveAt: timestamp, partyBreakReason: reason } }, debug: { reason, fights: 0, wins: 0 } };
         }
         const raidCombatActive = raidObjective
             && party.stats?.raidEncounter?.status === 'active'
@@ -326,27 +403,12 @@ const BackgroundPartyResolver = {
         const assemblyMembers = raidCombatActive || admission?.held
             ? members.filter(member => !admission?.held || Number(member.vitals?.hp) > 0).map((member) => ({ ...member, activity: 'grouped' }))
             : members;
+        // Never remote combat, nor a member's physical spot rewritten: the party gathers first.
         if (understaffed || raidRosterIncomplete || !Assembly.ready(party, assemblyMembers, spot)) {
-            // No route may mean admission is temporarily unavailable. Do not
-            // turn that into remote combat or rewrite a member's physical spot.
-            const nextResolveAt = timestamp + 30000;
-            return {
-                memberResults: members.map(state => ({ state, result: {
-                    patch: {}, events: [], memoryEvents: [],
-                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt
-                } })),
-                events: [], nextResolveAt,
-                partyPatch: { stats: { lastResolveAt: timestamp,
-                    assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp) } },
-                debug: {
-                    reason: understaffed ? 'clan_party_understaffed'
-                        : raidRosterIncomplete ? raidComposition.reason : 'party_assembling',
-                    fights: 0,
-                    wins: 0,
-                    spotId: spot.id
-                }
-            };
+            return assembling(party, members, spot, timestamp, understaffed ? 'clan_party_understaffed'
+                : raidRosterIncomplete ? raidComposition.reason : 'party_assembling', understaffed || raidRosterIncomplete);
         }
+        if (party.stats?.assemblyAt) (Situations ||= require('../Situations')).note('party:assembly:done');
 
         if (party.stats?.objective?.opportunisticRaid) {
             // Travel/rest are simulated; this roster opens its encounter only
@@ -359,7 +421,7 @@ const BackgroundPartyResolver = {
             return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt,
                 eventWait: 'raid_wait_native_activation' } })),
-                atomic: true, events: [], partyPatch: {}, nextResolveAt,
+                atomic: true, events: [], partyPatch: { stats: { assemblyAt: null, rosterRecheck: null } }, nextResolveAt,
                 debug: { reason: 'raid_wait_native_activation', fights: 0, wins: 0 } };
         }
         if (raid && !raidCombatActive) {
@@ -389,7 +451,8 @@ const BackgroundPartyResolver = {
                             remainingMusic: preparation.remainingMusic
                         },
                         raidEncounter: raidSnapshot,
-                        assemblyWait: null,
+                        assemblyAt: null,
+                        rosterRecheck: null,
                         restUntil: preparation.restUntil,
                         lastResolveAt: timestamp
                     } },
@@ -412,7 +475,8 @@ const BackgroundPartyResolver = {
             && !require('../../Clan/ClanRaidExpedition').helper(party, member)).some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index,
                 remainingHpRatio: Number(raidSnapshot?.hp) / Math.max(1, Number(raidSnapshot?.maxHp || 1)) }) !== 'continue');
-        const fightBudget = raid ? Number(!alreadyFailed) : estimateFightCount({ party, members, spot, elapsedMs });
+        const round = raid ? null : partyRound({ party, members, spot, elapsedMs, spotHunters, timestamp });
+        const fightBudget = raid ? Number(!alreadyFailed) : round.fights;
         let fights = 0;
         let attemptedFights = 0;
         let pending = raid
@@ -445,7 +509,7 @@ const BackgroundPartyResolver = {
             vitals: helperRecoveries.has(state.characterId) ? { ...state.vitals, hp: 0 }
                 : pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
-        // Raid preparation casts its own buffs; an ordinary hunt casts them between fights (F23).
+        // Raid preparation casts its own buffs; an ordinary hunt casts them between fights.
         const huntBuffs = raid || pending ? null : BackgroundResolver.castHuntPartyBuffs(combatMembers, timestamp);
         if (huntBuffs) combatMembers = huntBuffs.members;
         // A party rests between fights, never in one, as hot (HotBackgroundParty:
@@ -453,8 +517,17 @@ const BackgroundPartyResolver = {
         // for a pet it cannot heal (RestPolicy), sends it to rest at a fight's end.
         const restsNow = (state, resolved, vitals) => !raid && BackgroundResolver.needsRest(state, vitals, { party: true,
             pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) });
+        let mobsKilled = 0;
         for (let i = 0; i < fightBudget; i++) {
             if (lastFight && !pending) break;
+            // The first fight starts in any round; a new mob needs a whole one of the share and its walk.
+            if (round && i > 0 && (combatMs >= round.budgetMs || combatActions >= round.actions)) {
+                // cold_fight:party:action_bound: a round its CPU bound cut before its time.
+                if (combatMs < round.budgetMs && Diagnostics.active()) Diagnostics.count('cold_fight', 'party', 'action_bound');
+                break;
+            }
+            if (round && !pending && mobsKilled + 1 > round.shareMobs) break;
+            const walkMs = round && !pending ? round.walkMs : 0;
             const encounter = BackgroundResolver.resolvePartyFight({
                 members: combatMembers,
                 spot,
@@ -464,19 +537,25 @@ const BackgroundPartyResolver = {
                 encounter: pending,
                 partyId: party.partyId,
                 encounterKey: raidSnapshot?.key || null,
-                sharedEncounter: raid
+                sharedEncounter: raid,
+                partyProfiles: round?.profiles || null
             });
             if (encounter.avoided) {
                 avoidedReason = encounter.reason;
                 break;
             }
+            // No mob to walk to, no walk.
+            combatMs += walkMs;
             attemptedFights += 1;
             pending = encounter.encounter || null;
             if (raid) raidSnapshot = ColdRaidEncounter.record(party, raidSnapshot, encounter, timestamp);
             if (encounter.won || !pending) fights += 1;
             for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
-            combatMs += Number(encounter.debug?.durationMs || 0);
+            // A kill costs at least its killing action, as solo's: the swing or
+            // cast that killed ends after the kill (the members' actions end by then).
+            combatMs += Math.max(Number(encounter.debug?.durationMs || 0),
+                encounter.won ? Math.max(0, ...encounter.members.map(member => Number(member.readyAt) || 0)) : 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
             musicUses += encounter.members.reduce((sum, member) => sum + Number(member.musicUses || 0), 0);
@@ -524,8 +603,13 @@ const BackgroundPartyResolver = {
             }));
             if (encounter.won) {
                 wins += 1;
-                if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
-                overhitContexts.push(encounter.debug?.overhitContext || null);
+                // Every mob of the pull is a kill the share pays, as solo's; the last hit decides the overhit.
+                const paid = Math.max(1, Number(encounter.debug?.killsPaid) || 1);
+                mobsKilled += paid;
+                for (let kill = 1; kill <= paid; kill++) {
+                    if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
+                    overhitContexts.push(kill === paid ? encounter.debug?.overhitContext || null : null);
+                }
             }
             else if (!pending) losses += 1;
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
@@ -538,7 +622,7 @@ const BackgroundPartyResolver = {
             losses += 1;
         }
 
-        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, rng, timestamp });
+        const rewards = distributeRewards({ members, spot, kills: mobsKilled, defeatedNpcIds, overhitContexts, rng, timestamp });
         const memberResults = [];
         const events = [];
         let deaths = 0;
@@ -782,6 +866,9 @@ const BackgroundPartyResolver = {
 
         return {
             ...(materialHunt ? { atomic: true } : {}),
+            // A round whose spot admitted none of the party's fights (no mob its members
+            // may take): the spot's emptiness, marked on the party by its step (spot_empty).
+            ...(!raid && !attemptedFights && avoidedReason ? { unhuntable: true } : {}),
             memberResults: distributedMemberResults,
             events,
             partyPatch: {
@@ -789,16 +876,20 @@ const BackgroundPartyResolver = {
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
                 risk: clamp(Number(party.risk || 0.25) + riskDelta, 0.05, 0.95),
                 stats: {
+                    ...(raidFailed || raidDefeated ? { partyBreakReason: raidDefeated ? 'raid_defeated' : 'raid_failed' } : {}),
                     ...(lootDistribution.agreement ? { agreement: lootDistribution.agreement } : {}),
                     ...(materialHunt ? { materialTargetNpcId: targetNpcId } : {}),
                     pveEncounter: raid ? null : pending,
+                    // Whole mobs left unused stay for the other hunters (resolveSolo's carry).
+                    ...(round?.share != null ? { coldShare: { spotId: spot.id, carry: (left => Math.round((left < 0 ? left : left % 1)
+                        * 1000) / 1000)(round.shareMobs - mobsKilled) } } : {}),
                     recommendationHunt: huntActivity,
                     ...(raid ? { raidEncounter: raidSnapshot } : {}),
                     ...(marked && attemptedFights > 0 ? { raidAdmission: admission.proof } : {}),
-                    assemblyWait: null,
+                    assemblyAt: null,
+                    rosterRecheck: null,
                     fightsResolved: Number(party.stats?.fightsResolved || 0) + fights,
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
-                    lastProgressAt: wins > 0 ? timestamp : Number(party.stats?.lastProgressAt || 0),
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
                     restUntil: partyRestUntil,
@@ -877,4 +968,5 @@ BackgroundPartyResolver.resolve = (options = {}) => {
 const resolveWithCompetition = BackgroundPartyResolver.resolve;
 BackgroundPartyResolver.resolve = (options = {}) => PartySpotRiskPolicy.record(
     options.party, resolveWithCompetition(options), options.timestamp ?? Date.now());
+Object.assign(BackgroundPartyResolver, { PARTY_RESOLVE_MIN_MS, PARTY_RESOLVE_SPREAD_MS });
 module.exports = BackgroundPartyResolver;

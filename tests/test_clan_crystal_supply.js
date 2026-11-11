@@ -49,7 +49,7 @@ function context(state, options = {}) {
     return Economy.forState(state, { board: options.board || new BoardIndex(), spots: [], caller: 'meeting_prepare',
         npcOffersFor: invoke('GameServer/Bot/Population/ColdOccupationSources').npcOffersFor,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-        workshop: null, knownRecipes: [], ...options });
+        knownRecipes: [], ...options });
 }
 async function run() {
     Data.init(); await DB.init(); await Life.init();

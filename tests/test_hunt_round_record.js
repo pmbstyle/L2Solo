@@ -67,37 +67,6 @@ hot = hunt({ ...hot, timing: { lastHotAt: start + 30 * MIN } }, start + 40 * MIN
 assert.deepStrictEqual([hot.stats.huntClock.onSpot, hot.stats.huntClock.total], [beforeHot.onSpot, beforeHot.total],
     'hot time is neutral for the on-spot share');
 
-// The row's own noise (ARCH-05): a round's exp is divided by the time until
-// the next round, a random 30-120 s, so a steady hunt swings round to round.
-// The soft point reads a swing inside that noise as no observation; a real
-// fall of the hunt beyond it is one.
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const gap = i => (i % 2 ? 120 : 30) * 1000;
-let steady = base, steadyAt = start;
-const huntFor = (rounds, options = {}) => { for (let i = 0; i < rounds; i++) {
-    steady = hunt(steady, steadyAt, { ...options, nextIn: gap(i) }); steadyAt += gap(i); } };
-huntFor(8);
-const steadyShare = Efficiency.onSpotShare(steady);
-const observed = { sample: Sections.packSample(Sections.sample(steady, steadyAt)), incomeError: 0.03,
-    ...(steadyShare === 1 ? {} : { share: steadyShare }) };
-huntFor(1);
-assert.strictEqual(Sections.observationChanged(steady, observed, steadyAt), false,
-    'a reading inside the row\'s own noise is no observation event');
-huntFor(8, { adena: 150, exp: 25 });
-assert.strictEqual(Sections.observationChanged(steady, observed, steadyAt), true,
-    'a hunt that fell to a quarter is an observation event');
-
-// A round at a spot the bot already knows moves its row to the front
-// (record's [next, ...kept]): the same spots and values in another order are
-// no observation event, a value beyond the error after the reorder is one.
-const rowA = steady.stats.huntEfficiency[0], rowB = { ...rowA, spotId: 'other' };
-const withRows = rows => ({ ...steady, stats: { ...steady.stats, huntEfficiency: rows } });
-const orderBase = { ...observed, sample: Sections.packSample(Sections.sample(withRows([rowA, rowB]), steadyAt)) };
-assert.strictEqual(Sections.observationChanged(withRows([rowB, rowA]), orderBase, steadyAt), false,
-    'the same spots and values in another order are no observation event');
-assert.strictEqual(Sections.observationChanged(withRows([{ ...rowB, exp: rowB.exp / 4 }, rowA]), orderBase, steadyAt), true,
-    'a value beyond the error after a reorder is an observation event');
-
 // ARCH-NOTE: the delivered private-income rule intentionally removed cohort medians;
 // other bots' rows cannot establish this bot's hour. Solo/party samples remain separate.
 const earner = (characterId, party, adena) => {

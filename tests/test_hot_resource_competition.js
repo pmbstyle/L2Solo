@@ -23,7 +23,7 @@ options.default.Database.path = path.join(dir, 'test.sqlite');
 options.default.Database.historyPath = path.join(dir, 'history.sqlite');
 const original = { user: World.user, npcs: World.fetchNpcsInRadius, incoming: Awareness.npcThreateningActor,
     plan: Retreat.plan, spot: Spots.findCurrentSpot, peace: utils.isInPeaceZone, now: Date.now,
-    enabled: Config.backgroundPartyEnabled, limit: Config.maxBackgroundParties, enqueue: Memory.events.enqueue, promote: AI.promoteForPlayerInteraction };
+    enabled: Config.backgroundPartyEnabled, limit: Config.maxPlayingPopulation, enqueue: Memory.events.enqueue, promote: AI.promoteForPlayerInteraction };
 let now = Date.now(), serial = 1000, emitted = [];
 const sessions = [];
 function actor(id) {
@@ -52,7 +52,7 @@ function mob(owner) {
 async function run() {
     Date.now = () => now;
     AI.promoteForPlayerInteraction = () => {};
-    Config.backgroundPartyEnabled = true; Config.maxBackgroundParties = 60;
+    Config.backgroundPartyEnabled = true; Config.maxPlayingPopulation = 240;
     World.user = { sessions: [], revision: 0 }; Awareness.npcThreateningActor = s => s.incoming || null;
     utils.isInPeaceZone = () => false;
     Spots.findCurrentSpot = () => ({ id: 'field' });
@@ -195,7 +195,7 @@ async function run() {
     assert([a, b, c, d].every(s => !s.hotCompetitionHold));
     b.incoming = null;
     // A hot party consumes the same admission ceiling as a cold one.
-    Config.maxBackgroundParties = Parties.admitted().length;
+    Config.maxPlayingPopulation = 4 * Parties.admitted().length;
     assert.strictEqual(Population.reserveCompetitionPartySlot(), null);
     // Verify the ordinary hot-to-cold transaction accepts the newly formed roster.
     const party = Parties.find(partyId), states = party.memberIds.map(id => Life.cachedState(id));
@@ -215,7 +215,7 @@ async function run() {
 run().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
     Date.now = original.now; World.user = original.user; World.fetchNpcsInRadius = original.npcs;
     Awareness.npcThreateningActor = original.incoming; Retreat.plan = original.plan; Spots.findCurrentSpot = original.spot;
-    utils.isInPeaceZone = original.peace; Config.backgroundPartyEnabled = original.enabled; Config.maxBackgroundParties = original.limit;
+    utils.isInPeaceZone = original.peace; Config.backgroundPartyEnabled = original.enabled; Config.maxPlayingPopulation = original.limit;
     Memory.events.enqueue = original.enqueue;
     sessions.forEach(s => AI.stop(s));
     AI.promoteForPlayerInteraction = original.promote;

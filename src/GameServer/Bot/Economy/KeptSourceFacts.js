@@ -2,8 +2,8 @@
 // The source facts of a bot's wish build (WishProviders sourcePath over
 // GearAcquisitionPlanner.sourceFacts), kept with the bot's held build
 // (EconomyContext, beside its source ground) and served to the next build of
-// the same bot while every input the fact read is the same (decision links
-// step 5, S1): the walk is a pure function of what it reads, so the same reads
+// the same bot while every input the fact read is the same:
+// the walk is a pure function of what it reads, so the same reads
 // give the same answer. Owns the record's layout; worker and main builds.
 //
 // What a fact reads:
@@ -14,7 +14,7 @@
 //   of the route reader (kept with the held build; cells only fill, so the
 //   same array answers every spot it answered; a reset is a new array);
 // - its own: the item (and whether only Spoil is asked), whether the build
-//   had read the spoiler when it asked (the walk's band reads it, debt.md 23),
+//   bot spoils (the walk's band reads it; a build reads it once, WishProviders),
 //   and the crowd of every spot whose value it read (the reader's hunters);
 // - a price or a bag count read inside its scope: such a fact is not kept (none
 //   does today), so a kept fact replays no read and the build's read scopes
@@ -146,8 +146,8 @@ function session(prior, { spots, index, cells, fields }) {
         if (rows.length >= LIMIT || slots + row.length > RECORD_SLOTS) { cut++; return; }
         rows.push(row); slots += row.length;
     };
-    // The kept answer of the fact `key` asked with `spoilerSeen` (0 unread,
-    // 1 none, 2 a spoiler): { best } (best null: no ready source), or null:
+    // The kept answer of the fact `key` asked with `spoilerSeen` (1 none, 2 a
+    // spoiler; 0 a fact kept before the build read it once): { best } (best null: no ready source), or null:
     // build it. huntersAt(ordinal): the crowd there now. A kept answer with
     // `verify` set is built fresh too and handed back to built().
     function take(key, spoilerSeen, huntersAt) {

@@ -5,9 +5,8 @@ const Chat = invoke('GameServer/Bot/AI/BotClanChat');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const ClanService = invoke('GameServer/Clan/ClanService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
-const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -55,14 +54,24 @@ const Speak = invoke('GameServer/Network/Request/Speak');
 const SendPacket = invoke('Packet/Send');
 const saved = { user: World.user, find: ClanService.findById, speak: Response.speak,
     items: DataCache.items, now: Date.now, random: Math.random, execute: Database.execute,
-    evaluate: Needs.evaluate, cached: LifeState.cachedState,
+    goal: Needs.goal, shownGoal: Needs.shownGoal, view: Decision.view, cached: LifeState.cachedState,
     config: { ...Config }, warn: utils.infoWarn };
 let now = 1000000;
 let members = [101,102,103];
 const delivered = [], leaked = [];
 const source = { characterId: 101, name: 'Aria', level: 20, phase: 'cold', stats: { clanId: 999 } };
-const goal = (type = 'upgrade_gear', itemId = 1) => ({ type, status: 'active', target: { itemId, itemName: `Item ${itemId}`, level: 21 },
-    plan: {}, blockers: [], priority: 70, nextReviewAt: 1 });
+const goal = (type = 'upgrade_gear', itemId = 1) => ({ type, target: { itemId, itemName: `Item ${itemId}`, level: 21 }, plan: {} });
+// The goal each card's leaf reads (a gear purchase, else the next level), and the
+// goal each bot reads now (the flush check), over a held card store (the
+// coordinator's): a card of a new decision (its echo's decisionSeq) is told.
+const goalOf = card => card.activity.itemId ? goal('upgrade_gear', card.activity.itemId) : goal('progress_level');
+const current = new Map();
+let decisions;
+function hold(characterId, itemId, decisionSeq) {
+    const card = { updatedAt: 0, echo: [decisionSeq, 1, null], inputHash: 1, activity: { activity: 'shopping', itemId, amount: 1 } };
+    current.set(characterId, goalOf(card));
+    decisions.hold(characterId, card, { ...source, characterId });
+}
 // Separate account identities are required: insertUser retires reconnects of
 // the same account. The original three 'player' labels meant different humans.
 const listenerIds = new Map([
@@ -76,7 +85,8 @@ function player(clanId, sink, accountId = 'player_member', locX = 0) {
         packet => sink.push(packet), clanId, locX);
 }
 function reset() {
-    Chat.reset(); GoalState.reset(); Voice.reset(); delivered.length = 0; leaked.length = 0;
+    Chat.reset(); Voice.reset(); delivered.length = 0; leaked.length = 0; current.clear();
+    decisions = new Decision.ColdEconomyDecisions();
     members = [101,102,103]; now += 1000000;
     Config.clanChatEnabled = true; Config.globalChatEnabled = false;
     publishSessions([player(11, delivered), player(12, leaked, 'player_other_clan'),
@@ -90,35 +100,43 @@ async function main() {
         ClanService.findById = id => id === 11 ? { id: 11, members: members.map(id => ({ id })) } : { id, members: [] };
         DataCache.items = [{ selfId: 1, template: { name: 'Sword of Revolution' } }, { selfId: 2, template: { name: 'Iron Ore' } }];
         Database.execute = async () => [];
-        Needs.evaluate = () => [goal()];
-        LifeState.cachedState = () => null;
+        Decision.view = (state, card) => card;
+        Needs.goal = (state, options) => goalOf(options.economy);
+        Needs.shownGoal = state => current.get(state?.characterId) || null;
+        LifeState.cachedState = id => ({ ...source, characterId: id });
         reset();
-        await GoalService.review(source, { now });
-        assert.strictEqual(delivered.length, 1, 'a committed new goal is announced');
+        hold(101, 0, 1);
+        assert.strictEqual(delivered.length, 0, 'the first card after a restart replaces none: no news');
+        hold(101, 1, 2);
+        assert.strictEqual(delivered.length, 1, 'a new decision with a new goal is announced');
         assert(delivered[0].text.includes('Sword of Revolution') && !delivered[0].text.includes('Item 1'));
         assert.strictEqual(delivered[0].kind, 4);
         assert.strictEqual(leaked.length, 0, 'only real players in the same clan receive the packet, irrespective of distance');
         now += 20000;
-        await GoalService.review(source, { now });
-        assert.strictEqual(delivered.length, 1, 'reviewing the same target does not announce it again');
-        Needs.evaluate = () => [goal('upgrade_gear', 2)];
-        await GoalService.review(source, { now });
+        hold(101, 1, 2);
+        hold(101, 1, 3);
+        assert.strictEqual(delivered.length, 1, 'the same decision, or a new one with the same target, is not announced again');
+        hold(101, 2, 4);
         assert.strictEqual(delivered.length, 2, 'another target of the same goal type is a new goal');
         assert(delivered[1].text.includes('Iron Ore'));
 
-        reset(); Needs.evaluate = () => [goal()];
-        await GoalService.review(source, { now });
-        await GoalService.review({ ...source, characterId: 102, name: 'Belen' }, { now });
+        reset();
+        hold(101, 0, 1);
+        decisions.acceptNear(101, { updatedAt: 0, echo: [2, 1, null], inputHash: 1, activity: { activity: 'shopping', itemId: 2, amount: 1 } });
+        hold(101, 1, 3);
+        assert.strictEqual(delivered.length, 0, 'the first far card after a near body\'s card replaces no far goal: no news');
+        hold(101, 2, 4);
+        assert.strictEqual(delivered.length, 1, 'the next far decision is compared with the far card before it');
+
+        reset();
+        hold(101, 0, 1); hold(101, 1, 2);
+        hold(102, 0, 1); hold(102, 1, 2);
         assert.strictEqual(delivered.length, 1, 'two goals at once respect the shared clan budget');
         assert.strictEqual(Chat.snapshot().pending, 1);
         now += 15000; Chat.flush(now);
         assert.strictEqual(delivered.length, 2, 'the second notification is delivered on an ordinary tick');
         assert.strictEqual(leaked.length, 0);
-
-        reset(); Database.execute = async () => { throw new Error('write failed'); };
-        assert.strictEqual(await GoalService.review(source, { now }), null);
-        assert.strictEqual(delivered.length, 0, 'failed persistence must not produce a goal claim');
-        Database.execute = async () => [];
+        LifeState.cachedState = () => null;
 
         reset();
         const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -186,11 +204,13 @@ async function main() {
         reset();
         Chat.onWarehouse(source, receipt, 11, now);
         const queuedGoal = goal();
-        GoalState.prime(102, JSON.stringify(queuedGoal), now);
+        LifeState.cachedState = id => ({ ...source, characterId: id });
+        current.set(102, queuedGoal);
         assert(Chat.onGoal({ ...source, characterId: 102 }, queuedGoal, null, now));
-        GoalState.prime(102, JSON.stringify({ ...queuedGoal, status: 'completed' }), now);
+        current.set(102, null);
         now += 15000; Chat.flush(now);
         assert.strictEqual(delivered.length, 1, 'a completed or replaced queued goal must not speak later');
+        LifeState.cachedState = () => null;
         assert(Chat.onWarehouse({ ...source, characterId: 102 }, receipt, 11, now));
         Chat.onWarehouse({ ...source, characterId: 103 }, receipt, 11, now);
         members = [101,102]; now += 15000; Chat.flush(now);
@@ -225,13 +245,13 @@ async function main() {
         sender.actor.fetchClanId = () => 0;
         Speak(sender, new SendPacket(0x38).writeS('No clan').writeD(4).fetchBuffer());
         assert.strictEqual(delivered.length, 2, 'clanless speakers cannot broadcast to other clanless players');
-        console.log('Bot clan chat checks passed: committed goals, death windows, warehouse receipts, clan isolation and bounded queues.');
+        console.log('Bot clan chat checks passed: new decisions\' goals, death windows, warehouse receipts, clan isolation and bounded queues.');
     } finally {
         clearPublishedSessions();
         Object.assign(Config, saved.config); World.user = saved.user; ClanService.findById = saved.find;
         Response.speak = saved.speak; DataCache.items = saved.items; Date.now = saved.now; Math.random = saved.random;
-        Database.execute = saved.execute; Needs.evaluate = saved.evaluate;
-        LifeState.cachedState = saved.cached; utils.infoWarn = saved.warn; GoalState.reset(); Chat.reset(); Voice.reset();
+        Database.execute = saved.execute; Needs.goal = saved.goal; Needs.shownGoal = saved.shownGoal; Decision.view = saved.view;
+        LifeState.cachedState = saved.cached; utils.infoWarn = saved.warn; Chat.reset(); Voice.reset();
     }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

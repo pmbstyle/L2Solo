@@ -17,6 +17,7 @@ const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const { ColdSimulationKernel, lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const Situations = require('../src/GameServer/Bot/Situations');
 
 DataCache.init();
 Database.init();
@@ -66,7 +67,9 @@ function settleSnapshot() {
             classId: 0,
             role: 'dps',
             lastReason: 'acquisition_party_wait',
-            partyRequest: { status: 'open', priority: 'required' }
+            partyRequest: { status: 'open', priority: 'required' },
+            // Every decision taken and held: a raise shows on the row.
+            woken: 0, waiting: 0, earning: { spotId: null, at: 1 }, wishSections: {}
         },
         inventory: {}
     }, 'party_handoff_fixture');
@@ -91,6 +94,11 @@ function settleSnapshot() {
     assert.strictEqual(detached.party.partyId, null);
     assert.strictEqual(detached.activity, 'hunting', 'capacity reclamation must not leave a grouped solo bot');
     assert(Number(detached.timing.nextResolveAt) > Date.now(), 'detached grouped bot must receive a bounded solo due time');
+    // A far member's leave is its situation (party_left, the one leave rule): its earning spot and build wake
+    // on the row the leave wrote.
+    assert.strictEqual(Number(detached.stats.situationSeq || 0), Number(assigned.stats?.situationSeq || 0) + 1, 'the leave raises once');
+    assert(Number(detached.stats.woken) & Situations.BITS.earning_spot && Number(detached.stats.woken) & Situations.BITS.build,
+        'party_left wakes the earning spot and the build');
     assert(notifications.some((entry) => (
         entry.options.reason === 'party_left_party_capacity_reclaimed'
         && entry.options.critical === true
@@ -155,6 +163,7 @@ function settleSnapshot() {
     );
     await settleSnapshot();
     assert(raceDetached, 'party market break must commit while a worker step is in flight');
+    assert(Number(raceDetached.stats.woken) & Situations.BITS.earning_spot, 'the hand-off carries the leave\'s raise');
     assert.strictEqual(raceDetached.party.partyId, null);
     assert.strictEqual(raceDetached.activity, 'traveling');
     assert.strictEqual(raceDetached.stats.travel.reason, 'market_sale_inventory');

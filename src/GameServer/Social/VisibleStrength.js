@@ -1,4 +1,4 @@
-// "Can I win?" for every PvP decision, hot and cold (U26). A bot knows its own
+// "Can I win?" for every PvP decision, hot and cold. A bot knows its own
 // side exactly. Of the other side it knows only what a player sees: the grade
 // of the weapon and its enchant glow, the grade of the body armour and how many
 // people stand with him; plus its own memory of him (fear). Levels, stats,
@@ -39,9 +39,11 @@ function compare(a = NOTHING, b = NOTHING) {
     return weapon * body < 0 ? 0 : Math.sign(weapon + body);
 }
 
+// A look's order for the best of a side and the weakest of a crowd: weapon grade, then
+// glow, then body armour grade.
+const rank = (x = NOTHING) => (x.weapon * 4 + x.glow) * 6 + x.body;
 // The best-looking member stands for his side.
 function best(looks) {
-    const rank = x => (x.weapon * 4 + x.glow) * 6 + x.body;
     let top = NOTHING;
     for (const x of looks) if (rank(x) > rank(top)) top = x;
     return top;
@@ -176,10 +178,14 @@ function required(traits, fearOf = 0) {
 // visibly better gear and at least as many people = stronger, almost always;
 // visibly worse and no more people = weaker, almost never; anything else looks
 // even and the chance follows the odds against the author's threshold.
-function canWin({ own, other, traits, fear: fearOf = 0, knowledge = null }) {
+// The look alone (no roll, no condition): 'stronger', 'weaker' or 'even' (canWin's verdict).
+function verdictOf(own, other) {
     const people = own.people / Math.max(1, other.people);
     const gear = compare(own.look, other.look);
-    const verdict = gear > 0 && people >= 1 ? 'stronger' : gear < 0 && people <= 1 ? 'weaker' : 'even';
+    return gear > 0 && people >= 1 ? 'stronger' : gear < 0 && people <= 1 ? 'weaker' : 'even';
+}
+function canWin({ own, other, traits, fear: fearOf = 0, knowledge = null }) {
+    const verdict = verdictOf(own, other);
     const seenStrength = other.strength ?? other.people;
     const estimated = knowledge ? require('./PeopleKnowledge').estimate(seenStrength, knowledge.source, knowledge.persona, knowledge.key) : seenStrength;
     const ratio = (own.strength ?? own.people) / Math.max(0.25, estimated);
@@ -193,6 +199,6 @@ function willing(result, ...key) {
     return Tendency.roll(...key) < result.chance;
 }
 
-module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, seen, actorSeen, stateCue, stateSeen, actorSide, stateSide,
+module.exports = { GRADE, NOTHING, glow, look, compare, rank, best, actorLook, stateLook, actorPeople, statePeople, seen, actorSeen, stateCue, stateSeen, actorSide, stateSide,
     resources, condition,
-    fear, required, canWin, willing, SLOPE };
+    fear, required, verdictOf, canWin, willing, SLOPE };

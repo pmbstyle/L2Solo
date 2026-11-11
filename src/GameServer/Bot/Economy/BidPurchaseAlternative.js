@@ -1,8 +1,7 @@
 'use strict';
 
 const { SELL } = require('../../AfkTrade/BoardIndex');
-const { personalOfferAllowed } = require('../Population/PartyAdmission');
-const { fill } = require('./OfferQuery');
+const { fill, admits } = require('./OfferQuery');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
 const Production = require('./ProductionPolicy');
 
@@ -31,7 +30,7 @@ function cap(selfId, ctx, { units = 1, town, money, enchant = 0, proof = null, p
         if (line.ownerId === ctx.characterId || Number(line.enchant || 0) !== enchant
             || !Number.isSafeInteger(line.price) || line.price <= 0
             || !Number.isSafeInteger(line.count) || line.count <= 0 || line.available === false
-            || line.executable === false || !personalOfferAllowed(line, ctx.state)) continue;
+            || line.executable === false || !admits(line, ctx.state)) continue;
         if (line.custodyPolicy === 1 && !(planned?.activity === 'shopping' && planned.kind === 'buy'
             && planned.sourceType === 'afk' && planned.quoted === true && planned.executable === true
             && planned.itemId === Number(selfId) && planned.town === line.town

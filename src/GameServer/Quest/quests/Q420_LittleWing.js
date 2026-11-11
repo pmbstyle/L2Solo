@@ -6,7 +6,7 @@ const dragons = [
     { npc:7751, name:'Suzet', mob:270, prey:'Breka Orc Overlords', scale:3828, egg:3829 },
     { npc:7752, name:'Shamhai', mob:202, prey:'Dead Seekers', scale:3830, egg:3831 }
 ];
-// 719 (Fairy Queen Timiniel) left out: neither Mobius nor Lisvus C4 has that monster (T43).
+// 719 (Fairy Queen Timiniel) left out: neither Mobius nor Lisvus C4 has that monster.
 const fairyMobs = Array.from({length:11}, (_,i)=>589+i);
 const link = (event,text) => `<a action="bypass -h quest 420 ${event}">${text}</a><br>`;
 const page = text => `<html><body>Little Wing:<br>${text}</body></html>`;

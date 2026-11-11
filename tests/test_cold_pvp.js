@@ -30,7 +30,7 @@ const ordinaryHunt = process.argv.includes('--ordinary-hunt');
 const base = { life: Life, owner: Owner, parties: Parties, memory: Memory, now: () => at,
     participantAllowed: () => true, contestContextAllowed: () => true, onState() {},
     pvpEnabled: () => true, conflictsEnabled: () => true, personaFor,
-    waitMs: 15000, cooldownMs: 600000, rng: () => 0.2 };
+    waitMs: 15000, rng: () => 0.2 };
 function event(a, b, key = `cold-pvp:${a}:${b}`) {
     const participant = id => {
         const p = Parties.find(state(id).party?.partyId);
@@ -213,8 +213,8 @@ async function main() {
     const firstEvent = event(1, 3);
     const first = await new ColdCompetitionActions(base).apply(firstEvent);
     assert(first.ok && first.pvp, JSON.stringify(first));
-    assert.strictEqual(state(2).stats.coldCompetition.conflictUntil, at + 600000,
-        'a party with a recovering teammate can fight and retains the full PvP cooldown');
+    assert.strictEqual(state(2).stats.coldCompetition.key, firstEvent.key, 'a party with a recovering teammate can fight');
+    assert.strictEqual(state(2).stats.coldCompetition.conflictUntil, undefined, 'and keeps no conflict window after it');
     assert.strictEqual(first.outcome, 'pvp_killed');
     assert.strictEqual(state(1).activity, 'dead');
     assert.strictEqual(state(1).vitals.hp, 0);
@@ -291,7 +291,7 @@ async function main() {
     assert(revenge.ok && revenge.pvp, JSON.stringify(revenge));
     assert.strictEqual(state(22).activity, 'dead', 'the avenger opens the fight, not its unsuspecting target');
     assert.strictEqual(state(21).stats.coldCompetition.action, 'revenge');
-    assert.strictEqual(state(21).stats.revengeUntil, at + 600000);
+    assert.strictEqual(state(21).stats.revengeUntil, undefined, 'no revenge window: the pair meets again only at an arrival');
     assert(!(await Repository.load(22)).relations.some(r => r.reasons.some(reason => reason.type === 'mob_contested')),
         'a revenge fight must not fabricate stolen monsters');
     assert.strictEqual((await Database.execute(['SELECT pk FROM characters WHERE id=21', []]))[0].pk, 1,
@@ -359,8 +359,6 @@ async function main() {
     assert.deepStrictEqual(await Repository.load(38), aidMemory, 'cold aid consequences survive SQLite reopen');
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=1', []]))[0].hp, 0);
     assert.strictEqual((await Database.execute(['SELECT pk,karma FROM characters WHERE id=3', []]))[0].karma, 240);
-    assert.strictEqual(JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=21', []]))[0].statsJson).revengeUntil,
-        at + 600000, 'revenge cooldown survives SQLite reopen');
     console.log('Cold PvP: deterministic bounded combat, CP/MP, PK/PvP, death/recovery, atomic rollback, replay and SQLite reopen passed');
     console.log(`Cold PvP 9v9: ${fullFight.actions} actions, ${computeMs.toFixed(2)} ms calculation`);
 }

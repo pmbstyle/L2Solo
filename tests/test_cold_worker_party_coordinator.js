@@ -118,9 +118,8 @@ let coordinator = null;
         `INSERT INTO bot_background_parties (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
             cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
-        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}',
-            json_object('sessionReview', json_object('at', ?, 'nextAt', ?)), ?)`,
-        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt - 120000, dueAt - 1, dueAt]
+        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}', '{}', ?)`,
+        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt]
     ]);
     assert.strictEqual(await PartyState.init(), true);
     assert.strictEqual(await LifeState.init(), true);
@@ -132,19 +131,13 @@ let coordinator = null;
 
     coordinator = new ColdSimulationCoordinator();
     let mainCommands = 0;
-    let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
     const combatActionsBefore = Number(Metrics.counters.combatActions || 0);
     LifeState.enqueueEquipmentGoalAdvanceForState = async () => {
         throw new Error('synthetic equipment goal wakeup failure');
     };
     await coordinator.start({
-        executeWorkerLifecycleCommand() { mainCommands += 1; },
-        reconcileWorkerPartyGoals(party) {
-            partyGoalReconciles += 1;
-            assert.strictEqual(party.partyId, 'worker-party');
-            return Promise.resolve({ party, reviewed: 0, departed: null });
-        }
+        executeWorkerLifecycleCommand() { mainCommands += 1; }
     });
 
     const deadline = Date.now() + 25000;
@@ -165,13 +158,6 @@ let coordinator = null;
         await wait(50);
         snapshot = coordinator.snapshot();
     }
-    const formationProposal = await coordinator.requestRequiredPartyFormation({ candidateLimit: 12 });
-    assert.strictEqual(formationProposal.ok, true, 'main must receive a required-party proposal from the worker');
-    assert.deepStrictEqual(
-        formationProposal.candidates.map((candidate) => Number(candidate.characterId)).sort((a, b) => a - b),
-        [...requiredIds].sort((a, b) => a - b),
-        'worker proposal must contain the compatible unassigned required requests'
-    );
     const goalMembers = await LifeState.statesByIds(requiredIds, { unassigned: true });
     const goalParty = { partyId: 'worker-first-goal', memberIds: goalMembers.map(member => member.characterId),
         leaderId: goalMembers[0].characterId, stats: { objective: { sourceKind: 'raid', spotId: spot.id } } };
@@ -182,32 +168,6 @@ let coordinator = null;
     assert.deepStrictEqual(goalResult.sources,
         require('../src/GameServer/Bot/Population/PartyGoalCalculation').sources(goalMembers));
     assert.equal(coordinator.partyGoalRequests, 0, 'native response releases the admission slot');
-    const CraftShop = invoke('GameServer/Bot/Economy/CraftShopService');
-    const Workshop = require('../src/GameServer/Bot/Economy/CraftWorkshopService');
-    const Codec = require('../src/GameServer/Bot/Economy/RecipeBookCodec');
-    const originalService = CraftShop.isServiceCrafter;
-    const originalPost = coordinator.post;
-    let sentKnowledge;
-    CraftShop.isServiceCrafter = () => true;
-    // Main's recipe cache holds each member's book (none learned yet).
-    await Promise.all(goalMembers.map(member => Workshop.knownFor(member.characterId)));
-    coordinator.post = function(type, payload, ...args) {
-        const sent = originalPost.call(this, type, payload, ...args);
-        if (type === 'party_goal_request') {
-            sentKnowledge = payload.recipeKnowledge;
-            // A learning while the reply is awaited drops main's cached book.
-            Workshop.recipesChanged(goalMembers[0].characterId);
-        }
-        return sent;
-    };
-    try {
-        const changedKnowledge = await coordinator.requestPartyGoals(goalParty, goalMembers);
-        assert.equal(sentKnowledge[0].recipeBook, Codec.pack([]), 'query carries current main recipe authority');
-        assert.equal(changedKnowledge.reason, 'party_goal_source_changed', 'knowledge learned while awaiting reply rejects stale goals');
-        assert.equal(coordinator.partyGoalRequests, 0);
-    } finally {
-        CraftShop.isServiceCrafter = originalService; coordinator.post = originalPost;
-    }
     const largeMembers = await LifeState.statesForParty('worker-party');
     assert(require('../src/GameServer/Bot/Population/ColdSimulationProtocol').byteLength({ members: largeMembers }) > 256 * 1024,
         'fixture requires multiple complete-input pages');
@@ -218,8 +178,6 @@ let coordinator = null;
     assert(Number(snapshot.worker.resolved || 0) >= 2, 'worker must resolve every claimed party member');
     assert(Number(snapshot.queue.committed || 0) >= 2, 'main DB gateway must commit every party member');
     assert(Number(snapshot.worker.proposalCompactions || 0) >= 2, 'the real worker must compact a party exceeding one IPC message');
-    assert.strictEqual(snapshot.partyReviews.committed, 1, 'review telemetry counts the committed review once, not once per member');
-    assert.strictEqual(snapshot.partyReviews.departed, 0);
     const preserved = await Database.execute([`SELECT statsJson FROM bot_life_state WHERE partyId = 'worker-party'`, []]);
     assert(preserved.every(row => JSON.parse(row.statsJson).transportFixture.length === 140000),
         'sparse transport must preserve unchanged durable state for every party member');
@@ -239,8 +197,6 @@ let coordinator = null;
         'worker party commit must feed the public party resolve metric');
     assert(Number(Metrics.counters.combatActions || 0) > combatActionsBefore,
         'actual worker transport and commit must preserve the shared party combat counters');
-    assert.strictEqual(partyGoalReconciles, 1,
-        'one committed worker party combat result must reconcile party goals exactly once through the leader');
 
     await coordinator.stop();
     const cachedState = LifeState.cachedState;

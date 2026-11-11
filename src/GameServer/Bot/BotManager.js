@@ -1,7 +1,6 @@
 const FailureLog = require('../../FailureLog');
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
-const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
 const Shared      = invoke('GameServer/Network/Shared');
 const DataCache   = invoke('GameServer/DataCache');
@@ -21,7 +20,6 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
@@ -232,16 +230,15 @@ const BotManager = {
         const ServerResponse = invoke('GameServer/Network/Response');
         const Html = invoke('GameServer/World/Generics/HtmlKit');
         const safe = (value) => Html.esc(value);
-        const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
+        // The goal over the card the bot holds, its floor and errands.
+        const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').shownGoal(state);
         const travel = state.stats?.travel;
         const lead = state.stats?.marketLead;
         const wanted = state.stats?.marketWanted;
         const history = Object.values(state.stats?.partyHistory || {});
         const persona = BotPersona.of(state);
         const traits = personaTraits(persona);
-        const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
-            ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
-            : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
+        const goalLabel = !goal ? 'none' : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
         const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
             ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
             ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
@@ -319,7 +316,6 @@ const BotManager = {
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotManager :: Initializing automated bots...");
         BotFriendship.init();
         PopulationService.init();
-        GoalService.init();
         
         // Adventurers now belong exclusively to the persistent population
         // seeder. Keeping the old static starters here doubled the fresh-world
@@ -458,11 +454,12 @@ const BotManager = {
         const actor = session.actor;
 
         actor.state.setDead(false);
+        // A spawn starts at full HP/MP; the guide's blessing (buffs only) sends the
+        // vitals with its own refresh.
+        actor.fillupVitals();
         if (botData.fullNewbieBlessing !== false && BotBuffs.isNewbieEligible(actor)) {
             return BotBuffs.applyFullNewbieBlessing(session, actor, Generics);
         }
-
-        actor.fillupVitals();
         actor.statusUpdateVitals(actor);
         return { buffs: [], expiresAt: null };
     },
@@ -613,6 +610,13 @@ const BotManager = {
                         session.plan = botData.plan || 'hunting';
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
                         session.currentSpot = botData.currentSpot || null;
+                        // A walker shown on its road (HotActivation) walks the rest of its run
+                        // as the hot walk to its spot (HuntingState tickSpotRelocation); its
+                        // end is the bot's one arrival there; its cold trip (coldTrip) goes on cold
+                        // if the body cools first (BotLifeState.writeColdRow).
+                        if (botData.walkTo) session.spotRelocation = { mode: 'walk', method: 'walk',
+                            spotId: botData.walkTo.spotId, destination: { ...botData.walkTo.destination },
+                            coldTrip: botData.walkTo.trip || null, startedAt: Date.now(), lastCommandAt: 0 };
                         session.coldLifeState = botData.coldLifeState || null;
                         session.activationEconomyDecision = botData.economyDecision || null;
                         session.populationLocationPolicy = botData.populationLocationPolicy || 'return';
@@ -693,18 +697,8 @@ const BotManager = {
     },
 
     awardBaseGear(id, classId) {
-        const items = StarterItemCatalog.firstClassRow(DataCache.newbieItems, classId)?.items ?? [];
-        const hasTwoHandedWeapon = items.some((item) => {
-            const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
-            return Number(template?.etc?.slot || 0) === 14 &&
-                String(template?.template?.kind || '').startsWith('Weapon.');
-        });
-        return Promise.all(items.map((item) => {
-            item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
-            // Equip weapons/armors automatically for bots
-            item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
-            return Database.setItem(id, item);
-        }));
+        return Promise.all(StarterItemCatalog.starterRows(DataCache.newbieItems, classId, DataCache.items)
+            .map(row => Database.setItem(id, row)));
     },
 
     awardBaseSkills(id, classId, level = 1) {

@@ -1,6 +1,6 @@
 'use strict';
 
-// Two databases (step 1.8): the world file keeps what changes together; the
+// Two databases: the world file keeps what changes together; the
 // history file keeps finished events, filled through the world's outbox by the
 // history thread (src/HistoryStore.js, src/HistoryWorker.js).
 

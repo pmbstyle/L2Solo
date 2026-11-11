@@ -5,8 +5,8 @@ module.exports = function(session, parts) {
     const actor = session.actor;
     if (!actor) return;
 
-    if (actor.fetchLevel() > 25) {
-        session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Your level is too high! I can only help adventurers under level 25." }));
+    if (actor.fetchLevel() > BotBuffs.NEWBIE_GUIDE_MAX_LEVEL) {
+        session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: `Newbie Guide: Your level is too high! I can only help adventurers up to level ${BotBuffs.NEWBIE_GUIDE_MAX_LEVEL}.` }));
         return;
     }
 

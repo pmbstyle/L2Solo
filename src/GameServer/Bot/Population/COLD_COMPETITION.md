@@ -63,124 +63,124 @@ read. `/observer/api/world/status` exposes `hotCompetitionActions` separately
 from cold forecasts and actions; recent results distinguish executed outcomes
 and failed invitations.
 
-`coldCompetitionObserveEnabled` enables a read-only forecast in the cold worker.
-The monitor does not reserve mobs, change rewards, send invitations, write relationships,
-or initiate PvP. `offer_party.accepted` is a predicted response, not membership.
-`contest` and `pvpIntent` are hypothetical decisions, not accepted gameplay facts.
+## The spot aggregate: who holds a spot (worker)
 
-The monitor runs after initial snapshots, at most once per 30 seconds, and skips
-paused workers. It groups present, living cold hunters by spot and target NPC.
-Travel/rest are excluded. Party members use their leader context's objective and
-are one independent competitor; their occupied capacity still counts per member.
-Untargeted hunters add proportional demand. Raid/non-monster targets are excluded.
+Cold competition and cold revenge are situations of a spot, decided once when a unit
+arrives there; there is no periodic scan, no pair or unit cooldown and no revenge or
+conflict window. A pair meets again only at a later arrival.
 
-When no active equipment goal names a monster, ordinary hunters use a stable
-representative NPC drawn from level-appropriate spawn entries, weighted by spawn
-count. Parties share the leader's representative. Forecasts and execution use
-the same target calculation; this does not pin the actual PvE target or add a
-durable goal. Market plans and completed equipment goals no longer prevent
-ordinary hunting competition.
+`SpotContest` (pure) meets the arriving unit (a solo bot; a party through its leader
+until the party aggregate) with the units standing on the spot, read from the worker's
+occupancy index (bots on their way do not stand there; an arrival whose commit is not
+acked yet does, and the units it displaces do not). Over room is per-target pressure:
+the hunters on the arriving unit's target species, the untargeted by spawn share,
+against that species' share of the spot's room (`LevelingRoutes.capacityForSpot` times
+the spawn share, at least one place). Over room the arriving unit compares itself with
+each standing unit by what a player sees (`VisibleStrength`: weapon grade and glow, body
+armour grade, people with servitors; no level):
 
-Initial pressure is estimated using existing spot capacity multiplied by the
-target's share of spawns, with a floor of one slot. This is not measured spawn
-availability or kill throughput. Missing spawn data produces no estimate.
-This pressure is an encounter trigger, not proof that a particular NPC was stolen.
+1. a stranger that looks stronger stands there: the arriving unit answers the strongest
+   one: it leaves (`outmatched`), shares (`tolerated`) or disputes it (`pvp`);
+2. else it asks the weakest strangers it looks stronger than, each by its can-I-win roll,
+   to make room until the species is back to its room (at most eight units; standing
+   parties are not asked); each answers at the pressure then: it leaves (displaced),
+   shares (`spot:contest:tolerated_standing`) or disputes (one per arrival). The arrival
+   stays (`stronger`, or `pvp` with a dispute) when it displaced at least its own hunters,
+   the pressure after is within its own tolerance, or one stood its ground and the
+   pressure after is under twice the room; else it leaves (`outmatched`);
+3. else (an even look) a clanmate or friend there lets it share under twice the room
+   (`friendly_share`); otherwise it answers the first met stranger: it shares (`shared`),
+   disputes (`pvp`) or leaves (`even`, or `crowded` at twice the room): the first come
+   holds it.
 
-At most 32 pairs are sampled per scan with a rotating ground cursor. Each ground
-has at most eight pair slots; encounter hazard scales with pressure and is capped
-at four per minute per sampled pair. There is no backlog catch-up. Pair and unit
-forecast cooldowns are both two minutes; accepted disputes retain their separate
-durable cooldowns. A forecast the action consumer skips for its budget is handed
-back to the worker, which drops the cooldowns of that scan so the pair re-decides
-on the next scan (`competition_release`); nothing is queued. Expired keys are removed; at most twelve recent forecasts are
-retained, while the action consumer receives the current bounded event batch. Cooldowns and counters
-are process-local observation state and reset with the worker. They are NOT the
-durable deduplication needed for future gameplay events.
+The answer of the unit that does not hold the spot by look is its persona's
+(`ResourceCompetitionPolicy.decide` with it as the actor): avoid is leaving; a party
+offer (no party forms at the spot), a yield or a contest without PvP is sharing while the
+pressure is within its tolerance (`ResourceCompetitionPolicy.tolerance`: 1 to 1.3 times
+the room, by sociability, empathy and the lack of ambition), else leaving
+(`spot:contest:past_tolerance`); a contest with PvP intent, PvP on, is a dispute main
+carries out, the disputing unit its actor. A sharer takes the crowd's equal share; the
+stay judge (`spot_disappoints`) sends it away when that earns too far below its
+expectation. C4 has no bot rule here: a polite weaker player moves on, a stubborn one
+stays for the leftovers or fights (KS etiquette, karma); the numbers are our choice.
 
-Decisions use both personal relationships and existing persona traits. An unknown
-relationship is neutral; an unloaded memory view prevents evaluation. Each party
-is one competitor; an actual instigator is sampled with assertiveness/ambition
-weights and an actual counterpart is sampled uniformly. Observation cooldowns
-follow party identity, regardless of which member speaks. The estimator does not
-model clan/alliance diplomacy. Relative level and party
-size provide a coarse strength signal. Role, goal and actual membership validation
-must still happen before an eventual invitation can become a real party.
+Relationships are read for at most four met units and eight displacement candidates; an
+unread unit counts as a stranger, so a capped read only makes the arrival leave. A unit
+on a player's command or a safety evacuation never leaves (counted). Bodies near a player
+standing there are neither met nor displaced (their own tactics, below). A unit competes
+for its active equipment target where that spawns on the spot; otherwise (no target, or one
+that does not spawn there) for a stable representative NPC drawn from the spawns in its
+target level window, else from every spawn, weighted by count
+(`PartyHuntingTarget.competitionNpcId`), so every unit on a spot that spawns anything is
+counted, met and displaceable; this is competition context only, not the PvE target.
 
-Worker heartbeat and `/observer/api/snapshot` (`coldCompetition`) expose pressure,
-outcome counts, bounded examples, and scan duration. Do not interpret these counts
-as actual conflicts. Before enabling effects, use durable episode identity,
-participant ownership/CAS, inventory/reward accounting, and ordinary party APIs.
-No negative memory may be produced merely from a forecast or shared objective.
+The arriving unit's own outcome rides its arrival step: leaving raises `contest_lost`
+with the spot as its mark (it wakes the earning spot; the mark lasts the outing). A
+party's leave is a mark on the party (`PartySpotRiskPolicy.withMark`): its next step
+hears `contest_lost` on its held spot and its spot decision (`party_spot`) moves it. A
+displaced bot hears `contest_lost` (reason `displaced`) at its next step once the
+arriving commit is acked (the kernel's step wake: no commit of its own, it finishes the
+window its step already credited); a near arrival displaces at once. The unit that lost
+remembers the stronger one (`mob_contested`, `SpotContest.grievance`, counted
+`spot:contest:grievance` once its commit lands), written by its own commit: a displaced
+far bot at that next step (a command step carries it to main, which writes it once the
+command's writes landed, `ColdSimulationOwner.commitMemory`), a far solo arrival that
+shares under a stronger stranger (`tolerated`) at its arrival step. The event carries the step's time; main's commit queue
+writes it once that time has come. Parties and standing units that chose to share write none; bodies near a
+player write theirs per mob (`BotMobCompetition`).
+
+The spot keeps its reputation (`SpotRecords`, worker only): after five arrivals over its
+room it is held (the holder's best look and largest unit), until an arrival finds it at
+0.8 of its room or less. A bot hears of a hold at its town arrival; once heard, its solo
+spot search skips the camp when it looks weaker than the holder, has fewer people, or
+looks even and is more cautious than assertive (`spot:repelled`). A clearing is known at
+once; the bot's own sight is its outing mark.
+
+`EnemyMet` (pure, both threads) meets the arriving bots with the standing ones, both
+ways, where the holder remembers the peer or their clans are in a mutual war; the shared
+`RevengePolicy` decides (karma-aware: a red bot starts no fight outside a war, a red
+target is free, a white one weighs flag and karma), rolled once per (holder, peer,
+arrival step). Two far bots fight through main (below); two bodies near a player reach
+main as a `spot_command` (`BotRevenge.fromSpot`, the worker's roll, main checks the body
+and the 900-unit notice radius); a far and a near bot are only counted (`enemy_met:mixed`).
+A player's client first receiving a bot's CharInfo is a meeting too
+(`BotRevenge.playerSeen`, rolled per bot, player and the bot's stay).
+
+Outcomes touching other bots (the units an arrival displaces, a PvP dispute; a far
+`revenge` or `clan_war` meeting) wait in `SpotContestOutbox` for the arriving step's own
+commit ack; disputes and meetings are then fenced with that bot's committed revisions and
+go in the competition frame of the next heartbeat; the frame's receipt frees it. A
+refused ack, another step's ack, the bot leaving the far simulation, the worker's stop or
+an age past 10 s from the arrival drops them, counted (`spot:contest:<why>` on the
+situations= line), never re-fenced. A displaced bot standing there on a player's command
+loses the command at its next step (`command:displaced`) and its player is told who pushed
+it out (`spot_command` `command_lost`, main's `command_lost:told/offline`; an offline player
+is told nothing). Counters: `spot:arrival:checked/over`,
+`spot:contest:outmatched/even/crowded/stronger/friendly_share/tolerated/shared/pvp`,
+`spot:contest:tolerated_standing/past_tolerance/grievance`,
+`spot:contest:displaced/displaced_left`,
+`spot:contest:capped/memory/commanded/evacuation/hot_peer/pvp_hot_skipped` (a near
+arrival's PvP verdict runs no dispute: its body's own tactics),
+`enemy_met:<reason>`, `enemy_met:mixed`, and main's `enemy_met:<outcome>`.
 
 ## First real actions
 
 `coldCompetitionActionsEnabled` lets the main process apply at most four fresh
-PvP/revenge/accepted-offer/contest forecasts (eight attempts) and, in a separate
-budget, two yield/avoid departures (four attempts) from a scan, PvP first, within
-one 75 ms wall-time budget; `budgetSkipped` counts excess candidates, and their
-monitor cooldowns are released. Capacity and clan-objective refusals have explicit result reasons.
-Actual results are exported separately
-as `coldCompetitionActions` in the observer. PvP requires its separate enable flag.
-Resource disputes can execute under the separate conflicts flag described below.
-Two living solo hunters with the same active target can form a party.
-An accepted offer between a solo hunter and an existing party can instead recruit
-that hunter without consuming a new party slot. Party-to-party mergers and clan
-equipment operations are excluded.
-
-The action checks both lifecycle and memory revisions, target, presence, ownership,
-hot-handoff fences and a durable two-minute participant cooldown. Old forecasts
-expire after ten seconds. Main-process backlog/lag defers admission; there is no
-catch-up queue. The forecast is consumed once per scan, including rejections.
-
-A yield claims both hunting units and atomically records the episode with a
-15-second delay for the actor's unit (solo or full party). No relationship event is written. The resolver
-deducts the idle interval once from subsequent farming time and clears the wait.
-Party selection excludes pending waits. CAS validation rejects duplicate delivery
-even after restart, and a stale participant aborts both writes.
-
-An avoid decision excludes the current spot for ten steps of each holder (a
-member's far steps, the party's rounds), raises the occupation of the actor's
-unit and makes it due now; main searches no spot. The worker's next step (a
-solo member's trip start, the party's run) routes the unit off the excluded spot
-with the ordinary suitable-spot selector and capacity check, and starts normal
-travel with its arrival time and zero farming rewards during transit; with no
-other suitable spot the unit stays. All party members and the party's schedule
-commit together; the other unit keeps hunting. The bounded
-`coldCompetition.avoid` entry survives restart and later encounters, expires
-without escalating PvE death backoff, and does not create resentment.
-`coldCompetitionActions.avoids` counts committed avoids; recent results include
-the affected members.
-
-Party yields and all avoids validate the complete rosters (at most 18 hunters),
-physical presence, targets, memory versions and hot-handoff fences. The checks
-are repeated after claiming ownership, and SQLite validates party versions in
-the same transaction as all member writes. Partial claims are released.
-
-An accepted offer uses the existing atomic party-membership transaction for both
-solo hunters, with the episode marker in their persisted stats. Population limits
-and the ordinary party creation path still apply. Only a successful membership
-commit counts as a created party; shared-hunt memories still require later wins.
-
-Recruitment validates the forecast party version, full roster, common target,
-physical spot, capacity and ordinary composition rules. Every retained member
-must be alive, cold, present and free of worker ownership or hot-handoff fences.
-Unloaded memory or hostility between the recruit and any member rejects admission.
-All members and the recruit commit atomically. Actual recruitment is counted under
-`coldCompetitionActions.recruits`, separately from new parties.
+PvP-dispute/revenge/clan-war outcomes (eight attempts) from a frame, PvP first, within
+one 75 ms wall-time budget; `budgetSkipped` counts excess candidates, which are not
+carried out (the worker counts them, `spot:contest:skipped`). Actual results are
+exported separately as `coldCompetitionActions` in the observer. PvP requires its
+separate enable flag; the worker hears the combined flag at start and sends no PvP
+dispute without it. The action checks both lifecycle and memory revisions, target,
+presence, ownership and hot-handoff fences. Outcomes expire ten seconds after their
+arrival. Main-process backlog/lag defers admission; there is no catch-up queue. A
+frame is consumed once, including rejections.
 
 Every new background party uses one shared safety ceiling (60 by default).
 All creation paths reserve capacity through PartyAdmission while their SQLite
 commit is in flight. Historical `capacityPool` metadata grants no privileges;
 new parties do not write it. Existing parties are never evicted merely to make
 room for queued candidates. Normal objective review and session expiry remain.
-
-At capacity, an accepted solo-to-solo invitation atomically creates ordinary
-preferred party requests for both hunters, preserving existing required requests.
-They continue farming; this is no longer a replayable invitation. Later candidate
-selection rechecks goals and composition, and may select different companions.
-Current shared-target intent survives replanning only while the target matches;
-ordinary request expiry/cooldown applies. `coldCompetitionActions.queued` counts
-these deferred encounters, separately from actual formations.
 
 Idle candidate groups rank by current need and capped waiting age, with existing
 spot occupancy and compatible demand as tie-breakers. Clan origin grants no
@@ -190,28 +190,11 @@ the existing runtime lag/work budgets remain in force.
 
 ## Accepted resource disputes
 
-`coldCompetitionConflictsEnabled` adds solo/party `contest` outcomes to the
-existing maximum of two actions per scan. Accepted invitations rank first,
-contests second, and voluntary yields last.
-Main revalidates both active target plans, physical spot, target spawn presence,
-memory revisions, cold ownership and hot-handoff fences. A forecast alone never
-writes an offense.
-
-An accepted contest interrupts the peer's hunting for fifteen seconds. The same
-bounded wait accounting used by yielding prevents later catch-up farming for that
-interval. This is a coarse cold resource interruption, not a live NPC kill or a
-transfer of already awarded loot. The initiator receives no invented rewards.
-The victim alone records `mob_contested` against the initiator, atomically with
-both life states through the existing lease/CAS transaction. A rejected outcome
-writes neither the interruption nor the memory. Accepted snapshots reach the
-main memory cache and the cold worker through the normal state notification.
-
-Both participants retain a ten-minute conflict cooldown in their life state;
-ordinary cooperation preserves it, and restart cannot reset it. One encounter
-adds three hostility points: a neutral victim becomes wary, not immediately
-hostile. `pvpIntent` remains diagnostic; no attack, death, flag or karma change
-is inferred. Observer `contests` counts committed interruptions separately from
-forecast disputes, and recent results identify the victim and memory event.
+`coldCompetitionConflictsEnabled` lets a frame's `contest` outcomes (a PvP dispute,
+or a dispute with a party on a side) run through the party conflict below. Main
+revalidates both active target plans, physical spot, target spawn presence, memory
+revisions, cold ownership and hot-handoff fences. A forecast alone never writes an
+offense. No conflict window follows: the pair meets again only at a later arrival.
 
 Party encounters expand at most two complete rosters (18 bots). Every member must
 be present, living, cold, ready for hunting and have loaded memory. The party
@@ -227,8 +210,7 @@ the resolver deducts the shared interval once, without catch-up rewards. Members
 also retain the pause so leaving a party cannot erase it. Recovery is unaffected.
 The direct target remembers actual aggressors; defending supporters remember the
 instigator. Bystanders gain no negative relationship. Even 9v9 creates at most
-17 memory events. The ten-minute conflict cooldown is durable on both parties and
-their members. Peaceful settlements retain the cooldown but create no lost time
+17 memory events. Peaceful settlements create no lost time
 or negative memory, and are counted separately as `deescalated`. Recent outcomes
 include matchup, individual roles and affected member IDs. No PvP is executed.
 
@@ -255,10 +237,8 @@ from experience, including recruitment that would exclude an existing member.
 Large worker results use sparse JSON transport against the leased input state
 when ordinary compaction exceeds the IPC limit. Main checks the lease identity
 before reconstruction; the complete party retains its existing atomic CAS commit.
-Observer `partyReviews` reports committed worker reviews, departures (including
-minimum-size releases), dissolutions and decision reasons since process start,
-with the last twelve reviews retained. These counters do not depend on eviction
-from the per-bot life-event history.
+A member's leave is its own decision (`party_stay`), counted with the other
+decisions on the worker's situations line and traced with its answer.
 
 Only departing members leave. An attached leader remains, otherwise a replacement
 is elected; fewer than two remaining members dissolves the group. The main runtime
@@ -279,14 +259,14 @@ only that fixture; SQL access is forbidden. It never changes a running world.
 
 The neutral control removes only the episode's directed grievances, preserving
 other relationships. The one-offense variant uses saved relationships. Seven
-additional synthetic episodes, spaced beyond the ten-minute conflict cooldown,
+additional synthetic episodes, spaced ten minutes apart,
 produce the eight-offense variant through InteractionMemoryPolicy.apply. All
 variants use the same evaluation time, participants, levels, pressure (3), and
 random seeds. This isolates memory effects; it is not an exact historical replay
 or an estimate of encounter frequency on a live server.
 
 Assertions cover changes in competition, avoidance, accepted invitations and
-ordinary recruitment scores, actual cold-monitor decisions, and supporter versus
+ordinary recruitment scores, actual arrival contests (SpotContest), and supporter versus
 bystander reactions. Main-runtime assessments must equal assessments after memory
 serialization and ColdSimulationKernel.upsert. This parity covers relationship
 assessment and escalation intent, not identical hot/cold combat execution.
@@ -340,7 +320,7 @@ follow-up work.
 
 `coldCompetitionPvpEnabled` consumes accepted contest episodes whose existing
 forecast includes `pvpIntent`. It shares the same four-success/eight-attempt fight budget,
-ten-minute durable cooldowns, roster votes, memory revisions and ownership fences.
+roster votes, memory revisions and ownership fences.
 No new encounter generator or backlog replay is introduced. Peace zones and
 same-clan opponents cannot grant attack permission; a materially outmatched
 responder declines escalation. Clan membership and karma are rechecked against
@@ -408,7 +388,7 @@ combat and its existing cooldown guards; it does not create this shared encounte
 
 Observer `coldCompetitionActions` reports `pvpFights`, `pvpDeaths`, `pkKills` and
 bounded recent results with participants, actions, HP/MP/CP and individual kills.
-These are committed outcomes, distinct from the monitor's `pvpIntents`.
+These are committed outcomes, distinct from the arrivals' PvP intents.
 `test_cold_pvp.js` checks deterministic 1v1 and 9v9 resolution, healing, resource
 loss, PK/PvP, recovery, protection, ownership/context races, complete rollback,
 duplicate delivery and SQLite close/reopen.
@@ -431,46 +411,35 @@ queue pressure retains the original key for a later callback. Personal relations
 remain available after cooling or restart, independently of the old three-entry
 enemy history. That history is retained for diagnostics, not revenge decisions.
 
-## Independent revenge
+## Revenge and clan war meetings
 
 `Social/RevengePolicy` evaluates the same cached relationship in hot and cold
-mode. Personal hostility of at least 12 and trust at most -5 are required;
-effective hostility must reach 24, with effective trust at most -5 and no
-positive affinity. Clan reputation modulates the personal grievance but cannot
-create a campaign against unknown clan members. Same-party/clan affiliations
-remain protected. Fear, empathy, caution, resilience and clan discipline reduce
-the chance; assertiveness and resentment increase it. The final chance is capped
-at 35% per admitted attempt, with a ten-minute retry interval. These are intent
-thresholds, not PvP or clan-war permissions.
+mode. A personal grievance needs personal hostility of at least 12 and trust at
+most -5, effective hostility 24, effective trust at most -5 and no positive
+affinity; a mutual clan war is a grievance of its own. Clan reputation modulates a
+personal grievance but cannot create a campaign against unknown clan members.
+Same-party/clan affiliations remain protected. Fear, empathy, caution, resilience
+and clan discipline reduce the chance; assertiveness and resentment increase it;
+the C4 standing weighs it (`PvpAggression.karmaCost`). The chance is capped at 35%.
+These are intent thresholds, not PvP or clan-war permissions.
 
-Hot bots look up at most 32 known characters from their shared memory view every
-five seconds, then apply native distance, peace-zone, party, karma and strength
-guards. Human-led companions do not initiate independent revenge. A queued
-warning retains its original roll; changed relations can cancel it before the
-first hostile action. Cooldown is included in normal lifecycle snapshots.
+The meeting itself is `enemy_met` at an arrival (above), or a player's first sight of
+a bot; nothing scans for enemies. A queued warning retains the meeting's roll;
+changed relations can cancel it before the first hostile action (`BotPvpDefense`
+flushes it). Human-led companions do not initiate. A war fight's allies are the
+initiator's party members at mutual war with the target, joining at the first blow.
 
-The cold monitor visits at most 128 hunters per thirty-second sample using a
-rotating cursor, with at most 32 known targets per hunter and no all-pairs scan.
-Principals must actually be within 900 units on the same spot/floor. They need
-not hunt the same NPC, and no resource shortage is required. Forecasts use the
-existing two-action main-process admission budget and conflict/PvP enable flags.
-Main rechecks current memory, positions, full party rosters, ownership, cooldowns
-and physical combat permissions. Rejection writes no incident. Accepted fights
-use ordinary participation votes and the existing atomic PvP transaction.
+Far meetings reach main as `revenge` / `clan_war` outcomes; main rechecks current
+memory and the roll against the rule's chance, positions on the meeting's spot, full
+party rosters, ownership and physical combat permissions; rejection writes no
+incident. Accepted fights use ordinary participation votes (a war: its war roles) and
+the atomic PvP transaction. `revenge` encounters preserve their cause through hot/cold
+transitions; the avenger is accountable for fresh aggression, its target's response
+is defense. No `mob_contested` event is invented.
 
-`revenge` encounters preserve their cause through hot/cold transitions. Side 0
-opens independent revenge; side 1 still opens retaliation for a resource dispute.
-The avenger is accountable for fresh aggression; its target's response is defense.
-No `mob_contested` event is invented. Cold outcomes persist health, flags,
-PK/PvP consequences, personal/clan evidence and cooldown together. Forecast-only
-retry clocks live in the worker and reset on worker restart; accepted cooldowns
-survive restart. Observer competition reports expose `revenge` sampling/intent
-counts and `competitionActions.revenges` for accepted fights.
-
-Validation: `test_revenge_policy`, `test_bot_revenge`, `test_cold_pvp`,
-`test_revenge_handoff` and `test_bot_enemy_memory_persistence` cover decay,
-reconciliation before impact, shared decisions, real SQLite combat/rollback,
-attribution, flags, lifecycle transitions and cooldown persistence.
+Validation: `test_revenge_policy` (the rule and `EnemyMet`), `test_bot_revenge`,
+`test_clan_war_native`, `test_cold_pvp`, `test_revenge_handoff` and
+`test_bot_enemy_memory_persistence`.
 
 Validation: `test_pvp_interaction_memory.js` covers hit coalescing, death, replay,
 queue pressure, shortlist overflow and SQLite reopen. `test_bot_pvp_defense.js`

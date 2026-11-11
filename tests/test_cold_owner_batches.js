@@ -246,8 +246,8 @@ async function createProbe(index) {
     ]);
     assert.deepStrictEqual(
         [Number(physical[0].classId), Number(physical[0].level), Number(physical[0].exp), Number(physical[0].sp)],
-        [1, 21, authoredProfiles[0].committedExp, 100 + authoredProfiles[0].earnedSp],
-        'accepted CAS must atomically persist class and physical progression'
+        [0, 21, authoredProfiles[0].committedExp, 100 + authoredProfiles[0].earnedSp],
+        'accepted CAS must atomically persist physical progression; the class is main\'s training\'s to write'
     );
     assert.strictEqual(Number(physical[0].adenaItem), 550, 'accepted CAS must atomically persist materialized inventory');
     assert.strictEqual(physical[0].skillLevel, null, 'the commit must not grant an unowned synthetic worker skill');

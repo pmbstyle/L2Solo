@@ -18,7 +18,7 @@ function indexFor(spots) {
     return built;
 }
 
-// A cell piece a spot took in (SpotService, T123: an edge fragment) keeps
+// A cell piece a spot took in (SpotService: an edge fragment) keeps
 // its old id as a name of the spot that took it: a saved spotId of the
 // fragment still finds its field. A spot's own id always wins.
 function tableFor(spots) {
@@ -34,7 +34,7 @@ function tableFor(spots) {
     return built.table;
 }
 
-// The cell pieces a spot covers (SpotService, T123): its own cell, or its
+// The cell pieces a spot covers (SpotService): its own cell, or its
 // floor of a cell split by height ({ cell, low, high }: low <= z < high, null
 // for an open end), and the pieces it took in (joins). cell: the grid key
 // `x_y` or `x_y:area`.

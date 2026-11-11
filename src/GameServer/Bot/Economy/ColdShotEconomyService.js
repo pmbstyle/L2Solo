@@ -14,7 +14,6 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const WealthCraft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const Commit = require('./EconomyCommit');
 const Price = require('./PriceDecision');
@@ -22,14 +21,14 @@ const OfferQuery = require('./OfferQuery');
 const Basket = require('./WealthCraftPolicy');
 const ShotFunding = require('./ShotProductionFunding');
 const Production = require('./ProductionPolicy');
-const { personalOfferAllowed } = require('../Population/PartyAdmission');
 // The one purchase path (a trip to the seller's town), loaded on use.
 const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
 
 const Policy = require('./ShotCraftPolicy');
 const ShotMarketIndex = require('./ShotMarketIndex');
 const { SHOT_RECIPE_IDS, SHOT_PRODUCT_IDS, SHOT_RECIPE_ITEM_IDS, CRYSTAL_BY_RANK,
-    availableMaterial, fundedDemand, recipeTarget, scrapCraftRoutes, craftCandidate } = Policy;
+    fundedDemand, recipeTarget, scrapCraftRoutes, craftCandidate } = Policy;
+const Wealth = require('./WealthCraftDecision');
 const { CRYSTAL_SKILL_LEVEL } = require('./CraftEligibility');
 const active = new Set();
 
@@ -121,13 +120,15 @@ function recheck(state, selected, { physicalOnly = false } = {}) {
         }
     }
     // The worker's purchase rule (ColdOccupationSources.preparePurchase): the
-    // inspected board lines and the NPC shop of each town, one call.
+    // inspected board lines and the NPC shop of the town the bot stands in, one
+    // call; none in the field (a crafter buys only where it stands, ColdMarketService.acquire).
+    const here = state.activity === 'shopping' ? state.currentRegion : null;
     const purchase = (id, amount, query = {}) => {
-        const onlyTown = id === gearId && sourceCode === -3 ? hintedTown : null;
+        if (!here || id === gearId && sourceCode === -3 && hintedTown !== here) return null;
         const npcOffers = query.npc === true && Production.allowsNpcShot(id) ? Source.npcOffersFor(id) : [];
         const best = OfferQuery.cheapestTown(board, id, { amount, cost: trip, excludeOwner: state.characterId,
-            quoteDepth: Price.QUOTE_DEPTH, towns: onlyTown ? [onlyTown] : null, npcOffers,
-            accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state) });
+            quoteDepth: Price.QUOTE_DEPTH, towns: [here], npcOffers,
+            accept: line => !Number(line.enchant || 0) && OfferQuery.admits(line, state) });
         return best?.whole ? { ...best, tripDetails: trip.details?.(best.town), selfId: Number(id) } : null;
     };
     let gear = null;
@@ -154,7 +155,7 @@ function recheck(state, selected, { physicalOnly = false } = {}) {
         else if (sourceCode === -3 && !hintedTown) return null;
     }
     const personal = Number(selected.ownReserve) > 0
-        ? invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('shots') : null;
+        ? invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state).stock('shots') : null;
     const stock = personal && Number(personal.itemId) === Number(recipe.productId)
         ? { ...personal, target: Math.max(Number(personal.target || 0), Number(selected.ownReserve)) } : null;
     if (stock) ownStock.get(Number(recipe.productId)).count = Math.max(0,
@@ -202,13 +203,9 @@ function hasShotSurplus(state) {
     return [...SHOT_PRODUCT_IDS].some(id => Number(state.inventory?.[id]?.amount || 0) > Number(kept[id] || 0));
 }
 
-// A public procurement goal is an input to the shared wish graph. Unlike
-// ordinary craft preparation, its arrival/removal must be heard in the field
-// too, or the warm graph never creates (or retires) the recipe request.
-function recipeDemandStats(state, wanted) {
-    return DecisionEvents.applyRaise({ ...(state.stats || {}), shotRecipeDemand: wanted },
-        require('./DecisionSections').sectionMask(['sources', 'benefits', 'money']));
-}
+// The recipe want is the bot's own preparation: no situation of its own (own outputs
+// are not inputs); the wish graph and the board read it at the bot's next decision.
+const recipeDemandStats = (state, wanted) => ({ ...(state.stats || {}), shotRecipeDemand: wanted });
 
 async function obtainRecipe(state, selected, now) {
     const { recipe, route } = selected;
@@ -242,7 +239,7 @@ async function obtainRecipe(state, selected, now) {
     const offer = affordableOffer();
     if (!offer) return state;
     try {
-        // The recipe is bought in its seller's town: a trip, or here (one purchase path).
+        // The recipe is bought here or not at all (one purchase path: no crafter errand).
         const bought = await ColdMarket().acquire(state, itemId, 1, { money: maxSpend, maxPrice: maxSpend,
             ...funding, npc: false, purpose: 'recipe', timestamp: now, quoteDepth: 5, towns: [offer.town],
             sourcePlan: { selfId: itemId, town: offer.town, cost: Number(offer.price),
@@ -284,9 +281,8 @@ function consumeMaterials(state, materials) {
 }
 
 // Buys what is missing of a craft input on the one purchase path
-// (ColdMarketService.acquire): here when this town is the cheapest with the
-// trip, else an errand and a trip, and the craft waits. Returns { state,
-// ready }: ready once the bot holds the amount.
+// (ColdMarketService.acquire): in the town the bot stands in, never on an
+// errand. Returns { state, ready }: ready once the bot holds the amount.
 const hotState = state => LifeState.hotRow(state.characterId) || (state.phase === 'hot' ? state : null);
 
 // A held plan is bought up to its dearest unit, whatever cap came with it.
@@ -295,12 +291,12 @@ const planCap = (plan, price) => plan ? OfferQuery.topPrice(plan) || price : pri
 async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true, r = 0, sourcePlan = null) {
     const hot = hotState(state);
     if (hot) return { state: hot, ready: false, hot: true };
-    const missing = amount - availableMaterial(state, selfId);
+    const missing = amount - Wealth.freeOf(state, selfId);
     if (missing <= 0) return { state, ready: true };
     const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice: planCap(sourcePlan, maxPrice), npc, purpose: 'craft_input',
         r, money: PurchaseFunding.spendable(state, 0, { r }), quoteDepth: 5, refreshSource: true,
         ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) });
-    return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
+    return { state: bought.state, ready: bought.bought && !bought.hot && Wealth.freeOf(bought.state, selfId) >= amount };
 }
 
 // The crystals of a shot craft: the bot's own, else bought on the board, or a
@@ -310,7 +306,7 @@ async function obtainCrystals(state, candidate, batches) {
     const hot = hotState(state);
     if (hot) return { state: hot, ready: false, hot: true };
     const needed = candidate.requiredCrystals * batches;
-    if (availableMaterial(state, candidate.crystalId) >= needed) return { state, ready: true };
+    if (Wealth.freeOf(state, candidate.crystalId) >= needed) return { state, ready: true };
     const gear = candidate.gear;
     if (!gear) return { state, ready: false };
     if (gear.source === 'crystals') return buyMaterial(state, candidate.crystalId, needed, gear.price, false, candidate.r,
@@ -353,6 +349,9 @@ async function obtainCrystals(state, candidate, batches) {
                 product: { selfId: gear.selfId, name: template.template.name, amount: 1, stackable: false, slot: template.etc.slot } });
             state = await acceptMutation(result, { ...consumeMaterials(state, gear.recipe.materials),
                 vitals: { ...state.vitals, mp: Number(result.mp) } }, 'shot_scrap_crafted');
+        } catch (error) {
+            if (!WealthCraft.craftRefused(error)) throw error;
+            return { state: await refusedCraft(state, candidate), ready: false };
         } finally { if (admitted) Commit.finish(state.characterId, admitted.command); }
         if (result.success !== true) return { state, ready: false };
     } else if (gear.source === 'afk' || gear.source === 'npc') {
@@ -378,6 +377,11 @@ async function obtainCrystals(state, candidate, batches) {
 
 function materialRows(items, recipe) { return Profit.materials(items, recipe); }
 
+// A shot craft (or the gear craft feeding its crystals) the native commit refused is
+// a wealth craft's refusal: counted, the shot recipe marked until the next town look.
+const refusedCraft = (state, candidate) => WealthCraft.rejectAccepted(state, state,
+    { kind: 'shot', reason: 'craft_failed', recipeId: Number(candidate.recipe.recipeId) });
+
 async function craft(state, candidate, index, now) {
     if (hotState(state)) return hotState(state);
     const productPerBatch = Number(candidate.recipe.productCount);
@@ -388,18 +392,20 @@ async function craft(state, candidate, index, now) {
     const series = candidate.series || null;
     const held = state.stats?.shotCraft?.preparing;
     const gearTarget = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
-    const crystalGearId = candidate.gear && candidate.gear.source !== 'crystals' ? Number(candidate.gear.selfId) : 0;
+    // The piece of gear the crystals come from (bought, crafted or owned) is the kit's
+    // too: held from sale until it is crystallized (ItemDisposition.productionInputAmounts).
+    const crystalGear = candidate.gear && candidate.gear.source !== 'crystals' ? Number(candidate.gear.selfId) : 0;
     if (Number(held?.recipeId) !== Number(candidate.recipe.recipeId)
         || Number(held?.batches) !== batches || Number(held?.gearTarget) !== gearTarget
-        || Number(held?.crystalGearId || 0) !== crystalGearId
+        || Number(held?.crystalGear || 0) !== crystalGear
         || !held?.gearInputs || Number(held?.at) + 30 * 60 * 1000 <= now
         || JSON.stringify(state.stats?.shotCraft?.series || null) !== JSON.stringify(series)) {
         const gearInputs = Number(held?.gearTarget) === gearTarget && held?.gearInputs
             && Number(held.at) + 30 * 60 * 1000 > now ? held.gearInputs : ItemDisposition.collectedEquipmentInputs(state);
-        const stats = DecisionEvents.applyOwnRaise(state);
-        state = await persist({ ...state, stats: { ...stats, shotCraft: { ...state.stats?.shotCraft, series,
+        // Its own preparation: no situation of its own (own outputs are not inputs).
+        state = await persist({ ...state, stats: { ...state.stats, shotCraft: { ...state.stats?.shotCraft, series,
             preparing: { recipeId: Number(candidate.recipe.recipeId), productId: Number(candidate.recipe.productId),
-                batches, gearTarget, gearInputs, crystalGearId, at: now } } } }, 'shot_craft_preparing');
+                batches, gearTarget, gearInputs, ...(crystalGear ? { crystalGear } : {}), at: now } } } }, 'shot_craft_preparing');
     }
     const crystals = await obtainCrystals(state, candidate, batches);
     if (!crystals.ready || crystals.hot || hotState(crystals.state)) return hotState(crystals.state) || crystals.state;
@@ -426,6 +432,9 @@ async function craft(state, candidate, index, now) {
         state = await acceptMutation(crafted, { ...consumeMaterials(state, batchRecipe.materials), vitals: {
             ...(state.vitals || {}), mp: Number(crafted.mp)
         } }, 'shot_craft_inventory');
+    } catch (error) {
+        if (!WealthCraft.craftRefused(error)) throw error;
+        return refusedCraft(state, candidate);
     } finally { if (admitted) Commit.finish(state.characterId, admitted.command); }
     if (crafted.success !== true) return state;
     const craftedUnits = Number(crafted.units || 0);
@@ -484,11 +493,13 @@ async function dropSeries(state, keepRecipeId = 0) {
     const series = state.stats?.shotCraft?.series;
     const preparing = state.stats?.shotCraft?.preparing;
     const clearSeries = series && Number(series.recipeId) !== Number(keepRecipeId);
-    const clearGear = preparing?.crystalGearId && Number(preparing.recipeId) !== Number(keepRecipeId);
+    const clearGear = preparing?.crystalGear && Number(preparing.recipeId) !== Number(keepRecipeId);
     if (!clearSeries && !clearGear) return state;
-    return persist({...state,stats:{...DecisionEvents.applyOwnRaise(state),
-        shotCraft:{...state.stats.shotCraft,...(clearSeries?{series:null}:{}),
-            ...(clearGear?{preparing:{...preparing,crystalGearId:0}}:{})}}},'shot_series_dropped');
+    const kept = { ...preparing };
+    delete kept.crystalGear;
+    return persist({ ...state, stats: { ...state.stats,
+        shotCraft: { ...state.stats.shotCraft, ...(clearSeries ? { series: null } : {}),
+            ...(clearGear ? { preparing: kept } : {}) } } }, 'shot_series_dropped');
 }
 async function dropRecipeDemand(state, keepItemId = 0) {
     const wanted = state.stats?.shotRecipeDemand;
@@ -518,20 +529,26 @@ async function execute(state, step, now = Date.now()) {
     const hasSeries = Number.isSafeInteger(selected.horizonBatches) && selected.horizonBatches > selected.batches
         && selected.horizonBatches <= 64;
     const candidate = recheck(state, selected, { physicalOnly: hasSeries });
-    // What the act refuses is heard, its recipe marked as a wealth craft's: the search
-    // does not pick it again until the next town look.
+    // In the field a crafter crafts from its bag only (recheck buys nothing there): a craft
+    // that needs a purchase (an input, crystals, gear to crystallize, the recipe) waits for
+    // its town visit, where it buys; as a C4 crafter shops in town.
+    const inTown = state.activity === 'shopping';
+    // What the act refuses in town is heard, its recipe marked as a wealth craft's: the
+    // search does not pick it again until the next town look.
     if (!candidate) {
+        if (!inTown) return state;
         state = await dropSeries(state);
         const dropped = step?.recipeTarget ? await dropRecipeDemand(state) : state;
         return WealthCraft.rejectAccepted(dropped, dropped, { kind: 'shot', reason: 'no_basket', recipeId });
     }
     const production = recheckSeries(state, candidate, selected);
     if (!production) {
+        if (!inTown) return state;
         state = await dropSeries(state);
         return step?.recipeTarget ? dropRecipeDemand(state) : state;
     }
     if (step?.recipeTarget) {
-        if (known) return state;
+        if (known || !inTown && !(Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0)) return state;
         const board = AfkTrade.boardIndex(), scrollId = Number(recipe.recipeItemId);
         const asks = board.list(scrollId, AfkTrade.SELL), bids = board.list(scrollId, AfkTrade.BUY);
         let sale = null;
@@ -547,6 +564,7 @@ async function execute(state, step, now = Date.now()) {
             owned: Number(state.inventory?.[scrollId]?.amount || 0) > 0, scrollQuote: ask }, now);
     }
     if (step?.craft) {
+        if (!inTown && candidate.basket.cashCost + candidate.basket.actualCashFees > 0) return state;
         const funding = ShotFunding.investment(production, candidate.context);
         const certificate = Policy.selectionFor(production);
         return known && funding ? craft(state, { ...candidate, r: funding.terms.r,

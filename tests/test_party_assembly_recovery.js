@@ -2,7 +2,7 @@ const assert = require('assert');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Resolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
-const Recovery = require('../src/GameServer/Bot/Population/PartyAssemblyRecovery');
+const Assembly = require('../src/GameServer/Bot/Population/PartyHuntingAssembly');
 const Lifecycle = require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle');
 const Requests = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
@@ -10,135 +10,75 @@ const Duty = require('../src/GameServer/Bot/Population/ClanPartyDuty');
 const at = Date.now(), minute = 60000;
 const spot = { id: '24_20:antharas_lair' };
 const objective = { status: 'open', priority: 'required', objectiveKey: 'drop:test', spotId: spot.id, npcId: 621 };
-const original = { partyId: 'scattered', leaderId: 1, memberIds: [1, 2], spotId: spot.id,
-    status: 'active', startedAt: at - 10 * minute, stats: { objective,
-        sessionReview: { nextAt: at + 20 * minute } } };
-const members = [1, 2].map(id => ({ characterId: id, name: `Hunter${id}`, phase: 'cold', activity: 'grouped',
-    level: 55, party: { partyId: original.partyId, leaderId: 1 }, spotId: spot.id,
-    loc: { locX: id === 1 ? 145224 : 48000, locY: 120001, locZ: -4500 },
+const party = { partyId: 'scattered', leaderId: 1, memberIds: [1, 2, 3], spotId: spot.id,
+    status: 'active', startedAt: at - 10 * minute, stats: { objective } };
+const here = { locX: 145224, locY: 120001, locZ: -4500 }, far = { locX: 48000, locY: 120001, locZ: -4500 };
+const members = [1, 2, 3].map(id => ({ characterId: id, name: `Hunter${id}`, phase: 'cold', activity: 'grouped',
+    level: 55, party: { partyId: party.partyId, leaderId: 1 }, spotId: spot.id, loc: id === 3 ? far : { ...here },
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 }, timing: {}, inventory: {},
     stats: { classId: 1, role: 'dps', equipmentPlan: { status: 'active', strategy: 'direct_drop', requiresParty: true,
         target: { selfId: 91 }, next: { spotId: spot.id, npcId: 621 } } } }));
-let party = original;
-for (let tick = 0; tick <= 10; tick++) {
-    const timestamp = at + tick * 30000;
-    const result = Resolver.resolve({ party, members, spot, timestamp, rng: () => { throw Error('remote combat'); } });
-    assert.strictEqual(result.debug.reason, 'party_assembling');
-    assert(result.memberResults.every(entry => entry.result.materialize.exp === 0));
-    party = { ...party, stats: { ...party.stats, ...result.partyPatch.stats } };
-    assert.strictEqual(Lifecycle.sessionExpired(party, timestamp), tick === 10,
-        'five observed minutes of failed assembly must trigger review before the normal session timer');
-}
-const timestamp = at + 5 * minute;
-const restored = JSON.parse(JSON.stringify(party));
-const review = Lifecycle.review(restored, members, timestamp);
-assert.strictEqual(review.party.status, 'dissolved');
-assert(review.decisions.every(d => d.reason === Recovery.REASON && d.leave));
-assert(review.states.every(s => !s.party.partyId && s.activity === 'hunting'));
-assert(review.states.every(s => s.timing.nextResolveAt === timestamp + 30000));
-for (const state of review.states) {
-    assert.deepStrictEqual(state.vitals, members[0].vitals);
-    assert.deepStrictEqual(state.inventory, {});
-    assert(Recovery.coolingDown(state, timestamp));
-    assert.strictEqual(Requests.partyRequestForPlan(state, state.stats.equipmentPlan, timestamp, { economy: { worth: () => 0 } }).status, 'deferred');
-    assert.strictEqual(Requests.partyObjectiveForState(state), null);
-    for (const activity of ['traveling', 'shopping', 'resting', 'hunting']) {
-        assert.strictEqual(Requests.partyRequestForPlan({ ...state, activity },
-            { levelingRecovery: {} }, timestamp), state.stats.partyRequest,
-        'travel and recovery replanning must preserve the cooldown');
-    }
-    assert.strictEqual(Duty.waiting({ ...state, stats: { ...state.stats,
-        clanPartyObjective: { ...objective, clanGoalKey: 'clan-goal' } } }), false);
-}
-assert.deepStrictEqual(Composition.selectMembers(review.states, { timestamp, minSize: 2 }), []);
-assert.deepStrictEqual(Composition.selectRecruits([members[0]], [review.states[1]], { timestamp }), []);
-assert.strictEqual(Composition.selectMembers(review.states, { timestamp: timestamp + Recovery.RETRY_MS, minSize: 2 }).length, 2);
-assert.strictEqual(Requests.partyRequestForPlan(review.states[0], members[0].stats.equipmentPlan,
-    timestamp + Recovery.RETRY_MS, { economy: { worth: () => 0 } }).status, 'open');
+const resolve = (roster, timestamp, p = party) => Resolver.resolve({ party: p, members: roster, spot, timestamp,
+    rng: () => { throw Error('remote combat'); } });
 
-const requiredClan = { ...objective, clanId: 7, clanGoalKey: 'expired-clan', requestedAt: at - 60 * minute };
-const expiredWaiter = Requests.expireState({ ...members[0], activity: 'party_wait', party: { partyId: null },
-    stats: { eventWait: 'clan_party_assembly', clanPartyObjective: requiredClan, partyRequest: requiredClan,
-        equipmentPlan: { ...members[0].stats.equipmentPlan, clanGoal: { goalKey: requiredClan.clanGoalKey } } } }, at);
-assert.equal(expiredWaiter.activity, 'hunting');
-assert.equal(expiredWaiter.stats.clanPartyObjective.status, 'deferred');
-assert.equal(expiredWaiter.stats.equipmentPlan, undefined, 'a failed clan route cannot turn into solo combat');
-assert.equal(Requests.partyObjectiveForState(expiredWaiter), null);
-assert.equal(Duty.waiting(expiredWaiter), false);
-assert.equal(Recovery.coolingDown(expiredWaiter, at), true);
-assert.equal(Requests.partyRequestForPlan(expiredWaiter, null, at), expiredWaiter.stats.partyRequest,
-    'ordinary replanning retains the failed clan assembly cooldown');
-assert.equal(require('../src/GameServer/Bot/Population/ColdSoloWindow').stepElapsedMs(expiredWaiter, at), 1000,
-    'the expired wait does not award its idle hour as hunting');
-assert.equal(Requests.expireState({ ...expiredWaiter, party: { partyId: 'active-clan' } }, at + minute).party.partyId, 'active-clan');
+// A member on its way: the party steps at its arrival, no poll before it, nobody leaves.
+const arrivalAt = at + 3 * minute;
+const onTheWay = members.map(s => s.characterId === 3 ? { ...s, activity: 'traveling',
+    stats: { ...s.stats, travel: { reason: 'party_spot_replan', spotId: spot.id, arrivalAt } } } : s);
+const waiting = resolve(onTheWay, at);
+assert.strictEqual(waiting.debug.reason, 'party_assembling');
+assert.strictEqual(waiting.nextResolveAt, arrivalAt, 'the assembly steps at its member\'s known end');
+assert(waiting.memberResults.every(entry => entry.result.nextResolveAt === arrivalAt && entry.result.materialize.exp === 0));
+assert.strictEqual(waiting.assemblyAbsent, undefined);
+assert.strictEqual(waiting.partyPatch.stats.assemblyAt, arrivalAt);
 
-const gathered = members.map(s => ({ ...s, loc: { ...members[0].loc } }));
-const rescued = Lifecycle.review(restored, gathered, timestamp);
-assert.strictEqual(rescued.leaving.size, 0, 'a successful gathering just before review must preserve the party');
-assert.strictEqual(rescued.party.stats.assemblyWait, null);
-const rested = { ...restored, stats: { ...restored.stats, restUntil: timestamp + minute } };
-assert.strictEqual(Lifecycle.review(rested, members, timestamp).leaving.size, 0);
-assert.strictEqual(Lifecycle.sessionExpired(rested, timestamp), false);
-const staleRaidAssembly = {
-    ...restored,
-    stats: {
-        ...restored.stats,
-        objective: { ...objective, sourceKind: 'raid', raidBoss: true },
-        raidPreparation: { status: 'ready' },
-        raidEncounter: { status: 'active' }
-    }
-};
-assert.strictEqual(Lifecycle.sessionExpired(staleRaidAssembly, timestamp), true,
-    'an active raid snapshot must not keep an incomplete roster stuck after its assembly timeout');
-const gatheredRaidWithoutTank = {
-    ...staleRaidAssembly,
-    partyId: 'raid-without-tank',
-    memberIds: [1, 2, 3, 4, 5, 6, 7]
-};
-const gatheredRaidMembers = gatheredRaidWithoutTank.memberIds.map((id) => ({
-    characterId: id,
-    name: `RaidHunter${id}`,
-    level: 55,
-    phase: 'cold',
-    activity: 'grouped',
-    party: { partyId: gatheredRaidWithoutTank.partyId, leaderId: 1 },
-    spotId: spot.id,
-    loc: { ...members[0].loc },
-    vitals: { ...members[0].vitals },
-    inventory: {},
-    stats: { role: id === 1 ? 'healer' : id === 2 ? 'buffer' : 'dps' }
-}));
-const invalidRaidReview = Lifecycle.review(gatheredRaidWithoutTank, gatheredRaidMembers, timestamp);
-assert.strictEqual(invalidRaidReview.party.status, 'dissolved',
-    'physical assembly must not rescue a raid roster that still lacks a required combat role');
-assert([...invalidRaidReview.leaving.values()].every((reason) => reason === Recovery.REASON));
-const away = { ...restored, stats: { ...restored.stats, travel: { arrivalAt: timestamp + minute } } };
-assert.strictEqual(Lifecycle.review(away, members, timestamp).leaving.size, 0);
-const beforeProcess = { ...party, stats: { ...party.stats, assemblyWait: { ...party.stats.assemblyWait,
-    lastAt: at - Math.ceil(process.uptime() * 1000) - minute } } };
-const afterDowntime = Recovery.record(beforeProcess, timestamp + 24 * 60 * minute);
-assert.strictEqual(afterDowntime.waitedMs, party.stats.assemblyWait.waitedMs, 'offline time must not count as failed assembly');
-const duplicate = Recovery.record(party, timestamp);
-assert.strictEqual(duplicate.waitedMs, party.stats.assemblyWait.waitedMs, 'replayed timestamp adds no wait');
+// Nothing brings the far member (no trip, off the ground): it alone leaves, the party goes on.
+const timestamp = arrivalAt;
+const stranded = resolve(members, timestamp, { ...party, stats: { ...party.stats, assemblyAt: arrivalAt } });
+assert.deepStrictEqual(stranded.assemblyAbsent, [3]);
+assert.notStrictEqual(stranded.partyPatch.status, 'dissolved');
+const review = Lifecycle.release(party, members, new Map(stranded.assemblyAbsent.map(id => [id, Assembly.REASON])), timestamp,
+    { partyMinSize: 2 });
+assert.notStrictEqual(review.party.status, 'dissolved', 'the gathered members keep their party');
+assert.deepStrictEqual(review.party.memberIds, [1, 2]);
+const leaver = review.states.find(s => s.characterId === 3);
+assert(!leaver.party.partyId && leaver.activity === 'hunting' && leaver.timing.nextResolveAt === timestamp + 30000);
+assert.deepStrictEqual(leaver.vitals, members[0].vitals);
+// The assembly gave up on it: its request is closed, held until its next build.
+assert(Requests.closed(leaver));
+assert.strictEqual(leaver.stats.partyRequest.lastReason, Assembly.REASON);
+assert.strictEqual(Requests.partyObjectiveForState(leaver), null);
+assert.strictEqual(Duty.waiting({ ...leaver, stats: { ...leaver.stats,
+    clanPartyObjective: { ...objective, clanGoalKey: 'clan-goal' } } }), false);
+assert.deepStrictEqual(Composition.selectMembers([leaver], { timestamp, minSize: 1 }), []);
+// Its next build asks again (no clock reopens it).
+assert.strictEqual(Requests.partyRequestForPlan(leaver, members[0].stats.equipmentPlan,
+    timestamp + 1, { economy: { worth: () => 0 } }).status, 'open');
+// Of two, one stranded: under the minimum the party dissolves (party_min_size).
+const pair = { ...party, memberIds: [1, 3] };
+const pairReview = Lifecycle.release(pair, [members[0], members[2]], new Map([[3, Assembly.REASON]]), timestamp, { partyMinSize: 2 });
+assert.strictEqual(pairReview.party.status, 'dissolved');
 
-let delayed = original;
-for (let tick = 0; tick <= 5; tick++) {
-    const when = at + tick * 150000;
-    delayed = { ...delayed, stats: { ...delayed.stats, assemblyWait: Recovery.record(delayed, when) } };
-}
-assert.strictEqual(delayed.stats.assemblyWait.waitedMs, 5 * minute);
-assert(Recovery.expired(delayed), 'long scheduler gaps cannot leave an observed assembly wait at zero forever');
-assert(Recovery.expired({ stats: { assemblyWait: { attempts: 17, waitedMs: 0 } } }),
-    'the SHADOWflare legacy wait must recover without waiting for another full timeout');
+// A raid roster starts only whole: a member nothing brings ends it.
+const raidParty = { ...party, stats: { objective: { ...objective, sourceKind: 'raid', raidBoss: true } } };
+const raidSpot = { ...spot, raidBoss: true };
+const raidRoster = Array.from({ length: 9 }, (_, n) => ({ ...members[0], characterId: 10 + n,
+    loc: n === 8 ? far : { ...here }, stats: { role: n === 0 ? 'healer' : n === 1 ? 'buffer' : n === 2 ? 'tank' : 'dps' } }));
+const raidEnd = Resolver.resolve({ party: { ...raidParty, memberIds: raidRoster.map(s => s.characterId) },
+    members: raidRoster, spot: raidSpot, timestamp, rng: () => 0.5 });
+assert.strictEqual(raidEnd.debug.reason, 'party_assembling');
+assert.strictEqual(raidEnd.partyPatch.status, 'dissolved');
+assert.strictEqual(raidEnd.partyPatch.stats.partyBreakReason, Assembly.REASON);
 
-// A real combat attempt clears old assembly evidence, including an unfinished fight.
+// A gathered party fights and clears the wait.
 const syntheticSpot = { id: 'assembled', name: 'test', avgLevel: 20, density: 3, npcSelfIds: [],
     mob: { hp: 1, damage: 1 }, rewards: { exp: 100, sp: 10, adenaMin: 1, adenaMax: 1 } };
-const fight = Resolver.resolve({ party: { ...party, spotId: syntheticSpot.id }, members, spot: syntheticSpot,
-    timestamp, elapsedMs: 45000, rng: () => 0.5 });
-assert.strictEqual(fight.partyPatch.stats.assemblyWait, null);
+const gathered = members.map(s => ({ ...s, loc: { ...here } }));
+const fight = Resolver.resolve({ party: { ...party, spotId: syntheticSpot.id, stats: { ...party.stats, assemblyAt: arrivalAt } },
+    members: gathered, spot: syntheticSpot, timestamp, elapsedMs: 45000, rng: () => 0.5 });
+assert.strictEqual(fight.partyPatch.stats.assemblyAt, null);
 assert(fight.debug.wins > 0);
-console.log('Party assembly timeout, live-time accounting, release, cooldown and recovery checks passed');
+console.log('Party assembly on known ends: wait at the arrival, the absent member leaves, raid rosters whole, checks passed');
 
 // A published clan wait steps again only when a writer changes its row: no
 // 30 s step while it waits, at once on the change, its wait lived, not hunted.
@@ -166,12 +106,23 @@ console.log('Party assembly timeout, live-time accounting, release, cooldown and
     const clearedStats = { ...waiting.stats };
     delete clearedStats.clanPartyObjective;
     const cleared = { ...waiting, stats: clearedStats, simulation: { revision: 3 } };
-    assert(cleared.timing.nextResolveAt > at + 10000, 'the hold keeps a retry for a command that holds the bot first');
     now = at + 10000;
     kernel.upsert({ state: cleared });
     kernel.dueCandidates(now, 4);
     assert(kernel.busy(31), 'the objective\'s end wakes it at once (its command starts), not at the hold\'s retry');
     assert.strictEqual(stepElapsedMs(cleared, at + 10 * minute), 1000, 'ten minutes waiting are not hunted');
+    // The hold has no due of its own: a command holding the waiter (its clan hall
+    // visit) runs at once, and the write that ends it leaves the bot held, no step.
+    const behind = { ...waiting, stats: { ...waiting.stats, clanHallVisit: { hallId: 1 } }, simulation: { revision: 5 } };
+    assert.strictEqual(lifecycleKind(behind), 'command');
+    const commanded = new ColdSimulationKernel({ now: () => at, resolveSolo: () => null });
+    commanded.upsert({ state: behind });
+    commanded.dueCandidates(at, 4);
+    assert(commanded.busy(31), 'a command holding the waiter runs at once, not at a retry');
+    const resumed = new ColdSimulationKernel({ now: () => at + 10 * minute, resolveSolo: () => null });
+    resumed.upsert({ state: { ...behind, stats: waiting.stats, simulation: { revision: 6 } } });
+    resumed.dueCandidates(at + 10 * minute, 4);
+    assert(!resumed.busy(31), 'the command\'s end leaves it held: no timed step');
     const assigned = { ...waiting, party: { partyId: 'clan-party', leaderId: 32 }, simulation: { revision: 4 } };
     assert.strictEqual(lifecycleKind(assigned), 'party_member', 'its party takes it over');
     console.log('Clan party wait: event-driven hold, wake on the objective\'s end, lived wait checks passed');

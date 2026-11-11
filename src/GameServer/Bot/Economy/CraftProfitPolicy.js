@@ -44,10 +44,6 @@ function margin(recipe, price, inputs, { hourAdena, hunt, mpPerHour, tripCost = 
     return Number.isFinite(profit) ? { expectedRevenue, inputs: Number(inputs), labour, hours, profit,
         perHour: hours > 0 ? profit / hours : profit } : null;
 }
-// Revenue less materials and trip, in adena per craft hour; zero-MP is no repeatable clock.
-function craftIncomePerHour(margin) {
-    return margin?.hours > 0 ? (margin.profit + margin.labour) / margin.hours : null;
-}
 function contextFor(state, timestamp = Date.now()) {
     const context = require('../Population/ColdEconomyDecision').economyFor(state, { timestamp });
     return { ...context, ...invoke('GameServer/Bot/Population/ColdOccupationSources').craftLabour(state, timestamp) };
@@ -189,5 +185,5 @@ function materials(items, recipe, batches = 1) {
 function succeeds(recipe, random = Math.random) {
     return Number(recipe.successRate) >= 100 || Number(random()) * 100 < Number(recipe.successRate);
 }
-module.exports = { prepareCraftFacts, craftFacts, requirements, batchesFor, craftableBatches, revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
+module.exports = { prepareCraftFacts, craftFacts, requirements, batchesFor, craftableBatches, revenue, margin, contextFor, tripFor, inputValue, materials, succeeds,
     mpHours, successProbability, craftOutcomes };
