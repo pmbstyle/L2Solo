@@ -3001,17 +3001,26 @@ const PopulationService = {
         Config.developerDiagnostics && Metrics.recordBackgroundResolve();
         Config.developerDiagnostics && Metrics.recordCombat(result.debug);
         // The one place a far bot carries out its held improvement (reviewCold owns where it may:
-        // an enchant anywhere, a henna or a smith's work in a town that has the NPC), first in
-        // the step's work: a visit draws the henna it came for before it buys, sells and leaves
+        // an enchant anywhere, a henna or a smith's work in a town that has the NPC), before
+        // the step's trade: a visit draws the henna it came for before it buys, sells and leaves
         // (a review after the commit found the bot already on its way out of town). The commit
         // ends the held step (reviewCold raises goal_done:goal) and main's copy of the card is
         // released; the rest of the visit runs on the improved bag and, as after a
         // purchase, the bot stays for one pass that replans from it (a crystallization's exchange).
+        // A visit in town first takes out of its warehouse what it banked for its plan, as a C4
+        // player collects his materials before he trades them in: the held improvement reads the
+        // bag the release filled (an exchange's banked crystals), and the deposit after it banks
+        // only what the improvement left. The decision is the one taken before the release: the
+        // release moves the stock it counted from the bank to the bag.
         const decision = ColdSimulationCoordinator.economyDecisions.decided(updatedState);
+        const Improvements = invoke('GameServer/Bot/Economy/BotImprovementService');
+        const arrived = updatedState, inTown = Improvements.inTown(arrived);
+        const released = inTown ? await BotWarehouse.releaseCold(arrived, { inTown: true, before: state }) : { state: arrived };
+        const collected = released.state || arrived;
+        updatedState = collected;
         let improved = false;
         if (decision?.activity?.activity === 'improving') {
-            const review = await invoke('GameServer/Bot/Economy/BotImprovementService')
-                .reviewCold(updatedState, { beforeWrite, decide: () => decision });
+            const review = await Improvements.reviewCold(updatedState, { beforeWrite, decide: () => decision });
             if (review.changed) {
                 ColdSimulationCoordinator.economyDecisions.release(updatedState.characterId);
                 exchangeWaits.delete(Number(updatedState.characterId));
@@ -3022,18 +3031,16 @@ const PopulationService = {
         if (updatedState.activity === 'crafting') {
             return { ok: true, state: updatedState, debug: result.debug };
         }
-        const tripEdge = CombinedErrands.edge(state, updatedState, result);
+        // The stock the visit collected from its bank is no change of its errands.
+        const tripEdge = CombinedErrands.edge(state, arrived, result);
         const preparation = ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
             .then(async (shotEconomy) => {
                 const current = shotEconomy.state || updatedState;
-                const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
-                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true, before: state }) : { state: current };
-                const afterRelease = released.state || current;
-                const deposited = inTown && !released.aborted && (afterRelease.stats?.equipmentPlan?.inputPreparation
-                    || require('../Economy/CraftWarehousePolicy').planFor(afterRelease))
-                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(afterRelease)
-                    ? await BotWarehouse.depositCold(afterRelease) : { state: afterRelease };
-                return ColdMarketListingService.resolve(deposited.state || afterRelease);
+                const deposited = inTown && !released.aborted && (current.stats?.equipmentPlan?.inputPreparation
+                    || require('../Economy/CraftWarehousePolicy').planFor(current))
+                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(current)
+                    ? await BotWarehouse.depositCold(current) : { state: current };
+                return ColdMarketListingService.resolve(deposited.state || current);
             });
         // The goal on arrival: the held card's step over the bag as the visit found it.
         return preparation.then((marketLifecycle) => {
@@ -3046,7 +3053,10 @@ const PopulationService = {
             .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle,
                 improved ? { ...marketResult, improved } : marketResult, goal))
             .then((finalState) => {
-                const craftEvents = CraftTelemetry.progressEvents(state, acquisitionPlan, updatedState);
+                // Material the step obtained: its round's and its improvement's (a crystallization's
+                // crystals), never the stock it collected from its own bank.
+                const craftEvents = [...CraftTelemetry.progressEvents(state, acquisitionPlan, arrived),
+                    ...(improved ? CraftTelemetry.progressEvents(collected, acquisitionPlan, updatedState) : [])];
                 return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
                     .then(() => finalState);
             })
