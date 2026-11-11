@@ -136,7 +136,9 @@ function reviewHot(session) {
     const work = invoke('Database').applyBotImprovement(actor.fetchId(),improvement,{beforeWrite() {
         if (!current()) throw Error('improvement_actor_retired');
     }}).then(result => {
-        if (!current()) return result;
+        // A body gone during the write (cooled, logged off, dead) took its bag along: the
+        // committed step still ends once, on the row where the bot is now (raiseOn).
+        if (!current()) return stepDone(actor.fetchId()).then(() => result);
         const backpack = actor.backpack, before = new Map(backpack.fetchItems().map(item => [item.fetchId(),item]));
         const ids = new Set(result.changedIds || []);
         const after = new Map(result.items.map(item => [item.id,item]));
