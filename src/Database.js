@@ -8,6 +8,8 @@ const { DiagnosticMetricMap } = require('./GameServer/Bot/Population/DiagnosticM
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { randomInt } = require('node:crypto');
+const MIN_RANDOM_CREST_ID = 0x10000000;
 const mutationAdmission = new AsyncLocalStorage();
 // Bots the overdue line named: who moves their revision, with the caller (a
 // worker step begun before the move is refused). Four bots, 60 lines each.
@@ -2187,6 +2189,17 @@ function write(sql, params = []) {
     traceRevisionWrite(sql, params);
     const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
+}
+
+function createClanCrestUnsafe(clanId, kind, data, createdAt = now()) {
+    // C4 keeps Crest.utx across database wipes/restores and even other servers
+    // with the same server id. Sequential row ids can name unrelated textures.
+    let id;
+    do {
+        id = randomInt(MIN_RANDOM_CREST_ID, 0x80000000);
+    } while (one('SELECT id FROM clan_crests WHERE id = ?', [id]));
+    return write('INSERT INTO clan_crests (id, clanId, kind, data, createdAt) VALUES (?, ?, ?, ?, ?)',
+        [id, clanId, kind, data, createdAt]);
 }
 
 // Capture before a native flush can await; skill writers capture at their call.
@@ -11600,6 +11613,19 @@ const Database = {
             return result;
         });
     },
+    migrateClanCrestIds() {
+        return inTransaction(() => {
+            const legacy = all('SELECT * FROM clan_crests WHERE id > 0 AND id < ?', [MIN_RANDOM_CREST_ID]);
+            for (const crest of legacy) {
+                const created = createClanCrestUnsafe(crest.clanId, crest.kind, crest.data, crest.createdAt);
+                for (const column of ['crestId', 'allyCrestId', 'crestLargeId']) {
+                    write(`UPDATE clans SET ${column} = ? WHERE ${column} = ?`, [created.insertId, crest.id]);
+                }
+                write('DELETE FROM clan_crests WHERE id = ?', [crest.id]);
+            }
+            return { migrated: legacy.length };
+        }, 'clan:crest-id-migration');
+    },
     fetchAutonomousClanCrests() {
         return run(`SELECT clans.id, clans.level, clans.crestId, crests.data AS crestData
             FROM clans
@@ -11627,9 +11653,7 @@ const Database = {
             if (Number(current.crestId || 0) > 0) {
                 return { ok: true, idempotent: true, crestId: Number(current.crestId) };
             }
-            const created = write(`INSERT INTO clan_crests (clanId, kind, data, createdAt) VALUES (?, ?, ?, ?)`, [
-                clan, String(kind), crestData, now()
-            ]);
+            const created = createClanCrestUnsafe(clan, String(kind), crestData);
             const updated = write(`UPDATE clans SET ${crestColumn} = ? WHERE id = ? AND COALESCE(${crestColumn}, 0) = 0`, [created.insertId, clan]);
             if (Number(updated.affectedRows) !== 1) throw new Error('autonomous clan crest reservation changed');
             return { ok: true, crestId: Number(created.insertId) };
@@ -11671,8 +11695,7 @@ const Database = {
             const previousCrestId = Number(current.crestId || 0);
             let crestId = 0;
             if (crestData.length) {
-                const created = write(`INSERT INTO clan_crests (clanId, kind, data, createdAt)
-                    VALUES (?, 'pledge', ?, ?)`, [clan, crestData, now()]);
+                const created = createClanCrestUnsafe(clan, 'pledge', crestData);
                 crestId = Number(created.insertId);
             }
             write('UPDATE clans SET crestId = ? WHERE id = ?', [crestId, clan]);
@@ -11682,7 +11705,9 @@ const Database = {
             return { ok: true, clanId: clan, crestId, previousCrestId, deleted: crestId === 0 };
         }, 'clan:crest-player-managed-replace');
     },
-    createClanCrest(clanId, kind, data) { return insert('clan_crests', { clanId, kind, data, createdAt: now() }, 'clan:crest-create'); },
+    createClanCrest(clanId, kind, data) {
+        return inTransaction(() => createClanCrestUnsafe(clanId, kind, data), 'clan:crest-create');
+    },
     fetchClanCrest(id) { return selectOne('clan_crests', ['*'], 'id = ?', [id], 'clan:crest'); },
     createClan(data) { return insert('clans', { name: data.name, leaderId: data.leaderId }, 'clan:create'); },
     updateClanCrest(id, crestId) { return update('clans', { crestId }, 'id = ?', [id], 'clan:crest'); },
