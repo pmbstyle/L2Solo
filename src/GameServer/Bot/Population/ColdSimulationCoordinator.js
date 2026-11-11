@@ -2275,6 +2275,16 @@ class ColdSimulationCoordinator {
         this.worker.terminate().catch(() => null);
     }
 
+    raidForecastPressure(now = Date.now()) {
+        const sample = this.lastWorkerSnapshot;
+        const heartbeatAgeMs = Math.max(0, now - this.lastHeartbeatAt);
+        return { ready: !!this.worker && this.ready && this.snapshotsLoaded && !this.stopping
+                && !this.pauseReasons.size && heartbeatAgeMs <= 3000
+                && Number.isFinite(sample.eventLoopUtilization) && Number.isFinite(sample.eventLoopLagMaxMs),
+            heartbeatAgeMs, utilization: Number(sample.eventLoopUtilization) || 0,
+            lagMs: Number(sample.eventLoopLagMaxMs) || 0, pendingGoals: this.partyGoalRequests };
+    }
+
     desiredWorkerPressure() {
         const scheduler = Metrics.schedulerState || {};
         const lagMs = Math.max(

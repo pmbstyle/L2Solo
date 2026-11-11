@@ -10,7 +10,7 @@ useRate('x50');
 const fs = require('node:fs'), path = require('node:path'), { Worker } = require('node:worker_threads');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-Config.staticShotsDisabled = false;
+assert.equal(Config.staticShotsDisabled, false, 'configured shot fallback is enabled for all bots by default');
 const Evidence = require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const Offers = invoke('GameServer/Bot/Economy/MarketOpportunity');

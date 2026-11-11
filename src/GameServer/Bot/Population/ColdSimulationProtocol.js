@@ -6,6 +6,9 @@ let PartyGoalCalculation;
 const PROTOCOL_VERSION = 1;
 const MAX_BATCH = 64;
 const MAX_MESSAGE_BYTES = 256 * 1024;
+const RAID_TARGET_LIMIT = require('./RaidSearchCounters').LIMITS.targetCandidates;
+const validRaidCandidates = value => Array.isArray(value) && value.length > 0 && value.length <= RAID_TARGET_LIMIT
+    && new Set(value).size === value.length && value.every(id => Number.isSafeInteger(id) && id > 0);
 
 const MAIN_TYPES = new Set([
     'init',
@@ -168,10 +171,23 @@ function validRaidAssessment(joint, sources) {
         || !a || typeof a !== 'object' || Array.isArray(a) || typeof a.ready !== 'boolean'
         || typeof a.reason !== 'string' || !/^[a-z_]{1,80}$/.test(a.reason)
         || Object.keys(a).some(key => !['ready', 'reason', 'seconds', 'grossDps', 'regen', 'healing', 'shotPlans', 'kits', 'supplies',
-            'reasons', 'unchecked', 'defense', 'healingRequired', 'workMs'].includes(key))) return false;
+            'reasons', 'unchecked', 'defense', 'healingRequired', 'workMs', 'targetSelection'].includes(key))) return false;
     if (['seconds', 'grossDps', 'regen', 'healing', 'healingRequired', 'workMs'].some(key => a[key] !== undefined
         && (typeof a[key] !== 'number' || !Number.isFinite(a[key]) || a[key] < 0))) return false;
     const ids = new Set(sources.map(s => Number(s.characterId)));
+    if (a.targetSelection !== undefined) {
+        const t = a.targetSelection, candidates = joint.objective.raidCandidateIds;
+        if (!t || typeof t !== 'object' || Array.isArray(t) || !validRaidCandidates(candidates)
+            || Object.keys(t).some(k => !['bossId','considered','rejected','unknown','fullForecast','seconds','netDps'].includes(k))
+            || !Number.isSafeInteger(t.bossId) || typeof t.fullForecast !== 'boolean'
+            || (t.fullForecast ? !candidates.includes(t.bossId) : t.bossId !== 0 || a.ready)
+            || ['considered','unknown'].some(k => !Number.isSafeInteger(t[k]) || t[k] < 0 || t[k] > candidates.length)
+            || !t.rejected || typeof t.rejected !== 'object' || Array.isArray(t.rejected)
+            || Object.keys(t.rejected).some(k => !['raid_level','raid_damage_below_regeneration','raid_fight_too_long'].includes(k))
+            || Object.values(t.rejected).some(n => !Number.isSafeInteger(n) || n < 0)
+            || Object.values(t.rejected).reduce((n,v) => n + v, 0) + t.unknown > t.considered
+            || ['seconds','netDps'].some(k => t[k] !== undefined && (typeof t[k] !== 'number' || !Number.isFinite(t[k]) || t[k] < 0))) return false;
+    }
     for (const key of ['reasons', 'unchecked']) {
         const list = a[key];
         if (list !== undefined && (!Array.isArray(list) || list.length > 16
@@ -193,13 +209,16 @@ function validRaidAssessment(joint, sources) {
         || new Set(a.supplies.map(p => p?.id)).size !== a.supplies.length
         || a.supplies.some(p => !p || !ids.has(p.id) || !Number.isSafeInteger(p.selfId) || p.selfId <= 0
             || ['target', 'missing'].some(key => !Number.isSafeInteger(p[key]) || p[key] < 0)
+            || p.available !== undefined && (!Number.isSafeInteger(p.available) || p.available < 0)
             || ['price', 'cost', 'cash'].some(key => typeof p[key] !== 'number' || !Number.isFinite(p[key]) || p[key] < 0)
-            || Object.keys(p).some(key => !['id', 'selfId', 'target', 'missing', 'price', 'cost', 'cash'].includes(key))))) return false;
+            || p.reserveCost !== undefined && (typeof p.reserveCost !== 'number' || !Number.isFinite(p.reserveCost) || p.reserveCost < 0)
+            || Object.keys(p).some(key => !['id', 'selfId', 'target', 'missing', 'available', 'price', 'cost', 'reserveCost', 'cash'].includes(key))))) return false;
     if (a.kits !== undefined && (!Array.isArray(a.kits) || a.kits.length !== sources.length
         || new Set(a.kits.map(row => row?.[0])).size !== sources.length
         || a.kits.some(row => !Array.isArray(row) || row.length !== 2 || !ids.has(row[0])
             || typeof row[1] !== 'string' || row[1].length > 256))) return false;
-    return !a.ready || a.seconds > 0 && a.grossDps > a.regen && a.shotPlans?.length >= 6 && !!a.kits;
+    return !a.ready || a.seconds > 0 && a.grossDps > a.regen && a.shotPlans?.length >= 6 && !!a.kits
+        && !a.supplies?.some(p => p.available !== undefined && p.available < p.missing || (p.reserveCost ?? p.cost) > p.cash);
 }
 
 // A forming verdict (PartyGoalPolicy.formingVerdict): distinct accepted ids of the roster's
@@ -296,6 +315,9 @@ function validateEnvelope(message, direction, options = {}) {
             ? { partyId: payload.partyId, memberIds: payload.members?.map(state => state?.characterId),
                 leaderId: payload.members?.[0]?.characterId } : payload.party;
         if (!(PartyGoalCalculation ||= require('./PartyGoalCalculation')).validMembers(party, payload.members, paged)
+            || party?.stats?.objective?.raidCandidateIds !== undefined
+                && (!validRaidCandidates(party.stats.objective.raidCandidateIds)
+                    || party.stats.objective.opportunisticRaid !== true || party.stats.objective.sourceKind !== 'raid')
             || paged && (!Number.isSafeInteger(payload.pageIndex) || !Number.isSafeInteger(payload.pageCount)
                 || payload.pageCount < 1 || payload.pageCount > 9 || payload.pageIndex < 0
                 || payload.pageIndex >= payload.pageCount || payload.members.length !== 1

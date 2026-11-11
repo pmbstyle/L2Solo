@@ -218,7 +218,7 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
     const rosterSize = Math.max(1, (goal?.assignedMemberIds || []).length);
     const maxPartySize = Math.max(2, Math.min(9, rosterSize));
     const raid = plan.next?.sourceKind === 'raid' || plan.next?.raidBoss === true;
-    const minPartySize = goal.fullRoster ? 9 : raid
+    const minPartySize = goal.fullRoster ? goal.fullRoster.memberIds.length : raid
         ? Math.max(2, Math.min(maxPartySize, ClanRaidPolicy.MIN_MEMBERS))
         : Math.max(2, Math.min(maxPartySize, number(Config.operationMinMembers, 5)));
     return {
@@ -243,7 +243,7 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
         clanGoalKey: goal.goalKey || null,
         partyPreference: 'clan_first',
         clanOperation: 'equipment',
-        maxPartySize: goal.fullRoster ? 9 : maxPartySize,
+        maxPartySize: goal.fullRoster ? goal.fullRoster.memberIds.length : maxPartySize,
         minPartySize,
         ...(goal.fullRoster ? { fullRoster: goal.fullRoster } : {}),
         levelRange: 99,
@@ -256,7 +256,8 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
 
 function fullRosterIdentity(marker) {
     return marker ? [marker.clanId, marker.ownerSection, marker.goalKey, marker.generation,
-        [...(marker.memberIds || [])].map(number).sort((a, b) => a - b), marker.sourceId, marker.npcId, marker.raidInstanceId] : null;
+        [...(marker.memberIds || [])].map(number).sort((a, b) => a - b), marker.sourceId, marker.npcId, marker.raidInstanceId,
+        require('./ClanRaidExpedition').coreIds(marker), marker.unchargedHelperIds || []] : null;
 }
 function sameRosterRequirement(left, right) {
     return number(left?.minPartySize) === number(right?.minPartySize)
@@ -505,7 +506,7 @@ async function buyGoalItem(memberId, plan, clan) {
     return buyGoalCopy(memberId, plan, clan, Math.max(1, copies - owned));
 }
 
-async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {
+async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred', claimed = new Map()) {
     const id = number(member.characterId ?? member.id);
     let objective = clanPartyObjective(plan, goal, priority, clan.id);
     await LifeState.init();
@@ -533,7 +534,12 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
         const saved = await LifeState.upsertState({ ...current, stats }, 'clan_equipment_party_clear');
         return { ok: !!saved, changed: !!saved, memberId: id };
     }
-    if (stateHasSameClanObjective(current, objective)) return { ok: true, changed: false, memberId: id };
+    const target = goal.raidSupplyTargets?.find(row => row.id === id);
+    const supply = objective.fullRoster && target
+        ? require('./ClanRaidSupply').reserve(current, objective, target,
+            invoke('GameServer/Bot/Economy/ColdMarketService'), claimed) : { ok: true, marker: null };
+    if (!supply.ok) return { ...supply, memberId: id };
+    if (stateHasSameClanObjective(current, objective) && !supply.marker) return { ok: true, changed: false, memberId: id };
     const partyRequest = { ...objective, clanId: number(clan.id) };
     const nextObjective = { ...partyRequest, status: 'open' };
     const saved = await LifeState.upsertState({
@@ -545,7 +551,8 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
             clanId: number(clan.id),
             clanMaterialDemand: Object.fromEntries(Crafting.requirements(Crafting.resolveRecipe(plan?.recipeId), {}, null, 1, plan?.craftProviders, plan?.componentRecipes)),
             clanPartyObjective: nextObjective,
-            partyRequest
+            partyRequest,
+            ...(supply.marker ? { raidSupplyPreparation: supply.marker } : {})
         }
     }, 'clan_equipment_party_objective');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id };
@@ -1083,7 +1090,8 @@ function raidAssemblyCommitted(clan, goal) {
             || ['failed', 'defeated'].includes(party.stats?.raidEncounter?.status);
     })) return false;
     if (!ClanRaidPolicy.assessment({ ...clan, members }, source, goal,
-        { desiredMembers: 9, preferredMemberIds: marker.memberIds }).ready) return false;
+        { desiredMembers: 9, preferredMemberIds: marker.memberIds, allowHelpers: false,
+            ...(marker.coreMemberIds ? { coreMemberIds: marker.coreMemberIds, unchargedHelperIds: marker.unchargedHelperIds || [] } : {}) }).ready) return false;
     if (Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt)) <= RAID_ASSEMBLY_COMMIT_MS) return true;
     recordReason('raid_assembly_bound');
     return false;
@@ -1221,6 +1229,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     let persistedGoal = false;
     if (team?.actualReady) {
         goal.fullRoster = RosterDemand.fullRoster(clan, goal, team, section);
+        goal.raidSupplyTargets = (team.supplies || []).map(({ id, selfId, target }) => ({ id, selfId, target }));
         const saved = await Database.updateAutonomousClanGoal({ clanId: clan.id, goal, ownerSection: section,
             expectedUpdatedAt: number(clan.state?.updatedAt), recruitmentDemand: null, recruitmentScan: null, supersededProductionGoalKey,
             rosterProof: { ownFingerprint: team.ownFingerprint, rows: team.rows, source: team.source,
@@ -1257,11 +1266,12 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     }
     if (!persistedGoal) rotation = await releasePreviousBeneficiary(clan, previousGoal, goal);
     const roster = new Set(assignedMemberIds);
+    const claimedSupplies = new Map();
     const partyAssignments = await (clan.members || [])
         .filter((member) => member?.phase === 'cold')
         .reduce((chain, member) => chain.then(async (results) => {
             const result = roster.has(memberId(member))
-                ? await assignPartyObjective(member, clan, goal, selection.plan, 'required')
+                ? await assignPartyObjective(member, clan, goal, selection.plan, 'required', claimedSupplies)
                 : await assignPartyObjective(member, clan, goal, null);
             if (!result.ok) recordReason(result.code);
             results.push(result);

@@ -136,7 +136,15 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const without = Price.saleOutcome(saleInput(exit, oldCount, context));
     yield 'without';
     if (!without.known) return null;
-    const full = Price.saleOutcome(saleInput(exit, oldCount + productCount - reservedOutput, context));
+    const marketed = oldCount + productCount - reservedOutput;
+    const input = saleInput(exit, marketed, context);
+    // A conditional quote may support a minimum physical lot, not inflate
+    // its quantity with its price. One unfunded bid for one shot cannot
+    // justify manufacturing hundreds; own-use units are accounted separately.
+    const conditionalMarket = exit.trial === true
+        || exit.forecast?.origin === 'public_buy_interest' && exit.forecast.conditionalUnits > 0;
+    if (conditionalMarket && marketed > Math.max(0, input.applicableUnits - input.cheaperUnits)) return null;
+    const full = Price.saleOutcome(input);
     yield 'success';
     if (!full.known) return null;
     if (exit.trial === true && !(full.sold > without.sold)) return null;

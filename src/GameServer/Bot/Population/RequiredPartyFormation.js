@@ -17,6 +17,7 @@ function eligible(state) {
         && ELIGIBLE_ACTIVITIES.has(state.activity)
         && !state.party?.partyId
         && !state.partyId
+        && !require('./RaidSupplyPolicy').held(state)
         && partyTradeAllowed('party', state)
         && (!isMainThread || require('../../AfkTrade/TradeMeetingService').canJoinParty(state.characterId, state))
         && spotFor(state)

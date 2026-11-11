@@ -76,6 +76,8 @@ function neededKinds(assessment) {
     if (deficits.healing?.healers || deficits.healing?.healingBuffers) kinds.push('healer', 'healingBuffer');
     if (deficits.mainBuffers) kinds.push('mainBuffer');
     if (deficits.tanks || assessment.reason === 'raid_tank_power_low') kinds.push('tank');
+    if (['raid_tank_survival', 'raid_tank_body', 'raid_tank_shield'].includes(assessment.reason)) kinds.push('tank');
+    if (['raid_healing_mana', 'raid_preparation_mana'].includes(assessment.reason)) kinds.push('healer', 'healingBuffer');
     if (!kinds.length && (deficits.members || deficits.damage || deficits.coreMembers || deficits.power)) kinds.push('damage');
     return kinds;
 }
@@ -261,7 +263,7 @@ function raidDecoration({ id, raidRosterSize, raidEstimate }) {
 // gear and power decision; the second assessment enforces physical free slots.
 // actualCache: the own roster's assessment per spot id, for one clan, spot list
 // and previous goal (the planning job's; prospects do not change it).
-function prepare(clan, spots, prospects = [], previousGoal = null, readinessCache = new Map(), actualCache = null) {
+function prepare(clan, spots, prospects = [], previousGoal = null, readinessCache = new Map(), actualCache = null, raidOptions = {}) {
     if (clan.members.length > 40) return { raids: [], teams: {}, requests: [], retainedProspects: [] };
     const ownIds = new Set(clan.members.map(id));
     const free = Math.max(0, Rules.memberLimit(clan.level) - Number(clan.physicalMemberCount ?? clan.members.length));
@@ -274,18 +276,20 @@ function prepare(clan, spots, prospects = [], previousGoal = null, readinessCach
     let retained = [], bestSize = -1;
     for (const spot of spots) {
         if (!spot.raidBoss || spot.raidWorldAvailable === false) continue;
-        const options = { desiredMembers: 9, readinessCache, preferredMemberIds: [...ownIds] };
+        const options = { ...raidOptions, desiredMembers: 9, readinessCache, preferredMemberIds: [...ownIds] };
         let actual = actualCache?.get(spot.id);
         if (!actual) {
             actual = Raid.assessment(availableClan, spot, previousGoal, options);
             actualCache?.set(spot.id, actual);
         }
-        if (actual.ready && actual.eligible.length === 9) {
-            raids.push(decoratedRaid(spot, { raidRosterSize: 9, raidEstimate: actual.raidEstimate }));
+        if (actual.ready && actual.eligible.length >= 9) {
+            raids.push(decoratedRaid(spot, { raidRosterSize: actual.eligible.length, raidEstimate: actual.raidEstimate }));
             teams[spot.id] = { source: { id: spot.id, npcId: Number(spot.raidBossTemplateId), avgLevel: Number(spot.avgLevel),
                 raidInstanceId: spot.raidInstanceId || null, fingerprint: sourceFingerprint(spot) }, memberIds: actual.eligible.map(id),
                 rows: actual.eligible.map(proofRow), prospectiveIds: [], ownFingerprint: ownFingerprint(clan), actualReady: true,
-                deficits: actual.deficits, requirements: actual.requirements, neededKinds: [], reason: 'raid_ready' };
+                deficits: actual.deficits, requirements: actual.requirements, neededKinds: [], reason: 'raid_ready',
+                ...(actual.coreMemberIds ? { coreMemberIds: actual.coreMemberIds, unchargedHelperIds: actual.unchargedHelperIds } : {}),
+                supplies: actual.raidAssessment?.supplies || [], shotPlans: actual.raidAssessment?.shotPlans || [] };
             continue;
         }
         let future = free ? Raid.assessment({ ...clan, members: [...availableClan.members, ...pool] }, spot, previousGoal, options) : actual;
@@ -295,14 +299,16 @@ function prepare(clan, spots, prospects = [], previousGoal = null, readinessCach
         }
         const prospectiveIds = future.eligible.filter(member => !ownIds.has(id(member))).map(id);
         if (future.eligible.length > bestSize) { retained = prospectiveIds; bestSize = future.eligible.length; }
-        if (future.ready && future.eligible.length === 9) {
-            raids.push(decoratedRaid(spot, { raidRosterSize: 9, raidEstimate: future.raidEstimate }));
+        if (future.ready && future.eligible.length >= 9) {
+            raids.push(decoratedRaid(spot, { raidRosterSize: future.eligible.length, raidEstimate: future.raidEstimate }));
             teams[spot.id] = { source: { id: spot.id, npcId: Number(spot.raidBossTemplateId), avgLevel: Number(spot.avgLevel),
                 raidInstanceId: spot.raidInstanceId || null, fingerprint: sourceFingerprint(spot) },
                 memberIds: future.eligible.map(id), rows: future.eligible.map(proofRow), prospectiveIds,
-                ownFingerprint: ownFingerprint(clan), actualReady: actual.ready && actual.eligible.length === 9,
+                ownFingerprint: ownFingerprint(clan), actualReady: actual.ready && actual.eligible.length >= 9,
                 deficits: actual.deficits, requirements: actual.requirements, neededKinds: neededKinds(actual),
-                reason: actual.ready ? 'raid_ready' : actual.reason };
+                reason: actual.ready ? 'raid_ready' : actual.reason,
+                ...(future.coreMemberIds ? { coreMemberIds: future.coreMemberIds, unchargedHelperIds: future.unchargedHelperIds } : {}),
+                supplies: future.raidAssessment?.supplies || [], shotPlans: future.raidAssessment?.shotPlans || [] };
         }
         if (free > 0) {
             // A prospective nine only exposes a conditional equipment route.
@@ -330,7 +336,8 @@ function buildDemand(clan, goal, team, section) {
     const kinds = [...new Set([...team.neededKinds, ...team.rows.filter(row => team.prospectiveIds.includes(row[0]))
         .map(row => Raid.raidRole({ classId: row[2], level: row[3] }) === 'buffer' ? 'mainBuffer' : Raid.raidRole({ classId: row[2], level: row[3] }))])];
     const generation = hash([clan.id, section, goal.goalKey, team.source.fingerprint,
-        team.rows.map(row => [row[0], row[2], row[3], row[4]]).sort((a, b) => a[0] - b[0]), team.requirements]);
+        team.rows.map(row => [row[0], row[2], row[3], row[4]]).sort((a, b) => a[0] - b[0]), team.requirements,
+        team.coreMemberIds || null, team.unchargedHelperIds || null]);
     return { clanId: clan.id, ownerSection: section, goalKey: goal.goalKey, generation, desiredMembers: 9,
         source: team.source, minLevel: Math.max(1, team.source.avgLevel - Raid.MAX_LEVEL_BELOW_BOSS),
         maxLevel: team.source.avgLevel + Raid.MAX_LEVEL_ABOVE_BOSS, neededKinds: kinds,
@@ -342,7 +349,9 @@ function fullRoster(clan, goal, team, section) {
     const demand = buildDemand(clan, goal, team, section);
     return { clanId: clan.id, ownerSection: section, goalKey: goal.goalKey, generation: demand.generation,
         memberIds: team.memberIds, sourceId: team.source.id, npcId: team.source.npcId,
-        raidInstanceId: team.source.raidInstanceId, sourceFingerprint: team.source.fingerprint, minPartySize: 9, maxPartySize: 9 };
+        raidInstanceId: team.source.raidInstanceId, sourceFingerprint: team.source.fingerprint,
+        ...(team.coreMemberIds ? { coreMemberIds: team.coreMemberIds, unchargedHelperIds: team.unchargedHelperIds || [] } : {}),
+        minPartySize: team.memberIds.length, maxPartySize: team.memberIds.length };
 }
 function activeDemand(clan) {
     const demand = clan.state?.recruitmentDemand;

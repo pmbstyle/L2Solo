@@ -6,6 +6,8 @@ invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false
 const Data = invoke('GameServer/DataCache');
 Data.init({ validate: false });
 const Policy = invoke('GameServer/Bot/Population/OpportunisticRaidPolicy');
+invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
+    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
@@ -102,7 +104,8 @@ async function run() {
     const naked = structuredClone(party); delete naked[0].inventory[347]; delete naked[0].inventory[376];
     assert.equal(Policy.assessment(naked, spot).reason, 'raid_tank_body');
     const older = structuredClone(party).map(s => ({ ...s, level: s.level + 30 }));
-    assert(!Policy.assessment(older, { ...spot, avgLevel: 53 }).ready,
+    const higherBoss = Catalog.all().find(s => s.avgLevel >= 53 && s.avgLevel <= 55);
+    assert(!Policy.assessment(older, higherBoss).ready,
         'higher boss tiers still require the unchanged combat safety margins');
     assert(Policy.levelAllowed({ level: 78 }, 80), 'the curse gate must not permanently exclude endgame bosses above the player cap');
     assert(Policy.levelAllowed({ level: 29 }, 21));
@@ -252,7 +255,8 @@ async function run() {
             return {ready:false,reason:'raid_fight_too_long'}; }
     });
     await rotating.start();
-    for (let i = 0; i < 8; i++) { const prior = forecasts; rotating.wake('raid_opportunity'); await rotating.pulse(at+i*60000);
+    for (let i = 0; i < 8; i++) { const prior = forecasts; rotating.wake('raid_opportunity');
+        for (let slot = 0; slot < 12; slot++) await rotating.pulse(at+i*60000+slot*5000);
         assert(forecasts-prior <= 12, 'boss rotation retains the worker forecast cap'); }
     assert.equal(visited.size, bosses.length, 'later suitable bosses are not starved by restarting every queue at the first boss');
     rotating.stop();
@@ -349,11 +353,14 @@ async function run() {
         return { service, assessed, formed };
     }
     const viableLater = budgetSearch(9001);
-    await viableLater.service.start(); await viableLater.service.pulse(at); viableLater.service.stop();
+    await viableLater.service.start(); await viableLater.service.pulse(at);
+    await viableLater.service.pulse(at + 5000); viableLater.service.stop();
     assert.deepEqual(viableLater.assessed, [1, 9001], 'give the next roster a forecast before retrying the first roster on another boss');
     assert.deepEqual(viableLater.formed, [9001], 'the later viable roster can form under the existing forecast cap');
     const rejectedBudget = budgetSearch(-1);
-    await rejectedBudget.service.start(); await rejectedBudget.service.pulse(at); rejectedBudget.service.stop();
+    await rejectedBudget.service.start();
+    for (let i = 0; i < 12; i++) await rejectedBudget.service.pulse(at + i * 5000);
+    rejectedBudget.service.stop();
     assert.equal(rejectedBudget.assessed.length, 12, 'fair scheduling preserves the per-search worker forecast limit');
     assert.equal(new Set(rejectedBudget.assessed.slice(0, 8)).size, 8, 'all eight proposed rosters get their first assessment');
     assert.equal(rejectedBudget.formed.length, 0);
@@ -367,24 +374,25 @@ async function run() {
     assert(counted.total.hydratedBots <= 72 && counted.total.socialChecks <= 288);
 
     const heavyReady = budgetSearch(1);
-    heavyReady.service.assess = async () => ({ ...fit, workMs: 100 });
+    heavyReady.service.assess = async () => ({ ...fit, workMs: 200 });
     await heavyReady.service.start(); await heavyReady.service.pulse(at); heavyReady.service.stop();
     assert.deepEqual(heavyReady.formed, [1], 'a completed successful forecast may form even if that one forecast exceeded the CPU budget');
 
     const cpuLimited = budgetSearch(-1);
     cpuLimited.service.assess = async members => {
         cpuLimited.assessed.push(members[0].characterId);
-        return { ready: false, reason: 'raid_fight_too_long', workMs: 6,
+        return { ready: false, reason: 'raid_fight_too_long', workMs: 60,
             reasons: ['raid_fight_too_long', 'raid_tank_survival'], unchecked: ['supplies'] };
     };
     await cpuLimited.service.start(); await cpuLimited.service.pulse(at);
+    await cpuLimited.service.pulse(at + 30000);
     assert(cpuLimited.service.due && cpuLimited.service.poolAtFailure === null,
         'a search its CPU allowance cut stays due: it goes on once the allowance is full, not on pool churn');
     cpuLimited.service.stop();
     const cpuCounted = cpuLimited.service.snapshot().search;
     assert.equal(cpuLimited.assessed.length, 2, 'stop before another worker forecast once its CPU budget is spent');
     assert.equal(cpuCounted.lastSearch.status, 'forecast_cpu_budget');
-    assert.equal(cpuCounted.total.forecastWorkMs, 12);
+    assert.equal(cpuCounted.total.forecastWorkMs, 120);
     assert.equal(cpuCounted.total.forecastFailures, 2);
     assert.equal(cpuCounted.rejections.forecast.raid_fight_too_long, 2);
     assert.equal(cpuCounted.additionalReasons.raid_tank_survival, 2);
@@ -393,13 +401,13 @@ async function run() {
     const queued = budgetSearch(-1);
     queued.service.assess = async members => {
         queued.assessed.push(members[0].characterId);
-        return { ready: false, reason: 'raid_fight_too_long', workMs: 6 };
+        return { ready: false, reason: 'raid_fight_too_long', workMs: 60 };
     };
-    await queued.service.start(); await queued.service.pulse(at);
+    await queued.service.start(); await queued.service.pulse(at); await queued.service.pulse(at + 30000);
     const awaiting = queued.service.deferredRosters.map(ids => ids[0]);
     assert.equal(awaiting.length, 6, 'the CPU limit preserves unforecasted combinations');
     queued.service.wake('raid_opportunity');
-    await queued.service.pulse(at + 60000);
+    await queued.service.pulse(at + 60000); await queued.service.pulse(at + 90000);
     assert(queued.assessed.slice(2).every(id => awaiting.includes(id)), 'deferred combinations get forecasts before newly sampled ones');
     assert.equal(queued.service.deferredRosters.filter(ids => awaiting.includes(ids[0])).length, 4,
         'only the two forecasted deferred rosters are retired; fresh proposals remain bounded');
@@ -411,12 +419,15 @@ async function run() {
     const draining = budgetSearch(-1);
     draining.service.assess = async members => {
         draining.assessed.push(members[0].characterId);
-        return { ready: false, reason: 'raid_fight_too_long', workMs: 6 };
+        return { ready: false, reason: 'raid_fight_too_long', workMs: 60 };
     };
-    await draining.service.start(); await draining.service.pulse(at);
+    await draining.service.start(); await draining.service.pulse(at); await draining.service.pulse(at + 30000);
     const queuedFirst = draining.service.deferredRosters.map(ids => ids[0]);
     let windows = 0;
-    while (draining.service.due && windows < 10) await draining.service.pulse(at + ++windows * 60000);
+    while (draining.service.due && windows < 10) {
+        await draining.service.pulse(at + ++windows * 60000);
+        await draining.service.pulse(at + windows * 60000 + 30000);
+    }
     assert(draining.assessed.slice(2).every(id => queuedFirst.includes(id)), 'a continuation forecasts only its deferred rosters');
     assert.equal(draining.assessed.length, 8, 'each proposed roster is forecast once, no fresh one is added');
     assert(!draining.service.due && windows === 3 && draining.service.poolAtFailure !== null,
@@ -441,7 +452,7 @@ async function run() {
         assess: async members => {
             const id = members[0].characterId;
             tankForecasts.set(id, (tankForecasts.get(id) || 0) + 1);
-            return { ready: false, reason: 'raid_fight_too_long', workMs: 12 };
+            return { ready: false, reason: 'raid_fight_too_long', workMs: 120 };
         }, form: async () => assert.fail('rejected forecasts must never form a party') });
     await sustained.start();
     try {
@@ -449,7 +460,7 @@ async function run() {
             sustained.wake('raid_opportunity');
             await sustained.pulse(at + turn * 60000);
             const report = sustained.snapshot().search;
-            assert.equal(report.lastSearch.forecasts, 1, 'the same 12 ms CPU budget permits only one forecast per window');
+            assert.equal(report.lastSearch.forecasts, 1, 'the same 120 ms CPU budget permits only one forecast per window');
             assert(report.lastSearch.rosterAttempts <= 8 && report.lastSearch.hydratedBots <= 72
                 && report.lastSearch.socialChecks <= 288 && report.pendingRosters <= 7,
             'sustained coverage retains the existing per-window work and queue bounds');
@@ -461,13 +472,14 @@ async function run() {
     } finally { sustained.stop(); }
 
     const overrun = budgetSearch(-1);
-    overrun.service.assess = async () => ({ ready: false, reason: 'raid_fight_too_long', workMs: 30 });
+    overrun.service.assess = async () => ({ ready: false, reason: 'raid_fight_too_long', workMs: 300 });
     await overrun.service.start(); await overrun.service.pulse(at);
     assert.equal(overrun.service.snapshot().search.total.forecasts, 1);
     overrun.service.wake('raid_opportunity');
     await overrun.service.pulse(at + 60000);
     assert.equal(overrun.service.snapshot().search.total.forecasts, 1, 'a CPU overrun is repaid by deferring the following window');
-    assert.equal(overrun.service.snapshot().search.cpuBudget.deferredSearches, 1);
+    assert.equal(overrun.service.snapshot().search.pacing.nextForecastAt, at + 150000,
+        'the measured overrun holds the next forecast until its earned spacing');
     overrun.service.wake('raid_opportunity');
     await overrun.service.pulse(at + 120000);
     assert.equal(overrun.service.snapshot().search.total.forecasts, 1, 'a part allowance starts no search');

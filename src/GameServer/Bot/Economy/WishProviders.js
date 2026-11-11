@@ -875,6 +875,15 @@ function buildProjection(state, ctx, deps) {
                 if (present(id) || nodeKeys.has(`resale:${id}`)) continue;
                 const offer = ctx.board.first(id, 3, { excludeOwner: state.characterId, enchant: 0 });
                 if (!offer || !(offer.price > ctx.buyback(id))) continue;
+                // Unreachable high-grade orders cannot consume the eight
+                // detailed source searches before an attainable scroll is read.
+                // This is the same per-level solo gate as sourceFacts; route,
+                // pull safety, yields and profit still pass its full search.
+                if (!sourceIndex.get(Number(id)).some(entry => {
+                    if (entry.kind === 'spoil' ? !spoiler : spoilOnly || !shotScroll || entry.kind !== 'drop') return false;
+                    return Planner.soloSafeForSource(state, { npcLevel: Number(entry.npcLevel || entry.spot?.avgLevel || 1),
+                        sourceKind: entry.kind, raidBoss: entry.spot?.raidBoss === true });
+                })) continue;
                 const units = Math.max(1, Math.min(50, Math.floor(offer.count)));
                 demand.push({ id, offer, units, shotScroll, spoilOnly, ceiling: units * (offer.price - ctx.buyback(id)) });
                 demand.sort((a, b) => b.ceiling - a.ceiling || a.id - b.id);

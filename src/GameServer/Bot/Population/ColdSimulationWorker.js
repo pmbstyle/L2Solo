@@ -189,6 +189,10 @@ invoke('GameServer/Bot/Economy/ItemDisposition').useBoard(() => boardReady());
 // The bots' claimed board lines: main's 'board_claims' table (BoardClaims).
 require('../Economy/BoardClaims').useRows(() => tables.rows('board_claims'));
 invoke('GameServer/Bot/Economy/StaticMerchantPricing').useBoard(() => boardReady());
+invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({ board: boardReady(),
+    npcOffersFor: id => [...OccupationSources.npcOffersFor(id),
+        ...invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id)],
+    findSpot: id => SpotIndex.spotById(planningSpots, id) }));
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 // Planning producers import this same collector; its worker cap is64 rows.

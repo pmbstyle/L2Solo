@@ -52,6 +52,17 @@ const spot = Catalog.findById('raid:10366');
     const smallC=Policy.assessment(c,boss42,{timestamp:at,fundSupplies:true});
     assert.equal(Gear.combatReadiness(d[0]).armorRank,1);
     assert(strongD.defense && smallC.defense,'both kits reach actual combat defense checks');
+    const itemRows = Data.items;
+    try {
+        // Isolate the grade label from actual weapon power: the combat
+        // numbers, expertise and level limits still decide admission.
+        const damageWeapons = new Set(older.filter(s => Policy.role(s) === 'damage')
+            .flatMap(s => Object.values(s.inventory).filter(i => i.equipped && [7,14].includes(i.slot)).map(i => i.selfId)));
+        Data.items = itemRows.map(i => damageWeapons.has(i.selfId) ? { ...i, etc: { ...i.etc, rank: 'd' } } : i);
+        const lowerGrade = Policy.assessment(structuredClone(older), boss42, { timestamp: at, fundSupplies: true });
+        assert(!lowerGrade.reasons.includes('raid_weapon_grade'));
+        assert(lowerGrade.grossDps > 0 && lowerGrade.defense, 'lower-grade DD weapons reach the real combat forecast');
+    } finally { Data.items = itemRows; }
     assert(strongD.defense.pDef>smallC.defense.pDef,'enchant and item defense matter more than one C boot');
     assert(!strongD.reasons.includes('raid_tank_armor'));
     const full = structuredClone(older); equip(full[0],60);

@@ -8,6 +8,7 @@ const { SpotCatalogReader } = require('./ClanSpotCatalog');
 const { heapRecord, observe } = require('../Bot/Population/WorkerHeapTelemetry');
 if (workerData?.developerDiagnostics) observe(); // major-GC window for the v8Heap record (WorkerHeapTelemetry)
 const spotCatalog = new SpotCatalogReader();
+let spotById = new Map();
 
 // Only immutable catalogs and per-request snapshots enter this process.
 const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieItems: [], experience: [], skillTree: [], skills: [], classTemplates: [], revitalize: {} };
@@ -25,9 +26,15 @@ let planner;
 // and own-roster assessments, and the inputs the coordinator sends once per
 // job and then names in `held` (ClanPlanningCoordinator.jobInputs mirrors them).
 let job = null;
+let marketRevision = 0;
 const memberId = member => Number(member?.characterId ?? member?.id);
 function jobFor(key) {
     if (job?.key !== key) job = { key, readiness: new Map(), actual: new Map(), inputs: {}, prospectById: new Map() };
+    if (job.marketRevision !== marketRevision) {
+        job.marketRevision = marketRevision;
+        job.actual = new Map();
+        for (const key of job.readiness.keys()) if (/^raid_(priority|helper_supply):/.test(String(key))) job.readiness.delete(key);
+    }
     return job;
 }
 function jobInput(current, payload, held, name) {
@@ -85,6 +92,7 @@ function useContext(next) {
     fixedOffers = nextFixed;
     npcOffers = nextNpc;
     context = next;
+    marketRevision++;
 }
 // Static data: a request made under an older revision plans with the newer
 // one the worker holds (two plans in flight across a revision change).
@@ -111,6 +119,9 @@ const market = {
 };
 const stubs = new Map([
     ['GameServer/DataCache', catalogs],
+    // The same cold-state adapter as the simulation worker: native buff
+    // preparation has no live summon actor to discover in World.
+    ['GameServer/Npc/SummonControl', { activeSummon: () => null }],
     ['GameServer/Bot/Economy/MarketOpportunity', market],
     ['GameServer/Bot/Economy/CraftShopService', {
         ...require('../Bot/Economy/CraftEligibility'),
@@ -134,11 +145,17 @@ global.invoke = (name) => {
 };
 invoke('GameServer/Bot/Economy/StaticMerchantPricing').useBoard(() => tables.ready('board') ? boardIndex : null);
 invoke('GameServer/Bot/Economy/MarketCounters').useTable(() => tables.rows('market'));
+invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
+    board: tables.ready('board') ? boardIndex : null,
+    npcOffersFor: id => [...(npcOffers.get(Number(id)) || []), ...(fixedOffers.get(Number(id)) || [])],
+    findSpot: id => spotById.get(id)
+}));
 
 parentPort.on('message', (message) => {
     try {
         if (message.type === 'table_page') {
             const resync = tables.apply(message.tables);
+            if (message.tables.some(table => table.name === 'board')) marketRevision++;
             if (resync.length) parentPort.postMessage({ type: 'table_resync', names: resync });
             return;
         } else if (message.type === 'table_summary') {
@@ -152,6 +169,7 @@ parentPort.on('message', (message) => {
             require('../Items/ItemAcquisitionCatalog').reset();
         } else if (message.type === 'spot_catalog') {
             spotCatalog.apply(message.page);
+            if (message.page.done) spotById = new Map(spotCatalog.rows.map(spot => [spot.id, spot]));
         } else if (message.type === 'planning_context') {
             useContext(message.context);
         } else if (message.type === 'end_planning_job') {
@@ -178,7 +196,12 @@ parentPort.on('message', (message) => {
             current.prospectById = new Map(prospects.map(member => [memberId(member), member]));
             current.clan = clan; current.prospects = prospects;
             const Roster = require('./ClanRosterDemand');
-            current.prepared = Roster.prepare(clan, spots, prospects, previousGoal, current.readiness, current.actual);
+            if (current.fundRaidSupplies !== payload.fundRaidSupplies) current.actual = new Map();
+            current.fundRaidSupplies = payload.fundRaidSupplies;
+            current.prepared = Roster.prepare(clan, spots, prospects, previousGoal, current.readiness, current.actual,
+                { fundSupplies: payload.fundRaidSupplies !== false,
+                    ...(payload.coreMemberIds ? { coreMemberIds: payload.coreMemberIds,
+                        unchargedHelperIds: payload.unchargedHelperIds || [], allowHelpers: false } : {}) });
             current.prepared.economicProspects = Roster.retainedEconomicProspects(prospects,
                 economicRequirements, current.prepared.retainedProspects);
             parentPort.postMessage({ id: message.id, result: { ...current.prepared,

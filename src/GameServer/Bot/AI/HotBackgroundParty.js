@@ -39,6 +39,17 @@ function leader(session) {
     return roster(session).find(s => s.actor.fetchId() === party?.leaderId) || session;
 }
 
+function partyRoster(session) {
+    const party = Parties.find(session?.hotBackgroundPartyId);
+    return require('../../Clan/ClanRaidExpedition').partyMembers(module.exports.roster(session), party, session);
+}
+
+function partyLeader(session) {
+    const party = Parties.find(session?.hotBackgroundPartyId);
+    const group = partyRoster(session);
+    return group.find(member => member.actor.fetchId() === party?.leaderId) || group[0] || session;
+}
+
 const loc = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
 const ratio = (value, max) => Number(value || 0) / Math.max(1, Number(max || 0));
 
@@ -274,11 +285,18 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         return true;
     }
     if (session.hotRaidCasualtyAt) {
-        Tactics.stop(session, bot);
-        session.currentTargetId = undefined;
-        bot.unselect?.();
-        session.lastDecision = { action: 'raid_casualty_out', partyId: party.partyId, at: now };
-        return true;
+        const Expedition = require('../../Clan/ClanRaidExpedition');
+        if (Expedition.helper(party, session) && Threats.alive(bot)) {
+            session.hotRaidCasualtyAt = null;
+            session.hotRaidNeedsRebuff = true;
+            session.hotRaidResurrectionRecovery = true;
+        } else {
+            Tactics.stop(session, bot);
+            session.currentTargetId = undefined;
+            bot.unselect?.();
+            session.lastDecision = { action: 'raid_casualty_out', partyId: party.partyId, at: now };
+            return true;
+        }
     }
     const members = roster(session).filter(s => Threats.alive(s.actor) && !s.hotRaidCasualtyAt);
     if (!members.length) return true;
@@ -294,7 +312,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     // is neither waited for nor followed.
     const raidObjective = party.stats?.objective?.sourceKind === 'raid'
         || party.stats?.objective?.raidBoss === true;
-    const spot = party.spotId && !raidObjective ? partySpot(party) : null;
+    const spot = party.spotId && (!raidObjective || party.stats?.objective?.fullRoster?.coreMemberIds) ? partySpot(party) : null;
     const present = s => !spot || Spots.containsLocation(spot, loc(s.actor));
     for (const member of members) {
         const destination = member.backgroundPartyReturn;
@@ -303,7 +321,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         }
     }
     const returning = s => !!s.backgroundPartyReturn;
-    const returnPending = members.some(returning);
+    const returnPending = members.some(member => returning(member)
+        && !require('../../Clan/ClanRaidExpedition').helper(party, member));
     const radius = 1800;
     // Partial arrivals split the roster across the map. Defend the members
     // beside this actor before following an owner already at the farm spot.
@@ -320,6 +339,13 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const owner = returnIncoming ? returnGroup.find(s => s === leading) || returnGroup[0]
         : leading && !away(leading) ? leading
         : members.find(present) || members.find(s => !away(s)) || leading || members[0];
+    const Expedition = require('../../Clan/ClanRaidExpedition');
+    const group = Expedition.partyMembers(members, party, session);
+    const groupOwner = group.find(member => member === owner) || group[0];
+    if (Expedition.helper(party, session) && away(session) && !Awareness.npcThreateningActor(session)) {
+        returnToSpot(session, bot, spot, party, now, present(owner) ? loc(owner.actor) : null);
+        return true;
+    }
     const Roster = require('../../Clan/ClanRaidRoster');
     if (Roster.markerFor(party) && !Roster.held(party)) {
         const registered = roster(session);
@@ -330,13 +356,14 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             return true;
         }
         if (!Roster.exact(registered.map(member => Number(member.actor.fetchId())), marker.memberIds)
-            || members.length !== 9 || members.some(member => Threats.distance(member.actor, owner.actor) > 700)) {
+            || members.length !== marker.memberIds.length || members.some(member => Threats.distance(member.actor, owner.actor) > 700)) {
             Tactics.stop(session, bot); bot.unselect?.(); session.currentTargetId = undefined;
             session.lastDecision = { action: 'raid_roster_wait', partyId: party.partyId, at: now };
             return true;
         }
         if (!Roster.admitted(party)) {
-            if (holdForRaidPreparation(session, owner, members, Generics, now, true)) return true;
+            if (holdForRaidPreparation(session, groupOwner, group, Generics, now, true)) return true;
+            if (Expedition.groups(marker).some(ids => !ids.some(id => registered.find(s => s.actor.fetchId() === id)?.raidPreparationComplete))) return true;
             Lifecycle.openMarkedRaid(party, registered, now).catch(error =>
                 utils.infoWarn('BotParty', 'marked admission %s: %s', party.partyId, error.message));
             Tactics.stop(session, bot); bot.unselect?.(); session.currentTargetId = undefined;
@@ -366,6 +393,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     }
     if (bot.state.fetchCasts?.()) return true;
     const near = members.filter(s => Threats.distance(s.actor, owner.actor) <= radius);
+    const nearGroup = Expedition.partyMembers(near, party, session);
     // A member restarted in town goes back on its own threat only: the party's
     // fight at the spot is no target for a bot in town.
     const own = Awareness.npcThreateningActor(session);
@@ -402,9 +430,10 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         Tactics.stop(session, bot);
     }
     const Revival = invoke('GameServer/Bot/AI/PartyRevivalService');
-    const anchor = leader(session); // Keep attempts on the same session even if the leader dies.
-    const revivalAnchor = anchor?.hotRaidCasualtyAt ? owner : anchor;
-    const fallen = roster(session).filter(s => s.actor.isDead?.());
+    const anchor = partyLeader(session); // Includes the fallen helper leader: rescue attempts keep a stable owner.
+    const revivalAnchor = anchor?.hotRaidCasualtyAt && !Expedition.helper(party, anchor) ? owner : anchor;
+    const fallen = roster(session).filter(s => s.actor.isDead?.()
+        && (!Expedition.helper(party, s) || Expedition.helper(party, session)));
     if (!fallen.length) revivalAnchor.partyRevivalAttempt = null;
     const waiting = fallen.filter(s => !Revival.shouldTownRespawn(revivalAnchor, s, now));
     if (!incoming && waiting.length && !Revival.partyCombatInProgress(revivalAnchor)) {
@@ -449,8 +478,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         session.lastDecision = { action: 'party_regroup', partyId: party.partyId, at: now };
         return true;
     }
-    if (raidObjective && !incoming && !owner.raidPreparationComplete
-        && holdForRaidPreparation(session, owner, members, Generics, now)) {
+    if (raidObjective && !incoming && !groupOwner.raidPreparationComplete
+        && holdForRaidPreparation(session, groupOwner, group, Generics, now)) {
         return true;
     }
     let target = incoming || owner.backgroundHuntTarget;
@@ -464,7 +493,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         // until every member is past the "rest until" line (RestPolicy locked,
         // as a cold party and a hot solo bot do), not just past the trigger.
         const recovering = owner.backgroundPartyRecovery === party.partyId;
-        const low = members.some(s => RestPolicy.needsRest(s.actor, ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()),
+        const low = members.filter(s => !Expedition.helper(party, s)).some(s => RestPolicy.needsRest(s.actor, ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()),
             ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true, locked: recovering, pet: SummonerTactics.petRestView(s.actor) }));
         owner.backgroundPartyRecovery = low ? party.partyId : undefined;
         if (low) {
@@ -492,8 +521,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             return true;
         }
         if (!Revival.partyCombatInProgress(revivalAnchor)) {
-            if (Tactics.support(session, bot, { owner, members: near, threats: [] }, Generics, now)) return true;
-            if (prepareBuffs(session, owner, near, Generics, now, {
+            if (Tactics.support(session, bot, { owner: groupOwner, members: nearGroup, threats: [] }, Generics, now)) return true;
+            if (prepareBuffs(session, groupOwner, nearGroup, Generics, now, {
                 partyMusicLast: true
             })) return true;
         }
@@ -529,7 +558,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     }
     owner.backgroundHuntTarget = target;
     if (!raidObjective) standForAction(session, bot);
-    if (Tactics.support(session, bot, { owner, members: near, threats: [], raid: raidObjective }, Generics, now)) return true;
+    if (Tactics.support(session, bot, { owner: groupOwner, members: nearGroup, threats: [], raid: raidObjective }, Generics, now)) return true;
     // A summoner keeps its pet alive between fights, as alone (PetHealRule).
     if (!target && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return true;
     if (raidObjective && session.hotRaidResurrectionRecovery) {
@@ -590,7 +619,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const raidPlan = autonomousRaid ? RaidSafety.botClanRaidCombatPlan(owner, target) : null;
     if (raidPlan) return RaidCombat.tick(session, bot, Generics, AI, {
         owner, members, near, raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
-        partyId: party.partyId, combatBuffs: combatRaidBuffs
+        partyId: party.partyId, party,
+        combatBuffs: (member, _owner, _near, generics, at) => combatRaidBuffs(member, groupOwner, group, generics, at)
     }, now);
     const combatTarget = target;
     standForAction(session, bot);
@@ -617,4 +647,4 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     return true;
 }
 
-module.exports = { roster, leader, tick };
+module.exports = { roster, partyRoster, partyLeader, leader, tick };

@@ -161,7 +161,7 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
         ?? current.stats?.raidEncounter?.maxHp ?? 1));
     const remainingHpRatio = Math.max(0, Math.min(1, hpAtDeath / maxHpAtDeath));
     const previousDamageCasualties = sessions.filter((member) => (
-        member !== session && member.hotRaidCasualtyAt
+        member !== session && member.hotRaidCasualtyAt && !require('../../Clan/ClanRaidExpedition').helper(current, member)
     )).length;
     const disposition = options.reason ? 'abort' : raidDeathDisposition(session.actor || session.coldLifeState, {
         previousDamageCasualties,
@@ -300,7 +300,8 @@ function ready(party, states) {
 
 function members(party) {
     const ids = party?.memberIds || [];
-    if (ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length || !ids.includes(party.leaderId)) return null;
+    if (ids.length < 2 || ids.length > require('../../Clan/ClanRaidExpedition').capacity(party)
+        || new Set(ids).size !== ids.length || !ids.includes(party.leaderId)) return null;
     const states = ids.map(id => Life.cachedState(id));
     return states.every(s => s?.party?.partyId === party.partyId) ? states : null;
 }
@@ -607,7 +608,9 @@ function markedHotStates(party, sessions) {
         const actor = session.actor;
         // Only native assessment inputs, no wallet, wish, inventory or full
         // stats serialization. Full lifecycle snapshots belong to its CAS.
-        const items = (actor.backpack?.fetchItems?.() || []).filter(item => item.fetchEquipped?.() ?? item.equipped);
+        const shots = invoke('GameServer/Inventory/ShotStock').SHOT_IDS;
+        const items = (actor.backpack?.fetchItems?.() || []).filter(item => (item.fetchEquipped?.() ?? item.equipped)
+            || shots.includes(Number(item.fetchSelfId?.() ?? item.selfId)));
         return { ...current, classId: Number(actor.fetchClassId()), clanId: Number(actor.fetchClanId()), level: Number(actor.fetchLevel()),
             partyId: current.party?.partyId,
             loc: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
@@ -630,7 +633,7 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
             invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(marker.sourceId));
         const owner = Database.clanRaidOwner(marker);
         const current = await Life.statesByIds(marker.memberIds);
-        if (current.length !== 9 || current.some(state => state.phase !== 'hot' || state.partyId !== party.partyId))
+        if (current.length !== marker.memberIds.length || current.some(state => state.phase !== 'hot' || state.partyId !== party.partyId))
             return { ok: false, reason: 'raid_roster_member_changed' };
         const states = markedHotStates(party, sessions);
         const arrived = Roster.exact(sessions.map(id), marker.memberIds)
@@ -649,12 +652,20 @@ async function openMarkedRaid(party, sessions, timestamp = Date.now()) {
         const prepared = await Planning.withJob(deadlineAt, async jobKey => Planning.prepareRaids({ jobKey, deadlineAt,
             clan: { id: marker.clanId, level: owner.level, physicalMemberCount: 40, state: { mode: 'autonomous' },
                 members: Roster.assessmentMembers(states).map(state => ({ ...state, clanId: marker.clanId })) },
-            spots: [spot], prospects: [], previousGoal: { assignedMemberIds: marker.memberIds } }));
+            spots: [spot], prospects: [], previousGoal: { assignedMemberIds: marker.memberIds }, fundRaidSupplies: false,
+            coreMemberIds: marker.coreMemberIds, unchargedHelperIds: marker.unchargedHelperIds }));
         const team = prepared.teams?.[spot.id];
         if (!team?.actualReady || !Roster.exact(team.memberIds, marker.memberIds)) return { ok: false, reason: 'raid_roster_composition' };
         const fresh = markedHotStates(party, sessions);
         if (fresh.some(state => Roster.inputFingerprint(state) !== Roster.inputFingerprint(states.find(before => before.characterId === state.characterId))))
             return { ok: false, reason: 'raid_roster_member_changed' };
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        if (!team.shotPlans?.length || team.shotPlans.some(plan => {
+            const state = fresh.find(member => member.characterId === plan.id);
+            const shot = state && Shots.planForState(state);
+            return !shot || shot.selfId !== plan.selfId || shot.perAction !== plan.perAction
+                || Number(state.inventory?.[plan.selfId]?.amount || 0) + Shots.beginnerAmount(state, shot) < plan.required;
+        })) return { ok: false, reason: 'raid_shot_reserve' };
         const freshArrived = sessions.every(session => World.registeredActorById(id(session))?.session === session
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
             && require('./PartyHuntingAssembly').gathered(fresh, spot)
@@ -690,14 +701,14 @@ function markedAttackInputs(party, sessions, paidActorId = null, paidCost = null
             && session.hotBackgroundPartyId === party.partyId && !session.partyCompanion)
         && require('./PartyHuntingAssembly').gathered(states, spot)
         && states.every(state => !state.stats?.travel);
-    return arrived && states.length === 9 && states.every(state => state.phase === 'hot' && state.partyId === party.partyId
+    return arrived && states.length === marker.memberIds.length && states.every(state => state.phase === 'hot' && state.partyId === party.partyId
         && state.vitals.hp > 0 && !state.stats?.playerPartyTakeover && !state.stats?.tradeMeeting
         && invoke('GameServer/Bot/AI/RestPolicy').raidReady(state, state.vitals, state.openingPaidCost)
         && Roster.inputFingerprint(state) === party.stats.raidAdmission.members.find(row => row[0] === state.characterId)?.[3]) ? states : [];
 }
 function markedAttackReady(party, sessions) {
     const Roster = require('../../Clan/ClanRaidRoster');
-    return !Roster.markerFor(party) || Roster.held(party) || markedAttackInputs(party, sessions).length === 9;
+    return !Roster.markerFor(party) || Roster.held(party) || markedAttackInputs(party, sessions).length === Roster.markerFor(party).memberIds.length;
 }
 function openMarkedRaidAtImpact(party, session, actor, target, boss, nativeImpact, paidCost = null) {
     const Roster = require('../../Clan/ClanRaidRoster');
@@ -705,7 +716,7 @@ function openMarkedRaidAtImpact(party, session, actor, target, boss, nativeImpac
         || !Roster.markerFor(party).memberIds.includes(id(session))) return false;
     const sessions = party.memberIds.map(memberId => World.registeredActorById(memberId)?.session).filter(Boolean);
     const members = markedAttackInputs(party, sessions, id(session), paidCost);
-    if (members.length !== 9) return false;
+    if (members.length !== Roster.markerFor(party).memberIds.length) return false;
     const result = Database.openClanRaidPartyAtImpact({ partyId: party.partyId, expectedPartyRevision: party.revision,
         attackerId: id(session), targetId: Number(target.fetchId()), bossId: Number(boss.fetchId()),
         raidInstanceId: invoke('GameServer/RaidBoss/RaidEncounterScope').instanceId(boss), members, nativeImpact });

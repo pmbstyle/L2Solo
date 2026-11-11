@@ -85,8 +85,15 @@ function takeable(line, { npcPrice = 0, maxPrice = Infinity, excludeOwner = 0, c
     return !(excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner))
         && price > 0 && price <= maxPrice && !(npcPrice > 0 && price > npcPrice) && countOf(line) > 0;
 }
+// A group's earlier quotes own only a local allocation. Keep the original
+// line/count intact for stock validation and never consume the public book.
+function unclaimedCount(line, claimed) {
+    return Math.max(0, Number(line.count) - (claimed?.get(`${line.recordId}:${line.lineId}`) || 0));
+}
 function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0,
-    accept = null, acceptFill = null, countOf = lineCount } = {}) {
+    accept = null, acceptFill = null, claimed = null, countOf = lineCount } = {}) {
+    const available = countOf;
+    countOf = line => Math.max(0, available(line) - (claimed?.get(`${line.recordId}:${line.lineId}`) || 0));
     let left = Math.max(0, Math.floor(Number(amount) || 0));
     let budget = Math.max(0, Number(money));
     const taken = [];
@@ -115,6 +122,14 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
 
 let pastDepth = 0;
 
+// A raid travels only once: if repeatable supply exists, choose a town
+// with that reserve while comparing its cheaper public lines as usual.
+function quoteTowns(view, options) {
+    const reserve = options.requireRepeatable && view.npcPrice.size > 0;
+    const towns = options.towns || (reserve ? view.npcPrice.keys() : [...view.listed, ...view.npcPrice.keys()]);
+    return reserve ? new Set([...towns].filter(town => view.npcPrice.has(town))) : new Set(towns);
+}
+
 // The town where a buyer gets `amount` units of an item for the least, its
 // trip there included: in each town the board's
 // lines there and the NPC shop there as one more offer (fill), plus the
@@ -133,7 +148,7 @@ function cheapestTown(index, selfId, options = {}) {
     const view = boardView(index, selfId, options, amount);
     // One pass over the towns, no table: most callers price one amount.
     let best = null;
-    for (const town of new Set(options.towns || [...view.listed, ...view.npcPrice.keys()])) {
+    for (const town of quoteTowns(view, options)) {
         if (!town) continue;
         const trip = options.cost ? Number(options.cost(town)) : 0;
         if (!Number.isFinite(trip)) continue;
@@ -166,7 +181,8 @@ function boardView(index, selfId, options, amount = 0) {
         read++;
         if (!inspected.has(line.town)) inspected.set(line.town, []);
         inspected.get(line.town).push(line);
-        const countOf = options.countOf || lineCount;
+        const countOf = line => Math.max(0, (options.countOf || lineCount)(line)
+            - (options.claimed?.get(`${line.recordId}:${line.lineId}`) || 0));
         if (met || !named(line.town) || !takeable(line, { maxPrice, excludeOwner: options.excludeOwner, countOf })
             || options.accept && !options.accept(line)) continue;
         const before = held.get(line.town) || 0;
@@ -184,7 +200,7 @@ function betterOffer(best, options, amount, town, trip, price, lines) {
     const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
     const filled = fill(lines, amount, {
         npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
-        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill, countOf: options.countOf
+        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill, countOf: options.countOf, claimed: options.claimed
     });
     if (!filled.units) return best;
     const landed = filled.cost + trip;
@@ -214,7 +230,7 @@ function townTable(index, selfId, options = {}) {
 }
 function townRows(index, selfId, options, view) {
     const rows = [];
-    for (const town of new Set(options.towns || [...view.listed, ...view.npcPrice.keys()])) {
+    for (const town of quoteTowns(view, options)) {
         if (!town) continue;
         const trip = options.cost ? Number(options.cost(town)) : 0;
         if (!Number.isFinite(trip)) continue;
@@ -248,7 +264,7 @@ function cheapestIn(table, amount) {
     const options = table.options;
     amount = Math.max(1, Math.floor(Number(amount) || 1));
     let memo = null;
-    if (!options.moneyForTown && !options.acceptFill) {
+    if (!options.moneyForTown && !options.acceptFill && !options.claimed) {
         memo = table.byAmount ||= new Map();
         if (options.accept) {
             const admitted = table.lines.map(line => !!options.accept(line));
@@ -277,4 +293,4 @@ function othersIn(towns, fixed = [], npc = []) {
     ].filter((offer) => offer.available !== false);
 }
 
-module.exports = { admits, sourceAllowed, takeableUnits, bestSellOffer, cheapestTown, townTable, cheapestIn, fill, topPrice, othersIn, pastDepthCount: () => pastDepth };
+module.exports = { admits, sourceAllowed, takeableUnits, bestSellOffer, cheapestTown, townTable, cheapestIn, fill, unclaimedCount, topPrice, othersIn, pastDepthCount: () => pastDepth };

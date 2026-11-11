@@ -33,13 +33,13 @@ assert.equal(result.after.sold, 3, 'a backed buyer takes only its count');
 assert.equal(result.after.residual, 7);
 assert.equal(result.gross, 3 * 500 + 7 * 10);
 
-// A conditional bid holds no money: only the willingness read from the
-// seller's belief at the bid price, fewer than its count.
+// A conditional bid holds no money: its declared price gives uncertain
+// finite execution, fewer than its count.
 board = new BoardIndex();
 const conditional = put(board, { ownerId: 7, storeType: 3, count: 20, price: 500, custodyPolicy: 1 });
 result = sale(board, conditional, { units: 50 });
 const belief = PriceBelief.prior(ITEM, { board, characterId: 42, timestamp, understanding: 0.3, marketTrades: {} });
-const willing = Price.willingUnitsAt(belief, Price.traderOf(persona), { price: 500, applicableUnits: 20 });
+const willing = 20 * Price.phi(persona.traits.assertiveness - 0.5);
 assert.equal(result.status, 'ready');
 assert(willing > 0 && willing < 20, `willingness ${willing} is below the advertised count`);
 assert.equal(result.forecast.willingUnits, willing);
@@ -112,15 +112,15 @@ assert.equal(Pricing.bestAnswer(ITEM, fareCtx, { units: 6, residualUnitValue: 10
 const fundedCtx = Pricing.traderContext({ ...distantSeller, adena: 1000000 }, { board, timestamp, persona,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board } });
 assert(Pricing.bestAnswer(ITEM, fundedCtx, { units: 6, residualUnitValue: 10 }),
-    'the same bid is immediately eligible once the seller\'s wallet pays the fare');
-// The caller's own belief of the item is used for the willingness read: a
-// seller who believes the item is worth more expects more buyers at a bid.
+    'the same bid is immediately eligible once the seller has wallet funds the fare');
+// A caller's old valuation must not replace the current buyer's declared
+// willingness. It still prices an ordinary ask and the retained goods.
 const dearer = { ...belief, mu: belief.mu + 1 };
 board = new BoardIndex();
 const readOnce = put(board, { ownerId: 7, storeType: 3, count: 20, price: 500, custodyPolicy: 1 });
 assert.equal(sale(board, readOnce, { units: 50 }).forecast.willingUnits, willing);
-assert(sale(board, readOnce, { units: 50, belief: dearer }).forecast.willingUnits > willing,
-    'a passed belief replaces the belief read again');
+assert.equal(sale(board, readOnce, { units: 50, belief: dearer }).forecast.willingUnits, willing,
+    'a different historical centre cannot change execution of the same public bid');
 
 // A backed bid is answered with its count and valued in full.
 board = new BoardIndex();

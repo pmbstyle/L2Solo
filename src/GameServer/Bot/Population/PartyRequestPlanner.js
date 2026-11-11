@@ -151,7 +151,10 @@ function limitsForObjective(objective = null, defaults = {}) {
     if (objective?.opportunisticRaid === true) return { minSize: 9, maxSize: 9, levelRange: 7 };
     const maxSize = Number(defaults.maxSize ?? Config.partyMaxSize);
     const minSize = Number(defaults.minSize ?? Config.partyMinSize);
-    if (objective?.fullRoster) return { maxSize: 9, minSize: 9, levelRange: defaults.levelRange ?? 99 };
+    if (objective?.fullRoster) {
+        const size = require('../../Clan/ClanRaidExpedition').capacity(objective.fullRoster);
+        return { maxSize: size, minSize: size, levelRange: defaults.levelRange ?? 99 };
+    }
     const clanEquipment = objective?.clanOperation === 'equipment'
         && Number(objective?.clanId || 0) > 0;
     if (!clanEquipment) return { maxSize, minSize, levelRange: defaults.levelRange };
@@ -203,7 +206,8 @@ function partyObjectiveForPlan(plan) {
         clanId: Number(plan.clanGoal?.clanId || 0) || null,
         clanGoalKey: plan.clanGoal?.goalKey || null,
         partyPreference: plan.clanGoal?.partyPreference || null,
-        ...(plan.clanGoal?.fullRoster ? { fullRoster: plan.clanGoal.fullRoster, minPartySize: 9, maxPartySize: 9 } : {})
+        ...(plan.clanGoal?.fullRoster ? { fullRoster: plan.clanGoal.fullRoster,
+            minPartySize: plan.clanGoal.fullRoster.memberIds.length, maxPartySize: plan.clanGoal.fullRoster.memberIds.length } : {})
     };
 }
 

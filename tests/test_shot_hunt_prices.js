@@ -72,7 +72,7 @@ async function workerPrices() {
     for (const [at, id] of ids.entries()) {
         const state = { level: 40, stats: { classId: id === 1464 ? 1 : 27 },
             inventory: { [weapon.selfId]: { selfId: weapon.selfId, amount: 1, equipped: true, slot: weapon.etc.slot },
-                [id]: { selfId: id, amount: 1 } } };
+                [id]: { selfId: id, amount: id === 1464 ? weapon.etc.soulshot : weapon.etc.spiritshot } } };
         assert.equal(Shots.planForState(state).selfId, id);
         assert.equal(Hunt.consumablePrices(state).shots, quotes[at], 'hunting uses the actual shot replacement value');
     }

@@ -2853,7 +2853,10 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
         [characterId, BoardRules.BUY]).amount);
     const { r, root, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Trace.detailed(characterId) ? {} : null;
+    const clanRaid = raidPreparationId && stats.raidSupplyPreparation?.owner === 'clan';
     const budget = PurchaseFunding.payable({
+        characterId,
+        ...(clanRaid ? { clanId: Number(one('SELECT clanId FROM characters WHERE id=?', [characterId])?.clanId || 0) } : {}),
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
@@ -4984,7 +4987,7 @@ function raidRosterCommitReason(partyRow, nextStats, raidCommit, hotMembers = nu
         FROM characters c JOIN bot_life_state l ON l.characterId=c.id
         WHERE c.id IN (${marker.memberIds.map(() => '?').join(',')})`, marker.memberIds)
         : recruitmentRows(`c.id IN (${marker.memberIds.map(() => '?').join(',')})`, marker.memberIds);
-    if (rows.length !== 9 || proof.members.some(([id, classId, level, fingerprint]) => {
+    if (rows.length !== marker.memberIds.length || proof.members.some(([id, classId, level, fingerprint]) => {
         const row = rows.find(member => member.characterId === id);
         const input = hotMembers?.find(member => member.characterId === id) || row;
         return !row || row.clanId !== marker.clanId || row.classId !== classId || row.level !== level
@@ -5002,7 +5005,7 @@ function recruitmentProofCurrent(clanId, level, state, proof) {
     if (rows.length > 40) return false;
     const members = rows.filter(member => !require('./GameServer/Clan/ClanSimulationPolicy').isStaticService(member));
     if (Demand.ownFingerprint({ id: clanId, level, state, physicalMemberCount: rows.length, members }) !== proof.ownFingerprint) return false;
-    if (proof.rows.length > 9 || !proof.rows.length) return false;
+    if (proof.rows.length > 18 || !proof.rows.length || proof.rows.length > 9 && !String(proof.source.id || '').startsWith('raid:')) return false;
     const selected = recruitmentRows(`c.id IN (${proof.rows.map(() => '?').join(',')})`, proof.rows.map(row => row[0]));
     return proof.rows.every(row => selected.some(member => member.characterId === row[0] && Demand.memberFingerprint(member) === row[4]
         && (Number(member.clanId) === clanId || Number(member.clanId) === 0 && recruitmentAvailable(member))));
@@ -6284,7 +6287,7 @@ const Database = {
 
     commitBackgroundPartyGoals({ partyId, expectedPartyRevision, leaderId, memberIds, sources, statsJson, updatedAt } = {}) {
         const ids = Array.isArray(memberIds) ? memberIds : [];
-        if (!partyId || ids.length < 1 || ids.length > 9 || new Set(ids).size !== ids.length
+        if (!partyId || ids.length < 1 || ids.length > require('./GameServer/Clan/ClanRaidExpedition').capacity(jsonObject(statsJson).objective?.fullRoster) || new Set(ids).size !== ids.length
             || !ids.every(id => Number.isSafeInteger(id) && id > 0) || !ids.includes(leaderId)
             || !Array.isArray(sources) || sources.length !== ids.length
             || new Set(sources.map(source => source.characterId)).size !== ids.length
@@ -6598,7 +6601,7 @@ const Database = {
                 failure = !Array.isArray(changes) || changes.length > 2
                     || new Set(changes.map(change => change.partyId)).size !== changes.length;
                 if (!failure) for (const change of changes) {
-                    const party = one('SELECT status, memberIdsJson, revision FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
+                    const party = one('SELECT status, memberIdsJson, revision, statsJson FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
                     const ids = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
                     const expected = change.memberIds || [];
                     // A fresh revision-0 party cannot match a missing revision.
@@ -6609,7 +6612,7 @@ const Database = {
                         break;
                     }
                     if (party?.status !== 'active'
-                        || ids.length < 2 || ids.length > 9 || ids.length !== expected.length
+                        || ids.length < 2 || ids.length > require('./GameServer/Clan/ClanRaidExpedition').capacity(jsonObject(party?.statsJson).objective?.fullRoster) || ids.length !== expected.length
                         || new Set(expected).size !== expected.length || ids.some(id => !expected.includes(id) || !presentIds.has(id)
                             || memberRows.get(id)?.partyId !== change.partyId)
                         || !Number.isSafeInteger(change.updatedAt)
@@ -6871,7 +6874,7 @@ const Database = {
     transitionBackgroundParty(request = {}) {
         const members = request.members || [];
         const ids = members.map(m => Number(m.characterId));
-        if (ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length
+        if (ids.length < 2 || ids.length > require('./GameServer/Clan/ClanRaidExpedition').capacity(jsonObject(request.statsJson).objective?.fullRoster) || new Set(ids).size !== ids.length
             || !['hot', 'cold'].includes(request.phase) || !['hot', 'cold'].includes(request.expectedPhase)
             || !Number.isSafeInteger(request.expectedPartyRevision) || request.expectedPartyRevision < 0) {
             return Promise.resolve({ ok: false, reason: 'invalid_party_transition' });

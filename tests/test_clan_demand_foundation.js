@@ -230,6 +230,11 @@ async function main() {
 
 function pureCapabilities() {
     const readiness = Gear.combatReadiness;
+    const Estimate=require('../src/GameServer/Clan/ClanRaidEstimate');
+    const Priority=require('../src/GameServer/Bot/Population/RaidRosterPriority');
+    const estimate=Estimate.estimate, facts=Priority.facts;
+    Estimate.estimate=()=>({assessment:{ready:true,reason:'raid_ready'},estimate:{}});
+    Priority.facts=member=>({score:member.level});
     Gear.combatReadiness = () => ({ hasWeapon: true, armorCount: 5, armorRank: 2, weaponRank: 2, effectiveLevel: 54 });
     const member = (id, classId, skills = []) => ({ characterId: id, classId, level: 50, phase: 'cold',
         stats: { classId, coldCombat: { skillSource: 'database', skills: Combat.skillSnapshotsFromRecords(skills) } } });
@@ -250,11 +255,12 @@ function pureCapabilities() {
         const full = [...core, member(8, 55), member(9, 57)];
         const before = JSON.stringify(full);
         const assessed = Raid.assessment({ members: full }, { avgLevel: 50 }, null, { desiredMembers: 9 });
-        assert(assessed.ready); assert.equal(assessed.core.length, 7); assert.equal(assessed.eligible.length, 9);
+        assert(assessed.ready); assert.equal(assessed.core.length, 9); assert.equal(assessed.eligible.length, 9);
         assert.equal(assessed.requirements.members, 9); assert.equal(assessed.deficits.members, 0);
         assert.equal(JSON.stringify(full), before, 'hypothetical assessment changes no members or reservations');
         const onlySix = [...core.slice(0, 6), member(8, 55), member(9, 57), member(10, 57)];
-        assert(!Raid.assessment({ members: onlySix }, { avgLevel: 50 }, null, { desiredMembers: 9 }).ready, 'dwarves never manufacture seven combat core');
+        assert(Raid.assessment({ members: onlySix }, { avgLevel: 50 }, null, { desiredMembers: 9 }).ready,
+            'equipped dwarves contribute native damage like other DDs');
         const healingBuffers = [...full.filter(entry => entry.characterId !== 2 && entry.characterId !== 3),
             member(10, 51, Combat.skillRecordsFromTree(51, 50)), member(11, 52, Combat.skillRecordsFromTree(52, 50))];
         assert(Raid.assessment({ members: healingBuffers }, { avgLevel: 50 }, null, { desiredMembers: 9 }).ready, 'native two healing buffers replace one healer');
@@ -274,7 +280,7 @@ function pureCapabilities() {
         const healerClasses = Capabilities.classIdsForRequirements(['healer']);
         assert(healerClasses.includes(15) && !healerClasses.includes(21));
         assert(!Capabilities.classIdsForRequirements(['mainBuffer']).includes(21));
-    } finally { Gear.combatReadiness = readiness; }
+    } finally { Gear.combatReadiness = readiness; Estimate.estimate=estimate; Priority.facts=facts; }
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

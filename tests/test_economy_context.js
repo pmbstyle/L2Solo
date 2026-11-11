@@ -1,4 +1,6 @@
 'use strict';
+// Keep these market fixtures independent of optional reserve shot merchants.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 const assert = require('node:assert/strict');
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
