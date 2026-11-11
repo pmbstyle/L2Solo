@@ -898,10 +898,10 @@ async function run() {
         ];
         // The bot through every step, each a build after a money event; keep
         // false: the same steps with nothing kept.
-        // A seller of a conditional ad away from its town (Dion) whose money is all promised
+        // A seller of a conditional ad away from its town (Dion) whose wallet is below the fare
         // cannot pay its way to Giran (PartyAdmission.personalOfferAllowed); null: no state known.
         const Admission = invoke('GameServer/Bot/Population/PartyAdmission');
-        const sellerShort = { characterId: 77, phase: 'cold', activity: 'hunting', adena: 1000000,
+        const sellerShort = { characterId: 77, phase: 'cold', activity: 'hunting', adena: 1,
             loc: { locX: 16750, locY: 144559, locZ: -3000 }, stats: { money: [1000, .001, 0, 500] } };
         const walk = (keep, bot = crafter, path = steps) => {
             Economy.forget(bot.characterId);

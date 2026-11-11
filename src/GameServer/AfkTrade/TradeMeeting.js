@@ -147,10 +147,12 @@ function create(io) {
                     || intent.amount > need.count || intent.price > need.price) throw Error('trade_meeting_need_changed');
             }
             if (life && fresh && request.lines.some(line => line.payer === side && !line.certificate)) throw Error('trade_meeting_need_changed');
+            // A purchase and its trip take the money its rank may spend; a side
+            // that buys nothing pays its fare from the wallet (the debit below),
+            // as every trip.
             const outgoing = sum(totals[side], party.route.fee);
-            if (life) funding(id, { row: life }, outgoing, { r: Math.min(...request.lines.filter(line => line.payer === side)
-                .map(line => line.certificate ? Intent.decode(line.certificate).valueRate : Infinity)), free: totals[side] === 0,
-                survivalCost: party.survivalCost });
+            if (life && pays) funding(id, { row: life }, outgoing, { r: Math.min(...request.lines.filter(line => line.payer === side)
+                .map(line => line.certificate ? Intent.decode(line.certificate).valueRate : Infinity)), survivalCost: party.survivalCost });
             // A public bid is evidence of the owner's need, not collateral.
             for (const line of request.lines.filter(line => line.payer === side && line.adId)) {
                 const ad = one('SELECT * FROM afk_trade_shops WHERE id=?', [line.adId]);

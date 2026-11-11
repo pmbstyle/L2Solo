@@ -22,7 +22,9 @@ function fee(from, to) {
 // Developer telemetry counts each check per path as covered or short (E197),
 // never an input to the decision; counts are checks, not bots or trips:
 // cold (the trip is refused), hot (the bot walks), hot_errand (a supply
-// errand is refused), sale_town (a sale town is dropped from the choice).
+// errand is refused), sale_town (a sale town is dropped from the choice),
+// meeting_offer (a conditional offer's seller cannot reach its town),
+// meeting (a seller's meeting consent is refused).
 function fareShort(path, amount, adena) {
     const short = amount > adena;
     if (amount > 0) Diagnostics.count('trip_fare', short ? 'short' : 'covered', path);

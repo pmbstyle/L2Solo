@@ -101,18 +101,18 @@ assert.equal(answer.line.lineId, answerBid.lineId);
 assert.equal(answer.count, 4, 'the physical answer offers the bid count; the trade checks the money');
 assert(answer.outcome.sold < 4, 'its value counts only the expected paid units');
 assert.equal(answer.outcome.sold, expected.after.sold);
-// A seller answering a remote buy ad is the traveler. Its own protected
-// funding, not the buyer's wallet, decides whether it can pay the fare.
-const distantSeller = { characterId: 42, phase: 'cold', activity: 'hunting', adena: 1000000,
+// A seller answering a remote buy ad is the traveler. Its own wallet, not
+// the buyer's, decides whether it can pay the fare, an unfunded wish or not.
+const distantSeller = { characterId: 42, phase: 'cold', activity: 'hunting', adena: 1,
     loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
 const fareCtx = Pricing.traderContext(distantSeller, { board, timestamp, persona,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board } });
 assert.equal(Pricing.bestAnswer(ITEM, fareCtx, { units: 6, residualUnitValue: 10 }), null,
-    'a distant conditional bid cannot select a seller whose goal protects its fare');
-const fundedCtx = Pricing.traderContext({ ...distantSeller, stats: { money: [1000, .001, 0, 0] } }, { board, timestamp, persona,
+    'a distant conditional bid cannot select a seller whose wallet is below its fare');
+const fundedCtx = Pricing.traderContext({ ...distantSeller, adena: 1000000 }, { board, timestamp, persona,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board } });
 assert(Pricing.bestAnswer(ITEM, fundedCtx, { units: 6, residualUnitValue: 10 }),
-    'the same bid is immediately eligible once the seller has free fare');
+    'the same bid is immediately eligible once the seller\'s wallet pays the fare');
 // The caller's own belief of the item is used for the willingness read: a
 // seller who believes the item is worth more expects more buyers at a bid.
 const dearer = { ...belief, mu: belief.mu + 1 };

@@ -831,12 +831,12 @@ async function run() {
             assert.deepStrictEqual([bought()?.town, bought()?.lines[0].price], [town, price], `the buyer takes ${why}`);
         };
         agree('Giran', 100, 'the backed shop while the cheaper seller is in a party');
-        // A seller away from the ad's town whose money is all promised cannot pay its way there.
-        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
+        // A seller away from the ad's town whose wallet is below the fare cannot pay its way there.
+        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1,
             loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
         agree('Giran', 100, 'the backed shop while the cheaper seller cannot pay the trip to its ad');
-        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
-        agree('Dion', 1, 'the cheaper ad once its seller can pay the trip');
+        supplier = { ...supplier, adena: 1000000 };
+        agree('Dion', 1, 'the cheaper ad once its seller\'s wallet pays the trip, its wish unfunded');
         // Units another bot's trip claimed are gone for this buyer.
         const Claims = require('../src/GameServer/Bot/Economy/BoardClaims');
         Claims.claimErrand(990150, { town: 'Dion', selfId: 1864, purpose: 'supply', at: Date.now() },

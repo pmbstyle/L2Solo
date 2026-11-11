@@ -49,17 +49,21 @@ module.exports.personalShotProbe = async id => {
     const regraded = kernel.states.get(id).state = { ...state, inventory };
     occupationPlanner.cancel(id);
     const oldGradeSale = await kernel.prepareMeeting(id, request(1463, 710082));
-    // A seller with a funded goal cannot pay a gatekeeper fare from money
-    // protected for that goal. Native acceptance applies that rule even when
-    // the seller's physical wallet is ample.
+    // A seller pays the gatekeeper from its wallet, as every trip, though an
+    // unfunded wish leaves it no free money; a wallet below the fare refuses.
     const entry = kernel.states.get(id);
     entry.state = { ...regraded, stats: { ...regraded.stats, money: [1000, .001, 0, 500] } };
     occupationPlanner.cancel(id);
     const distant = request(1869, 710080);
+    distant.token = 'personal-shot-distant';
     distant.town = 'Orc Village'; distant.point = { locX: -44600, locY: -112400, locZ: -240 };
-    let unfundedFare;
-    try { await kernel.prepareMeeting(id, distant); unfundedFare = 'accepted'; }
-    catch (error) { unfundedFare = error.message; }
+    let paidFare, shortFare;
+    try { paidFare = (await kernel.prepareMeeting(id, distant)).token; }
+    catch (error) { paidFare = error.message; }
+    entry.state = { ...entry.state, adena: 10 };
+    occupationPlanner.cancel(id);
+    try { await kernel.prepareMeeting(id, { ...distant, token: 'personal-shot-short' }); shortFare = 'accepted'; }
+    catch (error) { shortFare = error.message; }
     occupationPlanner.cancel(id);
     const freeFare = await kernel.prepareMeeting(id, request(1869, 710080));
     // A conditional held SELL line may also answer a selected foreign WTB.
@@ -77,7 +81,7 @@ module.exports.personalShotProbe = async id => {
         occupationPlanner.cancel(id);
         heldSale = await kernel.prepareMeeting(id, selectedSale);
     } finally { choice.chooseByValue = previousChoice; }
-    return { rejected, ordinarySale: ordinarySale.token, oldGradeSale: oldGradeSale.token, unfundedFare, freeFare: freeFare.token,
+    return { rejected, ordinarySale: ordinarySale.token, oldGradeSale: oldGradeSale.token, paidFare, shortFare, freeFare: freeFare.token,
         heldSale: heldSale.token,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
 };`;
@@ -126,8 +130,9 @@ parentPort.on('message', message => {
             'the real Orc worker rejects both an old own SELL quote and a new WTB answer for current D shots');
         assert.equal(response.value.ordinarySale, 'personal-shot-710080');
         assert.equal(response.value.oldGradeSale, 'personal-shot-710082', 'a C weapon releases the old D ammunition');
-        assert.equal(response.value.unfundedFare, 'trade_meeting_funding', 'seller preparation applies the same protected-funds rule as native acceptance');
-        assert.equal(response.value.freeFare, 'personal-shot-710080', 'a free local meeting remains available');
+        assert.equal(response.value.paidFare, 'personal-shot-distant', 'a seller with an unfunded wish pays a far meeting\'s fare from its wallet');
+        assert.equal(response.value.shortFare, 'trade_meeting_funding', 'a seller whose wallet is below the fare is refused');
+        assert.equal(response.value.freeFare, 'personal-shot-710080', 'a free local meeting remains available with any wallet');
         assert.equal(response.value.heldSale, 'personal-shot-710090',
             'a previously selected WTB can consume free stock already advertised in a conditional SELL ad');
         assert.deepEqual(response.value.forbiddenLoaded, []);

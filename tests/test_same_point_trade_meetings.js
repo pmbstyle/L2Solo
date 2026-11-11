@@ -32,7 +32,12 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         };
         const accept = request => Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => true });
         const funds = async id => (await Database.fetchItems(id)).find(row => row.selfId === 57).amount;
+        // The seller's unfunded wish leaves it no free money; it pays the
+        // gatekeeper from its wallet, as every trip.
+        await Database.execute(["UPDATE bot_life_state SET mindJson=json_set(mindJson,'$.money[3]',5000) WHERE characterId=?", [ids[1]]]);
         const first = await accept(await prepare()), a = first.meeting.id;
+        assert.equal(first.meeting.routeReserveB, 20, 'the seller\'s fare is reserved');
+        assert.equal(await funds(ids[1]), 119980, 'the seller pays its fare from its wallet');
         const secondRequest = await prepare(ids[2]), second = await accept(secondRequest), b = second.meeting.id;
         assert.equal(second.meeting.routeReserveA, 0, 'shared actor reserves one trip');
         assert.equal(await funds(ids[0]), 119580, 'two independent purchases plus one trip');

@@ -495,12 +495,14 @@ const occupationPlanner = new ColdOccupationPlanner({
             // The native accept checks the same terms (TradeMeeting funding).
             own.survivalCost = [...survival.values()].reduce((a, b) => a + b, 0);
             // The transaction pays only from the physical wallet, not from
-            // buy-shop escrow. A seller's fare also uses free money, whose
-            // protected goal and survival reserves still apply.
+            // buy-shop escrow. A purchase and its trip take the money its rank
+            // may spend; a side that buys nothing pays its fare from the wallet,
+            // as every trip (TripPayment).
             const fundingState = { adena: input.state.adena, stats: { money: input.state.stats?.money } };
-            const spendable = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(fundingState, 0,
-                { r: valueRate, free: survival.size === 0, survivalCost: own.survivalCost });
-            if (!Number.isSafeInteger(total) || total > spendable || own.route.fee > Number(input.state.adena || 0))
+            const spendable = survival.size ? invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(fundingState, 0,
+                { r: valueRate, survivalCost: own.survivalCost }) : 0;
+            if (!Number.isSafeInteger(total) || (survival.size ? total > spendable
+                : invoke('GameServer/Bot/Travel/TripPayment').fareShort('meeting', total, Number(input.state.adena || 0))))
                 throw Error('trade_meeting_funding');
             try {
                 invoke('GameServer/Bot/Economy/BidPurchaseAlternative').assertMeetingPurchase(request.lines, side, request.town, {
