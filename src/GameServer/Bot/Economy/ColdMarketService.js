@@ -266,7 +266,7 @@ function tripFrom(state, timestamp = Date.now()) {
 function fundingTerms(options = {}) {
     const terms = {};
     if (typeof options.raidPreparationId === 'string') terms.raidPreparationId = options.raidPreparationId;
-    for (const name of ['r', 'valueHours', 'survivalCost', 'survivalShare']) {
+    for (const name of ['r', 'root', 'valueHours', 'survivalCost', 'survivalShare']) {
         if (options[name] !== undefined && options[name] !== null && Number.isFinite(Number(options[name]))) {
             terms[name] = Number(options[name]);
         }

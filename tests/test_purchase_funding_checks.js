@@ -39,14 +39,17 @@ assert.equal(Funding.summary().moneyPacketMissing, before + 1);
 const queue = Array.from({ length: 9 }, (_, i) => ({ key: String(i), funded: true, price: 100,
     ratio: (9-i) * 1e-4, object: { itemId: 100+i } }));
 const merged = Funding.packetFor({ queue, moneyPrice: 1e-5 }, 100000, 1000);
-assert.equal(merged.length, 28);
-assert.deepEqual(merged.slice(25), [1e-4, 900, 0]);
+const MergedPacket = require('../src/GameServer/Bot/Economy/StatsPacket');
+assert.equal(MergedPacket.fundedRows(merged), 8);
+assert.deepEqual([MergedPacket.fundedRatio(merged, 7), MergedPacket.fundedCumulative(merged, 7), MergedPacket.fundedItem(merged, 7)],
+    [1e-4, 900, 0], 'the merged tail carries no item');
 assert.equal(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { itemId: 108 }), 0);
-for (let i = 4; i < merged.length; i += 3) {
-    assert(merged[i] >= merged[1]);
-    assert(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { r: merged[i] }) >= 100);
+for (let row = 0; row < 8; row++) {
+    assert(MergedPacket.fundedRatio(merged, row) >= MergedPacket.moneyPrice(merged));
+    assert(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { r: MergedPacket.fundedRatio(merged, row) }) >= 100);
 }
-assert(Buffer.byteLength(JSON.stringify(merged)) <= 240);
+// Eight rows and their root ids.
+assert(Buffer.byteLength(JSON.stringify(merged)) <= 320);
 // Native basket bookkeeping retains the actual unpaid funded contribution.
 const originalPacket = [1000, .001, 0, 0, .1, 100, 2509, .05, 200, 1060];
 const paidA = Funding.packetAfterPurchase(originalPacket, 100, { r: .1, itemId: 2509 });
@@ -121,6 +124,24 @@ assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCan
     assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: .007 }), 200, 'an unfunded rank keeps every row held');
     assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: Infinity }), 200, 'so does an unbounded one');
     assert.equal(Funding.spendable(purse, 0, { valueHours: 1000 }), 200, 'and none');
+}
+// One jewel in two slots: two funded roots of one value per Adena. Each spends at its own root's
+// row (the second after the first slot's money), and a purchase pays its own root's row alone.
+{
+    const slots = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 100, firstUnfundedPrice: 0 });
+    Packet.addFunded(slots, .01, 300, 854, Packet.MONEY_ROWS, 'power:854:1');
+    Packet.addFunded(slots, .01, 700, 854, Packet.MONEY_ROWS, 'power:854:2');
+    const purse = { characterId: 1, adena: 1000, inventory: { 57: { selfId: 57, amount: 1000 } }, stats: { money: slots } };
+    const slot = key => Funding.goalTerms({ plan: { valueRate: .01, wishKey: key } });
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:1')), 900, 'the first slot reads the money above the reserve');
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:2')), 600, 'the second slot reads what the first slot\'s row leaves');
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:3')), 200, 'a third slot the queue does not fund keeps both rows held');
+    assert.equal(Funding.spendable(purse, 0, { r: .01 }), 900, 'a spend naming no root reads by its ratio');
+    const paid = Funding.packetAfterPurchase(slots, 400, slot('power:854:2'));
+    assert.deepEqual([0, 1].map(row => [Packet.fundedCumulative(paid, row), Packet.fundedRoot(paid, row)]),
+        [[300, Packet.rootId('power:854:1')], [300, Packet.rootId('power:854:2')]], 'the second slot\'s purchase pays its own row');
+    assert.equal(Packet.fundedRows([1000, .001, 100, 0, .01, 300, 854]), 1, 'a packet without root ids reads as before');
+    assert.equal(Packet.fundedRoot(merged, 7), 0, 'the merged tail names no root');
 }
 assert.deepEqual(Packet.dangerPrice({ deathHours: 0.4, riskWeight: 1.5 }), [0.4, 1.5]);
 assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), Packet.deathHours(undefined)], [0.4, 1.5, undefined]);

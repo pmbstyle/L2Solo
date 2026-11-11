@@ -98,7 +98,7 @@ function checkedPlan(session, state, town, options = {}) {
         const fundedState = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
         // The leaf's funded root funds it (the card leaf's r), as for a cold goal (PurchaseFunding.goalTerms).
         const ratio = PurchaseFunding.leafRatio(leaf);
-        const funding = ratio > 0 ? { valueRate: ratio } : {};
+        const funding = ratio > 0 ? { valueRate: ratio, wishKey: leaf.rootKey } : {};
         const budget = Math.min(payable(fundedState, PurchaseFunding.goalTerms({ plan: funding }, selfId), leaf.bids) / amount,
             economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestHotOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget,

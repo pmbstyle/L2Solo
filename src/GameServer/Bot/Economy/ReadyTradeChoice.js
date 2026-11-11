@@ -50,7 +50,7 @@ function clanCraftPurchase(state, economy, board) {
         .sort((a, b) => Number(b.itemId === next) - Number(a.itemId === next));
     for (const intent of intents) {
         const worth = TradeIntent.purchaseWorth(intent, economy.network.moneyPrice);
-        const money = require('./PurchaseFunding').spendable(state, 0, { r: intent.valueRate });
+        const money = require('./PurchaseFunding').spendable(state, 0, require('./PurchaseFunding').intentTerms(intent));
         const line = board.heads(intent.itemId, SELL, { excludeOwner: state.characterId, maxInspected: MAX_INSPECTED,
             accept: row => {
                 const route = economy.trip.details(row.town);

@@ -235,7 +235,7 @@ function shotRecipeInvestment(state, network, wish, row, survivalReserve) {
     const funded = { ...state, stats: { ...state.stats,
         money: Funding.packetFor(network, network.hourAdena, survivalReserve ?? Funding.operatingReserve(state)) } };
     const cap = Math.max(0, Math.floor(Math.min(Number(wanted.maxSpend), wish.valueHours / network.moneyPrice - inputCash,
-        Funding.spendable(funded, 0, { r: row.valueRate }) - inputCash)));
+        Funding.spendable(funded, 0, Funding.intentTerms(row)) - inputCash)));
     return { ...row, worth: cap, valueHours: cap * network.moneyPrice, shotRecipeInvestment: true };
 }
 
@@ -325,9 +325,12 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
     const packet = state?.stats?.money;
     let valueRate = intent.valueRate;
     if ((state?.stats?.wishFocus?.[0] === wish.key || wish.key.startsWith('stock:')) && Array.isArray(packet)) {
+        // The wish's own row: its root's, else (a packet without root ids) its item's.
+        const root = Packet.rootId(wish.key);
         for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
-            const ratio = Packet.fundedRatio(packet, row);
-            if (Number(Packet.fundedItem(packet, row)) === Number(wish.object?.itemId) && ratio > 0 && ratio >= Packet.moneyPrice(packet)) {
+            const ratio = Packet.fundedRatio(packet, row), own = Packet.fundedRoot(packet, row);
+            if ((own ? own === root : Number(Packet.fundedItem(packet, row)) === Number(wish.object?.itemId))
+                && ratio > 0 && ratio >= Packet.moneyPrice(packet)) {
                 valueRate = Number(ratio); break;
             }
         }
@@ -336,4 +339,16 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
         : { ...intent, amount: leaf.amount, worth: leaf.unitPrice, valueRate,
             valueHours: intent.valueHours * leaf.amount / intent.amount };
 }
-module.exports = { rootTuple, rootKey, encode, decode, project, watchRows, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource, shotRecipeCap };
+// A meeting side's funding terms, the same for the worker that prepares it and the native accept:
+// it pays at its lowest-ranked certificate's place in its money queue (that root's row); a side
+// whose lines carry none spends ahead of the queue (r Infinity, as before certificates).
+function meetingTerms(lines, side) {
+    let lowest = null;
+    for (const line of lines || []) {
+        if (line.payer !== side || !line.certificate) continue;
+        const intent = decode(line.certificate);
+        if (!lowest || intent.valueRate < lowest.valueRate) lowest = intent;
+    }
+    return lowest ? Funding.intentTerms(lowest) : { r: Infinity };
+}
+module.exports = { rootTuple, rootKey, meetingTerms, encode, decode, project, watchRows, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource, shotRecipeCap };

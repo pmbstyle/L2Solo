@@ -165,6 +165,25 @@ async function heldPurchaseVisit() {
         const tracedBuy = await ColdMarket.tryPurchase(tracedVisit.state, goal);
         assert.equal(tracedBuy.purchased, true, 'the input is bought in the visit that posted the bids');
         assert.equal(Native.amount(await DB.fetchItems(9119), INPUT), 1);
+
+        // Bots 2000320 and 2001024 (traced): the jewel's other slot, a root of the same value per
+        // Adena the queue does not fund, bid for the jewel (2,111,616 of a 5,904,338 bag) while the
+        // visit bought the first slot's input: one ratio, so its rank read the funded slot's row as
+        // its own, and the input was refused for money and re-taken. Each row names its root: the
+        // other slot reads what the funded slot's row leaves, the bag keeps the input's price.
+        const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+        const slots = Packet.addFunded(Packet.money({ hourAdena: 36000, moneyPrice: 1e-6, refillReserve: RESERVE, firstUnfundedPrice: 0 }),
+            1, price, 854, Packet.MONEY_ROWS, ROOT);
+        const sameRank = [{ itemId: 854, amount: 1, worth: price, key: 'power:854:5', recipeId: 0,
+            valueHours: 2 * price * 1e-6, valueRate: 1 }];
+        const slotBag = price + RESERVE + Math.floor(price / 2);
+        assert.equal(Funding.spendable({ adena: slotBag, stats: { money: slots } }, 0, Funding.goalTerms(goal)), slotBag - RESERVE,
+            'the funded slot reads its own row');
+        Pricing.bid = () => ({ price, count: 1, purchaseCap: price, pricing: { price } });
+        const slotVisit = await visit(9120, slotBag, slots, sameRank);
+        assert(await wallet(9120) >= price, 'the other slot\'s bid leaves the bag the input\'s price');
+        const slotBuy = await ColdMarket.tryPurchase(slotVisit.state, goal);
+        assert.equal(slotBuy.purchased, true, 'the input is bought in the visit that posted the bids');
         Pricing.bid = selfId => { const unit = selfId === 854 ? JEWEL_PRICE : STOCK_PRICE;
             return { price: unit, count: 1, purchaseCap: unit, pricing: { price: unit } }; };
 
@@ -239,7 +258,7 @@ async function heldPurchaseVisit() {
         assert.equal(unsold.purchased, false, 'fixture: no seller at the card\'s price');
         assert.equal(Market.buyOrderEscrow(9118), price, 'no seller, the root\'s bid stays on the board');
     } finally { Events.raiseOn = raiseOn; Pricing.bid = previousBid; Towns.buyAdTown = buyAdTown; }
-    console.log('PASS held purchase visit: no root bid beside its input buy, a lower tier\'s bid leaves the funded input its money, one purse for planner and buyer, funding_short marks nothing, the bag\'s wait wakes, the root\'s own bid pays its step, no seller takes no bid back');
+    console.log('PASS held purchase visit: no root bid beside its input buy, a lower tier\'s bid leaves the funded input its money, one purse for planner and buyer, funding_short marks nothing, the bag\'s wait wakes, the root\'s own bid pays its step, no seller takes no bid back, another root of one rank leaves the held step its price');
 }
 
 async function run() {

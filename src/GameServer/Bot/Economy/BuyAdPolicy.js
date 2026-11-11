@@ -36,7 +36,7 @@ function retainedLines(state, lines, owned, town) {
         const price = previous && withinCap(previous.price, line.purchaseCap)
             ? Number(previous.price) : Number(line.price);
         const available = Math.min(line.intent ? Infinity : money, PurchaseFunding.spendable(state, 0,
-            { ...(line.intent ? { r: line.intent.valueRate } : { itemId: line.selfId }), survivalCost: line.survivalCost }));
+            { ...(line.intent ? PurchaseFunding.intentTerms(line.intent) : { itemId: line.selfId }), survivalCost: line.survivalCost }));
         const count = Math.min(Number(line.count), Math.floor(available / price));
         if (!(count > 0)) continue;
         if (!line.intent) money -= count * price;
@@ -68,7 +68,7 @@ function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0, held = n
         const count = Math.min(Number(line.count), Number(need?.amount || 0)), price = Number(line.price);
         if (!need || !Number.isSafeInteger(count) || count <= 0 || !Number.isSafeInteger(price) || price <= 0
             || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)
-            || count * price > PurchaseFunding.spendable(state, escrow, { r: need.valueRate })) continue;
+            || count * price > PurchaseFunding.spendable(state, escrow, PurchaseFunding.intentTerms(need))) continue;
         const existing = output.findIndex(row => Number(row.selfId) === Number(line.selfId));
         if (existing >= 0 && Number(output[existing].count) >= count) continue;
         // A larger standing quantity cannot override the current price check.
@@ -176,7 +176,7 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
     const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList)
         .filter(row => !held || row.key !== held).map(row => ({ type: 'buy_craft_material',
         target: { itemId: row.itemId, amount: row.amount },
-        intent: row, plan: { estimatedCost: row.worth, purpose: row.kind, valueRate: row.valueRate } }));
+        intent: row, plan: { estimatedCost: row.worth, purpose: row.kind, valueRate: row.valueRate, wishKey: row.key } }));
     if (!nativeGoal(goal) && !watchList?.some(row => row.key) && goal?.target?.itemId
         && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
     const wallet = Number(state.adena || 0);

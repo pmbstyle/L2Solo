@@ -1047,7 +1047,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
             const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
                 || count * price > PurchaseFunding.spendable(state, escrow,
-                    { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {
+                    { ...(intent ? PurchaseFunding.intentTerms(intent) : { itemId: selfId }), survivalCost })) {
                 throw Error('economy_plan_bid_unfunded');
             }
             if (!intent) money -= count * price;

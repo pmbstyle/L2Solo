@@ -10,7 +10,7 @@ const imports = {
     'GameServer/DataCache': { items: [{ selfId: 736, template: { price: 400 }, etc: {} },
         { selfId: 1121, template: { price: 8 }, etc: {} }] },
     'GameServer/Bot/Economy/PurchaseFunding': { budget: state => state.adena, spendable: () => 50000,
-        goalTerms: (goal, itemId) => ({ itemId }) },
+        goalTerms: (goal, itemId) => ({ itemId }), intentTerms: intent => ({ r: intent.valueRate }) },
     'GameServer/Bot/Economy/ItemDisposition': { isQuestItem: () => false },
     'GameServer/Bot/Economy/MarketListingPolicy': { traderContext: () => context },
     'GameServer/Bot/Economy/MarketTownPolicy': { targetTownForItems: () => 'Giran' },

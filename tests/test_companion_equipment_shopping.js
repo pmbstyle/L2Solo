@@ -255,6 +255,24 @@ async function run() {
     assert.strictEqual(CompanionEquipmentShopping.planErrand(nonWish, genericBot, town), null,
         'an autonomous bot cannot spend its earmarked money on an item absent from the packet');
 
+    // One item in two slots: two funded roots of one value per Adena. The hot body budgets its
+    // leaf from its own slot's row, as the cold buyer does: the second slot after the first's money.
+    const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+    const slots = Packet.money({ hourAdena: 77000, moneyPrice: 2e-5, refillReserve: 15000, firstUnfundedPrice: 0 });
+    Packet.addFunded(slots, 4e-5, 100, 1, Packet.MONEY_ROWS, 'power:1:1');
+    Packet.addFunded(slots, 4e-5, 600, 1, Packet.MONEY_ROWS, 'power:1:2');
+    const slotBudget = rootKey => {
+        let budget = null;
+        MarketOpportunity.bestOffer = (_itemId, options = {}) => { budget = options.budget; return null; };
+        CompanionEquipmentShopping.planErrand({ ...genericSession, companionShopping: null,
+            heldEconomy: { decided: true, inputHash: 2, worth: () => 1e9, statsPacket: { money: slots },
+                network: { activity: { activity: 'shopping', itemId: 1, amount: 1, r: 4e-5, rootKey } } } }, genericBot, town);
+        return budget;
+    };
+    const first = slotBudget('power:1:1'), second = slotBudget('power:1:2');
+    assert(first > 100, 'fixture: the first slot can spend');
+    assert.strictEqual(first - second, 100, 'the second slot budgets after the first slot\'s row');
+
     World.user = { sessions: [] };
     MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
         && (!options.accept || options.accept(offer)) ? offer : null;

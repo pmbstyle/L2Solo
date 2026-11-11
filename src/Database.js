@@ -2851,13 +2851,13 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
     const escrow = Number(one("SELECT COALESCE(SUM(escrowAdena),0) amount FROM afk_trade_shops WHERE ownerId=? AND storeType=? AND status='active'",
         [characterId, BoardRules.BUY]).amount);
-    const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
+    const { r, root, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Trace.detailed(characterId) ? {} : null;
     const budget = PurchaseFunding.payable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
-    }, escrow, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
+    }, escrow, { r, root, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(StatsPacket.refillReserve(packet)),
             priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow,
@@ -4582,7 +4582,7 @@ function checkConditionalBidUnsafe(characterId, line, price = Number(line.price)
     // survival tranche every other restock may spend.
     const survivalCost = Math.max(0, Number(line.survivalCost) || 0);
     if (row) checkEconomyFundingUnsafe(characterId, { row }, total,
-        { ...(line.intent ? { r: line.intent.valueRate } : { itemId: Number(line.selfId) }), ...(survivalCost ? { survivalCost } : {}) }, wallet);
+        { ...(line.intent ? PurchaseFunding.intentTerms(line.intent) : { itemId: Number(line.selfId) }), ...(survivalCost ? { survivalCost } : {}) }, wallet);
 }
 
 // A purchase changes custody only here: reserve the shop's complete budget,

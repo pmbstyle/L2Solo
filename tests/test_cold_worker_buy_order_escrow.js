@@ -37,7 +37,8 @@ const base = (characterId, adena) => ({
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { hennas: [1, 13, 17], generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 });
-const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) / 3) }, (_, i) => packet[6 + i * 3]);
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+const fundedIds = packet => Array.from({ length: Packet.fundedRows(packet) }, (_, row) => Packet.fundedItem(packet, row));
 
 (async () => {
     // The original incomplete kit and 60k wallet do not prove a funded gear

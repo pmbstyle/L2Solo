@@ -401,7 +401,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (shared && Number(shared[1]) !== Number(input.state.stats?.tradeMeeting?.[0])) throw Error('trade_meeting_route_changed');
             own.route = shared ? { fee: 0, scroll: false, method: own.route.method, durationMs: 0 }
                 : { fee: routePlan.route.fee, scroll: !!routePlan.scroll, method: routePlan.method, durationMs: routePlan.durationMs };
-            let total = own.route.fee, valueRate = Infinity, sellerDecision = null;
+            let total = own.route.fee, sellerDecision = null;
             let productionReviewed = false, productionOpportunity = null;
             const survival = new Map();
             const required = new Map(), sold = new Map();
@@ -463,7 +463,6 @@ const occupationPlanner = new ColdOccupationPlanner({
                     line.needAdId = line.needAdRevision = 0; own.needRevision = own.revision;
                     // Survival first (each item's kit cost once), the rest by the
                     // wish's rank, as every other restock (PurchaseFunding.stockAllowance).
-                    valueRate = Math.min(valueRate, intent.valueRate);
                     survival.set(line.selfId, Math.round(economy.kitCost?.(line.selfId, line.price) || 0));
                     total += line.count * line.price;
                 } else {
@@ -500,7 +499,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             // as every trip (TripPayment).
             const fundingState = { adena: input.state.adena, stats: { money: input.state.stats?.money } };
             const spendable = survival.size ? invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(fundingState, 0,
-                { r: valueRate, survivalCost: own.survivalCost }) : 0;
+                { ...invoke('GameServer/Bot/Economy/TradeIntent').meetingTerms(request.lines, side), survivalCost: own.survivalCost }) : 0;
             if (!Number.isSafeInteger(total) || (survival.size ? total > spendable
                 : invoke('GameServer/Bot/Travel/TripPayment').fareShort('meeting', total, Number(input.state.adena || 0))))
                 throw Error('trade_meeting_funding');
