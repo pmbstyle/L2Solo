@@ -164,43 +164,53 @@ function* prepareNative(state, economy, options) {
     }
     // The bids (buy ads: the goal's and the build's watch rows, the standing craft bids
     // still needed) are posted on a town visit too, as a C4 player opens a buy store in
-    // town; the field plan adds the held leaf's trip.
+    // town; the field plan adds the held leaf's trip. They are the build's answer: a step
+    // served by its card (economy.served: no situation, no build) prepares none (absent
+    // buyAds: main publishes nothing) and the held ads stand until the next build. The
+    // card names the build's wants without their roots, so bids from it would be another
+    // set, replacing the held ads at every served step.
     let goal, money, recipeBidId = 0;
     {
         const needs = NeedsEvaluator.evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
         goal = needs[0];
-        const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
-        money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
-        let lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
-            townFor: items => Town.buyAdTown(state, items, own, { findSpot: options.findSpot }),
-            watchList: economy.watchList || [], money });
-        lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0,
-            BuyAds.heldPurchaseRoot(goal));
+        let lines = [];
+        if (!economy.served) {
+            const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
+            money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
+            lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
+                townFor: items => Town.buyAdTown(state, items, own, { findSpot: options.findSpot }),
+                watchList: economy.watchList || [], money });
+            lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0,
+                BuyAds.heldPurchaseRoot(goal));
+            let batch;
+            try { batch = buyBatch(lines); }
+            // A bug in the buy build, kept apart from a refused line (both leave the buy unprepared).
+            catch (error) { FailureLog.note('economy.buy_batch', error); batch = { buyAds: [null] }; }
+            Object.assign(plan, batch);
+            // A buy part not prepared (the held build's intent pending, or a
+            // line buyBatch refused) is absent from the packet, not a page: a
+            // refresh on main's next state copy reads the same build, so only
+            // the bot's next build can prepare it. An incoming
+            // delivery still pending is main's: its settlement is a state copy
+            // that rebuilds, so it stays a page.
+            const unprepared = !economy.intentPending ? (plan.buyAds.some(row => row === null) ? 'buy_error' : null)
+                : state.incomingPending ? 'intent_incoming' : 'intent_root';
+            if (unprepared) {
+                dropBuyBatch(plan);
+                if (unprepared === 'intent_incoming') plan.d = 1;
+                if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', unprepared);
+            }
+        }
+        plan.travel = start?.travel || null;
         // The native activity selected the priority. A buy may replace a sale
         // shop; ordinary surplus listings cannot evict a standing buy shop.
+        // A served step's bids are the held ones.
         plan.buyShop = ['upgrade_gear', 'buy_craft_material'].includes(goal?.type) ? BoardRules.BUY
             : goal?.type === 'sell_inventory' ? BoardRules.SELL : 0;
-        if (plan.buyShop === BoardRules.BUY && lines.length
+        const bidding = economy.served ? own.some(line => line.storeType === BoardRules.BUY && line.count > 0) : lines.length > 0;
+        if (plan.buyShop === BoardRules.BUY && bidding
             || own.some(line => line.kind === 'shop' && line.storeType === BoardRules.BUY) && plan.buyShop !== BoardRules.SELL)
             delete plan.shop;
-        let batch;
-        try { batch = buyBatch(lines); }
-        // A bug in the buy build, kept apart from a refused line (both leave the buy unprepared).
-        catch (error) { FailureLog.note('economy.buy_batch', error); batch = { buyAds: [null] }; }
-        Object.assign(plan, batch, { travel: start?.travel || null });
-        // A buy part not prepared (the held build's intent pending, or a
-        // line buyBatch refused) is absent from the packet, not a page: a
-        // refresh on main's next state copy reads the same build, so only
-        // the bot's next step, which rebuilds, can prepare it. An incoming
-        // delivery still pending is main's: its settlement is a state copy
-        // that rebuilds, so it stays a page.
-        const unprepared = !economy.intentPending ? (plan.buyAds.some(row => row === null) ? 'buy_error' : null)
-            : state.incomingPending ? 'intent_incoming' : 'intent_root';
-        if (unprepared) {
-            dropBuyBatch(plan);
-            if (unprepared === 'intent_incoming') plan.d = 1;
-            if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', unprepared);
-        }
         // A town visit's plan carries the craft step the visit selected (a crafter crafts
         // in town from what it brought), else the one its held decision prepared.
         const selected = options.visit && !Object.hasOwn(options, 'preparedCraft') ? heldCraft(economy) : options.preparedCraft;

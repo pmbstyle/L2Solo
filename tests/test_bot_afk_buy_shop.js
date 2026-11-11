@@ -261,9 +261,67 @@ async function heldPurchaseVisit() {
     console.log('PASS held purchase visit: no root bid beside its input buy, a lower tier\'s bid leaves the funded input its money, one purse for planner and buyer, funding_short marks nothing, the bag\'s wait wakes, the root\'s own bid pays its step, no seller takes no bid back, another root of one rank leaves the held step its price');
 }
 
+// Bot 2001088 (traced): in town its builds and its served steps (no situation, the card
+// serves) alternated about once a second. The build bids its wants by their roots; the
+// card names the same wants without them, so each served step bid another set and
+// replaced the held ads: 14 board writes in 50 s, the set flipping back and forth. Bids
+// are the build's: a served step's visit plan carries none, the held ads stand, and the
+// next build bids again.
+async function servedStepHoldsBids() {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration');
+    const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const Towns = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+    const kept = Generation.metadata(), previousBid = Pricing.bid, buyAdTown = Towns.buyAdTown;
+    // A build holds only by its event proof, which needs the warehouse rows and a recompute generation.
+    Warehouse.useRowSource(() => null, () => true);
+    Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
+    const ASK = { 1864: 40, 1865: 300, 1866: 400 };
+    Towns.buyAdTown = () => 'Giran';
+    Pricing.bid = (selfId, ctx, { cap }) => cap >= ASK[selfId]
+        ? { price: ASK[selfId], count: 1, purchaseCap: ASK[selfId], pricing: { price: ASK[selfId] } } : null;
+    try {
+        await bot(9121);
+        const T = Date.now(), deps = { timestamp: T, board: Afk.boardIndex(), sourceReady: true, caller: 'step', decide: true };
+        const built = Economy.forState(Life.snapshot(9121), deps);
+        const wants = ids => ids.map(itemId => ({ itemId, amount: 1, worth: 5000, key: `resale:${itemId}`, recipeId: 0,
+            valueHours: 5000 * built.network.moneyPrice, valueRate: 1 }));
+        built.watchList = wants([1864, 1865, 1866]);
+        const state = await Life.upsertState({ ...Life.snapshot(9121), stats: { ...Life.snapshot(9121).stats, ...built.statsPacket } },
+            'served_step_fixture');
+        const visit = economy => Plan.decide(state, economy, { visit: true, board: Afk.boardIndex(), now: T,
+            npcOffersFor: () => [], findSpot: () => null, tripCost: economy.trip });
+        const posted = () => records(9121).map(record => [record.id, record.revision, record.lines.map(line => line.selfId)]);
+        const plan = visit(built);
+        assert.deepEqual(plan.buyAds.map(row => row[0]), [1864, 1865, 1866], 'the build bids its wants');
+        await Market.executePlan(Life.snapshot(9121), plan, { reviewGoal: false });
+        const held = posted();
+        assert.deepEqual(held.flatMap(row => row[2]).sort((a, b) => a - b), [1864, 1865, 1866], 'fixture: the build\'s bids stand');
+        // The next step, on the same state, takes no build: its card serves.
+        const served = Decision.refreshAdvisory(state, Decision.advisory(built, state), deps);
+        assert(served, 'fixture: the card serves the step');
+        const servedPlan = visit(served.economy);
+        assert.equal(Object.hasOwn(servedPlan, 'buyAds'), false, 'a served step prepares no bids');
+        await Market.executePlan(Life.snapshot(9121), servedPlan, { reviewGoal: false });
+        assert.deepEqual(posted(), held, 'the held ads stand: no board write on a served step');
+        // A build (a want of it dropped) bids again.
+        built.watchList = wants([1864, 1865]);
+        const rebuilt = visit(built);
+        assert.deepEqual(rebuilt.buyAds.map(row => row[0]), [1864, 1865]);
+        await Market.executePlan(Life.snapshot(9121), rebuilt, { reviewGoal: false });
+        assert.deepEqual(posted().flatMap(row => row[2]).sort((a, b) => a - b), [1864, 1865], 'the next build changes its bids');
+    } finally {
+        Pricing.bid = previousBid; Towns.buyAdTown = buyAdTown;
+        Generation.configure(kept); Warehouse.useRowSource(null);
+    }
+    console.log('PASS served step holds bids: the build bids, a served step prepares none and writes no board, the next build bids again');
+}
+
 async function run() {
     DB.init(); invoke('GameServer/DataCache').init(); await Life.init();
     await heldPurchaseVisit();
+    await servedStepHoldsBids();
     await bot(9101);
     await apply(9101);
     assert.equal(shop(9101)?.storeType, Afk.BUY);
