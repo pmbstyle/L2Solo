@@ -34,6 +34,20 @@ try {
     readings(0, 0, 0);
 
     const coordinator = new ColdSimulationCoordinator();
+    coordinator.worker = {};
+    coordinator.ready = true;
+    coordinator.snapshotsLoaded = true;
+    coordinator.lastHeartbeatAt = 10000;
+    coordinator.lastWorkerSnapshot = { eventLoopUtilization: .5, eventLoopLagMaxMs: 12 };
+    assert.deepStrictEqual(coordinator.raidForecastPressure(11000), { ready: true,
+        heartbeatAgeMs: 1000, utilization: .5, lagMs: 12, pendingGoals: 0 });
+    assert.equal(coordinator.raidForecastPressure(14000).ready, false, 'old heartbeats cannot admit optional raid forecasts');
+    coordinator.partyGoalRequests = 1;
+    assert.equal(coordinator.raidForecastPressure(11000).pendingGoals, 1, 'ordinary party goals retain priority');
+    coordinator.partyGoalRequests = 0;
+    coordinator.pauseReasons.add('fixture');
+    assert.equal(coordinator.raidForecastPressure(11000).ready, false);
+    coordinator.pauseReasons.clear();
     const envelope = Protocol.envelope('throttle', 'pressure-test', { maxInFlight: 2 });
     assert.strictEqual(Protocol.validateEnvelope(envelope, 'main', { workerEpoch: 'pressure-test' }).ok, true,
         'the worker pressure control message must be admitted by the main-to-worker protocol');

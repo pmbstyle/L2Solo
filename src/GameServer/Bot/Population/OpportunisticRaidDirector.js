@@ -18,6 +18,9 @@ class OpportunisticRaidDirector {
         this.placementFailures = new Map();
         this.lastFormedAt = 0;
         this.nextSearchAt = 0;
+        this.nextForecastAt = 0;
+        this.pendingSearch = null;
+        this.now = deps.now || Date.now;
         this.running = false;
         this.active = false;
         this.lastResult = { reason: 'starting' };
@@ -49,7 +52,7 @@ class OpportunisticRaidDirector {
         }
         this.unsubscribeLife = this.life.subscribePublications(packet => {
             if (!this.active) return;
-            if (packet.kind === 'reset') { this.searchEpoch++; this.pool.clear(); this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0; return; }
+            if (packet.kind === 'reset') { this.finishSearch('interrupted'); this.nextSearchAt = 0; this.searchEpoch++; this.pool.clear(); this.coverage.clear(); this.deferredRosters = []; this.searchCounters.pendingRosters = 0; return; }
             const state = this.life.cachedState(Number(packet.characterId));
             if (state && Policy.available(state)) this.pool.set(state.characterId, state);
             else this.pool.delete(Number(packet.characterId));
@@ -67,6 +70,7 @@ class OpportunisticRaidDirector {
     }
 
     stop() {
+        this.finishSearch('interrupted');
         this.preparations?.stop();
         this.searchEpoch++;
         this.active = false; this.unsubscribeLife?.(); this.unsubscribeParty?.(); this.pool.clear();
@@ -91,174 +95,230 @@ class OpportunisticRaidDirector {
         return free.length - 1 >= Math.ceil(peers.length * this.config.opportunisticRaidAliveFraction);
     }
 
+    finishSearch(status) {
+        if (this.pendingSearch) this.searchCounters.finish(status);
+        this.pendingSearch = null;
+        this.searchCounters.pendingRosters = this.deferredRosters.length;
+    }
+
+    retireRoster(ids) {
+        const key = ids.join(':');
+        this.deferredRosters = this.deferredRosters.filter(row => row.join(':') !== key);
+        this.searchCounters.pendingRosters = this.deferredRosters.length;
+    }
+
+    refillForecastBudget(timestamp) {
+        this.forecastCpuAt ??= timestamp;
+        const windows = Math.max(0, Math.floor((timestamp - this.forecastCpuAt) / LIMITS.forecastWindowMs));
+        this.forecastCpuTokens = Math.min(LIMITS.forecastCpuMs,
+            this.forecastCpuTokens + windows * LIMITS.forecastCpuMs);
+        this.forecastCpuAt += windows * LIMITS.forecastWindowMs;
+        this.searchCounters.cpuBudget.availableMs = Math.max(0, this.forecastCpuTokens);
+        this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
+    }
+
+    forecastAdmission(timestamp) {
+        const pressure = this.forecastPressure?.(timestamp) || { ready: true, lagMs: 0, utilization: 0, pendingGoals: 0 };
+        this.searchCounters.pacing.pressure = { ...pressure };
+        const allowed = this.canWork() && pressure.ready && pressure.lagMs < LIMITS.workerLagMaxMs
+            && pressure.utilization < LIMITS.workerBusyMax && !pressure.pendingGoals;
+        if (!allowed) {
+            this.searchCounters.pacing.loadDeferrals++;
+            this.nextForecastAt = timestamp + LIMITS.forecastGapMs;
+            this.lastResult = { reason: 'raid_worker_busy' };
+        }
+        return allowed ? pressure : null;
+    }
+
+    async discover(timestamp, admitted, scheduling) {
+        const current = scheduling.current, yieldNow = scheduling.yieldNow || SearchWork.yieldToLoop;
+        this.searchCounters.begin(timestamp);
+        const shortlist = await SearchWork.run(Policy.candidateSteps([...this.pool.values()],
+            this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters), scheduling);
+        if (!shortlist || !current()) return;
+        this.tankCursor = shortlist.tankCursor;
+        for (const [reason, count] of Object.entries(shortlist.rejected))
+            for (let i = 0; i < count; i++) this.searchCounters.reject('assembly', reason);
+        for (const roster of shortlist.proposals) this.searchCounters.roster(roster);
+        if (shortlist.candidates.length < 9) {
+            this.searchCounters.reject('assembly', 'raid_candidates_small');
+            this.lastResult = { reason: 'raid_candidates_small', count: shortlist.candidates.length };
+            this.searchCounters.finish('no_candidates'); return;
+        }
+        const members = [];
+        for (let offset = 0; offset < shortlist.candidates.length; offset += 16) {
+            const ids = shortlist.candidates.slice(offset, offset + 16).map(s => s.characterId);
+            await this.memory.ensureMany(ids);
+            if (!current()) return;
+            members.push(...await this.life.statesByIds(ids));
+            if (!current()) return;
+            this.searchCounters.add('hydratedBots', ids.length);
+            await yieldNow();
+        }
+        const rosters = await SearchWork.run(Policy.proposalSteps(shortlist.proposals, members,
+            this.memory.assess.bind(this.memory), timestamp, this.searchCounters), scheduling);
+        if (!rosters || !current()) return;
+        this.rosterWindowCursor = ((this.rosterWindowCursor || 0) + 1) % 3;
+        this.searchCounters.add('rostersProposed', rosters.length);
+        this.deferredRosters = rosters.map(roster => roster.map(s => s.characterId));
+        this.searchCounters.pendingRosters = this.deferredRosters.length;
+        if (!rosters.length) {
+            this.lastResult = { reason: 'raid_compatible_roster_missing' };
+            this.searchCounters.finish('no_roster'); return;
+        }
+        const catalog = this.catalog.all(), alive = this.catalog.liveTemplateIds();
+        for (const [id, until] of this.blockedBosses) if (until <= timestamp) this.blockedBosses.delete(id);
+        const claimed = new Set(admitted.map(p => Number(p.stats?.objective?.raidBossTemplateId || 0)));
+        const start = shortlist.priorityKey ? (this.rosterCursor || 0) % rosters.length : 0;
+        const ordered = [...rosters.slice(start), ...rosters.slice(0, start)];
+        this.rosterCursor = start + 1;
+        const priorityIndex = ordered.findIndex(r => r.map(s => s.characterId).join(':') === shortlist.priorityKey);
+        if (priorityIndex > 0) ordered.unshift(...ordered.splice(priorityIndex, 1));
+        const scores = new Map();
+        const score = spot => {
+            if (!scores.has(spot.raidBossTemplateId)) scores.set(spot.raidBossTemplateId, Priority.targetScore(spot));
+            return scores.get(spot.raidBossTemplateId);
+        };
+        const queues = ordered.map(roster => {
+            const ids = roster.map(s => s.characterId), priority = ids.join(':') === shortlist.priorityKey;
+            const key = `${priority ? 'priority:' : ''}${Math.min(...roster.map(s => s.level))}:${Math.max(...roster.map(s => s.level))}`;
+            const all = catalog.filter(s => alive.has(s.raidBossTemplateId) && !claimed.has(s.raidBossTemplateId)
+                && !this.blockedBosses.has(s.raidBossTemplateId) && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
+                .sort((a,b) => score(a) - score(b) || a.avgLevel - b.avgLevel || a.raidBossTemplateId - b.raidBossTemplateId);
+            const offset = (this.bossCursors.get(key) || 0) % Math.max(1, all.length);
+            if (!all.length) { this.searchCounters.reject('target', 'raid_no_eligible_boss'); this.retireRoster(ids); }
+            return { ids, key, offset, cursor: 0, choices: [...all.slice(offset), ...all.slice(0, offset)] };
+        });
+        // Keep IDs and immutable target definitions only. Every paced check
+        // re-reads current native members and diplomacy before asking the worker.
+        this.pendingSearch = { queues, cursor: 0, remaining: LIMITS.forecasts,
+            assessed: new Set(), expiresAt: timestamp + this.config.opportunisticRaidSearchIntervalMs };
+    }
+
+    async forecastOne(timestamp, admitted, current) {
+        const search = this.pendingSearch, catalog = this.catalog.all(), alive = this.catalog.liveTemplateIds();
+        const claimed = new Set(admitted.map(p => Number(p.stats?.objective?.raidBossTemplateId || 0)));
+        for (let tried = 0; tried < search.queues.length; tried++) {
+            const queue = search.queues[search.cursor++ % search.queues.length];
+            if (queue.cursor >= queue.choices.length) continue;
+            const roster = queue.ids.map(id => this.life.cachedState(id));
+            this.searchCounters.add('revalidatedBots', roster.length);
+            const valid = roster.every(s => s && Policy.candidateReady(s, timestamp)) && Policy.composition(roster).ready
+                && roster.every((s,i) => roster.slice(i+1).every(peer =>
+                    Policy.compatible(s, peer, this.memory.assess.bind(this.memory), timestamp)));
+            if (!valid) {
+                this.searchCounters.reject('assembly', 'raid_members_changed');
+                queue.cursor = queue.choices.length; this.retireRoster(queue.ids); continue;
+            }
+            // Gather a bounded batch cooperatively. The worker prepares this
+            // roster once and selects the shortest viable encounter itself.
+            const startCursor = queue.cursor, targets = [];
+            let inspected = startCursor;
+            while (inspected < queue.choices.length && targets.length < LIMITS.targetCandidates) {
+                const next = queue.choices[inspected++];
+                if (inspected % 8 === 0) {
+                    await (this.searchScheduling?.yieldNow || SearchWork.yieldToLoop)();
+                    if (!current()) return;
+                }
+                if (!alive.has(next.raidBossTemplateId) || claimed.has(next.raidBossTemplateId)
+                    || !roster.every(m => Policy.recruitLevelAllowed(m, next.avgLevel))) continue;
+                if (!this.room(next, catalog, alive, admitted)) { this.searchCounters.reject('target', 'raid_alive_reserve'); continue; }
+                if (!this.bossFree(next)) { this.searchCounters.reject('target', 'raid_boss_busy'); continue; }
+                targets.push(next);
+            }
+            if (!targets.length) { queue.cursor = inspected; this.retireRoster(queue.ids); continue; }
+            const pressure = this.forecastAdmission(Math.max(timestamp, this.now()));
+            if (!pressure || !current()) { search.cursor--; return; }
+            const key = queue.ids.join(':');
+            if (!search.assessed.has(key)) { search.assessed.add(key); this.searchCounters.add('rostersAssessed'); }
+            let spot = targets[0];
+            const assessment = await this.assess(roster, spot, timestamp, { fundSupplies: true, targets });
+            if (!current()) return;
+            const selected = assessment.targetSelection;
+            if (selected?.fullForecast) spot = targets.find(s => s.raidBossTemplateId === selected.bossId);
+            if (!spot) { this.finishSearch('invalid_target_selection'); return; }
+            if (selected && !selected.fullForecast) {
+                queue.cursor = inspected;
+            } else {
+                // Move only the fully assessed target out of this window's
+                // queue. The other targets are re-screened with fresh members
+                // on the next turn, so old estimates never authorize a fight.
+                const index = queue.choices.indexOf(spot);
+                [queue.choices[startCursor], queue.choices[index]] = [queue.choices[index], queue.choices[startCursor]];
+                queue.cursor = startCursor + 1;
+            }
+            this.searchCounters.forecast(assessment, selected?.bossId ?? spot.raidBossTemplateId);
+            const workMs = Math.max(0, Number(assessment.workMs) || 0);
+            this.forecastCpuTokens -= workMs;
+            this.refillForecastBudget(Math.max(timestamp, this.now()));
+            // Adapt spacing to measured CPU: 20 ms costs ten seconds of a
+            // 120 ms/minute allowance. Never catch up with a burst after load.
+            const spacing = Math.max(LIMITS.forecastGapMs, workMs * LIMITS.forecastWindowMs / LIMITS.forecastCpuMs);
+            const slow = pressure.utilization >= .75 || pressure.lagMs >= 60 ? 2 : 1;
+            this.nextForecastAt = Math.max(timestamp, this.now()) + Math.ceil(spacing * slow);
+            this.searchCounters.pacing.nextForecastAt = this.nextForecastAt;
+            this.retireRoster(queue.ids);
+            this.bossCursors.delete(queue.key);
+            this.bossCursors.set(queue.key, (queue.offset + queue.cursor) % Math.max(1, queue.choices.length));
+            if (this.bossCursors.size > 256) this.bossCursors.delete(this.bossCursors.keys().next().value);
+            this.lastResult = { ...assessment, bossId: selected?.bossId ?? spot.raidBossTemplateId,
+                members: roster.map(s => ({ id: s.characterId, name: s.name, level: s.level })) };
+            search.remaining--;
+            if (assessment.ready && this.canWork() && this.bossFree(spot)) {
+                const objective = { status: 'open', priority: 'required', reason: 'opportunistic_raid', sourceKind: 'raid',
+                    opportunisticRaid: true, raidBoss: true, raidBossTemplateId: spot.raidBossTemplateId,
+                    npcId: spot.raidBossTemplateId, sourceLevel: spot.avgLevel, spotId: spot.id,
+                    minPartySize: 9, maxPartySize: 9, requestedAt: timestamp,
+                    expiresAt: timestamp + this.config.opportunisticRaidExpeditionMs, assessment };
+                const needsSupplies = assessment.supplies?.some(s => s.missing > 0);
+                const party = needsSupplies ? await this.preparations?.reserve(roster, objective, timestamp)
+                    : await this.form(roster, objective);
+                if (!current()) return;
+                if (party) {
+                    if (needsSupplies) this.searchCounters.add('preparationsStarted');
+                    this.lastFormedAt = Math.max(timestamp, Number(party.startedAt || 0));
+                    this.remember(party.memberIds, this.lastFormedAt);
+                    this.lastResult = { ...this.lastResult, ...(needsSupplies
+                        ? { reason: 'raid_preparing_supplies', preparationId: party.id } : { formedPartyId: party.partyId }) };
+                    this.finishSearch(needsSupplies ? 'preparing' : 'formed'); return;
+                }
+                this.searchCounters.reject('admission', needsSupplies ? 'raid_preparation_refused' : 'raid_formation_refused');
+            }
+            if (this.forecastCpuTokens <= 0) this.finishSearch('forecast_cpu_budget');
+            else if (!search.remaining) this.finishSearch('forecast_budget');
+            else this.searchCounters.finish('waiting_pace');
+            return; // One worker forecast per scheduler turn.
+        }
+        this.finishSearch('complete');
+    }
+
     async pulse(timestamp = Date.now()) {
         if (!this.active || this.running) return;
         this.running = true;
-        const epoch = this.searchEpoch;
-        const current = () => this.active && this.searchEpoch === epoch;
-        const scheduling = { ...this.searchScheduling, current };
-        const yieldNow = scheduling.yieldNow || SearchWork.yieldToLoop;
-        let searchStarted = false, searchStatus = 'complete', cpuAllowance = 0;
+        const epoch = this.searchEpoch, current = () => this.active && this.searchEpoch === epoch;
         try {
             await this.maintain(timestamp);
-            if (!current()) return;
-            if (timestamp < this.nextSearchAt) return;
-            this.nextSearchAt = timestamp + this.config.opportunisticRaidSearchIntervalMs;
-            if (!this.canWork()) {
-                this.nextSearchAt = timestamp + 10000;
-                this.lastResult = { reason: 'raid_background_busy' };
-                return;
-            }
+            if (!current() || timestamp < this.nextForecastAt) return;
             if (timestamp - this.lastFormedAt < this.config.opportunisticRaidIntervalMs) return;
             const admitted = [...this.parties.admitted(), ...(this.preparations?.admitted() || [])];
             if (admitted.filter(p => Policy.isObjective(p.stats?.objective)).length >= this.config.opportunisticRaidMaxParties) return;
-            // A synchronous forecast can overrun the allowance once. Charge
-            // that debt to following search windows instead of adding the
-            // same overrun every minute. Idle raid/cap windows refill normally.
-            this.forecastCpuAt ??= timestamp;
-            const windows = Math.max(0, Math.floor((timestamp - this.forecastCpuAt)
-                / this.config.opportunisticRaidSearchIntervalMs));
-            this.forecastCpuTokens = Math.min(LIMITS.forecastCpuMs,
-                this.forecastCpuTokens + windows * LIMITS.forecastCpuMs);
-            this.forecastCpuAt += windows * this.config.opportunisticRaidSearchIntervalMs;
-            this.searchCounters.cpuBudget.availableMs = Math.max(0, this.forecastCpuTokens);
-            this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
+            if (this.pendingSearch && timestamp >= this.pendingSearch.expiresAt) this.finishSearch('window_expired');
+            if (!this.pendingSearch && timestamp < this.nextSearchAt) return;
+            if (!this.forecastAdmission(timestamp)) return;
+            this.refillForecastBudget(timestamp);
             if (this.forecastCpuTokens <= 0) {
                 this.searchCounters.cpuBudget.deferredSearches++;
+                this.nextForecastAt = this.forecastCpuAt + LIMITS.forecastWindowMs;
                 this.lastResult = { reason: 'raid_forecast_cpu_rest' }; return;
             }
-            cpuAllowance = this.forecastCpuTokens;
-            this.searchCounters.begin(timestamp); searchStarted = true;
-            // Hydrate a rotating, bounded slice. Recent publication order must
-            // not permanently hide an older tank or healer.
-            const shortlist = await SearchWork.run(Policy.candidateSteps([...this.pool.values()],
-                this.cooldowns, this.tankCursor, timestamp, this.coverage, this.deferredRosters), scheduling);
-            if (!shortlist) return;
-            const { candidates } = shortlist;
-            this.tankCursor = shortlist.tankCursor;
-            for (const [reason, count] of Object.entries(shortlist.rejected))
-                for (let i = 0; i < count; i++) this.searchCounters.reject('assembly', reason);
-            for (const roster of shortlist.proposals) this.searchCounters.roster(roster);
-            if (candidates.length < 9) {
-                this.searchCounters.reject('assembly', 'raid_candidates_small');
-                this.lastResult = { reason: 'raid_candidates_small', count: candidates.length };
-                searchStatus = 'no_candidates'; return;
+            if (!this.pendingSearch) {
+                this.nextSearchAt = timestamp + this.config.opportunisticRaidSearchIntervalMs;
+                await this.discover(timestamp, admitted, { ...this.searchScheduling, current });
+                if (!current() || !this.pendingSearch) return;
             }
-            const members = [];
-            // Normalizing a returned row and publishing its cache entry also
-            // runs on Main. Small pages bound that work as well as selection.
-            for (let offset = 0; offset < candidates.length; offset += 16) {
-                if (!current()) return;
-                const ids = candidates.slice(offset, offset + 16).map(s => s.characterId);
-                await this.memory.ensureMany(ids);
-                if (!current()) return;
-                members.push(...await this.life.statesByIds(ids));
-                this.searchCounters.add('hydratedBots', ids.length);
-                if (!current()) return;
-                await yieldNow();
-            }
-            const windowCursor = this.rosterWindowCursor || 0;
-            const rosters = await SearchWork.run(Policy.proposalSteps(shortlist.proposals, members,
-                this.memory.assess.bind(this.memory), timestamp, this.searchCounters), scheduling);
-            if (!rosters) return;
-            this.rosterWindowCursor = (windowCursor + 1) % 3;
-            this.searchCounters.add('rostersProposed', rosters.length);
-            this.deferredRosters = rosters.map(roster => roster.map(s => s.characterId));
-            if (!rosters.length) { this.lastResult = { reason: 'raid_compatible_roster_missing' }; searchStatus = 'no_roster'; return; }
-            const catalog = this.catalog.all(), alive = this.catalog.liveTemplateIds();
-            for (const [id, until] of this.blockedBosses) if (until <= timestamp) this.blockedBosses.delete(id);
-            const claimed = new Set(admitted.map(p => Number(p.stats?.objective?.raidBossTemplateId || 0)));
-            // A coverage pass drains the fresh, revalidated deferred queue in
-            // order. Rotating it again could hide the adjacent strong cohort
-            // behind newly proposed weak tanks for many forecast intervals.
-            const start = shortlist.priorityKey ? (this.rosterCursor || 0) % rosters.length : 0;
-            const ordered = [...rosters.slice(start), ...rosters.slice(0, start)];
-            this.rosterCursor = start + 1;
-            const priorityIndex = ordered.findIndex(roster => roster.map(s => s.characterId).join(':') === shortlist.priorityKey);
-            if (priorityIndex > 0) ordered.unshift(...ordered.splice(priorityIndex, 1));
-            const retire = roster => {
-                const key = roster.map(s => s.characterId).join(':');
-                this.deferredRosters = this.deferredRosters.filter(ids => ids.join(':') !== key);
-            };
-            const deadline = Date.now() + 12000;
-            let remaining = 12;
-            const assessedRosters = new Set();
-            const targetScores = new Map();
-            const targetScore = spot => {
-                if (!targetScores.has(spot.raidBossTemplateId)) targetScores.set(spot.raidBossTemplateId, Priority.targetScore(spot));
-                return targetScores.get(spot.raidBossTemplateId);
-            };
-            const queues = ordered.map(roster => {
-                const priority = roster.map(s => s.characterId).join(':') === shortlist.priorityKey;
-                const key = `${priority ? 'priority:' : ''}${Math.min(...roster.map(s => s.level))}:${Math.max(...roster.map(s => s.level))}`;
-                const all = catalog.filter(s => alive.has(s.raidBossTemplateId) && !claimed.has(s.raidBossTemplateId)
-                    && !this.blockedBosses.has(s.raidBossTemplateId)
-                    && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
-                    .sort((a, b) => targetScore(a) - targetScore(b)
-                        || a.avgLevel - b.avgLevel || a.raidBossTemplateId - b.raidBossTemplateId);
-                const offset = (this.bossCursors.get(key) || 0) % Math.max(1, all.length);
-                if (!all.length) { this.searchCounters.reject('target', 'raid_no_eligible_boss'); retire(roster); }
-                return { roster, key, offset, cursor: 0, choices: [...all.slice(offset), ...all.slice(0, offset)] };
-            });
-            // Spend the same bounded worker budget across rosters first.
-            // One weak roster with many bosses must not hide a viable one.
-            while (queues.some(q => q.cursor < q.choices.length)) {
-                for (const queue of queues) {
-                    const { roster, choices } = queue;
-                    let spot;
-                    while (queue.cursor < choices.length) {
-                        const next = choices[queue.cursor++];
-                        if (!this.room(next, catalog, alive, admitted)) { this.searchCounters.reject('target', 'raid_alive_reserve'); continue; }
-                        if (!this.bossFree(next)) { this.searchCounters.reject('target', 'raid_boss_busy'); continue; }
-                        spot = next; break;
-                    }
-                    if (!spot) { retire(roster); continue; }
-                    if (this.searchCounters.last.forecastWorkMs >= cpuAllowance) { searchStatus = 'forecast_cpu_budget'; return; }
-                    if (!remaining-- || Date.now() >= deadline || !this.active) { searchStatus = 'forecast_budget'; return; }
-                    if (!assessedRosters.has(roster)) { assessedRosters.add(roster); this.searchCounters.add('rostersAssessed'); }
-                    const assessment = await this.assess(roster, spot, timestamp, { fundSupplies: true });
-                    this.searchCounters.forecast(assessment, spot.raidBossTemplateId);
-                    retire(roster);
-                    this.bossCursors.delete(queue.key);
-                    this.bossCursors.set(queue.key, (queue.offset + queue.cursor) % Math.max(1, choices.length));
-                    if (this.bossCursors.size > 256) this.bossCursors.delete(this.bossCursors.keys().next().value);
-                    if (!current()) return;
-                    this.lastResult = { ...assessment, bossId: spot.raidBossTemplateId,
-                        members: roster.map(s => ({ id: s.characterId, name: s.name, level: s.level })) };
-                    if (!assessment.ready) continue;
-                    if (!current() || !this.canWork()) return;
-                    const objective = { status: 'open', priority: 'required', reason: 'opportunistic_raid', sourceKind: 'raid',
-                        opportunisticRaid: true, raidBoss: true, raidBossTemplateId: spot.raidBossTemplateId,
-                        npcId: spot.raidBossTemplateId, sourceLevel: spot.avgLevel, spotId: spot.id,
-                        minPartySize: 9, maxPartySize: 9, requestedAt: timestamp,
-                        expiresAt: timestamp + this.config.opportunisticRaidExpeditionMs, assessment };
-                    const needsSupplies = assessment.supplies?.some(s => s.missing > 0);
-                    const party = needsSupplies
-                        ? await this.preparations?.reserve(roster, objective, timestamp)
-                        : await this.form(roster, objective);
-                    if (party) {
-                        if (needsSupplies) this.searchCounters.add('preparationsStarted');
-                        searchStatus = needsSupplies ? 'preparing' : 'formed';
-                        this.lastFormedAt = Math.max(timestamp, Number(party.startedAt || 0));
-                        this.remember(party.memberIds, this.lastFormedAt);
-                        this.lastResult = { ...this.lastResult, ...(needsSupplies
-                            ? { reason: 'raid_preparing_supplies', preparationId: party.id }
-                            : { formedPartyId: party.partyId }) };
-                        return;
-                    }
-                    this.searchCounters.reject('admission', needsSupplies ? 'raid_preparation_refused' : 'raid_formation_refused');
-                }
-                await yieldNow();
-                if (!current() || !this.canWork()) return;
-            }
+            await this.forecastOne(timestamp, admitted, current);
         } finally {
-            if (searchStarted) {
-                this.forecastCpuTokens -= this.searchCounters.last.forecastWorkMs;
-                this.searchCounters.cpuBudget.availableMs = Math.max(0, this.forecastCpuTokens);
-                this.searchCounters.cpuBudget.debtMs = Math.max(0, -this.forecastCpuTokens);
-                this.searchCounters.pendingRosters = this.deferredRosters.length;
-                this.searchCounters.finish(current() ? searchStatus : 'interrupted');
-            }
+            this.searchCounters.pacing.nextForecastAt = this.nextForecastAt;
             this.running = false;
         }
     }

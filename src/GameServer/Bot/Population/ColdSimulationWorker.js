@@ -176,6 +176,10 @@ invoke('GameServer/Bot/AI/SpotValueTable').useSpots(() => planningSpots);
 // The sale retry reads the buyers of a bot's unsold goods on this thread's board.
 invoke('GameServer/Bot/Economy/ItemDisposition').useBoard(() => boardReady());
 invoke('GameServer/Bot/Economy/StaticMerchantPricing').useBoard(() => boardReady());
+invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({ board: boardReady(),
+    npcOffersFor: id => [...OccupationSources.npcOffersFor(id),
+        ...invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id)],
+    findSpot: id => SpotIndex.spotById(planningSpots, id) }));
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 // Planning producers import this same collector; its worker cap is64 rows.

@@ -19,8 +19,10 @@ const party = { partyId: 'goal-worker', memberIds: [701, 702], leaderId: 701,
     stats: { objective: { clanGoalKey: 'clan-native', spotId: 'protected' } } };
 const observer = String.raw`
 const assert=require('node:assert/strict');
+Config.staticShotsDisabled=true;
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
+    if(message.queryProbe==='enable-static-shots') Config.staticShotsDisabled=false;
     if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-refresh') {
         const mode=message.queryProbe==='hold-meeting'?'meeting':'refresh';
         const held={id:701,mode,input:{mode,state:kernel.states.get(701).state}};
@@ -62,7 +64,12 @@ async function wait(predicate) {
     }
     return messages.find(predicate);
 }
-function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, epoch, payload, id)); }
+function post(type, payload, id) {
+    const message = Protocol.envelope(type, epoch, payload, id);
+    if (id?.startsWith('raid-')) assert(Protocol.validateEnvelope(message,'main').ok,
+        JSON.stringify(Protocol.validateEnvelope(message,'main')));
+    worker.postMessage(message);
+}
 (async () => {
     await wait(message => message.type === 'ready' && message.payload.phase === 'loaded');
     post('init', { config: { pvpAggression: 0 } }, 'init');
@@ -211,6 +218,91 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     const largest = await wait(message => message.type === 'party_goal_result' && message.msgId === 'nine');
     assert.equal(largest.payload.ok, true, largest.payload.reason);
     assert.equal(largest.payload.joint.memberGoals.length, 9, 'complete maximum roster survives multiple pages');
+    invoke('GameServer/DataCache').init({ validate: false });
+    const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const frozen = require('./fixtures/raid_priority_world.json');
+    const raiders = frozen.expected.map(id => {
+        const row = frozen.members.find(s => s.characterId === id);
+        return { ...row, level: id === 2006587 ? 50 : row.level, phase: 'cold', updatedAt: timestamp,
+            activity: 'shopping', currentRegion: 'Giran', party: {},
+            stats: { ...row.stats, coldCombat: { ...row.captured,
+                skills: Combat.skillSnapshotsFromRecords(row.skills.map(([selfId, level]) => ({ selfId, level }))) } },
+            inventory: Object.fromEntries(row.items.map(item => [item.selfId,
+                [1463,1464].includes(item.selfId) ? { ...item, amount: 0 } : item])) };
+    });
+    const { rowOf } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const shops = [1463,1464].map((selfId, i) => ({ id: 960000 + i, ownerId: 970000 + i,
+        storeType: 1, kind: 'shop', custodyPolicy: 0, town: 'Giran', revision: 1,
+        lines: [{ lineId: 980000 + i, selfId, count: 1000000, price: 1 }] }));
+    const marketPage = (rows, revision, from = null) => post('table_page', { tables: [{ name: 'board', from,
+        to: revision, full: from === null, removed: [], last: true, rows: rows.map(s => [s.id, rowOf(s)]) }] }, `raid-book-${revision}`);
+    marketPage(shops, 1);
+    const raidParty = { partyId: 'market-raid-worker', leaderId: raiders[0].characterId,
+        memberIds: raiders.map(s => s.characterId), stats: { objective: {
+            sourceKind: 'raid', opportunisticRaid: true, spotId: `raid:${frozen.bossId}`, fundRaidSupplies: true } } };
+    const raidReply = async id => {
+        const replyBy = Date.now() + 5000;
+        for (let i = 0; i < raiders.length; i++) post('party_goal_request', {
+            ...(i === 0 ? { party: raidParty } : { partyId: raidParty.partyId }), members: [raiders[i]], escrows: [0],
+            timestamp: frozen.at, replyBy, pageIndex: i, pageCount: 9 }, id);
+        const reply = await wait(m => m.type === 'party_goal_result' && m.msgId === id);
+        assert(reply.payload.ok, reply.payload.reason);
+        assert(Protocol.validateEnvelope(reply, 'worker').ok);
+        return reply.payload.joint.raidAssessment;
+    };
+    const fundedRaid = await raidReply('raid-backed');
+    assert(fundedRaid.ready, JSON.stringify(fundedRaid.reasons));
+    assert(fundedRaid.supplies.some(s => s.missing > 0 && s.available === s.missing && s.price === 1));
+    raidParty.stats.objective.raidCandidateIds = [10099, 10431];
+    raidParty.stats.objective.maxFightSeconds = fundedRaid.seconds - 1;
+    const selectedRaid = await raidReply('raid-select-target');
+    assert(selectedRaid.ready, JSON.stringify(selectedRaid.reasons));
+    assert.equal(selectedRaid.targetSelection.bossId, 10431);
+    assert.equal(selectedRaid.targetSelection.considered, 2);
+    assert.equal(selectedRaid.targetSelection.rejected.raid_fight_too_long, 1);
+    const selectedPayload = { ok:true, joint:{objective:raidParty.stats.objective,raidAssessment:selectedRaid,
+        memberGoals:raiders.map(s => ({ characterId:s.characterId }))},
+        sources:Calculation.sources(raiders) };
+    assert(Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,selectedPayload),'worker').ok);
+    const invalidTarget = structuredClone(selectedPayload); invalidTarget.joint.raidAssessment.targetSelection.bossId = 999999;
+    assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidTarget),'worker').ok);
+    const invalidCount = structuredClone(selectedPayload); invalidCount.joint.raidAssessment.targetSelection.considered = 10000;
+    assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidCount),'worker').ok);
+    raidParty.stats.objective.maxFightSeconds = 1;
+    const slowRaid = await raidReply('raid-all-too-slow');
+    assert.equal(slowRaid.targetSelection.fullForecast, false);
+    assert.equal(slowRaid.reason, 'raid_no_fast_target');
+    delete raidParty.stats.objective.raidCandidateIds;
+    delete raidParty.stats.objective.maxFightSeconds;
+    marketPage(shops.map(s => ({ ...s, revision: 2, custodyPolicy: 1, kind: 'sell_ad' })), 2, 1);
+    const advertisedRaid = await raidReply('raid-conditional');
+    assert(advertisedRaid.reasons.includes('raid_supplies_unavailable'),
+        'the real simulation worker reads current backed supply and refuses conditional ads');
+    worker.postMessage({ queryProbe:'enable-static-shots' });
+    await wait(message => message.probe==='enable-static-shots');
+    const fallbackRaid = await raidReply('raid-static-fallback');
+    assert(fallbackRaid.ready, JSON.stringify(fallbackRaid.reasons));
+    assert(fallbackRaid.supplies.filter(s => s.missing > 0).every(s =>
+        s.available === s.missing && s.price > 1 && s.cost <= s.cash),
+        'the real worker funds the expensive configured fallback without treating conditional ads as stock');
+    marketPage(shops.map(s => ({ ...s, revision:3, lines:s.lines.map(l => ({...l,count:100})) })),3,2);
+    const mixedRaid = await raidReply('raid-mixed-fallback');
+    assert(mixedRaid.ready, JSON.stringify(mixedRaid.reasons));
+    assert(mixedRaid.supplies.some(s => s.missing > 100 && s.cost < s.missing * s.price),
+        'a cheaper backed stack is used before the configured remainder');
+    const mixedSupply=mixedRaid.supplies.find(s => s.reserveCost>s.cost+1);
+    assert(mixedSupply,'the worker transports the fallback budget separately from the cheap quote');
+    const dd=raiders.find(s=>s.characterId===mixedSupply.id),walletBefore=dd.adena,moneyBefore=dd.stats.money;
+    dd.adena=Math.ceil(mixedSupply.cost)+1;dd.stats.money=[dd.adena,0,0,0];
+    const underfunded=await raidReply('raid-unaffordable-reserve');
+    assert(underfunded.reasons.includes('raid_consumables_funds'),
+        'a cheap fill never hides an unaffordable backup across the real worker boundary');
+    dd.adena=walletBefore;
+    if(moneyBefore===undefined)delete dd.stats.money;else dd.stats.money=moneyBefore;
+    const invalidReserve=structuredClone(selectedPayload);
+    invalidReserve.joint.raidAssessment.supplies[0].reserveCost=invalidReserve.joint.raidAssessment.supplies[0].cash+1;
+    assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidReserve),'worker').ok,
+        'ready advice cannot authorize an unfunded static reserve');
     post('party_goal_request', { ...request, replyBy: timestamp }, 'expired');
     const expired = await wait(message => message.type === 'party_goal_result' && message.msgId === 'expired');
     assert.equal(expired.payload.ok, false);

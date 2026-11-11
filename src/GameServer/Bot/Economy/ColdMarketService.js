@@ -215,7 +215,7 @@ function buyOffer(state, offer, options = {}) {
 }
 
 // What sells an item at a fixed price in each town: the NPC shops and the
-// configured shot merchants until 3.6 (their stock never runs out for a cold bot, as
+// configured reserve shot merchants (their stock never runs out for a cold bot, as
 // the author's cold NPC restock had it).
 function staticOffers(selfId) {
     return [...MarketOpportunity.npcOffersAll(selfId),
@@ -225,10 +225,7 @@ function staticOffers(selfId) {
 // The bot's round trip to a town in Adena, from its farming place
 // (OfferOrder.tripCost); none to the town it is shopping in.
 function tripFrom(state, timestamp = Date.now()) {
-    const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
-    const origin = OfferOrder.farmingOrigin(state, (spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId));
-    const trip = OfferOrder.tripCost(state, { origin, timestamp });
-    return (town) => (town === here ? 0 : trip ? trip(town) : 0);
+    return OfferOrder.purchaseTrip(state, spotId => invoke('GameServer/Bot/AI/SpotService').findById(spotId), timestamp);
 }
 
 // Keep the originating valuation through a trip. Zero is a real rate: it
@@ -347,7 +344,7 @@ function planPurchase(state, selfId, amount, options = {}) {
     const moneyForTown = (_town, npcPrice, lines) => {
         if (!options.currentFunding) return money;
         const first = lines.find(line => accept(line) && Number(line.price) > 0 && Number(line.price) <= maxPrice
-            && Number(line.count) >= 1 && Number(line.ownerId ?? line.sourceId) !== Number(state.characterId)
+            && OfferQuery.unclaimedCount(line, options.claimed) >= 1 && Number(line.ownerId ?? line.sourceId) !== Number(state.characterId)
             && (!(npcPrice > 0) || Number(line.price) <= npcPrice));
         const price = Number(first?.price || npcPrice || 0);
         fundingContext ||= options.economy?.kitCost ? options.economy : invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state);
@@ -376,7 +373,7 @@ function planPurchase(state, selfId, amount, options = {}) {
             if (staticOffers(selfId).some(offer => offer.town === source.town && Number(offer.price) === price)) npcPrice = price;
         }
         const filled = OfferQuery.fill(quotes, amount, { money: moneyForTown(source.town, npcPrice, quotes), maxPrice, npcPrice,
-            excludeOwner: state?.characterId, accept, acceptFill });
+            excludeOwner: state?.characterId, accept, acceptFill, claimed: options.claimed });
         if (filled.units < amount) options.onUnfilled?.({ amount, planned: Number(source.npc || 0)
             + (source.lines || []).reduce((sum, entry) => sum + Number(entry.count), 0),
             money: moneyForTown(source.town, npcPrice, quotes), cost: Number(source.cost) });
@@ -385,7 +382,8 @@ function planPurchase(state, selfId, amount, options = {}) {
             landed: filled.cost + Math.max(0, Number(source.landed) - Number(source.cost || 0)) };
     } else {
         plan = OfferQuery.cheapestTown(board, selfId, {
-            amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept, acceptFill,
+            amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept, acceptFill, claimed: options.claimed,
+            requireRepeatable: options.purpose === 'raid_supply',
             npcOffers: npc ? staticOffers(selfId) : [], cost: cost || tripFrom(state, timestamp),
             quoteDepth: options.quoteDepth ? PriceDecision.QUOTE_DEPTH : 0
         });

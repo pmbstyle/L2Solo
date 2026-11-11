@@ -417,8 +417,10 @@ const tests = [
     'tests/test_raid_buff_composition.js',
     'tests/test_raid_search_coverage.js',
     'tests/test_raid_priority_search.js',
+    'tests/test_raid_forecast_pacing.js',
     'tests/test_raid_adjacent_cohort.js',
     'tests/test_raid_target_priority.js',
+    'tests/test_raid_target_selection.js',
     'tests/test_raid_defense_assessment.js',
     'tests/test_raid_healing_estimate.js',
     'tests/test_raid_forecast_work.js',
@@ -1343,6 +1345,9 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_opportunistic_raids.js',
+    'tests/test_raid_search_coverage.js',
+    'tests/test_raid_target_selection.js',
     'tests/test_craft_material_recruitment.js',
     'tests/test_party_destination_reservations.js',
     'tests/test_craft_material_party.js',

@@ -1,9 +1,9 @@
 const DEFAULTS = {
     enabled: true,
     staticBuyersDisabled: false,
-    // C4: no NPC sells D-S shots (l2hub C4 shops, Lisvus merchant_buylists,
-    // Mobius buylists: only the GM shop); crafters make them (T116).
-    staticShotsDisabled: true,
+    // Configured shot merchants remain a priced fallback when public stock
+    // cannot fill the order. All buyers still compare price and travel cost.
+    staticShotsDisabled: false,
     developerDiagnostics: false,
     economyDiagnostics: false,
     economyDiagnosticsBotIds: '',

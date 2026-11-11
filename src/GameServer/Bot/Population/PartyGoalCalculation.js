@@ -50,10 +50,14 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
         if (!current()) throw new Error('party_goal_expired');
         const objective = party.stats.objective;
         const wall = performance.now(), cpu = process.threadCpuUsage?.();
-        const raidAssessment = require('./OpportunisticRaidPolicy').assessment(members,
-            invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(objective.spotId), {
+        const catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
+        const assessmentOptions = {
                 timestamp, maxFightSeconds: objective.maxFightSeconds, reserve: objective.shotReserve,
-                fundSupplies: objective.fundRaidSupplies === true });
+                fundSupplies: objective.fundRaidSupplies === true };
+        const raidAssessment = objective.raidCandidateIds?.length
+            ? require('./RaidTargetSelection').assess(members,
+                objective.raidCandidateIds.map(id => catalog.findById(`raid:${id}`)).filter(Boolean), assessmentOptions)
+            : require('./OpportunisticRaidPolicy').assessment(members, catalog.findById(objective.spotId), assessmentOptions);
         const used = cpu && process.threadCpuUsage(cpu);
         // Charge only synchronous forecast work on this worker thread. Queue
         // waits and other server threads must not inflate the search budget.

@@ -8,6 +8,8 @@ invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false
 invoke('GameServer/DataCache').init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
+require('../src/GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
+    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
 const Work = require('../src/GameServer/Bot/Population/RaidSearchWork');
 const { RaidRosterCoverage } = require('../src/GameServer/Bot/Population/RaidRosterCoverage');
 const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/OpportunisticRaidDirector');
@@ -47,6 +49,7 @@ async function run() {
     const forecasts = [];
     const targets = [boss, catalog.findById('raid:10418'), catalog.findById('raid:10044')];
     const service = new OpportunisticRaidDirector({
+        now: () => at,
         config: { opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidIntervalMs: 900000,
             opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidAliveFraction: .5,
             opportunisticRaidMaxParties: 2, opportunisticRaidExpeditionMs: 2700000 },

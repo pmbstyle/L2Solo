@@ -1468,7 +1468,7 @@ const PopulationService = {
             }
         });
 
-        registry.register({ name: 'opportunistic_raids', intervalMs: 11000, offsetMs: 45000,
+        registry.register({ name: 'opportunistic_raids', intervalMs: 5000, offsetMs: 45000,
             run: () => this.opportunisticRaids?.pulse() });
         registry.register({ name: 'opportunistic_raid_combat', intervalMs: 4000, offsetMs: 45000,
             run: () => this.opportunisticRaids?.maintain() });
@@ -1542,13 +1542,14 @@ const PopulationService = {
                     !BackgroundPartyState.raidCompetitors(spot.raidBossTemplateId, status, exceptPartyId, 'opportunity').length)
                 && !invoke('GameServer/RaidBoss/RaidEncounterScope').otherParticipants(World, boss, excludedIds);
         };
-        const assess = async (members, spot, timestamp = Date.now(), { fundSupplies = false } = {}) => {
+        const assess = async (members, spot, timestamp = Date.now(), { fundSupplies = false, targets = null } = {}) => {
             const party = { partyId: 'raid_assessment', leaderId: members[0].characterId,
                 memberIds: members.map(s => s.characterId), spotId: spot.id,
                 stats: { objective: { sourceKind: 'raid', opportunisticRaid: true, spotId: spot.id,
                     maxFightSeconds: Config.opportunisticRaidMaxFightSeconds,
                     shotReserve: Config.opportunisticRaidShotReserve,
-                    fundRaidSupplies: fundSupplies } } };
+                    fundRaidSupplies: fundSupplies,
+                    ...(targets?.length ? { raidCandidateIds: targets.map(s => s.raidBossTemplateId) } : {}) } } };
             const result = await ColdSimulationCoordinator.requestPartyGoals(party, members, { timestamp });
             return result.ok && result.joint?.raidAssessment
                 || { ready: false, reason: result.reason || 'raid_assessment_unavailable' };
@@ -1570,6 +1571,7 @@ const PopulationService = {
             canWork: () => this.started && !this.resolving
                 && Number(Database.pending()) < 4
                 && Number(Metrics.currentEventLoopLag()) < 40,
+            forecastPressure: timestamp => ColdSimulationCoordinator.raidForecastPressure(timestamp),
             dissolve: async (party, reason) => {
                 const current = BackgroundPartyState.find(party.partyId);
                 if (!current || current.status !== 'active') return;
@@ -1594,6 +1596,7 @@ const PopulationService = {
         service.preparations = new (require('./RaidSupplyPreparation').RaidSupplyPreparation)({
             life: LifeState, coordinator: ColdSimulationCoordinator, memory: Memory,
             market: ColdMarketService, catalog: Catalog, assess, bossFree, form: service.form,
+            onAssessment: verdict => { service.searchCounters.lastPreparation = verdict; },
             onReleased: ids => service.remember(ids, Date.now())
         });
         this.opportunisticRaids = service;

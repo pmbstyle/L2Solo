@@ -118,9 +118,8 @@ function npcOffersAll(selfId) {
     return held.all.map(offer => ({ ...offer }));
 }
 
-// Group F: ordinary NPC shops stay; configured city supply remains only for
-// shots until the dwarves' production chain replaces it in 3.6. Also used at
-// execution, so a saved non-shot offer cannot bypass the new routing rule.
+// Ordinary NPC shops stay; configured city stores provide reserve shots.
+// Execution applies the same policy, including the optional shot switch.
 function botCanBuy(offer) {
     if (!offer) return false;
     const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
