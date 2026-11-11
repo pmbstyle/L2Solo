@@ -628,6 +628,10 @@ class Automation extends SelectedModel {
         this.clearDestId();
         creature.state?.setTowards?.(false);
         Timer.clear(this.timer.action);
+        // A dropped pickup is over for whoever requested it: PickupExec and
+        // the ground loot queue read the generation.
+        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
+        this.pickupTargetId = null;
         Timer.clear(this.timer.pickup);
 
         const session = creature.session;
@@ -677,10 +681,7 @@ class Automation extends SelectedModel {
     }
 
     abortAll(creature, { notifyClient = true } = {}) {
-        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
-        this.pickupTargetId = null;
         this.abortMovement(creature, { notifyClient });
-        Timer.clear(this.timer.pickup);
     }
 }
 

@@ -480,8 +480,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         }
         // Let the collector finish before another member starts a fresh pull.
         // Incoming mobs and an existing fight still take priority above.
-        const collector = members.find(s => s.partyGroundPickupInProgress
-            && Number(s.partyGroundPickupDeadlineAt || 0) > now);
+        const collector = members.find(s => invoke('GameServer/Bot/AI/PartyCompanionService').collectingGroundLoot(s));
         if (collector) {
             Tactics.stop(session, bot);
             session.currentTargetId = undefined;

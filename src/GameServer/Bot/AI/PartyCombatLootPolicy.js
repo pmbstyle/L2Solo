@@ -48,7 +48,7 @@ function allowed(session, leaderSession, item, members) {
     if (!actor || !leader || !item || !session.partyCompanion || session.plan !== 'following'
         || !idleSupport(actor) || session.pvpDefense) return false;
     // FollowingState grants this only after its healing/control/buff choices.
-    if (!session.partyGroundPickupInProgress && Date.now()-Number(session.partyCombatLootReadyAt || 0)>1500) return false;
+    if (!invoke('GameServer/Bot/AI/PartyCompanionService').collectingGroundLoot(session) && Date.now()-Number(session.partyCombatLootReadyAt || 0)>1500) return false;
     if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.()
         || session.pendingSupportApproach || Number(session.pendingSupportCast?.expiresAt || 0)>Date.now()
         || Effects.impairments(actor).disabled || Effects.impairments(actor).rooted || hp(actor)<0.7) return false;

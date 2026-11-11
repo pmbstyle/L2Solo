@@ -104,7 +104,7 @@ try {
                 setTowards() {},
                 setHits(value) { this.hit = value; }
             },
-            automation: { abortAll() {} }
+            automation: { pickupGeneration: 0, abortAll() { this.pickupGeneration++; } }
         };
     }
     const closestBot = pickupBot(2, 110);
@@ -328,7 +328,7 @@ try {
     assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'a queued pickup should start normally before a simulated cancellation');
     const interruptedPickup = pickupCalls[7];
     assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'an active pickup must own the AI tick instead of falling through into follow movement');
-    assert.strictEqual(pickupCalls.length, 8, 'an active pickup must not be scheduled twice before its deadline');
+    assert.strictEqual(pickupCalls.length, 8, 'an active pickup must not be scheduled twice');
 
     World.npc = { spawns: [incomingThreat] };
     World.fetchNpcsInRadius = () => [incomingThreat];
@@ -342,8 +342,8 @@ try {
     World.fetchNpcsInRadius = () => [];
     assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'pickup should retry after the party is safe again');
     const cancelledPickup = pickupCalls[8];
-    botSession.partyGroundPickupDeadlineAt = Date.now() - 1;
-    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'an expired pickup action should be retried instead of locking future loot');
+    closestBot.automation.abortAll(closestBot);
+    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'a pickup run that a movement order stopped should be taken again instead of locking future loot');
     const retriedPickup = pickupCalls[9];
     cancelledPickup.onComplete();
     assert.deepStrictEqual(botSession.partyGroundPickupQueue, [{ id: 500009 }], 'a stale completion must not remove the retried pickup from the queue');
@@ -351,8 +351,6 @@ try {
     retriedPickup.onComplete();
     assert.deepStrictEqual(botSession.partyGroundPickupQueue, [], 'the current pickup completion should remove the recovered queue entry');
 
-    closestBot.fetchCollectiveRunSpd = () => 120;
-    closestBot.automation.ticksToMove = () => 21000;
     World.items = groundItems({
         partyLootLeaderId: leaderSession.actor.fetchId(),
         fetchId: () => 500010,

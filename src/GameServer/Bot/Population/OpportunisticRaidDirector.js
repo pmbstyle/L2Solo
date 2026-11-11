@@ -412,7 +412,7 @@ class OpportunisticRaidDirector {
                     if (sessions[0]) await this.hot.abandonRaid(sessions[0], 'raid_unavailable', timestamp);
                     continue;
                 }
-                if (sessions.some(s => s.partyGroundPickupInProgress)) continue;
+                if (sessions.some(s => invoke('GameServer/Bot/AI/PartyCompanionService').collectingGroundLoot(s))) continue;
                 if (this.canFinish?.(sessions) === false) continue;
                 // Finish the current buff cast without allowing a new queue
                 // after the victory's level-up and skill training.

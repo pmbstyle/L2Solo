@@ -131,7 +131,93 @@ function bot(id, x) {
             assert.strictEqual(Pickup.call(World, leader, leader.actor, item), false, 'a second claimant cannot duplicate the reward');
             assert.deepStrictEqual(leader.partyGroundPickupQueue, [], 'completion releases the queue');
         }
-        console.log('Hot ground loot: native drop, movement, arrival, solo/party ownership and combat/support priority passed');
+        // A melee hunter's own swing kills. C4: a body neither moves nor picks
+        // up inside its swing (Lisvus L2CharacterAI.onIntentionPickUp); the drop
+        // is its next action and it runs to it when the swing ends.
+        {
+            const Attack = invoke('GameServer/Actor/Attack'), State = invoke('GameServer/Model/State');
+            const Npc = invoke('GameServer/Npc/Npc'), Index = require('../src/GameServer/World/NpcObjectIndex');
+            const Quests = invoke('GameServer/Quest/QuestService');
+            Data.init();
+            replace(invoke('GameServer/Formulas'), 'calcHitChance', () => true);
+            replace(Geo, 'hasLineOfSight', () => true);
+            replace(invoke('GameServer/Actor/Generics'), 'experienceReward', () => {});
+            replace(invoke('GameServer/World/Generics/NpcDecay'), 'schedule', () => {});
+            replace(invoke('GameServer/Items/SoulCrystalProgression'), 'onDeath', async () => {});
+            replace(Quests, 'onAttack', async () => {});
+            replace(Quests, 'onKill', async () => {});
+            replace(World, 'npc', { spawns: [] });
+            replace(World, 'fetchNpcsInRadius', () => []);
+            Index.reset(World);
+            // The drop lands at the far edge of its 50-unit scatter around the corpse.
+            const spawnAtCorpse = World.spawnItem;
+            replace(World, 'spawnItem', (s, selfId, amount, coords, cb) => spawnAtCorpse(s, selfId, amount, { ...coords, locX: coords.locX + 50 }, cb));
+            const hunter = bot(4, 0);
+            Object.assign(hunter.actor, { state: new State(), attack: new Attack(), effects: {}, hp: 1000,
+                backpack: { fetchTotalWeaponKind: () => 'Weapon.Sword' }, fetchRadius: () => 8, fetchName: () => 'Hunter',
+                fetchCollectiveAtkSpd: () => 333, fetchCollectiveRunSpd: () => 130, fetchMaxHp: () => 1000,
+                fetchHp() { return this.hp; }, statusUpdateVitals() {}, isBlocked() { return this.state.isBlocked(); } });
+            hunter.actor.attack.prepareMeleeHit = () => ({ damage: 50, flags: 0 });
+            replace(Bots, 'sessions', [hunter]);
+            replace(World, 'user', { sessions: [], revision: 0 });
+            World.insertUser(hunter);
+            const monster = Data.npcs.find(entry => entry.template?.kind === 'Monster');
+            const mob = new Npc(1500001, { ...utils.crushOb(monster), locX: 50, locY: 0, locZ: 0, head: 0 });
+            mob.setHp(1);
+            World.npc.spawns.push(mob);
+            Index.add(World, mob);
+            purchases.length = 0;
+            hunter.actor.attack.meleeHit(hunter, mob); // 333 attack speed: lands at 0.9 s, ends at 1.4 s
+            await wait(1150);
+            assert.strictEqual(World.items.spawns.length, 1, 'the killing hit drops a ground object');
+            assert.strictEqual(hunter.actor.x, 0, 'the hunter finishes its swing before it moves to the drop');
+            assert.strictEqual(Loot.startQueuedGroundPickup(hunter), true, 'the drop is the next action: the AI tick starts no other hunt');
+            await wait(1450);
+            assert.deepStrictEqual(purchases, [[4, 57, 11]], 'the hunter collects its drop right after the swing ends');
+            assert.deepStrictEqual(hunter.partyGroundPickupQueue, [], 'completion releases the queue');
+
+            // An order that stops the body mid-run (a stun, a teleport, a command)
+            // does not leave the drop waiting: the next AI tick runs to it again.
+            Rewards.call(World, hunter, { ...npc, fetchLocX: () => 400 });
+            await wait(200);
+            hunter.actor.automation.abortAll(hunter.actor);
+            const stoppedAt = hunter.actor.x;
+            assert.strictEqual(Loot.startQueuedGroundPickup(hunter), true, 'the drop stays the hunter\'s action');
+            await wait(300);
+            assert(hunter.actor.x > stoppedAt + 20, 'a stopped run to the drop is taken again at the next tick');
+
+            // Another member kills the victim of a picker mid-swing. The picker's
+            // hit timer clears its swing before the swing ends, yet it has taken
+            // the drop: the party still has a collector and must not pull on.
+            await wait(1500);
+            hunter.actor.automation.abortAll(hunter.actor);
+            Object.assign(hunter, { partyGroundPickupQueue: [], partyGroundPickupInProgress: false, partyGroundPickupRun: null });
+            World.items.spawns.length = 0;
+            hunter.actor.x = 0;
+            const victim = new Npc(1500002, { ...utils.crushOb(monster), locX: 50, locY: 0, locZ: 0, head: 0 });
+            victim.setHp(1000);
+            World.npc.spawns.push(victim);
+            Index.add(World, victim);
+            hunter.actor.attack.meleeHit(hunter, victim);
+            await wait(300);
+            victim.state.setDead(true);
+            Rewards.call(World, hunter, { ...npc, fetchLocX: () => 50 });
+            let waiting = false;
+            for (let i = 0; i < 80 && !waiting; i++) {
+                waiting = hunter.partyGroundPickupInProgress === true && hunter.partyGroundPickupRun == null
+                    && !hunter.actor.state.fetchHits();
+                if (!waiting) await wait(25);
+            }
+            assert(waiting, 'the swing clears before its end while the drop is already taken');
+            assert.strictEqual(Loot.collectingGroundLoot(hunter), true, 'a picker finishing its swing is still the party\'s collector');
+            const alive = hunter.actor.isDead;
+            hunter.actor.isDead = () => true;
+            assert.strictEqual(Loot.collectingGroundLoot(hunter), false, 'a dead body that took a drop collects nothing');
+            hunter.actor.isDead = alive;
+            await wait(2500); // the swing ends and the drop is collected
+            assert.strictEqual(hunter.partyGroundPickupInProgress, false, 'the collector finishes its drop');
+        }
+        console.log('Hot ground loot: native drop, movement, arrival, swing-end and resumed pickup, solo/party ownership and combat/support priority passed');
     } finally {
         actors.forEach(actor => actor.automation.abortAll(actor, { notifyClient: false }));
         saved.reverse().forEach(restore => restore());

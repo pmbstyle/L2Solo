@@ -54,7 +54,7 @@ try {
     wanted.x = 400;
     Geo.hasLineOfSight = () => true;
     follower.partyGroundPickupInProgress = true;
-    follower.partyGroundPickupDeadlineAt = 15000;
+    follower.partyGroundPickupRun = 0;
     tick(leader);
     assert.strictEqual(leader.lastDecision.action, 'party_wait_loot', 'a fresh pull waits for the physical collector');
     assert.strictEqual(attacks.length, 0);
