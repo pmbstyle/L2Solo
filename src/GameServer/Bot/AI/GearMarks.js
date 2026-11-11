@@ -48,12 +48,31 @@ const SELLER_REFUSALS = new Set(['no_affordable_offer', 'low_tier_offer_missing'
     'trade_meeting_purchase_price_changed', 'trade_meeting_quote_changed', 'trade_meeting_stock_changed',
     'afk_trade_stock_changed', 'afk_trade_shop_changed', 'afk_trade_shop_unavailable', 'afk_trade_line_unavailable',
     'afk_trade_price_changed', 'afk_trade_pricing_changed', 'npc_offer_unavailable',
-    'This store is not selling items.', 'Store listing changed.', 'Item is not available.', 'Store price changed.', 'Item is out of stock.']);
+    'This store is not selling items.', 'Store listing changed.', 'Item is not available.', 'Store price changed.', 'Item is out of stock.',
+    'private_store_unavailable', 'private_store_changed', 'private_store_stock_changed']);
 const sellerRefused = reason => SELLER_REFUSALS.has(reason);
 // The refusals for money (marking nothing), by the hot body's errors and the cold board writer's
 // codes: the bag short of the line, or the line past the step's place in the money queue.
 const FUNDING_REFUSALS = new Set(['Not enough Adena.', 'not_enough_adena', 'insufficient_adena', 'economy_funding_changed', 'npc_line_not_funded']);
-const fundingRefused = reason => FUNDING_REFUSALS.has(reason);
+// The board's and the meeting's refusals of a buy that are no seller's and no money's: the
+// buyer's or the seller's party busy, the meeting queue full, the buyer anchored to a meeting
+// elsewhere or in another preparation, its authority moved since the decision
+// (TradeMeetingService.prepareTrade, stage), the record now trading by meeting only
+// (Database.buyFromAfkTradeShop), the meeting cancelled before it traded, the hot body's
+// session gone during the deal (AfkTradeService.admitBotTrade). They mark nothing.
+const BUY_REFUSALS = new Set(['trade_meeting_party_busy', 'trade_meeting_backpressure',
+    'trade_meeting_point_changed', 'trade_meeting_authority_changed', 'trade_meeting_player_at_point', 'trade_meeting_required',
+    'trade_meeting_preparation_busy', 'trade_meeting_cancelled', 'economy_session_changed']);
+// A store or board buy's error, hot and cold: 'funding' (FUNDING_REFUSALS), 'seller'
+// (SELLER_REFUSALS: its quote marked), 'refused' (BUY_REFUSALS, or a named refusal of the
+// writer: writerRefused, Database.refused(error), passed in so no rule here reads the
+// database), else 'failed': anything else, a broken invariant included, the caller counts.
+function buyRefusal(error, writerRefused = false) {
+    const code = error?.message;
+    if (FUNDING_REFUSALS.has(code)) return 'funding';
+    if (SELLER_REFUSALS.has(code)) return 'seller';
+    return BUY_REFUSALS.has(code) || writerRefused ? 'refused' : 'failed';
+}
 const marksOf = stats => Array.isArray(stats?.gearMarks) ? stats.gearMarks : [];
 const keyOf = value => Number(value) > 0 ? Number(value) : null;
 // The key a gear errand names.
@@ -100,4 +119,4 @@ function forgetQuotes(stats) {
 // The items marked (the gear plan's exclusions), and the refused quotes [key, town, price].
 const keys = stats => marksOf(stats).filter(mark => mark.town === undefined).map(mark => mark.key);
 const quotes = stats => marksOf(stats).filter(mark => mark.town !== undefined).map(mark => [mark.key, mark.town, mark.price]);
-module.exports = { MAX_MARKS, MAX_QUOTES, LIFETIME, QUOTE_LIFETIME, errandKey, withMark, quoteOf, sellerRefused, fundingRefused, marked, refused, forget, forgetQuotes, keys, quotes };
+module.exports = { MAX_MARKS, MAX_QUOTES, LIFETIME, QUOTE_LIFETIME, errandKey, withMark, quoteOf, sellerRefused, buyRefusal, marked, refused, forget, forgetQuotes, keys, quotes };

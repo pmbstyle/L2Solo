@@ -141,14 +141,6 @@ function observePurchase(offer, units, state) {
     }); } catch (error) { utils.infoWarn('BotMarket', 'committed purchase telemetry deferred: %s', error.message); }
 }
 
-// The board's and the meeting's refusals of a buy that are no seller's (GearMarks.SELLER_REFUSALS)
-// and no money's (GearMarks.FUNDING_REFUSALS): the buyer's or the seller's party busy, the
-// meeting queue full, the buyer anchored to a meeting elsewhere, its authority moved since the
-// decision (TradeMeetingService.prepareTrade, stage), the record now trading by meeting only
-// (Database.buyFromAfkTradeShop). They end the line's buy unmarked; any other code is a failure.
-const BOARD_BUY_REFUSALS = new Set(['trade_meeting_party_busy', 'trade_meeting_backpressure',
-    'trade_meeting_point_changed', 'trade_meeting_authority_changed', 'trade_meeting_player_at_point', 'trade_meeting_required']);
-
 // Buys `options.qty` (one by default) of a found offer for a cold bot: a
 // board record through AfkTradeService (one deal transaction), otherwise an
 // NPC or a configured city merchant. No goal or travel change; an NPC
@@ -205,19 +197,18 @@ function buyOffer(state, offer, options = {}) {
                 ...(invoke('GameServer/AfkTrade/TradeMeetingService').paysInPreparation(state.characterId) ? { pending: true } : {}),
                 purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
-            const back = LifeState.cachedState(state.characterId) || state, code = error?.message;
+            const back = LifeState.cachedState(state.characterId) || state;
+            const refusal = GearMarks.buyRefusal(error, invoke('Database').refused(error));
             // The writer refused for money (the bag, or the step's place in the money queue): a
             // purse short of the line, as the buyer's own check (funding_short).
-            if (GearMarks.fundingRefused(code)) {
+            if (refusal === 'funding') {
                 MarketTelemetry.fundingShort();
                 return { state: back, purchased: false, blocked: true, reason: 'funding_short' };
             }
-            // A refusal at the seller (the line, stock, price or record changed:
-            // GearMarks.SELLER_REFUSALS marks its quote), the board's or the meeting's other
+            // A refusal at the seller (its quote marked), the board's or the meeting's other
             // refusals, or another named writer refusal (its facts moved since the decision):
             // under its own name. Anything else, a broken invariant included, failed.
-            if (GearMarks.sellerRefused(code) || BOARD_BUY_REFUSALS.has(code) || invoke('Database').refused(error))
-                return { state: back, purchased: false, reason: code };
+            if (refusal !== 'failed') return { state: back, purchased: false, reason: error?.message };
             FailureLog.note('economy.cold_board_buy', error);
             return { state: back, purchased: false, reason: 'purchase_failed' };
         });
