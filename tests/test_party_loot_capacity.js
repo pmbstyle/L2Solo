@@ -23,7 +23,7 @@ function session(id, items = [], maxLoad = 1000) {
     backpack.items = items;
     return { actor: {
         backpack, fetchId: () => id, fetchRace: () => 0, fetchMaxLoad: () => maxLoad,
-        fetchLocX: () => 0, fetchLocY: () => 0,
+        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
         fetchIsOnline: () => true, isDead: () => false
     }, packets: [], dataSendToMe(packet) { this.packets.push(packet); }, dataSendToMeAndOthers() {} };
 }

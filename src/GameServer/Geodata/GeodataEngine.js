@@ -7,6 +7,9 @@ const VirtualObstacles = invoke('GameServer/Geodata/VirtualObstacles/index');
 const REGION_OFFSET_X = 20;
 const REGION_OFFSET_Y = 18;
 const MAX_LAYER_STEP = 64;
+// Where the latest straightMoveEnd walk stopped: scratch of that one call,
+// read before it returns and never kept (no allocation on the sight path).
+const walkStop = { cx: 0, cy: 0, cz: 0 };
 let sharedGeodata = null;
 
 function getSharedGeodata(directory) {
@@ -389,7 +392,41 @@ const GeodataEngine = {
     },
 
     hasLineOfSight(fromX, fromY, fromZ, toX, toY, toZ) {
-        if (GardenOfEvaBarriers.blocks(fromX, fromY, fromZ, toX, toY, toZ)) return false;
+        return this.walkStraight(fromX, fromY, fromZ, toX, toY, toZ, null);
+    },
+
+    // How far a straight move from a point toward another goes (C4: Lisvus
+    // GeoData.moveCheck, Mobius GeoEngine.getValidLocation): the target when
+    // the walk reaches it, otherwise the centre of the last cell the walk
+    // stood on, or the start point when it could not take one step. locZ is
+    // the floor the walk ended on. Our choice: a walk that comes to the
+    // target's cell on another floor ends in that cell on its own floor (C4
+    // sends it back to the start). Callers: a ground drop's landing point
+    // (NpcRewards), a pickup run's end (Automation), on main.
+    straightMoveEnd(fromX, fromY, fromZ, toX, toY, toZ) {
+        const reached = this.walkStraight(fromX, fromY, fromZ, toX, toY, toZ, walkStop);
+        if (reached) return { locX: toX, locY: toY, locZ: walkStop.cz, reached };
+        if (walkStop.cx === fromX >> 4 && walkStop.cy === fromY >> 4) {
+            return { locX: fromX, locY: fromY, locZ: walkStop.cz, reached };
+        }
+        return { locX: (walkStop.cx << 4) + 8, locY: (walkStop.cy << 4) + 8, locZ: walkStop.cz, reached };
+    },
+
+    // The one walk of the straight-step rule, for sight (hasLineOfSight) and
+    // for movement (straightMoveEnd), on main and in the pathfinding workers:
+    // the cells under the line, one step at a time. A step needs the NSWE
+    // flags of both cells (our rule; C4's moveCheck asks only the cell being
+    // left) and a floor step of at most MAX_LAYER_STEP. True when the walk
+    // ends on the target's cell and floor. With `stop` it also reports the
+    // last cell it stood on and that cell's floor.
+    walkStraight(fromX, fromY, fromZ, toX, toY, toZ, stop) {
+        if (GardenOfEvaBarriers.blocks(fromX, fromY, fromZ, toX, toY, toZ)) {
+            if (stop) {
+                stop.cx = fromX >> 4; stop.cy = fromY >> 4;
+                stop.cz = this.getCellData((stop.cx << 4) + 8, (stop.cy << 4) + 8, fromZ).z;
+            }
+            return false;
+        }
         let cx = fromX >> 4;
         let cy = fromY >> 4;
 
@@ -401,6 +438,7 @@ const GeodataEngine = {
         let cz = startCell.z;
 
         if (cx === targetCx && cy === targetCy) {
+            if (stop) { stop.cx = cx; stop.cy = cy; stop.cz = cz; }
             // A multilevel block can contain several floors in the same XY
             // cell.  Treating that as unconditional visibility is exactly
             // what lets Cruma mobs see through a ceiling.
@@ -416,6 +454,7 @@ const GeodataEngine = {
 
         let floatCx = cx;
         let floatCy = cy;
+        let blocked = false;
 
         for (let i = 0; i < steps; i++) {
             const nextCx = Math.round(floatCx + xInc);
@@ -458,7 +497,8 @@ const GeodataEngine = {
                 }
 
                 if (!path1Passable && !path2Passable) {
-                    return false;
+                    blocked = true;
+                    break;
                 }
 
                 cz = path1Passable ? cellDiag.z : cellDiagViaVertical.z;
@@ -467,7 +507,8 @@ const GeodataEngine = {
                 const cellNext = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cz);
 
                 if (Math.abs(cellNext.z - cellCurr.z) > MAX_LAYER_STEP) {
-                    return false;
+                    blocked = true;
+                    break;
                 }
 
                 let passable = false;
@@ -482,7 +523,8 @@ const GeodataEngine = {
                 }
 
                 if (!passable) {
-                    return false;
+                    blocked = true;
+                    break;
                 }
 
                 cz = cellNext.z;
@@ -499,7 +541,8 @@ const GeodataEngine = {
         // finishes on the target's resolved layer instead of a floor above
         // or below it. Missing geodata keeps the historical permissive
         // fallback so uncovered outdoor regions do not become opaque.
-        return !hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP;
+        if (stop) { stop.cx = cx; stop.cy = cy; stop.cz = cz; }
+        return !blocked && (!hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP);
     },
 
     // Runs the whole search in one go (findPathSteps without pauses).

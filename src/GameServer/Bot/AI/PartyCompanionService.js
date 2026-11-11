@@ -337,6 +337,15 @@ function canPickGroundLoot(session, leaderSession, item) {
     return distance2d(actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
 }
 
+// A pickup is one straight run (Automation.pickupRun). A body with no
+// straight run to within reach of the drop does not take it. Our choice: a bot
+// does not walk round an obstacle to a drop; the drop waits on the ground for
+// a member with a clear line, or for this body from where it stands at a
+// later loot scan.
+function reachesGroundLoot(session, item) {
+    return invoke('GameServer/Automation').pickupRun(session.actor, item).inReach;
+}
+
 function autonomousLootBot(session) {
     return !!session && !session.partyCompanion && (session.hotBackgroundPartyId
         || session.botSession === true || String(session.accountId || '').startsWith('bot_'));
@@ -482,10 +491,10 @@ function nearestGroundLootPicker(looterSession, item) {
             Number(a.actor.fetchId()) - Number(b.actor.fetchId())
         ));
     if (partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) {
-        const ready = pickers.find(member=>canLootDuringCombat(member,leaderSession,item));
+        const ready = pickers.find(member=>canLootDuringCombat(member,leaderSession,item) && reachesGroundLoot(member,item));
         if (ready) return ready;
     }
-    return pickers[0] || null;
+    return pickers.find(member => reachesGroundLoot(member, item)) || null;
 }
 
 function startQueuedGroundPickup(pickerSession) {
@@ -555,7 +564,8 @@ function startQueuedGroundPickup(pickerSession) {
     if (!queuedItem ||
         !isOwnedPartyGroundLoot(leaderSession, queuedItem) ||
         !isInsidePartyGroundLootLeash(leaderSession, queuedItem) ||
-        !canPickGroundLoot(pickerSession, leaderSession, queuedItem)) {
+        !canPickGroundLoot(pickerSession, leaderSession, queuedItem) ||
+        !reachesGroundLoot(pickerSession, queuedItem)) {
         queue.shift();
         return startQueuedGroundPickup(pickerSession);
     }
