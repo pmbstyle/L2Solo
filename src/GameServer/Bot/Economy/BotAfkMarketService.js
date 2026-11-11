@@ -897,79 +897,6 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     // A craft whose preparation went stale cannot run (stale: the coordinator raises its failure).
     if (crafted?.stale) return { state, buyPending: true, stale: true };
     if (TradeMeetingService.hasPreparation(ownerId)) return { state, pending: true };
-    // Publish the checked buy batch before independent sale custody writes.
-    // Moving surplus into a shop or withdrawing a listing advances the own
-    // revision too; it must not starve an unchanged recipe request forever.
-    // An empty desired list closes the old ads; it does not run another bid
-    // decision on main. The plan's quote remains the quote the worker made.
-    // An earlier native improvement/craft may have filled the root or
-    // changed its inputs. Publishing its old certificate at the new revision
-    // would manufacture fresh authority from stale need. Keep it pending.
-    const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
-    let buyPending = Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd());
-    const published = Object.hasOwn(plan, 'buyAds') && !buyPending ? await run(async () => {
-        if (!stillPrepared()) throw Error('economy_plan_need_changed');
-        if (filledAd()) return { state, buyPending: true };
-        // One read of the owner's records: nothing below writes before publishBuyAds.
-        const ads = buyAds(ownerId), escrow = buyOrderEscrow(ownerId);
-        if (Object.hasOwn(plan, 'buyCaps') && (!Array.isArray(plan.buyCaps) || plan.buyCaps.length !== plan.buyAds.length
-            || plan.buyCaps.some((cap, at) => cap !== null && (!Number.isSafeInteger(cap) || cap < 1 || plan.buyAds[at][2] > cap))))
-            throw Error('economy_plan_bid_cap');
-        // Unenchanted bids: their pricing state needs no forecast (see plan.sell).
-        const ctx = ListingPolicy.cardTraderContext(state);
-        if (Diagnostics.active()) Diagnostics.count('trader_context', 'card', 'plan_buy');
-        let money = PurchaseFunding.budget(state, escrow);
-        // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
-        // A survival item's ad may spend its kit cost from the survival
-        // reserve, as the meeting and the NPC restock do (each item once):
-        // the tranche the worker decided the bid with (plan.buyKit).
-        let wanted = (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).map((row, at) => {
-            const [selfId, count, price] = row;
-            const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
-            const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
-            if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
-                || count * price > PurchaseFunding.spendable(state, escrow,
-                    { ...(intent ? PurchaseFunding.intentTerms(intent) : { itemId: selfId }), survivalCost })) {
-                throw Error('economy_plan_bid_unfunded');
-            }
-            if (!intent) money -= count * price;
-            const item = ItemTemplateIndex.find(DataCache.items, selfId);
-            return { selfId, count, price, intent, survivalCost, purchaseCap: plan.buyCaps?.[at] ?? Infinity,
-                enchant: 0, name: item?.template?.name || `Item ${selfId}`,
-                slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
-                pricing: MarketPricing.lineState(selfId, ctx,
-                    { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
-        });
-        // A standing bid may have been repriced since worker preparation.
-        // Bound its prepared quantity at the price reconciliation will keep;
-        // this does not choose a new price or rebuild the worker's wishes.
-        const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
-        const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow,
-            BuyAdPolicy.heldPurchaseRoot(invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state)));
-        let town = buyAdTown(state, ads, wanted);
-        for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
-            wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
-            const nextTown = buyAdTown(state, ads, wanted);
-            if (!wanted.length || nextTown === town) break;
-            town = nextTown;
-        }
-        if (!wanted.length) {
-            if (ads.length) await publishBuyAds(ownerId, ads, [], ads[0].town, authority);
-            return { state: LifeState.cachedState(ownerId) || state };
-        }
-        await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
-        return { state: LifeState.cachedState(ownerId) || state };
-    }).catch((error) => {
-        // An outcome refusal (the money the worker funded a bid with was spent by an
-        // earlier step, a need or a record that moved, a full board) is counted, the
-        // plan's bids go stale (the next build bids again) and the step goes on. Anything
-        // else (a plan main and the worker disagree on, a retired worker) is a fault.
-        if (!PLAN_BID_REFUSALS.has(error?.message) || !FailureLog.refusal(error)) throw error;
-        planBidRefused[error.message] = (planBidRefused[error.message] || 0) + 1;
-        return { state: LifeState.cachedState(ownerId) || state, buyPending: true, stale: true };
-    }) : null;
-    buyPending ||= !!published?.buyPending;
     if (plan.withdraw?.length) await run(async () => {
         const own = new Map(AfkTrade.boardIndex().ownerLines(ownerId).map(line => [line.lineId, line]));
         const withdrawals = [];
@@ -1044,6 +971,76 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         return listSellAds(ownerId, state, listings, shop,
             () => Database.fetchItems(ownerId, 'market_execute_plan'), { planTowns });
     });
+    // An empty desired list closes the old ads; it does not run another bid
+    // decision on main. The plan's quote remains the quote the worker made.
+    // An earlier native improvement/craft may have filled the root or
+    // changed its inputs. Publishing its old certificate at the new revision
+    // would manufacture fresh authority from stale need. Keep it pending.
+    const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
+    let buyPending = Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd());
+    const published = Object.hasOwn(plan, 'buyAds') && !buyPending ? await run(async () => {
+        if (!stillPrepared()) throw Error('economy_plan_need_changed');
+        if (filledAd()) return { state, buyPending: true };
+        // One read of the owner's records: nothing below writes before publishBuyAds.
+        const ads = buyAds(ownerId), escrow = buyOrderEscrow(ownerId);
+        if (Object.hasOwn(plan, 'buyCaps') && (!Array.isArray(plan.buyCaps) || plan.buyCaps.length !== plan.buyAds.length
+            || plan.buyCaps.some((cap, at) => cap !== null && (!Number.isSafeInteger(cap) || cap < 1 || plan.buyAds[at][2] > cap))))
+            throw Error('economy_plan_bid_cap');
+        // Unenchanted bids: their pricing state needs no forecast (see plan.sell).
+        const ctx = ListingPolicy.cardTraderContext(state);
+        if (Diagnostics.active()) Diagnostics.count('trader_context', 'card', 'plan_buy');
+        let money = PurchaseFunding.budget(state, escrow);
+        // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
+        // A survival item's ad may spend its kit cost from the survival
+        // reserve, as the meeting and the NPC restock do (each item once):
+        // the tranche the worker decided the bid with (plan.buyKit).
+        let wanted = (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).map((row, at) => {
+            const [selfId, count, price] = row;
+            const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
+            const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
+            if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
+                || count * price > PurchaseFunding.spendable(state, escrow,
+                    { ...(intent ? PurchaseFunding.intentTerms(intent) : { itemId: selfId }), survivalCost })) {
+                throw Error('economy_plan_bid_unfunded');
+            }
+            if (!intent) money -= count * price;
+            const item = ItemTemplateIndex.find(DataCache.items, selfId);
+            return { selfId, count, price, intent, survivalCost, purchaseCap: plan.buyCaps?.[at] ?? Infinity,
+                enchant: 0, name: item?.template?.name || `Item ${selfId}`,
+                slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
+                pricing: MarketPricing.lineState(selfId, ctx,
+                    { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
+        });
+        // A standing bid may have been repriced since worker preparation.
+        // Bound its prepared quantity at the price reconciliation will keep;
+        // this does not choose a new price or rebuild the worker's wishes.
+        const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
+        const owned = AfkTrade.boardIndex().ownerLines(ownerId);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow,
+            BuyAdPolicy.heldPurchaseRoot(invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state)));
+        let town = buyAdTown(state, ads, wanted);
+        for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
+            wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
+            const nextTown = buyAdTown(state, ads, wanted);
+            if (!wanted.length || nextTown === town) break;
+            town = nextTown;
+        }
+        if (!wanted.length) {
+            if (ads.length) await publishBuyAds(ownerId, ads, [], ads[0].town, authority);
+            return { state: LifeState.cachedState(ownerId) || state };
+        }
+        await publishBuyAds(ownerId, ads, wanted, town, authority, plan.buyShop || 0);
+        return { state: LifeState.cachedState(ownerId) || state };
+    }).catch((error) => {
+        // An outcome refusal (the money the worker funded a bid with was spent by an
+        // earlier step, a need or a record that moved, a full board) is counted, the
+        // plan's bids go stale (the next build bids again) and the step goes on. Anything
+        // else (a plan main and the worker disagree on, a retired worker) is a fault.
+        if (!PLAN_BID_REFUSALS.has(error?.message) || !FailureLog.refusal(error)) throw error;
+        planBidRefused[error.message] = (planBidRefused[error.message] || 0) + 1;
+        return { state: LifeState.cachedState(ownerId) || state, buyPending: true, stale: true };
+    }) : null;
+    buyPending ||= !!published?.buyPending;
     if (buyPending) return { state, buyPending: true, ...(!stillPrepared() || published?.stale ? { stale: true } : {}) };
     if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {

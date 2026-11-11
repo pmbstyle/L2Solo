@@ -46,7 +46,7 @@ const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoW
         : name === '../../Inventory/ArrowStock' ? require(root + '/src/GameServer/Inventory/ArrowStock')
         : name === '../Population/ColdEconomyDecision' ? Decision
         : name === '../Population/CombinedErrandPolicy' ? { pending: () => [], ERRAND_MS: 1 }
-        : name === './OfferOrder' ? { farmingOrigin: () => null, tripCost: () => () => 0 }
+        : name === './OfferOrder' ? { farmingOrigin: () => null, tripCost: () => () => 0, purchaseTrip: () => () => 0 }
         : name === './OfferQuery' ? { cheapestTown: (_board, _id, options) => { quoted.push(options); return null; } } : {} };
 vm.runInNewContext(fs.readFileSync(root + '/src/GameServer/Bot/Economy/ColdMarketService.js', 'utf8'), sandbox, { filename: 'ColdMarketService.js' });
 const Market = sandbox.module.exports;

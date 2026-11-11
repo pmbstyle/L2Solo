@@ -1,4 +1,10 @@
 const assert = require('assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const geodataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spawn-drop-height-'));
+const previousGeodataDir = process.env.L2NODE_GEODATA_DIR;
+process.env.L2NODE_GEODATA_DIR = geodataDir;
 const { useRate } = require('./helpers/progressionRate');
 require('../src/Global');
 
@@ -121,4 +127,7 @@ try {
 } finally {
     created.forEach(npc => npc?.destructor?.({ dataSendToMe() {}, dataSendToMeAndOthers() {} }));
     restores.reverse().forEach(restore => restore());
+    if (previousGeodataDir === undefined) delete process.env.L2NODE_GEODATA_DIR;
+    else process.env.L2NODE_GEODATA_DIR = previousGeodataDir;
+    fs.rmSync(geodataDir, { recursive: true, force: true });
 }

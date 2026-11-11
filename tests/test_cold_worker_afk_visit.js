@@ -1,4 +1,6 @@
 'use strict';
+// Keep these market fixtures independent of optional reserve shot merchants.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 const assert = require('node:assert/strict');
 const { createWorld, Database, DataCache } = require('./helpers/c4QuestHarness');
 const nativeDecision = require('./helpers/workerEconomyDecision');
