@@ -776,6 +776,9 @@ class WishNetwork {
             }
         }
         wishes = wishes.filter(kept);
+        // The roots still wished for before any tier is read: a goal the money does not serve
+        // yet is still wanted (the build's craft hold keeps its inputs, CraftInputReservations).
+        const wished = wishes.map(wish => wish.key);
         const floor = hourAdena > 0 ? 1 / hourAdena : 0;
         // A required goal that pays no money floor even with the whole focus on it (an exchange
         // or a craft dearer than its item's worth) holds no money and no funding gap
@@ -1063,7 +1066,7 @@ class WishNetwork {
             }
             if (heldActivity && activity !== heldActivity && decisionSeq === inputDecisionSeq) { decisionSeq++; activityLeaf = 0; }
         }
-        const result = { inputKey, queue, moneyPrice, available, gap, hourAdena, bagShort,
+        const result = { inputKey, queue, wished, moneyPrice, available, gap, hourAdena, bagShort,
             quantityPrepared: !!stockFor,
             focus, dormant, activity, demands, plans, decisionSeq,
             activityLeaf: individual && activity ? leafId(activity) : 0 };

@@ -78,9 +78,9 @@ assert(Packet.firstUnfundedPrice(poorChoice.state.stats.money) > 0, 'a real unfu
 assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
     'the old jewellery plan alone cannot authorize its debit');
 
-// While the sale retry holds, a sale leaf names no kind the last sale visit could not place
-// (stats.marketSellSeen): it would only send the bot back to leave it in the bag again. A kind
-// it did not try (or a new buyer) ends the retry: every kind is for sale again.
+// A sale leaf names no kind the last sale visit could not place (stats.marketSellSeen) with no
+// new buyer of it: it would only send the bot back to leave it in the bag again. A kind it did
+// not try (or a new buyer of one) opens only itself: the kinds the visit kept stay no sale.
 {
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -92,7 +92,31 @@ assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }),
     assert(Disposition.saleRetryHolds(after), 'fixture: nothing new since the visit');
     assert.deepStrictEqual(kinds(after), kinds(seller).filter(id => !seen.includes(id)), 'the kinds the last visit kept are no sale');
     const newKind = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: seen.slice(1), buyers: null } } };
-    assert.deepStrictEqual(kinds(newKind), kinds(seller), 'a kind the visit did not try sends every kind to sale again');
+    assert.deepStrictEqual(kinds(newKind), kinds(seller).filter(id => !seen.slice(1).includes(id)),
+        'a kind the visit did not try is for sale, the kinds it kept are not');
+    // A grade crystal no sale leaf offers (it waits on the bot's own shop) is new to the
+    // retry, yet the leaf names none of the kinds the visit kept.
+    const crystal = { ...after, inventory: { ...after.inventory, 1458: { selfId: 1458, amount: 20, stackable: true } } };
+    assert.deepStrictEqual(kinds(crystal), kinds(after), 'a crystal in the bag sends no kept kind to sale again');
+    // Soul Ore bought for the shots the bot still wishes for (its craft hold) is no new goods:
+    // the retry holds and no sale offers it.
+    const ore = { ...after, inventory: { ...after.inventory, 1785: { selfId: 1785, amount: 30, stackable: true } },
+        stats: { ...after.stats, craftHold: [['stock:shots', [[1458, 10], [1785, 30]]]] } };
+    assert(Disposition.saleRetryHolds(ore), 'an input bought for a held craft does not end the sale retry');
+    assert(!kinds(ore).includes(1785), 'the held craft input is no sale');
+    // A new buyer of a kept kind opens that kind alone; a better bid on a kind the bag no longer
+    // holds sends the bot to sell nothing: the retry holds.
+    const bids = {};
+    Disposition.useBoard(() => ({ list: id => bids[id] ? [{ ownerId: 99, price: 1e9, count: 5 }] : [] }));
+    try {
+        const watched = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: [...seen, 1458], buyers: [...seen, 1458].map(() => [0, 0]) } } };
+        bids[1458] = true;
+        assert(Disposition.saleRetryHolds(watched), 'a bid on goods the bag no longer holds does not end the retry');
+        bids[seen[0]] = true;
+        assert(!Disposition.saleRetryHolds(watched), 'a new buyer of a kept kind ends the retry');
+        assert.deepStrictEqual(kinds(watched), kinds(seller).filter(id => id === seen[0] || !seen.includes(id)),
+            'the kind with a new buyer is for sale, the other kept kinds are not');
+    } finally { Disposition.useBoard(() => invoke('GameServer/AfkTrade/AfkTradeService').boardIndex()); }
 }
 
 const botOffer = { ...npcJewellery, partyNeedReason: 'market_fallback', market: { ...npcJewellery.market, sourceType: 'afk_bot_store' } };

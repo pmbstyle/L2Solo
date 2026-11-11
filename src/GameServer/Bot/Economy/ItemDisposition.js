@@ -294,10 +294,16 @@ function buyersOf(board, ids, characterId) {
 
 // What a sale visit could not place (stats.marketSellSeen, written at its end
 // and at a hot sell trip's start): the kinds of sale candidates it left in the
-// bag (none, when it placed everything) and the board's buyers of them. The sale retry
-// holds while the bag offers no kind it did not try and no new or better buyer
-// of those came: a new fact, not a clock, sends the bot to sell again (maintainer,
-// 2026-11-05). Before the worker's board is ready only the kinds are compared.
+// bag (none, when it placed everything) and the board's buyers of them. A kind is
+// open for sale (openSaleKinds) when the visit did not try it or a new or better
+// buyer of it came: a new fact, not a clock, sends the bot to sell again (maintainer,
+// 2026-11-05). The sale retry holds while no kind in the bag is open; the build's sale
+// leaf offers open kinds only, and a held sale step is spent when none of its kinds left
+// is open (EconomyContext.saleSpent): one answer per kind for all three, so a new kind
+// (a crystal, an input bought for a craft) opens only itself, never the kinds the visit
+// already failed to place. Our choice after C4 play: a player who could not sell X does
+// not walk back to try X because he picked up Y; he sells Y, and X only when someone new
+// shouts WTB X. Before the worker's board is ready only the kinds are compared.
 // The kinds are read with the whole kit kept (its potions, its Scroll of
 // Escape; shots are the bot's own), not the kit targets, which read this retry:
 // restocking the kit in town is no new goods to sell.
@@ -313,14 +319,23 @@ function saleSeen(state) {
     return { items, buyers: board ? buyersOf(board, items, state.characterId) : null };
 }
 
+// The kinds of ids open for sale (a Set): all of them before any sale visit; after one, the
+// kinds it did not try and the tried ones whose foreign buyers on the board are new or better
+// than the visit saw (both threads: useBoard).
+function openSaleKinds(state, ids) {
+    const seen = state?.stats?.marketSellSeen, kinds = [...new Set((ids || []).map(Number))];
+    if (!Array.isArray(seen?.items)) return new Set(kinds);
+    const open = new Set(kinds.filter(id => !seen.items.includes(id)));
+    const tried = kinds.filter(id => !open.has(id));
+    const board = tried.length && Array.isArray(seen.buyers) ? boardSource() : null;
+    if (board) buyersOf(board, tried, state.characterId).forEach(([best, units], at) => {
+        const was = seen.buyers[seen.items.indexOf(tried[at])];
+        if (best > Number(was?.[0] || 0) || units > Number(was?.[1] || 0)) open.add(tried[at]);
+    });
+    return open;
+}
 function saleRetryHolds(state) {
-    const seen = state?.stats?.marketSellSeen;
-    if (!Array.isArray(seen?.items)) return false;
-    const tried = new Set(seen.items);
-    if (retryKinds(state).some(id => !tried.has(id))) return false;
-    const board = Array.isArray(seen.buyers) ? boardSource() : null;
-    return !board || buyersOf(board, seen.items, state.characterId)
-        .every(([best, units], at) => best <= Number(seen.buyers[at]?.[0] || 0) && units <= Number(seen.buyers[at]?.[1] || 0));
+    return Array.isArray(state?.stats?.marketSellSeen?.items) && openSaleKinds(state, retryKinds(state)).size === 0;
 }
 
 function soloSaleSlotLimit(state = {}, retry) {
@@ -746,7 +761,7 @@ function saleFreeAmount(state, item, reserved = {}, known = null) {
     invoke('GameServer/Bot/Economy/WealthCraftDecision').freeUnits(state, item, reserved, equippedCount, protectedAmount));
 }
 
-const { selectedCraftAmounts } = require('./CraftInputReservations');
+const { holdAmounts } = require('./CraftInputReservations');
 // The stock a sale keeps: potions, crafter ammunition and travel scrolls at
 // their restock targets, the build's kit rates over the bag (EconomyContext.keptTargets;
 // a bag no build rated yet is kept whole). Ordinary bots retain their current ammunition
@@ -766,7 +781,7 @@ function keptStock(state) {
 // asked by the card's check, the held build's verdict and the build. Inputs
 // (the key): the bag (an inventory object and its rows are replaced, never
 // edited), the merged reserves (equipment and production reserves,
-// clan, henna, the caller's reserved and kept stock), the arrows' sale amounts,
+// clan, henna, the caller's reserved, the craft hold and kept stock), the arrows' sale amounts,
 // the personal shot, the state fields the walk reads (characterId, shotCraft
 // product and unit price, clanMarketDemand, clanMaterialDemand), the options it
 // reads (limit, onlyNpc, presenceOnly) and its tables (item templates, newbie
@@ -786,6 +801,10 @@ function saleCandidates(state, options = {}) {
         reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
     for (const [id, amount] of Object.entries(options.reserved || {}))
         reserved[id] = Math.max(Number(reserved[id] || 0), Number(amount) + Number(clan[id] || 0));
+    // The bot's standing craft hold over the bag walked here (CraftInputReservations.holdAmounts):
+    // every sale, listing, price and retry keeps the inputs of the crafts it still wishes for.
+    for (const [id, amount] of Object.entries(holdAmounts(state)))
+        reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
     const kept = options.keptAmounts || keptStock(state);
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount + Number(clan[selfId] || 0));
@@ -1044,6 +1063,7 @@ module.exports = {
     soloSaleSlotLimit,
     saleSlots,
     saleSeen,
+    openSaleKinds,
     saleRetryHolds,
     useBoard,
     npcOnlySlotCount,
@@ -1071,7 +1091,6 @@ module.exports = {
     reservationInputKey,
     saleCandidates,
     keptStock,
-    selectedCraftAmounts,
     saleFreeAmount,
     saleSummary,
     isSpareConsumable,

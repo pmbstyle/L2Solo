@@ -44,9 +44,6 @@ class CompactActivity {
         if (leaf.targetId) this.targetId = leaf.targetId;
         if (leaf.funding) this.funding = true;
         if (leaf.items) this.items = leaf.items.slice(0, 8).map(Number);
-        // The held build's craft inputs as [id, need] rows, not capped by the bag: each
-        // reader caps them by the bag it reads (CraftInputReservations.selectedCraftAmounts).
-        if (leaf.craftReservations?.length) this.craftReservations = leaf.craftReservations;
         // A shop step's own root bids its buyer may take back to pay it (WishNetwork).
         if (leaf.bids?.length) this.bids = leaf.bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number);
         if (leaf.activity === 'improving' && leaf.improvement) this.improvement = { ...leaf.improvement };
@@ -89,7 +86,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17], craftReservations: row[18], bids: row[19] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17], bids: row[19] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -158,10 +155,10 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
+        // Slot 18 is empty: a card saved before keeps its craft inputs there, which no reader
+        // reads (the bot's craft hold carries them: CraftInputReservations).
         ...(leaf.bids?.length ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null,
-            leaf.unitPrice ?? null, leaf.r ?? null, leaf.craftReservations?.length ? leaf.craftReservations : null, leaf.bids]
-            : leaf.craftReservations?.length ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null,
-            leaf.unitPrice ?? null, leaf.r ?? null, leaf.craftReservations]
+            leaf.unitPrice ?? null, leaf.r ?? null, null, leaf.bids]
             : leaf.town || leaf.sourceType || leaf.unitPrice !== undefined || leaf.r !== undefined
             ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null,
                 ...(leaf.r !== undefined ? [leaf.r] : [])]
@@ -310,7 +307,6 @@ function capture(economy, state, seen = state) {
         if (left > 0) missing.set(id, left); else missing.delete(id);
     }
     const activity = leaf ? new CompactActivity(leaf) : null;
-    if (activity && economy?.network?.craftNeeds?.length) activity.craftReservations = economy.network.craftNeeds;
     // A served plan keeps its decision's count (withHeldUnits): stamped anew, a
     // partial fill would order the whole amount again and a hunt lose its progress.
     const held = activity ? heldAtDecisionOf(activity, seen) : undefined;
@@ -455,10 +451,8 @@ function view(state, decision, deps = {}, preparedBase = null) {
     // The kit: the build's own when it prepared these basics, else its published rates over the bag (EconomyContext.keptKit).
     let kit = preparedBase;
     const kitOf = () => kit ||= invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state, baseDeps);
-    // The network carries the held craft's inputs as a built one does (craftNeeds): a
-    // sale or storage read caps them by its own bag.
     const own = { state, hourAdena, moneyPrice, refillReserve: valid ? Number(Packet.refillReserve(packet)) : base.refillReserve,
-        board, network: { activity, ...(activity?.craftReservations ? { craftNeeds: activity.craftReservations } : {}) }, activity, wish,
+        board, network: { activity }, activity, wish,
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]),
             ...(row[3] === SHOT_RECIPE_WATCH ? { shotRecipeInvestment: true } : {}) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
@@ -532,7 +526,7 @@ function advisory(economy, state, activity = state.activity) {
         activityLeaf: packet ? Number(packet.activityLeaf || 0) : undefined,
         focus: packet ? packet.wishFocus?.[0] ?? null : undefined, baseline: packet?.wishSections,
         // The build's own wish fields, re-proposed while its commit has not landed (pendingCommit).
-        decided: packet ? { wishFocus: packet.wishFocus, dormantWishes: packet.dormantWishes } : null,
+        decided: packet ? { wishFocus: packet.wishFocus, dormantWishes: packet.dormantWishes, craftHold: packet.craftHold } : null,
         activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp) };
     const restartProof = Economy.restartEventProof(eventProof, accepted);
     accepted.saved = restartProof ? RestartDecision.encode({ ...accepted, eventProof: restartProof },
@@ -673,7 +667,7 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     if (pending && Diagnostics.active()) Diagnostics.count('card', 'pending', 'served');
     const held = pending ? { ...accepted.decided, decisionSeq: accepted.decisionSeq,
         activityLeaf: accepted.activityLeaf } : state.stats;
-    economy.statsPacket = { wishFocus: held.wishFocus, dormantWishes: held.dormantWishes,
+    economy.statsPacket = { wishFocus: held.wishFocus, dormantWishes: held.dormantWishes, craftHold: held.craftHold,
         decisionSeq: held.decisionSeq, activityLeaf: held.activityLeaf, money: state.stats.money,
         kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline,
         wishAdvisory: accepted.saved || null };

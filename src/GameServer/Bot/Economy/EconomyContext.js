@@ -144,7 +144,7 @@ function activityIdentity(leaf) {
     const value = new ColdEconomyDecision.CompactActivity(leaf);
     // These are the card's derived execution/funding annotations, not a
     // different selected activity. Every native command field stays bound.
-    delete value.heldAtDecision; delete value.r; delete value.craftReservations;
+    delete value.heldAtDecision; delete value.r;
     return proofDigest(value);
 }
 // L70: the bot's own hunting/resting/travelling is not an economic event.
@@ -389,11 +389,11 @@ const FIELD_CHECKED = new Set(['hunting', 'improving', 'crafting', 'pvp', 'helpi
 // A sale step is spent once a visit ended after the build took it (the sale's own visit,
 // or the visit it was taken on, far or near: GoalExecutor.townLooked stamps townLook.at) and
 // the bot heads back to its ground (not on a trip to a town, as a craft warehouse
-// return): done when its items left the bag; refused when the kinds that stayed are on
-// the sale retry the visit's sale wrote (stats.marketSellSeen: what it could not place),
-// which keeps them out of the next build's sale until a new kind or a new or better buyer
-// comes (ItemDisposition.saleRetryHolds, WishProviders.liquidationCandidates): no trip
-// back for them. Kinds the visit never offered (its sale did not run) keep the step held:
+// return): done when its items left the bag; refused when none of the kinds that stayed
+// is open for sale (ItemDisposition.openSaleKinds over the visit's stats.marketSellSeen:
+// each tried, no new or better buyer of it since), the one answer that keeps them out of the
+// next build's sale too (WishProviders.liquidationCandidates): no trip back for them. A kind
+// the visit never offered (its sale did not run) or a new buyer of one keeps the step held:
 // its own trip carries it out. Held past the visit, a sale taken in town, where it costs
 // no trip, sent the bot back with its next loot. Temporary until the town plan holds the
 // visit's sale.
@@ -403,8 +403,8 @@ function saleSpent(state, leaf) {
     if (!toGround || !(Number(state.stats?.townLook?.at) > Number(state.stats?.wishSections?.at || 0))) return '';
     const stayed = (leaf.items || []).filter(id => positive(state.inventory?.[id]?.amount) > 0);
     if (!stayed.length) return 'goal_done:goal';
-    const tried = state.stats?.marketSellSeen?.items;
-    return Array.isArray(tried) && stayed.every(id => tried.includes(Number(id))) ? 'goal_failed' : '';
+    return Array.isArray(state.stats?.marketSellSeen?.items) && Disposition.openSaleKinds(state, stayed).size === 0
+        ? 'goal_failed' : '';
 }
 // Whether the held plan of a bot on a town visit names a stop after its leaf (the
 // agenda the build that sent it decided, WishNetwork.agendaOf): its leaf's end then
@@ -1385,6 +1385,11 @@ function buildForState(state, deps) {
         heldFocus: held?.plan.network.focus?.[0], freshFocus: network.focus?.[0],
         heldLeaf: held?.plan.network.activity?.key, freshLeaf: network.activity?.key });
     const plan = planOf(context, base, { key, tripHour, projection, knowledgeEnabled, prices });
+    // The bot's standing craft hold, one writer: this build (CraftInputReservations.nextHold over
+    // its full network: its wishes, its selected root's and agenda stops' craft inputs); the
+    // oldest root past the cap goes, counted.
+    context.statsPacket.craftHold = CraftInputReservations.nextHold(state.stats?.craftHold, context.network,
+        roots => Diagnostics.count('craft_hold', 'dropped', 'roots', roots));
     // A step's count is taken here: what reaches the bag on the way is its progress.
     if (plan.network.agenda) plan.network.agenda = plan.network.agenda.map(step => withHeldUnits(step, ColdEconomyDecision.heldFor(state, step.itemId)));
     // Its place in the money queue, as the card stamps it: a material has no packet row of its own.
@@ -1408,12 +1413,10 @@ function buildForState(state, deps) {
         // (perf C1).
         plan.eventProof = captureEventProof(state, deps, { plan });
         // What the card stamps on its leaf, read by its executors: the own item's
-        // bag+incoming at the decision (heldAtDecision) and a craft's reserved
-        // inputs (craftReservations).
+        // bag+incoming at the decision (heldAtDecision).
         const leaf = plan.network?.activity;
         remember(cache, actorKey, { key,
             heldUnits: ColdEconomyDecision.heldAtDecisionOf(leaf, state),
-            craftReservations: leaf?.activity === 'crafting' ? CraftInputReservations.heldCraftRows(state, plan.network.craftNeeds) : undefined,
             readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat, links,
             // A quiet build sees only the followed gear: a list it shortened is no review.
             gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection),
@@ -1475,8 +1478,7 @@ function planTrimmer(unresolved = new Set()) {
 // keeps the item plans (TradeIntent.npcOwnsPurchase asks by `item:<id>`) and
 // the plans of requirement rows that have none. A selected crystal operation
 // also keeps its one root: owned inputs can remove it from the money queue.
-// craftNeeds: the selected craft's inputs, walked once on the full network
-// for the card and the held verdict (absent when the root is no craft).
+// The wished roots (wished) are read by the build's craft hold only and stay behind.
 function compactNetwork(network) {
     const unresolved = new Set(), trim = planTrimmer(unresolved);
     const facts = wish => ({ key: wish.key, need: wish.need, object: wish.object, price: wish.price, reserved: wish.reserved,
@@ -1494,12 +1496,10 @@ function compactNetwork(network) {
     if (leaf?.rootKey?.startsWith('power:') && ['crystallize', 'luxury_exchange', 'mammon_unseal'].includes(leaf.kind)
         && all.has(leaf.rootKey)) plans.set(leaf.rootKey, trim(all.get(leaf.rootKey)));
     for (const key of unresolved) if (!plans.has(key) && all.has(key)) plans.set(key, trim(all.get(key)));
-    const craftNeeds = CraftInputReservations.selectedCraftNeeds(network);
     // The network's input key is the plan's key with its market (~2 KB of
     // text per bot, L104): view() gives it back from them, in its place.
-    return { ...network, inputKey: undefined, queue, gap: !network.gap ? network.gap : at >= 0 ? queue[at] : row(network.gap), activity, plans,
-        ...(network.agenda ? { agenda: network.agenda.map(Agenda.stepRow), later: network.later.map(facts) } : {}),
-        ...(craftNeeds.length ? { craftNeeds } : {}) };
+    return { ...network, inputKey: undefined, wished: undefined, queue, gap: !network.gap ? network.gap : at >= 0 ? queue[at] : row(network.gap), activity, plans,
+        ...(network.agenda ? { agenda: network.agenda.map(Agenda.stepRow), later: network.later.map(facts) } : {}) };
 }
 // The build's prices of what the plan's own numbers were made from (the
 // kit, the queue, the watch list): a later view starts from them, so its

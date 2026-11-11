@@ -188,18 +188,19 @@ async function heldPurchaseVisit() {
             return { price: unit, count: 1, purchaseCap: unit, pricing: { price: unit } }; };
 
         // A bag short of the input: refused for money, the visit ends, the step fails once and
-        // marks nothing (the build admits no step its bag cannot pay: test_wish_network).
+        // marks its quote only, never the item (the build admits no step its bag cannot pay:
+        // test_wish_network; the mark keeps the next build off the same step at the same money).
         raised.length = 0;
         const short = await visit(9115, price / 2);
         const refused = await ColdMarket.tryPurchase(short.state, goal);
         assert.equal(refused.purchased, false);
         assert.equal(refused.reason, 'funding_short');
         await new Promise(resolve => setImmediate(resolve));
-        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind, payload?.key]), [['goal_failed', undefined, undefined]],
-            'the step fails once and marks nothing');
+        assert.deepEqual(raised.map(([, name, payload]) => [name, payload?.kind, payload?.key, !!payload?.town && payload?.price > 0]),
+            [['goal_failed', 'gear_errand', INPUT, true]], 'the step fails once and marks its quote');
 
         // The root ranks above a stock bid whose escrow the purse counts: bag and escrow cover
-        // the input, the bag alone does not. The buyer refuses it for money and marks nothing
+        // the input, the bag alone does not. The buyer refuses it for money and marks its quote
         // (the build takes no shop step the bag cannot pay: test_wish_network).
         await bot(9116);
         const purse = (await DB.fetchItems(9116)).find(item => Number(item.selfId) === 57);
@@ -215,7 +216,7 @@ async function heldPurchaseVisit() {
         raised.length = 0;
         assert.equal((await ColdMarket.tryPurchase(held, goal)).reason, 'funding_short', 'the buyer refuses it for money');
         await new Promise(resolve => setImmediate(resolve));
-        assert.deepEqual(raised.map(([, , payload]) => payload?.key), [undefined], 'and marks nothing');
+        assert.deepEqual(raised.map(([, , payload]) => [payload?.key, !!payload?.town]), [[INPUT, true]], 'and marks its quote');
         // The build that took no step for it waits on the bag (bagShort): a bid taken back moves
         // its money from the escrow to the bag, the wallet stays, and that wait wakes the build.
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');

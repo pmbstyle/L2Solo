@@ -1572,11 +1572,11 @@ function personalCraftPlan(state, context, { allowStock = false, wishKey = null 
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network',
         ...(stock ? { purpose: 'stock', wishKey: leaf.rootKey } : {}) };
 }
-// While the sale retry holds (ItemDisposition.saleRetryHolds: no kind it did not try, no new
-// or better buyer of those since), a kind the last sale visit could not place is none: a sale
-// leaf on it would send the bot back to leave it in the bag again. Dropped after the selection,
-// as liquidationInputs' exclusions are. Cost: the retry read only for a bot whose candidates
-// hold a tried kind (one sale candidate pass and a board read of the tried kinds).
+// Only kinds open for sale (ItemDisposition.openSaleKinds): a kind the last sale visit could
+// not place, with no new or better buyer of it since, is none: a sale leaf on it would send the
+// bot back to leave it in the bag again, whatever else is new in the bag. Dropped after the
+// selection, as liquidationInputs' exclusions are. Cost: a board read of the tried kinds among
+// the candidates, for a bot past a sale visit.
 function liquidationCandidates(state, ctx) {
     const saleState = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').saleState(state);
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -1586,9 +1586,9 @@ function liquidationCandidates(state, ctx) {
             ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: ctx.stock('potions').target }),
             ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) }
     }).filter(row => row.npcComparable && !Disposition.isGradeCrystal(row));
-    const tried = state.stats?.marketSellSeen?.items;
-    if (!Array.isArray(tried) || !rows.some(row => tried.includes(Number(row.selfId))) || !Disposition.saleRetryHolds(state)) return rows;
-    return rows.filter(row => !tried.includes(Number(row.selfId)));
+    if (!Array.isArray(state.stats?.marketSellSeen?.items)) return rows;
+    const open = Disposition.openSaleKinds(state, rows.map(row => row.selfId));
+    return rows.filter(row => open.has(Number(row.selfId)));
 }
 // The native selector's sale rows at the held stock targets, including rejected
 // and cap-displaced items (selected before the exclusions are filtered out: an

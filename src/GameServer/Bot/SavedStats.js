@@ -35,9 +35,11 @@ function compact(stats = {}) {
 // town trip a build decided, held until it starts (PartyMarketBreak.cleanupDecision); rebuff: the rebuff
 // decision's held answer (Bot/AI/Rebuff); huntSpot: the spot the bot goes to when sent to hunt, the
 // worker route's one choice ({ spotId }, BotRoute.huntSpotHeld; an older row's extra fields are ignored);
-// offerWake: the board offer that alone woke the build, read by that build (Situations.offerWoke).
+// offerWake: the board offer that alone woke the build, read by that build (Situations.offerWoke);
+// craftHold: the inputs of the crafts the bot still wishes for, kept from every sale
+// (CraftInputReservations.nextHold, written by the build).
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections',
-    'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
+    'dormantWishes', 'craftHold', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
     'spotMarks', 'gearMarks', 'cleanupDue', 'rebuff', 'huntSpot', 'offerWake']);
 
 // A whole stats object (or a stats patch) as its two saved halves.

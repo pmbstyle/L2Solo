@@ -259,17 +259,15 @@ function verify() {
     assert.equal(produce(1000).activity.rootKey, required.key, 'an affordable kit piece precedes another profit craft');
     const inputs = { key: 'resale:101', need: 'power', object: { itemId: 101 }, paths: [{ kind: 'craft', batches: 1,
         grossRequirements: [{ key: 'item:1864', amount: 8 }], requirements: [] }] };
-    assert.equal(Disposition.selectedCraftAmounts(spare, { activity: { rootKey: inputs.key },
-        plans: new Map([[inputs.key, inputs.paths[0]]]) })[1864], 8, 'active profitable craft protects only its actual inputs');
     const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
     const network = { activity: { rootKey: inputs.key, activity: 'hunting', spotId: 'recipe' },
         queue: [{ key: inputs.key, plan: inputs.paths[0] }] };
-    // A built network carries its one craft walk (compactNetwork's craftNeeds).
-    const captured = Decision.compact(structuredClone(Decision.capture({ network: { ...network,
-        craftNeeds: Reservations.selectedCraftNeeds(network) } }, spare)));
-    assert.deepEqual(captured.activity.craftReservations, [[1864, 8]], 'physical craft reservations survive worker IPC');
-    const protectedSale = Listing.evaluate(spare, { board: new BoardIndex(), now: timestamp, slots: 0,
-        keptAmounts: {}, economy: { ...ctx, network: Decision.view(spare, captured, { board, timestamp }).network } });
+    // The build holds the craft's inputs in the bot's craft hold (its stats packet), which the
+    // main thread's sale reads with the card.
+    const holding = { ...spare, stats: { ...spare.stats, craftHold: Reservations.nextHold(undefined, network) } };
+    const captured = Decision.compact(structuredClone(Decision.capture({ network }, holding)));
+    const protectedSale = Listing.evaluate(holding, { board: new BoardIndex(), now: timestamp, slots: 0,
+        keptAmounts: {}, economy: { ...ctx, network: Decision.view(holding, captured, { board, timestamp }).network } });
     assert.equal(protectedSale.npc.find(row => row.selfId === 1864)?.count, 2,
         'the main-thread market sells only the unused ingredient surplus');
     const spoilBoard = new BoardIndex();

@@ -520,6 +520,27 @@ async function run() {
         assert(sources.has(990001) && !sources.has(990002), 'only the kept scope subscribes its sources');
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
+    // The build writes the bot's craft hold (stats.craftHold) into its stats packet: its selected
+    // craft's inputs; the row of a craft still wished for on another root stays (the shot stock
+    // waits in its queue) and one it no longer wishes for is released.
+    {
+        const bot = { ...base, characterId: 907, phase: 'hot', adena: 0, stats: { ...base.stats, classId: 56, playedHours: 2 } };
+        const at = stats => {
+            try { return Economy.forState({ ...bot, stats: { ...bot.stats, ...stats } }, { timestamp: Date.now() }); }
+            finally { Economy.forget(bot.characterId); }
+        };
+        const wished = [['stock:shots', [[1785, 3]]]];
+        const hunting = at({ craftHold: wished });
+        assert(hunting.network.queue.some(row => row.key === 'stock:shots'), 'fixture: the shot stock is still wished for');
+        assert.notEqual(hunting.network.activity?.rootKey, 'stock:shots', 'fixture: the build takes another root');
+        assert(hunting.statsPacket.craftHold.find(row => row[0] === hunting.network.activity.rootKey)?.[1].length,
+            'the build holds its selected craft\'s inputs');
+        assert.deepEqual(hunting.statsPacket.craftHold.find(row => row[0] === 'stock:shots'), wished[0],
+            'a build on another root keeps the craft still wished for');
+        const gone = at({ craftHold: [['stock:gone', [[1785, 3]]]] });
+        assert(!gone.statsPacket.craftHold.some(row => row[0] === 'stock:gone'), 'a craft no longer wished for is released');
+    }
+    console.log('PASS the build holds a wished craft\'s inputs');
     // The build's memos (inventory row keys, the kit fact) end with it: a row
     // changed after the build (a new bag: states are replaced, not edited in
     // place) reads fresh.

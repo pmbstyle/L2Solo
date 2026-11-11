@@ -168,7 +168,7 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         assert.equal((await Meetings.waitForResult('already-completed', bot.fetchId())).outcome, 'completed');
         assert.equal(receiptReads, 2, 'a transient read error cannot be mistaken for a cancelled exchange');
         // A refused buy gets the cold buyer's verdict (test_bot_cold_market_purchase, same codes): a
-        // seller's refusal marks its quote, a meeting's or a money refusal marks nothing, neither is a
+        // seller's or a money refusal marks its quote, a meeting's marks nothing, none is a
         // failure; a broken invariant marks nothing and is counted. A live store's line changed is
         // the seller's refusal as a bot store's is.
         const FailureLog = invoke('FailureLog'), Marks = invoke('GameServer/Bot/AI/GearMarks');
@@ -187,7 +187,8 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         stub(Trade, 'buyFromStore', Trade.buyFromStore);
         assert.deepEqual(await refusedBuy('trade_meeting_integer'), { counted: 1, quotes: [] }, 'a broken meeting invariant is counted');
         assert.deepEqual(await refusedBuy('trade_meeting_party_busy'), { counted: 0, quotes: [] }, 'a busy party is the meeting\'s refusal');
-        assert.deepEqual(await refusedBuy('not_enough_adena'), { counted: 0, quotes: [] }, 'a writer\'s money refusal');
+        assert.deepEqual(await refusedBuy('not_enough_adena'), { counted: 0, quotes: [[1, 'Giran', 500]] },
+            'a writer\'s money refusal marks its quote');
         assert.deepEqual(await refusedBuy('afk_trade_stock_changed'), { counted: 0, quotes: [[1, 'Giran', 500]] },
             'a line the seller changed marks its quote');
         assert.deepEqual(await refusedBuy('private_store_changed', true), { counted: 0, quotes: [[1, 'Giran', 500]] },

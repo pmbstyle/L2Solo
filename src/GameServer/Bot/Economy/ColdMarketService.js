@@ -44,8 +44,10 @@ const ERRAND_MS = CombinedErrands.ERRAND_MS;
 // board as it is now and takes another seller or holds, never the quote its buyer just refused,
 // until a posted offer wakes it (offer_posted). Our choice after C4 play: the board is trade
 // chat, a player who finds the item sold keeps asking for it, at other stalls. A purse short of
-// the step's price (funding_short) marks nothing: the build admits a shop step only where its
-// buyer pays it, read by the same terms (goalFunding), so the next build sees the purse too.
+// the step's price (funding_short) marks that quote too (GearMarks.quoteRefused), never the item:
+// the build admits a shop step only where its buyer pays it, so a refusal here is the build and
+// the buyer disagreeing, and the mark keeps the next build off the same step at the same money
+// until the money moves (goal_affordable:focus).
 const GEAR_SOURCE_FAILED = new Set(['configured_supply_retired', 'already_owned', 'incompatible_loadout']);
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
@@ -858,12 +860,12 @@ const ColdMarketService = {
         // A buy that failed on its item here (GEAR_SOURCE_FAILED: a gear piece or a craft
         // material) is a failed errand: its item is marked (GearMarks), so the build it wakes does
         // not send the bot for it again until its source changed (GearMarks.LIFETIME). A refusal
-        // at the seller (GearMarks.SELLER_REFUSALS) marks the step's quote (this town, the card's
-        // unit price): the build skips it. Any other miss (a failed write, a busy meeting, a stock
-        // limit) marks nothing: the seller did not refuse.
+        // at the seller or for money (GearMarks.quoteRefused) marks the step's quote (this town,
+        // the card's unit price): the build skips it. Any other miss (a failed write, a busy
+        // meeting, a stock limit) marks nothing: neither the seller nor the purse refused.
         const refreshAfter = written => written.then(result => {
             const key = Number(goal.target.itemId), reason = result?.reason;
-            const quote = arrival && GearMarks.sellerRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
+            const quote = arrival && GearMarks.quoteRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(reason) ? { impossible: true, kind: 'gear_errand', key, reason }
                     : quote ? { impossible: true, kind: 'gear_errand', key, ...quote, reason } : { impossible: true });

@@ -484,8 +484,7 @@ function marketRequests(state, warehouseItems, reserved = new Map(), options = {
     const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
     const decision = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(
         { ...state, inventory, [Index.STOCK_INCLUDED]: true }, { ...options, economy, stored: reserved });
-    const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true,
-        reserved: ItemDisposition.selectedCraftAmounts(state, economy.network) })
+    const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map((item) => [`${Number(item.selfId)}:${Number(item.enchant || 0)}`, Number(item.count)]));
     const choices = [
         ...decision.listings,
