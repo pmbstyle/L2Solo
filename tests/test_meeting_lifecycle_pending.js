@@ -72,7 +72,7 @@ const originalCached = Life.cachedState;
                 const round = { ...state, stats: { forcedMarketCleanup: true } };
                 const events = [{ type: 'kill', summary: 'round' }];
                 const visit = await Population.applyColdResolve(state, round, { economyPlan: { b: [] } },
-                    { events, debug: {} }, null, null, [], []);
+                    { events, debug: {} }, null, [], []);
                 assert.equal(visit.waiting, true, 'the visit waits for its preparation');
                 assert.equal(visit.state, round, 'on the round it wrote');
                 assert.deepEqual(recorded, events, 'the round\'s events are recorded once');

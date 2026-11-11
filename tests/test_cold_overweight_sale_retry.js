@@ -64,7 +64,7 @@ const ids = [731501, 731502];
                 Market.reconcile = async row => ({ state: row });
                 let result;
                 try {
-                    result = { state: await Population.finishColdMarketStep(state, { economyPlan: {} }, null, true,
+                    result = { state: await Population.finishColdMarketStep(state, { economyPlan: {} }, true,
                         { state, closed: false }, { state, purchased: false }, null) };
                 } finally {
                     Errands.finishTownErrands = saved.errands; Needs.needs = saved.needs; Market.reconcile = saved.reconcile;

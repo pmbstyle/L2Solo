@@ -1714,11 +1714,6 @@ class ColdSimulationKernel {
                     state: current.state,
                     precomputedPlan: postedPlan(lifecyclePlan),
                     precomputedResult: result,
-                    // The trip the plan started, else the ground this step
-                    // fought on (commandSpot on main reads the spot id).
-                    route: lifecyclePlan?.route?.needed
-                        ? { needed: true, spotId: lifecyclePlan.route.spotId }
-                        : { needed: false, spotId: spot?.id ?? null },
                     computedAt: timestamp,
                     ...(hallVisit ? { hallVisit: true } : {})
                 }]

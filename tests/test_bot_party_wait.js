@@ -163,13 +163,13 @@ async function run() {
     GoalExecutor.beginMarketTravel = () => null;
     LifeEvents.recordMany = () => Promise.resolve();
 
-    // In game every lifecycle command carries the worker's round and route
+    // In game every lifecycle command carries the worker's round
     // (executeWorkerLifecycleCommand refuses one without): main hunts the
     // worker's spot and chooses none. The worker's safe
     // fallback for a waiting requester is pinned in test_party_wait_fallback,
     // its delevel recovery in test_bot_leveling_recovery.
     SpotProfiles.findById = id => ({ ...fallbackSpot, id, name: String(id) });
-    const worker = (current, extra = {}) => ({ ...extra, route: { needed: false, spotId: current.spotId },
+    const worker = (current, extra = {}) => ({ ...extra,
         precomputedResult: BackgroundResolver.resolveSolo({ state: current, targetNpcId: 0 }) });
     const beforeDeferred = Number(PopulationService.planDeferred || 0);
     const missingWorker = await PopulationService.resolveColdState(state, worker(state));

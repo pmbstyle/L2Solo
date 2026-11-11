@@ -2004,7 +2004,7 @@ class ColdSimulationCoordinator {
                         ok: result?.ok !== false,
                         reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
-                            Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) }
+                            Number(result.retryAfterMs) || 5000) }
                             // An applied command that waits on its bot's trade preparation: the
                             // worker holds the bot until the preparation's end (preparationEnded).
                             : result?.waiting ? { waiting: true } : {}),

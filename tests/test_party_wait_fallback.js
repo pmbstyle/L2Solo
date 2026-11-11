@@ -174,23 +174,20 @@ async function commandChecks() {
     GlobalChat.maybeAnnounce = () => null;
     // The worker's plan is used as it is, its drop source included (main
     // picks no source again). The plan arrives with the party request the
-    // worker built for it (main builds none), and the request's route names
-    // the trip it started or the ground it fought on.
-    const command = (state, plan, route) => {
+    // worker built for it (main builds none).
+    const command = (state, plan) => {
         applied.length = 0;
         upserted.length = 0;
         return PopulationService.resolveColdState(state, {
             precomputedPlan: { previousPlan: null, acquisitionPlan: plan, replanFailure: null,
                 partyRequest: invoke('GameServer/Bot/Population/PartyRequestPlanner')
                     .partyRequestForPlan(state, plan, Date.now(), { economy: { worth: () => 0 } }) },
-            precomputedResult: workerFight(),
-            route
+            precomputedResult: workerFight()
         });
     };
-    const worked = { needed: false, spotId: currentSpot.id };
 
     // The waiter's safe fallback is the worker's rule (BotRoute.choose →
-    // PartyWaitFallback.spotFor); main applies the worker's route and relabels
+    // PartyWaitFallback.spotFor); main applies the worker's step and relabels
     // nothing.
     const { spotFor } = require('../src/GameServer/Bot/Population/PartyWaitFallback');
     const fallbackOf = (state, plan) => spotFor(state, plan, profiles, { timestamp: Date.now() })?.spot?.id;
@@ -203,25 +200,24 @@ async function commandChecks() {
     // A clan hunt asks for a party even with a solo-safe plan: it waits on its fallback too.
     assert.strictEqual(fallbackOf(routeState(13, { clanPartyObjective: clanObjective }), soloPlan), plannedFallback.id,
         'a clan-hunt request makes a solo-safe planner wait');
-    let result = await command(routeState(11, {}), partyPlan, worked);
+    let result = await command(routeState(11, {}), partyPlan);
     assert.strictEqual(result.ok, true);
-    assert.strictEqual(applied[0].spotId, currentSpot.id, 'a waiter\'s command hunts the worker\'s route, relabelled by none');
+    assert.strictEqual(applied[0].spotId, currentSpot.id, 'a waiter\'s command hunts where the worker fought, relabelled by none');
 
     // Main takes the spot the worker fought on and keeps the worker fight; it
     // runs no spot search of its own.
     SpotProfiles.findForState = () => assert.fail('a command runs no second spot search');
-    result = await command(routeState(15, {}), soloPlan, worked);
+    result = await command(routeState(15, {}), soloPlan);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(applied.length, 1, 'U3: the worker fight on known ground is kept');
     assert.strictEqual(applied[0].spotId, currentSpot.id);
     assert.deepStrictEqual(applied[0].stats.equipmentPlan, soloPlan, 'main applies the worker\'s drop plan as is');
-    // A trip the worker's step started (its request's route) names its destination.
-    result = await command(routeState(17, {}), soloPlan, { needed: true, spotId: levelSpot.id });
-    assert.strictEqual(applied.length, 1);
-    // Without any spot in the worker's route the rest stays.
-    result = await command(routeState(16, {}), soloPlan, { needed: false, spotId: null });
-    assert.strictEqual(result.reason, 'missing_spot_recovery', 'no spot anywhere: the bot rests and retries');
-    assert.strictEqual(upserted[0].value.activity, 'resting');
+    // Main applies the worker's step as it came: it starts no trip and invents
+    // no rest of its own.
+    result = await command(routeState(16, {}), soloPlan);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(applied.length, 1, 'no spot anywhere: the worker\'s step is applied');
+    assert(!upserted.some(entry => entry.value.activity === 'resting'), 'no spot anywhere: main writes no rest of its own');
     SpotProfiles.findForState = findForStateStub;
 }
 

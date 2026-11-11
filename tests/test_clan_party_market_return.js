@@ -61,7 +61,7 @@ Risk.backoffForStates = () => { throw new Error('must not apply solo bans to a c
     assert.strictEqual(saved.activity, 'hunting', 'a lost party cannot strand a personal craft in party_wait');
     assert.strictEqual(saved.stats.partyMarketReturn, null);
     const shopping = { ...returning, stats: { ...returning.stats, townVisit: { completed: false } } };
-    assert.strictEqual(Service.finishColdMarketStep(shopping, null, null, null, { state: shopping }, { state: shopping, pending: true }, null), shopping,
+    assert.strictEqual(Service.finishColdMarketStep(shopping, null, null, { state: shopping }, { state: shopping, pending: true }, null), shopping,
         'a supply deal already in progress retains ownership until it completes');
     console.log('Clan market return: live rendezvous, solo risk isolation, same-party return and dissolved-party waiting passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

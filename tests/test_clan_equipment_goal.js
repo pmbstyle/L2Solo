@@ -172,7 +172,7 @@ async function main() {
         assert.equal(closedState.activity, 'hunting');
         assert.equal(closedState.stats.partyRequest.status, 'closed', 'clan reviews keep the closed request');
         assert.equal(closedState.stats.clanPartyObjective.status, 'open', 'the clan keeps its call');
-        assert.equal(closedState.stats.equipmentPlan, undefined, 'the clan route is not hunted alone while the request is closed');
+        assert(closedState.stats.equipmentPlan, 'the plan is the clan\'s: a release leaves it to the clan review');
         // The member's next build asks again; the clan's next review hands the route back.
         const reopened = PartyRequestPlanner.partyRequestForPlan(closedState, null, Date.now(), { economy: { worth: () => 0 } });
         assert.equal(reopened.status, 'open');

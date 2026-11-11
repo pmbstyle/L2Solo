@@ -348,7 +348,7 @@ async function townStepKeepsBids() {
         assert(Market.canTradeRemotely(Life.snapshot(9122), goal), 'fixture: a goal the bot could bid on');
         const step = () => {
             const state = Life.snapshot(9122);
-            return Population.finishColdMarketStep(state, null, null, false, { state, closed: true },
+            return Population.finishColdMarketStep(state, null, false, { state, closed: true },
                 { state, purchased: false }, after);
         };
         await step();

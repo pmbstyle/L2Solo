@@ -127,13 +127,6 @@ function countActivatedInView(result, playerLoc, kind = null) {
     }
 }
 
-// The spot of a commanded bot, from its request's route: the trip the
-// worker's plan started (BotRoute), or the ground the worker fought on when
-// the bot needed no trip.
-function commandSpot(route) {
-    return route?.spotId ? SpotProfiles.findById(route.spotId) : null;
-}
-
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
     states.forEach((state) => {
@@ -255,15 +248,6 @@ function partyObjectiveMemo() {
         if (!objectives.has(state)) objectives.set(state, partyObjectiveForState(state));
         return objectives.get(state);
     };
-}
-
-function directDropTargetNpcId(...plans) {
-    for (const plan of plans) {
-        if (plan?.status !== 'active' || plan?.strategy !== 'direct_drop') continue;
-        const npcId = Number(plan.next?.npcId || 0);
-        if (npcId > 0) return npcId;
-    }
-    return 0;
 }
 
 function joinedBackgroundParty(state) {
@@ -2613,7 +2597,7 @@ const PopulationService = {
         if (workerRequest?.precomputedPlan) options = { ...options, stepPlan: workerRequest.precomputedPlan };
         const startedAt = Date.now();
         if (require('./RaidSupplyPolicy').held(state, startedAt)) {
-            const result = workerRequest?.precomputedResult || BackgroundResolver.resolveSolo({ state, timestamp: startedAt });
+            const result = workerRequest.precomputedResult;
             return LifeState.applyResolve(state, result, options).then(async saved => {
                 if (!saved) return { ok: false, reason: 'state_write_rejected', state };
                 let current = saved;
@@ -2653,8 +2637,6 @@ const PopulationService = {
         }
         const serviceResult = this.resolveColdServiceBranch(state, startedAt, workerRequest?.precomputedPlan?.buildTaken === true);
         if (serviceResult !== COLD_RESOLVE_NEXT) return serviceResult;
-        const staleShopping = BackgroundResolver.staleShopping(state);
-        const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const workerPlan = workerRequest?.precomputedPlan || null;
         const previousPlan = workerPlan ? workerPlan.previousPlan : state.stats?.equipmentPlan;
         // The worker's gear plan (source and replacement included) is applied
@@ -2699,25 +2681,12 @@ const PopulationService = {
         if (travellingState !== routedState) {
             return this.resolveColdCraftTravel(state, travellingState, travel, planEvents, travelEvents, startedAt);
         }
-        // A worker result is a fight at the worker's spot (its command's route);
-        // this command never starts a trip of its own: the worker is routed by its
-        // own plan (BotRoute) from the state this command writes.
-        const selectedSpot = passiveActivity ? null : commandSpot(workerRequest?.route);
+        // Main applies the worker's step as it came: a fight at the worker's spot
+        // or, with no ground under the bot, the step it took where it stands, with
+        // its decisions. This command starts no trip of its own: the worker routes
+        // the bot by its own plan (BotRoute) from the state this command writes.
         const effectiveState = travellingState;
-        const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
-        // A worker's occupation round (ColdSimulationKernel.occupationRound) carries no
-        // fight, only its plan: it needs no hunting ground; its plan buys or starts a trip.
-        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling' && !precomputedResult?.occupation) {
-            return this.resolveColdMissingSpot(state, plannedState, startedAt);
-        }
-
-        const result = precomputedResult || BackgroundResolver.resolveSolo({
-            state: effectiveState,
-            spot,
-            spotHunters: SpotProfiles.spotHunters(spot),
-            targetNpcId: directDropTargetNpcId(acquisitionPlan),
-            elapsedMs
-        });
+        const result = precomputedResult;
 
         if (joinedBackgroundParty(state)) {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_after_planning');
@@ -2725,7 +2694,7 @@ const PopulationService = {
         }
 
         return LifeState.applyResolve(effectiveState, result, { ...options, ...(workerPlan?.statsPacket ? { statsPacket: workerPlan.statsPacket } : {}) })
-            .then((updatedState) => this.applyColdResolve(state, updatedState, workerPlan, result, spot, acquisitionPlan, planEvents, travelEvents))
+            .then((updatedState) => this.applyColdResolve(state, updatedState, workerPlan, result, acquisitionPlan, planEvents, travelEvents))
             .then((outcome) => this.reviewColdOutcomeAfterCommit(state, outcome, options))
             .finally(() => {
                 if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
@@ -2932,22 +2901,7 @@ const PopulationService = {
         }).finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
     },
 
-    resolveColdMissingSpot(state, plannedState, startedAt) {
-        Config.developerDiagnostics && Metrics.recordSkippedResolve('missing_spot');
-        Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
-        const retryAt = startedAt + 30000;
-        const waiting = { ...plannedState, activity: 'resting',
-            timing: { ...plannedState.timing, nextResolveAt: retryAt },
-            stats: { ...plannedState.stats, restUntil: retryAt,
-                routeRecovery: { reason: 'missing_spot', at: startedAt,
-                    attempts: Number(state.stats?.routeRecovery?.attempts || 0) + 1 } } };
-        return LifeState.upsertState(waiting, 'missing_spot_recovery').then(saved => ({
-            ok: !!saved, reason: saved ? 'missing_spot_recovery' : 'state_write_rejected',
-            state: saved || state, debug: { fights: 0, wins: 0, reason: 'missing_spot' }
-        }));
-    },
-
-    async applyColdResolve(state, updatedState, workerPlan, result, spot, acquisitionPlan, planEvents, travelEvents) {
+    async applyColdResolve(state, updatedState, workerPlan, result, acquisitionPlan, planEvents, travelEvents) {
         if (!updatedState) {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('cold_apply_failed');
             return { ok: false, reason: 'apply_failed', state };
@@ -3049,7 +3003,7 @@ const PopulationService = {
                 : ColdMarketService.tryPurchase(marketLifecycle.state, goal))
                 .then((marketResult) => ({ marketLifecycle, marketResult, goal }));
         })
-            .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle,
+            .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, tripEdge, marketLifecycle,
                 improved ? { ...marketResult, improved } : marketResult, goal))
             .then((finalState) => {
                 // Material the step obtained: its round's and its improvement's (a crystallization's
@@ -3075,7 +3029,7 @@ const PopulationService = {
             });
     },
 
-    finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle, marketResult, goal) {
+    finishColdMarketStep(updatedState, workerPlan, tripEdge, marketLifecycle, marketResult, goal) {
         const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
         if (marketResult.pending) return purchasedState;
         // The bot was activated while the market step ran (the activation fence waits
