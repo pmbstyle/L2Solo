@@ -133,7 +133,8 @@ class OpportunisticRaidDirector {
 
     finishSearch(status) {
         if (status !== 'interrupted' || this.pendingSearch) this.searchCounters.finish(status);
-        if (Trace.on()) Trace.record({ kind: 'raid', phase: 'search', reason: String(this.due || ''), outcome: status });
+        if (Trace.on() && (status !== 'interrupted' || this.pendingSearch))
+            Trace.record({ kind: 'raid', phase: 'search', reason: String(this.due || ''), outcome: status });
         const cut = BUDGET_CUT.has(status);
         if (cut) this.draining = true;
         if (!cut || !this.deferredRosters.length) {
