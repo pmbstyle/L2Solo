@@ -1,6 +1,8 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 const { EventEmitter } = require('events');
+const path = require('path');
+const { Worker } = require('worker_threads');
 
 require('../src/Global');
 invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
@@ -171,7 +173,55 @@ async function run() {
         }, { key: 'integration:1', timeoutMs: 15000 });
         assert.deepStrictEqual(realPath, [{ locX: 53027, locY: 102938, locZ: -1064 }],
             'the real worker boundary must return a structured-clone-safe geodata path');
+
+        // A Giran town corridor whose search is several times one 150 ms
+        // worker turn: it continues over turns instead of failing.
+        const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+        const giran = { startX: 83384, startY: 149256, startZ: -3400, goalRadius: 64, townCorridor: true };
+        const longCorridor = { ...giran, endX: 87500, endY: 151000, endZ: -4152, maxNodes: 150000,
+            navigationRevision: GeodataEngine.navigationRevision || 0 };
+        const workBefore = realPool.stats().workerMs;
+        const corridor = await realPool.request(longCorridor, { key: 'town:long', timeoutMs: 15000 }).catch((error) => error);
+        const charged = realPool.stats().workerMs - workBefore;
         await realPool.shutdown();
+        assert(corridor.path?.length >= 2 && corridor.lanes?.length === 8,
+            `a town corridor longer than one worker turn must return its path and every lane (${corridor.code})`);
+        assert(charged > 150, 'the pool must be charged the search work of every turn, not only the last');
+
+        // A search cancelled after its first turn. An unreachable goal keeps
+        // the search running (maxNodes) far past the moment it is stopped.
+        const worker = new Worker(path.join(__dirname, '../src/GameServer/Geodata/PathfindingWorker.js'),
+            { workerData: { sharedGeodata: GeodataEngine.sharedDescriptor() } });
+        try {
+            const replies = [];
+            let wake = null;
+            worker.on('message', (reply) => { replies.push(reply); wake?.(); });
+            const reply = async (id) => {
+                for (;;) {
+                    const found = replies.find((message) => message.id === id);
+                    if (found) return found;
+                    await new Promise((resolve) => { wake = resolve; });
+                }
+            };
+            const send = (id, request, cancelFlag = null) => worker.postMessage({ type: 'path', id, request,
+                cancelBuffer: cancelFlag?.buffer });
+            const unreachable = { ...giran, endX: 117000, endY: 76000, endZ: -2700, maxNodes: 300000, navigationRevision: 1 };
+            const local = { ...giran, endX: 83384, endY: 149256, endZ: -3400, maxNodes: 32 };
+            send(1, { ...local, navigationRevision: 1 });
+            assert.strictEqual((await reply(1)).ok, true, 'the worker must answer once it is up');
+
+            const cancelFlag = new Int32Array(new SharedArrayBuffer(4));
+            send(2, unreachable, cancelFlag);
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            Atomics.store(cancelFlag, 0, 1);
+            const cancelled = await reply(2);
+            assert.strictEqual(cancelled.code, 'STALE_PATH', 'a search cancelled after its first turn must end as stale');
+
+            assert.deepStrictEqual(replies.map((message) => message.id), [1, 2],
+                'each request must be answered once under its own id');
+        } finally {
+            await worker.terminate();
+        }
     }
     console.log('Pathfinding worker pool checks passed');
 }

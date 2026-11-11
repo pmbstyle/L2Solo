@@ -68,25 +68,13 @@ delete idleSession.pendingPathRequest;
 idleSession.moveTimer = 1;
 assert.strictEqual(Recovery.move(idleSession, bot, destination, 'shopping', { targetActor: null }).status, 'moving',
     'an active movement timer must still retain ownership of its route');
-for (const error of ['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED', 'PATH_BUDGET']) {
+for (const error of ['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED']) {
     session.lastPathfinding = { requestedTo: destination, routeUsable: false, error, at: Date.now() + 100 + (session.companionNavigationRecovery?.lastFailureAt || 0) };
     const recovery = Recovery.move(session, bot, destination, 'town_gatekeeper', { targetActor: null });
     assert.strictEqual(recovery.failures, 0, `${error} must not consume route failure attempts`);
     assert.strictEqual(recovery.reason, 'budget_deferred');
 }
 
-const cappedSession = {};
-for (let attempt = 1; attempt <= 3; attempt++) {
-    cappedSession.lastPathfinding = { requestedTo: destination, routeUsable: false, error: 'PATH_BUDGET', at: Date.now() + attempt };
-    const result = Recovery.move(cappedSession, bot, destination, 'shopping', { targetActor: null });
-    assert.strictEqual(result.status, attempt < 3 ? 'waiting' : 'exhausted', 'repeated work-budget exhaustion must not retry forever');
-    assert.strictEqual(result.failures, 0, 'a work budget is not proof of unreachable geometry');
-    if (attempt === 3) assert.strictEqual(result.reason, 'work_budget_exhausted');
-}
-assert.strictEqual(Recovery.move(cappedSession, bot, destination, 'shopping', { targetActor: null }).status, 'exhausted');
-bot.locX += 100;
-assert.notStrictEqual(Recovery.move(cappedSession, bot, destination, 'shopping', { targetActor: null }).status, 'exhausted',
-    'physical progress must reset work-budget exhaustion');
 const queuedSession = {};
 for (let attempt = 1; attempt <= 6; attempt++) {
     queuedSession.lastPathfinding = { requestedTo: destination, routeUsable: false, error: 'QUEUE_FULL', at: Date.now() + attempt };

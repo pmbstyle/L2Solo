@@ -502,9 +502,19 @@ const GeodataEngine = {
         return !hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP;
     },
 
+    // Runs the whole search in one go (findPathSteps without pauses).
     findPath(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000, options = {}) {
-        const checkBudget = typeof options.checkBudget === 'function' ? options.checkBudget : null;
-        checkBudget?.();
+        const search = this.findPathSteps(startX, startY, startZ, endX, endY, endZ, maxNodes, options);
+        let step = search.next();
+        while (!step.done) step = search.next();
+        return step.value;
+    },
+
+    // The A* search, pausing (yield) at its start, every 128 expanded nodes
+    // and during smoothing, so a caller can stop it there or continue it on a
+    // later turn. It returns the smoothed path or null.
+    *findPathSteps(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000, options = {}) {
+        yield;
         const startCx = startX >> 4;
         const startCy = startY >> 4;
         const endCx = endX >> 4;
@@ -579,7 +589,7 @@ const GeodataEngine = {
             }
 
             nodesExpanded++;
-            if ((nodesExpanded & 127) === 0) checkBudget?.();
+            if ((nodesExpanded & 127) === 0) yield;
             if (nodesExpanded > maxNodes) {
                 break;
             }
@@ -670,10 +680,10 @@ const GeodataEngine = {
             let currentIdx = 0;
 
             while (currentIdx < pathPoints.length - 1) {
-                checkBudget?.();
+                yield;
                 let checkIdx = pathPoints.length - 1;
                 while (checkIdx > currentIdx + 1) {
-                    if ((checkIdx & 31) === 0) checkBudget?.();
+                    if ((checkIdx & 31) === 0) yield;
                     const startPt = pathPoints[currentIdx];
                     const endPt = pathPoints[checkIdx];
                     if (this.hasLineOfSight(startPt.locX, startPt.locY, startPt.locZ, endPt.locX, endPt.locY, endPt.locZ)) {

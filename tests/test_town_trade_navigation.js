@@ -110,25 +110,23 @@ async function run() {
         shopper.bot.automation.abortAll(shopper.bot);
 
         // An optional exit must never block the actual farming trip forever,
-        // including repeated worker-budget failures rather than an empty path.
-        for (const error of [undefined, 'PATH_BUDGET']) {
-            const f = fixture(2003060, street);
-            let moves = 0;
-            f.bot.moveTo = command => { moves++; f.session.lastPathfinding = {
-                requestedTo: command.to, routeUsable: false, error, at: now
-            }; };
-            let released = false;
-            for (let attempt = 0; attempt < 15; attempt++) {
-                if (!Hunting.leaveShop(f.session, f.bot)) { released = true; break; }
-                now += 6000;
-            }
-            assert(released, 'failed optional shop exit must yield to farm/gatekeeper selection');
-            const walked = moves;
-            now += 120000;
-            assert.equal(Hunting.leaveShop(f.session, f.bot), false,
-                'the ended departure keeps farming decisions available, no retry');
-            assert.equal(moves, walked, 'nor walks for the exit again');
+        // including repeated route failures.
+        const f = fixture(2003060, street);
+        let moves = 0;
+        f.bot.moveTo = command => { moves++; f.session.lastPathfinding = {
+            requestedTo: command.to, routeUsable: false, error: undefined, at: now
+        }; };
+        let released = false;
+        for (let attempt = 0; attempt < 15; attempt++) {
+            if (!Hunting.leaveShop(f.session, f.bot)) { released = true; break; }
+            now += 6000;
         }
+        assert(released, 'failed optional shop exit must yield to farm/gatekeeper selection');
+        const walked = moves;
+        now += 120000;
+        assert.equal(Hunting.leaveShop(f.session, f.bot), false,
+            'the ended departure keeps farming decisions available, no retry');
+        assert.equal(moves, walked, 'nor walks for the exit again');
         console.log(`Gludio shop, merchant and departure recovery checks passed: 16 exit variants, ${searches} searches`);
     } finally {
         Date.now = original.now;
