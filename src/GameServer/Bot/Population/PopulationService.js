@@ -391,8 +391,7 @@ async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
     const warehouse = token.cleanupReason === 'craft_warehouse';
-    const matching = warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
-        : party?.stats?.objective?.clanGoalKey === token.objective?.clanGoalKey;
+    const matching = PartyMarketBreak.sameObjective(party, token);
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
         partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : token.objective,
         partyRequest: warehouse ? state.stats.partyRequest : token.objective } };

@@ -9,6 +9,7 @@ const TravelRoutes = invoke('GameServer/Bot/Travel/TravelRoutes');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
+const PartyMarketBreak = require('../Population/PartyMarketBreak');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
@@ -40,7 +41,7 @@ function visitHere(state, townName, marketReturn, timestamp = Date.now(), reason
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     const ticket = state.stats?.partyMarketReturn;
-    if (Number(ticket?.until) > 0 && Number(ticket.until) <= timestamp)
+    if (ticket && !PartyMarketBreak.held(ticket, timestamp))
         state = { ...state, stats: { ...state.stats, partyMarketReturn: null } };
     if (BotErrands.busyWith(state, MARKET_TRIP_BUSY_FLAGS)) return null;
     const buyingGear = goal.type === 'upgrade_gear'

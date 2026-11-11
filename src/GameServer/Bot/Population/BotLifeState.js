@@ -63,11 +63,15 @@ cache.subscribePublications(({ characterId, state, previousState }) => {
         notifyClassMigrationPending();
     }
 });
-// The lifecycles a bot's own row carries (its party request, its clan errands), traced at the commit that changes
-// them: every committed state lands here (a step's commit, a main write, a native reply), a projection never does;
-// the boot's load (no state before) is no event.
+// The lifecycles a bot's own row carries (its party request, its clan errands, a stay trip's return ticket), traced at
+// the commit that changes them: every committed state lands here (a step's commit, a main write, a native reply), a
+// projection never does; the boot's load (no state before) is no event. A stay trip's expiry is counted with the
+// trace off too.
 cache.subscribePublications(({ state, previousState }) => {
-    if (workerProjectorRole || !state || !previousState || !Trace.on()) return;
+    if (workerProjectorRole || !state || !previousState) return;
+    if (previousState.stats?.partyMarketReturn !== state.stats?.partyMarketReturn)
+        invoke('GameServer/Bot/Population/PartyMarketBreak').traceCommitted(previousState, state);
+    if (!Trace.on()) return;
     invoke('GameServer/Bot/Population/PartyRequestPlanner').traceCommitted(previousState, state);
     invoke('GameServer/Clan/ClanPurchaseCredit').traceCommitted(previousState, state);
 });

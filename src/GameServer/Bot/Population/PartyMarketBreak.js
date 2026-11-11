@@ -63,8 +63,13 @@ function clanDuty(party) {
     const objective = party?.stats?.objective;
     return objective?.priority === 'required' && !!objective.clanGoalKey;
 }
+// A return ticket still held: before its 15 minutes run out. Past them the party no longer
+// waits for its member (pending drops it) and the member's next trip drops it
+// (GoalExecutor.beginMarketTravel). A ticket with no time (until missing, 0, not a number)
+// is held by neither: departure always writes one.
+const held = (token, now) => Number(token?.until) > now;
 function pending(party, now = Date.now()) {
-    return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
+    return Object.values(party?.stats?.marketAbsences || {}).filter(value => held(value, now));
 }
 // The trips a clan duty lets its member go on (its stay answered one,
 // ColdSimulationKernel.partyStay, one absence at a time): an unload of a bag at its
@@ -85,6 +90,42 @@ function departure(party, member, travel, now, given = undefined) {
         slots: need?.slots, limit: need?.limit };
     return { ...travel, stats: { ...travel.stats, partyMarketReturn: token, clanPartyObjective: token.objective } };
 }
+// The party the ticket returns to still runs the errand its member left: a clan duty's
+// goal, else (an ordinary party's warehouse trip) its objective.
+function sameObjective(party, token) {
+    return token?.cleanupReason === 'craft_warehouse'
+        ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
+        : party?.stats?.objective?.clanGoalKey === token?.objective?.clanGoalKey;
+}
+const sameTicket = (a, b) => String(a.partyId) === String(b.partyId) && a.startedAt === b.startedAt;
+// A stay trip's departure and its one end, traced at the commit of its member's row that
+// sets or clears the return ticket (BotLifeState's publication): every path that ends a trip
+// writes that row (the return to its party, the wait for it, a visit's end with its party
+// gone, a lost way back, a new trip over an expired ticket). The end: returned (in its party
+// again), return_wait (waits for it, party_wait) or alone (goes on without it); its reason,
+// what the party is at that commit: party_gone (no live row), party_hot (near the player),
+// objective_changed, party_live. A ticket past its time ends as expired, with the end it
+// found as the reason, and is counted (party:stay_trip:expired). Main only.
+function traceCommitted(previous, state, now = Date.now()) {
+    const before = previous.stats?.partyMarketReturn || null, after = state.stats?.partyMarketReturn || null;
+    if (!before && !after || before && after && sameTicket(before, after)) return;
+    // lazy: the worker loads this module without main's party rows; Situations links back here.
+    const Trace = require('../DecisionTrace'), bot = Number(state.characterId);
+    if (before) {
+        const party = invoke('GameServer/Bot/Population/BackgroundPartyState').find(before.partyId);
+        const end = String(state.party?.partyId || state.partyId || '') === String(before.partyId) ? 'returned'
+            : state.activity === 'party_wait' ? 'return_wait' : 'alone';
+        const cause = end === 'returned' ? undefined : !party ? 'party_gone' : party.status === 'hot' ? 'party_hot'
+            : !sameObjective(party, before) ? 'objective_changed' : 'party_live';
+        const expired = !held(before, now), startedAt = Number(before.startedAt);
+        if (expired) require('../Situations').note('party:stay_trip:expired');
+        Trace.record({ kind: 'party', bot, party: String(before.partyId), phase: 'stay_trip',
+            outcome: expired ? 'expired' : end, reason: expired ? end : cause,
+            durationMs: startedAt > 0 ? now - startedAt : undefined });
+    }
+    if (after) Trace.record({ kind: 'party', bot, party: String(after.partyId), phase: 'stay_trip', outcome: 'left',
+        reason: after.cleanupReason });
+}
 function stats(party, departed) {
     const token = departed?.stats?.partyMarketReturn;
     return token ? { marketAbsences: { ...party.stats?.marketAbsences, [departed.characterId]: token } } : {};
@@ -94,5 +135,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, pending,
-    goal, departure, stats, ready, FLOOR_REASONS };
+module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, held, pending,
+    goal, departure, sameObjective, traceCommitted, stats, ready, FLOOR_REASONS };

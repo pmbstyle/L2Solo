@@ -71,6 +71,8 @@ async function departureChecks() {
 
     const originals = [[GoalExecutor, 'beginMarketTravel'], [Disposition, 'inventoryCleanupNeed'], [Disposition, 'cleanupCounted']]
         .map(([owner, name]) => [owner, name, owner[name]]);
+    const originalTravel = GoalExecutor.beginMarketTravel;
+    const Situations = invoke('GameServer/Bot/Situations');
     let leaving = 0;
     GoalExecutor.beginMarketTravel = (member, goal) => goal?.type === 'sell_inventory' ? { ...member, activity: 'traveling',
         stats: { ...member.stats, travel: { reason: 'market_sale_inventory', arrivalActivity: 'shopping',
@@ -81,13 +83,29 @@ async function departureChecks() {
     const objective = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear', clanId: 1, clanOperation: 'equipment',
         minPartySize: 2, maxPartySize: 9 };
     const bagTrip = id => [{ characterId: id, reason: 'bag_full' }];
+    // A stay trip's departure and its end each leave one decision-trace record (kind party, phase stay_trip).
+    const Trace = invoke('GameServer/Bot/DecisionTrace');
+    const traced = [];
+    const stayTrips = () => traced.filter(row => row.kind === 'party' && row.phase === 'stay_trip')
+        .map(row => [row.bot, row.party, row.outcome, row.reason]);
+    Config.decisionTrace = true;
+    Trace.connect(batch => { traced.push(...batch.records.map(row => JSON.parse(row))); Trace.ack(batch.id, batch.records.length); });
     try {
         const breakParty = await formParty('mbleader', 3, { objective }, { clanId: 1 });
         leaving = breakParty.ids[0];
         const left = await Population.applyPartyStayTrips(breakParty.party, bagTrip(leaving));
+        assert.deepStrictEqual(stayTrips(), [[leaving, 'mbleader', 'left', 'inventory_capacity']], 'the departure is traced');
+        traced.length = 0;
         assert.strictEqual(left.departed[0]?.characterId, leaving, 'the leader leaves on its bag trip');
         assert.strictEqual(left.departed[0].stats.partyMarketReturn.partyId, 'mbleader', 'with its return ticket');
         await assertLeaderHandedOver('mbleader', leaving);
+
+        // Back at its party in time: the trip ends as returned.
+        const back = await LifeState.upsertState({ ...LifeState.cachedState(leaving), activity: 'party_wait',
+            stats: { ...LifeState.cachedState(leaving).stats, travel: null, marketReturn: null } }, 'market_break_fixture');
+        assert.strictEqual((await Population.resolveColdState(back)).reason, 'returned_to_clan_party');
+        assert.deepStrictEqual(stayTrips(), [[leaving, 'mbleader', 'returned', undefined]], 'the return is traced');
+        traced.length = 0;
 
         const driftParty = await formParty('mbdrift', 4, { objective }, { clanId: 1 });
         const drifted = driftParty.ids[3];
@@ -97,6 +115,34 @@ async function departureChecks() {
         assert.deepStrictEqual(PartyState.find('mbdrift').memberIds, driftParty.ids.slice(1, 3), 'the row keeps only attached members');
         assert.strictEqual(LifeState.cachedState(drifted).party.partyId, null, 'the leader sync writes no one who left back in');
         await assertLeaderHandedOver('mbdrift', leaving);
+        // Its ticket runs out before it comes back: its next trip drops it, and the trip ends as expired, counted.
+        const expired = () => Situations.counts().raised['party:stay_trip:expired'] || 0, expiredBefore = expired();
+        const away = LifeState.cachedState(leaving);
+        const late = await LifeState.upsertState({ ...away, activity: 'hunting', stats: { ...away.stats, travel: null, marketReturn: null,
+            partyMarketReturn: { ...away.stats.partyMarketReturn, until: Date.now() - 1 } } }, 'market_break_fixture');
+        const nextTrip = originalTravel(late, { type: 'sell_inventory', target: { cleanupReason: 'inventory_capacity' },
+            plan: { expectedBenefit: 'market_sale_inventory', marketTown: 'Giran' } }, Date.now());
+        assert(nextTrip, 'the next trip starts');
+        assert.strictEqual(nextTrip.stats.partyMarketReturn, null, 'the expired ticket is dropped');
+        await LifeState.upsertState(nextTrip, 'market_break_fixture');
+        assert.deepStrictEqual(stayTrips().filter(row => row[0] === leaving), [[leaving, 'mbdrift', 'left', 'inventory_capacity'],
+            [leaving, 'mbdrift', 'expired', 'alone']], 'the dropped ticket ends the trip as expired');
+        assert.strictEqual(expired(), expiredBefore + 1, 'the expiry is counted');
+        traced.length = 0;
+
+        // Its party dissolves while it shops: the visit ends with no party to go back to (finishMarketVisit), alone.
+        const townParty = await formParty('mbtown', 2, { objective }, { clanId: 1 });
+        leaving = townParty.ids[0];
+        assert.strictEqual((await Population.applyPartyStayTrips(townParty.party, bagTrip(leaving))).dissolved, true);
+        const shopper = LifeState.cachedState(leaving);
+        const shopping = await LifeState.upsertState({ ...shopper, activity: 'shopping', stats: { ...shopper.stats, travel: null,
+            marketReturn: { loc: { ...loc }, spotId: null } } }, 'market_break_fixture');
+        const done = GoalExecutor.finishMarketVisit(shopping, Date.now());
+        assert.strictEqual(done.stats.partyMarketReturn, null, 'a visit with its party gone ends the ticket');
+        await LifeState.upsertState(done, 'market_break_fixture');
+        assert.deepStrictEqual(stayTrips().filter(row => row[0] === leaving), [[leaving, 'mbtown', 'left', 'inventory_capacity'],
+            [leaving, 'mbtown', 'alone', 'party_gone']], 'the trip whose party dissolved ends traced');
+        traced.length = 0;
 
         const clanParty = await formParty('mbtoken', 2, { objective }, { clanId: 1 });
         const [leader, retained] = clanParty.ids;
@@ -124,7 +170,11 @@ async function departureChecks() {
         assert.strictEqual(waiting.party.partyId, null, 'no orphan party id');
         assert.strictEqual(waiting.stats.partyMarketReturn, null);
         assert.strictEqual(waiting.stats.partyRequest.clanGoalKey, objective.clanGoalKey);
+        assert.deepStrictEqual(stayTrips().filter(row => row[0] === leader), [[leader, 'mbtoken', 'left', 'inventory_capacity'],
+            [leader, 'mbtoken', 'return_wait', 'party_gone']], 'the trip to a dissolved party ends traced as a wait');
     } finally {
+        Config.decisionTrace = false;
+        Trace.stop();
         originals.forEach(([owner, name, value]) => { owner[name] = value; });
     }
 }
