@@ -553,7 +553,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     const ids = new Set();
     for (const row of knownRecipes || []) { ids.add(Number(row.recipeId ?? row)); yield 'recipe'; }
     for (const id of unpackKnown(options.knownShotRecipes || [])) { ids.add(id); yield 'recipe'; }
-    let best = null, recipeChoice = null;
+    let best = null, bestRate = 0, knownSeriesValue = 0, recipeChoice = null;
     const shared = { ...options, knownRecipes, searchMemo: new Map() };
     for (const id of SHOT_RECIPE_IDS) {
         const recipe = Recipes.resolveByRecipeId(id);
@@ -563,7 +563,11 @@ function* shotSearch(state, knownRecipes, context, options) {
         if (!plan) continue;
         const route = plan.first, series = plan.series;
         if (ids.has(id)) {
-            if (!best || series.valueHours > best.series.valueHours) best = plan;
+            // Known jobs compete on the same work hour: the priced series
+            // includes MP recovery, preparation and every required trip.
+            const rate = series.valueHours / Math.max(1 / 3600, series.hours);
+            knownSeriesValue = Math.max(knownSeriesValue, series.valueHours);
+            if (!best || rate > bestRate) { best = plan; bestRate = rate; }
             continue;
         }
         const owned = Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0;
@@ -581,7 +585,9 @@ function* shotSearch(state, knownRecipes, context, options) {
             && (!recipeChoice || decision.best.valueHours > recipeChoice.valueHours)) recipeChoice = {
             recipe, route, series, decision, valueHours: decision.best.valueHours };
     }
-    if (recipeChoice && (!best || recipeChoice.valueHours > best.series.valueHours)) {
+    // A new book repays its one-off purchase over its complete finite
+    // investment, against the strongest already-known series.
+    if (recipeChoice && (!best || recipeChoice.valueHours > knownSeriesValue)) {
         options.onSelection?.(recipeChoice.valueHours * recipeChoice.route.batches / recipeChoice.series.batches);
         return {
         recipeTarget: Number(recipeChoice.recipe.recipeId), recipeRoute: selectionFor({ ...recipeChoice.route,

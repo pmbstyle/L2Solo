@@ -4,6 +4,13 @@ require('../src/Global');
 
 const RaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const Estimate = require('../src/GameServer/Clan/ClanRaidEstimate');
+const Priority = require('../src/GameServer/Bot/Population/RaidRosterPriority');
+// This fixture owns composition and candidate ordering. Native combat and
+// procurement parity are exercised by test_clan_raid_assessment.js.
+const originalEstimate = Estimate.estimate, originalFacts = Priority.facts;
+Estimate.estimate = () => ({ assessment: { ready: true, reason: 'raid_ready' }, estimate: {} });
+Priority.facts = member => ({ score: member.testDamage ?? member.level });
 
 const originalReadiness = Gear.combatReadiness;
 let readinessCalls = 0;
@@ -81,8 +88,11 @@ try {
         testReadiness: { hasWeapon: true, armorCount: 5, weaponRank: 1, armorRank: 1, effectiveLevel: 52 }
     }));
     const weak = RaidPolicy.assessment({ members: undergeared }, profile);
-    assert.equal(weak.ready, false, 'a role-balanced party in the previous grade must not pull a raid boss');
-    assert.equal(weak.reason, 'raid_gear_insufficient');
+    assert.equal(weak.ready, false, 'the tank still needs its defensive equipment');
+    const cheapDamage = members.map(entry => RaidPolicy.raidRole(entry) === 'damage' ? { ...entry,
+        testReadiness: { hasWeapon: true, armorCount: 5, weaponRank: 0, armorRank: 0, effectiveLevel: 1 } } : entry);
+    assert(RaidPolicy.assessment({ members: cheapDamage }, profile).ready,
+        'DD item grade alone cannot veto the native combat assessor');
 
     const bGradeBoss = { id: 'raid:b-grade', avgLevel: 52 };
     const tankWithExpensiveWeapon = members.map((entry, index) => ({
@@ -171,10 +181,8 @@ try {
         ]
     };
     const dwarfPaddedAssessment = RaidPolicy.assessment(dwarfPaddedClan, profile);
-    assert.equal(dwarfPaddedAssessment.ready, false,
-        'a spoiler and crafter must not pad a five-member combat core into a raid-ready roster');
-    assert.equal(dwarfPaddedAssessment.eligible.some((entry) => [55, 57].includes(entry.classId)), false,
-        'dwarves must not manufacture the minimum combat core');
+    assert.equal(dwarfPaddedAssessment.ready, true,
+        'equipped spoilers and crafters contribute native damage like random-raid DDs');
 
     const fillerReadiness = { hasWeapon: false, armorCount: 0, weaponRank: 0, armorRank: 0, effectiveLevel: 35 };
     const fullWithDwarves = {
@@ -227,7 +235,7 @@ try {
     assert.equal(musicComposition.ready, true,
         'song and dance are optional damage members, not mandatory caster buffers');
     assert.equal(musicComposition.musicFighters, 2);
-    assert.equal(musicComposition.damageRoles, 2);
+    assert.equal(musicComposition.damageRoles, 4);
 
     const highSinger = member(601, 21, { level: 57 });
     const secondSinger = member(602, 21, { level: 56 });
@@ -292,4 +300,6 @@ try {
     console.log('Clan raid readiness, mixed-grade power, cache, role balance, party retention and level ceiling passed');
 } finally {
     Gear.combatReadiness = originalReadiness;
+    Estimate.estimate = originalEstimate;
+    Priority.facts = originalFacts;
 }

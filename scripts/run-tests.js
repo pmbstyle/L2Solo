@@ -270,6 +270,7 @@ const tests = [
     'tests/test_auto_soulshots.js',
     'tests/test_shot_stock_restock.js',
     'tests/test_shot_stock_weapon_rank.js',
+    'tests/test_blessed_shot_forecast.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_shot_economy.js',
     'tests/test_beginner_shot_policy.js',
@@ -410,8 +411,10 @@ const tests = [
     'tests/test_raid_buff_composition.js',
     'tests/test_raid_search_coverage.js',
     'tests/test_raid_priority_search.js',
+    'tests/test_raid_forecast_pacing.js',
     'tests/test_raid_adjacent_cohort.js',
     'tests/test_raid_target_priority.js',
+    'tests/test_raid_target_selection.js',
     'tests/test_raid_defense_assessment.js',
     'tests/test_raid_healing_estimate.js',
     'tests/test_raid_forecast_work.js',
@@ -590,6 +593,9 @@ const tests = [
     'tests/test_cold_raid_preparation_checkpoint.js',
     'tests/test_cold_visibility_handoff.js',
     'tests/test_clan_raid_policy.js',
+    'tests/test_clan_raid_assessment.js',
+    'tests/test_clan_raid_helpers.js',
+    'tests/test_clan_raid_mage_offense.js',
     'tests/test_clan_raid_failure_policy.js',
     'tests/test_bot_background_drops.js',
     'tests/test_cold_kill_rewards.js',
@@ -1335,6 +1341,9 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_opportunistic_raids.js',
+    'tests/test_raid_search_coverage.js',
+    'tests/test_raid_target_selection.js',
     'tests/test_craft_material_recruitment.js',
     'tests/test_party_destination_reservations.js',
     'tests/test_craft_material_party.js',

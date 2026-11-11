@@ -688,7 +688,7 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
     const refused = async () => { await options.onRefused?.(); return null; };
     if (objective?.fullRoster) {
         members = ClanRaidRoster.selectMembers(members, objective, partyLimitsForObjective(objective));
-        if (members.length !== 9) return refused();
+        if (members.length !== objective.fullRoster.memberIds.length) return refused();
     }
     if (ClanEquipmentPartyPolicy.applies(objective)) {
         members = members.filter(member => ClanEquipmentPartyPolicy.allowed(member, objective));
@@ -738,7 +738,9 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
             return null;
         }
     }
-    const leader = PartyComposition.chooseLeader(members);
+    const marked = requested?.fullRoster;
+    const leader = PartyComposition.chooseLeader(marked
+        ? members.filter(member => require('../../Clan/ClanRaidExpedition').coreIds(marked).includes(member.characterId)) : members);
     if (!leader) { await options.onRefused?.(); return null; }
     const objectiveMember = members.find((member) => (
         member.stats?.partyRequest?.status === 'open'
@@ -1288,7 +1290,7 @@ const PopulationService = {
             }
         });
 
-        registry.register({ name: 'opportunistic_raids', intervalMs: 11000, offsetMs: 45000,
+        registry.register({ name: 'opportunistic_raids', intervalMs: 5000, offsetMs: 45000,
             run: () => this.opportunisticRaids?.pulse() });
         registry.register({ name: 'opportunistic_raid_combat', intervalMs: 4000, offsetMs: 45000,
             run: () => this.opportunisticRaids?.maintain() });
@@ -1362,13 +1364,14 @@ const PopulationService = {
                     !BackgroundPartyState.raidCompetitors(spot.raidBossTemplateId, status, exceptPartyId, 'opportunity').length)
                 && !invoke('GameServer/RaidBoss/RaidEncounterScope').otherParticipants(World, boss, excludedIds);
         };
-        const assess = async (members, spot, timestamp = Date.now(), { fundSupplies = false } = {}) => {
+        const assess = async (members, spot, timestamp = Date.now(), { fundSupplies = false, targets = null } = {}) => {
             const party = { partyId: 'raid_assessment', leaderId: members[0].characterId,
                 memberIds: members.map(s => s.characterId), spotId: spot.id,
                 stats: { objective: { sourceKind: 'raid', opportunisticRaid: true, spotId: spot.id,
                     maxFightSeconds: Config.opportunisticRaidMaxFightSeconds,
                     shotReserve: Config.opportunisticRaidShotReserve,
-                    fundRaidSupplies: fundSupplies } } };
+                    fundRaidSupplies: fundSupplies,
+                    ...(targets?.length ? { raidCandidateIds: targets.map(s => s.raidBossTemplateId) } : {}) } } };
             const result = await ColdSimulationCoordinator.requestPartyGoals(party, members, { timestamp });
             return result.ok && result.joint?.raidAssessment
                 || { ready: false, reason: result.reason || 'raid_assessment_unavailable' };
@@ -1393,6 +1396,7 @@ const PopulationService = {
             canWork: () => this.started && !this.resolving
                 && Number(Database.pending()) < 4
                 && Number(Metrics.currentEventLoopLag()) < 40,
+            forecastPressure: timestamp => ColdSimulationCoordinator.raidForecastPressure(timestamp),
             dissolve: async (party, reason) => {
                 const current = BackgroundPartyState.find(party.partyId);
                 if (!current || current.status !== 'active') return;
@@ -1417,6 +1421,7 @@ const PopulationService = {
         service.preparations = new (require('./RaidSupplyPreparation').RaidSupplyPreparation)({
             life: LifeState, coordinator: ColdSimulationCoordinator, memory: Memory,
             market: ColdMarketService, catalog: Catalog, assess, bossFree, form: service.form,
+            onAssessment: verdict => { service.searchCounters.lastPreparation = verdict; },
             onReleased: ids => service.remember(ids, Date.now())
         });
         this.opportunisticRaids = service;
@@ -2604,6 +2609,7 @@ const PopulationService = {
             return LifeState.applyResolve(state, result, options).then(async saved => {
                 if (!saved) return { ok: false, reason: 'state_write_rejected', state };
                 let current = saved;
+                current = await require('../../Clan/ClanRaidSupply').advance(current, LifeState, ColdMarketService, startedAt);
                 if (current.activity === 'shopping') {
                     const purchase = await ColdMarketService.tryPurchase(current, null);
                     current = purchase.state || current;

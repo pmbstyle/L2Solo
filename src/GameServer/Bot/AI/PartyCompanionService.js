@@ -202,7 +202,7 @@ function partyLeaderSession(session) {
 function membersForLeader(leaderSession) {
     if (!leaderSession) return [];
     if (leaderSession.hotBackgroundPartyId) {
-        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession).filter(s => s !== leaderSession);
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').partyRoster(leaderSession).filter(s => s !== leaderSession);
     }
     return botSessions().filter((session) => isActiveCompanion(session, leaderSession));
 }

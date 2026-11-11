@@ -178,9 +178,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <!-- STABLE_DOWNLOADS -->
 | Platform | Download |
 |----------|----------|
-| **Windows** | [L2Solo-Launcher-0.2.2-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.2-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-mac-arm64.dmg) |
-| **Linux** | [L2Solo-Launcher-0.2.2-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.1/L2Solo-Launcher-0.2.2-linux-x86_64.AppImage) |
+| **Windows** | [L2Solo-Launcher-0.2.3-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.3-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.3-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
 On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.

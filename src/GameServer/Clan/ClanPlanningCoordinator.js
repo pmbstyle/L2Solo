@@ -315,7 +315,9 @@ class ClanPlanningCoordinator {
         if (Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
         const inputs = this.inputsFor(payload.jobKey);
-        let message = { jobKey: payload.jobKey, deadlineAt: payload.deadlineAt, contextRevision, held: [] };
+        let message = { jobKey: payload.jobKey, deadlineAt: payload.deadlineAt, contextRevision, held: [],
+            fundRaidSupplies: payload.fundRaidSupplies !== false, coreMemberIds: payload.coreMemberIds || null,
+            unchargedHelperIds: payload.unchargedHelperIds || null };
         for (const name of ['clan', 'previousGoal', 'economicRequirements', 'spots']) {
             if (Object.hasOwn(inputs.values, name) && inputs.values[name] === payload[name]) message.held.push(name);
             else if (name === 'spots') message = writer.pack({ ...message, spots: payload.spots });
@@ -376,6 +378,7 @@ async function buildStaticMarket(recipes) {
     const items = BotGear.currentWearableRows(DataCache.items);
     const npcOffers = [];
     const supplyIds = [...new Set([...items.map(item => item.selfId),
+        ...invoke('GameServer/Inventory/ShotStock').SHOT_IDS,
         ...recipes.flatMap(recipe => recipe.materials.map(row => row.selfId))])];
     for (let i = 0; i < supplyIds.length; i++) {
         npcOffers.push(...MarketOpportunity.npcOffersAll(supplyIds[i]).map(offerRow));
@@ -391,8 +394,9 @@ async function buildStaticMarket(recipes) {
 
 // Callers during a build share it; a failed build is not kept.
 function staticMarketFor(rate, recipes) {
-    if (staticMarket?.rate !== rate || staticMarket.recipes !== recipes) {
-        const entry = { rate, recipes, value: buildStaticMarket(recipes) };
+    const shotsDisabled = require('../Bot/Population/PopulationConfig').staticShotsDisabled;
+    if (staticMarket?.rate !== rate || staticMarket.recipes !== recipes || staticMarket.shotsDisabled !== shotsDisabled) {
+        const entry = { rate, recipes, shotsDisabled, value: buildStaticMarket(recipes) };
         staticMarket = entry;
         entry.value.catch(() => { if (staticMarket === entry) staticMarket = null; });
     }

@@ -796,6 +796,22 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     const heldAtDecision = itemId => Number(card?.itemId) === Number(itemId) && Number.isFinite(Number(card.heldAtDecision))
         ? Number(card.heldAtDecision) : ColdEconomyDecision.heldFor(preparedState, itemId);
     const filledSince = itemId => ColdEconomyDecision.heldFor(LifeState.cachedState(ownerId) || state, itemId) > heldAtDecision(itemId);
+    if (Object.hasOwn(plan, 'learnRecipe')) {
+        if (!stillPrepared()) return { state, buyPending: true };
+        const wanted = state.stats?.shotRecipeDemand;
+        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(plan.learnRecipe));
+        if (state.phase !== 'cold' || !Number.isSafeInteger(plan.learnRecipe)
+            || !recipe || !ShotCraftPolicy.SHOT_RECIPE_ITEM_IDS.has(Number(recipe.recipeItemId))
+            || Number(wanted?.recipeId) !== Number(recipe.recipeId)
+            || Number(wanted?.itemId) !== Number(recipe.recipeItemId)
+            || !(Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0))
+            throw Error('economy_plan_recipe_changed');
+        await run(async () => ({ state: await LifeState.learnCraftableRecipes(state,
+            { recipeIds: [Number(recipe.recipeId)] }) }));
+        // Consuming the scroll and publishing its book moves native authority.
+        // The worker's next card chooses production with the learned recipe.
+        return { state, ...(!stillPrepared() ? { buyPending: true } : {}) };
+    }
     if (plan.bidLimits?.length) await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
         if (!Array.isArray(plan.bidLimits) || plan.bidLimits.length > MAX_LINES + BoardRules.BOT_RECORDS.buy_ad) throw Error('economy_plan_bid_cap');
@@ -957,12 +973,12 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     });
     // An empty desired list closes the old ads; it does not run another bid
     // decision on main. The plan's quote remains the quote the worker made.
-    // An earlier native improvement/craft/sale may have filled the root or
+    // An earlier native improvement/craft may have filled the root or
     // changed its inputs. Publishing its old certificate at the new revision
     // would manufacture fresh authority from stale need. Keep it pending.
     const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
-    if (Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd())) return { state, buyPending: true, stale: !filledAd() };
-    const published = Object.hasOwn(plan, 'buyAds') ? await run(async () => {
+    let buyPending = Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd());
+    const published = Object.hasOwn(plan, 'buyAds') && !buyPending ? await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
         if (filledAd()) return { state, buyPending: true };
         // One read of the owner's records: nothing below writes before publishBuyAds.
@@ -1024,7 +1040,8 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         planBidRefused[error.message] = (planBidRefused[error.message] || 0) + 1;
         return { state: LifeState.cachedState(ownerId) || state, buyPending: true, stale: true };
     }) : null;
-    if (published?.buyPending) return { state, buyPending: true, ...(published.stale ? { stale: true } : {}) };
+    buyPending ||= !!published?.buyPending;
+    if (buyPending) return { state, buyPending: true, ...(!stillPrepared() || published?.stale ? { stale: true } : {}) };
     if (!reviewGoal || !plan.travel) return { state };
     await run(async () => {
         const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
@@ -1033,7 +1050,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         if (!travel) townTripRefused.refused += 1;
         return { state: travel ? await LifeState.upsertState(travel, 'worker_economy_market_travel') : state };
     });
-    return { state };
+    return { state, ...(buyPending ? { buyPending: true } : {}) };
 }
 
 async function reconcileOne(state, goal) {

@@ -8,6 +8,12 @@ const isolated = require('./helpers/isolatedSocialDatabase')('clan-goal-recruitm
 require('../src/Global');
 isolated.assertConfigured(options.default);
 const Data = invoke('GameServer/DataCache'); Data.init();
+// Recruitment/ownership fixture: a bounded native encounter, independent of
+// the strength of the live C4 raid catalogue.
+Data.npcs.push({ ...structuredClone(Data.npcs.find(npc=>npc.selfId===10137)), selfId:9900139,
+    template:{kind:'Boss',name:'Recruitment fixture',level:50,raidBoss:true},
+    stats:{pAtk:1,mAtk:1,pDef:1000,mDef:1000,atkSpd:278,accur:1},
+    vitals:{maxHp:1000,maxMp:1000,revHp:0,revMp:0} });
 const Database = invoke('Database');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -30,16 +36,17 @@ function member(id, classId, skills = []) {
         stats: { generatedCold: true, classId, partyHistory: { peer: { runs: 4 } }, coldCombat: {
             version: Combat.PROFILE_VERSION, classId, skillSource: 'database', skills: Combat.skillSnapshotsFromRecords(skills) } } };
     const role = Gear.roleFor(value);
-    for (const slot of [7, 14, 6, 9, 10, 11, 12]) {
+    for (const slot of [7, 14, 8, 6, 9, 10, 11, 12]) {
         if (slot === 14 && Object.values(value.inventory).some(row => row.slot === 7)) continue;
         const item = Data.items.find(row => row.etc?.slot === slot && row.etc?.rank === 'c' && Gear.suitable(row, value, role, 'c'));
         if (item) value.inventory[item.selfId] = { selfId: item.selfId, slot, amount: 1, equipped: true };
     }
+    for(const selfId of [1463,1464,2511]) value.inventory[selfId]={selfId,amount:100000,stackable:true};
     return value;
 }
 const roster = [member(base, 4), member(base + 1, 17, buff), ...[7, 9, 10, 21, 0].map((classId, i) => member(base + 2 + i, classId))];
 const healer = member(base + 7, 15, heal), damage = member(base + 8, 9);
-const spot = { id: 'raid:recruitment', avgLevel: 50, raidBoss: true, raidBossTemplateId: 10137,
+const spot = { id: 'raid:recruitment', avgLevel: 50, raidBoss: true, raidBossTemplateId: 9900139,
     raidInstanceId: 'fixture-boss', raidAuthorityRevision: 1, raidWorldAvailable: true };
 const seed = new DatabaseSync(isolated.world);
 seed.exec(fs.readFileSync(path.join(__dirname, '../database/sql/sqlite.sql'), 'utf8'));

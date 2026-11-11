@@ -5,6 +5,11 @@ const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
+const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+const board = new BoardIndex();
+board.put({ id: 990001, ownerId: 990002, storeType: 1, kind: 'shop', town: 'Dion',
+    lines: [{ lineId: 990003, selfId: 1463, count: 1000000, price: 10 }] });
+require('../src/GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({ board, tripFrom: () => () => 0 }));
 const Work = require('../src/GameServer/Bot/Population/RaidSearchWork');
 const { RaidRosterCoverage, choose, combination, WINDOWS } = require('../src/GameServer/Bot/Population/RaidRosterCoverage');
 const { RaidSearchCounters, LIMITS } = require('../src/GameServer/Bot/Population/RaidSearchCounters');

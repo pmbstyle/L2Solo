@@ -216,13 +216,15 @@ async function lifecycle() {
     const Policy = invoke('GameServer/Bot/Population/OpportunisticRaidPolicy');
     const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/OpportunisticRaidDirector');
     const roster = Array.from({ length: 9 }, (_, i) => ({ characterId: 950 + i, level: 30 }));
-    const steps = { candidates: Policy.candidateSteps, proposals: Policy.proposalSteps };
+    const steps = { candidates: Policy.candidateSteps, proposals: Policy.proposalSteps,
+        ready: Policy.candidateReady, composition: Policy.composition, compatible: Policy.compatible };
+    Policy.candidateReady = () => true; Policy.composition = () => ({ ready: true }); Policy.compatible = () => true;
     Policy.candidateSteps = function* () { yield* []; return { candidates: roster, proposals: [roster], rejected: {}, tankCursor: 0, priorityKey: null }; };
     Policy.proposalSteps = function* () { yield* []; return [roster]; };
     const spot = { id: 'raid:10366', raidBossTemplateId: 10366, avgLevel: 30 };
     const director = new OpportunisticRaidDirector({ database: { execute: async () => [] },
         config: { opportunisticRaidMemberCooldownMs: 0, opportunisticRaidIntervalMs: 1, opportunisticRaidMaxParties: 2, opportunisticRaidAliveFraction: 0 },
-        life: { cachedState: () => null, statesByIds: async ids => roster.filter(s => ids.includes(s.characterId)), subscribePublications: () => () => {} },
+        life: { cachedState: id => roster.find(s => s.characterId === id), statesByIds: async ids => roster.filter(s => ids.includes(s.characterId)), subscribePublications: () => () => {} },
         parties: { admitted: () => [], subscribeChanges: () => () => {} },
         catalog: { all: () => [spot], liveTemplateIds: () => new Set([10366]) },
         memory: { ensureMany: async () => {}, assess: () => ({ ready: true }) }, canWork: () => true, bossFree: () => true,
@@ -231,7 +233,8 @@ async function lifecycle() {
     try {
         await director.start();
         await director.pulse(Date.now());
-    } finally { director.stop(); Object.assign(Policy, { candidateSteps: steps.candidates, proposalSteps: steps.proposals }); }
+    } finally { director.stop(); Object.assign(Policy, { candidateSteps: steps.candidates, proposalSteps: steps.proposals,
+        candidateReady: steps.ready, composition: steps.composition, compatible: steps.compatible }); }
     assert.deepEqual(take('raid'), [[950, 'forming', 'formed', null], [null, 'search', 'formed', 'start']], 'the roster formed once, its search once');
     assert.equal(Trace.line({ kind: 'raid', phase: 'forming', outcome: 'formed', party: 'bgp_raid', npcId: 10366 }), 'raid forming formed bgp_raid boss 10366');
     assert.equal(Trace.summary([{ kind: 'errand', phase: 'failed', reason: 'no_source', bot: 1, at: 1 }]).lifecycle['errand failed (no_source)'], 1);

@@ -238,7 +238,7 @@ function buyOffer(state, offer, options = {}) {
 }
 
 // What sells an item at a fixed price in each town: the NPC shops and the
-// configured shot merchants until 3.6 (their stock never runs out for a cold bot, as
+// configured reserve shot merchants (their stock never runs out for a cold bot, as
 // the author's cold NPC restock had it).
 function staticOffers(selfId) {
     return [...MarketOpportunity.npcOffersAll(selfId),
@@ -248,10 +248,7 @@ function staticOffers(selfId) {
 // The bot's round trip to a town in Adena, from its farming place
 // (OfferOrder.tripCost); none to the town it is shopping in.
 function tripFrom(state, timestamp = Date.now()) {
-    const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
-    const origin = OfferOrder.farmingOrigin(state, (spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId));
-    const trip = OfferOrder.tripCost(state, { origin, timestamp });
-    return (town) => (town === here ? 0 : trip ? trip(town) : 0);
+    return OfferOrder.purchaseTrip(state, spotId => invoke('GameServer/Bot/AI/SpotService').findById(spotId), timestamp);
 }
 
 // Keep the originating valuation through a trip. Zero is a real rate: it
@@ -361,7 +358,8 @@ function planPurchase(state, selfId, amount, options = {}) {
         return OfferQuery.admits(line, state);
     };
     // The units other bots' trips claim are gone for this buyer (OfferQuery.takeableUnits).
-    const countOf = line => OfferQuery.takeableUnits(line, state);
+    const countOf = line => Math.max(0, OfferQuery.takeableUnits(line, state)
+        - (options.claimed?.get(`${line.recordId}:${line.lineId}`) || 0));
     const acceptFill = (line, count) => {
         const refused = priceRefused(state, line, count, board);
         if (refused) options.onPriceRefusal?.(line, count);
@@ -409,6 +407,7 @@ function planPurchase(state, selfId, amount, options = {}) {
     } else {
         plan = OfferQuery.cheapestTown(board, selfId, {
             amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept, acceptFill, countOf,
+            requireRepeatable: options.purpose === 'raid_supply',
             npcOffers: npc ? staticOffers(selfId) : [], cost: cost || tripFrom(state, timestamp),
             quoteDepth: options.quoteDepth ? PriceDecision.QUOTE_DEPTH : 0
         });

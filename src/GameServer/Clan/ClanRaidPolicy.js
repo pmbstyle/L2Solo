@@ -3,6 +3,7 @@ const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const GradeRule = invoke('GameServer/Bot/AI/GearGradeRule');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const SpotRisk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const Priority = require('../Bot/Population/RaidRosterPriority');
 
 const MIN_MEMBERS = 7;
 const MAX_MEMBERS = 9;
@@ -69,7 +70,7 @@ function raidRole(member) {
     if (Roles.isPartyMusicFighter(member)) return 'damage';
     const role = ClanPolicy.rosterRole(member);
     if (DAMAGE_ROLES.has(role)) return 'damage';
-    if (role === 'spoiler' || role === 'crafter') return 'filler';
+    if (role === 'spoiler' || role === 'crafter') return 'damage';
     return role;
 }
 
@@ -109,6 +110,9 @@ function combatCapable(member, profile, readinessCache = null) {
     // already in serious trouble regardless of one extra equipment grade.
     if (role === 'buffer' && !Roles.isPartyMusicFighter(member)) return true;
     const readiness = readinessFor(member, readinessCache);
+    // A DD contributes its real weapon damage. Its item's grade never vetoes
+    // the slot; the shared forecast judges net DPS, defenses and shot supply.
+    if (raidRole(member) === 'damage') return readiness.hasWeapon && readiness.armorCount >= 2;
     const requiredRank = requiredGearRank(profile);
     const support = ['healer', 'buffer'].includes(role);
     const armorTolerance = ARMOR_GRADE_TOLERANCE[role] ?? ARMOR_GRADE_TOLERANCE.default;
@@ -145,18 +149,15 @@ function feasibility(members = [], profile = {}, readinessCache = null) {
     const tankEffectiveLevel = Math.max(0, ...readiness
         .filter((entry) => entry.role === 'tank')
         .map((entry) => effectiveCombatLevel(entry.member, entry.readiness, entry.role)));
-    const ready = members.length >= MIN_MEMBERS
-        && averageEffectiveLevel >= bossLevel + MIN_EFFECTIVE_LEVEL_ADVANTAGE
-        && tankEffectiveLevel >= bossLevel + MIN_EFFECTIVE_LEVEL_ADVANTAGE;
+    // Effective levels remain useful diagnostics. Native damage and survival
+    // below own readiness, rather than an average distorted by DD item grade.
+    const ready = members.length >= MIN_MEMBERS;
     return {
         ready,
         averageEffectiveLevel,
         tankEffectiveLevel,
         requiredGearRank: requiredGearRank(profile),
-        reason: members.length < MIN_MEMBERS ? 'raid_gear_insufficient'
-            : averageEffectiveLevel < bossLevel + MIN_EFFECTIVE_LEVEL_ADVANTAGE ? 'raid_party_power_low'
-                : tankEffectiveLevel < bossLevel + MIN_EFFECTIVE_LEVEL_ADVANTAGE ? 'raid_tank_power_low'
-                    : 'raid_power_ready'
+        reason: ready ? 'raid_power_ready' : 'raid_gear_insufficient'
     };
 }
 
@@ -206,14 +207,25 @@ function composition(members = [], options = {}) {
 }
 
 function selectRaidMembers(members = [], readinessCache = null, beneficiary = null, options = {}) {
+    readinessCache ||= new Map();
     const preferred = new Set((options.preferredMemberIds || []).map(number));
     const preference = (left, right) => Number(preferred.has(memberId(right))) - Number(preferred.has(memberId(left)));
+    const damageScore = member => {
+        const key = `raid_priority:${memberId(member)}`;
+        if (!readinessCache?.has(key)) {
+            const score = Priority.facts(member, 'damage').score;
+            readinessCache?.set(key, score);
+            return score;
+        }
+        return readinessCache.get(key);
+    };
+    const strength = member => raidRole(member) === 'damage' ? damageScore(member)
+        : number(readinessFor(member, readinessCache).effectiveLevel, member.level);
     const ranked = [...members].sort((left, right) => (
         preference(left, right)
         || Number(BUSY_ACTIVITIES.has(left.activity) || !!left.stats?.travel)
             - Number(BUSY_ACTIVITIES.has(right.activity) || !!right.stats?.travel)
-        || number(readinessFor(right, readinessCache).effectiveLevel, right.level)
-        - number(readinessFor(left, readinessCache).effectiveLevel, left.level)
+        || strength(right) - strength(left)
         || number(right.level) - number(left.level)
         || memberId(left) - memberId(right)
     ));
@@ -277,13 +289,16 @@ function assessment(clan = {}, profile = {}, previousGoal = null, options = {}) 
     const readinessCache = options.readinessCache || new Map();
     const retained = new Set((previousGoal?.assignedMemberIds || []).map(number).filter(Boolean));
     const available = (clan.members || []).filter((member) => (
-        availableMember(member, profile, retained)
+        availableMember(member, profile, retained) && (!clan.id || !(Number(member.clanId ?? member.stats?.clanId) > 0)
+            || Number(member.clanId ?? member.stats?.clanId) === Number(clan.id))
     ));
     const candidates = available.filter((member) => (
         raidRole(member) !== 'filler' && combatCapable(member, profile, readinessCache)
     ));
-    const core = selectRaidMembers(candidates, readinessCache, options.beneficiary, { ...compositionOptions,
-        preferredMemberIds: options.preferredMemberIds });
+    const core = options.coreMemberIds
+        ? candidates.filter(member => options.coreMemberIds.includes(memberId(member)))
+        : selectRaidMembers(candidates, readinessCache, options.beneficiary, { ...compositionOptions,
+            preferredMemberIds: options.preferredMemberIds });
     const coreComposition = composition(core, { ...compositionOptions, desiredMembers: MIN_MEMBERS });
     if (!coreComposition.ready) {
         const possibleComposition = composition(available.filter((member) => raidRole(member) !== 'filler'), { ...compositionOptions, desiredMembers: MIN_MEMBERS });
@@ -313,23 +328,58 @@ function assessment(clan = {}, profile = {}, previousGoal = null, options = {}) 
     }
     const raidComposition = composition(eligible, compositionOptions);
     const power = feasibility(core, profile, readinessCache);
-    const ready = raidComposition.ready && power.ready;
-    // Only a ready roster's estimate is read: a clan sweep asks every raid spot.
-    const raidEstimate = ready ? require('./ClanRaidEstimate').estimate(eligible, profile, readinessCache) : null;
+    const structuralReady = raidComposition.ready && power.ready;
+    // Preparation is cached per immutable roster for this planning job. The
+    // same native forecast as random raids checks duration and supply.
+    let forecast = structuralReady ? require('./ClanRaidEstimate').estimate(eligible, profile, readinessCache,
+        { ...options, clanId: clan.id }) : null;
+    let coreMemberIds = options.coreMemberIds;
+    if (structuralReady && eligible.length === 9 && (coreMemberIds || options.allowHelpers !== false && clan.id > 0
+        && desiredMembers === 9 && ['raid_damage_below_regeneration', 'raid_fight_too_long', 'raid_healing_mana'].includes(forecast.assessment.reason))) {
+        const mainIds = eligible.map(memberId);
+        const rank = member => {
+            const key = `raid_priority:${memberId(member)}`;
+            if (!readinessCache.has(key)) readinessCache.set(key, Priority.facts(member, 'damage').score);
+            return readinessCache.get(key);
+        };
+        const helpers = available.filter(member => !mainIds.includes(memberId(member))
+            && Number(member.clanId ?? member.stats?.clanId) === Number(clan.id)
+            && (!coreMemberIds || options.preferredMemberIds?.includes(memberId(member))))
+            .sort((a, b) => rank(b) - rank(a) || memberId(a) - memberId(b)).slice(0, 9);
+        // No role quota or equipment gate for helpers. A spare learned buffer
+        // may improve their own party, but is never needed to form it.
+        const buffer = available.find(member => !mainIds.includes(memberId(member))
+            && Number(member.clanId ?? member.stats?.clanId) === Number(clan.id)
+            && raidRole(member) === 'buffer' && (!coreMemberIds || options.preferredMemberIds?.includes(memberId(member)))
+            && require('./ClanCandidateCapabilities').contextualCapability(member, 'mainBuffer', { beneficiaries: helpers }));
+        if (!coreMemberIds && buffer && helpers.length > 1 && !helpers.includes(buffer)) helpers[helpers.length - 1] = buffer;
+        if (helpers.length) {
+            coreMemberIds = mainIds;
+            eligible.push(...helpers);
+            forecast = require('./ClanRaidEstimate').estimate(eligible, profile, readinessCache,
+                { ...options, clanId: clan.id, coreMemberIds });
+        }
+    }
+    const ready = structuralReady && forecast.assessment.ready;
+    const raidEstimate = forecast?.estimate || null;
     return {
         ...raidComposition,
         ...power,
         ready,
-        reason: !raidComposition.ready ? 'raid_gear_insufficient' : power.reason,
+        reason: !raidComposition.ready ? 'raid_gear_insufficient' : forecast?.assessment.reason || power.reason,
         eligible,
         core,
+        ...(coreMemberIds ? { coreMemberIds, unchargedHelperIds: eligible.filter(member => !coreMemberIds.includes(memberId(member))
+            && !forecast?.assessment.shotPlans?.some(plan => plan.id === memberId(member))).map(memberId) } : {}),
         raidEstimate,
+        raidAssessment: forecast?.assessment || null,
         candidates,
         available,
         deficits: { ...raidComposition.deficits, coreMembers: Math.max(0, MIN_MEMBERS - core.length),
-            gear: 0, power: power.ready ? 0 : 1 },
+            gear: 0, power: !power.ready || forecast?.assessment.reasons?.some(reason =>
+                ['raid_damage_below_regeneration', 'raid_fight_too_long'].includes(reason)) ? 1 : 0 },
         minMembers: desiredMembers,
-        maxMembers: MAX_MEMBERS
+        maxMembers: coreMemberIds ? 18 : MAX_MEMBERS
     };
 }
 

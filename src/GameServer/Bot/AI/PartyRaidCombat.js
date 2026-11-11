@@ -12,6 +12,7 @@ const RAID_RECOVERY_BUFF_WAIT_MS = 8000;
 const ratio = (value, max) => Number(value || 0) / Math.max(1, Number(max || 1));
 
 function mainRaidTank(members, party) {
+    members = members.filter(member => !require('../../Clan/ClanRaidExpedition').helper(party, member));
     return members.find((member) => (
         Number(member.actor.fetchId?.() || 0) === Number(party?.leaderId || 0)
         && Roles.inferRole(member.actor) === 'tank'
@@ -37,13 +38,13 @@ function rememberRaidAction(owner, target, skill, now, retryMs = RAID_ACTION_RET
     raidClaimMap(owner).set(raidActionKey(target, skill), now + retryMs);
 }
 
-function raidMinionPickup(owner, members, raidPlan, mainTank, now, playerLeader) {
+function raidMinionPickup(owner, members, raidPlan, mainTank, now, playerLeader, party) {
     const Effects = invoke('GameServer/Effects/EffectStore');
     // Capability, not the inferred party role: music fighters can also have
     // Aggression. A holder remains valid while its skill is on reuse, so two
     // rescuers do not continually pull the same add away from one another.
     const holders = members.filter(member => member === mainTank
-        || SkillCapabilities.aggressionSkill(member.actor));
+        || !require('../../Clan/ClanRaidExpedition').helper(party, member) && SkillCapabilities.aggressionSkill(member.actor));
     const holderIds = new Set(holders.map(member => member.actor.fetchId()));
     const providers = holders.filter(member => member !== mainTank && member !== playerLeader
         && !member.actor.state.fetchCasts?.()
@@ -135,7 +136,7 @@ function preserveControlledAdds(session, bot, raidPlan) {
 }
 
 function tick(session, bot, Generics, AI, context, now = Date.now()) {
-    const { owner, members, near = members, raidPlan, raidTank, partyId = null, playerLeader = null, combatBuffs } = context;
+    const { owner, members, near = members, raidPlan, raidTank, partyId = null, playerLeader = null, combatBuffs, party } = context;
     const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
     preserveControlledAdds(session, bot, raidPlan);
     if (!Restrictions.canUseBasicAction(bot)) return true;
@@ -158,7 +159,7 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
         return true;
     }
     if (!isRaidTank) {
-        const pickup = raidMinionPickup(owner, members, raidPlan, raidTank, now, playerLeader);
+        const pickup = raidMinionPickup(owner, members, raidPlan, raidTank, now, playerLeader, party);
         if (pickup?.provider === session) {
             rememberRaidAction(owner, pickup.target, pickup.skill, now, RAID_AGGRESSION_RETRY_MS);
             castRaidSkill(session, bot, pickup.target, pickup.skill, Generics);

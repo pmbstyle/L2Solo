@@ -217,5 +217,36 @@ const originalBoard = Afk.boardIndex;
     assert.equal(Horizon.retainedBatches(personalSeries,{...demandBoard,
         ownerLines:()=>[{storeType:1,custodyPolicy:0,selfId:1464,count:1000}]},now),4,
         'posted commercial output offsets public sales, not the private stock shortfall');
+
+    // A long D order and one C order compete for the same smith's work.
+    // Both recipes are already learned: extra future batches cannot make a
+    // lower return per work hour displace the better current opportunity.
+    const fairState = { ...state, inventory: { ...state.inventory } };
+    delete fairState.inventory[1459];
+    const fairRecords = [
+        { ...records[0], lines: [{ ...records[0].lines[0], count: 9984, price: 500 }] },
+        { ...records[1], lines: [{ ...records[1].lines[0], count: 476, price: 600 }] },
+        { ...records[2], lines: [{ ...records[2].lines[0], selfId: 1459, count: 1, price: 5000 }] }
+    ];
+    const fairBoard = new BoardIndex(); fairRecords.forEach(row => fairBoard.put(row));
+    Afk.boardIndex = () => fairBoard;
+    const fairIndex = Shots.marketSnapshot(now);
+    const nextD = Shots.craftCandidate(fairState, Recipes.resolveByRecipeId(20), fairIndex);
+    const nextC = Shots.craftCandidate(fairState, recipe, fairIndex);
+    assert(nextD && nextC);
+    assert(nextC.valueHours / nextC.hours > nextD.valueHours / nextD.hours,
+        'the authored C recipe earns more per work hour, including its MP and bought crystals');
+    const dProjection = Horizon.projectState(fairState, nextD.recipe, nextD.context);
+    const futureD = Shots.craftCandidate(dProjection, nextD.recipe, fairIndex);
+    const longD = Horizon.value(futureD, fairState, nextD, nextD.context);
+    assert(longD && longD.batches > nextD.batches && longD.valueHours > nextC.valueHours,
+        'the competing D order really has a larger total return over its longer financed series');
+    const fairChoice = Policy.unpackStep(Policy.packStep((await probe(fairState, {
+        ...input, recipes: { recipeBook: Codec.pack([20,21]), knownShotRecipes: [20,21] },
+        boardRows: fairRecords.map(row => [row.id,rowOf(row)]) })).selected));
+    assert.equal(fairChoice.craft?.recipeId,21,
+        'known recipes compete on comparable work, rather than the total size of their series');
+    assert(fairChoice.craft.batches * Number(recipe.mpCost) <= fairState.vitals.mp,
+        'a work-rate comparison cannot grant future MP to the physical command');
     console.log('PASS shot horizon: finite D/C demand, one scroll, MP recovery, repeated trips, upfront cash and native rechecks');
 })().catch(error=>{console.error(error.stack);process.exitCode=1;}).finally(()=>{Afk.boardIndex=originalBoard;});

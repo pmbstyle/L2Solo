@@ -521,6 +521,14 @@ function productionInputAmounts(state, timestamp = Date.now()) {
         for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
             inputs[id] = Math.max(Number(inputs[id] || 0),amount);
     }
+    // A paid scroll can arrive before the town visit learns it. Its accepted
+    // learning target owns one copy through that handoff, including native
+    // sale checks that read only the persisted stats inside their transaction.
+    const wanted = state?.stats?.shotRecipeDemand;
+    const recipe = wanted && C4RecipeItems.resolveByRecipeId(Number(wanted.recipeId));
+    if (recipe && SHOT_PRODUCT_RANK[Number(recipe.productId)]
+        && Number(recipe.recipeItemId) === Number(wanted.itemId))
+        inputs[recipe.recipeItemId] = Math.max(Number(inputs[recipe.recipeItemId] || 0), 1);
     const gear = kitGear(state, timestamp);
     if (gear > 0) inputs[gear] = Number(inputs[gear] || 0) + 1;
     return inputs;

@@ -262,8 +262,10 @@ function prepare(members, { objective, party, spots, timestamp } = {}) {
     // the tables carry a party-role row (a mystic priced at a fighter's blow overstates the party's kills).
     const lines = members.map(member => {
         const own = Table.roleFor(member), options = { spoilSkillLevel: Rewards.spoilSkillLevel(member) };
-        const row = Table.value(spot.id, own, member.level, true, options);
-        if (row || !require('./PartyRequestPlanner').supportWithoutGround(member, spots)) return { role: own, shots: true, row }; // lazy: the planner's chain loads this module
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        const shots = Shots.shotRows(Shots.planForState(member));
+        const row = Table.value(spot.id, own, member.level, shots, options);
+        if (row || !require('./PartyRequestPlanner').supportWithoutGround(member, spots)) return { role: own, shots, row }; // lazy: the planner's chain loads this module
         return { role: 'dps', shots: false, row: Table.value(spot.id, 'dps', member.level, false, options) };
     });
     const values = lines.map(line => line.row);

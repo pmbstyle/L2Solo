@@ -58,11 +58,14 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     weight ??= moneyWeight(state, persona);
     const tableRole = Table.roleFor(state);
     hunt ??= Hunt.huntIncome(state, timestamp, mode);
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    const shotPlan = ShotStock.planForState(state), charged = ShotStock.shotRows(shotPlan);
+    const shotMode = ShotStock.shotRows(shotPlan, hunt.useShots);
     // The previous build's packet hour comes first, by design; the hunt only fills a missing packet.
     const packetHour = Number(Packet.hourAdena(state.stats?.money));
     const huntHour = Number(hunt.perHour);
     const bestIncome = packetHour > 0 && Number.isFinite(packetHour) || huntHour > 0 && Number.isFinite(huntHour)
-        ? null : Table.best(tableRole, state.level, true, 'income');
+        ? null : Table.best(tableRole, state.level, shotMode, 'income');
     const hourAdena = Math.max(1, Number.isFinite(packetHour) && packetHour > 0 ? packetHour
         : Number.isFinite(huntHour) && huntHour > 0 ? huntHour : Number(bestIncome?.adena || 0) + Number(bestIncome?.loot || 0));
     deathHours ??= deathHoursOf(state, hunt);
@@ -73,7 +76,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const rewardOptions = { spoilSkillLevel: (SpotRewardExpectation ||= require('./SpotRewardExpectation')).spoilSkillLevel(state) };
     const own = Hunt.sampledRows(state, timestamp, mode);
     const calibrations = own.flatMap(row => {
-        const base = Table.value(row.spotId, tableRole, state.level, true, rewardOptions);
+        const base = Table.value(row.spotId, tableRole, state.level, charged, rewardOptions);
         return base?.exp > 0 ? [Math.max(0, row.exp) / row.cycleMs * 3600000 / base.exp] : [];
     });
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
@@ -105,7 +108,8 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // deaths } an hour on the spot, the crowd cut there; measured: its own party
     // samples, with their costs an hour). A forecast takes the bot's calibration;
     // its deaths are the party's own (no solo death sample, no crowd here).
-    const reader = (spot, shots = hunt.useShots !== false, given = null) => {
+    const reader = (spot, shots = shotMode, given = null) => {
+        shots = ShotStock.shotRows(shotPlan, shots);
         // Charged observations cannot estimate a deliberately uncharged hunt.
         const observed = !given && shots ? own.find(row => row.spotId === spot.id) : null;
         const rate = observed ? 3600000 / observed.cycleMs : 0;
@@ -154,7 +158,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // shares a spot with (reader.hunters): named, for a holder that keeps what it made of
     // the rows (KeptSourceFacts). A row read with the default shots.
     reader.inputs = () => [['table', Table.revision()], ['weight', weight], ['role', tableRole], ['tableLevel', Number(state.level)],
-        ['shots', hunt.useShots !== false], ['expHour', Math.max(1, hour?.exp || hunt.expPerHour)],
+        ['shots', shotMode], ['expHour', Math.max(1, hour?.exp || hunt.expPerHour)],
         ['moneyHour', moneyHour], ['deathHours', deathHours], ['riskWeight', riskWeight],
         ['prices', [costs.shots, costs.potions]], ['spoilSkill', rewardOptions.spoilSkillLevel],
         ['samples', own.map(row => [row.spotId, row.exp, row.adena, row.loot, row.kills, row.costs, row.cycleMs])],

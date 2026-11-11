@@ -1,10 +1,10 @@
 'use strict';
 
-// What a bot may buy where (Group F, our rule until the 3.6 production chain):
-// an NPC shop sells it what it lists, graded shots only while static shots are
-// on (allowsNpcShot); a configured city store sells it only shots, while they
-// are on (allowsFixedShot). Every bot purchase and its price read these
-// (MarketOpportunity.botCanBuy, StaticMerchantPricing.cheapestPurchase forBot).
+// Configured shot merchants are a priced reserve alongside public crafters.
+// The optional disable switch removes that reserve and NPC graded shots;
+// ordinary NPC non-shot stock remains available. Purchases and prices read
+// the same policy through MarketOpportunity.botCanBuy and
+// StaticMerchantPricing.cheapestPurchase with forBot.
 const NO_GRADE_SHOTS = new Set([1835, 2509, 3947]);
 const GRADED_SHOTS = new Set([1463, 1464, 1465, 1466, 1467, 2510, 2511, 2512, 2513, 2514, 3948, 3949, 3950, 3951, 3952]);
 const config = () => invoke('GameServer/Bot/Population/PopulationConfig');

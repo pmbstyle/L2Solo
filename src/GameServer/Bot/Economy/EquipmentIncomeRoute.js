@@ -23,11 +23,12 @@ function economicHunt(state) {
 // spot closest to level; values(...): the same as { spotId, value } (the income
 // each is ranked by: SpotSearch's leveling goal).
 function spotList(state, { price } = {}) {
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), shotPlan = ShotStock.planForState(state);
     let spoiler, costs = null;
     const spoilerOf = () => spoiler !== undefined ? spoiler
         : (spoiler = ColdKillRewards.spoilerFor(state, { skills: ColdCombatProfile.skillsFor(state) }) || null);
     const ranked = read => (shots, level = state.level, minGap = -7) => read(SpotValueTable.roleFor(state), level,
-        costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, shots,
+        costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, ShotStock.shotRows(shotPlan, shots),
         { spoilSkillLevel: spoilerOf()?.skillLevel || 0 });
     return { spoiler: spoilerOf, ids: ranked(SpotValueTable.rankedSpotIds), values: ranked(SpotValueTable.rankedSpotValues) };
 }
@@ -41,8 +42,9 @@ function matchupOptions(state, timestamp) {
 // it stands on makes two spots each look better from the other (own outputs
 // are not inputs); at the bot's money weight.
 function valuesFor(state, timestamp, price) {
-    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, true, 'income');
-    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, true, 'exp')?.exp };
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), shots = ShotStock.shotRows(ShotStock.planForState(state));
+    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, shots, 'income');
+    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, shots, 'exp')?.exp };
     const weight = SpotEconomics.moneyWeight(state);
     return { hour, weight, evaluate: SpotEconomics.create(state, { timestamp, price, hour, moneyWeight: weight }) };
 }
@@ -79,6 +81,7 @@ function needsDrinks(state, spot, shots) {
 // holding no shot fires and buys until the decision is taken again.
 function spotRates(state, spot, shots) {
     const Shots = invoke('GameServer/Inventory/ShotStock'), Packet = require('./StatsPacket'), plan = Shots.planForState(state);
+    shots = Shots.shotRows(plan, shots);
     const row = SpotValueTable.value(spot.id, SpotValueTable.roleFor(state), state.level, shots);
     return { shotKind: Shots.decidedKind(state), shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)), drinks: needsDrinks(state, spot, shots) };
@@ -96,7 +99,7 @@ function spotUseOf(state, earning = state?.stats?.earning) {
         && (!state?.spotId || String(state.spotId) === String(earning.spotId))) return earning;
     const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const role = SpotValueTable.roleFor(state), level = Number(state?.level) || 1;
-    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true))
+    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, invoke('GameServer/Inventory/ShotStock').shotRows(plan)))
         || invoke('GameServer/Bot/AI/BotHuntEfficiency').incomeRow(state);
     return { shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)) };

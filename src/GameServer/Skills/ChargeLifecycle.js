@@ -1,5 +1,3 @@
-const ServerResponse = invoke('GameServer/Network/Response');
-
 // C4 keeps force/sonic charges for ten minutes from the first charge in the
 // current stack. Adding more charges does not refresh that deadline.
 const EXPIRY_MS = 600000;
@@ -17,7 +15,8 @@ function set(actor, value) {
 
 function notify(session, actor) {
     if (!actor) return;
-    const packet = ServerResponse.etcStatusUpdate(actor);
+    // Cold forecasts read charge timing only; packets belong to live actions.
+    const packet = invoke('GameServer/Network/Response').etcStatusUpdate(actor);
     if (actor.session?.dataSendToMe) actor.session.dataSendToMe(packet);
     else session?.dataSendToMe?.(packet);
 }

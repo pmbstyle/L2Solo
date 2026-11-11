@@ -815,12 +815,12 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const bestSpotId = hunt.spotId || state.spotId;
     const walkBackHours = WalkBack.hours(bestSpotId, state, deps.spots || SpotService.spots);
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
-    const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, hunt.useShots !== false) : null;
-    // With no spot: the income row the bot's hour is priced on (BotHuntEfficiency.incomeRow).
-    const bestTable = spotTable || Hunt.incomeRow(state);
     const ShotStock = invoke('GameServer/Inventory/ShotStock');
     // The shot kind of this build's own earning answer when it took the decision (its search).
     const shotPlan = ShotStock.planForState(income.searched ? { ...state, stats: { ...state.stats, earning: income.earning } } : state);
+    const shots = ShotStock.shotRows(shotPlan, hunt.useShots);
+    const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, shots) : null;
+    const bestTable = spotTable || Hunt.incomeRow(state);
     const shotItemId = shotPlan.selfId;
     const potion = HealingPotionStock.purchasePotionFor(state), potionItemId = potion.selfId;
     const hourAdena = Hunt.huntHour(hunt, state);
@@ -833,7 +833,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const potionUse = positive(bestTable?.potions);
     // The bottles that save rest (a solo hunter's, RestPotion).
     const potionRest = spotTable && Hunt.situationOf(state, deps.mode) === 'solo'
-        ? RestPotion.stockUse(state, { row: Table.cycle(bestSpotId, tableRole, state.level, hunt.useShots !== false),
+        ? RestPotion.stockUse(state, { row: Table.cycle(bestSpotId, tableRole, state.level, shots),
             potion, hour: hourAdena, timestamp }) : { use: 0, hours: 0 };
     let bagHours = 2;
     const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;

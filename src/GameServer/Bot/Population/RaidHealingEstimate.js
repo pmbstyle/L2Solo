@@ -78,23 +78,30 @@ function options(fighter, target, seconds, timestamp) {
     return plans;
 }
 
-// Keep the existing conservative single-spell strategy per healer. Compare
-// the two providers' choices without adding two copies of one native stack.
+// Keep the conservative single-spell strategy per healer. Merge equivalent
+// native HoT families so a clan's extra supports never cause a Cartesian
+// product of spell choices; one best total per occupied-family mask survives.
 function capacity(healers, target, seconds, timestamp = Date.now()) {
     if (!(seconds > 0) || !Number.isFinite(seconds) || !(target.vitals?.maxHp > 0)) return 0;
     const choices = healers.map(fighter => options(fighter, target, seconds, timestamp));
-    function best(index, used) {
-        if (index === choices.length) return 0;
-        let value = 0;
-        for (const plan of choices[index]) {
-            if (plan.family && used.has(plan.family)) continue;
-            if (plan.family) used.add(plan.family);
-            value = Math.max(value, plan.healing + best(index + 1, used));
-            if (plan.family) used.delete(plan.family);
+    const families = new Map();
+    let states = new Map([[0n, 0]]);
+    for (const plans of choices) {
+        const best = new Map();
+        for (const plan of plans) best.set(plan.family, Math.max(best.get(plan.family) || 0, plan.healing));
+        const next = new Map();
+        for (const [family, healing] of best) {
+            if (family && !families.has(family)) families.set(family, 1n << BigInt(families.size));
+            const flag = family ? families.get(family) : 0n;
+            for (const [used, value] of states) {
+                if (used & flag) continue;
+                const mask = used | flag;
+                next.set(mask, Math.max(next.get(mask) || 0, value + healing));
+            }
         }
-        return value;
+        states = next;
     }
-    return best(0, new Set());
+    return Math.max(0, ...states.values());
 }
 
 module.exports = { efficiency, capacity };
