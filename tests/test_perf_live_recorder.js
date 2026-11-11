@@ -66,6 +66,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         const worker = cpu.filter(line => line.thread === 'perf-test-busy');
         assert.equal(worker.length, 2);
         for (const line of worker) {
+            assert.equal(typeof line.sampleGaps, 'number', 'every chunk line carries its gap count, 0 included');
             assert.ok(line.longestMs >= 100 && line.longestMs < 400, `worker longest run ${line.longestMs}: ${JSON.stringify(worker)}`);
             assert.ok(line.longTurns >= 2, 'a 120 ms block every 300 ms gives several long turns a chunk');
         }

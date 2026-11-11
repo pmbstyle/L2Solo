@@ -30,6 +30,8 @@ try {
     assert.deepEqual(result.differs, []);
     const row = (label) => result.table.find(([name]) => name === label);
     assert.deepEqual(row('main busy %'), ['main busy %', 20, 25]);
+    assert.deepEqual(row('main sample gaps over 50 ms'), ['main sample gaps over 50 ms', undefined, undefined],
+        'runs recorded before gaps were counted compare as -, not 0');
     assert.deepEqual(row('main heap end MB'), ['main heap end MB', 400, 380]);
     // walk dropped off B's list (its floor is 5 %): it moved by at most 10 -> 5, not to 0.
     const shortB = folder(summary(25, 380, [{ fn: 'price src/a.js:1', pct: 12 }, { fn: 'new src/c.js:3', pct: 5 }]));

@@ -91,6 +91,7 @@ function threadSummary(data, label, start, end) {
     // stretches without samples are in neither its busy nor its idle time: left out of its length.
     const chunks = window.filter(line => !starved.has(line));
     const unsampled = chunks.reduce((sum, line) => sum + (line.unsampledMs || 0), 0);
+    const gaps = chunks.reduce((sum, line) => sum + (line.sampleGaps || 0), 0);
     const ms = chunks.reduce((sum, line) => sum + line.ms, 0) - unsampled;
     const busy = chunks.reduce((sum, line) => sum + line.busyMs, 0), gc = chunks.reduce((sum, line) => sum + line.gcMs, 0);
     // By part of the server, each sample charged to its owner (native time to the project code that
@@ -112,7 +113,7 @@ function threadSummary(data, label, start, end) {
         chunkLongestP95Ms: chunks.length ? round(quantiles(chunks.map(line => line.longestMs))?.p95Ms || 0) : null,
         instances: new Set(chunks.map(line => line.instance)).size,
         starvedChunks: starved.size,
-        unsampledSec: round(unsampled / 1000, 1),
+        unsampledSec: round(unsampled / 1000, 1), sampleGaps: chunks.some(line => line.sampleGaps !== undefined) ? gaps : null,
         longTurnCode: top(held, 10, 0).map(({ fn, ms: total }) => ({ fn, ms: total })),
         cpuSelf: top(self, 60, profiled),
         cpuFiles: top(files, 10, profiled),
@@ -422,7 +423,7 @@ function print(s) {
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
             + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`
             + `${t.starvedChunks ? `; ${t.starvedChunks} starved chunks left out (the profiler sampled too rarely)` : ''}`
-            + `${t.unsampledSec ? `; ${t.unsampledSec} s without samples left out` : ''}`);
+            + `${t.unsampledSec ? `; ${t.unsampledSec} s without samples left out${t.sampleGaps ? ` (${t.sampleGaps} sample gaps over ${CpuProfile.STARVED_STRETCH_MS} ms)` : ''}` : ''}`);
         if (t.longTurnCode.length) console.log('  long turns held by:');
         for (const row of t.longTurnCode.slice(0, 6)) console.log(`  ${String(row.ms).padStart(8)} ms  ${row.fn}`);
         console.log(`  by part: ${t.cpuParts.map(row => `${row.part} ${row.pct} %`).join(', ')}`);

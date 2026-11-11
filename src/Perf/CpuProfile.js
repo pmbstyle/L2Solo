@@ -111,12 +111,15 @@ function attribute(run, samples, ms, tree, count) {
 const STARVED_GAP_MS = 20;
 // A profiler can also starve in stretches while its average stays under STARVED_GAP_MS (2026-11-06,
 // the cold worker's first minute: 3788 samples in 61.5 s, 120 gaps over 100 ms holding 19 s, read
-// as one 60.6 s busy run). A gap between two samples longer than STARVED_STRETCH_MS (5 x
-// STARVED_GAP_MS) is a sample-less stretch: whether the thread went back to wait in it is unknown,
+// as one 60.6 s busy run). A gap between two samples longer than STARVED_STRETCH_MS (the long-turn
+// length: a gap that long hides a turn the report would read as code cost; 2026-11-11, a busy
+// laptop starved both threads in gaps of 50-100 ms that were neither counted nor left out) is a
+// sample-less stretch: whether the thread went back to wait in it is unknown,
 // so its time is neither busy nor idle (counted as unsampledMs) and it ends a busy run, as an idle
-// sample does. Healthy threads stay far below it (that run: main's longest gap 49 ms, at boot).
+// sample does. Healthy threads still show some (2026-11-11: up to 17 a run, none over 70 ms, under
+// 1.2 s in all); a starved one showed 272 (20 s), so the count a chunk reports (sampleGaps) tells them apart.
 // A chunk with more than STARVED_SHARE of its time in such stretches is starved as a whole.
-const STARVED_STRETCH_MS = 5 * STARVED_GAP_MS;
+const STARVED_STRETCH_MS = 50;
 const STARVED_SHARE = 0.1;
 
 // longTurnMs: a busy run at least this long is a long turn. top: rows per list. keep: long turns
@@ -212,4 +215,4 @@ function parse(text) {
     }
 }
 
-module.exports = { analyze, sourceOf, frameOf, repairText, parse };
+module.exports = { STARVED_STRETCH_MS, analyze, sourceOf, frameOf, repairText, parse };

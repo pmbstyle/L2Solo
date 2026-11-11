@@ -301,7 +301,7 @@ class LiveRecorder {
             // even when this chunk's file was not kept.
             endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}),
             // Stretches the profiler left without samples (CpuProfile): in ms but in neither busy nor idle.
-            ...(a.unsampledMs ? { unsampledMs: a.unsampledMs } : {}) });
+            ...(a.unsampledMs ? { unsampledMs: a.unsampledMs } : {}), sampleGaps: a.stretches });
         if (a.starved && !state.starvedWarned) {
             state.starvedWarned = true;
             this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms,`
