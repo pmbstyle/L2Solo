@@ -220,8 +220,7 @@ function evaluate(state, options = {}) {
     };
     const rollKey = item => ['dispose', ctx.characterId, item.selfId,
         ...(options.decisionPoint != null ? [options.decisionPoint] : rollFacts(state, ctx, item.selfId))];
-    const craftReservations = ctx.economy?.craftReservations
-        || ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
+    const craftReservations = ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
         reserved: { ...options.reserved, ...craftReservations } });
     const owned = (ctx.board?.ownerLines?.(Number(state.characterId)) || [])

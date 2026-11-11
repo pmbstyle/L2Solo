@@ -61,7 +61,7 @@ function traderContext(state, deps = {}) {
                 .ownSaleInputs(state, board?.ownerLines?.(Number(state.characterId)) || []).state : state;
             // The bot's own kept stock, as its listing keeps it (keptStock over the plan's published targets).
             const candidates = Disposition.saleCandidates(source, { unlimited: true, keptAmounts: Disposition.keptStock(state),
-                reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
+                reserved: Disposition.selectedCraftAmounts(state, economy.network) });
             const amounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
             const lines = new Map();
             if (backed) {

@@ -228,6 +228,36 @@ async function run() {
     const crystallizeReserve = Disposition.selectedCraftAmounts(gearBag, exchangeNetwork);
     assert.equal(crystallizeReserve[shield], 1, 'the selected crystallization holds its source gear');
     assert.equal(listed(gearBag, { reserved: crystallizeReserve }), 1, 'the other shield is sold');
+    // A shot stock crafted at a workshop from D crystals and soul ore: the held step buys the
+    // crystals, and the town visit served by the card decided with none in the bag (hot or
+    // cold) keeps the crystals it then bought for the craft; it never lists them again.
+    {
+        const { WishNetwork } = require('../src/GameServer/Bot/Economy/WishNetwork');
+        const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+        const Reservations = require('../src/GameServer/Bot/Economy/CraftInputReservations');
+        const buy = (id, price) => ({ key: `item:${id}`, object: id, price,
+            paths: [{ kind: 'buy', activity: 'shopping', price, executable: true }] });
+        const shots = new WishNetwork().build({ actorKey: 'shot-workshop', inputKey: 'shot-workshop', remembered: false,
+            nodes: [{ key: 'stock:shots', need: 'power', object: { itemId: 1463, amount: 300, kind: 'shots' }, valueHours: 50,
+                price: 0, paths: [{ requirements: [{ key: 'item:1463', amount: 300 }] }] },
+            { key: 'item:1463', object: 1463, price: 20000, paths: [{ kind: 'buy', activity: 'shopping', price: 20000 },
+                { kind: 'craft', activity: 'crafting', quoted: true, costHours: 1 / 3600, workshop: { characterId: 5, price: 50 },
+                    grossRequirements: [{ key: 'item:1785', amount: 3 }, { key: 'item:1458', amount: 1 }] }] },
+            buy(1458, 1500), buy(1785, 50)],
+            roots: ['stock:shots'], wallet: 10e6, hourAdena: 100000, stockFor: () => ({ owned: 0, incoming: 0 }) });
+        assert.equal(shots.activity.rootKey, 'stock:shots');
+        assert.equal(shots.activity.activity, 'shopping', 'the held step buys a craft input');
+        const decided = { ...state(), inventory: {}, stats: { classId: 46 } };
+        const card = Decision.compact(structuredClone(Decision.capture({ network: { ...shots,
+            craftNeeds: Reservations.selectedCraftNeeds(shots) } }, decided)));
+        const bought = { ...decided, inventory: inventory(1458, 5) };
+        for (const read of [Decision.view, Decision.nearView]) {
+            const economy = read(bought, card, { board: quoteOptions.board, timestamp: quoteOptions.now });
+            const sale = Listing.evaluate(bought, { ...quoteOptions, economy });
+            assert.equal(sale.listings.find(row => row.selfId === 1458)?.count || 0, 0,
+                'crystals bought for the held craft after its decision stay out of the visit\'s sale');
+        }
+    }
     Supplies.useRowSource(id => id === 42 ? [42, 1, [[1458, 3]], 1] : undefined);
     assert.equal(count(state(1458, { clanId: 42, equipmentPlan: exchange })), 5,
         'personal C exchange and active clan need have separate quantities');

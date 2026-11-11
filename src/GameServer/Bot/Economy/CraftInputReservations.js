@@ -26,14 +26,15 @@ function selectedCraftNeeds(network) {
     visit(plan);
     return [...needs].sort((a, b) => a[0] - b[0]);
 }
-// The needs capped by what the bot holds: {id: amount}.
+// The needs capped by the bag the reader reads: {id: amount}. A built network and a
+// card's view carry the needs (craftNeeds) and are capped here, never at the decision:
+// an input bought after it is the craft's as one held then.
 function selectedCraftAmounts(state, network) {
     const reserved = {};
-    for (const [id, need] of selectedCraftNeeds(network)) reserved[id] = Math.min(Number(state.inventory?.[id]?.amount || 0), need);
+    for (const [id, need] of network?.craftNeeds || selectedCraftNeeds(network)) reserved[id] = Math.min(Number(state.inventory?.[id]?.amount || 0), need);
     return reserved;
 }
-// The held units of given needs as [id, amount] rows: the decision card's
-// craftReservations and the held build's craft inputs.
+// The held units of given needs as [id, amount] rows: the held build's craft inputs.
 function heldCraftRows(state, needs) {
     const rows = [];
     for (const [id, need] of needs || []) {

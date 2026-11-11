@@ -269,7 +269,7 @@ function verify() {
         craftNeeds: Reservations.selectedCraftNeeds(network) } }, spare)));
     assert.deepEqual(captured.activity.craftReservations, [[1864, 8]], 'physical craft reservations survive worker IPC');
     const protectedSale = Listing.evaluate(spare, { board: new BoardIndex(), now: timestamp, slots: 0,
-        keptAmounts: {}, economy: { ...ctx, craftReservations: Object.fromEntries(captured.activity.craftReservations) } });
+        keptAmounts: {}, economy: { ...ctx, network: Decision.view(spare, captured, { board, timestamp }).network } });
     assert.equal(protectedSale.npc.find(row => row.selfId === 1864)?.count, 2,
         'the main-thread market sells only the unused ingredient surplus');
     const spoilBoard = new BoardIndex();

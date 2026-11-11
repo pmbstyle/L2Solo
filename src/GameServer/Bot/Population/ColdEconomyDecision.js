@@ -14,7 +14,6 @@ const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
-const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
 const Situations = require('../Situations');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
@@ -45,6 +44,8 @@ class CompactActivity {
         if (leaf.targetId) this.targetId = leaf.targetId;
         if (leaf.funding) this.funding = true;
         if (leaf.items) this.items = leaf.items.slice(0, 8).map(Number);
+        // The held build's craft inputs as [id, need] rows, not capped by the bag: each
+        // reader caps them by the bag it reads (CraftInputReservations.selectedCraftAmounts).
         if (leaf.craftReservations?.length) this.craftReservations = leaf.craftReservations;
         // A shop step's own root bids its buyer may take back to pay it (WishNetwork).
         if (leaf.bids?.length) this.bids = leaf.bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number);
@@ -309,10 +310,7 @@ function capture(economy, state, seen = state) {
         if (left > 0) missing.set(id, left); else missing.delete(id);
     }
     const activity = leaf ? new CompactActivity(leaf) : null;
-    if (activity) {
-        const rows = CraftInputReservations.heldCraftRows(seen, economy?.network?.craftNeeds);
-        if (rows.length) activity.craftReservations = rows;
-    }
+    if (activity && economy?.network?.craftNeeds?.length) activity.craftReservations = economy.network.craftNeeds;
     // A served plan keeps its decision's count (withHeldUnits): stamped anew, a
     // partial fill would order the whole amount again and a hunt lose its progress.
     const held = activity ? heldAtDecisionOf(activity, seen) : undefined;
@@ -457,9 +455,10 @@ function view(state, decision, deps = {}, preparedBase = null) {
     // The kit: the build's own when it prepared these basics, else its published rates over the bag (EconomyContext.keptKit).
     let kit = preparedBase;
     const kitOf = () => kit ||= invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state, baseDeps);
+    // The network carries the held craft's inputs as a built one does (craftNeeds): a
+    // sale or storage read caps them by its own bag.
     const own = { state, hourAdena, moneyPrice, refillReserve: valid ? Number(Packet.refillReserve(packet)) : base.refillReserve,
-        board, network: { activity }, activity, wish,
-        craftReservations: Object.fromEntries(activity?.craftReservations || []),
+        board, network: { activity, ...(activity?.craftReservations ? { craftNeeds: activity.craftReservations } : {}) }, activity, wish,
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]),
             ...(row[3] === SHOT_RECIPE_WATCH ? { shotRecipeInvestment: true } : {}) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
