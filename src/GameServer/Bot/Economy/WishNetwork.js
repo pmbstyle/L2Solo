@@ -707,10 +707,11 @@ class WishNetwork {
     // wallet: the money the queue orders (the bag and the bot's own bids' escrow); bag: what a
     // shop is paid from (PurchaseFunding.budget of the state), the wallet when no bid holds any;
     // ownBids: item -> the money the bot's own backed bids for that item hold (PurchaseFunding.ownBids).
+    // offered: the item of the board offer that alone woke this reconsideration (Situations.offerWoke), 0: none.
     build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, bag = wallet, ownBids = null, refillReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
         caller = 'wish_network', trigger = 'request', stockFor = null, completionKey = null, reconsider = true,
-        reconsiderReasons = null, onReadyCraftProof = null }) {
+        offered = 0, reconsiderReasons = null, onReadyCraftProof = null }) {
         const diagnostic = Diagnostics.active();
         const captureReadyCraft = typeof onReadyCraftProof === 'function';
         if (diagnostic) Diagnostics.count('network', 'request');
@@ -722,10 +723,11 @@ class WishNetwork {
         const individual = Number(characterId) > 0;
         decisionSeq = Math.max(0, Math.trunc(Number(decisionSeq) || 0));
         activityLeaf = Number(activityLeaf) >>> 0;
+        offered = reconsider ? Number(offered) || 0 : 0;
         const retain = remembered && RETAIN_ACTORS;
         const cached = retain ? this.cache.get(actorKey) : null;
         if (cached?.inputKey === inputKey && cached.decisionSeq === decisionSeq && cached.activityLeaf === activityLeaf
-            && cached.completionKey === completionKey && cached.reconsider === reconsider) {
+            && cached.completionKey === completionKey && cached.reconsider === reconsider && cached.offered === offered) {
             if (captureReadyCraft) onReadyCraftProof(null);
             if (diagnostic) Diagnostics.count('network', 'hit', 'same_inputs');
             return remember(this.cache, actorKey, cached).result;
@@ -816,12 +818,17 @@ class WishNetwork {
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
         // Only an event (reconsider: the caller's raised sections or due soft changes)
         // weighs a held choice against the others; an ordinary rebuild keeps it.
-        // A held choice survives a reconsideration while no row beats it by the bot's loyalty.
-        // Leaf values already carry the off-focus (1 - loyalty) weight; the margin is the same trait.
-        const loyal = (choice, rows) => !reconsider || rows.every(row => score(row) <= score(choice) * (1 + loyalty));
+        // A held choice survives a reconsideration while no rival beats it by the bot's loyalty
+        // (beating: the rivals that do). Leaf values already carry the off-focus (1 - loyalty)
+        // weight; the margin is the same trait. A board offer alone (offered) weighs the held step
+        // against the steps that buy its item only, which take the step when one beats it; the
+        // focus and the rest of the plan stand: a C4 hunter who hears a WTS shout weighs that
+        // trade, not what he is after.
+        const beating = (choice, rows, rival = () => true) => !reconsider ? []
+            : rows.filter(row => rival(row) && score(row) > score(choice) * (1 + loyalty));
         const held = focusWishes.find(wish => wish.key === previous.focus?.[0]);
         const focused = focusWishes.find(wish => wish.key === completionKey)
-            || (held && loyal(held, focusWishes) ? held
+            || (held && (offered || !beating(held, focusWishes).length) ? held
                 : choose(focusWishes, score, roll('focus')));
         const focus = focused ? [focused.key, held === focused ? previous.focus[1] : playedHours,
             nonnegative(focused.price)] : null;
@@ -979,14 +986,20 @@ class WishNetwork {
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
         const heldLeaf = individual && activityLeaf ? candidates.find(leaf => leafId(leaf) === activityLeaf) : null;
-        const heldActivity = heldLeaf && loyal(heldLeaf, candidates) ? heldLeaf : null;
+        const leafRivals = heldLeaf ? beating(heldLeaf, candidates,
+            leaf => !offered || leaf.kind === 'buy' && Number(leaf.itemId) === offered) : [];
+        const heldActivity = heldLeaf && !leafRivals.length ? heldLeaf : null;
+        // The held step an offer's buys beat: they are the choice, and the held step stands
+        // again when none of them pays its trip.
+        const offerRivals = offered && heldLeaf && leafRivals.length ? leafRivals : null;
+        const leafSeq = decisionSeq;
         if (individual && activityLeaf && !heldActivity && decisionSeq === inputDecisionSeq) {
             // A completed, impossible or outscored step is a real reconsideration;
             // rebuilding the same valid step is not another tendency roll.
             decisionSeq++; activityLeaf = 0;
         }
         const completion = candidates.find(leaf => leaf.rootKey === completionKey && leaf.kind === 'luxury_exchange');
-        let activity = completion || heldActivity || choose(candidates, score, roll('activity'));
+        let activity = completion || heldActivity || choose(offerRivals || candidates, score, roll('activity'));
         // The review reads its goals to the end. A later tier waits for this one, it is
         // no later review: what the money left funds of it stands in the agenda, its wish
         // joins the queue as its step comes. So does a craft's next stage, after its key.
@@ -1008,7 +1021,7 @@ class WishNetwork {
         if (individual) {
             // One look a visit: a buy elsewhere goes only where the visit pays its one trip
             // (its steps in that town); a town that does not drops out of the choice.
-            let pool = candidates;
+            let pool = offerRivals || candidates;
             for (let towns = 0; activity?.kind === 'buy' && towns < AGENDA_STEPS; towns++) {
                 steps = agendaFor(activity);
                 const visit = [activity, ...steps.agenda.filter(step => step.town === activity.town)];
@@ -1018,6 +1031,10 @@ class WishNetwork {
                 pool = pool.filter(leaf => !(leaf.kind === 'buy' && leaf.town === town));
                 activity = choose(pool, score, roll('activity'));
                 steps = null;
+            }
+            if (!activity && offerRivals) {
+                activity = heldLeaf; decisionSeq = leafSeq;
+                if (activity.kind === 'buy') steps = agendaFor(activity);
             }
             if (heldActivity && activity !== heldActivity && decisionSeq === inputDecisionSeq) { decisionSeq++; activityLeaf = 0; }
         }
@@ -1057,7 +1074,7 @@ class WishNetwork {
         if (retain) {
             if (diagnostic && !this.cache.has(actorKey) && this.cache.size >= ACTOR_LIMIT)
                 Diagnostics.count('network', 'eviction', 'capacity');
-            remember(this.cache, actorKey, { inputKey, completionKey, reconsider, decisionSeq: inputDecisionSeq,
+            remember(this.cache, actorKey, { inputKey, completionKey, reconsider, offered, decisionSeq: inputDecisionSeq,
                 activityLeaf: inputActivityLeaf, result });
         }
         return result;

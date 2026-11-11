@@ -1292,8 +1292,10 @@ function buildForState(state, deps) {
     const networkKey = key;
     // A woken build re-weighs the held focus and step (WishNetwork reconsider): a
     // situation woke it. A reader's build keeps them, and so does a first build (no
-    // held entry: a restart, an eviction): the published focus and step stand.
+    // held entry: a restart, an eviction): the published focus and step stand. One a
+    // board offer alone woke weighs them against that item only (Situations.offerWoke).
     const reconsider = decide && !!held;
+    const offered = reconsider ? Situations.offerWoke(state.stats) : 0;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
         remembered: keeps,
         stockFor: context.stockFor,
@@ -1301,9 +1303,9 @@ function buildForState(state, deps) {
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
         wallet: context.wallet, bag: Funding.budget(state), ownBids: Funding.ownBids(sourceBoard?.ownerLines?.(Number(state.characterId))),
         refillReserve: base.refillReserve,
-        reconsider,
+        reconsider, offered,
         // Diagnostics only: the events that re-weigh (network:reconsider), 'quiet' for none.
-        reconsiderReasons: !diagnostic ? null : [decide ? 'woken' : 'quiet'],
+        reconsiderReasons: !diagnostic ? null : [!decide ? 'quiet' : offered ? 'offer' : 'woken'],
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
         hourAdena: context.hourAdena, riskWeight: context.riskWeight,
