@@ -1267,15 +1267,6 @@ function takeTurnWindow(at) {
 
 // The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
-// Why the held card did not serve this step, counted and carried into the
-// build for its shadow plan join while diagnostics run (L114); the build's
-// inputs are the same either way.
-// Few counter names (the worker keeps 256): a non-field activity is not a
-// lever and the structural segment is named once, not in every join. A bot
-// in a party or without a card never had a card to reuse: counted, not joined.
-// L120: the build after a basics of the same step takes its income route
-// (EconomyContext.incomeRouteFor checks the key and replays its price reads).
-// A copy, so the caller's deps (kept beside the advisory) never carry it.
 // The step's stats packet with the bot's shot demand (EconomyContext.shotDemand),
 // merged into the proposed stats by prepareResolve (the step's packet before
 // its round). A bot with no demand before or now carries no key.
@@ -1857,7 +1848,7 @@ function startKernel(config = {}) {
             // below: that is its one decision point. No market plan is asked after
             // the round: a taken build or a town visit plans it before.
             const stepEconomy = lifecyclePlan?.economy || null;
-            let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null;
+            let economy = stepEconomy, seenEcho = null, refreshed = null;
             const base = roundProjection(state, timestamp, writtenAt, lifecyclePlan);
             const resolved = ready && stepEconomy && !raidPreparing && !repatched ? ready
                 : await LifeStateProjector.prepareResolve(state, result, raidPreparing
@@ -1868,7 +1859,6 @@ function startKernel(config = {}) {
                     economyDepsFor: async projected => ({ spots: planningSpots, routeRows: await occupationFor(projected, timestamp, { caller: 'member' }, 'wish'),
                         board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), caller: 'member' }),
                     economyFor: async (projected, deps) => {
-                        observedDeps = deps;
                         // The workshop decision first when woken (the far step's order). The build
                         // plans on a new projection holding its keys (a state is replaced, not
                         // edited); the projector writes them under the build's packet.
@@ -1895,7 +1885,7 @@ function startKernel(config = {}) {
                         // The build's route facts moved (a party member, a karma step).
                         if (!refreshed && built?.routeMoved === true) dropRoute(state.characterId, 'sections');
                         const advice = refreshed?.advisory || ColdEconomyDecision.advisory(built, seen);
-                        rememberWishAdvisory(owner, advice, refreshed ? null : seen, observedDeps);
+                        rememberWishAdvisory(owner, advice, refreshed ? null : seen);
                     }
                 });
             // Membership is the row's: a plan, request or objective of another
@@ -2173,7 +2163,7 @@ function startKernel(config = {}) {
                 updatedAt: Number(seen.updatedAt || 0), echo: ColdEconomyDecision.stateEcho(seen), flags: 0 }) : null;
             const advice = nullReuse ? { ...refreshed.advisory, card: heldDecision }
                 : ColdEconomyDecision.advisory(economy, seen, preparationState.activity);
-            rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
+            rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
             const stepPlan = {
                 ...stepWakeSeq,
