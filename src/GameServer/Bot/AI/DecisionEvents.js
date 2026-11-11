@@ -97,11 +97,13 @@ function raiseDecision(session, reason, { impossible = false, payload: fact = nu
     replaceStats(session, Situations.raise({ ...statsFor(session) }, reason, payload, Situations.OPEN, session.actor?.fetchId?.()));
 }
 // One entry of a body's bag (nearBag): the situation and what its payload names, a
-// spot fact's spot (a later command replaces the earlier), else its kind and key (a
-// failed gear errand's goal_failed { kind: 'gear_errand', key } is its own entry
-// beside a plain goal_failed: its mark is written by its own raise).
+// spot fact's spot (a later command replaces the earlier), else its kind, key and quote (a
+// failed gear errand's goal_failed { kind: 'gear_errand', key, town?, price? } is its own
+// entry beside a plain goal_failed, and each refused quote of one item its own: its mark is
+// written by its own raise, as a cold buyer's).
 const entryOf = (name, payload) => name === 'player_command' ? name
-    : FACTS.has(name) ? `${name}|${payload?.spotId}` : `${name}|${payload?.kind ?? ''}|${payload?.key ?? ''}`;
+    : FACTS.has(name) ? `${name}|${payload?.spotId}`
+        : `${name}|${payload?.kind ?? ''}|${payload?.key ?? ''}|${payload?.town ?? ''}|${payload?.price ?? ''}`;
 // A body's pending bag with these situations joined: a new raise (a new seq)
 // when one joins it, or always (force: a named raise or a stop, whose post is
 // flushed at once: named). One that waits already (entryOf) adds nothing, but a
