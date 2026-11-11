@@ -35,7 +35,7 @@ function removeDatabaseFiles(file) {
     for (const suffix of ['', '-wal', '-shm', '-journal']) fs.rmSync(file + suffix, { force: true });
 }
 
-// One integrity rule for a stopped SQLite file (U54): read-only open,
+// One integrity rule for a stopped SQLite file: read-only open,
 // quick_check must answer exactly "ok", the handle closes on every path.
 // Each caller passes its own failure (error text and type); a native SQLite
 // error while opening or reading passes through unchanged.

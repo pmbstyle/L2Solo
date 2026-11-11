@@ -181,7 +181,7 @@ function heldDisposition(chosen) {
             market: { buyback: chosen.priced.market.buyback } } : null };
 }
 
-// The bot's sale at a market visit or a review (group E): the author's hard
+// The bot's sale at a market visit or a review: the author's hard
 // rules first; every other item goes by one expected-value decision (the
 // board at its best ask, the NPC buy-back now, a buy ad answered in its town,
 // or keeping it), one roll. Public interest and recent purchases rank the

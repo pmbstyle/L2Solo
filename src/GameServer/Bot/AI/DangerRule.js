@@ -12,7 +12,7 @@ const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 // First choices, calibrated later by the hot harness:
 // the survival margin the solo gate admits (BotTargetMatchup.SOLO_GATE_MARGIN)
 // reads as a 0.15% lose chance, 0.8 of it as 5%, two thirds of it as 50%:
-// the gate sweep (T132) saw cold hunts rarely lost below an even ratio.
+// the gate sweep saw cold hunts rarely lost below an even ratio.
 const LOSE_SLOPE = 16;
 const ADMITTED_LOSE = 0.0015;
 // Only a viable escape receives this discount; faster pursuers rule it out.

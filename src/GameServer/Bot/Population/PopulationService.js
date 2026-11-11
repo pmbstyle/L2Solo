@@ -440,7 +440,7 @@ function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation =
 }
 
 // An ended visit is saved in town only while a meeting preparation holds the
-// bot (E314); it starts no market travel until that preparation ends.
+// bot; it starts no market travel until that preparation ends.
 function heldVisit(state) {
     return state?.stats?.townVisit?.completed === true && TradeMeetingService.hasPreparation(state.characterId);
 }
@@ -2800,7 +2800,7 @@ const PopulationService = {
         });
     },
 
-    // buildTaken: the worker's step took the build (F6: the Mammon trip is a side errand).
+    // buildTaken: the worker's step took the build (the Mammon trip is a side errand).
     resolveColdServiceBranch(state, startedAt, buildTaken = false) {
         const MammonUnseal = invoke('GameServer/Bot/AI/BotMammonUnseal');
         if (state.activity === 'crafting' && state.stats?.mammonReturn) {
@@ -2932,7 +2932,7 @@ const PopulationService = {
         // optional plan waits for fresh preparation, rather than replaying it.
         // A selling visit's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
-        // the author's path (E306).
+        // the author's path.
         // An occupation round's plan runs here as a far bot's review runs it after a direct
         // commit (ColdSimulationCoordinator.executeReviewCommand: its town trip started from the
         // plan's goal); a visit's plan starts none (the visit's own end does).
@@ -3072,7 +3072,7 @@ const PopulationService = {
                 // here would move the revision the staged meeting recorded. The fresh
                 // row may carry a meeting marker. A deal still preparing, or accepted
                 // as a meeting, keeps the bot in town; a refused one ends the visit
-                // below as every other sale outcome (E311).
+                // below as every other sale outcome.
                 const id = listingState.characterId;
                 if (LifeState.hotRow(id)) return LifeState.hotRow(id);
                 listingState = LifeState.cachedState(id) || listingState;

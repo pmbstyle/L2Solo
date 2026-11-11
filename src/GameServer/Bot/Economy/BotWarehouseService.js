@@ -433,7 +433,7 @@ function returnStage(state, stock, identity, bagIdentity, timestamp) {
 // A kit parked during a different objective can require a warehouse visit
 // after it becomes the active objective again. Only that recorded deposit
 // can trigger a trip, once per warehouse contents, after the current fight.
-// decided: the step took the build (F6), whose waking situation asks a failed
+// decided: the step took the build, whose waking situation asks a failed
 // visit again; else it goes once per contents and bag. A party member makes no
 // warehouse trip mid-hunt.
 function beginCraftReturn(state, timestamp = Date.now(), { decided = false } = {}) {

@@ -95,7 +95,7 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 
 
 const { SERVER_STARTED_AT } = require('../Population/Uptime');
 
-// Time on the spot against all time (E36): the round time each record
+// Time on the spot against all time: the round time each record
 // schedules against the uptime that really passed until the next record,
 // two running sums that fade over the life of a row. A gap that spans a
 // restart, or a stint near the player (hot: no record), starts anew: it
@@ -202,7 +202,7 @@ function scores(state, timestamp = Date.now(), mode) {
 // the NPC buy price, per hour of the hunt cycle and per kill, and the exp per
 // hour of that same row.
 // `share` is the bot's time on the spot against all its time: the hour of
-// a bot counts its trips, its town visits and its waits (E36).
+// a bot counts its trips, its town visits and its waits.
 function bestIncome(rows, share = 1) {
     let best = null;
     for (const row of rows) {

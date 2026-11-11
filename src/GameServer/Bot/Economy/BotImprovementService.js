@@ -50,8 +50,8 @@ function acquisitionTravel(state, leaf, timestamp = Date.now()) {
     if (travel && state.stats?.marketReturn) travel.stats.marketReturn = state.stats.marketReturn;
     return travel;
 }
-// options.decide(): the worker's decision made on exactly this state, or null
-// (L25); without one the wish network is built here.
+// options.decide(): the worker's decision made on exactly this state, or null;
+// without one the wish network is built here.
 async function reviewCold(state, options = {}) {
     if (!state?.characterId || state.phase !== 'cold' || ['dead','traveling'].includes(state.activity)) return Promise.resolve({state,changed:false});
     if (pendingCold.has(state.characterId)) return pendingCold.get(state.characterId);

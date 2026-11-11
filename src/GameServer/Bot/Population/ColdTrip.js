@@ -1,4 +1,4 @@
-// One builder for a cold bot's trip (U18): to a town (market, craft station,
+// One builder for a cold bot's trip: to a town (market, craft station,
 // Mammon) or to a hunting spot (a hunting route, the return from a town). The
 // caller names the destination and its own trip fields (reason, arrival,
 // events); the builder sets the method, the payment, the duration and the
@@ -54,7 +54,7 @@ function begin(state, travel, timestamp, durationMs, extraStats = {}) {
 // lands in (TravelRoutes.landingTown); in it already, it walks to the
 // gatekeeper; otherwise it reads a scroll, or walks there without one. Then
 // the gatekeeper route to the destination town. Null without a route. A bot
-// with karma enters no town but Floran, on foot (design 5.6-5.8, E48).
+// with karma enters no town but Floran, on foot.
 // here: the bot stands in that town already (within TOWN_RADIUS of it): a
 // caller that acts in the town does so where the bot stands, with no trip.
 function townPlan(state, to) {

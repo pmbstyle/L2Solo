@@ -173,7 +173,7 @@ function evaluateCandidate(candidate, from, threat, hazards, radius) {
 
     hazards.forEach((npc) => {
         const hazard = point(npc);
-        // Each hazard at its own C4 aggro range (T114); options.aggroRadius overrides all.
+        // Each hazard at its own C4 aggro range; options.aggroRadius overrides all.
         const aggroRadius = radius ?? NpcAggro.aggroRadius(npc);
         const startDistance = distance2d(from, hazard);
         const endpointDistance = distance2d(candidate.to, hazard);

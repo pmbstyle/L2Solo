@@ -444,7 +444,7 @@ function goalPurchaseFailed(code, result = {}) {
 }
 
 // The clan buys a market goal item for its beneficiary on the one purchase
-// path of a cold bot (б5, ColdMarketService.acquire, as ClanMarketService
+// path of a cold bot (ColdMarketService.acquire, as ClanMarketService
 // buys): the clan credits the member the price above its free money, and the
 // member buys in the seller's town, at once when it stands there, else on a
 // clan errand it goes on and buys on arrival (a real NPC sells only to a bot in

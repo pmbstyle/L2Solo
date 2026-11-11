@@ -484,7 +484,7 @@ function groundVerdict(spot, state = {}, options = {}) {
     return BotHuntingGroundPolicy.evaluate(spot, state, { ...options, tags });
 }
 
-// One spot: the reader's checks without its closure (L131 review).
+// One spot: the reader's checks without its closure (the source route reader).
 function isSpotAllowedForState(spot, state = {}, options = {}) {
     return groundVerdict(spot, state, options).allowed
         && TargetMatchup.spotMatchup(spot, TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) }),
@@ -492,7 +492,7 @@ function isSpotAllowedForState(spot, state = {}, options = {}) {
 }
 
 // A spot search asks this for many spots of one bot with one state and
-// options (L131). The matchup profiles and safety options depend only on
+// options. The matchup profiles and safety options depend only on
 // those, so they are read once, on the first spot that passes the hunting
 // ground check. Exact only while state and options stay unchanged; without
 // options.matchupProfiles or options.timestamp the profiles read the clock

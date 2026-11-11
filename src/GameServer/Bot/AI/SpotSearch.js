@@ -160,7 +160,7 @@ function leveling(state, options = {}) {
     const soloSearch = solo(state, options.mode);
     const starter = Spots.isProtectedStarterCohort(state);
     const currentMatch = current ? LevelingRoutes.scoreSpot(current, state, options) : null;
-    // One reader per search: profiles and safety are read once (L131).
+    // One reader per search: profiles and safety are read once.
     const homeAllowed = LevelingRoutes.spotAllowedReaderFor(state, options);
     const foreign = profile => LevelingRoutes.localityPenaltyForSpot(profile, state, { level: targetLevel },
         LevelingRoutes.tagsForSpot(profile)) > 0;

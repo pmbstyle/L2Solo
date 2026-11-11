@@ -43,12 +43,12 @@ const incomeRows = new Map();
 const incomeBases = new Map();
 // Four doubles and one index per cell, in typed arrays outside the V8 heap:
 // at most 19 MiB per thread. The bound is cells, what the memory is; measured
-// (T139, one key per class line x level x shots): 388947 cells held, no drop
+// (one key per class line x level x shots): 388947 cells held, no drop
 // at a scratch 1M bound. An entry cap of 256, from the role keys, read ~100%
 // misses, 14 ms a read against 0.126.
 const MAX_INCOME_BASE_CELLS = 524288;
 let incomeBaseCells = 0;
-// Cache use for the cold worker heartbeat (L104); counted only with developer diagnostics.
+// Cache use for the cold worker heartbeat; counted only with developer diagnostics.
 // memoEvictions, incomeEvictions, baseEvictions count the oldest-row drops at their caps; resets the
 // wholesale clears that dropped rows (catalog, table or rate change).
 const stats = { memoHits: 0, memoMisses: 0, memoEvictions: 0, incomeEvictions: 0, baseEvictions: 0, resets: 0,
@@ -73,7 +73,7 @@ function useSpots(source) {
     spotSource = typeof source === 'function' ? source : () => source || EMPTY_SPOTS;
 }
 
-// rates: the profile the caller has just read (one rate read per call, L75).
+// rates: the profile the caller has just read (one rate read per call).
 function refreshCatalog(rates) {
     const spots = spotSource() || EMPTY_SPOTS;
     const revision = Rewards.revision(rates);
@@ -188,7 +188,7 @@ let valueMemoTail = 0;
 function clearValueMemo() { valueMemo.clear(); valueMemoOrder.length = 0; valueMemoTail = 0; }
 // The Map holds a key's slot; the row lives at that slot as 13 numbers in a slab and a flag
 // byte. A new row drops the key filed at its slot, so a slot holds its key's row while the key
-// lives. L104: at the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
+// lives. At the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
 // with object rows, 1.0 MB so, plus the slab's 3 MB outside the JS heap (arrayBuffers). The ring fills
 // its slots in order before it wraps, so the slab grows by doubling and a small memo stays small.
 const ROW_NUMBERS = 13;
@@ -293,7 +293,7 @@ function shotKey(shots) {
     return shots === 2 ? 2 : shots ? 1 : 0;
 }
 
-// The rows as columns (T128): a JSON row is an array of ~22 numbers with two
+// The rows as columns: a JSON row is an array of ~22 numbers with two
 // nested arrays, ~61 MB of JS objects per thread (10-30 heap snapshot);
 // packed they are typed arrays with the same values. cells[spot * width +
 // cell]: the row's index or -1; numbers: its fields at index * fields (mix and
@@ -689,7 +689,7 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
     return held.cap;
 }
 
-// The mobs per hour a bot may take of a spot's spawns at its gap (E69, the
+// The mobs per hour a bot may take of a spot's spawns at its gap (the
 // one owner of the rule): the production of the species it may fight
 // (productionCap) times the part of it it may fight, as
 // BackgroundResolver.soloShareMobs counts each spawn group's production times
@@ -728,7 +728,7 @@ function killGapFactor(t, row, level, spotLevel, mask = ALL_SPECIES) {
 // A row's kills per hour at the bot's gap with the walk of that gap: the
 // row measured the walk to its reference's admitted spawns (a cap is 3600 /
 // the walk per mob, BackgroundResolver.soloWalkMs) inside its hour; the bot
-// of the gap walks to its own (T106). The level curve (measured: the row's
+// of the gap walks to its own. The level curve (measured: the row's
 // kills at the gap) moves the rest of a kill's time, the fight, the rest and
 // the deaths; a walk to a mob takes the same time at any level. Without a
 // gate, the kills as measured.

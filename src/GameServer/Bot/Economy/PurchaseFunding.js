@@ -102,7 +102,7 @@ function worth(packet, valueHours) {
 }
 // The treasury money a member carries for its pending clan errands
 // (ClanPurchaseCredit): the clan's, not the member's, while it waits or
-// travels (E193). `own` ({ clanId?, selfId }) is the clan errand whose own
+// travels. `own` ({ clanId?, selfId }) is the clan errand whose own
 // purchase is being funded; its credit is that purchase's clanPart.
 function clanCredit(state, own = null) {
     const stats = state?.stats;
@@ -163,7 +163,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
             if (row >= 0) { r = Packet.fundedRatio(packet, row); root = Packet.fundedRoot(packet, row); }
         }
         // Worth buying is value per Adena at the price really paid: a quote
-        // above the planner's estimate lowers it by the same factor (E187).
+        // above the planner's estimate lowers it by the same factor.
         // The queue's own order still decides which money is held for others.
         const quoted = options.quoteScale > 0 ? r * options.quoteScale : r;
         if (quoted >= Packet.moneyPrice(packet)) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture, root); }
@@ -178,7 +178,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
             budgetFor(packet, wallet, 0, fundedRank(packet, options.r, Number(options.root) || 0) ?? -Infinity, capture,
                 Number(options.root) || 0));
     }
-    // A side purchase (T177) carries its own value per Adena and takes only the
+    // A side purchase carries its own value per Adena and takes only the
     // money no queue row holds.
     if (Packet.hasMoney(packet) && !options.upperBound && options.side !== undefined) {
         reason = 'side';
@@ -239,7 +239,7 @@ function stepBids(own, bids) {
 // A shot, potion or scroll restock: survival first (the kit's cost), the rest
 // by its stock wish's rank at the quoted price. The wish was priced at the
 // planner's estimate; when the NPC asks more, each unit is worth less per
-// Adena and the optional part may drop below the money price (E187).
+// Adena and the optional part may drop below the money price.
 function quoteScale(estimate, quote) {
     return Number(estimate) > 0 && Number(quote) > 0 ? Number(estimate) / Number(quote) : 1;
 }
@@ -321,7 +321,7 @@ function significant(value) {
     return Number((Math.ceil(value * scale) / scale).toPrecision(3));
 }
 // The money packet keeps this many funded rows; with more funded wishes the
-// last row merges the tail and carries itemId 0 (FX-E3, StatsPacket).
+// last row merges the tail and carries itemId 0 (StatsPacket).
 const PACKET_ROWS = Packet.MONEY_ROWS;
 // Funded queue wishes that own an itemId row of packetFor, in queue order.
 function packetRowWishes(funded) {
@@ -334,7 +334,7 @@ function packetFor(network, hour, reserve) {
         firstUnfundedPrice: Math.round(network.gap ? cashCharge(network.gap) : 0) });
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {
-        // An unsupported wish keeps its queue place without money (MVP-1).
+        // An unsupported wish keeps its queue place without money.
         if (!fundable(wish)) continue;
         if (!wish.funded) break;
         cumulative += cashCharge(wish); count++;

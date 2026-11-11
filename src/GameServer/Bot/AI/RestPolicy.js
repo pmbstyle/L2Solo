@@ -36,7 +36,7 @@ function sitsForMana(subject, party = false) {
 }
 
 // Does a rest under way last until MP is back? Alone by sitsForMana; a party
-// member keeps the author's wake line (T107: the mana rule is solo only), the
+// member keeps the author's wake line (the mana rule is solo only), the
 // role's own mana rule as FollowingState's botRecovering reads it. A tank or a
 // music fighter sits for MP at a party's low line (needsRest) but gets up at
 // whole HP and follows: Recharge and the leader's camp see to the rest.

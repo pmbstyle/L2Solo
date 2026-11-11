@@ -226,7 +226,7 @@ module.exports = {
                     });
                     return;
                 }
-                // E71: attacked while resting takes the danger moment of a fight
+                // attacked while resting takes the danger moment of a fight
                 // (drink, fight back or flee); without one, the author's rule.
                 const moment = DangerMoment.take(session, bot, threat, { near: threatScan.near });
                 if (moment === 'drank') return;
@@ -282,7 +282,7 @@ module.exports = {
             // skillExec marks the actor as casting immediately.  Do not sit
             // on the next brain tick while the native self-cast is still live.
             if (bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
-            // Alone, a bottle may shorten the rest (RestPotion, T141); it stays seated.
+            // Alone, a bottle may shorten the rest (RestPotion); it stays seated.
             if (BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
                 && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;

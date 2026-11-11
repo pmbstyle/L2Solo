@@ -161,7 +161,7 @@ function blowLands(semantic, position, rng = Math.random) {
 }
 
 // The target's terms of a hit, one copy for the hot Attack, the cold fight
-// and the solo gate (BotTargetMatchup, T124). A spell meets its element's
+// and the solo gate (BotTargetMatchup). A spell meets its element's
 // weakness; a weapon hit its weapon's (bow, blunt), a physical skill also the
 // dagger one (by its trait or a knife), and both the attacker's bonus against
 // an undead target and against the target's race. hit { magic, skill, trait,

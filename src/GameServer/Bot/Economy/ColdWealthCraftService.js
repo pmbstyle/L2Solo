@@ -171,7 +171,7 @@ async function execute(state, opportunity, options = {}) {
         // path, ColdMarketService.acquire): a crafter goes on no errand for it.
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
         const required = Profit.requirements(recipe, batches) || new Map();
-        // Why a chosen seller's line did not fill, for the health line (T190).
+        // Why a chosen seller's line did not fill, for the health line.
         let unfilled = '';
         const onUnfilled = ({ amount, planned, money, cost }) => { unfilled = planned < amount ? 'more_than_planned' : money < cost ? 'money' : 'seller'; };
         const inputs = opportunity.basket.purchases.filter(purchase => Number(purchase.selfId) !== Number(recipe.recipeItemId))
@@ -278,7 +278,7 @@ async function execute(state, opportunity, options = {}) {
             });
         }
     } else if (exit.type === 'afk' && current.activity === 'shopping' && current.currentRegion === exit.offer.town) {
-        // A buy ad is answered in its town (E45); elsewhere the product waits
+        // A buy ad is answered in its town; elsewhere the product waits
         // for the bot's sale, which goes there when it pays (MarketPricing.disposition).
         const offer = AfkTrade.offers(recipe.productId, AfkTrade.BUY, { characterId: current.characterId })
             .find((entry) => Number(entry.recordId) === Number(exit.offer.recordId)

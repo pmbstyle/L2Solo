@@ -45,7 +45,7 @@ function profileFromSpot(spot) {
         dominantLevels: (spot.dominantLevels || []).map((entry) => ({ ...entry })),
         area: spot.area ? { ...spot.area } : null,
         spawnArea: Number(spot.spawnArea) || null,
-        // The cell pieces the spot covers (SpotIndex.piecesOf, T123).
+        // The cell pieces the spot covers (SpotIndex.piecesOf).
         floor: spot.floor ? { ...spot.floor } : null,
         joins: spot.joins ? spot.joins.map((piece) => ({ ...piece })) : null,
         tags: [...(spot.tags || [])],
@@ -80,7 +80,7 @@ function physicalSpotForState(state, profiles, catalogOnly = false) {
 // Level bounds are cheap and independent of the detailed route policy:
 // out-of-range spots are rejected before deriving their tags. The window of
 // one target level is the same for every search of one catalog. Near: the
-// spot's level mix (SpotService.levelMix, T123) meets the level +- 4, so a
+// spot's level mix (SpotService.levelMix) meets the level +- 4, so a
 // few high spawns among a field of low ones do not make it near.
 const spotsNearLevelByCatalog = new WeakMap();
 // Catalogue-owned references, at most 80 level arrays; collecting/resetting a
@@ -124,7 +124,7 @@ function useOccupancy(read) {
     threadOccupancy = read || mainOccupancy;
 }
 
-// The bots on a spot for its kill share (E69) and a spot value's crowd share
+// The bots on a spot for its kill share and a spot value's crowd share
 // (SpotEconomics), in this thread's occupancy (SpotOccupancyIndex.huntersOn),
 // as ColdSimulationKernel.spotHunters; with a state, that bot counted once.
 function spotHunters(spot, state = null) {

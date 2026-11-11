@@ -78,7 +78,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
     const opener = revenge ? 0 : 1;
     // Each side's can-I-win was rolled once at the dispute and travels on the
-    // event (U26) for who gives way; the PvP start has its own gate.
+    // event for who gives way; the PvP start has its own gate.
     const willing = event.willing || [];
     const combatAt = resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp;
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()

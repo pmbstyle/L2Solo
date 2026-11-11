@@ -277,7 +277,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     // The bot stands before each mob and its pack: this scan's idle mobs are all a pull can bring.
     const pack = SpotService.idlePack(allNearbyNpcs);
     const claimedIds = options.claimedIds || claimedTargetIds(session);
-    // The spot a point is part of (its cell piece and floor, T123), else its cell.
+    // The spot a point is part of (its cell piece and floor), else its cell.
     const spotIdAt = (actor, spot = SpotService.findCurrentSpot(botLocation(actor))) => spot?.id
         || `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
     const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot));
@@ -1037,13 +1037,13 @@ module.exports = {
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
-        // Between fights a solo bot heals itself where that beats sitting (T107).
+        // Between fights a solo bot heals itself where that beats sitting.
         if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
             && SoloSelfHeal.tryBetweenFights(session, bot, Generics)) return;
         // A summoner keeps its pet alive between fights too (PetHealRule), solo or in a party.
         if (!encounterActionInFlight && !session.currentTargetId
             && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return;
-        // Then a healing potion where the rest it saves pays for it (RestPotion, T141).
+        // Then a healing potion where the rest it saves pays for it (RestPotion).
         if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
             && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
         // A pet it cannot heal now sends it to rest as its own HP would (RestPolicy).

@@ -137,7 +137,7 @@ function nearBag(session, names, force = false) {
 }
 // The body's bag as its post carries it (BotLifeState.notifyNearFacts): a copy.
 const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.names.map(entry => ({ ...entry })) });
-// A body's own facts on its post (BotLifeState.notifyNearFacts, main, A1): the
+// A body's own facts on its post (BotLifeState.notifyNearFacts, main): the
 // situations of the posted row against its decision's baseline (the row's
 // wishSections: the last decision received), a fact the baseline lacks against
 // its previous post, joined to its bag. The previous post is kept as its facts

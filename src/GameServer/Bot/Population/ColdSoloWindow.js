@@ -1,5 +1,5 @@
 'use strict';
-// T120, option C: a hunting solo bot's step runs its rounds on until its next
+// A hunting solo bot's step runs its rounds on until its next
 // event; its next due is that event, not one 30-120 s round away. The rounds
 // are today's (resolveSolo, then BotLifeState.prepareResolve), in the order and
 // with the seeds its steps would run: a window changes when the bot decides and

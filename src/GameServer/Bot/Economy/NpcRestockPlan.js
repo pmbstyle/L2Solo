@@ -43,7 +43,7 @@ function collect(state, options = {}) {
     const survivalIds = new Set([736, Shot.planForState(current).selfId, Potions.purchasePotionFor(current).selfId]);
     // The visit's funding and amounts, over the bag after the purchases before
     // (the wallet after the sale). Funding ranks each wish at the bot's own
-    // estimate (E187): main's kit at its own prices (EconomyContext.keptKit), the
+    // estimate: main's kit at its own prices (EconomyContext.keptKit), the
     // worker's build. Amounts are that same kit's rates priced at this town's
     // quotes, unless the visit holds its own (a hot visit: options.kit, fixed
     // after its sale).

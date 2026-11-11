@@ -1,4 +1,4 @@
-// "Can I win?" for every PvP decision, hot and cold (U26). A bot knows its own
+// "Can I win?" for every PvP decision, hot and cold. A bot knows its own
 // side exactly. Of the other side it knows only what a player sees: the grade
 // of the weapon and its enchant glow, the grade of the body armour and how many
 // people stand with him; plus its own memory of him (fear). Levels, stats,

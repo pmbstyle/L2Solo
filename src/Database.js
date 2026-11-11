@@ -1807,7 +1807,7 @@ function applySchemaMigrations() {
         UPDATE afk_trade_shops SET expiresAt = 0 WHERE expiresAt > 0;
         DELETE FROM world_meta WHERE key = 'boardAliveAt';
     `)]);
-    // N79: observations belong to an open line, not to a bot's item book.
+    // observations belong to an open line, not to a bot's item book.
     // Durable cursors are initialized after history/the catalogue are ready.
     migrations.push([57, () => connection.exec(`
         ALTER TABLE afk_trade_lines ADD COLUMN fills INTEGER NOT NULL DEFAULT 0 CHECK(fills >= 0);
@@ -1853,7 +1853,7 @@ function applySchemaMigrations() {
         CREATE INDEX board_trade_meetings_actor_b ON board_trade_meetings(actorB,state,id);
     `)]);
     // A meeting fill left its record active at count 0 until it closed like
-    // every other fill (E198). Such a record holds nothing: it is deleted.
+    // every other fill. Such a record holds nothing: it is deleted.
     migrations.push([65, () => {
         const empty = connection.prepare(`SELECT id FROM afk_trade_shops s WHERE status = 'active' AND custodyPolicy = 1
             AND escrowAdena = 0 AND NOT EXISTS (SELECT 1 FROM afk_trade_lines l WHERE l.shopId = s.id AND l.count > 0)`).all();
@@ -4181,7 +4181,7 @@ function checkBotCapsUnsafe(ownerId, kind, lineCount) {
     if (held + 1 > Number(BoardRules.BOT_RECORDS[kind] || 0)) throw new Error('board_cap_reached');
 }
 
-// A closed record is deleted at once (design 16.19): its holdings first go
+// A closed record is deleted at once: its holdings first go
 // back (count and escrow to zero, so the economy journal sees them leave),
 // then its lines and the row itself.
 function deleteBoardRecordUnsafe(shopId, at) {
@@ -5581,7 +5581,7 @@ const Database = {
         }, 'market:trade-history');
     },
 
-    // Opens a board record (design 4.1): an AFK shop (`kind` 'shop', the
+    // Opens a board record: an AFK shop (`kind` 'shop', the
     // default), a sell ad, a buy ad or an order. In the same transaction the
     // record takes what it holds out of the owner's bag: the items of its sell
     // lines or the escrow of its buy lines. `replace` replaces the owner's
@@ -5729,7 +5729,7 @@ const Database = {
         }, 'board:close'));
     },
 
-    // The leave rule (design 2.7): an owner leaving the game closes every
+    // The leave rule: an owner leaving the game closes every
     // record it holds, of every kind; items and escrow go back to it.
     closeOwnerBoardRecords(ownerId) {
         const characterId = Number(ownerId);
@@ -9541,7 +9541,7 @@ const Database = {
                         if (target) write('UPDATE items SET amount = ? WHERE id = ?', [target.amount + amount, id]);
                         playerItem = { ...source, id, amount: (target?.amount || 0) + amount, equipped: false };
                     } else if (command.direction === 'consume') {
-                        // Eaten food and the feed it gives are one write, as in feedMountedPet (E232).
+                        // Eaten food and the feed it gives are one write, as in feedMountedPet.
                         const Rules = require('./GameServer/Pets/PetRules');
                         const type = Rules.TYPES[collar.selfId];
                         const feed = Number(command.feed);

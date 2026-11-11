@@ -14,7 +14,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 if (workerData?.sharedGeodata) GeodataEngine.attachShared(workerData.sharedGeodata);
 
 const DataCache = invoke('GameServer/DataCache');
-// Main checked these files against their schemas at startup; that check was ~3/4 of this boot (L71).
+// Main checked these files against their schemas at startup; that check was ~3/4 of this boot.
 DataCache.init({ validate: false });
 
 const originalInvoke = global.invoke;
@@ -392,7 +392,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes,
                 buyOrderEscrow: input.buyOrderEscrow, npcOffersFor: OccupationSources.npcOffersFor,
                 // A meeting review (its own workshop input, maybe the meeting's incoming) never
-                // replaces the bot's held plan: its next request still finds it (L133).
+                // replaces the bot's held plan: its next request still finds it.
                 caller: 'meeting_prepare', trigger: request.token, deal: new Set(request.lines.filter(line => line.payer === side).map(line => line.selfId)) });
             yield 'candidate';
             if (economy.intentPending) throw Error('trade_meeting_preparation_pending');
@@ -1289,7 +1289,7 @@ function roundProjection(state, timestamp, writtenAt, plan) {
 function heldAtStep(plan) {
     return ColdEconomyDecision.heldAtDecisionOf(plan.economy.network?.activity, plan.plannedState);
 }
-// L115: a publication the event proof refuses drops the advice, counted by
+// a publication the event proof refuses drops the advice, counted by
 // its first failing check.
 // owner: the bot's kernel record the step read; the card is a field of it.
 function rememberWishAdvisory(owner, advisory, seen = null) {
@@ -1665,7 +1665,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             // nodes (a party member's); a formation candidate's entry kept none, so
             // it is built (withNodes), reading each member's held workshop (temporary
             // until the party aggregate decides on its members' held answers). Never
-            // remembered: a query's own snapshot must not displace the bot's held build (L133).
+            // remembered: a query's own snapshot must not displace the bot's held build.
             return EconomyContext.forState(member, { timestamp, spots: planningSpots, board: boardReady(), routeRows,
                 buyOrderEscrow: payload.escrows[at], caller: 'workerPartyGoal', withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy

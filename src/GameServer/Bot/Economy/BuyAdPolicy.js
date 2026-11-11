@@ -118,7 +118,7 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         ? Math.max(1, Math.floor(Number(goal.target.amount) || 1))
         : 1);
     if (!(requestedCount > 0)) return null;
-    // The bid (group E): the bot's belief of the item and the mirror of its
+    // The bid: the bot's belief of the item and the mirror of its
     // ask; the item is worth its plan's price to it, or its own belief's
     // centre when the plan only estimated; never more than it can spend on
     // one unit: a bot short of the whole amount asks for fewer units.
@@ -180,7 +180,7 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
     if (!nativeGoal(goal) && !watchList?.some(row => row.key) && goal?.target?.itemId
         && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
     const wallet = Number(state.adena || 0);
-    // E303: the buy ads cap (shop lines + buy ads) is cut here; the later slices (ColdEconomyPlan.buyBatch, BotAfkMarketService) see at most that.
+    // the buy ads cap (shop lines + buy ads) is cut here; the later slices (ColdEconomyPlan.buyBatch, BotAfkMarketService) see at most that.
     const limit = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
     if (Diagnostics.active()) {
         Diagnostics.count('cap', 'buy_ads', 'check');

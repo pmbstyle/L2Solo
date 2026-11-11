@@ -188,7 +188,7 @@ function notifyNearFacts(session, reason) {
             row.spotId = session.currentSpot?.id ?? (spotReason === 'near_left' ? null : row.spotId);
             row.updatedAt = now();
             // Not saved: the number of this post and the raise it carries,
-            // with the situations of the body's own facts (A1: detected here).
+            // with the situations of the body's own facts (detected here).
             session.nearSeq = Number(session.nearSeq || 0) + 1;
             row.nearSeq = session.nearSeq;
             // Not saved either: the body's last spot post (near_spot / near_left), numbered,
@@ -1248,7 +1248,7 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
         });
 }
 
-// The world was paused while the server was down (L136): every persisted due
+// The world was paused while the server was down: every persisted due
 // time moves by the downtime, so a restart does not make all bots due at once,
 // and so does lastResolvedAt: the step's length is now - lastResolvedAt
 // (ColdSimulationKernel), so an unmoved stamp would credit the downtime as
@@ -1997,7 +1997,7 @@ const BotLifeState = {
     raiseOnRow,
     nearPosts,
 
-    // Boot only: { startedAt, downtimeMs } of this restart, measured once (L136).
+    // Boot only: { startedAt, downtimeMs } of this restart, measured once.
     bootPause() {
         return measureBootPause();
     },
@@ -2124,7 +2124,7 @@ const BotLifeState = {
 
     // A command refused because the row moved past the cache (NativeWriteCheckpoint
     // drift): the row is the owner of the checkpoint; read it back so the next
-    // command carries it instead of retrying the same stale copy forever (L127).
+    // command carries it instead of retrying the same stale copy forever.
     // A handoff in flight is published by its owner, not here.
     reloadRow(characterId, drift = []) {
         const id = Number(characterId);
@@ -2313,7 +2313,7 @@ const BotLifeState = {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
                     nextResolveAt: null,
-                    // The hot time is lived: the first cold step starts now (T126).
+                    // The hot time is lived: the first cold step starts now.
                     lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
@@ -2332,7 +2332,7 @@ const BotLifeState = {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
-                // The hot time is lived: the first cold step's length starts now (T126).
+                // The hot time is lived: the first cold step's length starts now.
                 lastResolvedAt: now()
             });
             const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
@@ -3032,7 +3032,7 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: writtenAt
         };
-        // ARCH-NOTE: C1 lifecycle packets precede their fight; accept the
+        // ARCH-NOTE: lifecycle packets precede their fight; accept the
         // worker's focus event before classifying actual changed sections.
         // Direct projections receive an already projected packet as before.
         // Both threads: a worker step that decided before its round merges
@@ -3253,7 +3253,7 @@ const BotLifeState = {
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
             }
-            // ARCH-NOTE: C1/E3 lifecycle commands carry the worker's money queue;
+            // ARCH-NOTE: lifecycle commands carry the worker's money queue;
             // main preparation must retain that packet without rebuilding it.
             if (Object.prototype.hasOwnProperty.call(options, 'statsPacket')) {
                 preparedOptions.statsPacket = options.statsPacket;

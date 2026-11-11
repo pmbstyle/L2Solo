@@ -116,7 +116,7 @@ const SITUATIONS = Object.freeze({
     arrived_town: link(NOW),
     'arrived_town:own': link(NOW),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
-    // queue held for it, DecisionSections.moneyCrossings, F3).
+    // queue held for it, DecisionSections.moneyCrossings).
     out_of_money: link(NOW),
     // A move the bot did not order (a flight, a pull, a push out, a party's call).
     moved_by_world: link(NOW),
@@ -621,7 +621,7 @@ function factNames(previousFact, current, planned = false) {
     // The plan's routed source outgrown by one more voluntary hunt floor (its rise): the
     // route may refuse it now, the plan's review judges it again.
     if (current.outgrown > (previousFact('outgrown') || 0)) add('source_stalled');
-    // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
+    // Karma that appeared or cleared (the karma wash). A baseline kept before the
     // fact was recorded has none to compare.
     const karma = previousFact('karma');
     if (karma !== undefined && karma !== current.karma) add('karma_changed');

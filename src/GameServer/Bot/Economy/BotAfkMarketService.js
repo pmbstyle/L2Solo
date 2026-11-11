@@ -89,7 +89,7 @@ function canTradeRemotely(state, goal) {
         const existing = linesOf(buyAds(state.characterId));
         const reserved = buyOrderEscrow(state.characterId);
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
-        // The offer as the buyer weighs it: its price and its trip there (б5, C7).
+        // The offer as the buyer weighs it: its price and its trip there.
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
             budget: PurchaseFunding.payable(state, reserved, PurchaseFunding.goalTerms(goal)),
@@ -540,7 +540,7 @@ async function withdrawBuyAds(ownerId, selfId = null, state = null) {
 
 // The sell side of a review: the bot's shop (the author's AFK sell shop),
 // reviewed from afar once it stands. It changes when the bag changed or a
-// line is no longer a lot, and never moves (N51, E46); what is listed past
+// line is no longer a lot, and never moves; what is listed past
 // its lines goes to sell ads, which need no trip. The prices of its lines
 // come from the bot's event review (MarketPricing.look), not a fixed review
 // period. A bot without a shop opens one in town (listOnBoard).

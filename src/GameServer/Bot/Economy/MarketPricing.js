@@ -128,7 +128,7 @@ function traderContext(state, deps = {}) {
 }
 
 // The best executable finite buy ad for this whole physical stock. The side
-// that acts travels (E45); known economic inputs rank the same hours as the
+// that acts travels; known economic inputs rank the same hours as the
 // final action. `net` remains the legacy monetary trip comparison for callers.
 function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0,
     reference = 0, caution = 0, belief = null } = {}) {
@@ -136,7 +136,7 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     // Keep finite quantities among the observed candidates: a lower bid for
     // five units can beat the top bid for only one unit in the same town.
     // A conditional bid holds no money: its value counts only the units its
-    // buyer is expected to pay for (MVP-5), a backed one its count. The
+    // buyer is expected to pay for, a backed one its count. The
     // physical answer still offers the bid's count; the trade checks money.
     const lines = (ctx.board?.list(selfId, BUY) || []).slice(0, MAX_INSPECTED);
     const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };

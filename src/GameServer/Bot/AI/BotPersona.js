@@ -1,4 +1,4 @@
-// ARCH-NOTE: C1/E3 the clan worker's missing-money survival fallback reads
+// ARCH-NOTE: the clan worker's missing-money survival fallback reads
 // an existing persona or null. Resolve the live database only at an actual
 // SQL operation so that pure lookup keeps the worker dependency guard intact.
 let database;
@@ -109,7 +109,7 @@ function dialogueVoice(persona) {
 
 // Values derived from the stored traits when a persona is cached, never
 // stored: the text card when the row has none, the dialogue voice, the
-// combat talents (combat-skills brief B) and the market understanding (N45).
+// combat talents and the market understanding.
 function withDerived(persona) {
     return {
         ...persona,

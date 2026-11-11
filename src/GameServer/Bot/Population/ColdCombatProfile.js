@@ -844,7 +844,7 @@ function numbersPass(kitPart, effects, timestamp, sourceOptions) {
         critical: power.critical, mCritRate, atkSpd: power.atkSpd, castSpd: power.castSpd, con: power.con, men: power.men,
         str: stats.str, dex: stats.dex,
         // Run speed as the hot CalculateStats.setCollectiveTotalRunSpd: the
-        // template's by DEX, plus and times the effects (the solo walk, T106);
+        // template's by DEX, plus and times the effects (the solo walk);
         // 0 without a template run speed.
         runSpd: Math.max(0, number(classTemplate(classId).speed?.run) && (Formulas.calcSpeed(stats.dex, number(classTemplate(classId).speed.run))
             + add(profile, 'runSpdAdd', timestamp, sources)) * multiplier(profile, 'runSpdMul', timestamp, sources)),
@@ -1235,7 +1235,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     if (!npc) return null;
     const combat = npcCombatStats(npc);
     const explicitRaid = options.allowRaid === true && spot.raidBoss === true;
-    // A solo fight takes the whole pull of its spawn group (F20): one size of
+    // A solo fight takes the whole pull of its spawn group: one size of
     // the group's mix, among the sizes the hunter survives when safety judged it.
     const pull = options.pull && !explicitRaid
         ? BotPullEstimate.rollPulls(selected.match?.allowed || BotPullEstimate.pullsOf(selected), rng) : 0;

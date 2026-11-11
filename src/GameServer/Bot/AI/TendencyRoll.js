@@ -12,7 +12,7 @@ function chance(p) {
 
 // FNV-1a over the first UTF-16 unit of each code point of the text, as a
 // for-of over the text reads it. The index loop gives the same hash without
-// an iterator and a one-character string per character (L75).
+// an iterator and a one-character string per character.
 function hashText(h, text) {
     for (let i = 0; i < text.length; i++) {
         const unit = text.charCodeAt(i);

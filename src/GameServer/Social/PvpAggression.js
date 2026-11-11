@@ -35,7 +35,7 @@ function retreatHp(threshold, aggression) {
 // attack's chance the bot gives up for it, by its caution (weights ours, not C4).
 // standing: { ownKarma, targetKarma, targetFlagged, war } (missing: a white unflagged
 // target, no war). A bot with karma gives up every attack it would start outside a war:
-// it washes its karma first (C9's karma wash; ours).
+// it washes its karma first (the karma wash; our choice).
 function karmaCost(persona, { ownKarma = 0, targetKarma = 0, targetFlagged = false, war = false } = {}) {
     if (war) return 0;
     if (Number(ownKarma) > 0) return 1;

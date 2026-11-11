@@ -234,7 +234,7 @@ async function startServer() {
         // rebuilds a restart's stale hot rows cold and saves the load repairs
         // (hennas, seeds, skills), which refuse a cold row over a cached hot
         // copy. The board migrations and the meeting marker rewrite and
-        // recovery in AfkTrade.init write rows into this cache (R16). A failed
+        // recovery in AfkTrade.init write rows into this cache. A failed
         // init logs and leaves no population, as before; it does not stop the
         // server. PopulationService.init (BotManager.init) reuses this init.
         await invoke('GameServer/Bot/Population/BotLifeState').init();

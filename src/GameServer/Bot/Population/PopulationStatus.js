@@ -192,7 +192,7 @@ const PopulationStatus = {
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
-    // started (T120, ColdSoloWindow); windowEnd: what ended the windows.
+    // started (ColdSoloWindow); windowEnd: what ended the windows.
     soloWindowText(w) {
         if (!w) return '';
         const rate = w.huntMs > 0 ? (3.6e6 * w.steps / w.huntMs).toFixed(1) : '-';

@@ -752,7 +752,7 @@ async function closeBotRecord(ownerId, recordId, options = {}) {
     return result;
 }
 
-// The leave rule (design 2.7): an owner leaving the game closes all its
+// The leave rule: an owner leaving the game closes all its
 // records; items and escrow go back to it.
 async function leave(ownerId) {
     const characterId = Number(ownerId);
@@ -777,7 +777,7 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
     return entriesById.get(Number(result.shop?.id))?.shop || null;
 }
 
-// A bot's look reprices several of its lines (E59): one transaction, and the
+// A bot's look reprices several of its lines: one transaction, and the
 // syncs only when an item or Adena moved. Returns { changed, skipped }.
 async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updates = [],
     coldAuthority = null, hotAuthority = null, canCommitReview = null } = {}) {
@@ -821,7 +821,7 @@ function restorePlace(ownerId) {
 }
 
 // Every record on the board: shops and ads (an ad is a shout heard in every
-// town, design 4.2).
+// town).
 function activeShops() {
     return [...entriesById.values()].map((entry) => entry.shop);
 }
@@ -895,7 +895,7 @@ async function activate(session, store) {
         session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
         session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
         spawnProjection(created.shop);
-        // A deal needs someone in the town (design 4.4, 4.6, E45): bots who
+        // A deal needs someone in the town: bots who
         // want this shop's lines travel to it, nothing crosses from afar.
         commandMessage(session, 'AFK trade is active. Use .afkstop to close it remotely.');
         return true;
@@ -1139,7 +1139,7 @@ async function init() {
         try { await BotMarket.withdrawSourceInvalidBuyAds(ownerId); }
         catch (error) { FailureLog.note('board.source_invalid_buy_ads', error); }
     }
-    // The market counters learn the board's last deals again (group E, E58).
+    // The market counters learn the board's last deals again.
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
     MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }),

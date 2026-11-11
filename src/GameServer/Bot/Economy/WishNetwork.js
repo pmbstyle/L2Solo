@@ -25,7 +25,7 @@ const commands = (batches, perCommand) => Math.ceil(batches / (Number(perCommand
 // away from the bot (its hours and fees are paid once, not per unit).
 const travels = path => !!path.town && (path.quoted || path.activity === 'hunting');
 
-// The one quantity reader (MVP-3). Accepted incoming is a native obligation:
+// The one quantity reader. Accepted incoming is a native obligation:
 // it removes the amount to order, not the amount still to deliver.
 function remainingQuantity({ required = 0, freePhysical = 0, acceptedIncoming = 0 } = {}) {
     const free = nonnegative(required) - nonnegative(freePhysical);
@@ -60,7 +60,7 @@ function mergedBranches(kinds, batches) {
     for (let at = 1; at <= batches && total <= MAX_BRANCHES; at++) total = total * (kinds - 1 + at) / at;
     return Math.round(total);
 }
-// MVP-1: money is held only behind a path with a step now (or awaiting a
+// money is held only behind a path with a step now (or awaiting a
 // native accepted incoming); an unresolved outcome holds none either.
 const fundable = wish => wish.supported !== false && wish.resolved !== false;
 // Cash the money queue holds for a wish: a stock root's survival tranche
@@ -140,7 +140,7 @@ function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
         // the floor neither, nor does the money wait for it.
         if (!fundable(wish) || !pays(wish)) {
             wish.funded = false;
-            // Kit before stock: stock nobody can supply is not what the money waits for (T178).
+            // Kit before stock: stock nobody can supply is not what the money waits for.
             if (pays(wish) && wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
             continue;
         }
@@ -156,8 +156,8 @@ function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
 // Providers supply game effects and available paths, never policy priorities.
 // One bounded DAG serves individual characters and group actors alike. The
 // caller owns its event input key and the small saved focus/dormant packet.
-// Per-actor results are a cache, not state: memory per bot is budgeted
-// (design 16.26). They serve the several readers of one decision (a commit,
+// Per-actor results are a cache, not state: memory per bot is budgeted.
+// They serve the several readers of one decision (a commit,
 // a resolve, a hot tick); a bot's next decision rebuilds the cheap layer
 // anyway (new adena, exp), while the expensive one is kept per kit
 // (ColdCombatProfile.profileFor). So few are held, least recently used out.
@@ -206,7 +206,7 @@ function sameResult(before, after) {
         && equalValue(before.plans, after.plans);
 }
 // One solver per node set. build() and the provider's candidate admission
-// use the same path facts, quantity reader and root valuation (MVP-6); its
+// use the same path facts, quantity reader and root valuation; its
 // scratch maps die with the caller's build.
 // ARCH-NOTE: PERF what the solvers of one build share over its descriptors, at
 // one price of time; it dies with the build. `subtrees` keeps the plans of
@@ -284,7 +284,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         return plan;
     };
-    // MVP-2: an attempt is valued until success only when every consumed
+    // an attempt is valued until success only when every consumed
     // input has a supported repeatable path; held stock alone is not one.
     const repeatables = new Map();
     const repeatable = key => {
@@ -413,7 +413,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 // Own step now: a seller, NPC, recipe, workshop capacity, farm.
                 let supported = executable && Number(path.availableUnits ?? Infinity) !== 0, resolved = true;
                 let probability = 1, branches = 1, onceCash = 0, onceEffort = 0, onceHours = 0;
-                // MVP-4: elapsed hours until the output is ready, in sequence:
+                // elapsed hours until the output is ready, in sequence:
                 // own labour, inputs, trips. Waiting for accepted incoming has
                 // no native delivery time. ARCH-NOTE: counted as zero.
                 // A farm's cost is its net hour; its elapsed time is readyHours.
@@ -441,7 +441,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                     supported &&= child.supported !== false;
                     resolved &&= child.resolved !== false;
                     // A per-unit child (no stock allocation) repeats its batch.
-                    // One stockless child plan is one batch of its path (E192):
+                    // One stockless child plan is one batch of its path:
                     // its cost repeats per batch, its chance per native command.
                     const childBatches = allocation ? 1 : Math.ceil(amount / Number(child.productCount || 1));
                     const childDraws = allocation ? 1 : commands(childBatches, child.perCommand);
@@ -470,7 +470,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                     branches += mergedBranches(2, commands(units, path.perCommand)) - 1;
                 }
                 price += onceCash; effort += onceEffort; hours += onceHours;
-                // E303: counted only where the branch cap itself cuts (not when a child already left the
+                // counted only where the branch cap itself cuts (not when a child already left the
                 // path unresolved, not in the native command pass); no check counter, the denominator is
                 // provider:admission:evaluation. The depth cap is counted by provider:admission_pending:evaluation_limit
                 // for provider roots; the group path (EconomyContext) depth is not counted.
@@ -522,7 +522,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             }
             choices.push(choice);
         }
-        // MVP-1: executable, then supported (saving, preparation, incoming),
+        // executable, then supported (saving, preparation, incoming),
         // then effort. Finite production plans its cheapest future source:
         // an unsupported purchase keeps the trial's queue place and WTB row
         // without cash, never a costlier step now.
@@ -576,7 +576,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     const rootAmount = node => node?.object?.kind === 'resale'
         && node.paths?.some(path => path.kind === 'craft' && path.trial === true && path.repeatable === false)
         && Number.isSafeInteger(node.object.amount) && node.object.amount > 0 ? node.object.amount : 1;
-    // MVP-4: one horizon H per root; a benefit per hour starts when the
+    // one horizon H per root; a benefit per hour starts when the
     // path is ready (funding delay at net income, then the path's hours).
     // An unknown delay keeps the interest unresolved: no money, no gap.
     const spendable = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
@@ -653,7 +653,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     };
     return { byKey, plans, finiteProduction, tripValue, tripEffort, rootWish, allocate, takeReadyCraftProof };
 }
-// MVP-6: roots in the caller's rank order while the union of their reachable
+// roots in the caller's rank order while the union of their reachable
 // nodes stays within the bound. A root that does not fit is pending (not
 // deleted, not zero cost); the smaller roots after it still proceed.
 // label 'solo' (a bot's own review, counted in WishProviders as provider:admission_pending) or 'group' (EconomyContext).
@@ -677,7 +677,7 @@ function admitRoots(roots, byKey, { rootLimit = MAX_ROOTS, nodeLimit = MAX_NODES
         admitted.push(key);
     }
     if (Diagnostics.active()) {
-        // E303: how often the caps cut. The solo dropped counts already exist as provider:admission_pending
+        // how often the caps cut. The solo dropped counts already exist as provider:admission_pending
         // root_limit/node_limit, so solo counts only checks and cuts; the group path has no other counter.
         let rootDropped = 0, nodeDropped = 0;
         for (const row of pending) row.reason === 'root_limit' ? rootDropped++ : nodeDropped++;
@@ -753,7 +753,7 @@ class WishNetwork {
         if (stockFor) {
             // Existing money priority allocates free stock once. Alternatives of
             // one root evaluate the same baseline and retain the maximum claim.
-            // MVP-4: the ready delay follows the cash the allocated path needs,
+            // the ready delay follows the cash the allocated path needs,
             // so a root is judged after allocation, as admission judges it; an
             // unquoted market price before it is no reason to drop the root.
             // Paths carry gross inputs, so the stockless pass prices held
@@ -831,7 +831,7 @@ class WishNetwork {
         const unsupplied = wish => wish.key.startsWith('stock:') && (!fundable(wish) || roadless(wish));
         const doable = wishes.filter(wish => !unsupplied(wish) && !parked.has(wish));
         const activePriority = Math.max(0, ...(doable.length ? doable : wishes).map(wish => wish.progressionPriority));
-        // An errand leaves the goal alone (decision 10-26): stock takes the money and
+        // An errand leaves the goal alone: stock takes the money and
         // the step, the focus stays on what the bot is after. With no other goal, that is
         // the parked one.
         const free = doable.filter(wish => !wish.key.startsWith('stock:'));

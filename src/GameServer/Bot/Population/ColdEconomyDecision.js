@@ -5,7 +5,7 @@
 // (where to hunt, which mob, which improvement) for its next context, route
 // and post-commit improvement. It reads the
 // worker's decision made on exactly that state instead of building the
-// network again on the main thread (L25). The native actor retains accepted
+// network again on the main thread. The native actor retains accepted
 // advice; one bounded saved prefix can cross a restart until its original
 // market deadline. Every use still takes the economy owner's event verdict.
 const FailureLog = require('../../../FailureLog');
@@ -24,7 +24,7 @@ const SHOT_RECIPE_WATCH = 128 | kinds.indexOf('resale');
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
 function kindFor(code) { return kinds[code === SHOT_RECIPE_WATCH ? kinds.indexOf('resale') : code]; }
 // A wish row carrying only the urgent root's urgency: the leaf has no root of
-// its own, so no amount or price is published (MVP-1), only gapHorizonHours.
+// its own, so no amount or price is published, only gapHorizonHours.
 const URGENCY_ONLY = 62;
 class CompactActivity {
     constructor(leaf) {
@@ -228,7 +228,7 @@ const validEcho = echo => Array.isArray(echo) && echo.length === 3
     && (echo[2] === null || typeof echo[2] === 'string' && echo[2].length <= 128);
 
 // Units a bot holds against a card's item: the bag and accepted incoming,
-// the two amounts the core subtracts from an order (MVP-3).
+// the two amounts the core subtracts from an order.
 function heldFor(state, itemId) {
     return Math.max(0, Number(state?.inventory?.[itemId]?.amount || 0))
         + Math.max(0, Number(state?.acceptedIncoming?.[itemId] || 0));
@@ -268,7 +268,7 @@ function capture(economy, state, seen = state) {
     const queue = economy?.network?.queue || [];
     const urgent = economy?.network?.gap || queue.find(row => row.key === economy?.network?.focus?.[0]) || queue[0];
     // The card's wish is the leaf's own root or none: another root's amount
-    // and price never stand in for the core's step (MVP-1).
+    // and price never stand in for the core's step.
     const wish = queue.find(row => row.key === leaf?.rootKey) || null;
     const urgency = !urgent ? 0 : urgent.key === 'stock:shots' ? URGENCY_SHOTS
         : urgent.key === 'stock:potions' ? URGENCY_POTIONS : URGENCY_STAGE;
@@ -284,7 +284,7 @@ function capture(economy, state, seen = state) {
     const usefulness = new Float32Array([...useful].filter(([id, value]) => id > 0 && (value > 0 || recipeValues.has(id)))
         .sort((a, b) => Number(recipeValues.has(b[0])) - Number(recipeValues.has(a[0]))
             || b[1] - a[1] || a[0] - b[0]).slice(0, 40).flat());
-    // The core's craft inputs to order only (MVP-3): a quantity-prepared
+    // The core's craft inputs to order only: a quantity-prepared
     // network (a stock reader) holds each input's remaining amount, stock and
     // accepted incoming subtracted once. A network without a stock reader has
     // no missing amounts, and no recipe walk guesses them.
@@ -514,7 +514,7 @@ function advisory(economy, state, activity = state.activity) {
     // A card is held only by its event proof (the economy verdict).
     if (!eventProof) { if (diagnostic) Diagnostics.count('card', 'drop', 'no_proof'); return null; }
     if (diagnostic) {
-        // L115: the real size of every card, dropped or kept.
+        // the real size of every card, dropped or kept.
         const total = card.data.byteLength;
         Diagnostics.count('card', 'size', total <= 2048 ? 'le2k' : total <= 4096 ? '2-4k' : total <= 8192 ? '4-8k' : '8k+');
         if (total > MAX_BYTES) Diagnostics.count('card', 'drop', 'oversize_card');
@@ -637,7 +637,7 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // serve: it builds.
     if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
-        && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
+        && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: load order unchecked
     return '';
 }
 function canReuse(state, accepted, deps = {}, options = {}) {

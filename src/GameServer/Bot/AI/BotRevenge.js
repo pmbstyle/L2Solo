@@ -183,7 +183,7 @@ function fromSpot(command, now = Date.now()) {
     if (!session?.actor || !peer?.actor) return counted('no_body');
     return counted(meet(session, peer.actor, command, now));
 }
-// A player's client first receives a bot's CharInfo (CharacterVisibility.afterSend, B8): the
+// A player's client first receives a bot's CharInfo (CharacterVisibility.afterSend): the
 // bot meets the player. Its grievance (its memory) or their clans' mutual war, by the same rule,
 // rolled once per (bot, player, the bot's stay: its spot post's number) and judged once a stay:
 // a re-entry into view on the same stay (a teleport, a DeleteObject, a body swap) rolls nothing

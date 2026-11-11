@@ -634,7 +634,7 @@ const GeneratedColdSeeder = {
                                     : saved));
                             });
                         })
-                        // The station publishes its workshop to bots (E212);
+                        // The station publishes its workshop to bots;
                         // its listing writes only when its entries change.
                         .then((saved) => (saved?.phase === 'cold' && LifeState.cachedState(saved.characterId)
                             ? invoke('GameServer/Bot/Economy/CraftWorkshopService').publishListing(LifeState.cachedState(saved.characterId))

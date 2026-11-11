@@ -1,5 +1,5 @@
 'use strict';
-// Resolved at the first call (cycles); a require per call is a path lookup (L73).
+// Resolved at the first call (cycles); a require per call is a path lookup.
 let SpotRewardExpectation = null;
 const Diagnostics = require('./EconomyDiagnostics');
 const Packet = require('./StatsPacket');
@@ -21,7 +21,7 @@ function moneyShort(state) {
     return Number.isFinite(price) && price > Math.max(0, Number(state.adena) || 0) ? 1 : 0;
 }
 
-// The share of money in a bot's spot value, 0..1 (decision 10-28, T53): what an
+// The share of money in a bot's spot value, 0..1: what an
 // hour of its income is worth to it (the packet's hour x its money price, at
 // least the hour itself, the money queue's floor; the hour itself before its
 // first build) against what an hour of its progress is (the level wish's).

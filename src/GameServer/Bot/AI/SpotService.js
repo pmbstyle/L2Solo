@@ -7,11 +7,11 @@ const MAX_WALK_SPOT_DISTANCE = 12000;
 // body this close to a spot's center, or on its ground, has arrived there (arrivedAt).
 const SPOT_ARRIVAL_RADIUS = 1000;
 // The fewest spawns of a bot's band a spot is suitable with (isSuitable). A
-// cell piece with fewer spawns is an edge fragment (T123): it joins the
+// cell piece with fewer spawns is an edge fragment: it joins the
 // field of its species in a neighbour cell.
 const MIN_ELIGIBLE_DENSITY = 3;
 // Spot ids: the cell `x_y`, `:area` inside a partitioned dungeon, `:f<n>` for
-// a floor of a cell split by height (T123).
+// a floor of a cell split by height.
 const GRID_SPOT_ID = /^(-?\d+)_(-?\d+)(?::.+)?$/;
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
@@ -44,7 +44,7 @@ function spotName(spot) {
     return `${primary} fields`;
 }
 
-// A spot's level mix (T123): the band its spawns' levels fill, their mean
+// A spot's level mix: the band its spawns' levels fill, their mean
 // plus and minus their standard deviation, from its level counts; a spot
 // with only min/max metadata (fixtures, older profiles): min..max. One answer
 // per counts object (spawn data, never written after the catalogue builds it).
@@ -100,7 +100,7 @@ function identitySeedForState(state) {
 
 // The area the spawns of a spot cover: a uniform spread over a w x h
 // rectangle has sigma w / sqrt(12), so 12 sigmaX sigmaY; at least the area
-// their own spacing gives under the walk rule that reads it (T123): the
+// their own spacing gives under the walk rule that reads it: the
 // solo walk (BackgroundResolver.soloWalkMs) takes the mean distance to the
 // nearest of n spawns over an area A as 1 / (2 sqrt(n / A)), so the spawns'
 // measured mean nearest distance d gives A = 4 n d^2. Two or three spawns on
@@ -127,7 +127,7 @@ function spawnArea(records = [], cells = 1) {
 }
 
 // A point drawn around a spawn of a grid spot stays in that spawn's cell (a
-// spot of several cells, T123, keeps each anchor's own).
+// spot of several cells keeps each anchor's own).
 function constrainToSpotGrid(spot, anchor, locX, locY) {
     if (!GRID_SPOT_ID.test(String(spot?.id || ''))) return { locX, locY };
     const gridX = Math.floor(Number(anchor.locX) / SPOT_CELL_SIZE);
@@ -170,8 +170,9 @@ function floorsOf(items, bound) {
 }
 
 // The cell pieces of the catalogue: one per floor of each cell. The floor
-// with the most spawns keeps the cell key as its id (the spot id saved by
-// bots before T123), the others are `<cell>:f<n>`, n from the bottom. A
+// with the most spawns keeps the cell key as its id (the spot id bots saved
+// before cells were split by height), the others are `<cell>:f<n>`, n the
+// floor counted from the bottom. A
 // split piece's band reaches halfway to the next floor (SpotIndex.spotAt).
 function cellPieces(cells, bound) {
     const pieces = [];
@@ -194,7 +195,7 @@ function cellPieces(cells, bound) {
     return pieces;
 }
 
-// T123: an edge fragment (a piece with fewer spawns than MIN_ELIGIBLE_DENSITY)
+// an edge fragment (a piece with fewer spawns than MIN_ELIGIBLE_DENSITY)
 // joins the piece of a neighbour cell (the same area partition) holding the
 // most of its spawns' species within `reach` and on its floor (`bound` in
 // height), ties to the nearest; a fragment of no such field stays alone. A
@@ -298,7 +299,7 @@ function spotOfPieces(root, members) {
         density: sector.count,
         npcNames: nameEntries.slice(0, 3).map((item) => item.name),
         npcSelfIds: selfIdEntries.slice(0, 8).map((item) => item.selfId),
-        // `production`: the group's mobs per hour from its respawns (E69).
+        // `production`: the group's mobs per hour from its respawns.
         npcEntries: Object.values(sector.npcs)
             .sort((a, b) => b.count - a.count)
             .map((entry) => ({ ...entry, production: Math.round(entry.production * 100) / 100 })),
@@ -306,10 +307,10 @@ function spotOfPieces(root, members) {
         levelCounts: { ...sector.levels },
         dominantLevels: levelEntries.slice(0, 3),
         partitionedAreaId: root.area?.id || null,
-        // T123: the floor band of a cell split by height, the pieces taken in.
+        // the floor band of a cell split by height, the pieces taken in.
         floor: root.floor,
         joins: joins.length ? joins : null,
-        // The square its spawns cover (T106, the solo walk): a uniform
+        // The square its spawns cover (the solo walk): a uniform
         // spread's 12 sigmaX sigmaY, at most the cells of the spot.
         spawnArea: spawnArea(sector.records, new Set(members.map((member) => member.key)).size),
         records: sector.records
@@ -359,11 +360,11 @@ function levelFit(spot, targetLevel, options = {}) {
     };
 }
 
-// Mobs per hour one spawn gives back (E69): 3600 / its respawn seconds. The
+// Mobs per hour one spawn gives back: 3600 / its respawn seconds. The
 // respawn spread is symmetric (SpawnNpcs.respawnDelayMs), so its mean is
 // `respawn`; a leader's minions come back with their leader. A day or night
 // spawn gives back only in its period: over the game day, its share of the
-// day (GameTime.periodShare, T123).
+// day (GameTime.periodShare).
 function respawnsPerHour(npc) {
     const spawn = (npc?.spawnDefinition || npc?.minionLeader?.spawnDefinition)?.spawn;
     const respawn = Number(spawn?.respawn) || 0;
@@ -397,11 +398,11 @@ const SpotService = {
         const SocialAggro = invoke('GameServer/Npc/SocialAggro');
         const NpcAggro = invoke('GameServer/Npc/NpcAggro'); // lazy: worker as SocialAggro above.
         const MinionManager = invoke('GameServer/World/RaidBossMinionManager'); // lazy: worker as SocialAggro above.
-        // T123: spawns farther apart in height than a mob assists or aggroes
+        // spawns farther apart in height than a mob assists or aggroes
         // (SocialAggro, NpcAggro) share no fight: another floor.
         const floorBound = Math.max(SocialAggro.MAX_ASSIST_Z_DIFFERENCE, NpcAggro.MAX_AGGRO_Z_DIFFERENCE);
         const cells = new Map();
-        // Every spawn of the game day (T123) at its seeded catalogue point
+        // Every spawn of the game day at its seeded catalogue point
         // (SpawnNpcs.catalogueSpawns): the same spots at every start, the
         // ones the spot table measures.
         const spawns = invoke('GameServer/World/Generics/SpawnNpcs').catalogueSpawns(World); // lazy: the worker's SpotService never indexes
@@ -434,7 +435,7 @@ const SpotService = {
 
         // A hunter of a field sees a spawn within the client's visibility
         // radius: an edge fragment's spawn of a species the neighbour field
-        // holds that close belongs to that field (T123).
+        // holds that close belongs to that field.
         const pieces = cellPieces(cells, floorBound);
         const roots = joinedPieces(pieces, floorBound, CLIENT_VISIBILITY_RADIUS);
         const members = new Map();

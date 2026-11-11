@@ -313,7 +313,7 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice, stepBids =
             const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, Number(price) || null));
             options.survivalCost = survival.survivalCost;
             if (survival.survivalShare !== undefined) options.survivalShare = survival.survivalShare;
-            // The stock wish's rank at the price paid, not the estimate (E187).
+            // The stock wish's rank at the price paid, not the estimate.
             if (plan.purpose === 'shots' && terms.r === undefined) {
                 options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(price));
             }
@@ -498,7 +498,7 @@ async function buyHere(state, plan, options = {}) {
     }
     if (current.phase !== 'cold' || LifeState.hotRow(current.characterId)) return { state: current, units, spent, hot: true };
     if (options.skipNpc) return result({ state: current, units, spent, hot: false });
-    // A saved plan may predate group F or a rate change. Only a current
+    // A saved plan may predate bot shops using these places or a rate change. Only a current
     // NPC/shot-table quote in this town can supply its remainder.
     const quotedPrice = Number(plan.npcPrice || 0);
     const npcPrice = staticOffers(plan.selfId).some((offer) => offer.town === plan.town
@@ -992,7 +992,7 @@ const ColdMarketService = {
             current = next?.state || current;
             if (next?.pending || next?.reason === 'bot_went_hot') return current;
         }
-        // E314: a visit already ended plans no shot purchase again (the NPC basket below still runs).
+        // a visit already ended plans no shot purchase again (the NPC basket below still runs).
         if (!options.raidSupplyOnly && current.stats?.townVisit?.completed !== true) {
             const plan = ShotStock.planForState(current);
             const localPrices = staticOffers(plan.selfId).filter(offer => offer.town === current.currentRegion);
@@ -1003,7 +1003,7 @@ const ColdMarketService = {
                     towns: [current.currentRegion], money: restock.cost, purpose: 'shots'
                 });
                 if (purchase) {
-                    // E314: a sale visit ends on a pending shot deal like on any other
+                    // a sale visit ends on a pending shot deal like on any other
                     // outcome (no retry on this visit). The ended visit is saved before
                     // the meeting is staged: the meeting pins the row revision, and no
                     // write of this row may follow it on this pass.

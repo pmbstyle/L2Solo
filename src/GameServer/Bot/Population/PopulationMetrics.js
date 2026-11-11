@@ -20,12 +20,12 @@ function emptyCounters() {
         skillUses: 0,
         heals: 0,
         partyBuffCasts: 0,
-        // Cold solo fights started and the mobs they pulled (F20): mobs per pull.
+        // Cold solo fights started and the mobs they pulled: mobs per pull.
         coldPulls: 0,
         coldPullMobs: 0,
-        // Cold solo area-skill hits that struck every mob of a pull (F20).
+        // Cold solo area-skill hits that struck every mob of a pull.
         coldAreaPullHits: 0,
-        // E69: solo rounds the spot share cut short, and the fights it did not start.
+        // solo rounds the spot share cut short, and the fights it did not start.
         coldShareBoundResolves: 0,
         coldShareCutFights: 0,
         skippedResolves: 0,
@@ -106,7 +106,7 @@ function stats(values) {
     };
 }
 
-// The cold worker limit reads the median of the last three 1 s readings (L118): two of three late, not one.
+// The cold worker limit reads the median of the last three 1 s readings: two of three late, not one.
 const LAG_WINDOW = 3;
 
 const PopulationMetrics = {

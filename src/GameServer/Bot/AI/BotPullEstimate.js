@@ -1,4 +1,4 @@
-// How many mobs come when one is hit (E72, F20; design 13.8, 13.12): the
+// How many mobs come when one is hit: the
 // target, its same-clan helpers inside its help radius (SocialAggro), the
 // aggressive mobs within the aggro radius (NpcAggro) and a leader's minion
 // group. One answer for hot target choice and cold fights: a hot bot counts the
@@ -27,7 +27,7 @@ function record(npc) {
 
 // Records: { id, leader (a live one's), selfId, clan, helpRadius, hostile, minion, x, y, z }.
 // rules: { assistZ, aggroRadius, aggroZ } from SocialAggro and NpcAggro;
-// an aggressive NPC joins within its own C4 range (NpcAggroRange, T114),
+// an aggressive NPC joins within its own C4 range (NpcAggroRange),
 // rules.aggroRadius for one without.
 function pullSize(target, neighbours = [], rules = {}, minions = 0) {
     const helpRadius = Number(target.helpRadius) || 0;

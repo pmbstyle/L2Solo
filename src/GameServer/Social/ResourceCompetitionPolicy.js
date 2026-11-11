@@ -48,7 +48,7 @@ function escalationChance(persona, towardOpponent, standing = {}) {
         * (1 - karmaCost(persona, standing));
     return scaleChance(chance, Config.pvpAggression);
 }
-// Can I win? Only by what a player sees (U26). A unit may carry own (how it
+// Can I win? Only by what a player sees. A unit may carry own (how it
 // knows itself) and seen (how others see it); otherwise its look and size.
 function view(unit, field) {
     return unit[field] || { look: unit.look, people: unit.people ?? unit.size };

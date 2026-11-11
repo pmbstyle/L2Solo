@@ -23,7 +23,7 @@ const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 // 19 prices from 2 widths under the centre to 2.5 over it.
 const GRID = Object.freeze(Array.from({ length: 19 }, (_, at) => -2 + at * 0.25));
 const NEAR_BEST = 0.02;
-// How differently buyers see the same offers (e13: their understanding error).
+// How differently buyers see the same offers (their understanding error).
 const PERCEPTION = 0.08;
 const RIVALS_SEEN = 20;
 // Waiting costs the gap's urgency spread over that wish's own horizon (1/hour).
@@ -159,7 +159,7 @@ function exitCompetition(asks, { ownerId, price, enchant = 0, count }) {
     return { cheaperUnits, limit: tail && cheaperUnits < count };
 }
 
-// One finite sale of `units` more goods into one bid (MVP-5). A backed bid
+// One finite sale of `units` more goods into one bid. A backed bid
 // buys its count; a conditional one only what its buyer is willing to pay
 // for, read from the seller's price belief (prospectiveExit). Cheaper
 // foreign asks serve the buyer first and the seller's own unsold goods

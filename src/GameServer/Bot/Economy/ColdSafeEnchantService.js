@@ -205,7 +205,7 @@ function summary(operations = []) {
     }, new Map()).values()];
 }
 
-// ARCH-NOTE: FX-F1 restores the authored guaranteed D-grade safe batch;
+// ARCH-NOTE: restores the authored guaranteed D-grade safe batch;
 // the delivered adapter discarded its operations and enchanted only one item.
 function consumedInventory(state = {}, operations = []) {
     const consumed = operations.reduce((amounts, operation) => {

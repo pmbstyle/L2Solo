@@ -140,7 +140,7 @@ function inferRole(value) {
     return 'dps';
 }
 
-// The table roles of their own (T106): summoners fight with a pet (isSummoner),
+// The table roles of their own: summoners fight with a pet (isSummoner),
 // orc chanters by their own line, not as the role's measured class.
 const CHANTER_TABLE_CLASSES = new Set([49, 50, 51, 52]);
 
@@ -190,7 +190,7 @@ function isTank(value) {
 
 // A summoner fights with its servitor: a summoner class, or a bot's first
 // class whose future second class is one (kitClassId; a Wizard heading for
-// Warlock, T122). A future Sorcerer or Necromancer Wizard learns the cat too,
+// Warlock). A future Sorcerer or Necromancer Wizard learns the cat too,
 // but no rule prices a pet for a non-summoner: it fights without one.
 function isSummoner(value) {
     return SUMMONER_CLASSES.has(kitClassId(value) ?? roleClassId(value));

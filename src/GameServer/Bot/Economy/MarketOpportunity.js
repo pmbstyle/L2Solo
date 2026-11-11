@@ -215,7 +215,7 @@ function hotOffers(selfId, options = {}) {
 // The one offer query (OfferQuery) for a buyer on the main thread: what a
 // cold bot can buy without meeting anyone (board records, NPC shops and the
 // configured shot merchants; a player's or a bot's live private store trades
-// face to face only, E14, E22), in `town`, in each of `towns` or in every
+// face to face only), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
 // The offers are the ones the bot's build quotes (OfferQuery.admits, the build's reader).
@@ -289,7 +289,7 @@ function liveBuyBoard(town, excludeOwner = 0) {
 
 // The buy records of the board (escrow held), best first in the board's own
 // order (BoardIndex.compareLines: the bid, a player before a bot, the record):
-// the budget-backed buy stores whose money stayed in the wallet are gone (E24).
+// the budget-backed buy stores whose money stayed in the wallet are gone.
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
     return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })

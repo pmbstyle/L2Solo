@@ -10,7 +10,7 @@
 // rate over the last hour of uptime), the market index (the mean log of the
 // deal price over the item's first price, the last ~32 deals), and its
 // hourly move (how much the index changes in an hour of uptime). Each counter
-// also keeps its buyers per hour in each town where it had deals (б7: the
+// also keeps its buyers per hour in each town where it had deals (the
 // shop town, MarketTownPolicy.shopTown).
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Uptime = require('../Population/Uptime');
@@ -30,7 +30,7 @@ const INDEX_DEALS = 32;
 const REPLAY_DEALS = Math.max(PRICES_KEPT, INDEX_DEALS);
 const GRADE_IN_NAME = /(?:^|[\s:])(D|C|B|A|S)(?:[- ]?Grade|\b)/i;
 // The starting hourly move of a counter no deal has measured yet: the median
-// hourly move over the counters of the group E journal (e17, 44 h).
+// hourly move over the counters of the board journal (44 h).
 const STARTING_MOVE = 0.05;
 const COUNTER_KEYS = Object.freeze(['gear', 'shot', 'recipe', 'material']
     .flatMap((kind) => GearGradeRule.GRADES.map((grade) => `${kind} ${grade}`)));
@@ -43,7 +43,7 @@ const counterCache = new Map();
 const counters = new Map();
 const items = new Map();
 // counter key -> town -> { rate, at }: the buyers per hour of the counter in
-// each town (б7, the shop town), the same exponential rate as the counter's.
+// each town (the shop town), the same exponential rate as the counter's.
 const towns = new Map();
 let mirror = null;
 // Public deal evidence is shared across price readers, never across owners'
@@ -123,7 +123,7 @@ function partGrade(selfId) {
     return grades?.size === 1 ? [...grades][0] : 'none';
 }
 
-// The one static classifier of an item (E47): its counter 'kind grade', as
+// The one static classifier of an item: its counter 'kind grade', as
 // 'gear d', 'shot d', 'recipe c', 'material b'. The market counters and the
 // shop town (MarketTownPolicy) read it.
 function counterOf(selfId) {

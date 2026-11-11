@@ -106,7 +106,7 @@ function withPersistedStats(state, result) {
         // readers of the cached state ask whether the bag or the kit moved.
         // Its updatedAt too: a settlement merged inside the commit moves it past
         // the worker's clock, and a command checkpoint built from the cache
-        // must match the row (L127: stale_command loop).
+        // must match the row (stale_command loop).
         const persisted = { ...state, ...Database.stateRevisions(row), name: row.characterName || state.name, stats,
             updatedAt: Number(row.updatedAt) || Number(state.updatedAt || 0) };
         // Board settlements, drops and native party payments can all change
