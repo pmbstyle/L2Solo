@@ -246,11 +246,14 @@ async function run() {
     await Database.setItem(ownerId, { selfId: cWeapon.selfId, name: cWeapon.template.name,
         amount: 1, enchant: 0, equipped: false, slot: 0 });
     await LifeState.syncExternalInventory(ownerId, 'test_actual_gear_acquired', LifeState.snapshot(ownerId));
+    // A review on main leaves the bid; the economy build's next plan, without the item, takes it back.
     await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop', 'buy_ad']);
+    await BotAfkMarket.executePlan(LifeState.snapshot(ownerId), { buyAds: [], buyShop: 0 }, { reviewGoal: false });
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
     assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
     assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop'],
-        'actual goal completion closes only the obsolete conditional buy advert');
+        'the next build closes only the obsolete conditional buy advert');
 
     const dGradeGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: 45, itemName: 'Bone Helmet', adena: 1000000 },

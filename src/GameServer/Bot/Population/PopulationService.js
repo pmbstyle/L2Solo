@@ -255,19 +255,22 @@ function joinedBackgroundParty(state) {
     return !!current?.party?.partyId;
 }
 
-// A trip to buy at a shop is paid from the wallet. When the bot's own buy
-// order still holds Adena, the trip withdraws it first (its goal keeps no
-// WTB, or beginMarketTravel would refuse) and starts from the refunded
-// state. If the order cannot be withdrawn, the bot does not leave; a caller
-// that holds the pre-refund state must not apply it after a refund.
+// A trip to buy at a shop is paid from the wallet. The bot's own bid for the goal's
+// item holds Adena the trip needs and would keep it from travelling
+// (beginMarketTravel refuses a bot that can bid), so the trip takes that bid back
+// first and starts from the refunded state; other bids stand. If it cannot be taken
+// back, the bot does not leave; a caller that holds the pre-refund state must not
+// apply it after a refund.
 async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
     const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
-    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
+    const itemId = goal?.target?.itemId;
+    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY || !itemId
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
-    const remote = await BotAfkMarketService.reconcile(state, goal).catch((error) => {
+    const taken = await BotAfkMarketService.withdrawBuyAds(state.characterId, itemId, state).catch((error) => {
         if (!FailureLog.refusal(error)) FailureLog.note('economy.trip_refund', error);
     });
-    const refunded = remote?.withdrawn ? remote.state || state : null;
+    if (taken && !taken.changed) return travel;
+    const refunded = taken?.withdrawn ? taken.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
     return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
 }
@@ -3130,7 +3133,7 @@ const PopulationService = {
             return [];
         }).then(async (needs) => {
             const goal = needs?.[0] || null;
-            const remote = await BotAfkMarketService.reconcile(marketState, goal, needs);
+            const remote = await BotAfkMarketService.reconcile(marketState, goal);
             const current = remote.state || marketState;
             // forState unloads only where the bag alone does (the mana floor comes first), so
             // the cheap bag floor answers the common no; one moment for both reads.

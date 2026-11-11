@@ -322,8 +322,7 @@ async function servedStepHoldsBids() {
 // Bot 2001600 (traced): its build bid 1463 x1310 in Dion; a cold town step that bought
 // nothing, with no build, then posted 1463 x1530 and 1458 x10 in Gludio, bids main read
 // from its card. Such a step reviews the bot's ads on main: it leaves the build's bids as
-// posted, and still takes them back when the goal is a purchase at an NPC (the trip pays
-// from the wallet).
+// posted.
 async function townStepKeepsBids() {
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
@@ -332,7 +331,7 @@ async function townStepKeepsBids() {
     const needs = Needs.needs, errands = Town.finishTownErrands, previousBid = Pricing.bid;
     const goal = { type: 'buy_craft_material', status: 'active', target: { itemId: 1866, amount: 3 },
         plan: { expectedBenefit: 'market_buy_craft_material', estimatedCost: 5000, wishKey: 'power:101:7' } };
-    let after = goal;
+    const after = goal;
     Needs.needs = () => [after];
     Town.finishTownErrands = async state => state;
     // The card's view would bid the goal's item: one ask the bot's worth covers.
@@ -354,14 +353,10 @@ async function townStepKeepsBids() {
         };
         await step();
         assert.deepEqual(posted(), held, 'a town step without a purchase leaves the build\'s bids as posted');
-        after = { ...goal, plan: { ...goal.plan, sourceType: 'npc' } };
-        await step();
-        assert.deepEqual(posted(), [], 'a purchase at an NPC takes the bids back');
-        assert.equal(await wallet(9122), 1000000, 'their escrow is back in the bag');
     } finally {
         Needs.needs = needs; Town.finishTownErrands = errands; Pricing.bid = previousBid;
     }
-    console.log('PASS town step keeps bids: a cold town step without a purchase changes no bid; an NPC purchase takes them back');
+    console.log('PASS town step keeps bids: a cold town step without a purchase changes no bid');
 }
 
 async function run() {
