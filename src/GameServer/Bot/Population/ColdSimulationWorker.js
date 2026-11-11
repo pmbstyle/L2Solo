@@ -2128,9 +2128,13 @@ function startKernel(config = {}) {
             // the old project's inputs and bids. Replacing its result with a
             // second bare wish plan drops that retained chain on every switch.
             const acquisitionPlan = selectedAcquisition.acquisitionPlan;
-            const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
-                { spots, economy, memo: kernel.states.get(Number(state.characterId)),
-                    planKey: selectedAcquisition.planKey });
+            // The party request is the build's output: a card served with no leaf holds the
+            // one the last build issued, as a card with a leaf does (forming's no stays closed,
+            // its attempts with it, until the next build asks again).
+            const partyRequest = nullReuse ? state.stats?.partyRequest || null
+                : PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
+                    { spots, economy, memo: kernel.states.get(Number(state.characterId)),
+                        planKey: selectedAcquisition.planKey });
             // The build's route facts moved (EconomyContext.forState routeMoved): the held
             // choice drops before the trip start, so it is chosen again on the planned state
             // (a new plan destination is in its key).

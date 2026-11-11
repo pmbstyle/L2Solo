@@ -171,6 +171,48 @@ module.exports.pendingProbe = async id => {
             proposed: Number(plan.statsPacket?.decisionSeq || 0) };
     } finally { Economy.forState = original; kernel.states.set(id, { ...kernel.states.get(id), state: row }); }
 };
+// A far bot whose held card names no leaf (its decision completed: nothing left to carry
+// out) serves it while no situation wakes its build. Its party progress request, closed by
+// forming's no, is held there as on any served step; its next build asks again, its
+// attempts kept. The fixture: the card's leaf completed, and a partner would bring the bot
+// to its next level sooner on its earning ground.
+module.exports.closedProbe = async (id) => {
+    const saved = kernel.states.get(id), refresh = ColdEconomyDecision.refreshAdvisory;
+    const Progress = invoke('GameServer/Bot/Population/PartyProgressComparison');
+    const { partnerFor, compare } = Progress;
+    const ground = planningSpots.find(spot => Number(spot.minLevel) <= 20 && Number(spot.maxLevel) >= 20) || planningSpots[0];
+    ColdEconomyDecision.refreshAdvisory = (...args) => {
+        const served = refresh(...args);
+        if (served) served.economy.network.activity = null;
+        return served;
+    };
+    Progress.partnerFor = () => ({ characterId: 0 });
+    Progress.compare = () => ({ accept: true, reason: 'party' });
+    try {
+        const closed = { status: 'closed', priority: 'preferred', objectiveKey: 'spot:' + ground.id, reason: 'party_progress',
+            spotId: ground.id, npcId: null, itemId: null, targetId: null, attempts: 2, requestedAt: 1, lastReason: 'forming_refused' };
+        const earning = EquipmentIncomeRoute.answerOf({ spot: ground, row: { income: 100 }, earning: 100 }, 1);
+        const step = async (woken, at) => {
+            const base = saved.state, state = { ...base, phase: 'cold', activity: 'hunting', spotId: ground.id, loc: { ...ground.center },
+                stats: { ...base.stats, woken, waiting: 0, earning, equipmentPlan: null, partyRequest: closed } };
+            kernel.states.set(id, { ...saved, progressAsk: null, state });
+            const plan = await kernel.planLifecycle({ state, timestamp: at });
+            const projection = await kernel.projectResolve(plan.plannedState || state, { patch: {}, debug: {}, events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at, plan);
+            const request = projection.state.stats.partyRequest || null;
+            return { built: plan.buildTaken === true, leaf: plan.economy.network.activity?.activity ?? null, status: request?.status ?? null,
+                reason: request?.reason ?? null, attempts: request?.attempts ?? null };
+        };
+        const at = Date.now() + 50000;
+        const served = await step(0, at);
+        const built = await step(Situations.BITS.build, at + 50000);
+        return { served, built };
+    } finally {
+        ColdEconomyDecision.refreshAdvisory = refresh;
+        Object.assign(Progress, { partnerFor, compare });
+        kernel.states.set(id, saved);
+    }
+};
 // A deferred plan's next page: main's write while pages wait asks it, once per
 // state; the bot's own commit and a sent plan with nothing deferred ask none.
 module.exports.pageProbe = async id => {
@@ -387,7 +429,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'askProbe', 'arrivalProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'closedProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'askProbe', 'arrivalProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -469,6 +511,16 @@ parentPort.on('message', message => {
         assert.equal(held.nearBuilt, true, 'fixture: the body builds on a situation while near');
         assert.equal(held.nearHandoff, '', 'back far it serves the card of its near build');
         assert.equal(held.nearLater, 0, 'with no situation its first far step builds nothing');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'closed'), closedProbe: id });
+        const closedResponse = await wait(message => message.probeId === 'closed'); if (closedResponse.error) throw Error(closedResponse.error);
+        const closed = closedResponse.value;
+        console.log(JSON.stringify(closed));
+        assert.deepEqual([closed.served.built, closed.served.leaf], [false, null], 'fixture: an unwoken step serves the card with no leaf');
+        assert.deepEqual([closed.served.status, closed.served.reason, closed.served.attempts], ['closed', 'party_progress', 2],
+            'a served card holds the request forming closed, its attempts with it: no reopening between builds');
+        assert.equal(closed.built.built, true, 'fixture: the woken build is taken');
+        assert.deepEqual([closed.built.status, closed.built.reason, closed.built.attempts], ['open', 'party_progress', 2],
+            'its next build asks again, its attempts kept');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'pending'), pendingProbe: id });
         const pendingResponse = await wait(message => message.probeId === 'pending'); if (pendingResponse.error) throw Error(pendingResponse.error);
         const pending = pendingResponse.value;
