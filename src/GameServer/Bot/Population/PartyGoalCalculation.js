@@ -26,11 +26,12 @@ function matches(members, expected) {
 }
 
 function validMembers(party, members, partial = false) {
-    return !!party && Array.isArray(members) && members.length > 0 && members.length <= 9
+    const capacity = require('../../Clan/ClanRaidExpedition').capacity(party);
+    return !!party && Array.isArray(members) && members.length > 0 && members.length <= capacity
         && new Set(members.map(state => state?.characterId)).size === members.length
         && members.every(state => Number.isSafeInteger(state?.characterId) && state.characterId > 0
             && ['cold', 'hot'].includes(state.phase) && Number.isFinite(Number(state.updatedAt || 0)))
-        && Array.isArray(party.memberIds) && party.memberIds.length > 0 && party.memberIds.length <= 9
+        && Array.isArray(party.memberIds) && party.memberIds.length > 0 && party.memberIds.length <= capacity
         && new Set(party.memberIds).size === party.memberIds.length
         && party.memberIds.every(id => Number.isSafeInteger(id) && id > 0)
         && members.every(state => party.memberIds.includes(state.characterId))

@@ -1312,6 +1312,23 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(boundedBurstKernel.snapshot().partyCapacityBursts, 0);
     assert.strictEqual(boundedBurstKernel.snapshot().partyCapacityDeferrals, 1);
 
+    const expeditionKernel = recordingKernel({ resolveSolo: resolver,
+        resolveParty: () => ({ memberResults: [], events: [], partyPatch: {}, nextResolveAt: now + 60000 }),
+        emit() {}, now: () => now, maxBatch: 64, maxInFlight: 2, maxAtomicPartySize: 9 });
+    const expeditionMembers = Array.from({ length: 18 }, (_, index) => state(800 + index, { party: { partyId: 'clan-expedition' } }));
+    const expeditionIds = expeditionMembers.map(member => member.characterId);
+    const expeditionMarker = { clanId: 77, ownerSection: 'goal', goalKey: 'expedition', generation: 'native',
+        sourceId: 'raid:123', npcId: 123, raidInstanceId: 'instance', memberIds: expeditionIds,
+        coreMemberIds: expeditionIds.slice(0,9), minPartySize: 18, maxPartySize: 18 };
+    expeditionMembers.forEach((member, index) => expeditionKernel.upsert(index === 0
+        ? standOn(expeditionKernel, { state: member }, { id: 'spot' }) : { state: member }));
+    expeditionKernel.partyPut('clan-expedition', { partyId: 'clan-expedition', leaderId: 800, memberIds: expeditionIds,
+        stats: { objective: { fullRoster: expeditionMarker } } });
+    expeditionKernel.tick();
+    assert.deepStrictEqual(lastSteps(expeditionKernel), expeditionIds,
+        'a marked clan expedition gets one whole bounded turn under the normal nine-member worker limit');
+    assert.strictEqual(expeditionKernel.snapshot().partyCapacityBursts, 1);
+
     const capacityMessages = [];
     const capacityKernel = recordingKernel({
         resolveSolo: resolver,

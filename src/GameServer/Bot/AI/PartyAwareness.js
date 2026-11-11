@@ -32,7 +32,7 @@ function isOnlineActor(actor) {
 
 function isPartySession(session, leaderSession) {
     if (leaderSession?.hotBackgroundPartyId) {
-        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession).includes(session);
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').partyRoster(leaderSession).includes(session);
     }
     return session === leaderSession || (
         session &&
@@ -50,7 +50,7 @@ function partySessions(leaderSession, { includeDead = false } = {}) {
     if (!leaderSession) return [];
     if (leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion) {
         // lazy: cycle HotBackgroundParty loads PartyAwareness through its AI modules
-        const roster = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession);
+        const roster = invoke('GameServer/Bot/AI/HotBackgroundParty').partyRoster(leaderSession);
         return includeDead ? roster : roster.filter(session => isOnlineActor(session.actor));
     }
     const members = world().pvpPartySessionsForKey(leaderSession);

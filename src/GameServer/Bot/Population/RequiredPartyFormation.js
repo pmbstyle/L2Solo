@@ -28,6 +28,7 @@ function eligible(state) {
         && ELIGIBLE_ACTIVITIES.has(state.activity)
         && !state.party?.partyId
         && !state.partyId
+        && !require('./RaidSupplyPolicy').held(state)
         && partyTradeAllowed('party', state)
         && (!isMainThread || require('../../AfkTrade/TradeMeetingService').canJoinParty(state.characterId, state))
         && spotFor(state)
@@ -111,7 +112,7 @@ function proposalFromStates(states = [], options = {}) {
             const compatible = anchors
                 .filter(({ state }) => !anchor.objective.fullRoster || anchor.objective.fullRoster.memberIds.includes(Number(state.characterId)))
                 .filter(({ state }) => Math.abs(Number(state.level || 1) - anchorLevel) <= levelRange)
-                .slice(0, candidateLimit)
+                .slice(0, anchor.objective.fullRoster ? maxSize : candidateLimit)
                 .map(({ state }) => state);
             const Material = require('./CraftMaterialParty');
             if (Material.isObjective(anchor.objective)) {

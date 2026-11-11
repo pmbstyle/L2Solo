@@ -408,7 +408,8 @@ const BackgroundPartyResolver = {
             }
         }
 
-        const alreadyFailed = raid && members.filter(member => member.vitals.hp <= 0).some((member, index) =>
+        const alreadyFailed = raid && members.filter(member => member.vitals.hp <= 0
+            && !require('../../Clan/ClanRaidExpedition').helper(party, member)).some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index,
                 remainingHpRatio: Number(raidSnapshot?.hp) / Math.max(1, Number(raidSnapshot?.maxHp || 1)) }) !== 'continue');
         const fightBudget = raid ? Number(!alreadyFailed) : estimateFightCount({ party, members, spot, elapsedMs });
@@ -437,9 +438,12 @@ const BackgroundPartyResolver = {
         // the save debits them from its stored stock, as the solo round's.
         const memberPotions = new Map();
         const memberSoulCrystals = new Map();
+        const helperRecoveries = raidCombatActive && admission?.held
+            ? require('../../Clan/ClanRaidHelperRecovery').recover(party, members, timestamp, elapsedMs) : new Map();
         let combatMembers = members.map((state) => ({
             ...state,
-            vitals: pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
+            vitals: helperRecoveries.has(state.characterId) ? { ...state.vitals, hp: 0 }
+                : pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
         // Raid preparation casts its own buffs; an ordinary hunt casts them between fights (F23).
         const huntBuffs = raid || pending ? null : BackgroundResolver.castHuntPartyBuffs(combatMembers, timestamp);
@@ -557,6 +561,11 @@ const BackgroundPartyResolver = {
         HuntActivity.consumeCold(huntActivity, memoryEvents);
 
         rewards.forEach(({ state, exp, sp, adena, items }, index) => {
+            const recovery = helperRecoveries.get(state.characterId);
+            if (recovery) {
+                memberResults.push({ state, result: { ...recovery, materialize: { exp: 0, sp: 0, adena, items } } });
+                return;
+            }
             const resolved = combatMembers[index] || state;
             const vitals = resolved.vitals || memberVitals(state);
             const hp = Math.max(0, Number(vitals.hp || 0));
@@ -727,7 +736,8 @@ const BackgroundPartyResolver = {
                 }
             });
         });
-        const casualties = combatMembers.filter(member => Number(member.vitals?.hp) <= 0);
+        const casualties = combatMembers.filter(member => Number(member.vitals?.hp) <= 0
+            && !require('../../Clan/ClanRaidExpedition').helper(party, member));
         const remainingHpRatio = Number(raidSnapshot?.hp || 0) / Math.max(1, Number(raidSnapshot?.maxHp || 1));
         const raidFailed = raid && raidSnapshot?.status !== 'defeated' && casualties.some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index, remainingHpRatio }) !== 'continue');

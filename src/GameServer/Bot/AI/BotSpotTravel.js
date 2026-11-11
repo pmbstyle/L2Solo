@@ -28,6 +28,12 @@ function partyReturnInCombat(session) {
     const destination = session?.backgroundPartyReturn;
     if (!destination || destination.partyId !== session.hotBackgroundPartyId
         || destination.spotId !== session.spotRelocation?.spotId) return false;
+    const party = invoke('GameServer/Bot/Population/BackgroundPartyState').find(session.hotBackgroundPartyId);
+    if (require('../../Clan/ClanRaidExpedition').helper(party, session)) {
+        // A helper's return is independent of siblings still fighting. Native
+        // travel also checks this actor's PvP, swings and recent incoming hits.
+        return !!invoke('GameServer/Bot/AI/PartyAwareness').npcThreateningActor(session);
+    }
     // Damage invalidates the victim's projection; autonomous siblings have
     // their own cached views. Cast completion needs the current party threat.
     invoke('GameServer/Bot/AI/PartyAwareness').invalidateThreatProjection(session);

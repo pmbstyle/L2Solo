@@ -905,7 +905,7 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
     const objective = objectiveOverride || members.map(partyObjectiveForState).find(ClanPartyCapacity.required);
     if (objective?.fullRoster) {
         members = ClanRaidRoster.selectMembers(members, objective, partyLimitsForObjective(objective));
-        if (members.length !== 9) return null;
+        if (members.length !== objective.fullRoster.memberIds.length) return null;
     }
     if (ClanEquipmentPartyPolicy.applies(objective)) {
         members = members.filter(member => ClanEquipmentPartyPolicy.allowed(member, objective));
@@ -956,7 +956,9 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         if (verdict.incomeReviews) review = { lastIncomeReviewAt: verdict.lastIncomeReviewAt,
             incomeReviews: verdict.incomeReviews.filter(row => accepted.has(row.characterId)) };
     }
-    const leader = PartyComposition.chooseLeader(members);
+    const marked = requested?.fullRoster;
+    const leader = PartyComposition.chooseLeader(marked
+        ? members.filter(member => require('../../Clan/ClanRaidExpedition').coreIds(marked).includes(member.characterId)) : members);
     if (!leader) return Promise.resolve(null);
     const objectiveMember = members.find((member) => (
         member.stats?.partyRequest?.status === 'open'
@@ -2983,6 +2985,7 @@ const PopulationService = {
             return LifeState.applyResolve(state, result, options).then(async saved => {
                 if (!saved) return { ok: false, reason: 'state_write_rejected', state };
                 let current = saved;
+                current = await require('../../Clan/ClanRaidSupply').advance(current, LifeState, ColdMarketService, startedAt);
                 if (current.activity === 'shopping') {
                     const purchase = await ColdMarketService.tryPurchase(current, null);
                     current = purchase.state || current;

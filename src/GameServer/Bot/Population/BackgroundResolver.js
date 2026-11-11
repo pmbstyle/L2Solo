@@ -1,5 +1,6 @@
 const { coldRestRegenPerTick, restRegenPerTick, requiresManaRecovery, estimateRestMs } = require('./ColdRest');
 const PveEncounter = require('./ColdPveEncounter');
+const Expedition = require('../../Clan/ClanRaidExpedition');
 const ColdSoulCrystal = require('./ColdSoulCrystal');
 const Packet = require('../Economy/StatsPacket');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
@@ -523,6 +524,7 @@ function coldRaidControlCapacity(fighters = [], mob = {}) {
     if (!minionCount) return 0;
     let held = 0;
     for (const fighter of fighters) {
+        if (fighter.vitals?.hp !== undefined && !(fighter.vitals.hp > 0)) continue;
         let best = 0;
         for (const skill of fighter.profile?.skills || []) {
             if (skill.passive || Number(skill.mp || 0) > Number(fighter.vitals?.mp || 0)) continue;
@@ -789,7 +791,8 @@ function raidPreparationFighters(members, timestamp) {
         const fighter = {
             state: fighterState,
             profile,
-            role: combatRoleForState(fighterState),
+            role: Expedition.helper(Expedition.memberMarker(fighterState), fighterState)
+                && combatRoleForState(fighterState) === 'tank' ? 'damage' : combatRoleForState(fighterState),
             vitals: {
                 hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp ?? profile.maxHp))),
                 maxHp: profile.maxHp,
@@ -974,6 +977,17 @@ function applySoloBuffs(patch, { buffCasts, fighter }, timestamp) {
 }
 
 function prepareRaidParty(members, timestamp = Date.now()) {
+    const marker = Expedition.memberMarker(members[0]);
+    if (marker?.coreMemberIds && members.some(member => Expedition.helper(marker, member))
+        && members.some(member => !Expedition.helper(marker, member))) {
+        const parts = Expedition.groups(marker).map(ids => prepareRaidParty(members.filter(m => ids.includes(m.characterId)), timestamp));
+        const nextResolveAt = Math.max(...parts.map(p => p.nextResolveAt));
+        return { ready: parts.every(p => p.ready), needsRest: parts.some(p => p.needsRest),
+            restUntil: parts.some(p => p.restUntil) ? nextResolveAt : null, nextResolveAt,
+            memberResults: parts.flatMap(p => p.memberResults), ...Object.fromEntries(
+                ['casts','buffCasts','musicCasts','summonCasts','chargeCasts','remainingBuffs','remainingMusic','durationMs']
+                    .map(key => [key, parts.reduce((sum, p) => sum + Number(p[key] || 0), 0)])) };
+    }
     const fighters = raidPreparationFighters(members, timestamp);
     const buffPass = castPartyBuffs(fighters, timestamp);
     const buffCasts = buffPass.buffCasts;
@@ -1435,6 +1449,11 @@ function spendColdShot(fighter) {
 // from the corpse.
 const WAITED = Object.freeze({ waited: true });
 function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, rng, party = false, help = null }) {
+    const marker = Expedition.memberMarker(fighter.state);
+    if (marker?.coreMemberIds) {
+        const groupIds = Expedition.groups(marker).find(ids => ids.includes(fighter.state.characterId));
+        allies = allies.filter(ally => groupIds.includes(ally.state.characterId));
+    }
     fighter.now = at;
     // Alone (no other living ally, a party of one too) the bot fights solo:
     // its class mode, MP price and songs (T100) are a solo bot's, as a hot bot
@@ -2116,7 +2135,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         return {
             state: fighterState,
             profile,
-            role: combatRoleForState(fighterState),
+            role: Expedition.helper(Expedition.memberMarker(fighterState), fighterState)
+                && combatRoleForState(fighterState) === 'tank' ? 'damage' : combatRoleForState(fighterState),
             vitals: {
                 hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp ?? profile.maxHp))),
                 maxHp: profile.maxHp,
@@ -2293,7 +2313,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             }
             mobReadyAt += delayMs;
         }
-        if (sharedEncounter && fighters.filter(f => f.vitals.hp <= 0).some((fighter, index) =>
+        if (sharedEncounter && fighters.filter(f => f.vitals.hp <= 0
+            && !Expedition.helper(Expedition.memberMarker(f.state), f.state)).some((fighter, index) =>
             invoke('GameServer/Bot/Population/RaidCasualtyPolicy').disposition(fighter.state, { previousDamageCasualties: index,
                 remainingHpRatio: mobHp / Math.max(1, mob.maxHp) }) !== 'continue')) break;
     }
@@ -2544,6 +2565,7 @@ const BackgroundResolver = {
         coldRaidEncounterProfile, coldMobFight, coldMobFightSave, coldMobAction, strikeSide, ownerWaitsForPet },
     resolveDeathRecovery,
     resolveRest,
+    resolveDeathRecovery,
     resolvePartyFight: options => countedBuilds('fight', 'party', resolvePartyFight, options),
     needsRest,
     staleShopping,

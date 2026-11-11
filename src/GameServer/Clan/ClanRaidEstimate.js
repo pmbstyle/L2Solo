@@ -1,98 +1,116 @@
-const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Forecast = require('../Bot/Population/RaidCombatAssessment');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
-const Rules = invoke('GameServer/Skills/C4SkillRules');
-const Formulas = invoke('GameServer/Formulas');
+const Items = require('../Item/ItemTemplateIndex');
+const Expedition = require('./ClanRaidExpedition');
+const Supply = require('../Bot/Population/RaidSupplyPolicy');
+const Shots = invoke('GameServer/Inventory/ShotStock');
+const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Offense = require('./ClanRaidOffense');
 
-function castCycle(p, skill) {
-    const magic = skill.spell !== false;
-    const speed = Math.max(1, Number(magic ? p.castSpd : p.atkSpd) || 333);
-    const semantic = Rules.resolveCached(skill);
-    const cast = Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, speed,
-        { magic, staticHitTime: !!semantic.staticHitTime });
-    let reuse = Number(skill.reuse) || 0;
-    if (!semantic.staticReuse) {
-        reuse *= 333 / speed * Combat.statMultiplier(p, magic ? 'mReuseMul' : 'pReuseMul')
-            / Math.max(0.01, Combat.statMultiplier(p, magic ? 'mReuseDiv' : 'pReuseDiv'));
+// Clan composition is owned by ClanRaidPolicy. Its healers and caster buffers
+// spend mana on support; music fighters and the tank retain their native hits.
+function combatRole(member) {
+    if (Roles.isPartyMusicFighter(member)) return 'damage';
+    const role = Roles.inferRole(member);
+    return role === 'tank' ? 'tank' : ['healer', 'buffer'].includes(role) ? 'healer' : 'damage';
+}
+
+function estimate(members, spot, cache = new Map(), options = {}) {
+    const timestamp = options.timestamp ?? cache.get('raid_timestamp') ?? Date.now();
+    cache.set('raid_timestamp', timestamp);
+    const coreIds = options.coreMemberIds;
+    const npc = Items.find(invoke('GameServer/DataCache').npcs, spot.raidBossTemplateId);
+    const core = member => !coreIds || coreIds.includes(Expedition.id(member));
+    const key = `raid_preparation:${options.clanId || 0}:${members.map(s => s.characterId ?? s.id).join(',')}:${coreIds?.join(',') || ''}`;
+    let entry = cache.get(key);
+    // The job's roster snapshots are immutable. Repeated recruitment pages
+    // and bosses share one preparation and its native fight profiles.
+    if (!entry || !members.every((member, i) => entry.members[i] === member)) {
+        entry = { members, preparation: null, roleFor: member => !core(member) && combatRole(member) === 'tank' ? 'damage' : combatRole(member) };
+        cache.set(key, entry);
     }
-    return Math.max(250, cast, reuse);
-}
-
-function weaponDps(p, boss) {
-    return Formulas.calcPhysicalDamage(p.pAtk, 0, Math.max(1, boss.pDef), 0) * 1000
-        / Combat.normalAttackMs({ ...p, atkSpd: p.atkSpd || 333 });
-}
-
-// A mage's damaging spells and their cast rate: the same for every boss and
-// every pass, so one member pays for them once per planning job.
-function castRates({ member, profile: p }, cache) {
-    const key = `raid_spells:${member.characterId || member.id}`;
-    if (cache.has(key)) return cache.get(key);
-    const rates = (p.skills || []).filter(skill => !skill.passive && skill.spell !== false
-        && [Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN, Rules.DEATH_LINK].includes(Rules.resolveCached(skill).skillType)
-        && Number(skill.power) > 0).map(skill => ({ skill, castsPerSecond: 1000 / castCycle(p, skill) }));
-    cache.set(key, rates);
-    return rates;
-}
-
-function damageRate(entry, boss, seconds, cache) {
-    const { profile: p, role, member } = entry;
-    if (role === 'healer' || role === 'buffer' && !Roles.isPartyMusicFighter(member)) return 0;
-    const physical = weaponDps(p, boss);
-    if (role !== 'mage') return physical;
-    return Math.max(physical, ...castRates(entry, cache).map(({ skill, castsPerSecond }) => {
-        const sustained = Math.min(castsPerSecond, Number(skill.mp) > 0
-            ? p.maxMp * 0.85 / Number(skill.mp) / seconds : Infinity);
-        return Formulas.calcMagicDamage(p.mAtk, Number(skill.power), Math.max(1, boss.mDef)) * sustained;
-    }));
-}
-
-function estimate(members, spot, cache = new Map()) {
-    const profiles = members.map(member => {
-        const key = `raid_combat:${member.characterId || member.id}`;
-        if (!cache.has(key)) cache.set(key, Combat.profileFor(member));
-        return { member, profile: cache.get(key), role: Roles.inferRole(member) };
-    });
-    const bossKey = `raid_boss:${spot.raidBossTemplateId || spot.id}`;
-    if (!cache.has(bossKey)) cache.set(bossKey, Combat.npcForSpot(spot, () => 0.5, {
-        preferredNpcId: spot.raidBossTemplateId, allowRaid: true
-    }));
-    const boss = cache.get(bossKey);
-    if (!boss || !profiles.length) return null;
-    let fightSeconds = 15, dps = 0;
-    // A small bounded estimate, not a combat simulation in the planner.
-    // Re-evaluate mana-limited casting against the estimated fight length.
-    for (let pass = 0; pass < 4; pass++) {
-        dps = profiles.reduce((sum, entry) => sum + damageRate(entry, boss, fightSeconds, cache), 0);
-        fightSeconds = Math.max(15, Math.min(3600, Number(boss.maxHp) / Math.max(1, dps * 1.2)));
+    const equipment = Forecast.equipmentFailures(members.filter(core), entry.roleFor, cache);
+    if (!equipment.length && !entry.preparation) {
+        // Prospective recruits are evaluated as future clan members; original
+        // snapshots/proof rows remain untouched and admission checks real joins.
+        const future = options.clanId > 0 ? members.map(member => ({ ...member, clanId: options.clanId,
+            stats: { ...member.stats, clanId: options.clanId } })) : members;
+        const prepareGroup = group => {
+            const groupKey = `raid_group:${options.clanId || 0}:${group.map(Expedition.id).join(',')}`;
+            let held = cache.get(groupKey);
+            if (!held || !group.every((member, i) => held.members[i] === member)) {
+                held = { members: group, preparation: Forecast.prepared(group.map(member => future[members.indexOf(member)]), timestamp) };
+                cache.set(groupKey, held);
+            }
+            return held.preparation;
+        };
+        if (coreIds) {
+            const groups = [members.filter(core), members.filter(member => !core(member))].filter(group => group.length);
+            const preparations = groups.map(prepareGroup);
+            entry.preparation = { states: preparations.flatMap(p => p.states), at: Math.max(...preparations.map(p => p.at)),
+                ready: preparations.every(p => p.ready) };
+        } else entry.preparation = prepareGroup(members);
+        entry.fighters = Forecast.fightersFor(entry.preparation, entry.roleFor).map(fighter => ({ ...fighter,
+            ...(core(fighter.state) ? {} : { contribution: .65 }) }));
+        entry.offenseFor = Offense.forRaid(entry.fighters, entry.preparation.at, Forecast.attack, { coldReuse: true });
+        // Helpers without an affordable reserve still contribute ordinary
+        // uncharged attacks. Their poverty never vetoes the main party.
+        entry.helpers = entry.fighters.filter(f => !core(f.state) && f.role !== 'healer');
     }
-    const tank = profiles.find(entry => entry.role === 'tank')?.profile;
-    const incoming = tank ? Formulas.calcMeleeDamage(boss.pAtk, 0, Math.max(1, tank.pDef))
-        * 1000 / Math.max(250, Formulas.calcMeleeAtkTime(boss.atkSpd || 253)) : Number(boss.pAtk);
-    const tankSurvivalSeconds = tank ? tank.maxHp / Math.max(1, incoming) : 0;
-    let healingBudget = 0, healingPerSecond = 0;
-    for (const { profile: p, role } of profiles) {
-        if (!['healer', 'buffer'].includes(role)) continue;
-        const heals = (p.skills || []).flatMap(skill => {
-            const semantic = Rules.resolveCached(skill);
-            if (skill.passive || ![Rules.HEAL, Rules.HEAL_HOT, Rules.HOT, Rules.HEAL_PERCENT].includes(semantic.skillType)
-                || !['friendly', 'party', 'ally'].includes(semantic.target)) return [];
-            const amount = semantic.hot ? Number(semantic.hot.heal || skill.power) * Number(semantic.hot.count || 1)
-                : semantic.skillType === Rules.HEAL_PERCENT ? (tank?.maxHp || p.maxHp) * Number(skill.power) / 100
-                    : Formulas.calcHealAmount(Number(skill.power || 0));
-            const budget = Number(skill.mp) > 0 ? amount * p.maxMp * 0.85 / Number(skill.mp) : amount * fightSeconds;
-            const rate = amount * 1000 / Math.max(castCycle(p, skill), semantic.hot
-                ? semantic.hot.count * semantic.hot.intervalMs : 0);
-            return [{ budget, rate, sustained: Math.min(rate, budget / fightSeconds) }];
-        }).sort((a, b) => b.sustained - a.sustained);
-        if (heals[0]) { healingBudget += heals[0].budget; healingPerSecond += heals[0].sustained; }
+    if (entry.helpers?.length && Array.isArray(options.unchargedHelperIds)) {
+        entry.helpers.forEach(f => { f.charged = !options.unchargedHelperIds.includes(Expedition.id(f.state)); });
+    } else if (entry.helpers?.length) {
+        const supplyKey = `raid_helper_supply:${key}:${entry.helpers.some(Offense.isMage) ? npc?.selfId : ''}`;
+        let held = cache.get(supplyKey);
+        if (held?.entry !== entry) {
+            const boss = npc && Combat.npcCombatStats(npc);
+            const targets = boss ? [boss,...Forecast.guardProfiles(npc).map(guard=>guard.profile).filter(Boolean)] : [];
+            const plans = entry.helpers.map(f => {
+                const plan = Shots.planForState(f.state);
+                const actions = Offense.isMage(f) && boss ? Math.max(...targets.map(target =>
+                    Offense.attack(f, target, 720, entry.preparation.at, true).rate)) * 720
+                    : 720000 / Combat.normalAttackMs(f.profile);
+                return { id: Expedition.id(f.state), selfId: plan.selfId, perAction: plan.perAction,
+                    stock: Number(f.state.inventory?.[plan.selfId]?.amount || 0) + Shots.beginnerAmount(f.state, plan),
+                    required: Math.ceil(actions * plan.perAction * 1.3) };
+            });
+            held = { entry, plans, terms: Supply.supplies(members, plans, timestamp) };
+            cache.set(supplyKey, held);
+        }
+        entry.helpers.forEach((f, index) => {
+            const s = held.terms[index];
+            f.charged = held.plans[index].perAction > 0 && (!s.missing || s.available >= s.missing && s.cash >= s.reserveCost);
+        });
     }
-    // Soft risk, not a new gear gate: real encounters calibrate the model.
-    const survival = Math.min(1, tankSurvivalSeconds / 8);
-    const deliveredHealing = Math.min(healingBudget, healingPerSecond * fightSeconds);
-    const sustain = Math.min(1, (deliveredHealing + Number(tank?.maxHp || 0)) / Math.max(1, incoming * fightSeconds));
-    const successChance = Math.max(0.1, Math.min(0.95, 0.95 * survival * Math.sqrt(sustain)));
-    return { fightSeconds, preparationSeconds: 90, recoverySeconds: 60,
-        successChance, damagePerSecond: dps, healingPerSecond, healingBudget, tankSurvivalSeconds };
+    // Like random target selection, screen damage/duration before the full
+    // defensive/healing/market pass. Reuse this exact offense on a viable boss.
+    let offenseEstimate;
+    if (!equipment.length && entry.preparation?.ready) {
+        offenseEstimate = npc && Forecast.damageEstimate(
+            entry.fighters.filter(f => f.role !== 'healer'), npc,
+            { offenseFor: entry.offenseFor, maxFightSeconds: options.maxFightSeconds ?? 720 });
+        if (offenseEstimate?.complete && Number.isFinite(offenseEstimate.grossDps) && Number.isFinite(offenseEstimate.regen)) {
+            const { grossDps, regen, seconds } = offenseEstimate;
+            const reason = grossDps <= regen * 1.5 ? 'raid_damage_below_regeneration'
+                : !Number.isFinite(seconds) || seconds > (options.maxFightSeconds ?? 720) ? 'raid_fight_too_long' : null;
+            if (reason) return { assessment: { ready:false, reason, reasons:[reason], grossDps, regen,
+                ...(Number.isFinite(seconds) ? { seconds } : {}), unchecked:['defense','healing','supplies'] }, estimate:null };
+        }
+    }
+    const assessment = Forecast.assessment(members, spot, { ...options, timestamp,
+        preparation: entry.preparation, roleFor: entry.roleFor, readinessCache: cache, offenseEstimate,
+        fundSupplies: options.fundSupplies !== false });
+    if (!assessment.ready) return { assessment, estimate: null };
+    const defense = assessment.defense;
+    return { assessment, estimate: {
+        fightSeconds: assessment.seconds,
+        preparationSeconds: Math.max(90, (entry.preparation.at - timestamp) / 1000), recoverySeconds: 60,
+        successChance: .95, damagePerSecond: assessment.grossDps, regenerationPerSecond: assessment.regen,
+        healingBudget: assessment.healing, healingPerSecond: assessment.healing / assessment.seconds,
+        tankSurvivalSeconds: defense.maxHp / Math.max(1, defense.bossDps + defense.guardDps),
+        supplyCost: (assessment.supplies || []).reduce((sum, s) => sum + s.cost, 0),
+        supplyReserveCost: (assessment.supplies || []).reduce((sum, s) => sum + s.reserveCost, 0)
+    } };
 }
 
-module.exports = { estimate };
+module.exports = { estimate, combatRole };

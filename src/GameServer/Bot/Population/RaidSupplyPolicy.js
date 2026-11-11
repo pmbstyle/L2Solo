@@ -38,6 +38,12 @@ function quoteBudget(purchase, amount, trip = purchase?.trip ?? purchase?.landed
 
 function held(state, now = Date.now()) {
     const value = state?.stats?.raidSupplyPreparation;
+    if (value?.owner === 'clan') {
+        const objective = state.stats?.clanPartyObjective, roster = objective?.fullRoster;
+        if (Number(value.clanId) !== Number(state.clanId ?? state.stats?.clanId)
+            || objective?.clanGoalKey !== value.goalKey || roster?.generation !== value.generation
+            || !roster?.memberIds?.includes(Number(state.characterId))) return null;
+    }
     return value?.id && Number(value.expiresAt) > now ? value : null;
 }
 

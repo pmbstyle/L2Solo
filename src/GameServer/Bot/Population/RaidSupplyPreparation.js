@@ -16,7 +16,7 @@ class RaidSupplyPreparation {
         for (const state of this.life.populationSeedStates()) {
             if (++scanned % 16 === 0) await yieldToLoop();
             const marker = Supply.held(state);
-            if (marker) { if (!groups.has(marker.id)) groups.set(marker.id, marker); }
+            if (marker && marker.owner !== 'clan') { if (!groups.has(marker.id)) groups.set(marker.id, marker); }
         }
         for (const marker of groups.values()) {
             await this.memory.ensureMany?.(marker.memberIds);

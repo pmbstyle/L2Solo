@@ -606,7 +606,7 @@ const BotAI = {
             const ritualRescuePending = session.clanAllianceQuest
                 && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
             const rescueLeader = wasCompanion ? session.followPlayerSession
-                : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').leader(session) : null;
+                : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').partyLeader(session) : null;
             const hotParty = session.hotBackgroundPartyId
                 ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(session.hotBackgroundPartyId)
                 : null;

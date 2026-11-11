@@ -1370,14 +1370,17 @@ class ColdSimulationKernel {
                         : members.filter((member) => Number(member.characterId) === id))
                     : members;
                 const candidateMemberIds = partyMembers.map((member) => Number(member.characterId)).filter(Boolean);
+                const marker = row?.stats?.objective?.fullRoster;
+                const atomicPartyLimit = marker && require('../../Clan/ClanRaidRoster').valid(marker)
+                    ? Math.max(this.maxAtomicPartySize, marker.memberIds.length) : this.maxAtomicPartySize;
                 const occupiedOwnership = this.inFlight.size + this.commanding.size;
                 const atomicCapacityBurst = candidateMemberIds.length > this.maxInFlight
-                    && candidateMemberIds.length <= this.maxAtomicPartySize
+                    && candidateMemberIds.length <= atomicPartyLimit
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     this.partyCapacityBlocked = true;
                     DiagnosticConfig.developerDiagnostics && (this.stats.partyCapacityDeferrals += 1);
-                    if (candidateMemberIds.length <= this.maxAtomicPartySize) {
+                    if (candidateMemberIds.length <= atomicPartyLimit) {
                         // Let current owners drain so the oldest valid party
                         // gets its bounded atomic turn even under player limits.
                         this.schedule(id, current.version, entry.dueAt, null, entry.lead);
