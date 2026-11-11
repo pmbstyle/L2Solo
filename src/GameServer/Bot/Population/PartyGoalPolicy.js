@@ -5,6 +5,7 @@ const PartyProgressComparison = require('./PartyProgressComparison');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const PartyStay = require('./PartyStay');
+const Expedition = require('../../Clan/ClanRaidExpedition');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 
 const positive = value => Math.max(0, Number(value) || 0);
@@ -19,9 +20,18 @@ function declaration(state) {
         need: request?.reason || (plan?.status === 'active' ? 'gear_acquisition' : 'progression') };
 }
 
+// Whose wishes a party's one purse merges: the members of one C4 party. A clan raid
+// expedition is two parties in one row, so its purse is its leader's party, the core;
+// the helpers come for the kill and keep their own goals (our choice, after C4: a
+// party shares within itself). Main and the worker both ask here.
+function purseMembers(party, members) {
+    return Expedition.partyMembers(members, party, party.leaderId);
+}
+
 function groupContext(party, members, deps = {}) {
+    const purse = purseMembers(party, members);
     return invoke('GameServer/Bot/Economy/EconomyContext').forGroup({ ...party,
-        adena: members.reduce((sum, member) => sum + positive(member.adena), 0) }, members, deps);
+        adena: purse.reduce((sum, member) => sum + positive(member.adena), 0) }, purse, deps);
 }
 
 function decide(state, peers, options = {}) {
@@ -166,5 +176,5 @@ function itemNeed(state, item, projected) {
     return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
+module.exports = { declaration, pending, joint, participation, purseMembers, groupContext, decide, verdictFree, formingMembers, formingVerdict,
     recruitment, itemNeed };

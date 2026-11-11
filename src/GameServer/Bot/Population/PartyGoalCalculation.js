@@ -71,13 +71,13 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
         if (!current()) throw new Error('party_goal_expired');
         return require('./PartyGoalPolicy').joint(party, members);
     }
+    const policy = require('./PartyGoalPolicy');
     const contexts = [];
-    for (const member of members) {
+    for (const member of policy.purseMembers(party, members)) {
         if (!current()) throw new Error('party_goal_expired');
         contexts.push(await prepare(member, timestamp));
         if (!current()) throw new Error('party_goal_expired');
     }
-    const policy = require('./PartyGoalPolicy');
     const context = policy.groupContext(party, members, { timestamp, memberContexts: contexts, rememberGroup: false });
     return policy.joint(party, members, { context });
 }

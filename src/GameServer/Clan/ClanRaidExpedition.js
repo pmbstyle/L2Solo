@@ -8,12 +8,18 @@ const coreIds = value => {
     const marker = markerFor(value);
     return marker?.coreMemberIds || marker?.memberIds || [];
 };
+// PARTY_MEMBERS: a C4 party's nine. MAX_MEMBERS: the most one background party row
+// holds, an expedition's core party and its helpers' party. A row of up to eighteen
+// is our expedition design: C4 has no party over nine. These own the size of a party
+// row and of the party goal query's messages: its request pages and answer, the group
+// purse, validGroups and capacity read them. Other places still write the number.
+const PARTY_MEMBERS = 9, MAX_MEMBERS = 2 * PARTY_MEMBERS;
 function validGroups(marker) {
     const all = marker?.memberIds, core = coreIds(marker);
-    return Array.isArray(all) && Array.isArray(core) && core.length === 9
-        && all.length >= 9 && all.length <= 18 && new Set(all).size === all.length
-        && new Set(core).size === 9 && core.every(value => all.includes(value))
-        && (all.length === 9 ? !marker.coreMemberIds : Array.isArray(marker.coreMemberIds));
+    return Array.isArray(all) && Array.isArray(core) && core.length === PARTY_MEMBERS
+        && all.length >= PARTY_MEMBERS && all.length <= MAX_MEMBERS && new Set(all).size === all.length
+        && new Set(core).size === PARTY_MEMBERS && core.every(value => all.includes(value))
+        && (all.length === PARTY_MEMBERS ? !marker.coreMemberIds : Array.isArray(marker.coreMemberIds));
 }
 function helper(value, member) {
     const marker = markerFor(value), memberId = id(member);
@@ -31,10 +37,10 @@ function partyMembers(members, value, member) {
 }
 function capacity(value) {
     const marker = markerFor(value);
-    return validGroups(marker) ? marker.memberIds.length : 9;
+    return validGroups(marker) ? marker.memberIds.length : PARTY_MEMBERS;
 }
 function memberMarker(value) {
     const state = value?.coldLifeState || value?.session?.coldLifeState || value;
     return state?.stats?.clanPartyObjective?.fullRoster || state?.stats?.partyRequest?.fullRoster;
 }
-module.exports = { id, markerFor, coreIds, helper, groups, validGroups, partyMembers, capacity, memberMarker };
+module.exports = { PARTY_MEMBERS, MAX_MEMBERS, id, markerFor, coreIds, helper, groups, validGroups, partyMembers, capacity, memberMarker };

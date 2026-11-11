@@ -1010,6 +1010,10 @@ class ColdSimulationCoordinator {
                 return { ok: false, reason: 'party_goal_source_changed' };
             return result;
         } catch (error) {
+            // No answer by the deadline, or a request the channel refused: the party
+            // survives it (it waits and asks again), so each is counted.
+            if (error.message === 'party_goal_timeout' || error.message === 'party_goal_send_failed')
+                FailureLog.note(`cold.${error.message}`, error);
             return { ok: false, reason: error.message };
         } finally {
             clearTimeout(timer);

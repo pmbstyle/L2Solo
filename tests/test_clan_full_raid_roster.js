@@ -23,8 +23,11 @@ const Hot = require('../src/GameServer/Bot/AI/HotBackgroundParty');
 const World = invoke('GameServer/World/World'), Index = invoke('GameServer/World/RaidEntityIndex');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog'), Scope = invoke('GameServer/RaidBoss/RaidEncounterScope');
 const Runtime = require('../src/GameServer/Clan/ClanPlanningCoordinator');
-const helperMode = process.argv.includes('--helpers');
-const base = 840000, ids = Array.from({ length: helperMode ? 10 : 9 }, (_, i) => base + i);
+// --forms: an expedition of two full parties, every member far and waiting for its
+// party with a bag too large for one worker message, forms through the real worker.
+const formsMode = process.argv.includes('--forms');
+const helperMode = formsMode || process.argv.includes('--helpers');
+const base = 840000, ids = Array.from({ length: formsMode ? 18 : helperMode ? 10 : 9 }, (_, i) => base + i);
 const spot = { id: 'raid:full-fixture', avgLevel: 50, raidBoss: true, raidBossTemplateId: 9900137,
     raidInstanceId: 'full-instance', raidWorldAvailable: true, raidAuthorityRevision: 0 };
 function body(id, classId, skills = []) {
@@ -42,7 +45,8 @@ function body(id, classId, skills = []) {
 }
 const seeded = [body(base, 4), body(base + 1, 17, [{ selfId: 1068, level: 1 }]), body(base + 2, 15, [{ selfId: 1015, level: 1 }]),
     ...[7, 9, 10, 21, 0, 9].map((classId, i) => body(base + 3 + i, classId))];
-if (helperMode) seeded.push(body(base + 9, 9));
+for (let i = 9; i < ids.length; i++) seeded.push(body(base + i, 9));
+if (formsMode) for (const member of seeded) member.stats.transportFixture = 'x'.repeat(30000);
 const seed = new DatabaseSync(isolated.world);
 seed.exec(fs.readFileSync(path.join(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
 seed.exec("INSERT INTO accounts(username,password) VALUES('bot_pop_full','fixture')");
@@ -454,9 +458,44 @@ async function phase(to) {
             expectedUpdatedAt: state.updatedAt, patch: Owner.persistencePatch({ ...state, phase: to }, at) })) });
     assert(result.ok, result.reason); result.rows.forEach(row => Life.acceptLifecycleRow(row)); party = Parties.acceptRow(result.party);
 }
+async function formsThroughWorker() {
+    const Population = invoke('GameServer/Bot/Population/PopulationService');
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+    const clan = await Database.createAutonomousClan({ name: 'FullNative', leaderId: base, memberIds: ids, founderQuorum: 5, maxBotMemberShare: 1 });
+    assert(clan.ok);
+    marker = { clanId: clan.clanId, ownerSection: 'productionGoal', goalKey: 'full-sword', generation: 'full-generation',
+        memberIds: ids, sourceId: spot.id, npcId: spot.raidBossTemplateId, raidInstanceId: spot.raidInstanceId,
+        coreMemberIds: ids.slice(0, 9), minPartySize: ids.length, maxPartySize: ids.length };
+    assert((await Database.updateAutonomousClanGoal({ clanId: marker.clanId, ownerSection: marker.ownerSection,
+        goal: { goalKey: marker.goalKey, status: 'preparing', assignedMemberIds: ids, fullRoster: marker } })).ok);
+    const objective = { status: 'open', priority: 'required', reason: 'clan_equipment', clanOperation: 'equipment',
+        clanId: marker.clanId, clanGoalKey: marker.goalKey, objectiveKey: 'direct_drop:full:10137', sourceKind: 'raid', raidBoss: true,
+        spotId: spot.id, npcId: spot.raidBossTemplateId, sourceLevel: 50, minPartySize: ids.length, maxPartySize: ids.length, fullRoster: marker };
+    // Every member waits for its party, far from any player, and takes no step of its own meanwhile.
+    for (const member of seeded) await query(`UPDATE bot_life_state SET activity='party_wait', nextResolveAt=?, statsJson=? WHERE characterId=?`,
+        [Date.now() + 3600000, JSON.stringify({ ...member.stats, clanId: marker.clanId, clanPartyObjective: objective, partyRequest: objective }), member.characterId]);
+    assert(await Life.init()); await Parties.init();
+    await Coordinator.start({ executeWorkerLifecycleCommand() {} });
+    try {
+        for (const deadline = Date.now() + 20000; Date.now() < deadline && !(Coordinator.ready && Coordinator.snapshotsLoaded);) await new Promise(resolve => setTimeout(resolve, 50));
+        assert(Coordinator.ready && Coordinator.snapshotsLoaded, 'the worker is ready');
+        Config.enabled = true; Config.backgroundPartyEnabled = true;
+        const waiting = await Life.statesByIds(ids);
+        assert(Buffer.byteLength(JSON.stringify(waiting)) > 256 * 1024, 'the roster does not fit one worker message');
+        const formed = await Population.formBackgroundParties(waiting);
+        assert.equal(formed.length, 1, 'an expedition of eighteen far members forms');
+        assert.deepEqual([...formed[0].memberIds].sort(), ids, 'with its core party and every helper');
+        assert(ids.slice(0, 9).includes(formed[0].leaderId), 'led from its core party');
+        const rows = await query('SELECT activity, partyId FROM bot_life_state');
+        assert(rows.every(row => row.partyId === formed[0].partyId && row.activity !== 'party_wait'), 'no member is left waiting for a party');
+        console.log('Clan raid expedition: eighteen far members form one party through the worker');
+    } finally { await Coordinator.stop(); }
+}
 async function main() {
     Database.init();
     try {
+        if (formsMode) return await formsThroughWorker();
         assert(await Life.init()); await Parties.init();
         Catalog.findById = id => id === spot.id ? spot : old.find(id);
         Scope.projectSource = value => value?.id === spot.id ? { ...spot } : old.project(value);
