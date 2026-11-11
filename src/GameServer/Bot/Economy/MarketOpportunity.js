@@ -183,10 +183,24 @@ const fixedStoreOffers = require('./FixedShotOffers').offers;
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const PartyAdmission = require('../Population/PartyAdmission');
 
+// The buyer an offer admission (OfferQuery.admits) reads on main: { state, session }.
+// state: the bot's cached row (its meeting, phase and party, which the trade
+// admission reads), with the quote marks (stats.gearMarks) of its live body when it
+// has one: a body's marks are written on its session (DecisionEvents.statsFor) while
+// the row keeps its activation snapshot, so the row's would admit a quote the body was
+// refused and hide one whose mark the body forgot. session: the body's live session.
+function buyerOf(characterId) {
+    const id = Number(characterId);
+    const row = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(id) || null;
+    const session = World.registeredActorById(id)?.session || null;
+    if (!row || !session) return { state: row, session };
+    const marks = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session).gearMarks;
+    return { state: marks === row.stats?.gearMarks ? row : { ...row, stats: { ...row.stats, gearMarks: marks } }, session };
+}
+
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
-    const ownState = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
-    const ownSession = World.registeredActorById(Number(options.buyerCharacterId))?.session;
+    const buyer = buyerOf(options.buyerCharacterId);
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
@@ -194,7 +208,7 @@ function hotOffers(selfId, options = {}) {
     ].filter((offer) => offer.available && Number(offer.sourceId) !== Number(options.buyerCharacterId)
         && Number(offer.price) <= (options.budget ?? Infinity)
         && (!options.accept || options.accept(offer))
-        && OfferQuery.admits(offer, ownState, ownSession))
+        && OfferQuery.admits(offer, buyer.state, buyer.session))
         .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
@@ -209,26 +223,27 @@ function bestOffer(selfId, options = {}) {
     const towns = options.town ? [options.town] : options.towns || null;
     const fixed = fixedStoreOffers(selfId);
     const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
-    const buyer = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
-    const session = World.registeredActorById(Number(options.buyerCharacterId))?.session || null;
+    const buyer = buyerOf(options.buyerCharacterId);
     return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
         towns,
         excludeOwner: options.buyerCharacterId,
         budget: options.budget,
         cost: options.cost,
-        accept: (offer) => OfferQuery.admits(offer, buyer, session) && (!options.accept || options.accept(offer)),
+        accept: (offer) => OfferQuery.admits(offer, buyer.state, buyer.session) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
 }
 
 // Keep the indexed board/NPC query for the existing sources; a visible actor
-// may also choose a public live shop in the town it physically visits.
+// may also choose a public live shop in the town it physically visits, under the
+// same admission (OfferQuery.admits: not a quote it was refused there).
 function bestHotOffer(selfId, options = {}) {
     const indexed = module.exports.bestOffer(selfId, options);
+    const buyer = buyerOf(options.buyerCharacterId);
     const live = privateOffers(selfId, options.town).filter(offer => offer.store?.kind === 'player'
         && Number(offer.sourceId) !== Number(options.buyerCharacterId)
-        && (!options.accept || options.accept(offer)));
+        && (!options.accept || options.accept(offer)) && OfferQuery.admits(offer, buyer.state, buyer.session));
     return OfferOrder.best([...(indexed ? [indexed] : []), ...live], options);
 }
 

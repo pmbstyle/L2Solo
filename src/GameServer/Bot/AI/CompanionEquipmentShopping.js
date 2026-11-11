@@ -157,13 +157,13 @@ function merchantTarget(offer, town) {
     return MarketOpportunity.offerTarget(offer, town.name);
 }
 
-// An errand the bot failed, or a quote it was refused, is planned no more while its mark
-// lasts (GearMarks: until its source changed): none rather than the same errand again.
+// An errand the bot failed is planned no more while its mark lasts (GearMarks: until its
+// source changed): none rather than the same errand again. A quote it was refused is no
+// offer it is planned at (MarketOpportunity.bestHotOffer admits the body's own marks).
 function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     const errand = errandFor(session, bot, town, purchaseCount, excludedSlots, economy);
     const Marks = require('./GearMarks'), stats = session.coldLifeState?.stats || session.decisionStats;
-    return errand && !errand.pending && (Marks.marked(stats, Marks.errandKey(errand))
-        || Marks.refused(stats, { selfId: errand.itemId, town: errand.target?.town, price: errand.price })) ? null : errand;
+    return errand && !errand.pending && Marks.marked(stats, Marks.errandKey(errand)) ? null : errand;
 }
 function errandFor(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     if (!town?.name || purchaseCount >= MAX_PURCHASES_PER_VISIT) return null;
