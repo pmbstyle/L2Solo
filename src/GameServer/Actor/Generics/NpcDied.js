@@ -229,12 +229,12 @@ function npcDied(session, actor, npc) {
     for (const reward of rewards) if (reward.session?.accountId?.startsWith('bot_')) {
         const saved = reward.session.coldLifeState;
         if (!saved) continue;
-        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-        const state = Economy.stateForActor(reward.session.actor, reward.session);
+        // The progress clock and counts are the body's row (stats.economyClock, playedHours,
+        // frustration, lifelongKills; timing): a kill takes no loss, so no persona trait.
         const learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
-        const life = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(state, {
+        const life = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(saved, {
             timestamp: Date.now(), startedAt: invoke('GameServer/Bot/AI/BotHuntEfficiency').SERVER_STARTED_AT,
-            kills: 1, persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: learning.knowledgeEnabled() });
+            kills: 1, knowledgeEnabled: learning.knowledgeEnabled() });
         // Its kill counts as a far round's won fight: resolved and won (GearStall's kill count,
         // stats.fightsWon; the readers that take wins as a share of resolved fights), and a win
         // in its spot's risk window and its recovery.
