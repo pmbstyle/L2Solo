@@ -44,6 +44,7 @@ const CraftMaterialPartyRoute = require('./CraftMaterialPartyRoute');
 const ColdTrip = require('./ColdTrip');
 const PartyRequestPlanner = require('./PartyRequestPlanner');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
+const WishNetwork = require('../Economy/WishNetwork');
 
 // The gates: a bot that may be routed now. Checked by choose and again by
 // record at every read (activity, travel and the duties move step by step).
@@ -462,12 +463,24 @@ function planSource(state, spots, frame) {
     return source ? SpotIndex.spotById(spots, source.spotId) : null;
 }
 
+// Does the bot's step farm its gear plan's item: a hunting leaf that farms an item (not a money
+// or experience leaf) for the plan's own target (the leaf's root names it), or a clan-owned plan
+// (the clan's errand). Only then is the plan's source where it hunts: a bot whose step buys the
+// item in town, earns money for it or levels hunts at its earning answer, as a C4 player shopping
+// for a piece farms where he earns best, not at the piece's drop camp. Our choice.
+function farmsPlan(leaf, plan) {
+    if (GearAcquisitionPlanner.isClanOwnedPlan(plan)) return true;
+    return leaf?.activity === 'hunting' && !leaf.funding && Number(leaf.itemId) > 0
+        && WishNetwork.rootItem(leaf.rootKey) === Number(plan?.target?.selfId);
+}
+
 // Where this solo bot hunts next: the one choice, for its trip (trip) and for every
 // reader that sends it to hunt from wherever it stands (a town or hall visit's end, a
 // body that must leave its ground: the mind key, huntSpotHeld). In order: a player's
 // command (its spot whatever the bot's own marks: only a spot the catalogue lost or a
 // raid refuses it), the spot its hunting leaf names when it fits (leafChoice), the gear
-// plan's source (planSource; not for a protected starter or a party waiter), its held earning answer (heldChoice),
+// plan's source while its step farms the plan's item (planSource, farmsPlan; not for a protected
+// starter or a party waiter), its held earning answer (heldChoice),
 // else the search (choose: a party waiter's fallback, a protected starter's field, the
 // leveling goal, also for a bot pushed off its ground whose answer names none). The bot is judged as
 // if it hunted now, under its exclusions (marks, death marks, death pressure). Our
@@ -493,8 +506,8 @@ function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
     if (wished) return { spotId: String(wished.spotId) };
     // A protected starter keeps its field and a party waiter its fallback before a plan's source (choose).
     const plan = hunter.stats.equipmentPlan;
-    const source = SpotProfiles.isProtectedStarterCohort(hunter) || PartyWaitFallback.waiting(hunter, plan, hunter.stats.partyRequest)
-        ? null : planSource(hunter, spots, frame);
+    const source = !farmsPlan(leaf, plan) || SpotProfiles.isProtectedStarterCohort(hunter)
+        || PartyWaitFallback.waiting(hunter, plan, hunter.stats.partyRequest) ? null : planSource(hunter, spots, frame);
     if (source) return { spotId: String(source.id) };
     let chosen = heldChoice(hunter, spots, frame);
     // On a spot its marks exclude (a contest lost, danger, deaths there) while its earning answer
@@ -511,9 +524,9 @@ function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
 }
 // The choice (huntSpot) held on the bot's kernel record (owner.huntSpot = { key, value },
 // worker-only), chosen again only when one of its inputs on the row moves: the leaf
-// (activity, spot), the plan and party request fields the search reads (planKey: the
-// gear plan's source and party need, the request's status, priority, material party and
-// suspension), the earning answer's spot and command, the level, the party, the
+// (activity, spot, whether it farms the plan's item: farmsPlan), the plan and party
+// request fields the search reads (planKey: the gear plan's source and party need, the
+// request's status, priority, material party and suspension), the earning answer's spot and command, the level, the party, the
 // exclusions' revision and the spot it stands on (the search keeps the current spot).
 // The rest it reads (the kit, shots and servitor of the ground and matchup verdicts,
 // relations, risk deaths, recovery) moves the build's route facts, whose drop (drop)
@@ -522,7 +535,8 @@ function huntSpot(state, leaf, { spots, timestamp, owner = null }) {
 // huntSpot (neither kept).
 function heldHuntSpot(owner, state, leaf, { spots, timestamp }) {
     const stats = state.stats || {};
-    const key = `${leaf?.activity || ''}|${leaf?.spotId ?? ''}|${planKey(stats.equipmentPlan, stats.partyRequest)}`
+    const key = `${leaf?.activity || ''}|${leaf?.spotId ?? ''}|${farmsPlan(leaf, stats.equipmentPlan) ? 1 : 0}`
+        + `|${planKey(stats.equipmentPlan, stats.partyRequest)}`
         + `|${stats.earning?.spotId ?? ''}|${EquipmentIncomeRoute.isCommanded(stats.earning) ? 1 : 0}`
         + `|${Number(state.level) || 0}|${state.party?.partyId || state.partyId || ''}`
         + `|${SpotRiskPolicy.exclusionVersion(state).revision}|${state.spotId ?? ''}`;

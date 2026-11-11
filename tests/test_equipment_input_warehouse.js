@@ -247,6 +247,17 @@ async function run() {
         assert.equal(recoveredDeposit.count, 195, 'the recovered project parks only its own physical share');
         assert.equal(Native.amount(await Database.fetchItems(id), 1458), 185);
         assert.equal(Native.amount(await Database.fetchWarehouseItems(id), 1458), 195);
+        // The real projection, not this test's row source: a town withdrawal
+        // is seen by the same visit's next reader (the NPC sale right after).
+        Index.useRowSource(); await Index.init();
+        const parked = recoveredDeposit.state;
+        assert.equal(Index.inventory(parked)[1458]?.amount, 195);
+        const banked = (await Database.fetchWarehouseItems(id)).find(row => Number(row.selfId) === 1458);
+        await Database.transferWarehouseToInventory(id, { id: banked.id, selfId: 1458, name: banked.name, amount: 195, stackable: true });
+        const withdrawn = { ...parked, inventory: { ...parked.inventory, 1458: { ...parked.inventory[1458], amount: 380 } } };
+        assert.equal(Index.inventory(withdrawn)[1458], undefined, 'the committed withdrawal leaves no phantom banked share');
+        assert.equal(Disposition.saleCandidates(withdrawn, { unlimited: true, keptAmounts: {} }).find(row => row.selfId === 1458)?.count,
+            185, 'the same visit\'s sale cannot take the withdrawn project share');
         const guardedId = id + 3;
         await Native.character(Database, guardedId, 'GuardedCrystalInput', 'bot_guarded_crystal', point);
         await Database.execute(['UPDATE characters SET classId=40,level=57 WHERE id=?', [guardedId]]);

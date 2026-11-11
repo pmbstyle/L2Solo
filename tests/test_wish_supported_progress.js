@@ -138,6 +138,7 @@ const mixed = moneyQueue([{ key: 'dream', valueHours: 100, price: 10, supported:
 assert.deepEqual(mixed.queue.map(row => [row.key, row.funded]), [['dream', false], ['bread', true], ['boots', false]]);
 assert.equal(mixed.gap.key, 'boots'); assert.equal(mixed.available, 4);
 const packet = PurchaseFunding.packetFor(mixed, 100, 0);
-assert.equal(packet.length, 7, 'the funded row after an unsupported one is published');
-assert.equal(packet[5], 4);
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+assert.equal(Packet.fundedRows(packet), 1, 'the funded row after an unsupported one is published');
+assert.deepEqual([Packet.fundedCumulative(packet, 0), Packet.fundedRoot(packet, 0)], [4, Packet.rootId('bread')]);
 done('money packet skips unsupported rows');

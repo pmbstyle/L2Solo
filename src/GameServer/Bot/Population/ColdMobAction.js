@@ -1,6 +1,6 @@
 'use strict';
 
-// A cold monster's side of a fight (combat core, T106): its skills and the
+// A cold monster's side of a fight (combat core): its skills and the
 // state of its fight, its weapon hit time, one rolled action on a fighter
 // (coldMobAction: BackgroundResolver's solo, party and raid fights) and the
 // expected damage of its actions (actionMix: the solo gate

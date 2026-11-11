@@ -33,13 +33,13 @@ const potionId = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchaseP
 warrior.inventory[potionId] = { selfId: potionId, amount: 1 };
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
-// The use of a bot with no spot and no held answer is the table's rate at the role's best spot
+// The use of a bot with no spot and no held answer is the table's rate at the income row its hour is priced on
 // (EquipmentIncomeRoute.spotUseOf; read from the table: a regenerated table moves it), at the
 // precision the kit rates keep (StatsPacket.roundRates); the outing to a tenth of an hour.
 const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
 const rounded = (shotUse, outingHours = 0) => Packet.roundRates({ shotUse, outingHours });
 const tenth = hours => rounded(0, hours).outingHours;
-const useRow = Table.best(native.tableRole, warrior.level, true);
+const useRow = Hunt.incomeRow(warrior);
 assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, rounded(useRow.shots).shotUse);
 const use = stock.usePerHour;
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');

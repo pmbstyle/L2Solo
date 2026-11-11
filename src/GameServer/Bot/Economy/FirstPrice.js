@@ -10,7 +10,7 @@ const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 
-// The first price of an item nobody has traded yet (design 15.4): the hours a
+// The first price of an item nobody has traded yet: the hours a
 // bot hunts to obtain one times what an hour of bots of that level earns,
 // not below the NPC buy-back and not above the NPC price.
 //
@@ -31,7 +31,7 @@ const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 // times the kill rate behind the bots' measured hour, and mixing the two
 // would put every common drop at the buy-back.
 //
-// An item without a hunting source (group E, user 2026-10-05): a crafted one
+// An item without a hunting source (user 2026-10-05): a crafted one
 // costs its materials (each at the NPC price when an NPC sells it, else at
 // its own first price) plus the labour, the craft time (its MP over the
 // seated MP regeneration of the lowest crafter able to make it) at that
@@ -95,7 +95,7 @@ function dropPrice(id, item, spots, timestamp) {
 // from hunting it. The floor is the NPC buy-back for every item. The ceiling
 // is the NPC shop price, and a made item has it only where an NPC sells it: the
 // NPC is then the buyer's other source. A D+ shot or a crystal that no NPC
-// sells has no ceiling (E91, user 2026-10-07: the market balances it); with
+// sells has no ceiling (user 2026-10-07: the market balances it); with
 // the ceiling at the NPC price scaled by the rate, a D shot was clamped to 20
 // while its cost is 58. A hunted item keeps the ceiling.
 function withinWalls(item, price, { made = false } = {}) {

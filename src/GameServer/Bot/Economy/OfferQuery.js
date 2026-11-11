@@ -1,4 +1,4 @@
-// The one offer query (U20): the best sell offer for a buyer, from the board
+// The one offer query: the best sell offer for a buyer, from the board
 // (a BoardIndex) and the caller's other sources (NPC shops, the configured
 // city merchants), in the one order of OfferOrder (price plus the trip to the
 // offer's town, a player before a bot, an NPC last, a stable id). The main
@@ -124,7 +124,7 @@ let pastDepth = 0;
 // ([{ town, price }]), money, maxPrice, excludeOwner, cost, quoteDepth (the
 // first lines of the item's board list a trader inspects,
 // PriceDecision.QUOTE_DEPTH, and on until one town holds the amount: a player
-// scrolls the list until the sum is there, decision 11-02; each line in its
+// scrolls the list until the sum is there; each line in its
 // own town). Returns { town,
 // lines, npc, npcPrice, units, cost, trip, landed } or null. O(T log n + k)
 // over the towns with offers.

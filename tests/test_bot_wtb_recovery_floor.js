@@ -11,7 +11,6 @@ const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
-const TradeIntent = invoke('GameServer/Bot/Economy/TradeIntent');
 Data.init();
 invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
 const NOW = 1750000000000;
@@ -22,8 +21,7 @@ const base = { characterId: 7, phase: 'cold', activity: 'dead', level: 40, adena
     stats: { generatedCold: true, classId: 0, build: { grade: 'c', classId: 0, level: 40 }, equipment: [],
         equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 32, slot: 11 },
             market: { town: 'Gludio', price: 37213, reserve: 6250, sourceType: 'afk_bot_store' } } } };
-const original = { snapshot: Life.snapshot, ownerRecords: Afk.ownerRecords, closeBotRecord: Afk.closeBotRecord,
-    retainedProjectIntents: TradeIntent.retainedProjectIntents };
+const original = { snapshot: Life.snapshot, ownerRecords: Afk.ownerRecords, closeBotRecord: Afk.closeBotRecord };
 let current = base, records = [order];
 const closes = [];
 // This is a real goal/reader control, with a spy at the monetary writer seam.
@@ -46,30 +44,17 @@ const closes = [];
         assert.deepEqual(closes, [], 'recovery never calls the refund/withdraw writer');
         assert.deepEqual(base, before);
         assert.deepEqual(order, orderBefore);
-        // The author's NPC route exception applies even through recovery.
+        // A review on main never takes bids back, whatever the goal: an NPC plan, no goal, a sale.
         current = { ...base, stats: { ...base.stats, equipmentPlan: { ...base.stats.equipmentPlan,
             market: { ...base.stats.equipmentPlan.market, sourceType: 'npc' } } } };
         const npcNeeds = Needs.evaluate(current, { now: NOW });
         const npc = await Market.reconcileBuyAds(current, npcNeeds[0], npcNeeds);
-        assert.equal(npc.withdrawn, true);
-        assert.deepEqual(closes.map(args => args.slice(0, 2)), [[7, 95726]]);
-        closes.length = 0;
-        // An ordinary state with no accepted C1 decision still has no buy need.
+        assert.equal(!!npc.withdrawn, false);
         current = { ...base, activity: 'hunting', vitals: { ...base.vitals, hp: 1000 } };
-        const missing = Needs.evaluate(current, { now: NOW });
-        assert.deepEqual(missing, []);
-        await Market.reconcileBuyAds(current, null, missing);
-        assert.deepEqual(closes.map(args => args.slice(0, 2)), [[7, 95726]]);
-        closes.length = 0;
-        current = { ...current, stats: { ...current.stats, equipmentPlan: { ...current.stats.equipmentPlan,
-            inputPreparation: { recipeId: 441, target: { selfId: 91, slot: 7 } } } } };
-        records = [order, { ...order, id: 95727, lines: [{ ...order.lines[0], selfId: 33 }] }];
-        TradeIntent.retainedProjectIntents = () => [{ itemId: 32 }];
+        await Market.reconcileBuyAds(current, null, []);
         await Market.reconcileBuyAds(current, { type: 'sell_inventory', status: 'active',
             plan: { expectedBenefit: 'market_sale_inventory' } }, []);
-        assert.deepEqual(closes.map(args => args.slice(0, 2)), [[7, 95727]],
-            'switching to a sale retains the unfinished craft bid and removes unrelated bids');
-        closes.length = 0;
+        assert.deepEqual(closes, [], 'no review closes the standing bid');
         records = [];
         current = base;
         assert.equal((await Market.reconcileBuyAds(base, recovered[0], recovered)).changed, false);
@@ -79,7 +64,6 @@ const closes = [];
         Life.snapshot = original.snapshot;
         Afk.ownerRecords = original.ownerRecords;
         Afk.closeBotRecord = original.closeBotRecord;
-        TradeIntent.retainedProjectIntents = original.retainedProjectIntents;
         Coordinator.economyDecisions.forget(7);
         Market._resetForTests();
         fs.rmSync(isolated.directory, { recursive: true, force: true });

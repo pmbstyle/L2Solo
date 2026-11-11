@@ -83,8 +83,11 @@ try {
     const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: invoke('GameServer/Bot/AI/GearPlanSelection')
         .withRoutedSource(shopper, { status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
             next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } }, spots, timestamp) } };
-    // A gear plan's source the route takes comes before the held answer (BotRoute.huntSpot).
-    assert.equal(tripOf(back(published(changed))), money.id, 'an active plan\'s viable source, as the route takes it');
+    // A gear plan's source the route takes comes before the held answer while its step farms the
+    // plan's item (BotRoute.huntSpot); a step that does not hunts the held answer.
+    const farm = { activity: 'hunting', kind: 'drop', rootKey: 'power:45:6', itemId: 45 };
+    assert.equal(tripOf(back(published(changed)), farm), money.id, 'an active plan\'s viable source, as the route takes it');
+    assert.equal(tripOf(back(published(changed))), source.id, 'with no step farming it, the held earning answer');
     // The held answer comes before the spot it hunted before the trip.
     const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
     assert.equal(tripOf(back(published(heldElsewhere))), money.id, 'the held earning answer, not the saved spot');

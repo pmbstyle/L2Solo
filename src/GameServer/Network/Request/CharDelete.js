@@ -17,7 +17,7 @@ function consume(session, data) {
     return Shared.fetchCharacters(session.accountId).then((characters) => {
         const character = characters[data.characterSlot];
 
-        // The leave rule (design 2.7, E49): the character's board records
+        // The leave rule: the character's board records
         // close first, so the board in memory and its index drop them.
         return invoke('GameServer/AfkTrade/AfkTradeService').leave(character.id).catch((error) => {
             utils.infoWarn('CharDelete', 'board leave failed for %s: %s', character.name, error.message);
@@ -27,7 +27,7 @@ function consume(session, data) {
             for (const result of deleted?.meetings || []) Meetings.acceptRows(result);
             // The character's items, skills, shortcuts and macros go with its
             // row: every table references characters(id) ON DELETE CASCADE and
-            // the game connection enables foreign keys (U53).
+            // the game connection enables foreign keys.
             characters.splice(data.characterSlot, 1);
             Shared.enterCharacterHall(session, characters);
         });

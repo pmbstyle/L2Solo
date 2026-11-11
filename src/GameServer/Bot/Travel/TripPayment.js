@@ -1,4 +1,4 @@
-// What a bot's trip costs, one rule for hot and cold bots (N2, user 2026-10-04):
+// What a bot's trip costs, one rule for hot and cold bots:
 // a trip to a town from outside it reads one Scroll of Escape, a hop between
 // towns pays the gatekeeper's fee as a player does (TravelRoutes), a trip to a
 // hunting spot is free. A hot bot pays from its backpack, a cold bot from its
@@ -19,10 +19,12 @@ function fee(from, to) {
 }
 
 // Whether a gatekeeper fee exceeds the money a bot may pay it from.
-// Developer telemetry counts each check per path as covered or short (E197),
+// Developer telemetry counts each check per path as covered or short,
 // never an input to the decision; counts are checks, not bots or trips:
 // cold (the trip is refused), hot (the bot walks), hot_errand (a supply
-// errand is refused), sale_town (a sale town is dropped from the choice).
+// errand is refused), sale_town (a sale town is dropped from the choice),
+// meeting_offer (a conditional offer's seller cannot reach its town),
+// meeting (a seller's meeting consent is refused).
 function fareShort(path, amount, adena) {
     const short = amount > adena;
     if (amount > 0) Diagnostics.count('trip_fare', short ? 'short' : 'covered', path);

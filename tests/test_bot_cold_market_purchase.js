@@ -103,6 +103,8 @@ async function run() {
         const buyer = await declaredState(value, label);
         const beforeBuyer = await Database.fetchItems(buyer.characterId);
         const { record, beforeSeller } = await publicSword(owner, ownerName, price);
+        // A buyer turned away for money before hears the posted line (offer_posted forgets its refused quotes).
+        await invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(buyer.characterId, 'offer_posted');
         // Database.openBoardRecordUnsafe takes physical stock into the line.
         // The before state includes that sword before publish reserves it.
         const [storedBefore] = await Database.execute(['SELECT selfId, count, initialCount, fills FROM afk_trade_lines WHERE shopId = ?', [record.id]]);
@@ -203,6 +205,14 @@ async function run() {
     const negativeBuyer = await declaredState(nativeOriginal.state, 'original_unfunded');
     const unfunded = await purchaseOnCard(negativeBuyer, goal);
     assert.strictEqual(unfunded.purchased, false, 'the actual queue does not fund this item');
+    // Refused for money at the stall, the step's quote is marked, so the next build does not take
+    // the same step at the same money; the money reaching the build's threshold forgets it.
+    await new Promise(resolve => setImmediate(resolve));
+    const Marks = invoke('GameServer/Bot/AI/GearMarks');
+    assert.deepStrictEqual([unfunded.reason, Marks.quotes(BotLifeState.cachedState(77).stats).map(row => row[0])], ['funding_short', [2]],
+        'the step refused for money marks its quote');
+    await invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(77, 'goal_affordable:focus');
+    assert.deepStrictEqual(Marks.quotes(BotLifeState.cachedState(77).stats), [], 'the money moving forgets the quote');
     assert.strictEqual(Native.amount(await Database.fetchItems(77), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(77), 2), 0);
     assert.strictEqual(playerStore.items[0].count, 1);
@@ -286,12 +296,17 @@ async function run() {
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
     // A purse short of the card's price is refused for money: no seller is looked up, the step
-    // fails and the item is not marked (the build admits no shop step its buyer cannot pay, so
-    // the item stays a purchase it takes again once the bag pays it).
+    // fails and only its quote is marked (the item at this town and the card's price): the next
+    // build does not take the same step at the same money; the item stays a purchase it takes
+    // again elsewhere or once its money moved.
     assert.strictEqual(lowTierPlayerPurchase.reason, 'funding_short');
     await new Promise(resolve => setImmediate(resolve));
-    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(88)?.stats, 2),
-        'the item refused for money is not marked');
+    const lowTierStats = BotLifeState.cachedState(88)?.stats;
+    assert(!invoke('GameServer/Bot/AI/GearMarks').marked(lowTierStats, 2), 'the item refused for money is not marked');
+    const [shortQuote] = invoke('GameServer/Bot/AI/GearMarks').quotes(lowTierStats);
+    assert.strictEqual(shortQuote?.[0], 2, 'the step refused for money marks its quote');
+    assert(invoke('GameServer/Bot/AI/GearMarks').refused(lowTierStats, { selfId: 2, town: shortQuote[1], price: shortQuote[2] }),
+        'the next build\'s offer reader skips that quote');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 0,
@@ -343,7 +358,6 @@ async function run() {
     // it is: it takes another seller, never the refused quote, until a seller posts an offer
     // it wants (offer_posted); with no seller it has no step to go back for (no refusal burst).
     await new Promise(resolve => setImmediate(resolve));
-    const Marks = invoke('GameServer/Bot/AI/GearMarks');
     const refusedFor = BotLifeState.cachedState(87);
     assert(!Marks.marked(refusedFor?.stats, 945), 'a refusal for no seller does not mark the item');
     assert.deepStrictEqual(Marks.quotes(refusedFor?.stats), [[945, 'Giran', 1000]], 'it marks the refused quote');
@@ -547,9 +561,10 @@ async function run() {
     const busyParty = await boardBuy(96, 'trade_meeting_party_busy');
     assert.deepStrictEqual([busyParty.result.reason, busyParty.quotes], ['trade_meeting_party_busy', []], 'a busy party marks no quote');
     // The writer refused for money (the bag short of the line): a purse short of it, as the
-    // buyer's own check, marks nothing.
+    // buyer's own check, marks the line's quote.
     const shortPurse = await boardBuy(97, 'not_enough_adena');
-    assert.deepStrictEqual([shortPurse.result.reason, shortPurse.quotes], ['funding_short', []], 'a writer\'s money refusal is funding_short, no quote');
+    assert.deepStrictEqual([shortPurse.result.reason, shortPurse.quotes], ['funding_short', [[2, 'Giran', 1000]]],
+        'a writer\'s money refusal is funding_short and marks its quote');
     assert.strictEqual(failuresOf(), failuresBefore + 2, 'neither refusal is a failure');
     Afk.buyFromShop = originalBuyFromShop;
     MarketOpportunity.bestOffer = priorBestOffer;
@@ -831,12 +846,12 @@ async function run() {
             assert.deepStrictEqual([bought()?.town, bought()?.lines[0].price], [town, price], `the buyer takes ${why}`);
         };
         agree('Giran', 100, 'the backed shop while the cheaper seller is in a party');
-        // A seller away from the ad's town whose money is all promised cannot pay its way there.
-        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
+        // A seller away from the ad's town whose wallet is below the fare cannot pay its way there.
+        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1,
             loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
         agree('Giran', 100, 'the backed shop while the cheaper seller cannot pay the trip to its ad');
-        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
-        agree('Dion', 1, 'the cheaper ad once its seller can pay the trip');
+        supplier = { ...supplier, adena: 1000000 };
+        agree('Dion', 1, 'the cheaper ad once its seller\'s wallet pays the trip, its wish unfunded');
         // Units another bot's trip claimed are gone for this buyer.
         const Claims = require('../src/GameServer/Bot/Economy/BoardClaims');
         Claims.claimErrand(990150, { town: 'Dion', selfId: 1864, purpose: 'supply', at: Date.now() },

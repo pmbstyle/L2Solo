@@ -98,7 +98,7 @@ function checkedPlan(session, state, town, options = {}) {
         const fundedState = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
         // The leaf's funded root funds it (the card leaf's r), as for a cold goal (PurchaseFunding.goalTerms).
         const ratio = PurchaseFunding.leafRatio(leaf);
-        const funding = ratio > 0 ? { valueRate: ratio } : {};
+        const funding = ratio > 0 ? { valueRate: ratio, wishKey: leaf.rootKey } : {};
         const budget = Math.min(payable(fundedState, PurchaseFunding.goalTerms({ plan: funding }, selfId), leaf.bids) / amount,
             economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestHotOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget,
@@ -157,13 +157,13 @@ function merchantTarget(offer, town) {
     return MarketOpportunity.offerTarget(offer, town.name);
 }
 
-// An errand the bot failed, or a quote it was refused, is planned no more while its mark
-// lasts (GearMarks: until its source changed): none rather than the same errand again.
+// An errand the bot failed is planned no more while its mark lasts (GearMarks: until its
+// source changed): none rather than the same errand again. A quote it was refused is no
+// offer it is planned at (MarketOpportunity.bestHotOffer admits the body's own marks).
 function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     const errand = errandFor(session, bot, town, purchaseCount, excludedSlots, economy);
     const Marks = require('./GearMarks'), stats = session.coldLifeState?.stats || session.decisionStats;
-    return errand && !errand.pending && (Marks.marked(stats, Marks.errandKey(errand))
-        || Marks.refused(stats, { selfId: errand.itemId, town: errand.target?.town, price: errand.price })) ? null : errand;
+    return errand && !errand.pending && Marks.marked(stats, Marks.errandKey(errand)) ? null : errand;
 }
 function errandFor(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     if (!town?.name || purchaseCount >= MAX_PURCHASES_PER_VISIT) return null;

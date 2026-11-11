@@ -609,7 +609,7 @@ function restockPlan(value, options = {}) {
     const wish = options.targetAmount === undefined ? context.network?.queue?.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
     const fundedState = !onMain && options.targetAmount === undefined && context.statsPacket
         ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    // The wish's rank at the price each source asks (E187): the board lines
+    // The wish's rank at the price each source asks: the board lines
     // at the cheapest line's price, the NPC remainder at the NPC's.
     const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
         PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(estimate, price));
@@ -653,7 +653,7 @@ function restockPlan(value, options = {}) {
 
 // The NPC part of a restock (restockPlan): the remaining hours of stock with the money
 // left after the players' shops, within the wish's allowance at the NPC's
-// price (npcBudget, E187). `bought` and `spent` are what the shop lines
+// price (npcBudget). `bought` and `spent` are what the shop lines
 // bought, so a line that fails at purchase leaves its shots and money to the NPC.
 function npcRestockAmount(restock, bought = 0, spent = 0) {
     if (!restock.needed || !(restock.unitPrice > 0)) return 0;
@@ -671,7 +671,7 @@ async function purchaseActorRestock(actor, options = {}) {
 
     const plan = options.plan || planForActor(actor);
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    // The board's lines of the town the bot stands in (б5: a deal is made in
+    // The board's lines of the town the bot stands in (a deal is made in
     // the seller's town); away from a town, only the merchant's price.
     const town = options.town ?? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
     const botActor = actor.session?.actor === actor

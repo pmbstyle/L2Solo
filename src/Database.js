@@ -325,14 +325,15 @@ function operationName(sql, fallback = 'raw') {
 
 // The writer's named refusals: it refuses an act whose facts moved since its decision (a
 // unit the bot's reserves keep, money an earlier step spent, the economy step's sequence,
-// owner or intent, a recipe, an improvement's source, a board record or a bag line). An
-// outcome: counted apart from failures here, a refused decision at the cold command
-// boundary (ColdSimulationCoordinator). Any other throw, a bare code included (a missing
-// row or template, a broken invariant), is a failure with its stack.
+// owner or intent, a recipe, an improvement's source or the bot row it read, a board
+// record or a bag line). An outcome: counted apart from failures here, a refused decision
+// at the cold command boundary (ColdSimulationCoordinator). Any other throw, a bare code
+// included (a missing row or template, a broken invariant), is a failure with its stack.
 const REFUSALS = new Set(['economy_material_protected', 'economy_funding_changed', 'economy_sequence_changed',
     'economy_owner_changed', 'economy_intent_changed', 'economy_plan_need_changed',
     'craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed', 'craft_product_template_changed',
-    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_missing_materials',
+    'craft_material_identity_changed', 'improvement_source_changed', 'improvement_source_retired',
+    'improvement_missing_materials',
     'soul_crystal_resonance', 'afk_trade_shop_changed', 'afk_trade_stock_changed', 'inventory_item_changed',
     'board_cap_reached', 'not_enough_adena']);
 const refused = error => FailureLog.refusal(error) && REFUSALS.has(error.message);
@@ -1806,7 +1807,7 @@ function applySchemaMigrations() {
         UPDATE afk_trade_shops SET expiresAt = 0 WHERE expiresAt > 0;
         DELETE FROM world_meta WHERE key = 'boardAliveAt';
     `)]);
-    // N79: observations belong to an open line, not to a bot's item book.
+    // observations belong to an open line, not to a bot's item book.
     // Durable cursors are initialized after history/the catalogue are ready.
     migrations.push([57, () => connection.exec(`
         ALTER TABLE afk_trade_lines ADD COLUMN fills INTEGER NOT NULL DEFAULT 0 CHECK(fills >= 0);
@@ -1852,7 +1853,7 @@ function applySchemaMigrations() {
         CREATE INDEX board_trade_meetings_actor_b ON board_trade_meetings(actorB,state,id);
     `)]);
     // A meeting fill left its record active at count 0 until it closed like
-    // every other fill (E198). Such a record holds nothing: it is deleted.
+    // every other fill. Such a record holds nothing: it is deleted.
     migrations.push([65, () => {
         const empty = connection.prepare(`SELECT id FROM afk_trade_shops s WHERE status = 'active' AND custodyPolicy = 1
             AND escrowAdena = 0 AND NOT EXISTS (SELECT 1 FROM afk_trade_lines l WHERE l.shopId = s.id AND l.count > 0)`).all();
@@ -2173,6 +2174,12 @@ function one(sql, params = []) {
 function all(sql, params = []) {
     if (!isReadStatement(sql)) checkMutationAdmission();
     return normalizeRows(Statements.prepare(connection, sql, true).all(...params));
+}
+
+// An owner's stock rows, read inside the transaction that changed them, for
+// PersonalWarehouseIndex.committed (one indexed read of at most a few dozen rows).
+function warehouseStockUnsafe(characterId) {
+    return all('SELECT selfId, amount, enchant FROM warehouse_items WHERE characterId = ? AND amount > 0', [characterId]);
 }
 
 function write(sql, params = []) {
@@ -2844,13 +2851,13 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
     const escrow = Number(one("SELECT COALESCE(SUM(escrowAdena),0) amount FROM afk_trade_shops WHERE ownerId=? AND storeType=? AND status='active'",
         [characterId, BoardRules.BUY]).amount);
-    const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
+    const { r, root, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Trace.detailed(characterId) ? {} : null;
     const budget = PurchaseFunding.payable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
-    }, escrow, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
+    }, escrow, { r, root, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(StatsPacket.refillReserve(packet)),
             priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow,
@@ -4174,7 +4181,7 @@ function checkBotCapsUnsafe(ownerId, kind, lineCount) {
     if (held + 1 > Number(BoardRules.BOT_RECORDS[kind] || 0)) throw new Error('board_cap_reached');
 }
 
-// A closed record is deleted at once (design 16.19): its holdings first go
+// A closed record is deleted at once: its holdings first go
 // back (count and escrow to zero, so the economy journal sees them leave),
 // then its lines and the row itself.
 function deleteBoardRecordUnsafe(shopId, at) {
@@ -4575,7 +4582,7 @@ function checkConditionalBidUnsafe(characterId, line, price = Number(line.price)
     // survival tranche every other restock may spend.
     const survivalCost = Math.max(0, Number(line.survivalCost) || 0);
     if (row) checkEconomyFundingUnsafe(characterId, { row }, total,
-        { ...(line.intent ? { r: line.intent.valueRate } : { itemId: Number(line.selfId) }), ...(survivalCost ? { survivalCost } : {}) }, wallet);
+        { ...(line.intent ? PurchaseFunding.intentTerms(line.intent) : { itemId: Number(line.selfId) }), ...(survivalCost ? { survivalCost } : {}) }, wallet);
 }
 
 // A purchase changes custody only here: reserve the shop's complete budget,
@@ -5574,7 +5581,7 @@ const Database = {
         }, 'market:trade-history');
     },
 
-    // Opens a board record (design 4.1): an AFK shop (`kind` 'shop', the
+    // Opens a board record: an AFK shop (`kind` 'shop', the
     // default), a sell ad, a buy ad or an order. In the same transaction the
     // record takes what it holds out of the owner's bag: the items of its sell
     // lines or the escrow of its buy lines. `replace` replaces the owner's
@@ -5722,7 +5729,7 @@ const Database = {
         }, 'board:close'));
     },
 
-    // The leave rule (design 2.7): an owner leaving the game closes every
+    // The leave rule: an owner leaving the game closes every
     // record it holds, of every kind; items and escrow go back to it.
     closeOwnerBoardRecords(ownerId) {
         const characterId = Number(ownerId);
@@ -7890,25 +7897,21 @@ const Database = {
         return select('warehouse_items', ['*'], 'characterId = ? AND amount > 0', [characterId], 'warehouse:list');
     },
     setWarehouseItem(characterId, item) {
-        const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, enchant: Math.max(0, Number(item.enchant ?? 0) || 0), characterId };
-        if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
-        return insert('warehouse_items', values, 'warehouse:insert').then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+        const petData = item.petData ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData)) : null;
+        let stock = null;
+        return inTransaction(() => {
+            const result = write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)',
+                [item.selfId, item.name ?? '', item.amount ?? 1, Math.max(0, Number(item.enchant ?? 0) || 0), petData, characterId]);
+            stock = warehouseStockUnsafe(characterId);
+            return result;
+        }, 'warehouse:insert').then(result => {
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
-    },
-    updateWarehouseItemAmount(characterId, id, amount) {
-        const work = Number(amount) <= 0
-            ? remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete-empty')
-            : update('warehouse_items', { amount }, 'id = ? AND characterId = ?', [id, characterId], 'warehouse:amount');
-        return work.then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
-    },
-    deleteWarehouseItem(characterId, id) {
-        return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete')
-            .then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
     },
 
     transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null, validate = null } = {}) {
         if (coldState && Number(coldState.characterId) !== Number(characterId)) return Promise.reject(new Error('economy_state_changed'));
+        let stock = null;
         return withCharacterFlush(characterId, () => inTransaction(() => {
             validate?.();
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
@@ -7927,10 +7930,11 @@ const Database = {
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId], null,
                 Number(craftDepositTarget) > 0 ? { craftWarehouseDepositTarget: Number(craftDepositTarget),
                     ...(craftDepositKind ? { craftWarehouseDepositKind: craftDepositKind } : {}) } : null);
+            stock = warehouseStockUnsafe(characterId);
             return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:deposit')).then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
     },
 
@@ -7941,6 +7945,7 @@ const Database = {
         // its scalar location and activity inside the native transaction.
         const townIntent = coldState && { activity: coldState.activity, currentRegion: coldState.currentRegion,
             locX: Number(coldState.loc?.locX || 0), locY: Number(coldState.loc?.locY || 0), locZ: Number(coldState.loc?.locZ || 0) };
+        let stock = null;
         return withCharacterFlush(characterId, () => inTransaction(() => {
             validate?.();
             let life = null;
@@ -7984,10 +7989,11 @@ const Database = {
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
+            stock = warehouseStockUnsafe(characterId);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:withdraw')).then(result => {
-            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result;
+            invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').committed(characterId, stock); return result;
         });
     },
 
@@ -9535,7 +9541,7 @@ const Database = {
                         if (target) write('UPDATE items SET amount = ? WHERE id = ?', [target.amount + amount, id]);
                         playerItem = { ...source, id, amount: (target?.amount || 0) + amount, equipped: false };
                     } else if (command.direction === 'consume') {
-                        // Eaten food and the feed it gives are one write, as in feedMountedPet (E232).
+                        // Eaten food and the feed it gives are one write, as in feedMountedPet.
                         const Rules = require('./GameServer/Pets/PetRules');
                         const type = Rules.TYPES[collar.selfId];
                         const feed = Number(command.feed);

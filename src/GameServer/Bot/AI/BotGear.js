@@ -73,7 +73,7 @@ function flattenItem(item) {
 
 // A datapack row with a real name: legacy placeholders are named '0' or '_'
 // (Flail 163, Heavy Flail 170: no C4 source, l2hub.info/c4 lists none), and no
-// bot plans, wishes for or wears them (T118).
+// bot plans, wishes for or wears them.
 function isNamedItem(item = {}) {
     const name = String(item.template?.name ?? item.name ?? '').trim();
     return name.length > 0 && name !== '0' && !/^_+$/.test(name);

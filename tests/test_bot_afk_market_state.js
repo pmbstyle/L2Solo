@@ -186,11 +186,18 @@ async function run() {
     const buyGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: cWeapon.selfId, itemName: cWeapon.template.name },
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } };
-    // A buy goal opens a buy ad on the board beside the shop: the bot
-    // sells and buys at once; the shop and its stock stay.
+    // A buy goal's bid (its build's plan row, posted by main) opens a buy ad on
+    // the board beside the shop: the bot sells and buys at once; the shop and
+    // its stock stay.
+    const bidPlan = (state, goal) => ({ buyShop: AfkTrade.BUY, buyAds: invoke('GameServer/Bot/Economy/BuyAdPolicy')
+        .linesFor(state, goal, { watchList: [], board: AfkTrade.boardIndex() }).map(line => [line.selfId, line.count, line.price]) });
+    const postBid = async goal => {
+        const posted = await BotAfkMarket.executePlan(LifeState.snapshot(ownerId), bidPlan(LifeState.snapshot(ownerId), goal),
+            { reviewGoal: false });
+        return { state: posted.state, shop: AfkTrade.ownerRecords(ownerId).find(record => record.kind === 'buy_ad') };
+    };
     const varnishBefore = amount(await Database.fetchItems(ownerId), 1865);
-    const switched = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
-    assert.strictEqual(switched.changed, true);
+    const switched = await postBid(buyGoal);
     assert.strictEqual(switched.state.activity, 'hunting');
     assert.strictEqual(switched.shop.storeType, AfkTrade.BUY);
     assert.strictEqual(switched.shop.kind, 'buy_ad');
@@ -239,18 +246,21 @@ async function run() {
     await Database.setItem(ownerId, { selfId: cWeapon.selfId, name: cWeapon.template.name,
         amount: 1, enchant: 0, equipped: false, slot: 0 });
     await LifeState.syncExternalInventory(ownerId, 'test_actual_gear_acquired', LifeState.snapshot(ownerId));
+    // A review on main leaves the bid; the economy build's next plan, without the item, takes it back.
     await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop', 'buy_ad']);
+    await BotAfkMarket.executePlan(LifeState.snapshot(ownerId), { buyAds: [], buyShop: 0 }, { reviewGoal: false });
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
     assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
     assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop'],
-        'actual goal completion closes only the obsolete conditional buy advert');
+        'the next build closes only the obsolete conditional buy advert');
 
     const dGradeGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: 45, itemName: 'Bone Helmet', adena: 1000000 },
         plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran', priceSource: 'offer' } };
     const choicesBefore = townChoices.length;
-    const dGradeBuyer = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), dGradeGoal);
-    assert.strictEqual(dGradeBuyer.changed, true);
+    const dGradeBuyer = await postBid(dGradeGoal);
+    assert(dGradeBuyer.shop, 'the purchase bid opens');
     assert.strictEqual(townChoices.length, choicesBefore, 'a purchase bid never invokes a sale-income town roll');
     assert.strictEqual(dGradeBuyer.shop.town, MarketTownPolicy.targetTownForItems(LifeState.snapshot(ownerId), [{ selfId: 45 }]),
         'an unsupported new purchase bid keeps the declared grade fallback');

@@ -63,11 +63,15 @@ cache.subscribePublications(({ characterId, state, previousState }) => {
         notifyClassMigrationPending();
     }
 });
-// The lifecycles a bot's own row carries (its party request, its clan errands), traced at the commit that changes
-// them: every committed state lands here (a step's commit, a main write, a native reply), a projection never does;
-// the boot's load (no state before) is no event.
+// The lifecycles a bot's own row carries (its party request, its clan errands, a stay trip's return ticket), traced at
+// the commit that changes them: every committed state lands here (a step's commit, a main write, a native reply), a
+// projection never does; the boot's load (no state before) is no event. A stay trip's expiry is counted with the
+// trace off too.
 cache.subscribePublications(({ state, previousState }) => {
-    if (workerProjectorRole || !state || !previousState || !Trace.on()) return;
+    if (workerProjectorRole || !state || !previousState) return;
+    if (previousState.stats?.partyMarketReturn !== state.stats?.partyMarketReturn)
+        invoke('GameServer/Bot/Population/PartyMarketBreak').traceCommitted(previousState, state);
+    if (!Trace.on()) return;
     invoke('GameServer/Bot/Population/PartyRequestPlanner').traceCommitted(previousState, state);
     invoke('GameServer/Clan/ClanPurchaseCredit').traceCommitted(previousState, state);
 });
@@ -184,7 +188,7 @@ function notifyNearFacts(session, reason) {
             row.spotId = session.currentSpot?.id ?? (spotReason === 'near_left' ? null : row.spotId);
             row.updatedAt = now();
             // Not saved: the number of this post and the raise it carries,
-            // with the situations of the body's own facts (A1: detected here).
+            // with the situations of the body's own facts (detected here).
             session.nearSeq = Number(session.nearSeq || 0) + 1;
             row.nearSeq = session.nearSeq;
             // Not saved either: the body's last spot post (near_spot / near_left), numbered,
@@ -1244,7 +1248,7 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
         });
 }
 
-// The world was paused while the server was down (L136): every persisted due
+// The world was paused while the server was down: every persisted due
 // time moves by the downtime, so a restart does not make all bots due at once,
 // and so does lastResolvedAt: the step's length is now - lastResolvedAt
 // (ColdSimulationKernel), so an unmoved stamp would credit the downtime as
@@ -1601,6 +1605,35 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
         session.nearFacts = null;
     }
     return merged;
+}
+
+// A body cooled on its way (a cooldown, a failed spawn's rollback) goes on cold as it was
+// going; null when it was on no way. On its walk or trip to a spot before the arrival: a
+// walker shown on its road (HotActivation) walks the rest of its run from where it stands,
+// any other trip (a town gatekeeper, a scroll, a hot walk) is a cold trip there from where
+// it stands, its arrival raised cold as its trip said. In the town of its town trip
+// (BotTownTravel: plan shopping, preShopLocation where it set out): that town's visit with
+// its way back, which the cold visit carries out and ends. Without these a body cooled in
+// town stands on no spot there and its trip or visit is lost. Only a body whose place is
+// where it stands (`physical`) has a way from there, a walker's run excepted.
+function bodyTrip(session, preserved, merged, physical, timestamp) {
+    const relocation = session.spotRelocation;
+    if (relocation?.coldTrip?.run && !relocation.arrivalPending) return invoke('GameServer/Bot/Population/ColdTrip')
+        .resumeRun({ ...merged, spotId: relocation.spotId }, relocation.coldTrip, timestamp);
+    if (!physical) return null;
+    // A preserved spot's trip goes to a waypoint (a quest NPC), no hunting ground.
+    if (relocation?.spotId && relocation.destination && !relocation.arrivalPending && relocation.preserveSpot !== true) {
+        const spotId = relocation.spotId;
+        return require('./HuntingTravel').beginHuntingTrip({ ...merged, spotId }, { needed: true, mode: 'solo', spotId,
+            regionName: SpotService.findById(spotId)?.name, to: relocation.destination }, timestamp);
+    }
+    if (session.plan !== 'shopping' || !session.preShopLocation) return null;
+    const { locX, locY, locZ } = merged.loc;
+    const town = invoke('GameServer/World/TownRespawn').getClosestTown(locX, locY, locZ);
+    // It keeps the spot it left while in town, as a far bot's visit does (beginMarketTravel).
+    const spotId = session.currentSpot?.id || preserved.spotId || null;
+    return invoke('GameServer/Bot/Goals/GoalExecutor').visitHere({ ...merged, spotId }, town.name, { loc: { ...session.preShopLocation },
+        regionName: SpotService.findById(spotId)?.name || preserved.currentRegion || null, spotId }, timestamp);
 }
 
 // A stale cold snapshot can retain the previous hunting region while its
@@ -1964,7 +1997,7 @@ const BotLifeState = {
     raiseOnRow,
     nearPosts,
 
-    // Boot only: { startedAt, downtimeMs } of this restart, measured once (L136).
+    // Boot only: { startedAt, downtimeMs } of this restart, measured once.
     bootPause() {
         return measureBootPause();
     },
@@ -2091,7 +2124,7 @@ const BotLifeState = {
 
     // A command refused because the row moved past the cache (NativeWriteCheckpoint
     // drift): the row is the owner of the checkpoint; read it back so the next
-    // command carries it instead of retrying the same stale copy forever (L127).
+    // command carries it instead of retrying the same stale copy forever.
     // A handoff in flight is published by its owner, not here.
     reloadRow(characterId, drift = []) {
         const id = Number(characterId);
@@ -2280,7 +2313,7 @@ const BotLifeState = {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
                     nextResolveAt: null,
-                    // The hot time is lived: the first cold step starts now (T126).
+                    // The hot time is lived: the first cold step starts now.
                     lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
@@ -2299,16 +2332,10 @@ const BotLifeState = {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
-                // The hot time is lived: the first cold step's length starts now (T126).
+                // The hot time is lived: the first cold step's length starts now.
                 lastResolvedAt: now()
             });
-            // A walker shown on its road (HotActivation) whose body cools before its walk
-            // ends (a failed spawn's rollback, a cooldown) stays a walker: the rest of its
-            // run from where it stands, its arrival raised cold as its trip said.
-            const walk = session.spotRelocation;
-            const nextState = walk?.coldTrip?.run && !walk.arrivalPending
-                ? invoke('GameServer/Bot/Population/ColdTrip').resumeRun({ ...merged, spotId: walk.spotId }, walk.coldTrip, now())
-                : merged;
+            const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
             return this.upsertState(nextState, reason, { releaseHot: true });
@@ -3005,7 +3032,7 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: writtenAt
         };
-        // ARCH-NOTE: C1 lifecycle packets precede their fight; accept the
+        // ARCH-NOTE: lifecycle packets precede their fight; accept the
         // worker's focus event before classifying actual changed sections.
         // Direct projections receive an already projected packet as before.
         // Both threads: a worker step that decided before its round merges
@@ -3226,7 +3253,7 @@ const BotLifeState = {
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
             }
-            // ARCH-NOTE: C1/E3 lifecycle commands carry the worker's money queue;
+            // ARCH-NOTE: lifecycle commands carry the worker's money queue;
             // main preparation must retain that packet without rebuilding it.
             if (Object.prototype.hasOwnProperty.call(options, 'statsPacket')) {
                 preparedOptions.statsPacket = options.statsPacket;

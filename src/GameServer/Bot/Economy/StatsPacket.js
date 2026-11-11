@@ -8,7 +8,9 @@
 // stats.money, the money packet (PurchaseFunding.packetFor writes it):
 //   [hourAdena, moneyPrice (hours per Adena), refillReserve, firstUnfundedPrice (the gap's cash, 0 without one),
 //    then one (ratio, cumulative, itemId) row per funded queue wish, at most MONEY_ROWS; with more funded
-//    wishes the last row merges the tail and carries itemId 0].
+//    wishes the last row merges the tail and carries itemId 0], then the rows' root ids: one per row in row order
+//    (rootId of the funded wish's key; 0 on the merged tail), the row count and ROOTED (-1) last. A packet without
+//    them (an old save, a fixture) has no root ids: every row matches a spend by its ratio.
 // stats.kitRates, the build's per-bot kit rates (EconomyContext.kitRates writes it; EconomyContext.kitReader
 // computes the amounts from them and the held earning answer's per-spot rates over the live bag, wallet and
 // prices):
@@ -24,17 +26,25 @@
 // Values are stored as given: their rounding is the writer's caller's rule.
 
 // The money packet.
-const HOUR = 0, PRICE = 1, RESERVE = 2, GAP = 3, QUEUE = 4, ROW = 3;
+const HOUR = 0, PRICE = 1, RESERVE = 2, GAP = 3, QUEUE = 4, ROW = 3, ROOTED = -1;
 // The funded rows the money packet keeps (its byte bound).
 const MONEY_ROWS = 8;
+const { fnv1a32 } = require('../Fnv1a');
 function money({ hourAdena, moneyPrice, refillReserve, firstUnfundedPrice }) {
     return [hourAdena, moneyPrice, refillReserve, firstUnfundedPrice];
 }
-// Appends a funded wish's row; a packet already holding `rows` rows has its
-// last one replaced (the merged tail).
-function addFunded(packet, ratio, cumulative, itemId, rows = MONEY_ROWS) {
-    if (fundedRows(packet) < rows) packet.push(ratio, cumulative, itemId);
-    else { const last = QUEUE + ROW * (rows - 1); packet[last] = ratio; packet[last + 1] = cumulative; packet[last + 2] = itemId; }
+// A root's id in the packet: two roots of one value per Adena (a jewel in its two slots) are two rows.
+const rootId = key => key ? fnv1a32(String(key)) : 0;
+const rooted = packet => Array.isArray(packet) && packet.length > QUEUE + 1 && packet[packet.length - 1] === ROOTED;
+// Appends a funded wish's row and its root id (a root key, or none); a packet already holding
+// `rows` rows has its last one replaced (the merged tail, no root). Rows and ids stay in row order.
+function addFunded(packet, ratio, cumulative, itemId, rows = MONEY_ROWS, root = null) {
+    const count = fundedRows(packet), ids = [];
+    for (let row = 0; row < count; row++) ids.push(fundedRoot(packet, row));
+    packet.length = QUEUE + ROW * count;
+    if (count < rows) { packet.push(ratio, cumulative, itemId); ids.push(rootId(root)); }
+    else { const last = QUEUE + ROW * (rows - 1); packet[last] = ratio; packet[last + 1] = cumulative; packet[last + 2] = itemId; ids[rows - 1] = 0; }
+    if (ids.some(Boolean)) packet.push(...ids, ids.length, ROOTED);
     return packet;
 }
 // A packet with its header (a saved row may be anything else).
@@ -45,10 +55,13 @@ const moneyPrice = packet => slot(packet, PRICE);
 const refillReserve = packet => slot(packet, RESERVE);
 const firstUnfundedPrice = packet => slot(packet, GAP);
 // The packet's complete funded rows, in queue order.
-const fundedRows = packet => Array.isArray(packet) ? Math.max(0, Math.floor((packet.length - QUEUE) / ROW)) : 0;
+const fundedRows = packet => !Array.isArray(packet) ? 0 : rooted(packet) ? packet[packet.length - 2]
+    : Math.max(0, Math.floor((packet.length - QUEUE) / ROW));
 const fundedRatio = (packet, row) => packet[QUEUE + ROW * row];
 const fundedCumulative = (packet, row) => packet[QUEUE + ROW * row + 1];
 const fundedItem = (packet, row) => packet[QUEUE + ROW * row + 2];
+// A row's root id; 0 when the packet carries none or the row is the merged tail.
+const fundedRoot = (packet, row) => rooted(packet) ? packet[QUEUE + ROW * fundedRows(packet) + row] || 0 : 0;
 // Writes a row's cumulative into a packet the caller owns (its own copy).
 function setFundedCumulative(packet, row, cumulative) {
     packet[QUEUE + ROW * row + 1] = cumulative;
@@ -103,5 +116,5 @@ const deathHours = row => slot(row, 0);
 const riskWeight = row => slot(row, 1);
 
 module.exports = { MONEY_ROWS, money, addFunded, hasMoney, hourAdena, moneyPrice, refillReserve, firstUnfundedPrice,
-    fundedRows, fundedRatio, fundedCumulative, fundedItem, setFundedCumulative,
+    fundedRows, fundedRatio, fundedCumulative, fundedItem, fundedRoot, rootId, setFundedCumulative,
     kitRates, roundRates, roundRate: significant, ratesOf, lineOf, outingHours, gapHorizonHours, dangerPrice, deathHours, riskWeight };

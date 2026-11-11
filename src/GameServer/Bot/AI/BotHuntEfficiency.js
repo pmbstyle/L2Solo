@@ -95,7 +95,7 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 
 
 const { SERVER_STARTED_AT } = require('../Population/Uptime');
 
-// Time on the spot against all time (E36): the round time each record
+// Time on the spot against all time: the round time each record
 // schedules against the uptime that really passed until the next record,
 // two running sums that fade over the life of a row. A gap that spans a
 // restart, or a stint near the player (hot: no record), starts anew: it
@@ -202,7 +202,7 @@ function scores(state, timestamp = Date.now(), mode) {
 // the NPC buy price, per hour of the hunt cycle and per kill, and the exp per
 // hour of that same row.
 // `share` is the bot's time on the spot against all its time: the hour of
-// a bot counts its trips, its town visits and its waits (E36).
+// a bot counts its trips, its town visits and its waits.
 function bestIncome(rows, share = 1) {
     let best = null;
     for (const row of rows) {
@@ -244,7 +244,7 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     const costs = consumablePrices(state);
     const ranked = shots => Table.rankedIncome(tableRole, level, costs, -7, shots, rewardOptions);
     let progress = current || Table.best(tableRole, level, true);
-    let row = current && netIncome(current, costs) > 0 ? current : ranked(true)[0] || ranked(false)[0];
+    let row = current && netIncome(current, costs) > 0 ? current : incomeRow(state, costs);
     const rowUnfit = fits && row && !fits(row.spotId || state.spotId);
     const progressUnfit = fits && progress && !fits(progress.spotId || state.spotId);
     if (rowUnfit || progressUnfit) {
@@ -271,15 +271,23 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
         spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId, useShots: row.useShots !== false };
 }
+// The table's best net-income row in the bot's band, charged if any pays, else
+// uncharged (its consumables at their NPC prices): the row a bot with no spot of
+// its own earns on (huntIncome's table pick, huntHour) and the one its kit is
+// sized on with no spot (EquipmentIncomeRoute.spotUseOf, EconomyContext.foundation).
+// null: no row in the band.
+function incomeRow(state, costs = consumablePrices(state)) {
+    const table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
+    const tableRole = table.roleFor(state), level = levelOf(state);
+    return table.rankedIncome(tableRole, level, costs, -7, true, rewardOptions)[0]
+        || table.rankedIncome(tableRole, level, costs, -7, false, rewardOptions)[0] || null;
+}
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
     if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
     const costs = consumablePrices(state);
-    const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
-    const table = invoke('GameServer/Bot/AI/SpotValueTable');
-    const tableRole = table.roleFor(state);
-    const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, true, rewardOptions)[0]
-        || table.rankedIncome(tableRole, levelOf(state), costs, -7, false, rewardOptions)[0];
+    const row = incomeRow(state, costs);
     return Math.max(1, row ? netIncome(row, costs) : 0);
 }
 function hourValue(state, timestamp = Date.now(), mode) {
@@ -292,4 +300,4 @@ function hourValue(state, timestamp = Date.now(), mode) {
 function observe() {}
 function resetLevelBands() {}
 module.exports = { record, recordRound, disappoints, STAY_KILLS, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
-    resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
+    resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, incomeRow, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };

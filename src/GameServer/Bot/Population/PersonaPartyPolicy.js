@@ -27,7 +27,7 @@ function backgroundIntent(state = {}) {
         return { accept: true, reason: 'goal_requires_party', score: 100, persona };
     }
     // A healer or buffer without solo ground seeks a party whatever its
-    // persona (decision 10-30, T106); the persona still weighs each party it
+    // persona; the persona still weighs each party it
     // is offered (PartyGoalPolicy.decide) and its score stays its own.
     if (PartyRequestPlanner.seeksParty(state)) {
         return { accept: true, reason: 'no_solo_ground', score: Math.round(baseScore(persona)), persona };

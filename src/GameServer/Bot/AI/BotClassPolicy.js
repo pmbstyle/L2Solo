@@ -26,7 +26,7 @@ function hasSkill(actor, skillId, level) {
 
 // A hot bot in a background party fights in party mode only while another
 // member lives beside it: alone, it fights solo, as the cold fight's party of
-// one does (BackgroundResolver.coldBotTurn, T126).
+// one does (BackgroundResolver.coldBotTurn).
 function hotPartyAlone(session) {
     // lazy: worker HotBackgroundParty loads the live world; only a hot session reaches here.
     const roster = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(session);

@@ -1,5 +1,5 @@
 'use strict';
-// Owner: how far an aggressive NPC sees a target (T114): its C4 aggro range
+// Owner: how far an aggressive NPC sees a target: its C4 aggro range
 // (L2J Lisvus npc.sql `aggro`, data/Npcs/aggro-ranges.json from
 // scripts/generate-npc-aggro-ranges.js), else the author's 500. Read by the
 // live aggro (NpcAggro) and the pull estimate (BotPullEstimate).

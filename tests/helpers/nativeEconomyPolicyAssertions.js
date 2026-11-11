@@ -3,38 +3,44 @@
 const assert = require('node:assert/strict');
 const nativeDecision = require('./workerEconomyDecision');
 const Decision = require('../../src/GameServer/Bot/Population/ColdEconomyDecision');
+const Packet = require('../../src/GameServer/Bot/Economy/StatsPacket');
 
 // Independent E3 oracle over the real worker packet: C(r) is the cumulative
-// cost of wishes above r. This helper never creates or alters a money packet.
+// cost of wishes above r (a query naming no root reads the rows by ratio).
+// This helper never creates or alters a money packet.
 function expectedSpendable(state, { r = 0, escrow = 0, upperBound = false, free = false } = {}) {
     const packet = state.stats?.money;
-    assert(Array.isArray(packet) && packet.length >= 4, 'funding must use an actual native packet');
+    assert(Packet.hasMoney(packet), 'funding must use an actual native packet');
     const wallet = Math.max(0, Number(state.adena ?? state.inventory?.[57]?.amount) || 0) + escrow;
-    if (upperBound) return Math.max(0, wallet - packet[2]);
-    if (free && packet[3] !== 0) return 0;
+    if (upperBound) return Math.max(0, wallet - Packet.refillReserve(packet));
+    if (free && Packet.firstUnfundedPrice(packet) !== 0) return 0;
     if (free) r = -Infinity;
-    else if (r < packet[1]) return 0;
+    else if (r < Packet.moneyPrice(packet)) return 0;
     let higherCost = 0;
-    for (let at = 4; at + 2 < packet.length; at += 3) {
-        if (packet[at] > r) higherCost = Math.max(higherCost, packet[at + 1]);
+    for (let row = 0; row < Packet.fundedRows(packet); row++) {
+        if (Packet.fundedRatio(packet, row) > r) higherCost = Math.max(higherCost, Packet.fundedCumulative(packet, row));
     }
-    return Math.max(0, wallet - packet[2] - higherCost);
+    return Math.max(0, wallet - Packet.refillReserve(packet) - higherCost);
 }
 
 function assertFunding(state) {
     const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
     const packet = state.stats.money;
-    assert(packet[0] > 0 && packet[1] > 0, 'native hunting supplies a positive hour and money value');
+    assert(Packet.hourAdena(packet) > 0 && Packet.moneyPrice(packet) > 0, 'native hunting supplies a positive hour and money value');
     assert(packet.every(Number.isFinite), 'all native packet values are finite');
-    assert(Number.isSafeInteger(packet[0]) && Number.isSafeInteger(packet[2]) && Number.isSafeInteger(packet[3]));
-    assert(packet.length <= 28 && (packet.length - 4) % 3 === 0, 'the actual funded list retains its eight-entry bound');
+    assert([Packet.hourAdena(packet), Packet.refillReserve(packet), Packet.firstUnfundedPrice(packet)].every(Number.isSafeInteger));
+    const rows = Packet.fundedRows(packet);
+    assert(rows <= Packet.MONEY_ROWS, 'the actual funded list retains its eight-entry bound');
     let priorCost = 0;
-    for (let at = 4; at + 2 < packet.length; at += 3) {
-        assert(packet[at + 1] >= priorCost && Number.isSafeInteger(packet[at + 1]));
-        priorCost = packet[at + 1];
+    for (let row = 0; row < rows; row++) {
+        const cumulative = Packet.fundedCumulative(packet, row);
+        assert(cumulative >= priorCost && Number.isSafeInteger(cumulative));
+        assert(Number.isSafeInteger(Packet.fundedRoot(packet, row)), 'each row names its root id (0: none)');
+        priorCost = cumulative;
     }
     const missingBefore = Funding.summary().moneyPacketMissing;
-    const queries = [{ r: packet[1] / 2 }, { r: packet[1] }, { r: Infinity }, { free: true }, { upperBound: true }];
+    const price = Packet.moneyPrice(packet);
+    const queries = [{ r: price / 2 }, { r: price }, { r: Infinity }, { free: true }, { upperBound: true }];
     for (const query of queries) assert.equal(Funding.spendable(state, 0, query), expectedSpendable(state, query),
         'actual native packet agrees with R/C(r)/moneyPrice ' + JSON.stringify(query));
     assert.equal(Funding.summary().moneyPacketMissing, missingBefore, 'native funding never falls back to a missing packet');

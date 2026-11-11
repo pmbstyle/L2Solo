@@ -773,7 +773,7 @@ const BotAI = {
         if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
             return true;
         }
-        // A solo bot on mobs heals itself by the rule hot and cold share (T107).
+        // A solo bot on mobs heals itself by the rule hot and cold share.
         if (!options.pvp && BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
             && SoloSelfHeal.tryInFight(session, bot, npc, Generics)) {
             return true;

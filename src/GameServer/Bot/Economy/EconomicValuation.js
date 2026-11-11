@@ -132,7 +132,7 @@ function visitPays(context, steps, route) {
     return carried || tripPays(context, { selfId: Number(steps[0]?.itemId), units: 1, amount: 1, cost }, route, { valueHours });
 }
 
-// MVP-4: hours spent earning a cash shortfall at the net income rate. No
+// hours spent earning a cash shortfall at the net income rate. No
 // shortfall waits nothing even without income; a shortfall without income is
 // unknown (null), never free time.
 function fundingDelay({ requiredCash = 0, spendableCash = 0, incomePerHour = 0 } = {}) {
@@ -182,7 +182,7 @@ const RESPAWN_HOURS = 90 / 3600;
 // A death's price in hours: the exp it loses, the walk back, the gear it may
 // drop. A table row's deaths (spot and hunt tables, read by SpotEconomics and
 // EconomyContext) already cost their kills the respawn wait (the generator
-// runs the real respawn, T126); a live death adds it (liveDeathHours).
+// runs the real respawn); a live death adds it (liveDeathHours).
 function deathHours(state, { expPerHour = 0, walkBackHours, returnHours, lostGearHours = 0, spotId } = {}) {
     const Death = invoke('GameServer/Progression/DeathExperience');
     const loss = Death.calculateLoss({ ...state, exp: state.stats?.exp ?? state.exp ?? 0 });

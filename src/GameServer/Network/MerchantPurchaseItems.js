@@ -2,7 +2,7 @@ const DataCache    = invoke('GameServer/DataCache');
 const Item         = invoke('GameServer/Item/Item');
 const TradeService = invoke('GameServer/Bot/TradeService');
 
-// Rows of a native merchant buy window (U42): one item per store line whose
+// Rows of a native merchant buy window: one item per store line whose
 // price the C4 packet can carry, built from the item template with the line's
 // object id, count and price; a line with an unknown template is left out.
 // `refresh` re-quotes the store for `actor` first: the re-render after a

@@ -7,8 +7,9 @@ invoke('GameServer/DataCache').init();
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
-// The one choice of a solo bot (BotRoute.huntSpot) over the test's catalogue.
-const huntSpot = (state, timestamp = 1000) => BotRoute.huntSpot(state, null, { spots: SpotProfiles.cache, timestamp })?.spotId;
+// The one choice of a solo bot (BotRoute.huntSpot) over the test's catalogue, its step farming its plan's item.
+const farm = { activity: 'hunting', kind: 'drop', itemId: 1, rootKey: 'power:1:7' };
+const huntSpot = (state, timestamp = 1000) => BotRoute.huntSpot(state, farm, { spots: SpotProfiles.cache, timestamp })?.spotId;
 
 const originalCache = SpotProfiles.cache;
 const originalBestSourceForPlan = GearAcquisitionPlanner.bestSourceForPlan;
@@ -34,6 +35,7 @@ SpotProfiles.cache = [
 try {
     const equipmentPlan = {
         status: 'active',
+        target: { selfId: 1 },
         next: { spotId: 'gear_source_01' }
     };
     GearAcquisitionPlanner.bestSourceForPlan = () => ({ spotId: 'gear_source_01' });

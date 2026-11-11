@@ -44,8 +44,10 @@ const ERRAND_MS = CombinedErrands.ERRAND_MS;
 // board as it is now and takes another seller or holds, never the quote its buyer just refused,
 // until a posted offer wakes it (offer_posted). Our choice after C4 play: the board is trade
 // chat, a player who finds the item sold keeps asking for it, at other stalls. A purse short of
-// the step's price (funding_short) marks nothing: the build admits a shop step only where its
-// buyer pays it, read by the same terms (goalFunding), so the next build sees the purse too.
+// the step's price (funding_short) marks that quote too (GearMarks.quoteRefused), never the item:
+// the build admits a shop step only where its buyer pays it, so a refusal here is the build and
+// the buyer disagreeing, and the mark keeps the next build off the same step at the same money
+// until the money moves (goal_affordable:focus).
 const GEAR_SOURCE_FAILED = new Set(['configured_supply_retired', 'already_owned', 'incompatible_loadout']);
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
@@ -141,14 +143,6 @@ function observePurchase(offer, units, state) {
     }); } catch (error) { utils.infoWarn('BotMarket', 'committed purchase telemetry deferred: %s', error.message); }
 }
 
-// The board's and the meeting's refusals of a buy that are no seller's (GearMarks.SELLER_REFUSALS)
-// and no money's (GearMarks.FUNDING_REFUSALS): the buyer's or the seller's party busy, the
-// meeting queue full, the buyer anchored to a meeting elsewhere, its authority moved since the
-// decision (TradeMeetingService.prepareTrade, stage), the record now trading by meeting only
-// (Database.buyFromAfkTradeShop). They end the line's buy unmarked; any other code is a failure.
-const BOARD_BUY_REFUSALS = new Set(['trade_meeting_party_busy', 'trade_meeting_backpressure',
-    'trade_meeting_point_changed', 'trade_meeting_authority_changed', 'trade_meeting_player_at_point', 'trade_meeting_required']);
-
 // Buys `options.qty` (one by default) of a found offer for a cold bot: a
 // board record through AfkTradeService (one deal transaction), otherwise an
 // NPC or a configured city merchant. No goal or travel change; an NPC
@@ -205,19 +199,18 @@ function buyOffer(state, offer, options = {}) {
                 ...(invoke('GameServer/AfkTrade/TradeMeetingService').paysInPreparation(state.characterId) ? { pending: true } : {}),
                 purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
-            const back = LifeState.cachedState(state.characterId) || state, code = error?.message;
+            const back = LifeState.cachedState(state.characterId) || state;
+            const refusal = GearMarks.buyRefusal(error, invoke('Database').refused(error));
             // The writer refused for money (the bag, or the step's place in the money queue): a
             // purse short of the line, as the buyer's own check (funding_short).
-            if (GearMarks.fundingRefused(code)) {
+            if (refusal === 'funding') {
                 MarketTelemetry.fundingShort();
                 return { state: back, purchased: false, blocked: true, reason: 'funding_short' };
             }
-            // A refusal at the seller (the line, stock, price or record changed:
-            // GearMarks.SELLER_REFUSALS marks its quote), the board's or the meeting's other
+            // A refusal at the seller (its quote marked), the board's or the meeting's other
             // refusals, or another named writer refusal (its facts moved since the decision):
             // under its own name. Anything else, a broken invariant included, failed.
-            if (GearMarks.sellerRefused(code) || BOARD_BUY_REFUSALS.has(code) || invoke('Database').refused(error))
-                return { state: back, purchased: false, reason: code };
+            if (refusal !== 'failed') return { state: back, purchased: false, reason: error?.message };
             FailureLog.note('economy.cold_board_buy', error);
             return { state: back, purchased: false, reason: 'purchase_failed' };
         });
@@ -266,7 +259,7 @@ function tripFrom(state, timestamp = Date.now()) {
 function fundingTerms(options = {}) {
     const terms = {};
     if (typeof options.raidPreparationId === 'string') terms.raidPreparationId = options.raidPreparationId;
-    for (const name of ['r', 'valueHours', 'survivalCost', 'survivalShare']) {
+    for (const name of ['r', 'root', 'valueHours', 'survivalCost', 'survivalShare']) {
         if (options[name] !== undefined && options[name] !== null && Number.isFinite(Number(options[name]))) {
             terms[name] = Number(options[name]);
         }
@@ -320,7 +313,7 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice, stepBids =
             const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, Number(price) || null));
             options.survivalCost = survival.survivalCost;
             if (survival.survivalShare !== undefined) options.survivalShare = survival.survivalShare;
-            // The stock wish's rank at the price paid, not the estimate (E187).
+            // The stock wish's rank at the price paid, not the estimate.
             if (plan.purpose === 'shots' && terms.r === undefined) {
                 options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(price));
             }
@@ -505,7 +498,7 @@ async function buyHere(state, plan, options = {}) {
     }
     if (current.phase !== 'cold' || LifeState.hotRow(current.characterId)) return { state: current, units, spent, hot: true };
     if (options.skipNpc) return result({ state: current, units, spent, hot: false });
-    // A saved plan may predate group F or a rate change. Only a current
+    // A saved plan may predate bot shops using these places or a rate change. Only a current
     // NPC/shot-table quote in this town can supply its remainder.
     const quotedPrice = Number(plan.npcPrice || 0);
     const npcPrice = staticOffers(plan.selfId).some((offer) => offer.town === plan.town
@@ -867,12 +860,12 @@ const ColdMarketService = {
         // A buy that failed on its item here (GEAR_SOURCE_FAILED: a gear piece or a craft
         // material) is a failed errand: its item is marked (GearMarks), so the build it wakes does
         // not send the bot for it again until its source changed (GearMarks.LIFETIME). A refusal
-        // at the seller (GearMarks.SELLER_REFUSALS) marks the step's quote (this town, the card's
-        // unit price): the build skips it. Any other miss (a failed write, a busy meeting, a stock
-        // limit) marks nothing: the seller did not refuse.
+        // at the seller or for money (GearMarks.quoteRefused) marks the step's quote (this town,
+        // the card's unit price): the build skips it. Any other miss (a failed write, a busy
+        // meeting, a stock limit) marks nothing: neither the seller nor the purse refused.
         const refreshAfter = written => written.then(result => {
             const key = Number(goal.target.itemId), reason = result?.reason;
-            const quote = arrival && GearMarks.sellerRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
+            const quote = arrival && GearMarks.quoteRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
             invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(reason) ? { impossible: true, kind: 'gear_errand', key, reason }
                     : quote ? { impossible: true, kind: 'gear_errand', key, ...quote, reason } : { impossible: true });
@@ -999,7 +992,7 @@ const ColdMarketService = {
             current = next?.state || current;
             if (next?.pending || next?.reason === 'bot_went_hot') return current;
         }
-        // E314: a visit already ended plans no shot purchase again (the NPC basket below still runs).
+        // a visit already ended plans no shot purchase again (the NPC basket below still runs).
         if (!options.raidSupplyOnly && current.stats?.townVisit?.completed !== true) {
             const plan = ShotStock.planForState(current);
             const localPrices = staticOffers(plan.selfId).filter(offer => offer.town === current.currentRegion);
@@ -1010,7 +1003,7 @@ const ColdMarketService = {
                     towns: [current.currentRegion], money: restock.cost, purpose: 'shots'
                 });
                 if (purchase) {
-                    // E314: a sale visit ends on a pending shot deal like on any other
+                    // a sale visit ends on a pending shot deal like on any other
                     // outcome (no retry on this visit). The ended visit is saved before
                     // the meeting is staged: the meeting pins the row revision, and no
                     // write of this row may follow it on this pass.

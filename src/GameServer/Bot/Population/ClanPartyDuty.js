@@ -33,23 +33,19 @@ function hold(state, timestamp) {
         materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp,
         debug: { activity: 'clan_party_assembly', fights: 0, wins: 0 } };
 }
-// A clan member the call no longer holds hunts its own spot again; the call stays
-// for a later build. Either it buys on the market or serves a shop (formingSkips:
-// its request is dropped), or its request for the call closed (the closed request
-// is kept until its next build). A closed call's equipment plan goes with it, waiter
-// or not: the clan's route is a party's, never a solo hunt (the clan keeps the goal
-// and assigns the plan again at its review after the member's next build).
+// A clan waiter the call no longer holds is released once: it hunts its own spot
+// and the clan keeps its call for a later build. Either it buys on the market or
+// serves a shop (formingSkips: its request is dropped), or its request for the
+// call closed (the closed request is kept until its next build). The equipment
+// plan is the clan's: only the clan's goal review writes or drops it, and the
+// hunt's own spot choice keeps the clan's route out of a solo hunt.
 function released(state) {
     if (state?.party?.partyId || state?.partyId || waiting(state)) return false;
-    const goal = call(state);
-    return !!goal && (state.activity === 'party_wait'
-        || Planner().closed(state) && state.stats.equipmentPlan?.clanGoal?.goalKey === goal.clanGoalKey);
+    return !!call(state) && state.activity === 'party_wait';
 }
 function release(state, timestamp) {
     const stats = { ...state.stats }, goalKey = call(state).clanGoalKey;
-    if (Planner().closed(state)) {
-        if (stats.equipmentPlan?.clanGoal?.goalKey === goalKey) delete stats.equipmentPlan;
-    } else if (stats.partyRequest?.clanGoalKey === goalKey) delete stats.partyRequest;
+    if (!Planner().closed(state) && stats.partyRequest?.clanGoalKey === goalKey) delete stats.partyRequest;
     return { patch: { activity: 'hunting', stats }, events: [],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp,
         debug: { activity: 'clan_party_released', fights: 0, wins: 0 } };

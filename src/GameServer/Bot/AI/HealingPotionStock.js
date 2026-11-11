@@ -228,7 +228,7 @@ function selectPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
     const safeMaxHp = Math.max(1, Number(maxHp || hp || 1));
     const safeHp = Math.max(0, Number(hp || 0));
     const hpRatio = safeHp / safeMaxHp;
-    // The danger moment (E70, DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
+    // The danger moment (DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
     if (!options.dangerMoment && hpRatio > (options.pvp ? 0.65 : useThreshold(roleOrActor))) return null;
     const available = availablePotions(inventory, hpRatio, options);
     if (!available.length) return null;
@@ -273,7 +273,7 @@ function tryUseInCombat(session, actor, target, options = {}) {
     if (actor.state?.fetchCasts?.() || (activeHot && !options.pvp)) return null;
 
     const targetId = Number(target.fetchId?.() ?? target.id ?? 0);
-    // A bot that took the danger moment for this target drinks only by it (E70);
+    // A bot that took the danger moment for this target drinks only by it;
     // the potion HoT and the item reuse limit the bottles, as on the cold side.
     if (!options.dangerMoment && !options.pvp && session.dangerMoment?.targetId === targetId) return null;
 

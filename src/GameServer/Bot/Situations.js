@@ -116,7 +116,7 @@ const SITUATIONS = Object.freeze({
     arrived_town: link(NOW),
     'arrived_town:own': link(NOW),
     // The held leaf's funded row went unfunded (the wallet fell below the money the
-    // queue held for it, DecisionSections.moneyCrossings, F3).
+    // queue held for it, DecisionSections.moneyCrossings).
     out_of_money: link(NOW),
     // A move the bot did not order (a flight, a pull, a push out, a party's call).
     moved_by_world: link(NOW),
@@ -153,8 +153,9 @@ const SITUATIONS = Object.freeze({
     'goal_affordable:potions': link(NOW),
     'goal_affordable:focus': link(NOW),
     // A board offer its held build wants (MarketBuyerWaiters: a new SELL line, or a cheaper
-    // one, within the want's budget), raised at the bot's next step (payload { itemId,
-    // price }): it answers the trade it hears, as a C4 player answers a WTS shout.
+    // one, within the want's budget), raised at a far bot's next step, on a near body's mind
+    // at once (payload { itemId, price }): it answers the trade it hears, as a C4 player
+    // answers a WTS shout.
     offer_posted: link(NOW),
     // Its own board lines (the worker's board diff): a SELL line of the same item posted
     // or repriced below its own in its town (an unplaced ad counts in every town), as a
@@ -313,6 +314,24 @@ function decisionNames(bits) {
     return Object.keys(BITS).filter(decision => all & BITS[decision]).join(',');
 }
 
+// The board offer that alone woke the build (stats.offerWake { itemId, seq }: the offered
+// item and the situationSeq of the raise that stands on it), its build's one reading: that
+// build weighs the held focus and step only against the item's own wish and buy step
+// (WishNetwork offered), as a C4 hunter who hears a WTS shout weighs that trade, not his
+// whole plan. Raised on a build already woken (another situation's, unanswered), or
+// followed by another situation that wakes it (a raise, a stop's release), it is no offer
+// alone: the full reconsideration. Valid while the build stays woken at its seq: the
+// decision clears the bit, a raise on main's row moves the seq. 0: none.
+const offerWoke = stats => stats?.offerWake && Number(stats.offerWake.seq) === (Number(stats.situationSeq) || 0)
+    && (storedBits(stats) & BITS.build) ? Number(stats.offerWake.itemId) || 0 : 0;
+// The offer alone after a raise (heard: offerWoke before it; woke: the decisions it wakes
+// now): a raise that does not wake the build keeps it; offer_posted on a build not yet
+// woken, or of the item already heard, names its item; any other wake ends it.
+function offerAlone(stats, name, payload, woke, heard) {
+    if (!(woke & BITS.build)) return heard;
+    const itemId = name === 'offer_posted' ? Number(payload?.itemId) || 0 : 0;
+    return itemId > 0 && (!(wokenBits(stats) & BITS.build) || heard === itemId) ? itemId : 0;
+}
 // The one writer of a bot's woken decisions (both threads): a situation raised at a
 // place. Its decisions heard here wake (woken), the rest wait on its plane (waiting).
 // A raise that adds no bit and writes no fact is no news: not counted, situationSeq
@@ -326,14 +345,17 @@ function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     const bits = delta(name, payload, where, stats);
     if (bits.leaf) stats.activityLeaf = 0;
     const stored = storedBits(stats), was = stored | unheld(stats), waited = Number(stats.waiting) || 0;
+    const heard = offerWoke(stats), offered = offerAlone(stats, name, payload, bits.woken, heard);
     const before = stats.earning?.spotId ?? null, wrote = writeFacts(stats, bits.facts);
     const woken = stored | bits.woken, waiting = waited | bits.waiting;
     if (bits.facts.forgot && Trace.on()) {
         for (const [owner, n] of bits.facts.forgot) Trace.record({ kind: 'forget', bot: subject, name, owner, n });
     }
-    if (!wrote && woken === stored && waiting === waited) return stats;
+    if (!wrote && offered === heard && woken === stored && waiting === waited) return stats;
     stats.woken = woken; stats.waiting = waiting;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
+    if (offered) stats.offerWake = { itemId: offered, seq: stats.situationSeq };
+    else delete stats.offerWake;
     counted(name, where, was, was | woken, subject, waiting & ~waited, payload);
     if (bits.taken) took(stats, bits, name, subject, before);
     // A player's command ended (endsCommand): its lifecycle's end, counted and traced.
@@ -519,6 +541,8 @@ function stop(stats, where, subject = 0) {
     if (!release) return stats;
     const was = wokenBits(stats);
     stats.woken = storedBits(stats) | release; stats.waiting = waiting;
+    // What waited for the build is another situation of it: no offer alone (offerWoke).
+    if (release & BITS.build) delete stats.offerWake;
     countWoke(was, was | release, `stop@${NAMES.get(where)}`);
     if (Trace.on()) Trace.record({ kind: 'stop', bot: subject, place: NAMES.get(where), woke: decisionNames(release & ~was) });
     return stats;
@@ -597,7 +621,7 @@ function factNames(previousFact, current, planned = false) {
     // The plan's routed source outgrown by one more voluntary hunt floor (its rise): the
     // route may refuse it now, the plan's review judges it again.
     if (current.outgrown > (previousFact('outgrown') || 0)) add('source_stalled');
-    // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
+    // Karma that appeared or cleared (the karma wash). A baseline kept before the
     // fact was recorded has none to compare.
     const karma = previousFact('karma');
     if (karma !== undefined && karma !== current.karma) add('karma_changed');
@@ -808,5 +832,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, arrivesInTown,
-    DECISIONS, ALL, FIRST, raise, stepMind, landMind, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, FIRST, raise, offerWoke, stepMind, landMind, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };

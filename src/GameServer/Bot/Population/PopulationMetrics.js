@@ -20,12 +20,12 @@ function emptyCounters() {
         skillUses: 0,
         heals: 0,
         partyBuffCasts: 0,
-        // Cold solo fights started and the mobs they pulled (F20): mobs per pull.
+        // Cold solo fights started and the mobs they pulled: mobs per pull.
         coldPulls: 0,
         coldPullMobs: 0,
-        // Cold solo area-skill hits that struck every mob of a pull (F20).
+        // Cold solo area-skill hits that struck every mob of a pull.
         coldAreaPullHits: 0,
-        // E69: solo rounds the spot share cut short, and the fights it did not start.
+        // solo rounds the spot share cut short, and the fights it did not start.
         coldShareBoundResolves: 0,
         coldShareCutFights: 0,
         skippedResolves: 0,
@@ -39,11 +39,22 @@ function emptyCounters() {
         // arrival's or a budget cut's next scan places are not counted. Counted with or without
         // developerDiagnostics.
         lateInViewActivations: 0,
+        // Of those, walkers shown on their road (PopulationService.showWalkersNear); a walker
+        // that landed by a gatekeeper inside the view is not late.
+        lateInViewWalkers: 0,
         // Bodies placed by a recovery of a place off the ground (ActivationPlacement), by kind:
         // a walker by a step back toward its run's start, a bot on its spot (a raid included)
         // at one of the spot's spawn points or its centre.
         walkerRoadStepBacks: 0,
         spotPlaceRecoveries: 0,
+        // Walkers whose road point was still in the town their run began in, shown at the
+        // run's start instead (ActivationPlacement).
+        walkerStartTownPlacements: 0,
+        // Hot bots' walks to their town's gatekeeper that failed (BotSpotTravel.recoverOrDefer),
+        // and the Scrolls of Escape a bot stuck in a town began after repeated failures
+        // (BotSpotTravel.startEmergencyScroll: an unreachable or a missing gatekeeper).
+        townDepartureRouteFailures: 0,
+        townStuckEscapes: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -95,7 +106,7 @@ function stats(values) {
     };
 }
 
-// The cold worker limit reads the median of the last three 1 s readings (L118): two of three late, not one.
+// The cold worker limit reads the median of the last three 1 s readings: two of three late, not one.
 const LAG_WINDOW = 3;
 
 const PopulationMetrics = {
@@ -284,8 +295,9 @@ const PopulationMetrics = {
         this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
     },
 
-    recordLateInViewActivation() {
+    recordLateInViewActivation(kind = null) {
         this.counters.lateInViewActivations += 1;
+        if (kind === 'walker') this.counters.lateInViewWalkers += 1;
     },
 
     recordWalkerRoadStepBack() {
@@ -294,6 +306,18 @@ const PopulationMetrics = {
 
     recordSpotPlaceRecovery() {
         this.counters.spotPlaceRecoveries += 1;
+    },
+
+    recordWalkerStartTownPlacement() {
+        this.counters.walkerStartTownPlacements += 1;
+    },
+
+    recordTownDepartureRouteFailure() {
+        this.counters.townDepartureRouteFailures += 1;
+    },
+
+    recordTownStuckEscape() {
+        this.counters.townStuckEscapes += 1;
     },
 
     recordCooldown(durationMs) {

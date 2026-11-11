@@ -128,7 +128,7 @@ const HotActivation = {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
             // A traveller a player invites or calls leaves its trip, as a hunter
-            // leaves its spot (design 5.9). A walker (ColdTrip: a solo run to a
+            // leaves its spot. A walker (ColdTrip: a solo run to a
             // spot) a player comes near shows itself where the cold model has it, on
             // its road (ColdTrip.positionAt at one instant for the whole activation,
             // grounded by ActivationPlacement), and walks the rest of its run as a

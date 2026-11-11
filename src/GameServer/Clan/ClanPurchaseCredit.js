@@ -4,7 +4,7 @@
 // It stays the clan's money while the member carries it: it travels with an
 // errand that is on its way or waiting to leave (party, town visit), and it
 // returns to the clan when the purchase fails at once or the errand ends
-// without spending it (E193, E194). One rule for the equipment goal
+// without spending it. One rule for the equipment goal
 // (ClanEquipmentService) and the clan-level goal (ClanMarketService).
 const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const Diagnostics = require('../Bot/Economy/EconomyDiagnostics');

@@ -77,7 +77,7 @@ async function settleLine(sellerState, line, town, options = {}) {
 }
 
 // The buy ads a bot chose to answer (MarketListingPolicy.evaluate: the side
-// that acts travels, E45). options.now: the decision point.
+// that acts travels). options.now: the decision point.
 function answers(state, options = {}) {
     return invoke('GameServer/Bot/Economy/MarketListingPolicy').evaluate(state, { ...options, unlimited: true }).answers;
 }
@@ -111,7 +111,7 @@ async function sellToBestBuyer(state, town = state?.currentRegion, options = {})
 }
 
 // The town of the buy ads a bot chose to answer that pay it most: where its
-// sale trip goes (the side that acts travels, E45). { town, value } or null.
+// sale trip goes (the side that acts travels). { town, value } or null.
 // The sale decision runs only when the board has a buy ad for something in
 // the bag (O(bag) index reads); the visit makes its own decision on arrival.
 function bestTownFor(state, options = {}) {

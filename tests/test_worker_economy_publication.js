@@ -8,8 +8,9 @@ require('../src/Global');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
+const { rowOf, SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
 
-async function runWorker(state, predicate, followUp = null) {
+async function runWorker(state, predicate, followUp = null, init = {}) {
     const epoch = `economy-publication-${state.characterId}`, received = [];
     const worker = new Worker(path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js'),
         { workerData: { sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: epoch }, resourceLimits: { maxOldGenerationSizeMb: 256 } });
@@ -40,7 +41,7 @@ async function runWorker(state, predicate, followUp = null) {
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
         send('table_page', { tables: ['board', 'market'].map(name =>
             ({ name, from: null, to: 0, full: true, rows: [], removed: [] })) });
-        send('init', { config: { loopIntervalMs: 20, maxInFlight: 1, maxBatch: 1 } }, 'init');
+        send('init', { config: { loopIntervalMs: 20, maxInFlight: 1, maxBatch: 1 }, ...init }, 'init');
         await until(message => message.type === 'ready' && message.msgId === 'init');
         send('snapshot_page', { rows: [{ state }], initial: true, done: true });
         const result = await until(predicate);
@@ -130,6 +131,26 @@ async function runWorker(state, predicate, followUp = null) {
         const reviewed = (await decidedAt(until, 8)).payload.near.statsPacket;
         assert.deepEqual(reviewed.gearMarks, [{ key: 6 }, { key: 5 }], 'the review it woke keeps both marks it planned without');
     });
+
+    // A near body hears a board offer its held build wants: a player's new SELL line of its
+    // watched weapon within its wallet wakes its build on its near mind, and its near
+    // decision answers the post it holds (no new post), as a far bot's next step would.
+    const watcher = { ...state, characterId: 765415, level: 61, exp: 146307211, adena: 5000000, stats: { classId: 2, generatedCold: true } };
+    await runWorker(watcher, decidedFor(watcher.characterId), async ({ result: first, until, received, table }) => {
+        assert.notEqual(Decisions.compact(first.payload.economyDecision).activity?.itemId, 2517, 'no seller yet: it shops elsewhere');
+        const mark = received.length;
+        table([{ name: 'board', from: 0, to: 1, full: false, removed: [], rows: [[9301, rowOf({ id: 9301, kind: 'sell_ad',
+            storeType: SELL, ownerId: 765499, town: 'Giran', botOwned: false,
+            lines: [{ id: 93010, selfId: 2517, count: 1, price: 1000000 }] })]] }]);
+        // The offer asks the body's near decision.
+        const woken = await until(message => decidedFor(watcher.characterId)(message) && received.indexOf(message) >= mark);
+        assert.equal(woken.payload.near.nearSeq, first.payload.near.nearSeq, 'it answers the post the body holds');
+        assert(woken.payload.near.statsPacket.decisionSeq > first.payload.near.statsPacket.decisionSeq,
+            'its build is taken again on the offer');
+        const step = Decisions.compact(woken.payload.economyDecision).activity;
+        assert.deepEqual([step?.activity, step?.itemId, step?.price], ['shopping', 2517, 1000000], 'it goes to buy the offered weapon');
+    // A build's card is held under the code's identity (its event proof), as main gives the worker.
+    }, { recomputeGeneration: { code: '1'.repeat(40), config: '2'.repeat(64), local: true } });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,
         selfId: 952, amount: 1, equipped: false, slot: 0, enchant: 0 }));

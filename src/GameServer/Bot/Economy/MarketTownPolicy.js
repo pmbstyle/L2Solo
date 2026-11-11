@@ -38,8 +38,7 @@ function nearestNoGradeMarket(loc = {}) {
         .sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
-// The grade of an item by the one static classifier (E47,
-// MarketCounters.counterOf); a row without an item id keeps its own rank.
+// The grade of an item by the one static classifier (MarketCounters.counterOf); a row without an item id keeps its own rank.
 function rankOf(item) {
     if (Number(item?.selfId) > 0) return MarketCounters.gradeOf(item.selfId);
     return String(item?.rank || 'none').toLowerCase();
@@ -54,7 +53,7 @@ function dGradeMarketFor(state = {}) {
 }
 
 function targetTownForItems(state, items = [], options = {}) {
-    // A bot with karma trades in Floran (design 5.8, E48).
+    // A bot with karma trades in Floran.
     if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
     const ranks = items.map(rankOf);
     const hasHigherGrade = ranks.some((rank) => ['c', 'b', 'a', 's'].includes(rank));

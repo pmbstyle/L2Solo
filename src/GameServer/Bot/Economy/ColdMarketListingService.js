@@ -142,7 +142,7 @@ function open(state, options = {}) {
     const initialMarket = market;
     // An answer may stage a trade meeting, which records the seller's revision:
     // a later main save of the seller would discard it. The sale retry every
-    // outcome below sets is on the row before the answers run (E311).
+    // outcome below sets is on the row before the answers run.
     const answerTown = town?.name ?? state.currentRegion;
     const answering = market.answers.some((answer) => answer.line.town === answerTown)
         ? LifeState.upsertState(deferSellRetry(state), 'market_sale_retry').then((saved) => saved || deferSellRetry(state))
@@ -151,7 +151,7 @@ function open(state, options = {}) {
         return BuyStoreService.sellToBestBuyer(state, answerTown, { answers: market.answers }); }).then((dynamicBuyerSale) => {
     // A deal through a trade meeting ends the sale like every other outcome:
     // the retry keeps a later pass from answering the same ad again when the
-    // payer refuses it (E311).
+    // payer refuses it.
     if (dynamicBuyerSale.pending) return { ...dynamicBuyerSale, state: deferSellRetry(dynamicBuyerSale.state || state), listed: false };
     return StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
     const saleState = buyerSale.state || dynamicBuyerSale.state || state;
@@ -235,7 +235,7 @@ function travelToShopTown(state, board, timestamp) {
     // Scroll of Escape reaches (GoalExecutor.beginMarketTravel), from a town
     // this same town: only a trip to the shop town counts. Otherwise the lines
     // wait in the bag behind the sale retry, as every other ended sale visit,
-    // instead of a new sale trip each resolve (E304 (a)).
+    // instead of a new sale trip each resolve.
     const trip = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);
     const travel = trip?.stats?.travel?.townName === board.shopTown ? trip : null;
     if (travel) travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;

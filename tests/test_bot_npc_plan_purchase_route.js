@@ -82,15 +82,14 @@ const posted = await AfkTrade.publishBot(7, { kind: 'buy_ad', storeType: AfkTrad
 assert.strictEqual(Number(posted.escrowAdena), 0);
 assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000);
 assert.strictEqual(BotAfkMarket.buyOrderEscrow(7), 0);
+// A review on main never takes bids back: the trip refunds the goal item's own bid itself.
 const result = await BotAfkMarket.reconcile(LifeState.snapshot(7), activeGoal);
-assert.strictEqual(result.withdrawn, true, 'the conditional WTB is removed before the NPC trip');
-assert.strictEqual(AfkTrade.ownerRecords(7).length, 0);
-assert.strictEqual(BotAfkMarket.buyOrderEscrow(7), 0);
+assert(!result.withdrawn);
+assert.strictEqual(AfkTrade.ownerRecords(7).length, 1);
 assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000, 'an unaccepted WTB never moves the original wallet');
-assert.strictEqual(amount(await Database.fetchItems(7), plan.target.selfId), 0, 'withdrawal is not an NPC purchase');
-assert.strictEqual(LifeState.snapshot(7).adena, 300000);
+assert.strictEqual(amount(await Database.fetchItems(7), plan.target.selfId), 0, 'a review is not an NPC purchase');
 console.log(JSON.stringify({ sourcePlanTarget: plan.target.selfId, npcTown: plan.market.town,
-    escrow: 0, walletAfterRemoval: amount(await Database.fetchItems(7), 57), purchased: 0 }));
+    escrow: 0, walletAfterReview: amount(await Database.fetchItems(7), 57), purchased: 0 }));
 console.log('Bot NPC plan purchase route checks passed');
 } finally {
     await AfkTrade._resetForTests();

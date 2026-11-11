@@ -195,7 +195,7 @@ async function run() {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     Economy.configure({ spots: [], knowledgeEnabled: false });
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
-    state = { ...state, level: 30 };
+    state = { ...state, level: 33 };
     const packet = Economy.forState(state).statsPacket;
     // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
     state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');
@@ -235,6 +235,15 @@ async function run() {
             assert(Packet.lineOf(shape.stats.kitRates, Route.spotUseOf(shape), 'potions') > 0, `${name}: a potion line on main`);
             assert(potionLine(shape) > 0, `${name}: the town visit buys it`);
         }
+        // A solo bot on no spot and holding no answer sizes its kit on the income row its hour is priced
+        // on (where it would earn), not on the band's best experience row: one answer to where it hunts.
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        const incomeRow = invoke('GameServer/Bot/AI/BotHuntEfficiency').incomeRow(shapes.none);
+        const expRow = Table.best(Table.roleFor(shapes.none), shapes.none.level, true);
+        assert(!shapes.none.spotId && incomeRow?.potions > 0 && !(expRow.potions > 0),
+            'fixture: the income row needs potions, the experience row none');
+        assert.equal(Route.spotUseOf(shapes.none).potionsPerHour, Packet.roundRate(incomeRow.potions), 'main reads the income row');
+        assert.equal(Economy.basics(shapes.none).rates.potionUse, Packet.roundRate(incomeRow.potions), 'the build sizes its kit on it');
     }
     // No build has rated the kit yet: no potion is bought, no basics are built.
     const unrated = { ...state, stats: { ...state.stats, kitRates: undefined } };

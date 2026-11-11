@@ -90,6 +90,19 @@ async function run() {
     const originalFindPath = GeodataEngine.findPath;
     const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
     let synchronousFindPathCalls = 0;
+    const originalUser = RuntimeWorld.user;
+    const fixtures = new Set(), pools = new Set();
+    const fixture = (...args) => {
+        const value = companionFixture(...args);
+        fixtures.add(value);
+        return value;
+    };
+    const makePool = options => {
+        const pool = new BoundedPathfindingWorkerPool(options);
+        pools.add(pool);
+        return pool;
+    };
+    const routeError = subject => String(subject.session.lastPathfinding?.error ?? 'unknown');
     GeodataEngine.findPath = () => {
         synchronousFindPathCalls++;
         throw new Error('companion path must not execute A* on the game thread');
@@ -97,19 +110,19 @@ async function run() {
     GeodataEngine.hasLineOfSight = () => false;
 
     try {
-        const realPool = new BoundedPathfindingWorkerPool({ size: 1, queueLimit: 4 });
-        const realFixture = companionFixture(realPool);
+        const realPool = makePool({ size: 1, queueLimit: 4 });
+        const realFixture = fixture(realPool);
         const pending = issueMove(realFixture, { locX: 53327, locY: 102938, locZ: -1064 });
         assert.strictEqual(pending.strategy, 'worker_pending', 'eligible companion routes must return without blocking the game thread');
         const realPromise = realFixture.session.pendingPathRequest.promise;
         await realPromise;
         assert.strictEqual(synchronousFindPathCalls, 0, 'eligible companion movement must never call synchronous findPath');
-        assert.strictEqual(realFixture.session.lastPathfinding.strategy, 'worker_geodata');
+        assert.strictEqual(realFixture.session.lastPathfinding.strategy, 'worker_geodata', `real companion route: ${routeError(realFixture)}`);
         assert.strictEqual(realFixture.session.lastPathfinding.worker, true);
         assert.strictEqual(realFixture.actor.state.towards, 'move', 'the main thread must apply a current real-worker path');
         stopMove(realFixture);
 
-        const autonomousFixture = makeAutonomous(companionFixture(
+        const autonomousFixture = makeAutonomous(fixture(
             realPool,
             { locX: 83384, locY: 149256, locZ: -3400 }
         ));
@@ -124,14 +137,14 @@ async function run() {
         await autonomousFixture.session.pendingPathRequest.promise;
         assert.strictEqual(synchronousFindPathCalls, 0,
             'autonomous town errands must not execute A* on the game thread');
-        assert.strictEqual(autonomousFixture.session.lastPathfinding.strategy, 'worker_geodata');
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.strategy, 'worker_geodata', `autonomous Giran route: ${routeError(autonomousFixture)}`);
         assert.strictEqual(autonomousFixture.session.lastPathfinding.routeUsable, true,
             'the real Giran route to Groot must use the requested errand budget');
         assert.strictEqual(autonomousFixture.session.lastPathfinding.maxNodes, 30000);
         assert.strictEqual(autonomousFixture.session.lastPathfinding.arrivalRadius, 16);
         stopMove(autonomousFixture);
 
-        const helvetiaFixture = makeAutonomous(companionFixture(
+        const helvetiaFixture = makeAutonomous(fixture(
             realPool,
             { locX: 80456, locY: 147864, locZ: -3504 }
         ));
@@ -152,7 +165,7 @@ async function run() {
             'segmented town movement must keep A* off the game thread');
         stopMove(helvetiaFixture);
 
-        const shopEgressFixture = makeAutonomous(companionFixture(
+        const shopEgressFixture = makeAutonomous(fixture(
             realPool,
             { locX: 80348, locY: 147752, locZ: -3506 }
         ));
@@ -200,7 +213,7 @@ async function run() {
             'the saved shop exit must be consumed once instead of becoming a rail');
         stopMove(shopEgressFixture);
 
-        const gludioShopFixture = makeAutonomous(companionFixture(
+        const gludioShopFixture = makeAutonomous(fixture(
             realPool,
             { locX: -12736, locY: 122816, locZ: -3112 }
         ));
@@ -215,7 +228,7 @@ async function run() {
             'the real Gludio route from town center to Lundy must stay off-thread and usable');
         stopMove(gludioShopFixture);
 
-        const gludioGatekeeperFixture = makeAutonomous(companionFixture(
+        const gludioGatekeeperFixture = makeAutonomous(fixture(
             realPool,
             { locX: -13908, locY: 123394, locZ: -3116 }
         ));
@@ -233,12 +246,12 @@ async function run() {
         stopMove(gludioGatekeeperFixture);
         await realPool.shutdown();
 
-        const delayedPool = new BoundedPathfindingWorkerPool({
+        const delayedPool = makePool({
             size: 1,
             queueLimit: 2,
             workerPath: path.join(__dirname, 'fixtures', 'companion_path_worker.js')
         });
-        const staleFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
+        const staleFixture = fixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(staleFixture, { locX: 1000, locY: 0, locZ: 0 });
         const stalePromise = staleFixture.session.pendingPathRequest.promise;
         issueMove(staleFixture, { locX: 2000, locY: 0, locZ: 0 });
@@ -249,7 +262,7 @@ async function run() {
         assert(delayedPool.stats().stale >= 1, 'replacing a target must cancel stale queued or in-flight work');
         stopMove(staleFixture);
 
-        const movedFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
+        const movedFixture = fixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(movedFixture, { locX: 1000, locY: 0, locZ: 0 });
         const movedPromise = movedFixture.session.pendingPathRequest.promise;
         movedFixture.position.locY = 25;
@@ -258,7 +271,7 @@ async function run() {
             'an actor position change must invalidate the immutable worker snapshot');
         assert.strictEqual(movedFixture.session.pendingPathRequest, null);
 
-        const targetFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
+        const targetFixture = fixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(targetFixture, { locX: 1000, locY: 0, locZ: 0 }, targetFixture.leaderSession.actor);
         const targetPromise = targetFixture.session.pendingPathRequest.promise;
         targetFixture.leaderPosition.locY = 200;
@@ -278,7 +291,7 @@ async function run() {
             },
             cancel() { return false; }
         };
-        const budgetFixture = companionFixture(budgetPool, { locX: 0, locY: 0, locZ: 0 });
+        const budgetFixture = fixture(budgetPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(budgetFixture, { locX: 1000, locY: 0, locZ: 0 });
         await budgetFixture.session.pendingPathRequest.promise;
         assert.strictEqual(
@@ -288,7 +301,7 @@ async function run() {
         );
         stopMove(budgetFixture);
 
-        const abortedFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
+        const abortedFixture = fixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(abortedFixture, { locX: 1000, locY: 0, locZ: 0 });
         const abortedPromise = abortedFixture.session.pendingPathRequest.promise;
         abortedFixture.actor.automation.abortAll(abortedFixture.actor);
@@ -305,7 +318,7 @@ async function run() {
             },
             cancel() { return false; }
         };
-        const fallbackFixture = companionFixture(rejectedPool, { locX: 0, locY: 0, locZ: 0 });
+        const fallbackFixture = fixture(rejectedPool, { locX: 0, locY: 0, locZ: 0 });
         GeodataEngine.hasLineOfSight = () => true;
         issueMove(fallbackFixture, { locX: 1000, locY: 0, locZ: 0 });
         await fallbackFixture.session.pendingPathRequest.promise;
@@ -319,7 +332,7 @@ async function run() {
             request() { throw new Error('short clear routes must not pay worker latency'); },
             cancel() { return false; }
         };
-        const shortFixture = companionFixture(shortPool, { locX: 0, locY: 0, locZ: 0 });
+        const shortFixture = fixture(shortPool, { locX: 0, locY: 0, locZ: 0 });
         const shortResult = issueMove(shortFixture, { locX: moveTo.COMPANION_DIRECT_DISTANCE, locY: 0, locZ: 0 });
         assert.strictEqual(shortResult.strategy, 'short_direct');
         assert.strictEqual(shortFixture.actor.state.towards, 'move');
@@ -327,8 +340,18 @@ async function run() {
 
         await delayedPool.shutdown();
     } finally {
-        GeodataEngine.findPath = originalFindPath;
-        GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+        // An assertion can fail while a worker and/or move timer is still alive.
+        // Shut down on failure as well as success; retain the failing assertion.
+        // Cancel movement before shutdown and once more after pending route callbacks settle.
+        try {
+            for (const value of fixtures) stopMove(value);
+            await Promise.all([...pools].map(pool => pool.shutdown()));
+        } finally {
+            for (const value of fixtures) stopMove(value);
+            RuntimeWorld.user = originalUser;
+            GeodataEngine.findPath = originalFindPath;
+            GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+        }
     }
 
     console.log('Companion pathfinding worker checks passed');

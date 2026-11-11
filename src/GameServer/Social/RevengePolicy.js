@@ -12,7 +12,7 @@ const WAR_HOSTILITY = 0.5;
 const clamp = (n, low = 0, high = 1) => Math.max(low, Math.min(high, Number(n) || 0));
 // standing: { ownKarma, targetKarma, targetFlagged, war } (PvpAggression.karmaCost).
 // A bot with karma starts no fight outside a mutual clan war: it washes its karma first
-// (C9's karma wash); a war kill gives no karma in C4, so a red bot still meets its war
+// (the karma wash); a war kill gives no karma in C4, so a red bot still meets its war
 // enemies. A red target is free; a white one weighs being flagged and turning red.
 // The cheap gates of the callers ask the same (startsNoFight).
 const startsNoFight = ({ ownKarma = 0, war = false } = {}) => war !== true && Number(ownKarma) > 0;

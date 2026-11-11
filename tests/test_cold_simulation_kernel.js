@@ -522,8 +522,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(commandRequest.payload.requests[0].precomputedPlan.statsPacket.activityLeaf, 19, 'kernel forwards whole packet');
     assert(commandRequest.payload.requests[0].precomputedResult, 'main command gateway must receive worker-computed lifecycle output');
     assert.strictEqual(commandRequest.payload.requests[0].computedAt, now);
-    assert.deepStrictEqual(commandRequest.payload.requests[0].route, { needed: true, spotId: 'trip-ground' },
-        'main\'s command reads the spot of the trip the worker\'s step started');
     assert.strictEqual(commandKernel.scheduleTokens.has(3), false,
         'a command request must consume its due token while the command is in flight');
     assert.strictEqual(commandKernel.snapshot().commandingAgeMs, 0,
@@ -564,14 +562,14 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     await commandPressureKernel.resolveChain;
     for (const s of blockedCommands.slice(0, 2)) {
         commandAck(commandPressureKernel, { characterId: s.characterId, ok: false,
-            reason: 'missing_spot', retryAfterMs: 30000, state: s });
+            reason: 'command_rejected', retryAfterMs: 30000, state: s });
         commandPressureKernel.upsert({ state: s });
         assert.strictEqual(commandPressureKernel.scheduleTokens.get(s.characterId).dueAt, now + 30000,
             'a failed command with an unchanged state must respect retry delay after a catalog refresh');
     }
     commandPressureKernel.tick();
     await commandPressureKernel.resolveChain;
-    commandAck(commandPressureKernel, { characterId: 712, ok: false, reason: 'missing_spot',
+    commandAck(commandPressureKernel, { characterId: 712, ok: false, reason: 'command_rejected',
         retryAfterMs: 30000, state: blockedCommands[2] });
     commandPressureKernel.tick();
     assert.deepStrictEqual(lastSteps(commandPressureKernel), [720, 721, 722],

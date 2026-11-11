@@ -505,7 +505,7 @@ const BackgroundPartyResolver = {
             ...state,
             vitals: pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
-        // Raid preparation casts its own buffs; an ordinary hunt casts them between fights (F23).
+        // Raid preparation casts its own buffs; an ordinary hunt casts them between fights.
         const huntBuffs = raid || pending ? null : BackgroundResolver.castHuntPartyBuffs(combatMembers, timestamp);
         if (huntBuffs) combatMembers = huntBuffs.members;
         // A party rests between fights, never in one, as hot (HotBackgroundParty:
@@ -548,7 +548,7 @@ const BackgroundPartyResolver = {
             if (encounter.won || !pending) fights += 1;
             for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
-            // A kill costs at least its killing action, as solo's (T126): the swing or
+            // A kill costs at least its killing action, as solo's: the swing or
             // cast that killed ends after the kill (the members' actions end by then).
             combatMs += Math.max(Number(encounter.debug?.durationMs || 0),
                 encounter.won ? Math.max(0, ...encounter.members.map(member => Number(member.readyAt) || 0)) : 0);

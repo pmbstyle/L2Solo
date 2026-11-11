@@ -101,7 +101,7 @@ function memberOffer(state, itemId, cap = Infinity) {
 }
 
 // The market pays only when a member can buy the item as the executor does
-// (memberOffer); the order's caps bound the price (E41).
+// (memberOffer); the order's caps bound the price.
 function affordableOffer(order, clan, itemId, remaining, options = {}) {
     if (options.offer === null) return null;
     const remainingBudget = number(order.budget) > 0 ? Math.max(0, number(order.budget) - number(order.spent)) : Infinity;

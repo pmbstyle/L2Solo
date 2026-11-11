@@ -111,6 +111,14 @@ assert.equal(stretch.durationMs, 3199);
 assert.equal(stretch.starved, false, '6 % of the chunk without samples');
 assert.deepEqual([stretch.unsampledMs, stretch.stretches, stretch.busyMs], [200, 1, 2999]);
 assert.deepEqual(stretch.long, [{ atMs: 1699, ms: 1500 }, { atMs: 0, ms: 1499 }], 'two runs, not one of 3199 ms');
+// Partial starvation (2026-11-11): 60 ms gaps are under the old 100 ms limit, so they were neither
+// counted nor left out. Each is now a stretch: out of busy time, counted, and it ends the run.
+const partialChunk = busyChunk([500, 1500, 2500]);
+for (const at of [500, 1500, 2500]) partialChunk.timeDeltas[at] = 60000;
+partialChunk.endTime = partialChunk.timeDeltas.reduce((sum, delta) => sum + delta, 0) + 1000;
+const partial = CpuProfile.analyze(partialChunk, { longTurnMs: 1000 });
+assert.deepEqual([partial.stretches, partial.unsampledMs, partial.starved], [3, 180, false], 'three gaps over 50 ms counted');
+assert.equal(partial.runs, 4, 'each gap ends the busy run');
 // Five such gaps: 1 s of 4 s (25 %) without samples starve the whole chunk, though its 3000 samples
 // average one per 1.3 ms.
 const stretches = CpuProfile.analyze(busyChunk([500, 1000, 1500, 2000, 2500]));

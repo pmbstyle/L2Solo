@@ -2,7 +2,8 @@
 // A failed craft roll spends its inputs and completes nothing.
 // The native multi-batch command consumes exactly the materials; one failed
 // roll through ColdWealthCraftService.execute (stubbed roll) yields no product
-// and the re-derived need asks for the full batch again.
+// and the re-derived need asks for the full batch again. A workshop craft the
+// writer refuses spends nothing and is not retried, cold or hot.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
@@ -18,6 +19,10 @@ const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const { WishNetwork } = require('../src/GameServer/Bot/Economy/WishNetwork');
 const { freeAmount } = require('../src/GameServer/Bot/Economy/WealthCraftDecision');
 const Native = require('./helpers/nativeMarketFixture');
+const Workshop = require('../src/GameServer/Bot/Economy/CraftWorkshopService');
+const Crafting = invoke('GameServer/Bot/Economy/ColdCraftingService');
+const Diagnostics = require('../src/GameServer/Bot/Population/PopulationConfig');
+const workshopLoc = { locX: 83396, locY: 147904, locZ: -3400 };
 Data.init();
 const amount = async (id, selfId) => Native.amount(await Database.fetchItems(id), selfId);
 const current = async id => Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
@@ -48,6 +53,24 @@ async function crafter(id, batches) {
     return materials;
 }
 
+// A workshop owner (knows `recipe`, publishes its listing) or a customer holding three input sets.
+async function workshopSeed(id, recipe, owner, { phase = 'cold', activity = 'shopping', equipmentPlan = null } = {}) {
+    const account = `bot_b5_workshop_${id}`;
+    await Native.character(Database, id, 'B5Workshop' + id, account, workshopLoc);
+    await Database.execute(['UPDATE characters SET level=70,hp=1000,mp=1000000,maxMp=1000000,race=4,classId=? WHERE id=?', [owner ? 57 : 0, id]]);
+    await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 100000000, stackable: true });
+    if (owner) await Database.setCharacterRecipe(id, recipe.recipeId, recipe.type);
+    else for (const m of recipe.materials) await Database.setItem(id, { selfId: m.selfId, name: 'Material', amount: m.amount * 3 });
+    let state = await Life.upsertState({ characterId: id, accountName: account, name: 'B5Workshop' + id, level: 70, exp: 0, sp: 0,
+        adena: 100000000, phase, activity, homeRegion: 'Giran', currentRegion: 'Giran', loc: workshopLoc,
+        vitals: { hp: 1000, maxHp: 1000, mp: 1000000, maxMp: 1000000 },
+        stats: { classId: owner ? 57 : 0, generatedCold: true, money: [36000, 0, 0, 0], ...(equipmentPlan ? { equipmentPlan } : {}) },
+        inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
+        simulation: { revision: 0 }, timing: phase === 'hot' ? { lastHotAt: Date.now() } : {}, updatedAt: Date.now() }, 'b5_workshop_fixture');
+    if (owner) state = await Workshop.publishListing(state);
+    return state;
+}
+
 // The need for one product batch, derived from the bot's stock the way EconomyContext.stockFor reads it.
 function need(state) {
     const keys = uncertain.materials.map(m => ({ key: `item:${m.selfId}`, amount: Number(m.amount) }));
@@ -70,6 +93,7 @@ async function run() {
     assert(uncertain, 'native catalog supplies a probabilistic dwarven recipe');
     Database.init();
     await Life.init();
+    Workshop.init();
 
     // 1. Native command: a failed roll of three batches consumes exactly the inputs and makes no product.
     const materials = await crafter(1, 3);
@@ -112,7 +136,64 @@ async function run() {
         assert.equal(again.missing.get(`item:${m.selfId}`), Number(m.amount), `need for ${m.selfId} is back to the full batch`);
     }
     assert.equal(Commit.size(), 0);
-    console.log('PASS Task 4 B5 failed craft: inputs consumed, no product, need back to the full batch');
+
+    // 3. A workshop craft the writer refuses (another writer took the customer's material between the read
+    // and the write): rolled back, nothing spent, so it is one refused job and no failed one, cold and hot.
+    // Neither caller tries the refused command again through its original token.
+    Diagnostics.developerDiagnostics = true;
+    const workshopRecipe = Recipes.resolveByRecipeId(1);
+    const jobs = () => ({ ...Database.stats().operations['craft:customer'] });
+    // The first craftForCustomer of `act` finds one input gone before it writes.
+    async function refusedWrite(act) {
+        const native = Database.craftForCustomer, before = jobs();
+        let first = true;
+        Database.craftForCustomer = async (...args) => {
+            if (first) {
+                first = false;
+                const m = args[2].materials[0];
+                await Database.execute(['UPDATE items SET amount = 0 WHERE id = ?', [m.id]]);
+            }
+            return native.apply(Database, args);
+        };
+        let outcome;
+        try { outcome = await act(); } finally { Database.craftForCustomer = native; }
+        const after = jobs();
+        assert.equal(after.refusals - (before.refusals || 0), 1, 'one refused workshop job');
+        assert.equal(after.failures - (before.failures || 0), 0, 'no failed workshop job');
+        return outcome;
+    }
+    const plan = owner => ({ strategy: 'craft', status: 'ready_to_craft', recipeId: workshopRecipe.recipeId,
+        amount: workshopRecipe.productCount, valueRate: 1, target: { selfId: workshopRecipe.productId },
+        craftProviders: { [workshopRecipe.recipeId]: { workshop: true, characterId: owner.characterId,
+            revision: owner.simulation.revision, known: true,
+            price: owner.stats.workshop.entries.find(row => row.recipeId === workshopRecipe.recipeId).price } } });
+    const coldOwner = await workshopSeed(10, workshopRecipe, true);
+    const coldBuyer = await workshopSeed(11, workshopRecipe, false, { activity: 'crafting', equipmentPlan: plan(coldOwner) });
+    const coldAdena = await amount(coldBuyer.characterId, 57);
+    const refusedCold = await refusedWrite(() => Crafting.craft(coldBuyer, () => 0));
+    assert.equal(refusedCold.crafted, false);
+    assert.equal(refusedCold.error, 'economy_material_protected');
+    assert.equal(await amount(coldBuyer.characterId, 57), coldAdena, 'the refused cold craft charges no fee');
+    assert.equal(await amount(coldBuyer.characterId, workshopRecipe.productId), 0);
+
+    const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
+    const hotOwner = await workshopSeed(12, workshopRecipe, true);
+    const hotBuyer = await workshopSeed(13, workshopRecipe, false, { phase: 'hot', equipmentPlan: plan(hotOwner) });
+    const wrap = row => ({ ...row, fetchId() { return this.id; }, fetchSelfId() { return this.selfId; },
+        fetchAmount() { return this.amount; }, fetchEquipped() { return false; }, setAmount(value) { this.amount = value; } });
+    const bag = { items: (await Database.fetchItems(hotBuyer.characterId)).map(wrap), fetchItems() { return this.items; },
+        insertItem(id, selfId, row) { this.items.push(wrap({ ...row, id, selfId })); } };
+    const actor = { backpack: bag, fetchId: () => hotBuyer.characterId, fetchIsOnline: () => true, fetchName: () => 'B5Hot' };
+    const session = { actor, coldLifeState: hotBuyer };
+    const selected = Shopping.workshopTarget(session, actor);
+    assert(selected?.station.workshop, 'the visible bot goes to its personal workshop provider');
+    const hotAdena = await amount(hotBuyer.characterId, 57);
+    await refusedWrite(() => Shopping.craftAtWorkshop(session, actor, selected));
+    assert.equal(session.workshopOriginal, undefined, 'a refused hot craft keeps no command to recover');
+    assert.equal(await amount(hotBuyer.characterId, 57), hotAdena, 'the refused hot craft charges no fee');
+    assert.equal(await amount(hotBuyer.characterId, workshopRecipe.productId), 0);
+    assert.equal(Commit.size(), 0);
+    console.log('PASS Task 4 B5 failed craft: inputs consumed, no product, need back to the full batch; a refused workshop craft is not recovered');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     Commit.clear();

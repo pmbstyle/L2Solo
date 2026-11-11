@@ -115,22 +115,16 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
 }
 
 // A player's scan made these bots bodies; each one placed already inside that player's view
-// counts once (lateInViewActivations): the activation ring's lead past the view did not hold.
-// Called only for a settled player (activationSettled): right after an arrival or a budget cut
-// bodies land in the view by nature and say nothing of the lead.
-function countActivatedInView(result, playerLoc) {
+// counts once (lateInViewActivations; `kind` 'walker': a walker on its road, also counted apart):
+// the activation ring's lead past the view did not hold. Called only for a settled player
+// (activationSettled): right after an arrival or a budget cut bodies land in the view by nature
+// and say nothing of the lead.
+function countActivatedInView(result, playerLoc, kind = null) {
     const World = invoke('GameServer/World/World');
     for (const state of result.states || [result.state]) {
         const actor = state?.characterId ? ActorQueries.byId(World, state.characterId)?.actor : null;
-        if (actor && inClientView(actor.fetchLocX(), actor.fetchLocY(), playerLoc.locX, playerLoc.locY)) Metrics.recordLateInViewActivation();
+        if (actor && inClientView(actor.fetchLocX(), actor.fetchLocY(), playerLoc.locX, playerLoc.locY)) Metrics.recordLateInViewActivation(kind);
     }
-}
-
-// The spot of a commanded bot, from its request's route: the trip the
-// worker's plan started (BotRoute), or the ground the worker fought on when
-// the bot needed no trip.
-function commandSpot(route) {
-    return route?.spotId ? SpotProfiles.findById(route.spotId) : null;
 }
 
 function groupBySpot(states, options = {}) {
@@ -256,33 +250,27 @@ function partyObjectiveMemo() {
     };
 }
 
-function directDropTargetNpcId(...plans) {
-    for (const plan of plans) {
-        if (plan?.status !== 'active' || plan?.strategy !== 'direct_drop') continue;
-        const npcId = Number(plan.next?.npcId || 0);
-        if (npcId > 0) return npcId;
-    }
-    return 0;
-}
-
 function joinedBackgroundParty(state) {
     const current = LifeState.cachedState(state?.characterId);
     return !!current?.party?.partyId;
 }
 
-// A trip to buy at a shop is paid from the wallet. When the bot's own buy
-// order still holds Adena, the trip withdraws it first (its goal keeps no
-// WTB, or beginMarketTravel would refuse) and starts from the refunded
-// state. If the order cannot be withdrawn, the bot does not leave; a caller
-// that holds the pre-refund state must not apply it after a refund.
+// A trip to buy at a shop is paid from the wallet. The bot's own bid for the goal's
+// item holds Adena the trip needs and would keep it from travelling
+// (beginMarketTravel refuses a bot that can bid), so the trip takes that bid back
+// first and starts from the refunded state; other bids stand. If it cannot be taken
+// back, the bot does not leave; a caller that holds the pre-refund state must not
+// apply it after a refund.
 async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
     const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
-    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
+    const itemId = goal?.target?.itemId;
+    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY || !itemId
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
-    const remote = await BotAfkMarketService.reconcile(state, goal).catch((error) => {
+    const taken = await BotAfkMarketService.withdrawBuyAds(state.characterId, itemId, state).catch((error) => {
         if (!FailureLog.refusal(error)) FailureLog.note('economy.trip_refund', error);
     });
-    const refunded = remote?.withdrawn ? remote.state || state : null;
+    if (taken && !taken.changed) return travel;
+    const refunded = taken?.withdrawn ? taken.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
     return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
 }
@@ -390,8 +378,7 @@ async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
     const warehouse = token.cleanupReason === 'craft_warehouse';
-    const matching = warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
-        : party?.stats?.objective?.clanGoalKey === token.objective?.clanGoalKey;
+    const matching = PartyMarketBreak.sameObjective(party, token);
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
         partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : token.objective,
         partyRequest: warehouse ? state.stats.partyRequest : token.objective } };
@@ -453,7 +440,7 @@ function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation =
 }
 
 // An ended visit is saved in town only while a meeting preparation holds the
-// bot (E314); it starts no market travel until that preparation ends.
+// bot; it starts no market travel until that preparation ends.
 function heldVisit(state) {
     return state?.stats?.townVisit?.completed === true && TradeMeetingService.hasPreparation(state.characterId);
 }
@@ -1857,7 +1844,9 @@ const PopulationService = {
 
     // Walkers near a player appear on their road within the same activation budget
     // (HotActivation). Only the small walker list is read. countInView: the player is settled
-    // (activationSettled), so a walker placed inside its view counts as late.
+    // (activationSettled), so a walker placed inside its view counts as late, unless it landed
+    // by a gatekeeper inside the view: C4 shows a teleport arrival as it appears, no lead past
+    // the view shows it sooner.
     showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now(), countInView = false) {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
@@ -1868,7 +1857,11 @@ const PopulationService = {
             return this.requestActivation(state, 'near_player', { readyOnActivation: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
-                    if (countInView) countActivatedInView(result, loc);
+                    const travel = state.stats?.travel;
+                    const landing = travel?.method === 'gatekeeper_spot' ? travel.run?.from : null;
+                    if (countInView && !(landing && inClientView(landing.locX, landing.locY, loc.locX, loc.locY))) {
+                        countActivatedInView(result, loc, 'walker');
+                    }
                     activated.push(result);
                     ambientActivated.push(result);
                 });
@@ -2607,7 +2600,7 @@ const PopulationService = {
         if (workerRequest?.precomputedPlan) options = { ...options, stepPlan: workerRequest.precomputedPlan };
         const startedAt = Date.now();
         if (require('./RaidSupplyPolicy').held(state, startedAt)) {
-            const result = workerRequest?.precomputedResult || BackgroundResolver.resolveSolo({ state, timestamp: startedAt });
+            const result = workerRequest.precomputedResult;
             return LifeState.applyResolve(state, result, options).then(async saved => {
                 if (!saved) return { ok: false, reason: 'state_write_rejected', state };
                 let current = saved;
@@ -2647,8 +2640,6 @@ const PopulationService = {
         }
         const serviceResult = this.resolveColdServiceBranch(state, startedAt, workerRequest?.precomputedPlan?.buildTaken === true);
         if (serviceResult !== COLD_RESOLVE_NEXT) return serviceResult;
-        const staleShopping = BackgroundResolver.staleShopping(state);
-        const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const workerPlan = workerRequest?.precomputedPlan || null;
         const previousPlan = workerPlan ? workerPlan.previousPlan : state.stats?.equipmentPlan;
         // The worker's gear plan (source and replacement included) is applied
@@ -2693,25 +2684,12 @@ const PopulationService = {
         if (travellingState !== routedState) {
             return this.resolveColdCraftTravel(state, travellingState, travel, planEvents, travelEvents, startedAt);
         }
-        // A worker result is a fight at the worker's spot (its command's route);
-        // this command never starts a trip of its own: the worker is routed by its
-        // own plan (BotRoute) from the state this command writes.
-        const selectedSpot = passiveActivity ? null : commandSpot(workerRequest?.route);
+        // Main applies the worker's step as it came: a fight at the worker's spot
+        // or, with no ground under the bot, the step it took where it stands, with
+        // its decisions. This command starts no trip of its own: the worker routes
+        // the bot by its own plan (BotRoute) from the state this command writes.
         const effectiveState = travellingState;
-        const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
-        // A worker's occupation round (ColdSimulationKernel.occupationRound) carries no
-        // fight, only its plan: it needs no hunting ground; its plan buys or starts a trip.
-        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling' && !precomputedResult?.occupation) {
-            return this.resolveColdMissingSpot(state, plannedState, startedAt);
-        }
-
-        const result = precomputedResult || BackgroundResolver.resolveSolo({
-            state: effectiveState,
-            spot,
-            spotHunters: SpotProfiles.spotHunters(spot),
-            targetNpcId: directDropTargetNpcId(acquisitionPlan),
-            elapsedMs
-        });
+        const result = precomputedResult;
 
         if (joinedBackgroundParty(state)) {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_after_planning');
@@ -2719,7 +2697,7 @@ const PopulationService = {
         }
 
         return LifeState.applyResolve(effectiveState, result, { ...options, ...(workerPlan?.statsPacket ? { statsPacket: workerPlan.statsPacket } : {}) })
-            .then((updatedState) => this.applyColdResolve(state, updatedState, workerPlan, result, spot, acquisitionPlan, planEvents, travelEvents))
+            .then((updatedState) => this.applyColdResolve(state, updatedState, workerPlan, result, acquisitionPlan, planEvents, travelEvents))
             .then((outcome) => this.reviewColdOutcomeAfterCommit(state, outcome, options))
             .finally(() => {
                 if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
@@ -2822,7 +2800,7 @@ const PopulationService = {
         });
     },
 
-    // buildTaken: the worker's step took the build (F6: the Mammon trip is a side errand).
+    // buildTaken: the worker's step took the build (the Mammon trip is a side errand).
     resolveColdServiceBranch(state, startedAt, buildTaken = false) {
         const MammonUnseal = invoke('GameServer/Bot/AI/BotMammonUnseal');
         if (state.activity === 'crafting' && state.stats?.mammonReturn) {
@@ -2926,22 +2904,7 @@ const PopulationService = {
         }).finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
     },
 
-    resolveColdMissingSpot(state, plannedState, startedAt) {
-        Config.developerDiagnostics && Metrics.recordSkippedResolve('missing_spot');
-        Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
-        const retryAt = startedAt + 30000;
-        const waiting = { ...plannedState, activity: 'resting',
-            timing: { ...plannedState.timing, nextResolveAt: retryAt },
-            stats: { ...plannedState.stats, restUntil: retryAt,
-                routeRecovery: { reason: 'missing_spot', at: startedAt,
-                    attempts: Number(state.stats?.routeRecovery?.attempts || 0) + 1 } } };
-        return LifeState.upsertState(waiting, 'missing_spot_recovery').then(saved => ({
-            ok: !!saved, reason: saved ? 'missing_spot_recovery' : 'state_write_rejected',
-            state: saved || state, debug: { fights: 0, wins: 0, reason: 'missing_spot' }
-        }));
-    },
-
-    async applyColdResolve(state, updatedState, workerPlan, result, spot, acquisitionPlan, planEvents, travelEvents) {
+    async applyColdResolve(state, updatedState, workerPlan, result, acquisitionPlan, planEvents, travelEvents) {
         if (!updatedState) {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('cold_apply_failed');
             return { ok: false, reason: 'apply_failed', state };
@@ -2969,7 +2932,7 @@ const PopulationService = {
         // optional plan waits for fresh preparation, rather than replaying it.
         // A selling visit's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
-        // the author's path (E306).
+        // the author's path.
         // An occupation round's plan runs here as a far bot's review runs it after a direct
         // commit (ColdSimulationCoordinator.executeReviewCommand: its town trip started from the
         // plan's goal); a visit's plan starts none (the visit's own end does).
@@ -2994,16 +2957,26 @@ const PopulationService = {
         Config.developerDiagnostics && Metrics.recordBackgroundResolve();
         Config.developerDiagnostics && Metrics.recordCombat(result.debug);
         // The one place a far bot carries out its held improvement (reviewCold owns where it may:
-        // an enchant anywhere, a henna or a smith's work in a town that has the NPC), first in
-        // the step's work: a visit draws the henna it came for before it buys, sells and leaves
-        // (a review after the commit found the bot already on its way out of town). Consumed
-        // inputs retire the card; the rest of the visit runs on the improved bag and, as after a
+        // an enchant anywhere, a henna or a smith's work in a town that has the NPC), before
+        // the step's trade: a visit draws the henna it came for before it buys, sells and leaves
+        // (a review after the commit found the bot already on its way out of town). The commit
+        // ends the held step (reviewCold raises goal_done:goal) and main's copy of the card is
+        // released; the rest of the visit runs on the improved bag and, as after a
         // purchase, the bot stays for one pass that replans from it (a crystallization's exchange).
+        // A visit in town first takes out of its warehouse what it banked for its plan, as a C4
+        // player collects his materials before he trades them in: the held improvement reads the
+        // bag the release filled (an exchange's banked crystals), and the deposit after it banks
+        // only what the improvement left. The decision is the one taken before the release: the
+        // release moves the stock it counted from the bank to the bag.
         const decision = ColdSimulationCoordinator.economyDecisions.decided(updatedState);
+        const Improvements = invoke('GameServer/Bot/Economy/BotImprovementService');
+        const arrived = updatedState, inTown = Improvements.inTown(arrived);
+        const released = inTown ? await BotWarehouse.releaseCold(arrived, { inTown: true, before: state }) : { state: arrived };
+        const collected = released.state || arrived;
+        updatedState = collected;
         let improved = false;
         if (decision?.activity?.activity === 'improving') {
-            const review = await invoke('GameServer/Bot/Economy/BotImprovementService')
-                .reviewCold(updatedState, { beforeWrite, decide: () => decision });
+            const review = await Improvements.reviewCold(updatedState, { beforeWrite, decide: () => decision });
             if (review.changed) {
                 ColdSimulationCoordinator.economyDecisions.release(updatedState.characterId);
                 exchangeWaits.delete(Number(updatedState.characterId));
@@ -3014,18 +2987,16 @@ const PopulationService = {
         if (updatedState.activity === 'crafting') {
             return { ok: true, state: updatedState, debug: result.debug };
         }
-        const tripEdge = CombinedErrands.edge(state, updatedState, result);
+        // The stock the visit collected from its bank is no change of its errands.
+        const tripEdge = CombinedErrands.edge(state, arrived, result);
         const preparation = ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
             .then(async (shotEconomy) => {
                 const current = shotEconomy.state || updatedState;
-                const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
-                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true, before: state }) : { state: current };
-                const afterRelease = released.state || current;
-                const deposited = inTown && !released.aborted && (afterRelease.stats?.equipmentPlan?.inputPreparation
-                    || require('../Economy/CraftWarehousePolicy').planFor(afterRelease))
-                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(afterRelease)
-                    ? await BotWarehouse.depositCold(afterRelease) : { state: afterRelease };
-                return ColdMarketListingService.resolve(deposited.state || afterRelease);
+                const deposited = inTown && !released.aborted && (current.stats?.equipmentPlan?.inputPreparation
+                    || require('../Economy/CraftWarehousePolicy').planFor(current))
+                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(current)
+                    ? await BotWarehouse.depositCold(current) : { state: current };
+                return ColdMarketListingService.resolve(deposited.state || current);
             });
         // The goal on arrival: the held card's step over the bag as the visit found it.
         return preparation.then((marketLifecycle) => {
@@ -3035,10 +3006,13 @@ const PopulationService = {
                 : ColdMarketService.tryPurchase(marketLifecycle.state, goal))
                 .then((marketResult) => ({ marketLifecycle, marketResult, goal }));
         })
-            .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle,
+            .then(({ marketLifecycle, marketResult, goal }) => this.finishColdMarketStep(updatedState, workerPlan, tripEdge, marketLifecycle,
                 improved ? { ...marketResult, improved } : marketResult, goal))
             .then((finalState) => {
-                const craftEvents = CraftTelemetry.progressEvents(state, acquisitionPlan, updatedState);
+                // Material the step obtained: its round's and its improvement's (a crystallization's
+                // crystals), never the stock it collected from its own bank.
+                const craftEvents = [...CraftTelemetry.progressEvents(state, acquisitionPlan, arrived),
+                    ...(improved ? CraftTelemetry.progressEvents(collected, acquisitionPlan, updatedState) : [])];
                 return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
                     .then(() => finalState);
             })
@@ -3058,7 +3032,7 @@ const PopulationService = {
             });
     },
 
-    finishColdMarketStep(updatedState, workerPlan, spot, tripEdge, marketLifecycle, marketResult, goal) {
+    finishColdMarketStep(updatedState, workerPlan, tripEdge, marketLifecycle, marketResult, goal) {
         const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
         if (marketResult.pending) return purchasedState;
         // The bot was activated while the market step ran (the activation fence waits
@@ -3098,7 +3072,7 @@ const PopulationService = {
                 // here would move the revision the staged meeting recorded. The fresh
                 // row may carry a meeting marker. A deal still preparing, or accepted
                 // as a meeting, keeps the bot in town; a refused one ends the visit
-                // below as every other sale outcome (E311).
+                // below as every other sale outcome.
                 const id = listingState.characterId;
                 if (LifeState.hotRow(id)) return LifeState.hotRow(id);
                 listingState = LifeState.cachedState(id) || listingState;
@@ -3159,7 +3133,7 @@ const PopulationService = {
             return [];
         }).then(async (needs) => {
             const goal = needs?.[0] || null;
-            const remote = await BotAfkMarketService.reconcile(marketState, goal, needs);
+            const remote = await BotAfkMarketService.reconcile(marketState, goal);
             const current = remote.state || marketState;
             // forState unloads only where the bag alone does (the mana floor comes first), so
             // the cheap bag floor answers the common no; one moment for both reads.

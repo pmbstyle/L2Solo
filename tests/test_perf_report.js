@@ -47,7 +47,7 @@ jsonl('timeline-20261103.jsonl', [
         longTurns: 1, starved: true, samples: 110 },
     // A worker chunk with 6 s of stretches the profiler left without samples: in neither busy nor idle.
     { type: 'cpu', t: iso(start + 1000), thread: 'worker', instance: 0, ms: 60000, busyMs: 27000, gcMs: 0, longestMs: 300,
-        longTurns: 3, unsampledMs: 6000 },
+        longTurns: 3, unsampledMs: 6000, sampleGaps: 40 },
     { type: 'cpu', t: iso(start + 61000), thread: 'worker', instance: 0, ms: 0, busyMs: 59844, gcMs: 0, longestMs: 59844,
         longTurns: 1, profile: 'cpu/w.cpuprofile', endTime: 30e6 },
     // The hot scenario's player: 20 probes, one waited 200 ms for the loop.
@@ -122,6 +122,8 @@ try {
     const worker = s.threads.worker;
     assert.equal(worker.starvedChunks, 1, 'the wrapped minute is read again from its profile: starved, left out and counted');
     assert.deepEqual([worker.longestMs, worker.longTurnCode], [300, []], 'its fake 60 s turn is not reported');
+    assert.equal(main.sampleGaps, null, 'chunks recorded before gaps were counted: unknown, not 0');
+    assert.equal(worker.sampleGaps, 40, 'the sample gaps over 50 ms are counted, so partial starvation shows');
     assert.deepEqual([worker.minutes, worker.busyPct, worker.unsampledSec], [0.9, 50, 6],
         'busy share of the sampled 54 s; the stretches without samples counted');
     assert.deepEqual(main.cpuSelf[0], { fn: 'heavy src/GameServer/World/World.js:10', ms: 60, pct: 100 },

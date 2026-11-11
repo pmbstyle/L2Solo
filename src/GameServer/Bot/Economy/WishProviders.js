@@ -29,13 +29,13 @@ function need(path) {
 // purchase. Keep every item (including SA and set parts) in this immutable view.
 // Only a review's finalists are bounded; prices, holdings and funding are live.
 const GEAR_FINALISTS_PER_SLOT = 8;
-// A wish review keeps at most WISH_ROOTS roots (plan E92: 12 roots/40 nodes/
+// A wish review keeps at most WISH_ROOTS roots (12 roots/40 nodes/
 // depth 4). Producer candidates priced in detail share that bound: at most
 // three producer roots are nominated, and pricing more candidates than a
 // review can hold as roots adds cost without a reachable choice.
 const WISH_ROOTS = 12;
 const PRODUCER_PRICED = WISH_ROOTS;
-// MVP-6 (PLAN "Admission and placement"): four gear roots, four admission
+// four gear roots, four admission
 // rounds (the initial evaluation plus three affected re-evaluations).
 const GEAR_ROOTS = 4;
 const GEAR_ROUNDS = 4;
@@ -107,7 +107,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         // purchases in the comparison, even when the wallet covers a higher one.
         // Rank nominates alternatives, never a required next purchase.
         for (const row of [retained, ...efficientByRank.values(), affordable, above, exchangeEfficient, exchangeStrong]) if (row) selected.set(Number(row.item.selfId), row.item);
-        // E303: the finalists cap of 8, per slot per review.
+        // the finalists cap of 8, per slot per review.
         if (Diagnostics.active()) {
             Diagnostics.count('cap', 'gear_finalists', 'check');
             if (selected.size > GEAR_FINALISTS_PER_SLOT) {
@@ -287,7 +287,7 @@ function buildProjection(state, ctx, deps) {
     const magic = need('./BotImprovementPolicy').isCaster(state);
     const Recipes = invoke('GameServer/Items/C4RecipeItems'), Profit = need('./CraftProfitPolicy');
     // `nodes` is the current target: the real projection, or one gear
-    // candidate's scratch arena while it is evaluated (MVP-6).
+    // candidate's scratch arena while it is evaluated.
     // `nodeKeys` holds the keys of `nodes` (the same target), so a membership
     // test is one lookup instead of a scan; `add` is the only writer of both.
     let nodes = [], nodeKeys = new Set(), scratch = false;
@@ -723,7 +723,7 @@ function buildProjection(state, ctx, deps) {
         && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || ''))) {
         // Per-bot constants of the candidate loop: the bot's own plain sell lines
         // are read once and grouped by item, not once per candidate recipe.
-        // Plan bound (E92 "Performance, fixed bounds"): preliminary admission
+        // Bound: preliminary admission
         // reads only the RecipeProductionIndex rows and O(1) facts per recipe;
         // the detailed exit pricing runs for PRODUCER_PRICED finalists only.
         const Price = need('./PriceDecision');
@@ -782,7 +782,7 @@ function buildProjection(state, ctx, deps) {
             admitted.push({ recipe, count, id, ownSales, oldUnits, material, shot, earningPreference, known: knownRecipes.has(Number(recipe.recipeId)),
                 ceiling: positive(count * lots * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
         }
-        // E303: the priced producers cap of 12.
+        // the priced producers cap of 12.
         if (Diagnostics.active()) {
             Diagnostics.count('cap', 'producers', 'check');
             if (admitted.length > PRODUCER_PRICED) {
@@ -938,7 +938,7 @@ function buildProjection(state, ctx, deps) {
         return Sources.hasNonRaidSource(id) || present(id) || !!observedPurchase(id);
     };
     // The gear candidates the held build weighed are served while what they
-    // read is the same (KeptGearCandidates, decision links S4). The wallet
+    // read is the same (KeptGearCandidates). The wallet
     // enters only through its comparisons: each is noted with its answer.
     // A candidate as the network reads it: its value and gain, and what follows
     // from its item and slot (the preparation's C piece starts later).
@@ -1075,7 +1075,7 @@ function buildProjection(state, ctx, deps) {
             }
         }
     }
-    // MVP-6: every nominated candidate is valued by the same path solver
+    // every nominated candidate is valued by the same path solver
     // the network uses, over its own scratch arena of item descriptors. A
     // forecast without a supplier no longer screens out a step now: the
     // fundable path wins its family, then benefit per effort.
@@ -1114,7 +1114,7 @@ function buildProjection(state, ctx, deps) {
     // A path whose benefit cannot start inside the horizon is not a missing
     // path: it waits, counted, for money or a cheaper source. Its own elapsed
     // time (a drop's expected kills, a craft, a trip) at or past the horizon
-    // waits too, though resale and status keep its ready value above zero (E212).
+    // waits too, though resale and status keep its ready value above zero.
     const statusOf = (wish, node) => !wish.plan ? 'no_path'
         : wish.valueHours > 0 && positive(wish.plan.hours) < node.horizonHours ? 'evaluated'
             : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
@@ -1201,7 +1201,7 @@ function buildProjection(state, ctx, deps) {
             admission.rounds++;
             for (const row of affected) { evaluate(row, used); yield row; }
         }
-        // E303: families with an evaluated winner left out because the gear roots cap of 4 was reached.
+        // families with an evaluated winner left out because the gear roots cap of 4 was reached.
         if (Diagnostics.active() && admitted.length >= GEAR_ROOTS) {
             const left = winners(family => !closed.has(family)).length;
             if (left) {
@@ -1209,7 +1209,7 @@ function buildProjection(state, ctx, deps) {
                 Diagnostics.count('cap', 'gear_roots', 'dropped', left);
             }
         }
-        // Shared held stock (MVP-6): the network allocates it in the author's
+        // Shared held stock: the network allocates it in the author's
         // money priority (stockless full value per price, an unquoted root at
         // its market price), not by score. Admitted roots whose arenas share
         // a held item someone claimed are allocated again in that order, one
@@ -1264,7 +1264,7 @@ function buildProjection(state, ctx, deps) {
     }
     // ARCH-NOTE: the provider runs inside the synchronous EconomyContext
     // forState; yielding each evaluation through prepareNative would need
-    // forState and its callers as generators (the MVP-6 continuation gate,
+    // forState and its callers as generators (the continuation gate,
     // not met). The generator keeps the per-evaluation step and is drained
     // here synchronously.
     const admitting = admitGear();
@@ -1279,12 +1279,12 @@ function buildProjection(state, ctx, deps) {
             price: price(rare.item.selfId), valueHours: rare.value * statusWeight,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
-    // The hunting paths name the hunt's own spot only when the build picked it (a party's
-    // table row, a solo bot with no earning answer); a solo bot's earning answer is not
-    // copied into its leaf: the route reads the answer when the bot goes (BotRoute.huntSpot),
-    // so an answer moved by a decision taken alone (an outleveled or disappointing spot)
-    // moves the bot without a build.
-    const huntSpot = spotId => ctx.hunt.answer ? {} : { spotId };
+    // The money and experience paths name the hunt's spot only for a party (its table row);
+    // a solo bot's hunt is its route's (BotRoute.huntSpot: the earning answer, none, or the
+    // search with no answer), never copied into its leaf, so an answer moved by a decision
+    // taken alone (an outleveled or disappointing spot) moves the bot without a build, and
+    // an answer naming none sends it to no table row its decision passed over.
+    const huntSpot = spotId => ctx.hunt.solo ? {} : { spotId };
     if (!progression.required && ctx.hunt.expPerHour > 0 && state.level < invoke('GameServer/Progression/ProgressionCap').effectiveLevelCap()) {
         root({ key: `level:${state.level + 1}`, need: 'power', object: { level: state.level + 1 },
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',
@@ -1572,11 +1572,11 @@ function personalCraftPlan(state, context, { allowStock = false, wishKey = null 
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network',
         ...(stock ? { purpose: 'stock', wishKey: leaf.rootKey } : {}) };
 }
-// While the sale retry holds (ItemDisposition.saleRetryHolds: no kind it did not try, no new
-// or better buyer of those since), a kind the last sale visit could not place is none: a sale
-// leaf on it would send the bot back to leave it in the bag again. Dropped after the selection,
-// as liquidationInputs' exclusions are. Cost: the retry read only for a bot whose candidates
-// hold a tried kind (one sale candidate pass and a board read of the tried kinds).
+// Only kinds open for sale (ItemDisposition.openSaleKinds): a kind the last sale visit could
+// not place, with no new or better buyer of it since, is none: a sale leaf on it would send the
+// bot back to leave it in the bag again, whatever else is new in the bag. Dropped after the
+// selection, as liquidationInputs' exclusions are. Cost: a board read of the tried kinds among
+// the candidates, for a bot past a sale visit.
 function liquidationCandidates(state, ctx) {
     const saleState = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').saleState(state);
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -1586,9 +1586,9 @@ function liquidationCandidates(state, ctx) {
             ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: ctx.stock('potions').target }),
             ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) }
     }).filter(row => row.npcComparable && !Disposition.isGradeCrystal(row));
-    const tried = state.stats?.marketSellSeen?.items;
-    if (!Array.isArray(tried) || !rows.some(row => tried.includes(Number(row.selfId))) || !Disposition.saleRetryHolds(state)) return rows;
-    return rows.filter(row => !tried.includes(Number(row.selfId)));
+    if (!Array.isArray(state.stats?.marketSellSeen?.items)) return rows;
+    const open = Disposition.openSaleKinds(state, rows.map(row => row.selfId));
+    return rows.filter(row => open.has(Number(row.selfId)));
 }
 // The native selector's sale rows at the held stock targets, including rejected
 // and cap-displaced items (selected before the exclusions are filtered out: an

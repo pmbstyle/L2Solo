@@ -2004,7 +2004,7 @@ class ColdSimulationCoordinator {
                         ok: result?.ok !== false,
                         reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
-                            Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) }
+                            Number(result.retryAfterMs) || 5000) }
                             // An applied command that waits on its bot's trade preparation: the
                             // worker holds the bot until the preparation's end (preparationEnded).
                             : result?.waiting ? { waiting: true } : {}),
@@ -2290,7 +2290,7 @@ class ColdSimulationCoordinator {
         let maxInFlight = player ? playerLimit : idleLimit;
         // The worker limit follows sustained lag only. The raw max above (the latest 1 s reading, or the same reading
         // held 5 s in schedulerState) dropped the limit 32 -> 2 on one GC or burst task: 14% of summaries at 2 on
-        // 2026-10-14 (L118). Early-flush admission and the governor still read the raw lagMs returned below.
+        // 2026-10-14. Early-flush admission and the governor still read the raw lagMs returned below.
         const limitLagMs = Number(Metrics.sustainedEventLoopLag?.() || 0);
 
         if (abortMs > 0 && limitLagMs >= abortMs) {

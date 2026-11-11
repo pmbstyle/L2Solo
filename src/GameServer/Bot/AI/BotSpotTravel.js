@@ -6,6 +6,8 @@ const TownGatekeeperCatalog = invoke('GameServer/Bot/AI/TownGatekeeperCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
+const Trace = invoke('GameServer/Bot/DecisionTrace');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
@@ -133,7 +135,7 @@ function start(session, bot, spot, targetLoc = null) {
             // A settlement with no catalogued gatekeeper must not trap its
             // residents forever either. Each cooldown is a fresh recovery cycle.
             const escape = !bot.isDead?.() && !BotTownTravel.hasCombatThreat(session, bot)
-                && TownTransitPolicy.escapeAfterFailure(session, bot, `${townName}:missing_gatekeeper:${spot.id}`, Symbol('missing-gatekeeper'));
+                && TownTransitPolicy.escapeAfterFailure(session, bot, `${townName}:missing_gatekeeper`, Symbol('missing-gatekeeper'));
             TownTransitPolicy.defer(session, bot, 'town_gatekeeper_unavailable');
             if (escape) return startEmergencyScroll(session, bot, spot, destination);
         }
@@ -221,14 +223,18 @@ function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null
     return true;
 }
 
+// One recovery per way out of a town (its gatekeeper): a bot that cannot reach it is stuck
+// in the town whichever spot it is bound for, so a new spot keeps the failures counted.
 function recoveryKey(relocation) {
-    return `${relocation.gatekeeper.town}:${relocation.gatekeeper.npcSelfId}:${relocation.spotId}`;
+    return `${relocation.gatekeeper.town}:${relocation.gatekeeper.npcSelfId}`;
 }
 
 function startEmergencyScroll(session, bot, spot, destination, preserveSpot = false) {
     session.townEmergencyEscapeAt = Date.now();
     delete session.townTravelRecovery;
-    return startScroll(session, bot, spot, destination, 'town_stuck_after_recovery', null, preserveSpot);
+    const started = startScroll(session, bot, spot, destination, 'town_stuck_after_recovery', null, preserveSpot);
+    if (started) Metrics.recordTownStuckEscape();
+    return started;
 }
 
 function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
@@ -251,13 +257,12 @@ function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
         session, bot, recoveryKey(relocation), relocation.token);
     cancel(session, bot, reason);
     TownTransitPolicy.defer(session, bot, reason);
-    // A confirmed path failure with no escape while it is safe (alive, no threat): the
-    // spot is unreachable for it, the earning spot's situation (spot_unreachable; its
-    // mark keeps the body off it until the answer). An unconfirmed one (a queued path),
-    // a death or a threat is an execution retry: only deferred.
-    // lazy: only a failed trip raises; travel itself needs none of the economy DecisionEvents loads.
-    if (!escape && confirmed && safe) invoke('GameServer/Bot/AI/DecisionEvents').raiseDecision(session, 'spot_unreachable',
-        { payload: { spotId: String(relocation.spotId), reason } });
+    Metrics.recordTownDepartureRouteFailure();
+    // The way to the gatekeeper is the town's, not the spot's: a failure marks no spot
+    // (another spot leaves by the same gatekeeper). It is retried after the cooldown, and
+    // a confirmed failure repeated while the body stays put ends in the Scroll of Escape.
+    if (Trace.on()) Trace.record({ kind: 'note', bot: Number(bot.fetchId?.()), name: 'town_departure_failed', reason,
+        town: String(relocation.gatekeeper.town), spot: String(relocation.spotId), outcome: escape ? 'escape' : 'retry' });
     if (!escape) return false;
     const spot = SpotService.findById(relocation.spotId) || { id: relocation.spotId, center: relocation.destination };
     return startEmergencyScroll(session, bot, spot, relocation.destination, relocation.preserveSpot);

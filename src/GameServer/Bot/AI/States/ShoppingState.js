@@ -29,6 +29,7 @@ const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
 const World = invoke('GameServer/World/World');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const InventoryCleanup = require('../CompanionInventoryCleanup');
+const FailureLog = invoke('FailureLog');
 
 const MAX_RESTOCK_ATTEMPTS = 3;
 
@@ -224,16 +225,20 @@ function deferEquipmentRetry(session, reason) {
 // where it acts (the build decides anew), as a cold buyer's: no seller at the step's price (the
 // line taken or changed, the price changed, the NPC gone: GearMarks.SELLER_REFUSALS) is the
 // contest at that seller lost, the purchase stays in the bot's wants at other sellers and only
-// that quote is marked (GearMarks: the item at this seller's town and price); a purse short of
-// it is the money's, a failed write or a cancelled meeting no seller's: they mark nothing.
+// that quote is marked (GearMarks: the item at this seller's town and price), as it is for a
+// purse short of it (GearMarks.quoteRefused); a failed write or a cancelled meeting is no
+// seller's and no purse's: it marks nothing.
+// The refusal is the cold buyer's classification (GearMarks.buyRefusal), returned: 'failed'
+// is no refusal, a store or board buy counts it as the cold one does.
 function equipmentPurchaseFailed(session, bot, errand, error) {
-    const Marks = require('../GearMarks');
-    if (Marks.fundingRefused(error?.message)) invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
-    const quote = Marks.sellerRefused(error?.message) && Marks.quoteOf({ town: errand.target?.town, price: errand.price });
+    const Marks = require('../GearMarks'), refusal = Marks.buyRefusal(error, invoke('Database').refused(error));
+    if (refusal === 'funding') invoke('GameServer/Bot/Economy/MarketTelemetry').fundingShort();
+    const quote = Marks.quoteRefused(error?.message) && Marks.quoteOf({ town: errand.target?.town, price: errand.price });
     raiseDecision(session, 'goal_failed', quote ? { impossible: true, payload: { kind: 'gear_errand', key: Number(errand.itemId),
         ...quote, reason: error?.message || 'purchase_failed' } } : { impossible: true });
     session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
     utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
+    return refusal;
 }
 
 function usesWarehouseStop(session) {
@@ -993,7 +998,7 @@ module.exports = {
                     { values: { item: boughtSummary.name, seller: sellerName } });
                 purchaseSucceeded = true;
             } catch (err) {
-                equipmentPurchaseFailed(session, bot, companionErrand, err);
+                if (equipmentPurchaseFailed(session, bot, companionErrand, err) === 'failed') FailureLog.note('economy.hot_board_buy', err);
                 TownChatter.say(session, BotAI, 'market-offer-gone', Speech.lines('town.market-offer-gone'));
             }
             if (purchaseSucceeded) await invoke('GameServer/Bot/BotSkillTraining').review(session);

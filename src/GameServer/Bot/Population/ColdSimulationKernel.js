@@ -33,7 +33,7 @@ const MAX_WINDOW_ROUNDS = 32;
 // event could carry: this is the simulation's look-ahead, not a window for a
 // missing event.
 const WINDOW_LEAD_MS = 300000;
-// Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
+// Ready resolver promises chained back to back ran a tick's whole batch as one task (a profile of
 // 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
 // queued step and command starts on its own turn: same work, no long task.
 const nextTurn = require('../../EventLoopTurn');
@@ -415,7 +415,7 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
     if (BotErrands.busyWith(state, BotErrands.COLD_CLAIM)) return 'command';
-    // A sealed item goes to Mammon on a taken build (F6: a side errand runs only when the
+    // A sealed item goes to Mammon on a taken build (a side errand runs only when the
     // build was taken, PopulationService.resolveColdServiceBranch): a woken build's step
     // is main's; a failed visit waits for the build's next waking situation.
     if (stats.mammonReturn || (Situations ||= require('../Situations')).woken(stats, 'build')
@@ -555,7 +555,7 @@ function proposalResult(result = {}) {
 // Stable membership of the same authoritative states, not another state
 // snapshot or due queue. Producer writes keep traversal O(1) under churn.
 class RetainedStateMap extends Map {
-    // ARCH-NOTE: ALT: Authorized M6 sharing keeps only frozen exact primitive
+    // ARCH-NOTE: ALT: Authorized sharing keeps only frozen exact primitive
     // skill DTOs after native canonical publication. Per-owner mutable arrays
     // and protocol fields remain unchanged; 4096 records bound the Worker pool.
     // Delete/fence/clear synchronously retire captured acquired-slot ledgers.
@@ -686,7 +686,7 @@ class ColdSimulationKernel {
         this.equipmentBridgeReason = typeof options.equipmentBridgeReason === 'function'
             ? options.equipmentBridgeReason : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
-        // A hunting solo step's window (T120, ColdSoloWindow), the worker's:
+        // A hunting solo step's window (ColdSoloWindow), the worker's:
         // { projectRound(state, result, timestamp, plan, writtenAt),
         // readers(plan) }. A kernel built without
         // them (a test of another rule) has no window: a step is its one round.
@@ -721,7 +721,7 @@ class ColdSimulationKernel {
             this.partyMinSize,
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
-        // ARCH-NOTE: M6: the matched 20m native snapshot attributes 78.590
+        // ARCH-NOTE: the matched 20m native snapshot attributes 78.590
         // KiB/bot to canonical states (d05b2f66: 78.308; task estimate: 66).
         // These are the original shared state objects. Shrinking their shape
         // or the coldCombat packet requires a shared-state task, not another
@@ -1022,7 +1022,8 @@ class ColdSimulationKernel {
 
     // entry.ownOutput: the state is this thread's own output echoed back by
     // main, 'commit' (onCommitAck: the proposal) or 'review' (completeCommand:
-    // the review that ran the plan sent), handed to states.set for its observers.
+    // the review that ran the plan sent), handed to states.set for its observers
+    // (beside 'situation': situationWake's raise on a near body).
     upsert(entry = {}) {
         let state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
@@ -1240,6 +1241,24 @@ class ColdSimulationKernel {
             this.raiseWakeups.add(id);
             if (!this.busy(id)) this.requeue(id, this.now());
         }
+        return true;
+    }
+    // A situation another owner raises on a bot, far or near (the worker's board diff:
+    // offer_posted on a buyer, line_undercut and goal_done:line on an own line's owner): a far
+    // bot hears it at its next step (stepWake: refused while this kernel stops or the bot's
+    // checkpoint failed); a near body's mind, this thread's, takes it now at the body's place
+    // (Situations.raise: the decisions it wakes, the quote marks it forgets), its record
+    // replaced with the raised mind and handed to the states' observers as 'situation', not a
+    // body's post (the worker asks the body's near decision, which answers it on the post it
+    // holds). True when taken; false for no record, a far refusal, or a raise that is no news
+    // (what it wakes already woken, no mark to forget).
+    situationWake(characterId, name, payload = null) {
+        const id = Number(characterId), record = this.states.get(id), state = record?.state;
+        if (state?.phase !== 'hot') return this.stepWake(id, name, payload);
+        Situations ||= require('../Situations');
+        const stats = Situations.raise({ ...state.stats }, name, payload, Situations.bodyPlace(state), id);
+        if (stats.situationSeq === state.stats?.situationSeq) return false;
+        this.states.set(id, { ...record, state: { ...state, stats } }, 'situation');
         return true;
     }
     // The step wake a committed step raised is answered (its seq): the names heard
@@ -1645,7 +1664,7 @@ class ColdSimulationKernel {
             && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint);
     }
 
-    // The bots on a spot for a fight's kill share (E69), from this kernel's
+    // The bots on a spot for a fight's kill share, from this kernel's
     // occupancy index (SpotOccupancyIndex.huntersOn); with a state, that bot
     // counted once. No spot value reads it: a crowd is met at arrival.
     spotHunters(spot, state = null) {
@@ -1695,11 +1714,6 @@ class ColdSimulationKernel {
                     state: current.state,
                     precomputedPlan: postedPlan(lifecyclePlan),
                     precomputedResult: result,
-                    // The trip the plan started, else the ground this step
-                    // fought on (commandSpot on main reads the spot id).
-                    route: lifecyclePlan?.route?.needed
-                        ? { needed: true, spotId: lifecyclePlan.route.spotId }
-                        : { needed: false, spotId: spot?.id ?? null },
                     computedAt: timestamp,
                     ...(hallVisit ? { hallVisit: true } : {})
                 }]
@@ -2416,7 +2430,7 @@ class ColdSimulationKernel {
             // write stamp (updatedAt) stays the real start. Whole: a due read from
             // the stats can hold a fraction, and every clock of the step comes from here.
             // Never before the bot's own clock: a step woken inside a hunt window
-            // (T120) goes on from its end, it lives that time once.
+            // goes on from its end, it lives that time once.
             const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0, ownClock(active.state)));
             const elapsedMs = stepElapsedMs(active.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(active.state, timestamp);
@@ -2517,7 +2531,7 @@ class ColdSimulationKernel {
         }
     }
 
-    // T120: the hunt runs on from the step's first round, its rounds as its steps
+    // the hunt runs on from the step's first round, its rounds as its steps
     // would run them (their due, their seed), each projected on the last, until
     // one ends the window (ColdSoloWindow.endOf). Each round is a turn of its
     // own. Returns the last round: its base state for the step's full projection,

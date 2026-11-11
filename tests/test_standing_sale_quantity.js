@@ -60,7 +60,7 @@ async function run() {
         // Isolate valuation outcomes while using the real reservation, lot,
         // publication and NPC mutation paths below.
         Pricing.traderContext = (state, deps = {}) => ({ characterId: state.characterId,
-            timestamp: 1800000000000, board: deps.board || Afk.boardIndex(), economy: { craftReservations: {} } });
+            timestamp: 1800000000000, board: deps.board || Afk.boardIndex(), economy: {} });
         Town.targetTownForItems = () => 'Giran';
         Pricing.lineState = () => null;
         Pricing.disposition = (item, _ctx, deps) => {

@@ -19,18 +19,21 @@ const statsFor = request => ({ classId: 1, generatedCold: true, eventWait: 'clan
 // A clan member whose clan party never formed: its request closes, the worker
 // releases it to its own hunt without the clan's route, and it keeps the closed
 // request until its next build asks again.
-function assertReleased(state) {
+async function assertReleased(state) {
     assert(Requests.closed(state));
     assert.equal(Duty.waiting(state), false, 'a closed call holds no wait');
     assert.equal(Duty.released(state), true);
     assert.equal(lifecycleKind(state), 'resolver', 'the worker steps it, no command for main');
-    const { patch } = Duty.release(state, at);
-    assert.equal(patch.activity, 'hunting');
-    assert.equal(patch.stats.equipmentPlan, undefined, 'a released clan hold cannot keep the clan\'s farm route');
-    assert.equal(patch.stats.partyRequest.status, 'closed', 'its closed request stays until its next build');
-    assert.equal(patch.stats.clanPartyObjective.status, 'open', 'the clan keeps its call');
-    const released = { ...state, ...patch };
-    assert.equal(Duty.released(released), false, 'released once');
+    const result = Duty.release(state, at);
+    assert.equal(result.patch.activity, 'hunting');
+    assert.equal(result.patch.stats.partyRequest.status, 'closed', 'its closed request stays until its next build');
+    assert.equal(result.patch.stats.clanPartyObjective.status, 'open', 'the clan keeps its call');
+    // The row as main writes it: the patch's stats merge over the row's, so the clan's plan stays.
+    const released = await Life.prepareResolve(state, result,
+        { timestamp: at, persist: false, projectClassProgression: true });
+    assert.equal(released.activity, 'hunting');
+    assert(released.stats.equipmentPlan, 'the plan is the clan\'s: a release does not drop it');
+    assert.equal(Duty.released(released), false, 'released once: the next step sends no second release');
     assert.equal(Requests.partyObjectiveForState(released), null, 'it anchors no roster while closed');
     assert.equal(Requests.partyRequestForPlan({ ...released, activity: 'traveling' }, null, at), released.stats.partyRequest,
         'a bot that cannot ask keeps the closed request');
@@ -72,7 +75,10 @@ async function main() {
         await new Promise(resolve => setImmediate(resolve));
         const closed = Life.cachedState(id);
         assert.equal(closed.stats.partyRequest.attempts, 5, 'the failed forming counts one attempt');
-        assertReleased(closed);
+        if (index) {
+            assert.equal(Duty.released(closed), false, 'a hunting member with a closed request is not released');
+            assert(closed.stats.equipmentPlan, 'its clan plan stays');
+        } else await assertReleased(closed);
         assert.equal(await Life.deferUnformablePartyRequests([id]), 0, 'a closed request is not closed again');
     }
     const member = { ...Life.cachedState(ids[0]), party: { partyId: 'active-clan' } };

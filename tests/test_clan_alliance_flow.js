@@ -117,6 +117,8 @@ const mocks = {
         beginPartyTownRecovery: BotAI.beginPartyTownRecovery,
         getDeathRespawnTarget: () => ({ locX: 0, locY: 0, locZ: 0 })
     },
+    'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
+    'GameServer/Bot/Population/PopulationMetrics': { recordTownStuckEscape() {}, recordTownDepartureRouteFailure() {} },
     'GameServer/Bot/AI/CompanionNavigationRecovery': { clear() {}, move(s, a, loc) {
         movements.push({ id: a.fetchId(), ...loc }); place(a, loc); return { status: 'started' };
     } }

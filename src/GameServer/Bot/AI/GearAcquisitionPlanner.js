@@ -2601,7 +2601,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
                 : rules.expected[ordinal];
             let status = 'ineligible', reason = rule === FACT_RULE_RAID ? 'raid' : null;
             if (!reason && kind === 'spoil') {
-                // The executor's rule: a learned Spoil, not the class (E189).
+                // The executor's rule: a learned Spoil, not the class.
                 if (spoiler === undefined) spoiler = sourceSpoilerFor(state);
                 if (!spoiler) reason = 'spoil_skill';
             }
@@ -2750,7 +2750,7 @@ function sourceFactRulesFor(entries, itemId, ratesKey) {
     if (Diagnostics.active()) Diagnostics.count('source_bound', 'row', 'built');
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
         // The rule reads only the level, the raid flag and the NPC id of a
-        // record: no source target object per record (L130).
+        // record: no source target object per record.
         const entry = entries[ordinal], npcLevel = sourceRecordNpcLevel(entry);
         // Killer level 0 has no deep-blue penalty; nothing else of a reward
         // roll reads the killer level, so this is every bot's penalty-free yield.
@@ -2862,7 +2862,7 @@ function rankedKind(levels) {
 // Without a deep-blue penalty (every fact the hunt band admits) the pair is
 // keyed by numbers, not a five-part string: the same bound, a cheaper read.
 // A deep-blue drop or spoil with a whole penalty is keyed by numbers too, in
-// its own map (L129): its string key was built and hashed on every read.
+// its own map: its string key was built and hashed on every read.
 const PLAIN_YIELD_ITEMS = 2 ** 20;
 // npc, item, kind and a 7-bit penalty (0..100) stay below 2 ** 53.
 const DEEP_YIELD_NPCS = 2 ** 24;

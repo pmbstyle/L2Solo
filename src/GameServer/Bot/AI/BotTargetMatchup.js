@@ -287,7 +287,7 @@ function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, a
     // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
     const power = Math.max(0, HitRules.skillPower(semantic, number(skill.power ?? semantic.power, 0), 1, 1));
     if (!power) return null;
-    // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
+    // An area skill hits every mob of a pull (BotPullEstimate.pullView).
     const area = Rules.hitsArea(semantic) && number(target.pull, 1) > 1;
     const struck = area ? number(target.pull) : 1;
     const shot = Cold.actionShot(supply, skill);
@@ -592,7 +592,7 @@ function dealSeconds(curves, hp, limit) {
 
 function soloChannels(profile, target, attacksOf = channels) {
     const attacks = attacksOf(profile, target);
-    // T100: a bot that sits for MP and fights with its weapon (an archer,
+    // a bot that sits for MP and fights with its weapon (an archer,
     // a self-healer: RestPolicy.sitsForMana) spends MP only while its bar is
     // near full (BotCombatUtility's price): its fight is the normal attack.
     if (!Roles.usesCasterWeaponCombat(profile) && RestPolicy.sitsForMana(profile)) {
@@ -677,7 +677,7 @@ function soloSpotUpperBound(profiles) {
     // Search-local, capped at 4096 species (every C4 NPC template; ~130 KiB of
     // pairs at most, dies with the search); never retained on a bot, a shared
     // verdict fingerprint or a saved combat projection. A source route reader
-    // asks it for ~700 spots of one build (R3 cost: at 256 a third of its
+    // asks it for ~700 spots of one build (at 256 a third of its
     // asks recomputed a species).
     const seen = new Map();
     // Every answer is kept, the unhuntable (null) and unknown-stat (true) too.

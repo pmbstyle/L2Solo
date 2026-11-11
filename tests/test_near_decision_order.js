@@ -98,6 +98,24 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         assert(!Events.failureWaits(silent), 'no wait for an answer that will not come');
         assert(invoke('GameServer/Bot/AI/GearMarks').marked(Events.statsFor(silent), 7), 'its mark holds the errand');
     }
+    // Two stalls refuse one item while the body waits for its answer: each refused quote is
+    // its own raise, marked on the body (its errand planner walks to neither stall again) and
+    // carried to the worker (its build quotes neither again), as a cold buyer marks each one.
+    {
+        const Marks = invoke('GameServer/Bot/AI/GearMarks');
+        const shop = { accountId: 'bot_near_order', actor, coldLifeState: state };
+        const refused = price => ({ impossible: true,
+            payload: { kind: 'gear_errand', key: 90, town: 'Giran', price, reason: 'Store price changed.' } });
+        Events.raiseDecision(shop, 'goal_failed', refused(1000));
+        Events.raiseDecision(shop, 'goal_failed', refused(1200));
+        const mind = { woken: 0, wishSections: {}, equipmentPlan: {} };
+        Events.takePostedRaise(mind, Events.postedBag(shop), 0, Situations.bodyPlace({ activity: 'shopping' }));
+        for (const price of [1000, 1200]) {
+            const offer = { selfId: 90, town: 'Giran', price };
+            assert(Marks.refused(Events.statsFor(shop), offer), `the body skips the stall that refused it at ${price}`);
+            assert(Marks.refused(mind, offer), `the worker's build skips the stall that refused it at ${price}`);
+        }
+    }
 
     // An executor's raise from inside the bot's own command lands after that command
     // ends (its revision-checked writes first), never mid-command.

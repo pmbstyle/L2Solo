@@ -121,20 +121,20 @@ function kitReserve(buyer, context) {
 // E3's consumer equation over a genuine producer packet. A selected item's
 // own ratio allows only wallet - R - the higher-ratio cumulative cost.
 function itemBudget(buyer, itemId) {
-    const packet = buyer.stats.money;
+    const packet = buyer.stats.money, rows = Packet.fundedRows(packet);
     let ratio = 0;
-    for (let index = 4; index + 2 < packet.length; index += 3) {
-        if (packet[index + 2] === itemId) {
-            ratio = packet[index];
+    for (let row = 0; row < rows; row++) {
+        if (Packet.fundedItem(packet, row) === itemId) {
+            ratio = Packet.fundedRatio(packet, row);
             break;
         }
     }
-    if (ratio < packet[1]) return 0;
+    if (ratio < Packet.moneyPrice(packet)) return 0;
     let earlier = 0;
-    for (let index = 4; index + 2 < packet.length; index += 3) {
-        if (packet[index] > ratio) earlier = packet[index + 1];
+    for (let row = 0; row < rows; row++) {
+        if (Packet.fundedRatio(packet, row) > ratio) earlier = Packet.fundedCumulative(packet, row);
     }
-    return Math.max(0, buyer.adena - packet[2] - earlier);
+    return Math.max(0, buyer.adena - Packet.refillReserve(packet) - earlier);
 }
 
 // This is the real hot producer. The original synthetic state has no cold

@@ -194,7 +194,7 @@ function pointsFor(target) {
     }
 
     if (visibleFallback) {
-        // Seen but no reachable counter slot: bots walk to a point A* may not reach (T49 live read).
+        // Seen but no reachable counter slot: bots walk to a point A* may not reach.
         utils.infoWarn('TownNpcApproach', 'npc %d at %d,%d: no reachable counter slot, visible fallback',
             Number(target.npcSelfId), Math.round(Number(target.locX)), Math.round(Number(target.locY)));
         return cachePoints(key, Object.freeze(visibleFallback));

@@ -66,12 +66,12 @@ async function run() {
         kind: 'buy', activity: 'shopping' });
     assert.deepEqual(view(hotGoal), view(coldGoal), 'hot and cold read the same leaf, root, item and amount');
 
-    // Cold opens its buy ad for the root's material.
-    const opened = await Market.reconcileBuyAds(cold, coldGoal, [coldGoal]);
+    // Cold posts its build's bid for the root's material (the plan's row: item, amount, price).
+    await Market.executePlan(cold, { buyAds: [[itemId, coldGoal.target.amount, coldGoal.target.adena]] }, { reviewGoal: false });
     assert.equal(buyAds(1).length, 1, 'cold publishes one buy ad');
     const ad = buyAds(1)[0];
     assert.equal(ad.lines[0].selfId, itemId);
-    assert.equal(ad.lines[0].count, 26, opened.reason);
+    assert.equal(ad.lines[0].count, 26);
     const escrow = ad.escrowAdena;
     const walletAfterAd = Native.amount(await Database.fetchItems(1), 57);
     assert.equal(walletAfterAd, 100000 - escrow);

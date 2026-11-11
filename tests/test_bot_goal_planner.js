@@ -39,7 +39,8 @@ function checkLeaf(goals, leaf, label) {
         assert.equal(goal.plan.estimatedCost, leaf.price);
     } else if (leaf.activity === 'hunting') {
         assert.equal(goal.type, leaf.funding ? 'earn_adena' : 'progress_level');
-        assert.equal(goal.plan.spotId, leaf.spotId);
+        // A solo bot's leaf names no spot (its route's choice); the card's copy carries none as null.
+        assert.equal(goal.plan.spotId ?? null, leaf.spotId ?? null);
         assert.equal(goal.plan.npcId, leaf.npcId);
     } else if (leaf.activity === 'selling') {
         assert.equal(goal.type, 'sell_inventory');

@@ -11,6 +11,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const DataCache = invoke('GameServer/DataCache');
 const Response = invoke('GameServer/Network/Response');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 // A trip to town reads a Scroll of Escape from the backpack (N2, user
 // 2026-10-04); every test bot carries a few unless a case says otherwise.
@@ -299,6 +300,8 @@ try {
     fallbackSession.dataSendToMeAndOthers = () => {};
     CompanionNavigationRecovery.move = () => ({ status: 'exhausted', failures: 3 });
     const fallbackTimerBase = timers.length;
+    const routeFailures = Metrics.counters.townDepartureRouteFailures;
+    const stuckEscapes = Metrics.counters.townStuckEscapes;
     assert.strictEqual(
         BotSpotTravel.startViaTownGatekeeper(fallbackSession, fallbackBot, remoteSpot),
         true,
@@ -306,18 +309,27 @@ try {
     );
     assert.strictEqual(fallbackSession.spotRelocation, undefined);
     assert.strictEqual(fallbackSession.lastSpotRelocation?.reason, 'gatekeeper_route_unreachable');
+    assert.strictEqual(fallbackSession.decisionStats?.spotMarks?.length || 0, 0,
+        'a town route to the gatekeeper that fails marks no spot unreachable: the spot is not at fault');
     assert(fallbackSession.townTravelRetryAt > Date.now(), 'unreachable routes need a finite cooldown');
     assert.strictEqual(fallbackBot.state.fetchCasts(), false, 'one failed recovery cycle must not grant a teleport');
     assert.strictEqual(timers.length, fallbackTimerBase, 'navigation failure must not schedule SoE');
     assert.strictEqual(BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot), false,
         'the next hunting tick must respect the cooldown instead of bypassing it with SoE');
+    // Each cycle bound for another spot (a bot re-choosing where to hunt): still one bot
+    // stuck before one gatekeeper, so the third exhausted cycle escapes.
     let recoveryNow = fallbackSession.townTravelRetryAt + 1;
     Date.now = () => recoveryNow;
-    BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot);
+    BotSpotTravel.start(fallbackSession, fallbackBot, { ...remoteSpot, id: 'second_field' });
     assert.strictEqual(fallbackBot.state.fetchCasts(), false, 'the second exhausted cycle must still wait');
+    assert.strictEqual(Metrics.counters.townDepartureRouteFailures, routeFailures + 2, 'each failed walk to the gatekeeper is counted');
+    assert.strictEqual(Metrics.counters.townStuckEscapes, stuckEscapes, 'no escape yet');
     recoveryNow = fallbackSession.townTravelRetryAt + 1;
-    BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot);
+    BotSpotTravel.start(fallbackSession, fallbackBot, { ...remoteSpot, id: 'third_field' });
     assert.strictEqual(fallbackBot.state.fetchCasts(), true, 'confirmed prolonged stuckness must retain the emergency SoE');
+    assert.strictEqual(Metrics.counters.townDepartureRouteFailures, routeFailures + 3);
+    assert.strictEqual(Metrics.counters.townStuckEscapes, stuckEscapes + 1, 'the escape it fires is counted');
+    assert.strictEqual(fallbackSession.decisionStats?.spotMarks?.length || 0, 0, 'no spot was marked on the way');
     assert.strictEqual(fallbackSession.spotRelocation?.recoveryReason, 'town_stuck_after_recovery');
     assert.strictEqual(fallbackSession.spotRelocation?.arrivalPending, undefined, 'emergency recovery must not teleport instantly');
     const emergencyTimer = timers.at(-1);

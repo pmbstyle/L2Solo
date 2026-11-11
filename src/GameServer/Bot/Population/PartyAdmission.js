@@ -62,7 +62,7 @@ function priority(objectives, timestamp) {
         return urgency + Math.min(6, age / 120000);
     }));
 }
-// E169: admission only. Existing group reviews and accepted trade receipts
+// admission only. Existing group reviews and accepted trade receipts
 // keep their native owner; no departure/return policy is introduced here.
 function partyTradeAllowed(direction, state = {}, session = null, preparing = false, accepted = false) {
     if (direction === 'party') return !preparing && !accepted && !state?.stats?.tradeMeeting;

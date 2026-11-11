@@ -9,6 +9,7 @@ require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
@@ -114,14 +115,14 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
             return new Promise((resolve, reject) => { refuse = () => reject(Error('trade_meeting_need_changed')); });
         };
 
-        const first = await Population.resolveColdState(Life.cachedState(sellerId));
+        const first = await Population.resolveColdState(Life.cachedState(sellerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(sellerId) }) });
         assert(first.ok, 'the first visit pass runs');
         await settle();
         assert.equal(meetings.size, 1, 'the first pass answered the buy ad through a trade meeting');
         assert.equal(Meetings.hasPreparation(sellerId), true, 'the deal is still being prepared');
         assert.equal(Life.cachedState(sellerId).activity, 'shopping', 'a deal in preparation keeps the visit');
         const retryWhilePreparing = Life.cachedState(sellerId).stats.marketSellSeen;
-        await Population.resolveColdState(Life.cachedState(sellerId));
+        await Population.resolveColdState(Life.cachedState(sellerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(sellerId) }) });
         await settle();
         assert.equal(Life.cachedState(sellerId).activity, 'shopping', 'a pass during the preparation does not end the visit');
 
@@ -136,7 +137,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         const held = Life.cachedState(sellerId);
         await Life.upsertState({ ...held, stats: { ...held.stats, money: [100, 0, 1000, 0] } }, 'e311_fixture');
         for (let pass = 0; pass < 2 && Life.cachedState(sellerId).activity === 'shopping'; pass++) {
-            await Population.resolveColdState(Life.cachedState(sellerId));
+            await Population.resolveColdState(Life.cachedState(sellerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(sellerId) }) });
             await settle();
         }
         const after = Life.cachedState(sellerId);
@@ -166,7 +167,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         const Errands = invoke('GameServer/Bot/Economy/ColdMarketService'), finishErrands = Errands.finishTownErrands;
         Errands.finishTownErrands = async (state) => state;
         for (let pass = 0; pass < 3; pass++) {
-            await Population.resolveColdState(Life.cachedState(errandSellerId));
+            await Population.resolveColdState(Life.cachedState(errandSellerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(errandSellerId) }) });
             await settle();
         }
         Errands.finishTownErrands = finishErrands;

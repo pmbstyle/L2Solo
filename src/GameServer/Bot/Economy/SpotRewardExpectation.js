@@ -31,7 +31,7 @@ let rewardGroups = new WeakMap();
 const npcValues = new Map();
 
 // rates: the profile a caller read a moment earlier in the same synchronous
-// call (SpotValueTable), so one rate read serves both revision checks (L75).
+// call (SpotValueTable), so one rate read serves both revision checks.
 function refresh(rates = Rates.profile()) {
     const current = [rates, Data.npcs, Data.npcs?.length, Data.npcRewards,
         Data.npcRewards?.length, Data.items, Data.items?.length, Data.skills, Data.skills?.length];

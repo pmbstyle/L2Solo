@@ -17,13 +17,15 @@ const MAX_DEPTH = 6;
 // (EconomicValuation.OUTCOME_LIMIT); a larger composition is unresolved.
 const MAX_BRANCHES = 8;
 const nonnegative = value => Math.max(0, Number(value) || 0);
+// Paths that make the root's item out of other goods rather than buy it.
+const TRANSFORMATIONS = new Set(['luxury_exchange', 'craft']);
 // Native commands for `batches`: a path without perCommand runs one batch each.
 const commands = (batches, perCommand) => Math.ceil(batches / (Number(perCommand) >= 1 ? Number(perCommand) : 1));
 // A trip is one row per town: a quoted seller or workshop, or a farm spot
 // away from the bot (its hours and fees are paid once, not per unit).
 const travels = path => !!path.town && (path.quoted || path.activity === 'hunting');
 
-// The one quantity reader (MVP-3). Accepted incoming is a native obligation:
+// The one quantity reader. Accepted incoming is a native obligation:
 // it removes the amount to order, not the amount still to deliver.
 function remainingQuantity({ required = 0, freePhysical = 0, acceptedIncoming = 0 } = {}) {
     const free = nonnegative(required) - nonnegative(freePhysical);
@@ -58,7 +60,7 @@ function mergedBranches(kinds, batches) {
     for (let at = 1; at <= batches && total <= MAX_BRANCHES; at++) total = total * (kinds - 1 + at) / at;
     return Math.round(total);
 }
-// MVP-1: money is held only behind a path with a step now (or awaiting a
+// money is held only behind a path with a step now (or awaiting a
 // native accepted incoming); an unresolved outcome holds none either.
 const fundable = wish => wish.supported !== false && wish.resolved !== false;
 // Cash the money queue holds for a wish: a stock root's survival tranche
@@ -111,32 +113,42 @@ function choose(rows, weight, roll) {
     return rows[rows.length - 1];
 }
 
+// A required piece (progression priority) is worth at least its price at the money
+// price, so its own small benefit never holds it back; no more than its item's worth
+// (wish.worth, set where a transformation brings the item): an exchange or a craft
+// dearer than the item it yields is below the floor like any other wish. Our choice:
+// a C4 player buys the piece he needs, not a recipe that costs a multiple of it.
+const flooredValue = (wish, floor) => wish.progressionPriority > 0
+    ? Math.max(wish.valueHours, Math.min(wish.price, wish.worth ?? Infinity) * floor) : wish.valueHours;
+// Read on the floored value itself, not on the ratio: a required piece at its own
+// price passes exactly.
+const paysFloor = (wish, floor, value = flooredValue(wish, floor)) => value / wish.price >= floor
+    || wish.progressionPriority > 0 && value >= wish.price * floor;
 function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
     let available = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
         .map(wish => {
-            const valueHours = wish.progressionPriority > 0 ? Math.max(wish.valueHours, wish.price * floor) : wish.valueHours;
+            const valueHours = flooredValue(wish, floor);
             return { ...wish, valueHours, ratio: valueHours / wish.price };
         })
         .sort((a, b) => nonnegative(b.progressionPriority) - nonnegative(a.progressionPriority)
             || b.ratio - a.ratio || a.key.localeCompare(b.key));
+    const pays = wish => paysFloor(wish, floor, wish.valueHours);
     let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null, awaitingKit = null;
     for (const wish of queue) {
-        // An unsupported wish keeps its place and interest, never the money.
-        if (!fundable(wish)) {
+        // An unsupported wish keeps its place and interest, never the money; one below
+        // the floor neither, nor does the money wait for it.
+        if (!fundable(wish) || !pays(wish)) {
             wish.funded = false;
-            // Kit before stock: stock nobody can supply is not what the money waits for (T178).
-            if (wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
+            // Kit before stock: stock nobody can supply is not what the money waits for.
+            if (pays(wish) && wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
             continue;
         }
         // The first gap holds the marginal price of money. Smaller desires
         // do not spend the money earmarked toward that first missing goal.
-        wish.funded = !cutoffFound && (wish.progressionPriority > 0 || wish.ratio >= floor) && cashCharge(wish) <= available;
+        wish.funded = !cutoffFound && cashCharge(wish) <= available;
         if (wish.funded) available -= cashCharge(wish);
-        else if (!cutoffFound) {
-            if (wish.progressionPriority > 0 || wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
-            cutoffFound = true;
-        }
+        else if (!cutoffFound) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; cutoffFound = true; }
     }
     return { queue, moneyPrice, available, gap: gap || awaitingKit };
 }
@@ -144,8 +156,8 @@ function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
 // Providers supply game effects and available paths, never policy priorities.
 // One bounded DAG serves individual characters and group actors alike. The
 // caller owns its event input key and the small saved focus/dormant packet.
-// Per-actor results are a cache, not state: memory per bot is budgeted
-// (design 16.26). They serve the several readers of one decision (a commit,
+// Per-actor results are a cache, not state: memory per bot is budgeted.
+// They serve the several readers of one decision (a commit,
 // a resolve, a hot tick); a bot's next decision rebuilds the cheap layer
 // anyway (new adena, exp), while the expensive one is kept per kit
 // (ColdCombatProfile.profileFor). So few are held, least recently used out.
@@ -194,7 +206,7 @@ function sameResult(before, after) {
         && equalValue(before.plans, after.plans);
 }
 // One solver per node set. build() and the provider's candidate admission
-// use the same path facts, quantity reader and root valuation (MVP-6); its
+// use the same path facts, quantity reader and root valuation; its
 // scratch maps die with the caller's build.
 // ARCH-NOTE: PERF what the solvers of one build share over its descriptors, at
 // one price of time; it dies with the build. `subtrees` keeps the plans of
@@ -272,7 +284,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         return plan;
     };
-    // MVP-2: an attempt is valued until success only when every consumed
+    // an attempt is valued until success only when every consumed
     // input has a supported repeatable path; held stock alone is not one.
     const repeatables = new Map();
     const repeatable = key => {
@@ -401,7 +413,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 // Own step now: a seller, NPC, recipe, workshop capacity, farm.
                 let supported = executable && Number(path.availableUnits ?? Infinity) !== 0, resolved = true;
                 let probability = 1, branches = 1, onceCash = 0, onceEffort = 0, onceHours = 0;
-                // MVP-4: elapsed hours until the output is ready, in sequence:
+                // elapsed hours until the output is ready, in sequence:
                 // own labour, inputs, trips. Waiting for accepted incoming has
                 // no native delivery time. ARCH-NOTE: counted as zero.
                 // A farm's cost is its net hour; its elapsed time is readyHours.
@@ -429,7 +441,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                     supported &&= child.supported !== false;
                     resolved &&= child.resolved !== false;
                     // A per-unit child (no stock allocation) repeats its batch.
-                    // One stockless child plan is one batch of its path (E192):
+                    // One stockless child plan is one batch of its path:
                     // its cost repeats per batch, its chance per native command.
                     const childBatches = allocation ? 1 : Math.ceil(amount / Number(child.productCount || 1));
                     const childDraws = allocation ? 1 : commands(childBatches, child.perCommand);
@@ -458,7 +470,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                     branches += mergedBranches(2, commands(units, path.perCommand)) - 1;
                 }
                 price += onceCash; effort += onceEffort; hours += onceHours;
-                // E303: counted only where the branch cap itself cuts (not when a child already left the
+                // counted only where the branch cap itself cuts (not when a child already left the
                 // path unresolved, not in the native command pass); no check counter, the denominator is
                 // provider:admission:evaluation. The depth cap is counted by provider:admission_pending:evaluation_limit
                 // for provider roots; the group path (EconomyContext) depth is not counted.
@@ -510,7 +522,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             }
             choices.push(choice);
         }
-        // MVP-1: executable, then supported (saving, preparation, incoming),
+        // executable, then supported (saving, preparation, incoming),
         // then effort. Finite production plans its cheapest future source:
         // an unsupported purchase keeps the trial's queue place and WTB row
         // without cash, never a costlier step now.
@@ -564,7 +576,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     const rootAmount = node => node?.object?.kind === 'resale'
         && node.paths?.some(path => path.kind === 'craft' && path.trial === true && path.repeatable === false)
         && Number.isSafeInteger(node.object.amount) && node.object.amount > 0 ? node.object.amount : 1;
-    // MVP-4: one horizon H per root; a benefit per hour starts when the
+    // one horizon H per root; a benefit per hour starts when the
     // path is ready (funding delay at net income, then the path's hours).
     // An unknown delay keeps the interest unresolved: no money, no gap.
     const spendable = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
@@ -582,6 +594,14 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         wish.valueHours = plan ? base * Number(plan.successProbability ?? 1) : 0;
     };
+    // The worth of a root's item when a transformation (an exchange, a craft) brings it:
+    // its node's price, the price the build quotes the item at. A bought item, or a root
+    // that names none (stock, a resale, a clan supply), has none.
+    const worthOf = (key, node, plan) => {
+        const acquisition = plan?.requirements?.length === 1 ? plan.requirements[0] : null;
+        return acquisition?.key === `item:${rootItem(key)}` && TRANSFORMATIONS.has(acquisition.plan?.kind)
+            && nonnegative(node.price) > 0 ? nonnegative(node.price) : null;
+    };
     // The author's priority value: full benefit, before its ready delay.
     const fullValue = (wish, node) => wish.plan ? nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress)))
         * Number(wish.plan.successProbability ?? 1) : 0;
@@ -592,7 +612,8 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         plans.set(key, plan);
         const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false, reserved: nonnegative(node.reserved),
             progressionPriority: nonnegative(node.progressionPriority), progressionFunding: !!node.progressionFunding,
-            price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
+            price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity,
+            worth: worthOf(key, node, plan) };
         value(wish, node, plan);
         wish.fullValueHours = fullValue(wish, node);
         if (wish.progressionPriority && plan) wish.effort = Math.max(wish.effort,
@@ -608,6 +629,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         wish.progressionPriority = nonnegative(byKey.get(wish.key).progressionPriority);
         wish.progressionFunding = !!byKey.get(wish.key).progressionFunding;
         wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
+        wish.worth = worthOf(wish.key, byKey.get(wish.key), plan);
         wish.supported = plan?.supported !== false;
         value(wish, byKey.get(wish.key), plan);
         wish.fullValueHours = fullValue(wish, byKey.get(wish.key));
@@ -631,7 +653,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     };
     return { byKey, plans, finiteProduction, tripValue, tripEffort, rootWish, allocate, takeReadyCraftProof };
 }
-// MVP-6: roots in the caller's rank order while the union of their reachable
+// roots in the caller's rank order while the union of their reachable
 // nodes stays within the bound. A root that does not fit is pending (not
 // deleted, not zero cost); the smaller roots after it still proceed.
 // label 'solo' (a bot's own review, counted in WishProviders as provider:admission_pending) or 'group' (EconomyContext).
@@ -655,7 +677,7 @@ function admitRoots(roots, byKey, { rootLimit = MAX_ROOTS, nodeLimit = MAX_NODES
         admitted.push(key);
     }
     if (Diagnostics.active()) {
-        // E303: how often the caps cut. The solo dropped counts already exist as provider:admission_pending
+        // how often the caps cut. The solo dropped counts already exist as provider:admission_pending
         // root_limit/node_limit, so solo counts only checks and cuts; the group path has no other counter.
         let rootDropped = 0, nodeDropped = 0;
         for (const row of pending) row.reason === 'root_limit' ? rootDropped++ : nodeDropped++;
@@ -688,10 +710,11 @@ class WishNetwork {
     // wallet: the money the queue orders (the bag and the bot's own bids' escrow); bag: what a
     // shop is paid from (PurchaseFunding.budget of the state), the wallet when no bid holds any;
     // ownBids: item -> the money the bot's own backed bids for that item hold (PurchaseFunding.ownBids).
+    // offered: the item of the board offer that alone woke this reconsideration (Situations.offerWoke), 0: none.
     build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, bag = wallet, ownBids = null, refillReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
         caller = 'wish_network', trigger = 'request', stockFor = null, completionKey = null, reconsider = true,
-        reconsiderReasons = null, onReadyCraftProof = null }) {
+        offered = 0, reconsiderReasons = null, onReadyCraftProof = null }) {
         const diagnostic = Diagnostics.active();
         const captureReadyCraft = typeof onReadyCraftProof === 'function';
         if (diagnostic) Diagnostics.count('network', 'request');
@@ -703,10 +726,11 @@ class WishNetwork {
         const individual = Number(characterId) > 0;
         decisionSeq = Math.max(0, Math.trunc(Number(decisionSeq) || 0));
         activityLeaf = Number(activityLeaf) >>> 0;
+        offered = reconsider ? Number(offered) || 0 : 0;
         const retain = remembered && RETAIN_ACTORS;
         const cached = retain ? this.cache.get(actorKey) : null;
         if (cached?.inputKey === inputKey && cached.decisionSeq === decisionSeq && cached.activityLeaf === activityLeaf
-            && cached.completionKey === completionKey && cached.reconsider === reconsider) {
+            && cached.completionKey === completionKey && cached.reconsider === reconsider && cached.offered === offered) {
             if (captureReadyCraft) onReadyCraftProof(null);
             if (diagnostic) Diagnostics.count('network', 'hit', 'same_inputs');
             return remember(this.cache, actorKey, cached).result;
@@ -729,7 +753,7 @@ class WishNetwork {
         if (stockFor) {
             // Existing money priority allocates free stock once. Alternatives of
             // one root evaluate the same baseline and retain the maximum claim.
-            // MVP-4: the ready delay follows the cash the allocated path needs,
+            // the ready delay follows the cash the allocated path needs,
             // so a root is judged after allocation, as admission judges it; an
             // unquoted market price before it is no reason to drop the root.
             // Paths carry gross inputs, so the stockless pass prices held
@@ -752,25 +776,47 @@ class WishNetwork {
             }
         }
         wishes = wishes.filter(kept);
-        const gearPriority = Math.max(0, ...wishes.filter(wish => wish.object?.slot).map(wish => wish.progressionPriority));
-        if (gearPriority) {
+        // The roots still wished for before any tier is read: a goal the money does not serve
+        // yet is still wanted (the build's craft hold keeps its inputs, CraftInputReservations).
+        const wished = wishes.map(wish => wish.key);
+        const floor = hourAdena > 0 ? 1 / hourAdena : 0;
+        // A required goal that pays no money floor even with the whole focus on it (an exchange
+        // or a craft dearer than its item's worth) holds no money and no funding gap
+        // (moneyQueue); while its paths are supported it has no step either (a step that spends
+        // no money, a farm, serves an unsupported root only). Such a goal stays wanted in the
+        // queue, and the tiers are read without it: the build takes the next goal the money
+        // funds, and the goal is back the build it pays the floor (a cheaper path, a dearer
+        // item). Read on its own value, never the focus: the same inputs park the same goals, so
+        // the focus does not swing between the two. A board offer that makes it pay (a seller
+        // at its worth) brings it back with the focus, even when the offer alone woke the
+        // build: the focus stands on an offer, but the goal it held stood in for this one.
+        const parked = new Set(wishes.filter(wish => wish.progressionPriority > 0 && !wish.key.startsWith('stock:')
+            && fundable(wish) && !paysFloor(wish, floor)));
+        const gearTier = rows => Math.max(0, ...rows.filter(wish => wish.object?.slot).map(wish => wish.progressionPriority));
+        // The kit tier is the gear the bot can still build, the parked pieces left out: with
+        // every piece parked the other goals read as with no gear at all. With no other goal
+        // left, survival stock is weighed with the parked gear: the bot keeps hunting with the
+        // kit it has and needs its potions and shots.
+        const gearPriority = gearTier(wishes.filter(wish => !parked.has(wish)));
+        const kitPriority = gearPriority
+            || (wishes.some(wish => !parked.has(wish) && !wish.key.startsWith('stock:')) ? 0 : gearTier(wishes));
+        if (kitPriority) {
             const budget = Math.max(0, wallet - refillReserve);
-            const readyGear = wishes.some(wish => wish.object?.slot && wish.progressionPriority === gearPriority
+            const readyGear = wishes.some(wish => wish.object?.slot && !parked.has(wish) && wish.progressionPriority === kitPriority
                 && fundable(wish) && Math.max(cashCharge(wish), nonnegative(byKey.get(wish.key).price)) <= budget);
             // A finite profitable craft can pay for the kit. Once a kit piece
             // is affordable, spend on it before starting another earning trial.
-            for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
+            for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = kitPriority;
             // A kit kind below its line is weighed with the gear it serves, by its
             // value, never above it; roadless below reads its road.
-            for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = gearPriority;
-            wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
+            for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = kitPriority;
+            wishes = wishes.filter(wish => wish.progressionPriority >= kitPriority);
         }
         // Stock nobody can supply keeps its queue place and its bid. No visit closes it,
         // so it takes the bot off nothing while something else can be done.
         // So does required stock whose road its goods do not carry (EconomicValuation.roadCarried,
         // at the bot's own hour): no trip for a few potions; they ride along on a visit
         // made for something else, or are bought where the bot stands.
-        const floor = hourAdena > 0 ? 1 / hourAdena : 0;
         const roadless = wish => {
             const plan = wish.plan, entries = plan?.tripEntries || [];
             if (!(wish.progressionPriority > 0) || !entries.length) return false;
@@ -783,26 +829,34 @@ class WishNetwork {
                 amount, wanted, valueHours: nonnegative(wish.valueHours) * amount / wanted }, road);
         };
         const unsupplied = wish => wish.key.startsWith('stock:') && (!fundable(wish) || roadless(wish));
-        const doable = wishes.filter(wish => !unsupplied(wish));
+        const doable = wishes.filter(wish => !unsupplied(wish) && !parked.has(wish));
         const activePriority = Math.max(0, ...(doable.length ? doable : wishes).map(wish => wish.progressionPriority));
-        // An errand leaves the goal alone (decision 10-26): stock takes the money and
-        // the step, the focus stays on what the bot is after.
-        const goals = doable.filter(wish => !wish.key.startsWith('stock:'));
+        // An errand leaves the goal alone: stock takes the money and
+        // the step, the focus stays on what the bot is after. With no other goal, that is
+        // the parked one.
+        const free = doable.filter(wish => !wish.key.startsWith('stock:'));
+        const goals = free.length ? free : wishes.filter(wish => parked.has(wish));
         const goalPriority = Math.max(0, ...goals.map(wish => wish.progressionPriority));
         const tiers = wishes;
-        if (activePriority) wishes = wishes.filter(wish => wish.progressionPriority === activePriority || unsupplied(wish));
+        if (activePriority) wishes = wishes.filter(wish => wish.progressionPriority === activePriority || unsupplied(wish)
+            || parked.has(wish) && wish.progressionPriority > activePriority);
         const focusWishes = goals.length ? goals.filter(wish => wish.progressionPriority === goalPriority)
             : (doable.length ? doable : wishes).filter(wish => wish.progressionPriority === activePriority);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
         // Only an event (reconsider: the caller's raised sections or due soft changes)
         // weighs a held choice against the others; an ordinary rebuild keeps it.
-        // A held choice survives a reconsideration while no row beats it by the bot's loyalty.
-        // Leaf values already carry the off-focus (1 - loyalty) weight; the margin is the same trait.
-        const loyal = (choice, rows) => !reconsider || rows.every(row => score(row) <= score(choice) * (1 + loyalty));
+        // A held choice survives a reconsideration while no rival beats it by the bot's loyalty
+        // (beating: the rivals that do). Leaf values already carry the off-focus (1 - loyalty)
+        // weight; the margin is the same trait. A board offer alone (offered) weighs the held step
+        // against the steps that buy its item only, which take the step when one beats it; the
+        // focus and the rest of the plan stand: a C4 hunter who hears a WTS shout weighs that
+        // trade, not what he is after.
+        const beating = (choice, rows, rival = () => true) => !reconsider ? []
+            : rows.filter(row => rival(row) && score(row) > score(choice) * (1 + loyalty));
         const held = focusWishes.find(wish => wish.key === previous.focus?.[0]);
         const focused = focusWishes.find(wish => wish.key === completionKey)
-            || (held && loyal(held, focusWishes) ? held
+            || (held && (offered || !beating(held, focusWishes).length) ? held
                 : choose(focusWishes, score, roll('focus')));
         const focus = focused ? [focused.key, held === focused ? previous.focus[1] : playedHours,
             nonnegative(focused.price)] : null;
@@ -960,14 +1014,20 @@ class WishNetwork {
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
         const heldLeaf = individual && activityLeaf ? candidates.find(leaf => leafId(leaf) === activityLeaf) : null;
-        const heldActivity = heldLeaf && loyal(heldLeaf, candidates) ? heldLeaf : null;
+        const leafRivals = heldLeaf ? beating(heldLeaf, candidates,
+            leaf => !offered || leaf.kind === 'buy' && Number(leaf.itemId) === offered) : [];
+        const heldActivity = heldLeaf && !leafRivals.length ? heldLeaf : null;
+        // The held step an offer's buys beat: they are the choice, and the held step stands
+        // again when none of them pays its trip.
+        const offerRivals = offered && heldLeaf && leafRivals.length ? leafRivals : null;
+        const leafSeq = decisionSeq;
         if (individual && activityLeaf && !heldActivity && decisionSeq === inputDecisionSeq) {
             // A completed, impossible or outscored step is a real reconsideration;
             // rebuilding the same valid step is not another tendency roll.
             decisionSeq++; activityLeaf = 0;
         }
         const completion = candidates.find(leaf => leaf.rootKey === completionKey && leaf.kind === 'luxury_exchange');
-        let activity = completion || heldActivity || choose(candidates, score, roll('activity'));
+        let activity = completion || heldActivity || choose(offerRivals || candidates, score, roll('activity'));
         // The review reads its goals to the end. A later tier waits for this one, it is
         // no later review: what the money left funds of it stands in the agenda, its wish
         // joins the queue as its step comes. So does a craft's next stage, after its key.
@@ -989,7 +1049,7 @@ class WishNetwork {
         if (individual) {
             // One look a visit: a buy elsewhere goes only where the visit pays its one trip
             // (its steps in that town); a town that does not drops out of the choice.
-            let pool = candidates;
+            let pool = offerRivals || candidates;
             for (let towns = 0; activity?.kind === 'buy' && towns < AGENDA_STEPS; towns++) {
                 steps = agendaFor(activity);
                 const visit = [activity, ...steps.agenda.filter(step => step.town === activity.town)];
@@ -1000,9 +1060,13 @@ class WishNetwork {
                 activity = choose(pool, score, roll('activity'));
                 steps = null;
             }
+            if (!activity && offerRivals) {
+                activity = heldLeaf; decisionSeq = leafSeq;
+                if (activity.kind === 'buy') steps = agendaFor(activity);
+            }
             if (heldActivity && activity !== heldActivity && decisionSeq === inputDecisionSeq) { decisionSeq++; activityLeaf = 0; }
         }
-        const result = { inputKey, queue, moneyPrice, available, gap, hourAdena, bagShort,
+        const result = { inputKey, queue, wished, moneyPrice, available, gap, hourAdena, bagShort,
             quantityPrepared: !!stockFor,
             focus, dormant, activity, demands, plans, decisionSeq,
             activityLeaf: individual && activity ? leafId(activity) : 0 };
@@ -1038,7 +1102,7 @@ class WishNetwork {
         if (retain) {
             if (diagnostic && !this.cache.has(actorKey) && this.cache.size >= ACTOR_LIMIT)
                 Diagnostics.count('network', 'eviction', 'capacity');
-            remember(this.cache, actorKey, { inputKey, completionKey, reconsider, decisionSeq: inputDecisionSeq,
+            remember(this.cache, actorKey, { inputKey, completionKey, reconsider, offered, decisionSeq: inputDecisionSeq,
                 activityLeaf: inputActivityLeaf, result });
         }
         return result;

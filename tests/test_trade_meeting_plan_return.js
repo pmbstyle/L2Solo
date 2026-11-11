@@ -163,7 +163,7 @@ const arrive = async id => {
         const Market = invoke('GameServer/Bot/Economy/ColdMarketService'), errands = Market.finishTownErrands;
         Market.finishTownErrands = async state => state;
         try {
-            await Population.finishColdMarketStep(stale, null, null, false, { state: stale, closed: true }, { state: stale }, null);
+            await Population.finishColdMarketStep(stale, null, false, { state: stale, closed: true }, { state: stale }, null);
         } finally { Market.finishTownErrands = errands; }
         const kept = Life.cachedState(ids[0]);
         assert.equal(kept.activity, 'shopping', 'the meeting keeps the bot in town');

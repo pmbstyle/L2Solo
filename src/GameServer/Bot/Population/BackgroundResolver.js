@@ -33,7 +33,7 @@ const NpcHate = invoke('GameServer/Npc/NpcHate');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
 // A monster's side of the fight, and the fighter's views, hit roll, action
-// times and shot supply: their owners' (combat core, T106).
+// times and shot supply: their owners' (combat core).
 const ColdMobAction = require('./ColdMobAction');
 const { mobHitModifier, coldMobFight, coldMobFightSave, coldMobAction, mobAttackMs, dotDamage, landOnMob, controlLandChance } = ColdMobAction;
 const { hitSources, attackerView, defenderView, hitSucceeds, actionDelayMs } = ColdCombatProfile;
@@ -451,7 +451,7 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
 }
 
 // The healing potions a solo bot drinks between fights to save rest
-// (RestPotion, T141): at the gap one, once the last has run out; sitting down
+// (RestPotion): at the gap one, once the last has run out; sitting down
 // (options.resting) then one more each time the last runs out, as RestingState
 // does, the rest's regeneration counted for each next choice. vitals take a
 // bottle's heal at once, as a won fight's tail (settleColdTails). bag: the
@@ -691,7 +691,7 @@ function applyMusicAction(provider, action, timestamp) {
 }
 
 // self: the caster's own buffs too (target self, no cast condition such as
-// Frenzy's HP gate): a solo bot buffs itself (T106); a party casts only its
+// Frenzy's HP gate): a solo bot buffs itself; a party casts only its
 // buffs for others.
 function coldBuffSkill(skill, self = false) {
     if (!skill || skill.passive === true) return false;
@@ -914,7 +914,7 @@ function castPartyBuffs(fighters, timestamp, options = {}) {
     return { buffCasts, durationMs };
 }
 
-// An ordinary cold party hunt (F23): the party casts its buffs between fights
+// An ordinary cold party hunt: the party casts its buffs between fights
 // when the earliest one is about to expire. Cast time is not charged to the
 // hunt, it fits inside the gap between two party resolves.
 // The plan's skills are the profile's, ColdCombatProfile.skillsFor without the
@@ -1435,8 +1435,8 @@ const WAITED = Object.freeze({ waited: true });
 function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, rng, party = false, help = null }) {
     fighter.now = at;
     // Alone (no other living ally, a party of one too) the bot fights solo:
-    // its class mode, MP price and songs (T100) are a solo bot's, as a hot bot
-    // alone in its party (BotClassPolicy.modeFor, T126).
+    // its class mode, MP price and songs are a solo bot's, as a hot bot
+    // alone in its party (BotClassPolicy.modeFor).
     const solo = !allies.some((ally) => ally !== fighter && ally.vitals.hp > 0);
     if (!keepColdSummon(fighter, at) && !(solo && strikesAlone(fighter, mob, mobHp, at))
         && startColdSummon(fighter, at, fighter.cooldowns)) return null;
@@ -1445,7 +1445,7 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
         fighter.readyAt += 250;
         return null;
     }
-    // Alone, the bot heals itself by the solo rule (SoloSelfHeal, T107); in a party by the author's.
+    // Alone, the bot heals itself by the solo rule (SoloSelfHeal); in a party by the author's.
     const heal = solo ? coldSoloHeal(fighter, mobHp, time, at)
         : chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter);
     if (heal) {
@@ -1518,7 +1518,7 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
     }
     const shot = loadColdShot(fighter, skill);
     let damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at, shot });
-    // An area skill hits every mob of a pull, each for the full hit (F20).
+    // An area skill hits every mob of a pull, each for the full hit.
     const struck = skill && Number(mob.pull) > 1 && C4SkillRules.hitsArea(C4SkillRules.resolveCached(skill)) ? Number(mob.pull) : 1;
     if (damage > 0) damage = afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mobHp, { time, at, rng });
     // A missed normal attack deals 0 and keeps its soulshot.
@@ -1542,7 +1542,7 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
 }
 
 // What a bot's landed hit on a cold monster does beyond its damage, as the
-// hot hit does (T124): a lethal strike leaves the struck mob at 1 HP
+// hot hit does: a lethal strike leaves the struck mob at 1 HP
 // (HitRules.lethalStrike; never on a raid boss); a drain heals the caster
 // (Formulas.calcDrainHeal, Vampiric Claw) and a normal hit, not a bow's,
 // steals life (absorbDam: a weapon SA, Vampiric Rage; HitRules.absorbedHp),
@@ -1587,7 +1587,7 @@ function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mo
 }
 
 // cold_fight:<rule>: how often the cold fight meets a hot rule it rolls
-// (T124: lethal, drain, life_steal, reflect, effect_landed, bow_mp_wait); only while diagnostics count.
+// (lethal, drain, life_steal, reflect, effect_landed, bow_mp_wait); only while diagnostics count.
 // The bound of a pet's fight left alone (coldPetStays).
 const PET_LEFT_ACTIONS = 400;
 
@@ -1700,7 +1700,7 @@ function countHitRule(rule) {
 }
 
 // The mob a fight meets, one rule for a solo fight and a party's (resolveFight,
-// resolvePartyFight): the whole pull its pick rolled (F20: ColdCombatProfile.npcForSpot
+// resolvePartyFight): the whole pull its pick rolled (ColdCombatProfile.npcForSpot
 // with pull; the target, its helpers and the aggressive mobs near it come
 // together, in C4 as in the hot world) as one view (BotPullEstimate.pullView),
 // its mobs standing together by the share of the hunters' damage by area
@@ -1747,7 +1747,7 @@ function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(
     if (picked.avoided) return { avoided: true, reason: picked.reason };
     // Readiness keeps the margin the spawn-group verdict gave the rolled pull
     // (a size of the group's mix the hunter survives); helpers, aggressive
-    // neighbours and minions beyond it come regardless (design 13.5).
+    // neighbours and minions beyond it come regardless.
     // The share of the bot's damage by area skills: a pull it wears down
     // together keeps its mobs standing together (BotPullEstimate.pullView).
     let areaShare = 0, petNear = null;
@@ -1880,7 +1880,7 @@ function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(
             // One mob's hate: an area hit adds the same on each of its pull.
             soloFighter.hate = addHate(soloFighter.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
-            // Each mob of a pull an area skill strikes takes the full hit (F20):
+            // Each mob of a pull an area skill strikes takes the full hit:
             // exact while all k stand, a little generous once some have fallen.
             const struck = hit.struck;
             if (struck > 1) areaPullHits += 1;
@@ -2250,7 +2250,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (!hit || hit === WAITED) continue;
             next.hate = addHate(next.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
-            // Each mob of a pull an area skill strikes takes the full hit (F20), as solo's.
+            // Each mob of a pull an area skill strikes takes the full hit, as solo's.
             mobHp -= Math.max(0, hit.damage) * hit.struck;
             if (mobHp <= 0) {
                 overhitContext = invoke('GameServer/Progression/OverhitReward').contextForHit({
@@ -2526,7 +2526,7 @@ function soloWalkMs(density, runSpd, area = SPOT_CELL_SIZE * SPOT_CELL_SIZE, rea
     return Math.round(spacing / Math.max(1, Number(runSpd) || 1) * 1000);
 }
 
-// E69: a cold solo bot kills at most its share of what the spot's spawns give
+// a cold solo bot kills at most its share of what the spot's spawns give
 // back during the round: the mobs per hour (SpotService, from the respawns)
 // of the spawns it may fight (shares: admittedShares; all without) times the
 // round's hours, split among the bots on the spot. Null when the spot has no
@@ -2567,11 +2567,11 @@ const BackgroundResolver = {
     needsRest,
     staleShopping,
     estimateRestMs,
-    // Between-fight heals (the pet's, then the bot's own): tests and the offline hunt model (T128).
+    // Between-fight heals (the pet's, then the bot's own): tests and the offline hunt model.
     coldHealBetweenFights,
     healPartyPetsBetweenFights,
     petViewForState,
-    // A solo bot's own buffs before a fight: the offline hunt model prices their casting time (T128).
+    // A solo bot's own buffs before a fight: the offline hunt model prices their casting time.
     castSoloBuffs,
     applyStandingRegen,
     prepareRaidParty,
@@ -2579,7 +2579,7 @@ const BackgroundResolver = {
     effectiveSkillPower,
     // The offline hunt tables (scripts/hunt-tables) measure a rotation against a dummy target.
     resolveFight,
-    // spotHunters: the bots on the spot, from the caller's occupancy (E69).
+    // spotHunters: the bots on the spot, from the caller's occupancy.
     // lastFight: the bot's next act waits for the engaged fight: the round starts no new one (PveEncounter.holdsTrip).
     resolveSolo({ state, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
@@ -2786,7 +2786,7 @@ const BackgroundResolver = {
         const admitted = admittedShares(state, spot, timestamp, profiles);
         // Nothing here for it to fight alone: no walk, no pick (a fight already begun goes on).
         let noPrey = !continuing && TargetMatchup.admitsNone(admitted);
-        // T106: the round's kills are limited by the walk to each next mob and
+        // the round's kills are limited by the walk to each next mob and
         // by the share below; fights, gap heals, buffs and walks run by their
         // own time within the elapsed time. The fights a round may hold at
         // most (CPU bound): a mob engaged before, one per walk that starts
@@ -2950,7 +2950,7 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             shotActions += Number(result.debug?.shotActions || 0);
-            // A kill costs at least its killing action (T126), walk or not:
+            // A kill costs at least its killing action, walk or not:
             // the swing or cast that killed ends after the kill.
             combatMs += Math.max(Number(result.debug?.durationMs || 0), Number(result.debug?.killMs || 0));
             skillUses += Number(result.debug?.skillUses || 0);
@@ -2998,7 +2998,7 @@ const BackgroundResolver = {
                 break;
             }
             // A won fight's gap: the pet's heals, then the self-heals that
-            // beat sitting (SoloSelfHeal, T107); the shots of the round.
+            // beat sitting (SoloSelfHeal); the shots of the round.
             if (result.won && result.profile) {
                 // The round's inventory: the fight spent from its own copy (resolveFight), not fightState's.
                 const shooter = round.shot ? { shot: round.shot, state: { ...fightState, inventory: round.inventory || patch.inventory },

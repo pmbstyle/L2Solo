@@ -114,7 +114,7 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
     return null;
 }
 
-// decided: the step took the build (F6), which asks a moved clan crafter again.
+// decided: the step took the build, which asks a moved clan crafter again.
 function beginTravel(state, timestamp = Date.now(), { decided = false } = {}) {
     if (Karma.closesTowns(state?.stats?.karma)) return null;
     const plan = state?.stats?.equipmentPlan;
@@ -418,7 +418,7 @@ async function craft(state, random = Math.random) {
         }
     }
     if (station.workshop) success = result.success !== false;
-    // ARCH-NOTE: E3 physical craft fees must reach the returned wallet.
+    // ARCH-NOTE: physical craft fees must reach the returned wallet.
     // Validate the existing exchange receipt before subsequent writers. Missing
     // receipts retain the existing zero-fee and unit-facade behavior.
     const cashReceipt = result?.customerAdena;

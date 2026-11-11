@@ -86,8 +86,9 @@ async function buyWithStepBids(bids) {
 }
 
 // A purchase refused for money is counted as a cold buyer's funding_short; refused for money or
-// for no seller (the NPC's line gone) the step fails, the bot decides anew and the item is not
-// marked: it stays a purchase the next plan takes once the bag pays it or a seller stands.
+// for no seller (the NPC's line gone) the step fails, the bot decides anew and only that quote
+// is marked, not the item: it stays a purchase the next plan takes once the bag pays it or
+// another seller stands.
 async function refusedForMoney() {
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -104,6 +105,8 @@ async function refusedForMoney() {
         assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'a hot refusal for money is counted');
         assert(Situations.woken(session.coldLifeState.stats, 'build'), 'the step failed: the bot decides anew');
         assert(!Marks.marked(session.coldLifeState.stats, SHORT_SWORD), 'the item refused for money is not marked');
+        assert.deepStrictEqual(Marks.quotes(session.coldLifeState.stats).map(row => row[0]), [SHORT_SWORD],
+            'the quote refused for money is marked, as a cold buyer\'s funding_short');
         MarketOpportunity.npcOffers = () => [];
         const gone = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
         await ShoppingState.sellAndRestock(gone, bot, null, { getClosestTown: () => null, say() {} });

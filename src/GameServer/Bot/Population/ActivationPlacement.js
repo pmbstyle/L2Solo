@@ -3,11 +3,14 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const PartyHuntingTarget = invoke('GameServer/Bot/Population/PartyHuntingTarget');
+const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 
 // A walker shown on its road (HotActivation) stands within ROAD_RADIUS of its road
 // point; a point off the ground is stepped back toward the run's start in at most
 // ROAD_STEPS equal steps, the last one the start itself (a teleport point or where it
-// set out). Our choice: the run is a straight line until roads exist.
+// set out). A road point still in the town the run began in is shown at the run's start:
+// the straight line leaves a town through its walls, into yards no street reaches. Our
+// choice: the run is a straight line until roads exist.
 const ROAD_RADIUS = 300;
 const ROAD_STEPS = 12;
 // A hunter shown on its held spot stands by the mobs it hunts, as a C4 player stands
@@ -179,9 +182,14 @@ function resolve(state, options = {}) {
         const loc = ground(point, PLACE_ABOVE);
         return loc && SpotService.containsLocation(savedSpot, loc) && connected(bossFloor, loc) ? loc : null;
     };
+    // A walker still in the town its run began in has not left it: shown at the run's start.
+    const startTown = road && finiteLocation(source) && finiteLocation(options.roadFrom)
+        ? TownTransitPolicy.townAt(options.roadFrom) : null;
+    const inStartTown = !!startTown && TownTransitPolicy.townAt(source) === startTown;
     // A walker that has just landed by teleport (its run began at the landing) is shown
     // there even beside a player, as C4 shows a teleport arrival; a summoned bot by him.
-    const landing = road && options.roadFromLanding === true && distance(source, options.roadFrom) <= ROAD_RADIUS;
+    const landing = road && options.roadFromLanding === true
+        && (inStartTown || distance(source, options.roadFrom) <= ROAD_RADIUS);
     const nearest = summoned || landing ? 0 : Config.activationMinPlayerDistance;
     // A sample grounds at its anchor's height, within FLOOR_BELOW either way; the ray
     // from the anchor proves it stands on the anchor's floor.
@@ -238,6 +246,12 @@ function resolve(state, options = {}) {
         // Never replace an exhausted search with an unchecked displacement.
         return acceptable(anchor, anchor);
     };
+    if (inStartTown) {
+        const start = ground(options.roadFrom, PLACE_ABOVE);
+        const placement = start && around(start);
+        if (placement) Metrics.recordWalkerStartTownPlacement();
+        return placement;
+    }
     // A place a body cannot stand on recovers where the bot can be: a walker on the first
     // ground stepped back along its road, a raid body or a bot on its spot at the spot's
     // nearest spawn point that stands inside the spot. Without one (a bot in town, a group member around

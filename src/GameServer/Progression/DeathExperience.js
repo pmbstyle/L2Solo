@@ -1,7 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const Karma = invoke('GameServer/Karma');
-// ARCH-NOTE: C1/E3 pure loss/restoration valuation is also read by the clan
+// ARCH-NOTE: pure loss/restoration valuation is also read by the clan
 // worker. Resolve the database only for the existing queued persistence path
 // so those reads preserve the worker's forbidden-dependency guard.
 let database;

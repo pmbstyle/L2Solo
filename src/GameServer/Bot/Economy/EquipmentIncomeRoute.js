@@ -87,15 +87,17 @@ function spotRates(state, spot, shots) {
 // its held earning answer's when the answer carries it and the bot hunts
 // that spot solo (or stands on none: the town, the road); else the spot table's
 // at the bot's spot and level (a party member, an answer saved before it carried
-// the use, none held, another spot), the band's best row without a spot. A pure
-// table read, no search. earning: the answer to read (a build's own, else held).
+// the use, none held, another spot), without a spot the income row its hour is
+// priced on (BotHuntEfficiency.incomeRow). A pure table read, no search.
+// earning: the answer to read (a build's own, else held).
 function spotUseOf(state, earning = state?.stats?.earning) {
     const party = state?.party?.partyId || state?.partyId;
     if (!party && earning && Number.isFinite(earning.shotsPerHour) && Number.isFinite(earning.potionsPerHour)
         && (!state?.spotId || String(state.spotId) === String(earning.spotId))) return earning;
     const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const role = SpotValueTable.roleFor(state), level = Number(state?.level) || 1;
-    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true)) || SpotValueTable.best(role, level, true);
+    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true))
+        || invoke('GameServer/Bot/AI/BotHuntEfficiency').incomeRow(state);
     return { shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
         potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)) };
 }
@@ -128,7 +130,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // rule), whatever else it is (a crafter at its station too: karma closes its town): weaker experience-bearing
     // mobs, on foot; woken again by karma_changed. A party member searches none (its party's spot washes it).
     const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
-    // A broke bot skips the spots that need survival drinks of it (A5), the karma wash's too.
+    // A broke bot skips the spots that need survival drinks of it, the karma wash's too.
     const broke = cannotDrink(state, price);
     if (Karma.active(state)) {
         const { evaluate } = valuesFor(state, timestamp, price);
@@ -193,7 +195,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // Compare both charge policies and the entire earning band together.
     // Returning the first charged/near-level camp hid cheaper easier hunts.
     // The same spot under both policies ties on all keys: the charged one first.
-    // One profile and safety read for the whole search (L131). The chosen
+    // One profile and safety read for the whole search. The chosen
     // route carries its solo profiles: the same build's source route reader
     // (GearAcquisitionPlanner.sourceRouteReader) reads the same ones.
     // The crowd is no input: a C4 player picks a camp by what he knows of it and
@@ -267,11 +269,11 @@ function answerOf(route, at, error = 0, state = null) {
         ...(state ? spotRates(state, route.spot, route.row.useShots !== false) : { drinks: false }) }
         : { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at, drinks: false };
 }
-// A player's command naming a spot (Situations' player_command, B6) as the held answer: that spot, with the
+// A player's command naming a spot (Situations' player_command) as the held answer: that spot, with the
 // bot's hour, charge policy and error kept from the answer it replaces (held: null for none); no income expected
 // there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
 // situation re-decides the spot. command: the player decided it (isCommanded: a spot contest never makes it
-// avoid, B14; a stronger arrival displacing it ends it, uncommanded); by: the player's character id (0: unknown),
+// avoid; a stronger arrival displacing it ends it, uncommanded); by: the player's character id (0: unknown),
 // told when it ends so.
 // It carries no kit use of its own: spotUseOf reads the spot table there (no table read here); the shot
 // kind the replaced answer chose stays (ShotStock.decidedKind).
@@ -288,15 +290,15 @@ function uncommanded(held) {
     delete answer.command; delete answer.by;
     return answer;
 }
-// The held answer's spot id (no search). null: no answer, none held (spotId null), or a bot in a party: its
-// hunt is the party's (the party comparison reads its solo copy).
-function answerSpotId(state, mode = null) {
+// The answer's spot id (no search; earning: the answer to read, a build's own, else the held one). null: no
+// answer, none held (spotId null), or a bot in a party: its hunt is the party's (the party comparison reads its solo copy).
+function answerSpotId(state, mode = null, earning = state.stats?.earning) {
     if (state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return null;
-    return state.stats?.earning?.spotId || null;
+    return earning?.spotId || null;
 }
 // The same spot in a catalogue (spots: the catalogue's profiles); null too for a spot the catalogue lost.
-function heldSpot(state, spots = [], mode = null) {
-    const spotId = answerSpotId(state, mode);
+function heldSpot(state, spots = [], mode = null, earning = state.stats?.earning) {
+    const spotId = answerSpotId(state, mode, earning);
     return spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId) || null : null;
 }
 // The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices

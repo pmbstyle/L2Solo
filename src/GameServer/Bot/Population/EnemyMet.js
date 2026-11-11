@@ -64,7 +64,7 @@ function decide(holder, peer, { memory, personaFor, at, step }) {
 // (the arriving ones not among them); spotId; at: the arrival's time; step: its step; memory: the
 // interaction memory (views, assess, clanWars); personaFor(state).
 // Returns { meeting, kind: 'cold' | 'hot' } or null; a meeting of a far and a near bot is counted
-// (enemy_met:mixed) and traced, no fight (B10), and the next pair is read.
+// (enemy_met:mixed) and traced, no fight, and the next pair is read.
 // More standing bots than MAX_STANDING: the ones met are picked by a seeded roll of (spot, the
 // first arriving bot, arrival step, standing bot), as SpotContest picks its peers (counted).
 function meet({ arriving = [], standing = [], spotId, at, step, memory, personaFor }) {
@@ -117,7 +117,7 @@ function hotCommand({ meeting, spotId, at, step }) {
         roll: meeting.roll, chance: meeting.chance };
 }
 
-// A player and a bot meet on main (B8: the player's client first receives the bot's CharInfo):
+// A player and a bot meet on main (the player's client first receives the bot's CharInfo):
 // social, the rule's verdict on the bot toward the player (BotRevenge's assessment: its grievance
 // or their clans' mutual war), rolled once per (bot, player, the bot's stay: its spot post's
 // number). Returns { reason, roll, chance } or null.
