@@ -46,11 +46,35 @@ async function main() {
         assert(allyAssets.every((asset) => asset.width === 8 && asset.height === 12 && asset.bitsPerPixel === 8));
         assert.strictEqual(new Set(clanAssets.map((asset) => fs.readFileSync(path.resolve(rootDir, asset.file)).toString('hex'))).size, clanAssets.length);
 
+        // Crest.utx outlives worlds and keys textures by server id + crest id.
+        // A fresh database must not reuse the small ids cached by older worlds.
+        const legacyData = fs.readFileSync(path.resolve(rootDir, clanAssets[0].file));
+        await Database.execute([`INSERT INTO clans(id, name, leaderId, level, crestId, allyCrestId, crestLargeId)
+            VALUES (6000005, 'LegacyCrest', 5, 3, 32, 33, 34)`, []]);
+        for (const [id, kind] of [[32, 'pledge'], [33, 'ally'], [34, 'large']]) {
+            await Database.execute([`INSERT INTO clan_crests(id, clanId, kind, data, createdAt)
+                VALUES (?, 6000005, ?, ?, 123)`, [id, kind, legacyData]]);
+        }
+        assert.strictEqual((await Database.migrateClanCrestIds()).migrated, 3);
+        const [legacyClan] = await Database.execute(['SELECT * FROM clans WHERE id = 6000005', []]);
+        const migratedIds = [legacyClan.crestId, legacyClan.allyCrestId, legacyClan.crestLargeId];
+        assert.strictEqual(new Set(migratedIds).size, 3);
+        for (const [index, kind] of ['pledge', 'ally', 'large'].entries()) {
+            const crestId = Number(migratedIds[index]);
+            assert(crestId >= 0x10000000 && crestId <= 0x7fffffff, 'migrated ids must fit positive C4 int32 fields');
+            const [migrated] = await Database.fetchClanCrest(crestId);
+            assert.strictEqual(migrated.kind, kind);
+            assert.strictEqual(Number(migrated.createdAt), 123);
+            assert.deepStrictEqual(Buffer.from(migrated.data), legacyData, 'migration must preserve the original image');
+        }
+        assert.strictEqual((await Database.execute(['SELECT id FROM clan_crests WHERE id IN (32, 33, 34)', []])).length, 0);
+        assert.strictEqual((await Database.migrateClanCrestIds()).migrated, 0, 'restarts must preserve migrated ids');
+
         const first = await ClanCrestService.ensureAutonomousClans();
         assert.strictEqual(first.assigned, 1);
         assert.strictEqual(first.cleared, 0);
         const rows = await Database.execute(['SELECT id, crestId FROM clans ORDER BY id', []]);
-        assert(Number(rows[0].crestId) > 0, 'level 3 autonomous clan should receive a crest');
+        assert(Number(rows[0].crestId) >= 0x10000000, 'autonomous crests must avoid old client cache ids');
         assert.strictEqual(Number(rows[1].crestId), 0, 'clans below level 3 must not receive a crest');
 
         await Database.execute(['UPDATE clans SET level = 3 WHERE id = ?', [6000002]]);
@@ -108,7 +132,7 @@ async function main() {
         assert.strictEqual(lockedManaged.code, 'level_too_low', 'player-managed crest uploads must require clan level 3');
         const firstManaged = await ClanService.setPlayerManagedCrest(6000003, observerCrest);
         assert.strictEqual(firstManaged.ok, true);
-        assert(Number(firstManaged.crestId) > 0);
+        assert(Number(firstManaged.crestId) >= 0x10000000, 'Observer uploads must avoid old client cache ids');
         assert.strictEqual(ClanService.findById(6000003).crestId, firstManaged.crestId);
         const secondManaged = await ClanService.setPlayerManagedCrest(6000003, clientData);
         assert.strictEqual(secondManaged.ok, true);
@@ -122,6 +146,12 @@ async function main() {
         const deletedManaged = await ClanService.setPlayerManagedCrest(6000003, Buffer.alloc(0));
         assert.strictEqual(deletedManaged.deleted, true);
         assert.strictEqual(ClanService.findById(6000003).crestId, 0);
+        const afterRemoval = await ClanService.setPlayerManagedCrest(6000003, observerCrest);
+        assert.strictEqual(afterRemoval.ok, true);
+        assert(![firstManaged.crestId, secondManaged.crestId].includes(afterRemoval.crestId),
+            'uploading after removal must not reuse an old client cache key');
+        const clientUpload = await Database.createClanCrest(6000003, 'pledge', clientData);
+        assert(Number(clientUpload.insertId) >= 0x10000000, 'in-game uploads must use the same cache-safe ids');
         const crest180 = fs.readFileSync(path.join(rootDir, 'data', 'crests', 'clan', 'crest-180.bmp'));
         const dds180 = ClanCrestService.bmpToDxt1Dds(crest180);
         assert.strictEqual(crest180.readUInt32LE(10), 810, 'regression asset should exercise a compact palette');
@@ -221,6 +251,16 @@ async function main() {
             ClanService.setSmallCrest = originalSetSmallCrest;
             ClanService.onlineSessions = originalOnlineSessions;
         }
+
+        await Database.execute([`INSERT INTO clan_crests(id, clanId, kind, data, createdAt)
+            VALUES (35, 6000005, 'pledge', ?, 456)`, [legacyData]]);
+        await Database.execute(['UPDATE clans SET crestId = 35 WHERE id = 6000005', []]);
+        await ClanService.init();
+        const startupClan = ClanService.findById(6000005);
+        assert(startupClan.crestId >= 0x10000000, 'startup must migrate legacy ids before loading the clan cache');
+        assert.strictEqual(startupClan.allyCrestId, legacyClan.allyCrestId, 'startup must preserve migrated ids');
+        const startupCrest = await ClanService.findSmallCrest(startupClan.crestId);
+        assert.deepStrictEqual(startupCrest.data, ClanCrestService.clientCrestData(legacyData));
         console.log('Clan crest asset checks passed');
     } finally {
         await Database.close();
