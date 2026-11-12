@@ -326,9 +326,24 @@ function applyManaHot(session, source, target, effect) {
     return true;
 }
 
+// A tick on another character or NPC is its caster's hit while the caster is
+// still its session's body. Once that body has left the world (logout, a bot
+// cooled, a new body on the session) the effect keeps ticking, as in C4
+// (Lisvus L2Effect keeps its effector; EffectDamOverTime stops at 1 HP): the
+// target loses HP down to 1 and the tick is nobody's hit: no hate, no kill,
+// no reward.
 function applyDamage(session, source, target, damage) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(target, 'petrification')) return;
     if (session && source && target?.fetchId && source !== target) {
+        if (session.actor !== source) {
+            const hp = Number(target.fetchHp()) || 0;
+            if (hp <= 1) return;
+            target.setHp(Math.max(1, hp - damage));
+            if (target.statusUpdateVitals) target.statusUpdateVitals(target);
+            else if (target.broadcastVitals) target.broadcastVitals();
+            target.automation?.replenishVitals?.(target);
+            return;
+        }
         if (target.fetchId() >= 2000000) {
             invoke(path.actor).receivedHit(session, target, damage, { wakeSleep: true, source });
         } else {
