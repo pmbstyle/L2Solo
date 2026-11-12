@@ -49,7 +49,7 @@ try {
 moveTo(session, actor, { from: { locX: 10, locY: 20, locZ: -70 }, to: { locX: 100, locY: 200, locZ: -76 } });
 assert.strictEqual(packets.pop().readInt32LE(13), -76, 'Server-generated actor Z must not be corrected twice');
 
-const originalGeo = Object.fromEntries(['getCellData', 'hasGeo', 'hasLineOfSight'].map(key => [key, GeodataEngine[key]]));
+const originalGeo = Object.fromEntries(['getCellData', 'hasGeo', 'canWalkStraight'].map(key => [key, GeodataEngine[key]]));
 try {
     actor.fetchSize = () => 23;
     let covered = true;
@@ -57,7 +57,7 @@ try {
     let endHeight = -2248;
     GeodataEngine.getCellData = (x, y, z) => ({ z: y >= 28800 ? endHeight : -2256, nswe: 15 });
     GeodataEngine.hasGeo = () => covered;
-    GeodataEngine.hasLineOfSight = () => reachable;
+    GeodataEngine.canWalkStraight = () => reachable;
     const source = [148240, 28731, -2259];
     const destination = [148240, 28840, -2281];
     assert.deepStrictEqual(request(destination, source), [2000224, 148240, 28840, -2248, ...source],
@@ -93,8 +93,8 @@ require('./helpers/verify_geodata_when_available')(GeodataEngine, [[24, 18]], 'A
         [148604, 26971, -2193, 64, 0]
     ]) {
         const endZ = GeodataEngine.getHeight(x + dx, y + dy, z);
-        assert(GeodataEngine.hasLineOfSight(x, y, z, x + dx, y + dy, endZ), `Doorway ${x},${y} ingress`);
-        assert(GeodataEngine.hasLineOfSight(x + dx, y + dy, endZ, x, y, z), `Doorway ${x},${y} egress`);
+        assert(GeodataEngine.canWalkStraight(x, y, z, x + dx, y + dy, endZ), `Doorway ${x},${y} ingress`);
+        assert(GeodataEngine.canWalkStraight(x + dx, y + dy, endZ, x, y, z), `Doorway ${x},${y} egress`);
     }
     // Actual source/target coordinates from the failed post-restart movement trace.
     const destinationZ = GeodataEngine.getHeight(148255, 28865, -2281 + actor.fetchSize());

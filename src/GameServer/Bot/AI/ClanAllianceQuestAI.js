@@ -14,7 +14,7 @@ function returnLanding(session, target) {
             const y = Math.round(center.locY + Math.sin(angle) * radius);
             const z = geo.getHeight(x, y, center.locZ);
             if (Number.isFinite(z) && Math.abs(z - center.locZ) <= 128
-                && geo.hasLineOfSight(x, y, z, center.locX, center.locY, center.locZ)) {
+                && geo.canWalkStraight(x, y, z, center.locX, center.locY, center.locZ)) {
                 return { locX: x, locY: y, locZ: z };
             }
         }

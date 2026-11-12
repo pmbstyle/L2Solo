@@ -12,6 +12,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const originalGetCellData = GeodataEngine.getCellData;
 const originalHasGeo = GeodataEngine.hasGeo;
 const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+const originalCanWalkStraight = GeodataEngine.canWalkStraight;
 const originalFindPath = GeodataEngine.findPath;
 
 GeodataEngine.hasGeo = () => true;
@@ -60,9 +61,9 @@ GeodataEngine.getCellData = (x, _y, z) => {
     return { z, nswe: 15 };
 };
 assert.strictEqual(
-    GeodataEngine.hasLineOfSight(8, 8, 0, 24, 8, 0),
+    GeodataEngine.canWalkStraight(8, 8, 0, 24, 8, 0),
     false,
-    'NSWE walls must block line of sight between adjacent cells'
+    'NSWE walls must block a straight walk between adjacent cells'
 );
 
 // A tree as the map has it: the skirt cells open outward (downhill) only, the
@@ -79,26 +80,26 @@ assert.strictEqual(
         return { z: ledge[key] || 0, nswe: around[key] || 15 };
     };
     const at = (cx, cy, z = 0) => [(cx << 4) + 8, (cy << 4) + 8, z];
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 2), ...at(0, 2)), true,
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(2, 2), ...at(0, 2)), true,
         'a body in a tree skirt walks out of it by the side its cell opens');
     const out = GeodataEngine.findPath(...at(2, 2), ...at(0, 6), 500);
     assert(out && out.length > 1, 'a body in a tree skirt has a route to the open ground');
     let from = { locX: 40, locY: 40, locZ: 0 };
     for (const to of out) {
-        assert(GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+        assert(GeodataEngine.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
             'every leg of the route out is a straight walk the same rule allows');
         from = to;
     }
     assert(GeodataEngine.findPath(...at(3, 2, 24), ...at(0, 6), 500)?.length > 1, 'also from deeper in the skirt');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(0, 2), ...at(2, 2)), false, 'nobody walks into the skirt from the west');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 5), ...at(2, 2)), false, 'nor from the south');
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(0, 2), ...at(2, 2)), false, 'nobody walks into the skirt from the west');
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(2, 5), ...at(2, 2)), false, 'nor from the south');
     assert.strictEqual(GeodataEngine.findPath(...at(0, 6), ...at(2, 2), 500), null, 'no route leads into the skirt');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 0), ...at(2, 1)), false,
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(2, 0), ...at(2, 1)), false,
         'a closed cell is not entered although its neighbour opens toward it');
     assert.strictEqual(GeodataEngine.findPath(...at(0, 0), ...at(3, 1), 500), null, 'no route ends inside the trunk');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(8, 8, 200), ...at(9, 8)), false,
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(8, 8, 200), ...at(9, 8)), false,
         'a step whose floor lies more than a layer step below is not taken');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(9, 8), ...at(8, 8, 200)), false, 'nor one that far above');
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(9, 8), ...at(8, 8, 200)), false, 'nor one that far above');
 }
 
 const heightMap = [
@@ -127,7 +128,7 @@ GeodataEngine.getCellData = (x, y) => {
     if (openMap[cy - 1]?.[cx]) nswe |= 8;
     return { z: heightMap[cy][cx], nswe };
 };
-GeodataEngine.hasLineOfSight = (fromX, fromY, fromZ, toX, toY, toZ) => (
+GeodataEngine.canWalkStraight = (fromX, fromY, fromZ, toX, toY, toZ) => (
     Math.abs((fromX >> 4) - (toX >> 4)) + Math.abs((fromY >> 4) - (toY >> 4)) <= 1
     && Math.abs(fromZ - toZ) <= 64
 );
@@ -140,7 +141,7 @@ assert.strictEqual(
 
 GeodataEngine.getCellData = originalGetCellData;
 GeodataEngine.hasGeo = originalHasGeo;
-GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+GeodataEngine.canWalkStraight = originalCanWalkStraight;
 
 const crumaRegion = path.join(GeodataEngine.getGeodataDir(), '20_21.l2j');
 if (process.env.L2NODE_SKIP_RAW_GEODATA_TESTS === '1') {
@@ -166,7 +167,7 @@ if (process.env.L2NODE_SKIP_RAW_GEODATA_TESTS === '1') {
         assert(closeLayerPath.length > 2, 'close layers may only connect by a real horizontal detour');
         for (let i = 1; i < closeLayerPath.length; i++) {
             const a = closeLayerPath[i - 1], b = closeLayerPath[i];
-            assert(GeodataEngine.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ),
+            assert(GeodataEngine.canWalkStraight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ),
                 'each detour segment must follow walkable geodata rather than jump vertically');
         }
     }

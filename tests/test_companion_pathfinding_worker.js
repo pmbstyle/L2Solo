@@ -88,7 +88,7 @@ function stopMove(fixture) {
 
 async function run() {
     const originalFindPath = GeodataEngine.findPath;
-    const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+    const originalHasLineOfSight = GeodataEngine.canWalkStraight;
     let synchronousFindPathCalls = 0;
     const originalUser = RuntimeWorld.user;
     const fixtures = new Set(), pools = new Set();
@@ -107,7 +107,7 @@ async function run() {
         synchronousFindPathCalls++;
         throw new Error('companion path must not execute A* on the game thread');
     };
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
 
     try {
         const realPool = makePool({ size: 1, queueLimit: 4 });
@@ -319,7 +319,7 @@ async function run() {
             cancel() { return false; }
         };
         const fallbackFixture = fixture(rejectedPool, { locX: 0, locY: 0, locZ: 0 });
-        GeodataEngine.hasLineOfSight = () => true;
+        GeodataEngine.canWalkStraight = () => true;
         issueMove(fallbackFixture, { locX: 1000, locY: 0, locZ: 0 });
         await fallbackFixture.session.pendingPathRequest.promise;
         assert.strictEqual(fallbackFixture.session.lastPathfinding.strategy, 'worker_geodata_error_fallback');
@@ -350,7 +350,7 @@ async function run() {
             for (const value of fixtures) stopMove(value);
             RuntimeWorld.user = originalUser;
             GeodataEngine.findPath = originalFindPath;
-            GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+            GeodataEngine.canWalkStraight = originalHasLineOfSight;
         }
     }
 

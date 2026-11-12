@@ -156,7 +156,7 @@ Potions.tryUseInCombat = () => false;
 {
     const bot = actor(1, { x: 0 }), nearest = actor(2, { x: 100 }), second = actor(3, { x: -500 });
     const plan = Retreat.plan(bot, nearest, { distance: 900, threats: [nearest, second],
-        world: { fetchNpcsInRadius: () => [] }, geodata: { hasLineOfSight: () => true, getHeight: () => 0 } });
+        world: { fetchNpcsInRadius: () => [] }, geodata: { canWalkStraight: () => true, getHeight: () => 0 } });
     assert.strictEqual(plan.hazardCount, 1, 'other PvP attackers participate in route safety');
     assert(Math.abs(plan.to.locY) > 100, 'do not flee straight through the second attacker');
 }

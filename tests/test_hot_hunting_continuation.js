@@ -35,7 +35,7 @@ stub(World, 'user', { sessions: [] });
 stub(World, 'npc', { spawns: [] });
 stub(World, 'fetchNpcsInRadius', () => available);
 stub(invoke('GameServer/Bot/BotManager'), 'sessions', []);
-stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => true);
+stub(invoke('GameServer/Geodata/GeodataEngine'), 'canWalkStraight', () => true);
 stub(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
 stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'syncVisit', () => null);
 stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'needsVisit', () => false);
@@ -455,7 +455,7 @@ test('a deferred errand leaves only ground that admits none of its fights, as a 
     const restoreAt = restores.length;
     try {
         stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
-        stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => false);
+        stub(invoke('GameServer/Geodata/GeodataEngine'), 'canWalkStraight', () => false);
         Object.assign(f.session.coldLifeState.stats, holds(primary));
         available = [npcNear(alternative.center)];
         for (let i = 0; i < 4; i++) f.tick();

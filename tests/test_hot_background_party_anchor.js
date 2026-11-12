@@ -31,7 +31,7 @@ function actor(id, x = 0, kind = null) {
         moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
-    replace(Geo, 'hasLineOfSight', () => true);
+    replace(Geo, 'canWalkStraight', () => true);
     const group = [1, 2, 3].map(id => ({ accountId: `bot_hot_anchor_${id}`, fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'anchor', actor: actor(id), dataSendToOthers() {}, dataSendToMeAndOthers() {} }));
     const [leader, healer, follower] = group;

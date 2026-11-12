@@ -90,7 +90,7 @@ function awayVector(from, threat, preferredPoint) {
 
 function directRouteUsable(geodata, from, to) {
     try {
-        return geodata.hasLineOfSight(
+        return geodata.canWalkStraight(
             from.locX, from.locY, from.locZ,
             to.locX, to.locY, to.locZ
         ) === true;

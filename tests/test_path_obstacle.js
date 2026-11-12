@@ -53,7 +53,7 @@ assert(templeBandShopPath && templeBandShopPath.length > 1, 'the removed temple 
     assert(out && out.length > 1, 'a body inside the tree skirt at 45868, 34914 has a route to the open ground');
     let from = skirt;
     for (const to of out) {
-        assert(GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+        assert(GeodataEngine.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
             'every leg of the route out is a straight walk');
         from = to;
     }
@@ -61,7 +61,7 @@ assert(templeBandShopPath && templeBandShopPath.length > 1, 'the removed temple 
     assert(GeodataEngine.hasLineOfSight(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ),
         'a hunter standing there sees a mob on the ground beside the tree');
     assert(GeodataEngine.findPath(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ)?.length > 1, 'and reaches it');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ), false,
+    assert.strictEqual(GeodataEngine.canWalkStraight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ), false,
         'the skirt is not walked into from the ground');
     assert.strictEqual(GeodataEngine.findPath(ground.locX, ground.locY, ground.locZ, skirt.locX, skirt.locY, skirt.locZ), null,
         'no route leads into the skirt');

@@ -33,7 +33,7 @@ function hostile(id, x, y) {
 
 const openGeodata = {
     getHeight: (_x, _y, z) => z,
-    hasLineOfSight: () => true
+    canWalkStraight: () => true
 };
 
 const bot = actor(2000001, 0, 0);
@@ -71,7 +71,7 @@ const blockedDirectPlan = BotRetreatPlanner.plan(bot, threat, {
     world: { fetchNpcsInRadius: () => [threat] },
     geodata: {
         getHeight: openGeodata.getHeight,
-        hasLineOfSight(_fromX, _fromY, _fromZ, _toX, toY) {
+        canWalkStraight(_fromX, _fromY, _fromZ, _toX, toY) {
             return toY !== 0;
         }
     }
@@ -452,7 +452,7 @@ const blockedCompanion=actor(3000007,200,0);
 let blockedMoves=0;
 blockedCompanion.moveTo=()=>{blockedMoves++;};
 const blockedPartyPlan=BotRetreatPlanner.retreat({},blockedCompanion,hostile(3000008,150,0),{
-    ...partyOptions,geodata:{...openGeodata,hasLineOfSight:()=>false}
+    ...partyOptions,geodata:{...openGeodata,canWalkStraight:()=>false}
 });
 assert.strictEqual(blockedPartyPlan.partyMovementAllowed,false);
 assert.strictEqual(blockedMoves,0,'blocked party routes must not fall back to an unbounded escape command');

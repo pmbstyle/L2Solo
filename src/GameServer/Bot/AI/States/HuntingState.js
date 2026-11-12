@@ -76,8 +76,8 @@ function shopDepartureTarget(town, bot) {
         };
         point.locZ = GeodataEngine.getHeight(point.locX, point.locY, point.locZ);
         if (Math.abs(point.locZ - center.locZ) <= 64
-            && GeodataEngine.hasLineOfSight(center.locX, center.locY, center.locZ, point.locX, point.locY, point.locZ)
-            && GeodataEngine.hasLineOfSight(point.locX, point.locY, point.locZ, center.locX, center.locY, center.locZ)) {
+            && GeodataEngine.canWalkStraight(center.locX, center.locY, center.locZ, point.locX, point.locY, point.locZ)
+            && GeodataEngine.canWalkStraight(point.locX, point.locY, point.locZ, center.locX, center.locY, center.locZ)) {
             return { ...point, town: town.name };
         }
     }
@@ -1315,7 +1315,7 @@ module.exports = {
                     for (let attempt = 0; attempt < HuntingVisibility.CHECKS_PER_SCAN; attempt++) {
                         const wanderX = baseCoord.locX + utils.oneFromSpan(-2500, 2500);
                         const wanderY = baseCoord.locY + utils.oneFromSpan(-2500, 2500);
-                        if (!GeodataEngine.hasLineOfSight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
+                        if (!GeodataEngine.canWalkStraight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
                             wanderX, wanderY, bot.fetchLocZ())) continue;
                         bot.moveTo({ from: botLocation(bot),
                             to: { locX: wanderX, locY: wanderY, locZ: bot.fetchLocZ() } });

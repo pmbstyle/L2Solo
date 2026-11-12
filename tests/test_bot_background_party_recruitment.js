@@ -14,7 +14,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
-const originalGeo = Object.fromEntries(['getCellData', 'getHeight', 'hasGeo', 'hasLineOfSight'].map((key) => [key, Geo[key]]));
+const originalGeo = Object.fromEntries(['getCellData', 'getHeight', 'hasGeo', 'canWalkStraight'].map((key) => [key, Geo[key]]));
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -126,7 +126,7 @@ async function run() {
     Geo.getCellData = (x, y, z) => ({ z, nswe: 15 });
     Geo.getHeight = (x, y, z) => z;
     Geo.hasGeo = () => true;
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     Config.partyMinSize = 2;
     Config.partyMaxSize = 5;
     let projectionCalls = 0;

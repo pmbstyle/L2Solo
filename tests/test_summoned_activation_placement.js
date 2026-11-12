@@ -11,7 +11,7 @@ const geo = {
     getHeight: () => 0,
     getCellData: (x, y) => ({ z: wrongFloor ? 1000 : 0,
         nswe: !blocked && Math.abs(x) <= 160 && Math.abs(y) <= 80 ? 15 : 0 }),
-    hasLineOfSight: () => !disconnected
+    canWalkStraight: () => !disconnected
 };
 const dependencies = {
     'GameServer/Bot/Population/PopulationConfig': config,

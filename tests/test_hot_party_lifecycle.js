@@ -212,7 +212,7 @@ async function run() {
         [World, 'fetchNpcsInRadius', () => [{ fetchSelfId: () => 10, isDead: () => false,
             fetchLocX: () => 3000, fetchLocY: () => 0, fetchLocZ: () => 0 }]],
         [Geo, 'hasGeo', () => true], [Geo, 'getHeight', () => 0], [Geo, 'getCellData', () => ({ z: 0, nswe: 15 })],
-        [Geo, 'hasLineOfSight', () => true]];
+        [Geo, 'canWalkStraight', () => true]];
     const unstubbed = stubs.map(([object, key, value]) => { const before = object[key]; object[key] = value; return () => { object[key] = before; }; });
     spawnCount = 0;
     try {

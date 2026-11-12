@@ -83,7 +83,7 @@ const mocks = {
     },
     'GameServer/Bot/AI/CompanionNavigationRecovery': {},
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => null },
-    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, hasLineOfSight: () => true },
+    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, canWalkStraight: () => true },
     'GameServer/Effects/EffectStore': { prune() {} },
     'GameServer/Effects/EffectTicker': { clearAll() {}, refreshEffects() {} },
     'GameServer/Actor/Generics/CalculateStats': () => {},

@@ -16,7 +16,7 @@ function wait(ms) {
 async function run() {
     const originalWorldUser = RuntimeWorld.user;
     const originalFindPath = GeodataEngine.findPath;
-    const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+    const originalHasLineOfSight = GeodataEngine.canWalkStraight;
     const originalGetHeight = GeodataEngine.getHeight;
     const packets = [];
     const position = { locX: 100, locY: 200, locZ: -300 };
@@ -70,7 +70,7 @@ async function run() {
             { locX: endX, locY: endY, locZ: endZ }
         ];
     };
-    GeodataEngine.hasLineOfSight = () => true;
+    GeodataEngine.canWalkStraight = () => true;
     GeodataEngine.getHeight = (x, y, z) => z;
 
     try {
@@ -149,7 +149,7 @@ async function run() {
         actor.automation.abortAll(actor, { notifyClient: false });
         RuntimeWorld.user = originalWorldUser;
         GeodataEngine.findPath = originalFindPath;
-        GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+        GeodataEngine.canWalkStraight = originalHasLineOfSight;
         GeodataEngine.getHeight = originalGetHeight;
     }
 

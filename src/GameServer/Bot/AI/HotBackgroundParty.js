@@ -240,7 +240,7 @@ function searchGround(session, owner, members, party, legal, now, present) {
         const to = { locX: point.locX, locY: point.locY, locZ: cell.z };
         // Exploration must not reintroduce an unseen monster as a movement
         // goal after the combat scan rejected it through a wall.
-        if (!Geo.hasLineOfSight(origin.locX, origin.locY, origin.locZ, to.locX, to.locY, to.locZ)) continue;
+        if (!Geo.canWalkStraight(origin.locX, origin.locY, origin.locZ, to.locX, to.locY, to.locZ)) continue;
         session.backgroundSearchDestination = to;
         session.lastDecision = { action: 'party_search', partyId: party.partyId, destination: to, at: now };
         // Native bounded pathfinding still owns movement to the visible

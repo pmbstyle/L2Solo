@@ -2232,14 +2232,14 @@ try {
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
 
     const pullGeo = invoke('GameServer/Geodata/GeodataEngine');
-    const savedPullSight = pullGeo.hasLineOfSight;
+    const savedPullSight = pullGeo.canWalkStraight;
     try {
-        pullGeo.hasLineOfSight = () => false;
+        pullGeo.canWalkStraight = () => false;
         FollowingState.tick(autoPullTankSession, autoPullTank, { skillExec() {} }, {
             say() {}, executePvPCombat() {},
             executeCombat() { assert.fail('automatic tank pulling must not select a mob behind a wall'); }
         });
-    } finally { pullGeo.hasLineOfSight = savedPullSight; }
+    } finally { pullGeo.canWalkStraight = savedPullSight; }
 
     const scoredPuller = fakeActor(2000099, { locX: 0, locY: 0, level: 40, classId: 5 });
     const scoredLeader = fakeActor(2000100, { locX: 0, locY: 0, level: 40, classId: 0 });

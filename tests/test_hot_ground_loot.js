@@ -246,7 +246,7 @@ function bot(id, x) {
             const Quests = invoke('GameServer/Quest/QuestService');
             Data.init();
             replace(invoke('GameServer/Formulas'), 'calcHitChance', () => true);
-            replace(Geo, 'hasLineOfSight', () => true);
+            replace(Geo, 'canWalkStraight', () => true);
             replace(invoke('GameServer/Actor/Generics'), 'experienceReward', () => {});
             replace(invoke('GameServer/World/Generics/NpcDecay'), 'schedule', () => {});
             replace(invoke('GameServer/Items/SoulCrystalProgression'), 'onDeath', async () => {});

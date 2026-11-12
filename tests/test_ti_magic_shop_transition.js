@@ -43,7 +43,7 @@ function packet(opcode, values) {
     return p;
 }
 
-const originals = Object.fromEntries(['hasGeo', 'getCellData', 'hasLineOfSight'].map(k => [k, Geo[k]]));
+const originals = Object.fromEntries(['hasGeo', 'getCellData', 'canWalkStraight'].map(k => [k, Geo[k]]));
 // A diagonal missing-floor strip between two intact aprons. Sources inside it
 // resolve to the roof; no ordinary geodata line of sight can cross it.
 const physicalDepth = (x, y) => ((x + 84497) - (y - 240840)) * Math.SQRT1_2;
@@ -58,7 +58,7 @@ const clear = (x, y, z, endX, endY) => {
 try {
     Geo.hasGeo = () => true;
     Geo.getCellData = cell;
-    Geo.hasLineOfSight = clear;
+    Geo.canWalkStraight = clear;
     for (const t of [ingress, egress]) {
         for (const offset of [-27, -20, 0, 20, 27]) {
             const f = fixture(t, point(t, 0, offset));
@@ -96,8 +96,8 @@ try {
             { hasGeo: (x, y) => physicalDepth(x, y) > -30 },
             { getCellData: (x, y) => physicalDepth(x, y) < -30 ? { z: -3500, nswe: 15 } : cell(x, y) },
             { getCellData: (x, y) => physicalDepth(x, y) > 30 ? { z: -3500, nswe: 15 } : cell(x, y) },
-            { hasLineOfSight: (x, y, ...rest) => physicalDepth(x, y) > 0 && clear(x, y, ...rest) },
-            { hasLineOfSight: (x, y, ...rest) => physicalDepth(x, y) < 0 && clear(x, y, ...rest) }
+            { canWalkStraight: (x, y, ...rest) => physicalDepth(x, y) > 0 && clear(x, y, ...rest) },
+            { canWalkStraight: (x, y, ...rest) => physicalDepth(x, y) < 0 && clear(x, y, ...rest) }
         ]) {
             const old = Object.fromEntries(Object.keys(override).map(k => [k, Geo[k]]));
             Object.assign(Geo, override);

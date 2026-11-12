@@ -72,7 +72,7 @@ function radialPoint(target, distance, radians) {
 
 function hasLineOfSight(from, to) {
     if (!from || !to) return false;
-    return GeodataEngine.hasLineOfSight(
+    return GeodataEngine.canWalkStraight(
         Number(from.locX), Number(from.locY), Number(from.locZ),
         Number(to.locX), Number(to.locY), Number(to.locZ)
     );

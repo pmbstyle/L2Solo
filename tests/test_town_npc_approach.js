@@ -27,10 +27,10 @@ function identifiedBotAt(actorId, locX, locY, locZ = -100) {
 }
 
 // Protocol/queue behavior should not depend on an installed terrain pack.
-const originalGeo = Object.fromEntries(['hasGeo', 'hasLineOfSight', 'getHeight', 'getCellData', 'checkVirtualObstacles']
+const originalGeo = Object.fromEntries(['hasGeo', 'canWalkStraight', 'getHeight', 'getCellData', 'checkVirtualObstacles']
     .map(key => [key, GeodataEngine[key]]));
 GeodataEngine.hasGeo = () => false;
-GeodataEngine.hasLineOfSight = () => true;
+GeodataEngine.canWalkStraight = () => true;
 GeodataEngine.getHeight = (x, y, z) => z;
 
 const target = {
@@ -170,7 +170,7 @@ for (let index = 0; index < 32; index++) {
     const edgeTarget = { ...target, npcSelfId: 7003 };
     const edgePoints = TownNpcApproach.pointsFor(edgeTarget);
     const edge = botAt(edgePoints.interaction.locX + 8, edgePoints.interaction.locY);
-    GeodataEngine.hasLineOfSight = (x, y) => x !== edge.locX || y !== edge.locY;
+    GeodataEngine.canWalkStraight = (x, y) => x !== edge.locX || y !== edge.locY;
     assert(!TownNpcApproach.hasLineOfSight(edge, edgeTarget));
     assert(TownNpcApproach.plan({}, edge, edgeTarget, 'shopping').ready,
         'a clipped arrival cell within 16 units of a visible counter point may complete interaction');
@@ -186,7 +186,7 @@ for (let index = 0; index < 32; index++) {
     const originalVisibility = InteractionGeometry.canSee;
     InteractionGeometry.canSee = () => true;
     GeodataEngine.hasGeo = () => true;
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
     GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? obstacleHeight : 0, nswe: 0 });
     GeodataEngine.checkVirtualObstacles = () => virtualWall;
     assert(TownNpcApproach.hasInteractionLineOfSight(from, to),
@@ -339,7 +339,7 @@ assert.strictEqual(outsideOpenBoundary.ready, false,
 {
     const npc = { ...botAt(72, 0, 0), fetchSelfId: () => 7097, fetchHead: () => 32768 };
     GeodataEngine.hasGeo = () => true;
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
     GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? 24 : 0, nswe: 0 });
     GeodataEngine.checkVirtualObstacles = () => false;
     const clientSight = InteractionGeometry.canSee;

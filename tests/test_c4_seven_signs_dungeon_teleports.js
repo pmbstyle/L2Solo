@@ -89,7 +89,7 @@ for (const dungeon of DungeonTeleports.DUNGEONS) {
     }
     if (geodataAvailable) {
         assert.strictEqual(
-            GeodataEngine.hasLineOfSight(...dungeon.outside.spawn.slice(0, 3), ...dungeon.inside.spawn.slice(0, 3)),
+            GeodataEngine.canWalkStraight(...dungeon.outside.spawn.slice(0, 3), ...dungeon.inside.spawn.slice(0, 3)),
             false,
             `${dungeon.name} must retain the sealed geodata portal between its Ziggurat pair`
         );

@@ -35,7 +35,7 @@ mob.fetchDestId = () => bot.fetchId();
 World.user = { sessions: [session] };
 World.npc = { spawns: [mob] };
 World.fetchNpcsInRadius = () => [mob];
-Geodata.hasLineOfSight = () => true;
+Geodata.canWalkStraight = () => true;
 const output = { attacks: [], skills: [],
     attackExec(_s, _b, data) { this.attacks.push(data); },
     skillExec(_s, _b, data) { this.skills.push(data); } };
@@ -129,9 +129,9 @@ bot.fetchMp = () => 10;
 bot.canUseSkill = () => false;
 assert.strictEqual(Finisher.evaluate(session, bot, mob), null, 'cooldown prevents a finisher');
 bot.canUseSkill = () => true;
-Geodata.hasLineOfSight = () => false;
+Geodata.canWalkStraight = () => false;
 assert.strictEqual(Finisher.evaluate(session, bot, mob), null, 'blocked line of sight prevents a finisher');
-Geodata.hasLineOfSight = () => true;
+Geodata.canWalkStraight = () => true;
 mob.fetchIsRaidBoss = () => true;
 assert.strictEqual(Finisher.evaluate(session, bot, mob), null, 'raid protection wins even at one hit');
 mob.fetchIsRaidBoss = () => false;

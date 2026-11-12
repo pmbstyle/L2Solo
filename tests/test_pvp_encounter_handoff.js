@@ -292,7 +292,7 @@ async function main() {
         [Target, 'competitionNpcId', (_party, s) => s.characterId === 5 ? 10 : 11],
         [World, 'fetchNpcsInRadius', () => [mobAt(10, 3000), mobAt(11, -3000)]],
         [Geo, 'hasGeo', () => true], [Geo, 'getHeight', () => 0], [Geo, 'getCellData', () => ({ z: 0, nswe: 15 })],
-        [Geo, 'hasLineOfSight', () => true]];
+        [Geo, 'canWalkStraight', () => true]];
     const unstubbed = stubs.map(([object, key, value]) => { const before = object[key]; object[key] = value; return () => { object[key] = before; }; });
     spawned = 0; failSpawn = 0;
     try {

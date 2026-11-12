@@ -195,7 +195,7 @@ function start(npc, world, observers, random = Math.random) {
     // regions on behalf of an idle monster.
     if (!Geodata.hasGeo(from.locX, from.locY) || !Geodata.hasGeo(to.locX, to.locY)) return blocked();
     to.locZ = Geodata.getHeight(to.locX, to.locY, from.locZ);
-    if (!Number.isFinite(to.locZ) || !Geodata.hasLineOfSight(
+    if (!Number.isFinite(to.locZ) || !Geodata.canWalkStraight(
         from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)) return blocked();
 
     const transport = { dataSendToMeAndOthers(packet) { sendToWatchers(npc, observers, packet); } };

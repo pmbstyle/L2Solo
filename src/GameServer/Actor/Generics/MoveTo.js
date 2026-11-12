@@ -587,7 +587,7 @@ function moveTo(session, actor, coords) {
                 }
                 clearPending();
                 const routeFound = Array.isArray(candidatePath) && candidatePath.length > 1;
-                const fallbackLineOfSight = !routeFound && GeodataEngine.hasLineOfSight(
+                const fallbackLineOfSight = !routeFound && GeodataEngine.canWalkStraight(
                     startX, startY, startZ,
                     pathTarget.locX, pathTarget.locY, pathTarget.locZ
                 );
@@ -695,7 +695,7 @@ function moveTo(session, actor, coords) {
             };
 
             const directDistance = distance2d(start, requestedTo);
-            if (directDistance <= COMPANION_DIRECT_DISTANCE && GeodataEngine.hasLineOfSight(
+            if (directDistance <= COMPANION_DIRECT_DISTANCE && GeodataEngine.canWalkStraight(
                 startX, startY, startZ,
                 requestedTo.locX, requestedTo.locY, requestedTo.locZ
             )) {
@@ -763,7 +763,7 @@ function moveTo(session, actor, coords) {
         // terrain. The runtime has always handled that case with a direct
         // movement fallback, so distinguish a clear line from a genuinely
         // blocked destination before callers decide to reject the route.
-        const fallbackLineOfSight = !routeFound && GeodataEngine.hasLineOfSight(
+        const fallbackLineOfSight = !routeFound && GeodataEngine.canWalkStraight(
             startX, startY, startZ,
             pathTarget.locX, pathTarget.locY, pathTarget.locZ
         );

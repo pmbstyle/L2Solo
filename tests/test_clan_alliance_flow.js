@@ -103,7 +103,7 @@ const mocks = {
     'GameServer/Quest/QuestService': { questRates: () => ({ questSp: 1 }) },
     'GameServer/World/Generics/SpawnNpcs': { despawnQuestNpc: (w, npc) => despawn(npc) },
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => null },
-    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, hasLineOfSight: () => true },
+    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, canWalkStraight: () => true },
     'GameServer/Bot/AI/BotEventJournal': { record: async () => {} },
     'GameServer/Bot/Population/BotLifeState': { notifyNearFacts() {} },
     'GameServer/Bot/AI/BotTownTravel': { hasCombatThreat: () => false },
