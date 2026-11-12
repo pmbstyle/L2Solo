@@ -565,6 +565,7 @@ function expireSpotRelocation(session, bot, relocation) {
 // taken. A timeout (fights on the way) is an execution retry: no mark, no search,
 // the next walk bounded by the same relocation timeout.
 function failWalkRelocation(session, bot, relocation, reason) {
+    if (reason === 'route_unavailable') TownPathfinder.traceWayFailure(bot, session.lastPathfinding);
     expireSpotRelocation(session, bot, relocation);
     if (reason === 'route_unavailable') DecisionEvents.raiseDecision(session, 'spot_unreachable',
         { payload: { spotId: String(relocation.spotId), reason: `walk_${reason}` } });

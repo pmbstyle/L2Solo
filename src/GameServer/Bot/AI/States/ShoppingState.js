@@ -18,6 +18,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
+const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
@@ -704,6 +705,7 @@ module.exports = {
                 }
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
                 deferEquipmentRetry(session, 'route_unreachable');
+                TownPathfinder.traceWayFailure(bot, navigation.diagnostic);
                 // A walk to town that found no way is not walked again from the same
                 // ground (BotTownTravel.walkFailed); an approach that failed inside a
                 // town keeps the town pause.

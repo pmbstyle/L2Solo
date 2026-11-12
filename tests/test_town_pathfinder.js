@@ -144,4 +144,42 @@ assert(distance(globalFirst.to, globalTarget) < distance(globalStart, globalTarg
 assertNotSameLoc(globalFirst.to, globalSecond.to,
     'global segmented routes should also vary by bot instead of forming rails');
 
+// A walk between a spot and its town follows the spot's town way (TownWays): from Karul
+// Bugbear fields (20_12) the straight line to Hunter's Village crosses a ridge no walk
+// crosses; the way runs east and south round it. The fixture is the generator's output
+// for 20_12 and 20_13 (scripts/generate-town-ways.js --spot-ids=20_12,20_13).
+const TownWays = invoke('GameServer/Bot/Travel/TownWays');
+const path = require('path');
+TownWays.useFile(path.join(__dirname, 'fixtures', 'town-ways-karul.json'));
+try {
+    const way = TownWays.way('20_12');
+    const onOut = (point) => way.out.some((p) => p.locX === point.locX && p.locY === point.locY && p.locZ === point.locZ);
+    const center = { locX: 123948, locY: 75896, locZ: -2605 };
+    const hally = { locX: 116646, locY: 74820, locZ: -2581, town: "Hunter's Village" };
+    // bless1ng's field position (run B): the walk's first leg is a point of the way.
+    const field = { locX: 123700, locY: 75953, locZ: -2464 };
+    const errand = { currentSpot: { id: '20_12', center } };
+    const first = TownPathfinder.routeWithSession(errand, variedActor(2001505), field, hally);
+    assert(onOut(first.to), `the errand walk heads for its way, not the straight line (${JSON.stringify(first.to)})`);
+    assert.strictEqual(first.diagnostics.reason, 'town_way');
+    assert.strictEqual(first.diagnostics.townWay, '20_12');
+    // At that point the next leg is the way's next point (the sticky leg held until reached).
+    const index = way.out.findIndex((p) => p.locX === first.to.locX && p.locY === first.to.locY);
+    const second = TownPathfinder.routeWithSession(errand, variedActor(2001505), { ...first.to }, hally);
+    assert.deepStrictEqual(second.to, { ...way.out[index + 1] }, 'a reached way point leads to the next');
+    // The walk back from the town's square to the spot's centre follows the way back.
+    const back = TownPathfinder.routeWithSession({ spotRelocation: { spotId: '20_12', destination: center } }, variedActor(2001505),
+        { locX: 117129, locY: 76917, locZ: -2689 }, center);
+    assert(way.back.some((p) => p.locX === back.to.locX && p.locY === back.to.locY), 'the walk back heads for its way');
+    // No way: a spot without a row, or a target in another town, routes as before.
+    const plain = TownPathfinder.routeWithSession({ currentSpot: { id: '99_99', center } }, variedActor(2001505), field, hally);
+    assert.strictEqual(plain.diagnostics.reason, 'new_waypoint_area');
+    assert(!onOut(plain.to));
+    const elsewhere = TownPathfinder.routeWithSession({ currentSpot: { id: '20_12', center } }, variedActor(2001505), field,
+        { locX: 146737, locY: 25807, locZ: -2008, town: 'Aden' });
+    assert.strictEqual(elsewhere.diagnostics.reason, 'new_waypoint_area', 'a walk to another town keeps its straight leg');
+} finally {
+    TownWays.useFile();
+}
+
 console.log('TownPathfinder regression checks passed');

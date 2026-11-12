@@ -315,6 +315,7 @@ const tests = [
     'tests/test_town_traffic.js',
     'tests/test_town_movement.js',
     'tests/test_town_trade_navigation.js',
+    'tests/test_town_ways_geodata.js',
     'tests/test_openrouter_gateway.js',
     'tests/test_ai_config_surface.js',
     'tests/test_bot_inference_budget.js',
@@ -1313,6 +1314,7 @@ const geodataTests = new Set([
     'tests/test_town_gate_routing.js',
     'tests/test_town_movement.js',
     'tests/test_town_trade_navigation.js',
+    'tests/test_town_ways_geodata.js',
     'tests/test_town_navigation.js',
     'tests/test_town_npc_routing.js'
 ]);

@@ -2,11 +2,15 @@
 // zone, mapregion, and bot random-walk data. Keep this file small and explicit:
 // it is a routing hint layer, not a replacement for geodata.
 const TownGateCatalog = invoke('GameServer/Bot/AI/TownGateCatalog');
+const TownWays = invoke('GameServer/Bot/Travel/TownWays');
 
 const GATE_APPROACH_REACHED = 140;
 const GATE_PASSAGE_REACHED = 80;
 const GATE_WAYPOINT_ARRIVAL_RADIUS = 48;
 const WAYPOINT_AREA_ARRIVAL_RADIUS = 96;
+// A town way's leg ends on its point (an exact goal): the next leg was checked from
+// there; a goal radius can end the walk on a lower step it cannot leave the same way.
+const TOWN_WAY_ARRIVAL_RADIUS = 0;
 const PROGRESSIVE_SEGMENT_DISTANCE = 1200;
 const PROGRESSIVE_SEGMENT_MIN_REMAINDER = 700;
 
@@ -393,6 +397,27 @@ function clearSessionRoute(session) {
     }
 }
 
+// The point a body heads for on its spot's town way: the way of the spot it walks to (a
+// relocation) or holds; back to the spot when the target is its centre; into the town when
+// the target lies in that town and the body is not in it yet or already on the way (an
+// NPC-to-NPC walk in town keeps its leg): on to the target's NPC by its spur, or to the
+// town end while that is nearer the target than the body. Null: no way applies.
+function townWayPoint(session, from, to) {
+    const spotId = session?.spotRelocation?.spotId ?? session?.currentSpot?.id;
+    const way = spotId == null ? null : TownWays.way(spotId);
+    if (!way) return null;
+    // lazy: cycle, TownTransitPolicy requires this module
+    const townAt = (point) => invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(point);
+    let point = null;
+    if (TownWays.atStart(way, to)) point = TownWays.wayPoint(way, from, false, townAt(from) === way.townName);
+    else if ((to?.town || townAt(to)) === way.townName) {
+        const into = TownWays.wayInto(way, to);
+        if ((into !== way.out || TownWays.leadsCloser(way, to, from))
+            && (TownWays.reachedOn(into, from) >= 0 || townAt(from) !== way.townName)) point = TownWays.wayPoint(way, from, true, false, to);
+    }
+    return point ? { point, way } : null;
+}
+
 const TownPathfinder = {
     towns: TOWNS,
 
@@ -428,6 +453,19 @@ const TownPathfinder = {
 
         const fromTown = findTown(from);
         const toTown = findTown(to);
+        // A walk between the body's spot and its town follows the spot's town way: the
+        // straight line may cross a ridge or a canyon no walk crosses (TownWays).
+        const onWay = townWayPoint(session, from, to);
+        if (onWay) {
+            const routePlan = session ? { townName: onWay.way.townName, finalTarget: cloneLoc(to),
+                waypoint: cloneLoc(onWay.point), arrivalRadius: TOWN_WAY_ARRIVAL_RADIUS,
+                createdAt: now, updatedAt: now, reason: 'town_way' } : null;
+            if (session) session.townRoutePlan = routePlan;
+            // townWay names the way a failed leg was on (the walk's give-up trace).
+            return { to: cloneLoc(onWay.point), arrivalRadius: TOWN_WAY_ARRIVAL_RADIUS,
+                diagnostics: { ...createDiagnostics(from, to, onWay.point, fromTown, toTown, routePlan, 'town_way'),
+                    townWay: onWay.way.spotId } };
+        }
         let baseRoutedTo = this.route(actor, from, to);
         const exactGateWaypoint = TownGateCatalog.isGatePoint(baseRoutedTo);
         let usesProgressiveSegment = false;
@@ -480,6 +518,15 @@ const TownPathfinder = {
                 usesTownRoute ? (usesWaypointArea ? 'new_waypoint_area' : 'new_waypoint') : 'direct'
             )
         };
+    },
+
+    // A walk given up on a failed leg of a town way is traced with the way's spot: a
+    // table the live map no longer walks shows here (the walk keeps its own trace).
+    traceWayFailure(bot, diagnostic) {
+        const spotId = diagnostic?.townRoute?.townWay;
+        const Trace = invoke('GameServer/Bot/DecisionTrace');
+        if (spotId == null || !Trace.on()) return;
+        Trace.record({ kind: 'note', bot: Number(bot?.fetchId?.()), name: 'walk_failed', reason: 'town_way', spot: String(spotId) });
     },
 
     describeDiagnostics(diagnostics) {
