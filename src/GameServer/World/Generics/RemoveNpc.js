@@ -3,6 +3,7 @@ const SpawnNpcs      = invoke('GameServer/World/Generics/SpawnNpcs');
 const NpcDecay        = invoke('GameServer/World/Generics/NpcDecay');
 const RaidBossState   = invoke('GameServer/World/RaidBossState');
 const FailureLog      = require('../../../FailureLog');
+const { killEffect }  = require('../KillEffect');
 
 function canRespawnDefinition(world, definition, periodRevision) {
     if (!SpawnNpcs.isPeriodic(definition?.spawn)) return true;
@@ -48,9 +49,9 @@ function removeNpc(session, npc) {
         }
     }
 
-    // The drops are a consequence of the kill (Die.killEffect): a bad drop row is counted, the
+    // The drops are a consequence of the kill (killEffect): a bad drop row is counted, the
     // corpse still decays (registered above) and the kill's other rewards still run.
-    invoke('GameServer/Npc/Generics/Die').killEffect('kill.drops', () => this.npcRewards(session, npc));
+    killEffect('kill.drops', () => this.npcRewards(session, npc));
 }
 
 module.exports = removeNpc;

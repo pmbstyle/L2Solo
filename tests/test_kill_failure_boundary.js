@@ -69,5 +69,40 @@ try {
     assert.doesNotThrow(() => invoke('GameServer/Npc/Generics/Die')({ dataSendToMeAndOthers() {} }, leader.actor, corpse));
     assert.deepStrictEqual([corpse.state.dead, handedOver], [true, 1], 'the corpse is still handed over to NpcDied');
     assert.strictEqual(count('kill.fairy_tree'), 1);
+
+    // A character's death: its EXP loss throws before the body is marked dead and its life row
+    // throws after. The body still dies (dead, die packet), the died situation still reaches the
+    // worker and the journal still gets its line; each failure is counted.
+    {
+        const fs = require('fs'), vm = require('vm'), { createRequire } = require('node:module');
+        const filename = require.resolve('../src/GameServer/Actor/Generics/Die.js');
+        const seen = { diePackets: 0, posts: [], journal: 0 };
+        const boom = (message) => () => { throw new TypeError(message); };
+        const deps = {
+            'GameServer/Network/Response': { die: () => Buffer.from([0]) },
+            'GameServer/Effects/EffectStore': { prune() {} }, 'GameServer/Effects/EffectTicker': { clearAll() {}, refreshEffects() {} },
+            'GameServer/Actor/Generics/CalculateStats': () => {}, 'GameServer/Skills/ChargeLifecycle': { clear() {} },
+            'GameServer/Bot/Economy/EconomyContext': { basics: () => ({ deathHours: 1 }) },
+            'GameServer/Bot/Economy/EconomicValuation': { progressStats: () => ({}), liveDeathHours: (hours) => hours },
+            'GameServer/Bot/AI/KnowledgeLearning': { knowledgeEnabled: () => false },
+            'GameServer/Progression/DeathExperience': { applyDeathPenalty: boom('death exp failed') },
+            'GameServer/Clan/ClanAllianceService': { onDeath() {} },
+            'GameServer/Bot/Population/BotLifeState': { cachedState: () => ({ stats: {} }), recordNearFight: boom('life row failed'),
+                notifyNearFacts: (session, reason) => seen.posts.push(reason) },
+            'GameServer/Bot/DecisionTrace': { on: () => false },
+            'GameServer/Bot/AI/BotEventJournal': { record() { seen.journal++; } }
+        };
+        const box = { exports: {} };
+        vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { module: box, require: createRequire(filename),
+            invoke: (name) => deps[name] || {}, Buffer });
+        const dying = { fetchId: () => 7003, fetchName: () => 'b7003', fetchExp: () => 1000, setExpSp() {}, effects: {},
+            dead: false, isDead() { return this.dead; }, destructor() {},
+            state: { destructor() {}, setDead(value) { dying.dead = value; } } };
+        dying.session = { accountId: 'bot_7003', actor: dying, dataSendToMeAndOthers() { seen.diePackets++; } };
+        assert.doesNotThrow(() => box.exports(dying.session, dying), 'a failed consequence does not leave the death');
+        assert.deepStrictEqual([dying.dead, seen.diePackets], [true, 1], 'the body is still dead, not alive at 0 HP');
+        assert.deepStrictEqual([seen.posts, seen.journal], [['death'], 1], 'the died situation and the journal line still happen');
+        assert.deepStrictEqual([count('death.exp_penalty'), count('death.life_row')], [1, 1], 'both failures are counted');
+    }
     console.log('Kill consequences: one that fails is counted and the others still run');
 } finally { saved.reverse().forEach((restore) => restore()); }

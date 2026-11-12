@@ -5,6 +5,7 @@ const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
 const FailureLog = require('../../../FailureLog');
+const { killEffect } = require('../../World/KillEffect');
 
 const PARTY_REWARD_RADIUS = 2500;
 const PendingSweep = invoke('GameServer/Bot/AI/PendingSweep');
@@ -147,7 +148,6 @@ function autoSweepSpoiledCorpse(npc, Generics) {
 
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
-    const { killEffect } = invoke('GameServer/Npc/Generics/Die');
 
     if (npc.minionBossObjectId) {
         killEffect('kill.minion', () => RaidBossMinionManager.onMinionDeath(World, npc));

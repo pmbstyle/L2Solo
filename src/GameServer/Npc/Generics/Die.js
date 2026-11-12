@@ -2,22 +2,13 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const FailureLog = require('../../../FailureLog');
+const { killEffect } = require('../../World/KillEffect');
 
 function clearEffectsOnDeath(npc) {
     EffectTicker.clearAll(npc);
     npc.effects = {};
     npc.activeBuffs = {};
     EffectStore.prune(npc);
-}
-
-// One consequence of an NPC's death: a reward, a quest callback, a raid's minions, a guardian
-// spawn. The death itself (dead state, effects cleared, the corpse's decay and respawn) is not one.
-// A consequence that throws is counted under its site (`kill.<what>`: FailureLog logs its first
-// stack and writes a trace failure record) and the others still run; the kill comes from a hit
-// timer, where a throw would exit the server. C4 (Lisvus L2Attackable.doDie, calculateRewards): a
-// failed reward or quest notification is logged and the death goes on.
-function killEffect(site, effect) {
-    try { effect(); } catch (error) { FailureLog.note(site, error); }
 }
 
 function die(session, actor, npc) {
@@ -47,4 +38,3 @@ function die(session, actor, npc) {
 
 module.exports = die;
 module.exports.clearEffectsOnDeath = clearEffectsOnDeath;
-module.exports.killEffect = killEffect;
