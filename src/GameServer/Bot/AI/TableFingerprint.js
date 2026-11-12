@@ -3,7 +3,8 @@
 // The files each precomputed bot table is simulated by, and their fingerprint:
 // a change in one of these files makes the table stale. Read by the generators
 // (scripts/generate-spot-table.js writes the spot table's header.fingerprint,
-// scripts/hunt-tables/common.js each hunt table's), by scripts/check-tables.js
+// scripts/hunt-tables/common.js each hunt table's, scripts/generate-town-ways.js
+// the town ways'), by scripts/check-tables.js
 // (`npm run check` fails on a stale committed table) and by SpotValueTable
 // (one log line at the first read, main thread). Readers only (SpotValueTable,
 // SpotEconomics, SpotRewardExpectation, ...) are no input. A path is a file or
@@ -59,12 +60,23 @@ const HUNT_GENERATOR = ['scripts/hunt-tables/build.js', 'scripts/hunt-tables/rot
     // Its mob and spot list (no header: it moves only with the catalogue), its nearest towns.
     'data/Bots/spot-reward-npcs.json', 'src/GameServer/World/TownRespawn.js'];
 
+// The town ways: the walk search and its step rule, the towns, the spot ids and
+// centres the catalogue cuts (the spot generator builds it; the hunting filter
+// decides which spawns make a spot) and the service NPCs whose spurs it stores.
+const WAYS_GENERATOR = ['scripts/generate-town-ways.js', 'scripts/generate-spot-table.js', 'src/GameServer/World/TownRespawn.js',
+    'src/GameServer/Geodata/GeodataEngine.js', 'src/GameServer/Geodata/GardenOfEvaBarriers.js', 'src/GameServer/Geodata/VirtualObstacles',
+    'src/GameServer/Bot/AI/BotHuntingTargetPolicy.js', 'src/GameServer/Bot/Travel/TownWays.js',
+    'src/GameServer/Bot/Economy/TownServiceCatalog.js', 'src/GameServer/World/Generics/NpcShopBuyLists.js',
+    'src/GameServer/World/C4GatekeeperTeleports.js'];
+
 const INPUTS = Object.freeze({
     spot: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR],
-    hunt: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR, ...HUNT_GENERATOR]
+    hunt: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR, ...HUNT_GENERATOR],
+    ways: [...CATALOGUE, 'data/Npcs', ...WAYS_GENERATOR]
 });
 // header.generator -> its inputs.
-const GENERATORS = Object.freeze({ 'scripts/generate-spot-table.js': 'spot', 'scripts/hunt-tables/build.js': 'hunt' });
+const GENERATORS = Object.freeze({ 'scripts/generate-spot-table.js': 'spot', 'scripts/hunt-tables/build.js': 'hunt',
+    'scripts/generate-town-ways.js': 'ways' });
 
 function walk(root, relative, out) {
     const full = path.join(root, relative);
