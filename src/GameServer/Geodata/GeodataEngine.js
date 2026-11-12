@@ -7,6 +7,13 @@ const VirtualObstacles = invoke('GameServer/Geodata/VirtualObstacles/index');
 const REGION_OFFSET_X = 20;
 const REGION_OFFSET_Y = 18;
 const MAX_LAYER_STEP = 64;
+// The sides a body may leave a geodata cell by (its NSWE flags).
+const EAST = 1, WEST = 2, SOUTH = 4, NORTH = 8;
+const NEIGHBOURS = Object.freeze([{ dx: 0, dy: -1, exit: NORTH }, { dx: 0, dy: 1, exit: SOUTH },
+    { dx: 1, dy: 0, exit: EAST }, { dx: -1, dy: 0, exit: WEST }]);
+// Where the latest straightMoveEnd walk stopped: scratch of that one call,
+// read before it returns and never kept (no allocation on the sight path).
+const walkStop = { cx: 0, cy: 0, cz: 0 };
 let sharedGeodata = null;
 
 function getSharedGeodata(directory) {
@@ -389,7 +396,60 @@ const GeodataEngine = {
     },
 
     hasLineOfSight(fromX, fromY, fromZ, toX, toY, toZ) {
-        if (GardenOfEvaBarriers.blocks(fromX, fromY, fromZ, toX, toY, toZ)) return false;
+        return this.walkStraight(fromX, fromY, fromZ, toX, toY, toZ, null);
+    },
+
+    // How far a straight move from a point toward another goes (C4: Lisvus
+    // GeoData.moveCheck, Mobius GeoEngine.getValidLocation): the target when
+    // the walk reaches it, otherwise the centre of the last cell the walk
+    // stood on, or the start point when it could not take one step. locZ is
+    // the floor the walk ended on. Our choice: a walk that comes to the
+    // target's cell on another floor ends in that cell on its own floor (C4
+    // sends it back to the start). Callers: a ground drop's landing point
+    // (NpcRewards), a pickup run's end (Automation), on main.
+    straightMoveEnd(fromX, fromY, fromZ, toX, toY, toZ) {
+        const reached = this.walkStraight(fromX, fromY, fromZ, toX, toY, toZ, walkStop);
+        if (reached) return { locX: toX, locY: toY, locZ: walkStop.cz, reached };
+        if (walkStop.cx === fromX >> 4 && walkStop.cy === fromY >> 4) {
+            return { locX: fromX, locY: fromY, locZ: walkStop.cz, reached };
+        }
+        return { locX: (walkStop.cx << 4) + 8, locY: (walkStop.cy << 4) + 8, locZ: walkStop.cz, reached };
+    },
+
+    // The step rule, one for the straight walk (sight and movement) and for
+    // the route search, on main and in the pathfinding workers: a body on the
+    // cell `from` steps to the neighbouring cell on its `exit` side when
+    // `from` is open on that side. The entered cell's flag toward the body is
+    // not asked (C4: Lisvus GeoData.moveCheck and CellNodeBuffer.getNeighbors,
+    // Mobius GeoEngine.getValidLocation and NodeBuffer.expandNeighbors read
+    // the cell being left), so a one-way edge (a steep slope, a ledge) is
+    // walked down and never up, and a body inside a tree's or a rock's skirt
+    // walks out of it. Two clauses on the entered cell: it is not closed on
+    // all four sides (Mobius GeoEngine.isCompletelyBlocked; a town building
+    // is such a cell here), and its floor lies within MAX_LAYER_STEP of the
+    // one left, up or down (our choice: Lisvus has no height limit on a step,
+    // Mobius refuses more than 40 up and nothing down). Returns the entered
+    // cell, its layer nearest the floor left, or null.
+    stepTo(from, cellX, cellY, exit) {
+        if ((from.nswe & exit) === 0) return null;
+        const to = this.getCellData((cellX << 4) + 8, (cellY << 4) + 8, from.z);
+        return to.nswe !== 0 && Math.abs(to.z - from.z) <= MAX_LAYER_STEP ? to : null;
+    },
+
+    // The one straight walk, for sight (hasLineOfSight) and for movement
+    // (straightMoveEnd): the cells under the line, one stepTo at a time. A
+    // diagonal step is two steps round either corner (our choice: C4 needs
+    // both corners open). True when the walk ends on the target's cell and
+    // floor. With `stop` it also reports the last cell it stood on and that
+    // cell's floor.
+    walkStraight(fromX, fromY, fromZ, toX, toY, toZ, stop) {
+        if (GardenOfEvaBarriers.blocks(fromX, fromY, fromZ, toX, toY, toZ)) {
+            if (stop) {
+                stop.cx = fromX >> 4; stop.cy = fromY >> 4;
+                stop.cz = this.getCellData((stop.cx << 4) + 8, (stop.cy << 4) + 8, fromZ).z;
+            }
+            return false;
+        }
         let cx = fromX >> 4;
         let cy = fromY >> 4;
 
@@ -398,9 +458,11 @@ const GeodataEngine = {
         const startCell = this.getCellData((cx << 4) + 8, (cy << 4) + 8, fromZ);
         const targetCell = this.getCellData((targetCx << 4) + 8, (targetCy << 4) + 8, toZ);
         const hasLayerData = this.hasGeo(fromX, fromY) && this.hasGeo(toX, toY);
+        let cell = startCell;
         let cz = startCell.z;
 
         if (cx === targetCx && cy === targetCy) {
+            if (stop) { stop.cx = cx; stop.cy = cy; stop.cz = cz; }
             // A multilevel block can contain several floors in the same XY
             // cell.  Treating that as unconditional visibility is exactly
             // what lets Cruma mobs see through a ceiling.
@@ -416,78 +478,32 @@ const GeodataEngine = {
 
         let floatCx = cx;
         let floatCy = cy;
+        let blocked = false;
 
         for (let i = 0; i < steps; i++) {
             const nextCx = Math.round(floatCx + xInc);
             const nextCy = Math.round(floatCy + yInc);
 
-            const diffX = nextCx - cx;
-            const diffY = nextCy - cy;
-
-            if (diffX !== 0 && diffY !== 0) {
-                const cellCurr = this.getCellData((cx << 4) + 8, (cy << 4) + 8, cz);
-                const cellHoriz = this.getCellData((nextCx << 4) + 8, (cy << 4) + 8, cz);
-                const cellDiag = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cellHoriz.z);
-
-                let path1Passable = Math.abs(cellHoriz.z - cellCurr.z) <= MAX_LAYER_STEP
-                    && Math.abs(cellDiag.z - cellHoriz.z) <= MAX_LAYER_STEP;
-                if (diffX > 0) {
-                    path1Passable = path1Passable && ((cellCurr.nswe & 1) !== 0) && ((cellHoriz.nswe & 2) !== 0);
-                } else {
-                    path1Passable = path1Passable && ((cellCurr.nswe & 2) !== 0) && ((cellHoriz.nswe & 1) !== 0);
+            const xExit = nextCx > cx ? EAST : WEST;
+            const yExit = nextCy > cy ? SOUTH : NORTH;
+            let next;
+            if (nextCx !== cx && nextCy !== cy) {
+                const side = this.stepTo(cell, nextCx, cy, xExit);
+                next = side && this.stepTo(side, nextCx, nextCy, yExit);
+                if (!next) {
+                    const other = this.stepTo(cell, cx, nextCy, yExit);
+                    next = other && this.stepTo(other, nextCx, nextCy, xExit);
                 }
-                if (diffY > 0) {
-                    path1Passable = path1Passable && ((cellHoriz.nswe & 4) !== 0) && ((cellDiag.nswe & 8) !== 0);
-                } else {
-                    path1Passable = path1Passable && ((cellHoriz.nswe & 8) !== 0) && ((cellDiag.nswe & 4) !== 0);
-                }
-
-                const cellVert = this.getCellData((cx << 4) + 8, (nextCy << 4) + 8, cz);
-                const cellDiagViaVertical = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cellVert.z);
-                let path2Passable = Math.abs(cellVert.z - cellCurr.z) <= MAX_LAYER_STEP
-                    && Math.abs(cellDiagViaVertical.z - cellVert.z) <= MAX_LAYER_STEP;
-                if (diffY > 0) {
-                    path2Passable = path2Passable && ((cellCurr.nswe & 4) !== 0) && ((cellVert.nswe & 8) !== 0);
-                } else {
-                    path2Passable = path2Passable && ((cellCurr.nswe & 8) !== 0) && ((cellVert.nswe & 4) !== 0);
-                }
-                if (diffX > 0) {
-                    path2Passable = path2Passable && ((cellVert.nswe & 1) !== 0) && ((cellDiagViaVertical.nswe & 2) !== 0);
-                } else {
-                    path2Passable = path2Passable && ((cellVert.nswe & 2) !== 0) && ((cellDiagViaVertical.nswe & 1) !== 0);
-                }
-
-                if (!path1Passable && !path2Passable) {
-                    return false;
-                }
-
-                cz = path1Passable ? cellDiag.z : cellDiagViaVertical.z;
             } else {
-                const cellCurr = this.getCellData((cx << 4) + 8, (cy << 4) + 8, cz);
-                const cellNext = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cz);
-
-                if (Math.abs(cellNext.z - cellCurr.z) > MAX_LAYER_STEP) {
-                    return false;
-                }
-
-                let passable = false;
-                if (diffX > 0) {
-                    passable = ((cellCurr.nswe & 1) !== 0) && ((cellNext.nswe & 2) !== 0);
-                } else if (diffX < 0) {
-                    passable = ((cellCurr.nswe & 2) !== 0) && ((cellNext.nswe & 1) !== 0);
-                } else if (diffY > 0) {
-                    passable = ((cellCurr.nswe & 4) !== 0) && ((cellNext.nswe & 8) !== 0);
-                } else if (diffY < 0) {
-                    passable = ((cellCurr.nswe & 8) !== 0) && ((cellNext.nswe & 4) !== 0);
-                }
-
-                if (!passable) {
-                    return false;
-                }
-
-                cz = cellNext.z;
+                next = this.stepTo(cell, nextCx, nextCy, nextCx !== cx ? xExit : yExit);
+            }
+            if (!next) {
+                blocked = true;
+                break;
             }
 
+            cell = next;
+            cz = next.z;
             cx = nextCx;
             cy = nextCy;
             floatCx += xInc;
@@ -499,7 +515,8 @@ const GeodataEngine = {
         // finishes on the target's resolved layer instead of a floor above
         // or below it. Missing geodata keeps the historical permissive
         // fallback so uncovered outdoor regions do not become opaque.
-        return !hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP;
+        if (stop) { stop.cx = cx; stop.cy = cy; stop.cz = cz; }
+        return !blocked && (!hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP);
     },
 
     // Runs the whole search in one go (findPathSteps without pauses).
@@ -600,31 +617,12 @@ const GeodataEngine = {
             }
 
             const currentCell = this.getCellData((current.cx << 4) + 8, (current.cy << 4) + 8, current.cz);
-            
-            const directions = [
-                { dx: 0, dy: -1, bit: 8, oppBit: 4 },
-                { dx: 0, dy: 1, bit: 4, oppBit: 8 },
-                { dx: 1, dy: 0, bit: 1, oppBit: 2 },
-                { dx: -1, dy: 0, bit: 2, oppBit: 1 }
-            ];
-
-            for (const dir of directions) {
+            for (const dir of NEIGHBOURS) {
                 const nCx = current.cx + dir.dx;
                 const nCy = current.cy + dir.dy;
-                if ((currentCell.nswe & dir.bit) === 0) {
-                    continue;
-                }
-
-                const nCell = this.getCellData((nCx << 4) + 8, (nCy << 4) + 8, currentCell.z);
+                const nCell = this.stepTo(currentCell, nCx, nCy, dir.exit);
+                if (!nCell) continue;
                 const key = `${nCx},${nCy},${nCell.z}`;
-
-                if ((nCell.nswe & dir.oppBit) === 0) {
-                    continue;
-                }
-
-                if (Math.abs(nCell.z - currentCell.z) > MAX_LAYER_STEP) {
-                    continue;
-                }
 
                 if (GardenOfEvaBarriers.blocks((current.cx << 4) + 8, (current.cy << 4) + 8, current.cz,
                     (nCx << 4) + 8, (nCy << 4) + 8, nCell.z)) continue;

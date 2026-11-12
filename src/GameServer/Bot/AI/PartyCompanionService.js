@@ -21,8 +21,6 @@ const DEFAULT_PARTY_SETTINGS = {
 const PARTY_LOOT_RADIUS = 2500;
 const PARTY_GROUND_LOOT_LEASH_RADIUS = 1200;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
-const GROUND_PICKUP_FALLBACK_TIMEOUT_MS = 8000;
-const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
 const capacityReservations = new WeakMap();
@@ -294,8 +292,25 @@ function cancelGroundPickup(session) {
     session.partyGroundPickupAttempt = Number(session.partyGroundPickupAttempt || 0) + 1;
     session.partyGroundPickupQueue = [];
     session.partyGroundPickupInProgress = false;
-    session.partyGroundPickupDeadlineAt = 0;
+    session.partyGroundPickupRun = null;
     delete actor.storedPickup;
+}
+
+// The run to the head drop is in flight: Automation has not dropped the
+// pickup this body requested (any abort of its movement changes the generation).
+function groundPickupRunning(session) {
+    const run = session?.partyGroundPickupRun;
+    return run != null && Number(session.actor?.automation?.pickupGeneration || 0) === run;
+}
+
+// This body is collecting: it has taken its head drop and the take is still
+// live, either waiting for its own swing to end (C4: no pickup while
+// attacking; no run requested yet) or running to it. A take whose run was
+// dropped is released at the next pickup tick, and a dead or offline body
+// collects nothing.
+function collectingGroundLoot(session) {
+    return !!session?.partyGroundPickupInProgress && isAliveOnline(session)
+        && (session.partyGroundPickupRun == null || groundPickupRunning(session));
 }
 
 function canPickGroundLoot(session, leaderSession, item) {
@@ -320,6 +335,15 @@ function canPickGroundLoot(session, leaderSession, item) {
         delete actor.storedPickup;
     }
     return distance2d(actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
+}
+
+// A pickup is one straight run (Automation.pickupRun). A body with no
+// straight run to within reach of the drop does not take it. Our choice: a bot
+// does not walk round an obstacle to a drop; the drop waits on the ground for
+// a member with a clear line, or for this body from where it stands at a
+// later loot scan.
+function reachesGroundLoot(session, item) {
+    return invoke('GameServer/Automation').pickupRun(session.actor, item).inReach;
 }
 
 function autonomousLootBot(session) {
@@ -429,14 +453,14 @@ function reconcileGroundLoot(looterSession) {
     const combat = partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession);
     if (combat && !groundLootPickers(leaderSession).some(member=>member.partyCompanion
         && invoke('GameServer/Bot/AI/PartyCombatLootPolicy').idleSupport(member.actor)
-        && (member.partyGroundPickupInProgress || now-Number(member.partyCombatLootReadyAt || 0)<=1500))) return 0;
+        && (collectingGroundLoot(member) || now-Number(member.partyCombatLootReadyAt || 0)<=1500))) return 0;
     if (combat) {
         // Pending orders assigned before combat may belong to a fighter.
         // Release them for an idle support; never replace an in-flight FIFO.
         for (const member of groundLootPickers(leaderSession)) {
             const queue = member.partyGroundPickupQueue || [];
             for (let index=queue.length-1;index>=0;index--) {
-                if (index===0 && member.partyGroundPickupInProgress) continue;
+                if (index===0 && collectingGroundLoot(member)) continue;
                 const item = (world().items?.spawns || []).find(item=>Number(item.fetchId())===Number(queue[index].id));
                 if (!canLootDuringCombat(member,leaderSession,item)) queue.splice(index,1);
             }
@@ -467,27 +491,10 @@ function nearestGroundLootPicker(looterSession, item) {
             Number(a.actor.fetchId()) - Number(b.actor.fetchId())
         ));
     if (partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) {
-        const ready = pickers.find(member=>canLootDuringCombat(member,leaderSession,item));
+        const ready = pickers.find(member=>canLootDuringCombat(member,leaderSession,item) && reachesGroundLoot(member,item));
         if (ready) return ready;
     }
-    return pickers[0] || null;
-}
-
-function groundPickupTimeoutMs(picker, pickup) {
-    const item = (world().items?.spawns || [])
-        .find((candidate) => Number(candidate?.fetchId?.()) === Number(pickup?.id));
-    if (!item?.fetchLocX || !item?.fetchLocY || !item?.fetchLocZ) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
-    const automation = picker?.automation;
-    const runSpeed = Number(picker?.fetchCollectiveRunSpd?.());
-    if (!Number.isFinite(runSpeed) || runSpeed <= 0) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
-    const travelMs = Number(automation?.ticksToMove?.(
-        picker.fetchLocX(), picker.fetchLocY(), picker.fetchLocZ(),
-        item.fetchLocX(), item.fetchLocY(), item.fetchLocZ(),
-        0,
-        runSpeed
-    ));
-    if (!Number.isFinite(travelMs) || travelMs <= 0) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
-    return Math.max(GROUND_PICKUP_FALLBACK_TIMEOUT_MS, Math.ceil(travelMs) + GROUND_PICKUP_TIMEOUT_GRACE_MS);
+    return pickers.find(member => reachesGroundLoot(member, item)) || null;
 }
 
 function startQueuedGroundPickup(pickerSession) {
@@ -512,21 +519,21 @@ function startQueuedGroundPickup(pickerSession) {
         !isInsidePartyGroundLootLeash(leaderSession, queuedItem) ||
         distance2d(picker, queuedItem) > PARTY_GROUND_LOOT_LEASH_RADIUS;
     if (pickerSession.partyGroundPickupInProgress) {
-        const deadlineAt = Number(pickerSession.partyGroundPickupDeadlineAt || 0);
+        const running = groundPickupRunning(pickerSession);
         // This is a handled AI action. Falling through into FollowingState
         // would issue a formation move, cancel the pickup timer and make the
         // bot visibly run out and back without collecting anything. Combat,
         // revival and a broken leash still outrank loot and must reclaim the
         // current tick immediately.
-        if ((!deadlineAt || now < deadlineAt) && !partyNeedsAttention && !invalidPickup) return true;
-        // A competing movement order can cancel Automation's pickup timer
-        // without invoking PickupExec's completion callback. Do not leave the
-        // whole FIFO permanently locked behind that stale action.
+        if ((running || picker.state?.fetchHits?.()) && !partyNeedsAttention && !invalidPickup) return true;
+        // No run is in flight any more: the swing it waited for has ended, or
+        // a competing order made Automation drop the run without PickupExec's
+        // completion. The head drop is released here and taken again below.
         // A support cast may already have taken ownership of automation.
-        if (!picker.state?.fetchCasts?.()) picker.automation?.abortAll?.(picker);
+        if (running && !picker.state?.fetchCasts?.()) picker.automation?.abortAll?.(picker);
         picker.state?.setPickinUp?.(false);
         pickerSession.partyGroundPickupInProgress = false;
-        pickerSession.partyGroundPickupDeadlineAt = 0;
+        pickerSession.partyGroundPickupRun = null;
         // Invalidate a completion that was already queued before abortAll.
         // The item stays queued across transient combat and can retry later.
         pickerSession.partyGroundPickupAttempt = Number(pickerSession.partyGroundPickupAttempt || 0) + 1;
@@ -557,9 +564,9 @@ function startQueuedGroundPickup(pickerSession) {
     if (!queuedItem ||
         !isOwnedPartyGroundLoot(leaderSession, queuedItem) ||
         !isInsidePartyGroundLootLeash(leaderSession, queuedItem) ||
-        !canPickGroundLoot(pickerSession, leaderSession, queuedItem)) {
+        !canPickGroundLoot(pickerSession, leaderSession, queuedItem) ||
+        !reachesGroundLoot(pickerSession, queuedItem)) {
         queue.shift();
-        pickerSession.partyGroundPickupDeadlineAt = 0;
         return startQueuedGroundPickup(pickerSession);
     }
     pickerSession.partyGroundPickupInProgress = true;
@@ -569,15 +576,19 @@ function startQueuedGroundPickup(pickerSession) {
             targetId:pickup.id,at:now
         };
     }
-    pickerSession.partyGroundPickupDeadlineAt = now + groundPickupTimeoutMs(picker, pickup);
     const attempt = Number(pickerSession.partyGroundPickupAttempt || 0) + 1;
     pickerSession.partyGroundPickupAttempt = attempt;
+    pickerSession.partyGroundPickupRun = null;
+    // A body collects after its own swing, never inside it (C4: no pickup
+    // while attacking). The drop is its next action; the swing's end runs it.
+    if (picker.state?.fetchHits?.()) return true;
     if (picker.state?.fetchSeated?.()) {
         picker.state.setSeated(false);
         pickerSession.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(picker), picker);
     }
     const Generics = invoke(path.actor);
     Generics.stopAutomation(pickerSession, picker);
+    pickerSession.partyGroundPickupRun = Number(picker.automation?.pickupGeneration || 0);
     Generics.pickupExec(pickerSession, picker, pickup, () => {
         if (Number(pickerSession.partyGroundPickupAttempt) !== attempt) return;
         picker.state?.setPickinUp?.(false);
@@ -588,7 +599,7 @@ function startQueuedGroundPickup(pickerSession) {
             if (index >= 0) queue.splice(index, 1);
         }
         pickerSession.partyGroundPickupInProgress = false;
-        pickerSession.partyGroundPickupDeadlineAt = 0;
+        pickerSession.partyGroundPickupRun = null;
         startQueuedGroundPickup(pickerSession);
         // A completed queue entry can make another idle ground drop eligible
         // immediately. Do not wait for a later AI cadence just because the
@@ -1063,6 +1074,7 @@ const PartyCompanionService = {
     queueRandomGroundPickup,
 
     startQueuedGroundPickup,
+    collectingGroundLoot,
 
     reconcileGroundLoot,
     groundLootLeader: partyLeaderSession,

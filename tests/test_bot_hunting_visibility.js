@@ -48,6 +48,7 @@ async function main() {
         replace(World, 'fetchNpcsInRadius', () => available);
         replace(World, 'fetchUser', () => Promise.reject(new Error('NPC')));
         replace(World, 'fetchNpc', id => Promise.resolve(available.find(target => target.fetchId() === id)));
+        const realRay = Geo.hasLineOfSight;
         replace(Geo, 'hasLineOfSight', () => false);
 
         const bot = {
@@ -249,6 +250,29 @@ async function main() {
         assert.equal(completions, 1, 'losing visibility during an approach must suppress its old callback');
         assert.equal(bot.moves.length, routesBeforeArrival + 1);
         bot.automation.abortAll(bot);
+
+        // A hunter that ended inside a tree's skirt: its cell opens on every
+        // side, the ground round it does not open back into it. It takes the
+        // mob it can walk out to; with none in sight it walks off to search.
+        Geo.hasLineOfSight = realRay;
+        Geo.getCellData = (x, y, z) => {
+            const cx = x >> 4, cy = y >> 4;
+            const nswe = cy === 0 && cx === 1 ? 13 : cy === 0 && cx === -1 ? 14 : cx === 0 && cy === 1 ? 7 : cx === 0 && cy === -1 ? 11 : 15;
+            return { z, nswe };
+        };
+        const skirtHunter = { ...bot, moves: [], moveTo(coords) { this.moves.push(coords); } };
+        skirtHunter.state = { ...bot.state, fetchTowards: () => false };
+        const skirtSession = { actor: skirtHunter, plan: 'hunting' };
+        assert.equal(Visibility.canSee(skirtHunter, npc(500, 100)), true, 'a hunter on a one-way cell sees the mob it can walk out to');
+        assert.equal(Visibility.canSee(npc(500, 100), skirtHunter), false, 'the cell is still not walked into');
+        available = [npc(500, 100)];
+        Hunting.tick(skirtSession, skirtHunter, {}, ai);
+        assert.equal(skirtSession.currentTargetId, 500, 'a hunter on a one-way cell takes the mob in front of it');
+        assert.equal(attacks.at(-1), 500);
+        skirtSession.currentTargetId = undefined;
+        available = [];
+        Hunting.tick(skirtSession, skirtHunter, {}, ai);
+        assert.equal(skirtHunter.moves.length, 1, 'with no mob in sight it walks off its cell to search');
         console.log('Hunting visibility: walls, floors, bounded scans, approach cancellation, wandering and self-defense passed');
     } finally {
         restores.reverse().forEach(restore => restore());

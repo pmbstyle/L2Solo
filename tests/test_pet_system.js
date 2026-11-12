@@ -21,7 +21,7 @@ function owner(backpack) {
     const packets = [];
     const actor = { backpack, pet: null, mounted: false, fetchId: () => 2000001, fetchName: () => 'PetOwner', fetchLevel: () => 40,
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, fetchHead: () => 0, fetchRadius: () => 10,
-        fetchPvpFlag: () => 0, fetchKarma: () => 0, isDead: () => false, state: { fetchHits: () => false, fetchDead: () => false } };
+        fetchPvpFlag: () => 0, fetchKarma: () => 0, fetchIsOnline: () => true, isDead: () => false, state: { fetchHits: () => false, fetchDead: () => false } };
     const session = { actor, packets, dataSendToMe: p => packets.push(p), dataSendToMeAndOthers: p => packets.push(p) };
     actor.session = session;
     return session;

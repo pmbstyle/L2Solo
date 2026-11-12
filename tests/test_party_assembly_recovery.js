@@ -125,5 +125,72 @@ console.log('Party assembly on known ends: wait at the arrival, the absent membe
     assert(!resumed.busy(31), 'the command\'s end leaves it held: no timed step');
     const assigned = { ...waiting, party: { partyId: 'clan-party', leaderId: 32 }, simulation: { revision: 4 } };
     assert.strictEqual(lifecycleKind(assigned), 'party_member', 'its party takes it over');
+
+    // A waiter whose plan has an errand of its own (its clan craft still owes C
+    // crystals; a crystal exchange it holds the inputs for) waits like any other:
+    // while the wait holds it takes no step and its row is not written, and the
+    // wait's end sends it back to its hunt, where the errand is its next step.
+    // Stepped by the real solo resolver, every command applied as main applies it.
+    const Solo = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const kit = Object.fromEntries(invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 2, level: 40 }).items
+        .filter(item => item.slot !== 9).map(item => [item.selfId, { selfId: item.selfId, amount: 1, equipped: true,
+            equippedCount: 1, equippedSlots: [item.slot], slot: item.slot }]));
+    // A level 55 gladiator in its level 40 kit (the projection reads the level from the
+    // experience and the class from the level).
+    const grown = { ...waiting, level: 55, exp: Number(invoke('GameServer/DataCache').experience[54]), inventory: kit,
+        stats: { ...waiting.stats, classId: 2 } };
+    const errands = {
+        'owes its clan craft C crystals': { ...grown, clanId: 7, stats: { ...grown.stats, clanId: 7,
+            equipmentPlan: { status: 'active', strategy: 'craft', target: { selfId: 608, slot: 9 },
+                materials: [{ selfId: 1459, amount: 35 }], clanGoal: { clanId: 7, beneficiaryId: 31, goalKey: 'clan-goal' } } } },
+        'holds a crystal exchange ready': { ...grown, inventory: { ...kit, 1458: { selfId: 1458, amount: 10, stackable: true } },
+            stats: { ...grown.stats, equipmentPlan: { status: 'active', strategy: 'luxury_exchange', target: { selfId: 608, slot: 9 },
+                exchange: { kind: 'luxury_exchange', materials: [{ selfId: 1458, amount: 10 }] },
+                materials: [{ selfId: 1458, amount: 10 }] } } }
+    };
+    assert(invoke('GameServer/Bot/Economy/ClanCrystalSupply').requirement(errands['owes its clan craft C crystals']),
+        'the fixture owes the crystals');
+    assert(invoke('GameServer/Bot/Economy/BotCrystallization').ready(errands['holds a crystal exchange ready']),
+        'the fixture holds the exchange\'s inputs');
+    const project = async (state, result, timestamp) => ({ ...await Life.prepareResolve(state, result,
+        { timestamp, persist: false, projectClassProgression: true }),
+        simulation: { revision: state.simulation.revision + 1 }, updatedAt: timestamp });
+    for (const [errand, held] of Object.entries(errands)) {
+        let clock = at + minute, row = held, writes = 0;
+        const requests = [];
+        const stepped = new ColdSimulationKernel({ now: () => clock, resolveSolo: Solo.resolveSolo,
+            emit: (type, payload) => { if (type === 'command_request') requests.push(...payload.requests); } });
+        stepped.upsert({ state: held });
+        for (let turn = 0; turn < 5; turn++, clock += 40) {
+            const steps = stepped.dueCandidates(clock, 4);
+            await stepped.resolveChain;
+            writes += steps.length;
+            for (const request of requests.splice(0)) {
+                writes += 1;
+                row = await project(request.state, request.precomputedResult, clock);
+                assert(stepped.completeCommand({ characterId: 31, commandId: request.commandId,
+                    commandCheckpoint: request.commandCheckpoint, ok: true, state: row }));
+            }
+        }
+        assert.strictEqual(writes, 0, `a held waiter that ${errand} takes no step and writes no row`);
+        assert(!stepped.busy(31) && !stepped.needsNormalSchedule(31), `no step is coming for a waiter that ${errand}`);
+        // The clan's call as its planner writes it (party_wait, not published yet): the
+        // worker's own step publishes the wait, once; main has nothing to carry out.
+        const called = { ...held, stats: { ...held.stats } };
+        delete called.stats.eventWait;
+        assert.strictEqual(lifecycleKind(called), 'resolver', `the worker publishes the wait of a member that ${errand}`);
+        const published = await project(called, Solo.resolveSolo({ state: called, spot: null, timestamp: clock }), clock);
+        assert.strictEqual(published.stats.eventWait, 'clan_party_assembly');
+        assert.strictEqual(lifecycleKind(published), 'event_driven', 'published once, it waits');
+        // Forming's no ends the wait: the waiter steps at once, back to its hunt, and
+        // the errand is that hunt's next step.
+        const refused = { ...row, stats: { ...row.stats, partyRequest: { ...row.stats.partyRequest, status: 'closed' } },
+            simulation: { revision: row.simulation.revision + 1 } };
+        stepped.upsert({ state: refused });
+        assert.strictEqual(stepped.dueCandidates(clock, 4).length, 1, 'the wait\'s end steps it at once');
+        const hunting = await project(refused, Solo.resolveSolo({ state: refused, spot: null, timestamp: clock }), clock);
+        assert.strictEqual(hunting.activity, 'hunting', 'released, it hunts again');
+        assert.strictEqual(lifecycleKind(hunting), 'command', `back at its hunt, a bot that ${errand} takes its errand up`);
+    }
     console.log('Clan party wait: event-driven hold, wake on the objective\'s end, lived wait checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

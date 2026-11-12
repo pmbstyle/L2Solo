@@ -27,9 +27,11 @@ function hold(state, timestamp) {
     return { patch: { activity: 'party_wait', stats: { ...state.stats, partyRequest: objective(state),
         lastReason: 'clan_party_assembly' } }, events: [], eventWait: 'clan_party_assembly',
         // Held, the bot takes no step; the change that ends the wait steps it at
-        // once (ColdSimulationKernel.upsert). The hold has no due of its own: a
-        // command that holds the bot first (lifecycleKind) runs at once, and the
-        // write that ends it leaves the bot held again.
+        // once (ColdSimulationKernel.upsert). The hold has no due of its own: only
+        // a step that ends by itself may come before the wait (lifecycleKind: a
+        // hall visit, a town service under way, a return to its party); it runs at
+        // once and the write that ends it leaves the bot held again. A step that
+        // changes nothing before the wait would be due again at once, for ever.
         materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp,
         debug: { activity: 'clan_party_assembly', fights: 0, wins: 0 } };
 }

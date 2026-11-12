@@ -213,6 +213,8 @@ class Attack {
             const releaseBowMovement = () => {
                 if (!rangedAttack) return;
                 actor.state.setHits(false);
+                // A released bow may move: a drop queued during the draw is collected first.
+                if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) return;
                 if (this.queue.name) this.dequeueEvent(session);
             };
 
@@ -277,13 +279,12 @@ class Attack {
             // newer movement. Do not let the old victim's death abort it.
             if (rangedAttack && !repeatTarget && !this.queue.name
                 && Number(session.moveRouteGeneration || 0) !== movementGeneration) return;
-            if (this.blockedPvpDefense(session, actor, nextTarget)
-                || this.checkParticipants(actor, nextTarget, { allowDeadTarget: this.queue.name === 'move' })) {
-                return;
-            }
-
-            actor.state.setHits(false);
-            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+            if (this.blockedPvpDefense(session, actor, nextTarget)) return;
+            // The swing ends here whether or not its victim lived: a drop
+            // queued during it is collected before anything else.
+            const stopped = this.checkParticipants(actor, nextTarget, { allowDeadTarget: this.queue.name === 'move' });
+            if (!stopped) actor.state.setHits(false);
+            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session) || stopped) {
                 return;
             }
 

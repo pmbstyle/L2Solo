@@ -6,6 +6,9 @@ let PartyGoalCalculation;
 const PROTOCOL_VERSION = 1;
 const MAX_BATCH = 64;
 const MAX_MESSAGE_BYTES = 256 * 1024;
+// A party message is bound by the party row it serves: an answer by that row's
+// capacity, a paged request (one member a page) by the largest row.
+const Expedition = require('../../Clan/ClanRaidExpedition');
 const RAID_TARGET_LIMIT = require('./RaidSearchCounters').LIMITS.targetCandidates;
 const validRaidCandidates = value => Array.isArray(value) && value.length > 0 && value.length <= RAID_TARGET_LIMIT
     && new Set(value).size === value.length && value.every(id => Number.isSafeInteger(id) && id > 0);
@@ -319,7 +322,7 @@ function validateEnvelope(message, direction, options = {}) {
                 && (!validRaidCandidates(party.stats.objective.raidCandidateIds)
                     || party.stats.objective.opportunisticRaid !== true || party.stats.objective.sourceKind !== 'raid')
             || paged && (!Number.isSafeInteger(payload.pageIndex) || !Number.isSafeInteger(payload.pageCount)
-                || payload.pageCount < 1 || payload.pageCount > 9 || payload.pageIndex < 0
+                || payload.pageCount < 1 || payload.pageCount > Expedition.MAX_MEMBERS || payload.pageIndex < 0
                 || payload.pageIndex >= payload.pageCount || payload.members.length !== 1
                 || payload.pageIndex === 0 && payload.pageCount !== payload.party.memberIds.length
                 || payload.pageIndex > 0 && payload.party !== undefined)
@@ -332,7 +335,8 @@ function validateEnvelope(message, direction, options = {}) {
     if (message.type === 'party_goal_result') {
         const payload = message.payload;
         if (typeof payload.ok !== 'boolean' || (payload.ok
-            ? !Array.isArray(payload.sources) || payload.sources.length < 1 || payload.sources.length > 9
+            ? !Array.isArray(payload.sources) || payload.sources.length < 1
+                || payload.sources.length > Expedition.capacity(payload.joint?.objective)
                 || !payload.joint || typeof payload.joint !== 'object' || Array.isArray(payload.joint)
                 || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
                     : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length

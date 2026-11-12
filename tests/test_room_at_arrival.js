@@ -226,6 +226,13 @@ invoke('GameServer/DataCache').init();
         assert.equal(Contest.targetPressure(spot, NPC, 3, 2, () => 4).pressure, 2, 'hunters on the species and a spawn share of the untargeted');
         assert.equal(Contest.contest(input(solos(2))).action, 'coexist', 'two hunters on two places: no contest');
         assert.equal(Contest.contest(input([unit(2), unit(3, 'none', { npcId: NPC + 1 })])).action, 'coexist', 'a unit on another species is no rival');
+        // Nobody else on its species: the first come holds the camp, even a party of five on
+        // the species' two places; a body near a player there still turns it away.
+        const party = unit(1, 'none', { key: 'party-a', partyId: 'party-a', size: 5, hunters: 5 });
+        const alone = Contest.contest(input([], party));
+        assert.deepEqual([alone.action, alone.reason, alone.displaced], ['stay', 'first_come', []], 'a party arriving where nobody stands holds the camp');
+        assert.equal(Contest.contest(input([unit(2, 'd', { npcId: NPC + 1 })], party)).reason, 'first_come', 'nor does a unit on another species send it away');
+        assert.equal(Contest.contest(input([unit(2, 'none', { hot: true })], party)).action, 'avoid', 'a body near a player on its species is met by its own tactics');
         // A D-grade solo over two no-grade solos (1.5x): it stays, the weakest goes.
         const displacedCount = raised('spot:contest:stronger');
         const held = Contest.contest(input(solos(2, 3)));

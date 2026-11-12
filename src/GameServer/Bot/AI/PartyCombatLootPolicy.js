@@ -1,7 +1,6 @@
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Effects = invoke('GameServer/Effects/EffectStore');
-const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Aggro = invoke('GameServer/Npc/NpcAggro');
 const Retreat = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const World = invoke('GameServer/World/World');
@@ -48,7 +47,7 @@ function allowed(session, leaderSession, item, members) {
     if (!actor || !leader || !item || !session.partyCompanion || session.plan !== 'following'
         || !idleSupport(actor) || session.pvpDefense) return false;
     // FollowingState grants this only after its healing/control/buff choices.
-    if (!session.partyGroundPickupInProgress && Date.now()-Number(session.partyCombatLootReadyAt || 0)>1500) return false;
+    if (!invoke('GameServer/Bot/AI/PartyCompanionService').collectingGroundLoot(session) && Date.now()-Number(session.partyCombatLootReadyAt || 0)>1500) return false;
     if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.()
         || session.pendingSupportApproach || Number(session.pendingSupportCast?.expiresAt || 0)>Date.now()
         || Effects.impairments(actor).disabled || Effects.impairments(actor).rooted || hp(actor)<0.7) return false;
@@ -64,8 +63,6 @@ function allowed(session, leaderSession, item, members) {
     const from=position(actor), to=position(item), anchor=position(leader);
     if (distance(from,to)>500 || distance(to,anchor)>600 || distance(from,anchor)>600
         || Math.abs(from.locZ-to.locZ)>64 || session.botStay && distance(from,to)>50) return false;
-    // Native PickupExec follows this straight segment, not a MoveTo A* route.
-    if (Geodata.hasLineOfSight(from.locX,from.locY,from.locZ,to.locX,to.locY,to.locZ)!==true) return false;
     return !(World.fetchNpcsInRadius(from.locX,from.locY,distance(from,to)+Aggro.MAX_AGGRO_RADIUS+100) || []).some(npc => {
         const clearance=Aggro.aggroRadius(npc)+100;
         if (npc.isDead?.() || npc.state?.fetchDead?.() || !npc.fetchAttackable?.()) return false;

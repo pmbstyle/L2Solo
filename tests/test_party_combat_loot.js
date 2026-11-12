@@ -65,7 +65,6 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
         leader.actor.hp=60;assert.strictEqual(allowed(),false,'party healing outranks loot');leader.actor.hp=100;
         support.actor.hp=60;assert.strictEqual(allowed(),false,'hurt support cannot start looting');support.actor.hp=100;
         assert.strictEqual(allowed(drop(-650)),false,'combat loot stays near the party');
-        Geo.hasLineOfSight=()=>false;assert.strictEqual(allowed(),false,'native straight pickup must not cross a wall');Geo.hasLineOfSight=()=>true;
         const hazard={...enemy,fetchId:()=>3400002,x:-350,y:599,attacking:false,fetchDestId:()=>undefined};
         World.npc.spawns.push(hazard);assert.strictEqual(allowed(),false,'path clearance catches aggro even when both endpoints clear 600 units');
         hazard.hostile=false;assert(allowed(),'a peaceful idle NPC is not an aggro hazard');
@@ -132,6 +131,25 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
         assert(World.items.spawns.includes(late),'new emergency before arrival prevents pickup without an AI tick');
         assert.strictEqual(purchases.length,3);
         assert.strictEqual(support.actor.state.pickup,false,'aborted award releases pickup state');
+
+        // Mid-fight a tree (one closed geodata cell, x -352..-337) stands between
+        // the nearer idle support and the drop; a second idle support farther
+        // away has a clear line. The farther one collects, the nearer one stays.
+        leader.actor.hp=100;support.actor.x=-300;support.partyGroundPickupQueue=[];
+        World.items={spawns:[],byLeader:new Map()};purchases.length=0;
+        const second=session(2400004,-520,30);
+        Object.assign(second,{partyCompanion:true,followPlayerSession:leader,partyCombatLootReadyAt:Date.now()});
+        registerSessions(sessions);Bots.sessions=[support,fighter,second];
+        const openCells=Geo.getCellData;
+        Geo.getCellData=(x,y,z)=>({z,nswe:(x>>4)===-22 && (y>>4)===0?0:15});
+        try {
+            const shaded=drop(-400);GroundItems.put(World.items,shaded);ready();second.partyCombatLootReadyAt=Date.now();
+            Loot.queueRandomGroundPickup(leader,shaded);
+            await wait(900);
+            assert.strictEqual(second.actor.x,-420,'the support with a clear line runs to the drop during the fight');
+            assert.strictEqual(World.items.spawns.length,0,'and collects it');
+            assert.strictEqual(support.actor.x,-300,'the support behind the tree does not run into it');
+        } finally {Geo.getCellData=openCells;}
         console.log('Party combat loot: tank protection, attack/skill clearance, priorities, native movement/distribution, reassignment and interruption passed');
     } finally {sessions.forEach(s=>s.actor.automation.abortAll(s.actor,{notifyClient:false}));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

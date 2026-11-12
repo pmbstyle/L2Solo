@@ -107,4 +107,7 @@ assert.equal(RaidCombat.mainRaidTank([helperTank,mainTank], { leaderId: helper.c
 const lifecycle = require('node:child_process').spawnSync(process.execPath, ['--require', require.resolve('./helpers/databaseIsolation'),
     require.resolve('./test_clan_full_raid_roster'), '--helpers'], { stdio: 'inherit', env: process.env });
 assert.equal(lifecycle.status, 0, 'the expanded native roster passes atomic cold/hot opening and single reward regressions');
+const forming = require('node:child_process').spawnSync(process.execPath, ['--require', require.resolve('./helpers/databaseIsolation'),
+    require.resolve('./test_clan_full_raid_roster'), '--forms'], { stdio: 'inherit', env: process.env });
+assert.equal(forming.status, 0, 'an expedition of eighteen far members forms through the worker');
 console.log('PASS clan helper selection, party scope, ordinary attacks, recovery, main tank and expanded native lifecycle');

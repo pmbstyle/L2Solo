@@ -132,6 +132,9 @@ try {
     assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
         'the actor must have clearance from an adjacent wall');
     Geo.getCellData = () => ({ z: 0, nswe: 15 });
+    Geo.hasLineOfSight = (x, y, z, toX) => !(x === 116 && toX === 100);
+    assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
+        'a point that opens onto a neighbour which does not open back is not a place a body is shown at');
     Geo.hasLineOfSight = (x, y, z, toX) => Math.abs(toX - x) <= 16;
     assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
         'a clear endpoint behind a wall must still be rejected');

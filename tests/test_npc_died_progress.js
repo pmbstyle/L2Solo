@@ -55,5 +55,19 @@ try {
     assert.strictEqual(after.wishFocus, 'kept', 'the row keeps its other stats');
     assert.strictEqual(session.coldLifeState.timing.lastResolvedAt, now - 7200000);
     assert.strictEqual(captures, 0, 'a kill reward does not capture the whole body of a rewarded bot');
+
+    // A killer no longer near the corpse (its poison killed after it went back
+    // to town) is paid nothing and its row does not move: C4 pays only those
+    // within reward range of the monster.
+    const away = actor(7002, 90000);
+    const awaySession = { accountId: 'bot_away', actor: away, plan: 'hunting',
+        coldLifeState: { characterId: 7002, timing: {}, stats: { lifelongKills: 3, fightsWon: 1, fightsResolved: 1 } } };
+    replace(World, 'user', { sessions: [awaySession], revision: 0 });
+    const paid = [];
+    replace(Generics, 'experienceReward', (rewarded) => paid.push(rewarded));
+    NpcDied(awaySession, away, mob);
+    assert.deepStrictEqual(paid, [], 'a killer far from the corpse gets no EXP or SP');
+    assert.deepStrictEqual(awaySession.coldLifeState.stats, { lifelongKills: 3, fightsWon: 1, fightsResolved: 1 },
+        'and the kill is not its won fight');
     console.log('NpcDied: a hot bot\'s kill moves its progress from its row without a body capture');
 } finally { saved.reverse().forEach(restore => restore()); }
