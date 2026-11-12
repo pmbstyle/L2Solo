@@ -281,6 +281,8 @@ async function parityAndIntegration() {
     const originalWarehouse = Database.fetchClanWarehouseItems;
     const originalProjection = Goals.clanProjectionById;
     const originalPlanner = Gear.planFor;
+    const warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    await warehouse.init();
     Database.fetchClanWarehouseItems = async () => [];
     let current = structuredClone(clan);
     Goals.clanProjectionById = async () => current;
@@ -299,6 +301,14 @@ async function parityAndIntegration() {
         current.members.find((member) => member.characterId === beneficiaryId).adena++;
         await assert.rejects(Equipment.validatePlanning(clan, planning, planning.selection), { code: 'clan_planning_deferred' },
             'beneficiary resource changes must invalidate a plan, unrelated loot must not starve it');
+        current = structuredClone(clan);
+        warehouse.committed(other.characterId, [{ selfId: 1865, amount: 20 }]);
+        await Equipment.validatePlanning(clan, planning, planning.selection);
+        warehouse.committed(beneficiaryId, [{ selfId: 1865, amount: 90 }]);
+        await assert.rejects(Equipment.validatePlanning(clan, planning, planning.selection), { code: 'clan_planning_deferred' },
+            'changed beneficiary storage invalidates the planned withdrawal without unrelated storage starving it');
+        warehouse.committed(beneficiaryId, []);
+        warehouse.committed(other.characterId, []);
         for (const mutate of [
             (c) => { c.members[0].phase = 'hot'; },
             (c) => { c.members[0].partyId = 'new-party'; },

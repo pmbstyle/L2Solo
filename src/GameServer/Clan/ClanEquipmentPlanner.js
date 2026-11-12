@@ -5,6 +5,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Policy = require('./ClanEquipmentPolicy');
 const Config = require('./ClanSimulationConfig');
 const Crafting = require('./ClanCraftingPolicy');
+const PersonalWarehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
 function plannerState(member) {
@@ -289,7 +290,8 @@ function planForMember(member, spots = [], warehouseRows = [], options = {}) {
     visit(Crafting.resolveRecipe(plan.recipeId));
     plan.craftProviders = providers;
     plan.componentRecipes = componentRecipes;
-    return { ...plan, warehouseMaterials: Crafting.warehouseMaterials(plan, inventory, warehouseRows),
+    return { ...plan, warehouseMaterials: Crafting.warehouseMaterials(plan, inventory, warehouseRows,
+        PersonalWarehouse.inventory(member)),
         ...(Object.keys(providers).length ? { craftProviders: providers } : {}) };
 }
 

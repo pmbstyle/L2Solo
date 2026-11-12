@@ -426,6 +426,7 @@ const tests = [
     'tests/test_bot_chat_voice.js',
     'tests/test_bot_clan_chat.js',
     'tests/test_clan_production.js',
+    'tests/test_clan_warehouse_personal_stock.js',
     'tests/test_clan_membership_recovery.js',
     'tests/test_clan_party_help.js',
     'tests/test_clan_party_rescue.js',
