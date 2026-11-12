@@ -19,11 +19,15 @@ const flat = (points) => points.flatMap((point) => [point.locX, point.locY, poin
 const backDetour = [p(0, 1400), p(-500, 700), p(0, 0)];
 const npcSpur = [p(0, 6400), p(0, 5900), p(0, 1400)];
 const spawnSpur = [p(-3000, -800), p(-1500, -400), p(0, 0)];
+// A second spawn spur starting 100 u from the first one's middle point.
+const secondSpur = [p(-1500, -300), p(-1000, -100), p(0, 0)];
 fs.writeFileSync(file, JSON.stringify({
     header: { generator: 'scripts/generate-town-ways.js' },
     ways: {
         a: { town: 'hunters_village', out: flat(out), spurs: [{ points: flat(spawnSpur) }] },
-        b: { town: 'hunters_village', out: flat(out), back: flat(backDetour) }
+        b: { town: 'hunters_village', out: flat(out), back: flat(backDetour) },
+        d: { town: 'hunters_village', out: flat(out), spurs: [{ points: flat(spawnSpur) }, { points: flat(secondSpur) }] },
+        e: { town: 'hunters_village', out: flat(out), back: [] }
     },
     towns: { hunters_village: { spurs: [{ npc: 7301, points: flat(npcSpur) }] } },
     none: { c: 'cap' }
@@ -73,6 +77,16 @@ try {
     assert.deepStrictEqual(TownWays.wayPoint(way, p(-3100, -900), true), p(-1500, -400));
     assert.deepStrictEqual(TownWays.wayPoint(way, p(-1500, -400), true), p(0, 0));
     assert.deepStrictEqual(TownWays.wayPoint(way, p(0, 0), true), p(500, 0));
+
+    // A spur is taken at the point it starts at, whatever spur before it passes within reach.
+    const twice = TownWays.way('d');
+    assert.deepStrictEqual(TownWays.wayPoint(twice, p(-1500, -300), true), p(-1000, -100), 'the second spur from its own start');
+    assert.deepStrictEqual(TownWays.wayPoint(twice, p(-1600, -600), true), p(0, 0), 'the first spur from its middle point, out of the second one\'s reach');
+    // A spot with no way back walks back as without a way: not even the town's NPC spurs apply.
+    const oneWay = TownWays.way('e');
+    assert.equal(TownWays.wayPoint(oneWay, p(0, 6680), false, true), null, 'no way back: no spur from the NPC');
+    assert.equal(TownWays.wayPoint(oneWay, p(0, 5900), false, true), null, 'no way back: none on the spur either');
+    assert.deepStrictEqual(TownWays.wayPoint(oneWay, p(0, 1400), true, false, p(100, 6450)), p(0, 5900), 'the way in is unchanged');
 
     // A server without its ways: no way anywhere, the failure counted.
     const counted = () => FailureLog.snapshot()?.['TownWays.load'] || 0;
