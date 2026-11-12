@@ -69,6 +69,14 @@ try {
         'the walk search moves the town ways alone');
     assert.doesNotMatch(result.stderr, /spot-table\.json|mobs\.json/);
     put(engine, `// ${engine}\n`);
+    // A moved service NPC (its spawn source) leaves a stale spur: the town ways alone are stale.
+    const gatekeepers = 'src/GameServer/World/C4LateTownGatekeepers.js';
+    put(gatekeepers, '// a moved gatekeeper\n');
+    result = check();
+    assert.match(result.stderr, /error: Stale bot table data\/Bots\/town-ways\.json .*: 1 input file changed since: src\/GameServer\/World\/C4LateTownGatekeepers\.js\./,
+        'the service NPC rows the spurs are built on move the town ways');
+    assert.doesNotMatch(result.stderr, /spot-table\.json|mobs\.json/);
+    put(gatekeepers, `// ${gatekeepers}\n`);
 
     put('src/GameServer/Formulas.js', '// a changed formula\n');
     assert.notStrictEqual(TableFingerprint.compute('spot', root).hash, spot.hash, 'a changed input: another fingerprint');

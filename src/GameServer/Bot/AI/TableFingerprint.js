@@ -62,12 +62,17 @@ const HUNT_GENERATOR = ['scripts/hunt-tables/build.js', 'scripts/hunt-tables/rot
 
 // The town ways: the walk search and its step rule, the towns, the spot ids and
 // centres the catalogue cuts (the spot generator builds it; the hunting filter
-// decides which spawns make a spot) and the service NPCs whose spurs it stores.
+// decides which spawns make a spot) and the service NPCs whose spurs it stores
+// (the catalogue's rows read DataCache.npcSpawns: its spawn sources, and the
+// gatekeeper ids of NativeServiceIndex).
 const WAYS_GENERATOR = ['scripts/generate-town-ways.js', 'scripts/generate-spot-table.js', 'src/GameServer/World/TownRespawn.js',
     'src/GameServer/Geodata/GeodataEngine.js', 'src/GameServer/Geodata/GardenOfEvaBarriers.js', 'src/GameServer/Geodata/VirtualObstacles',
     'src/GameServer/Bot/AI/BotHuntingTargetPolicy.js', 'src/GameServer/Bot/Travel/TownWays.js',
     'src/GameServer/Bot/Economy/TownServiceCatalog.js', 'src/GameServer/World/Generics/NpcShopBuyLists.js',
-    'src/GameServer/World/C4GatekeeperTeleports.js'];
+    'src/GameServer/World/C4GatekeeperTeleports.js', 'src/GameServer/DataCache.js',
+    'src/GameServer/World/C4LateTownGatekeepers.js', 'src/GameServer/World/C4SevenSignsDungeonTeleports.js',
+    'src/GameServer/World/GiranMammon.js', 'src/GameServer/World/GiranCrystallizationStation.js',
+    'data/Pets/c4-quest-npcs.json', 'src/GameServer/Knowledge/NativeServiceIndex.js'];
 
 const INPUTS = Object.freeze({
     spot: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR],
