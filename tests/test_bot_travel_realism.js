@@ -621,7 +621,6 @@ try {
                 assert.strictEqual(walker.moves.length, 0, 'and no step is taken');
                 assert.strictEqual(hunter.plan, 'hunting');
             }
-            hunter.townTravelRetryAt = 0;
             const scroll = { fetchAmount: () => 1, fetchId: () => 1 };
             walker.backpack = { fetchItemFromSelfId: id => id === 736 ? scroll : null, fetchItems: () => [], deleteItem() {} };
             assert.strictEqual(ask(), 'escape', 'a bot with a scroll reads it');
@@ -636,6 +635,34 @@ try {
             global.setTimeout = originalSetTimeout;
             Response.skillStarted = realSkillStarted;
         }
+    }
+
+    // The same failure while the body stands in a town is an approach that failed there:
+    // the town pause holds it and no walk hold is set.
+    {
+        const home = Object.values(invoke('GameServer/World/TownRespawn').towns)[0];
+        const target = { actorId: null, name: 'Town shop', locX: home.locX + 800, locY: home.locY, locZ: home.locZ, town: home.name };
+        const walker = bot({ locX: home.locX, locY: home.locY, locZ: home.locZ });
+        walker.state = { inMotion: () => false, setCasts() {}, fetchCasts: () => false };
+        walker.isDead = () => false;
+        const inTown = {
+            plan: 'shopping', partyCompanion: false, currentSpot: { id: '20_13' }, shoppingTarget: target,
+            lastPathfinding: { requestedTo: target, routeUsable: false, at: Date.now() },
+            companionNavigationRecovery: {
+                key: CompanionNavigationRecovery.targetKey('shopping', target),
+                failures: CompanionNavigationRecovery.MAX_ROUTE_FAILURES - 1, lastFailureAt: 0, retryAt: 0
+            }
+        };
+        publishTravelSession(inTown, walker);
+        const realLife = { cachedState: LifeState.cachedState, nearPosts: LifeState.nearPosts, notifyNearFacts: LifeState.notifyNearFacts };
+        LifeState.cachedState = () => ({ phase: 'hot' });
+        LifeState.nearPosts = () => true;
+        LifeState.notifyNearFacts = () => {};
+        try { ShoppingState.tick(inTown, walker, noTeleportGenerics, { say() {}, getClosestTown: () => ({ name: home.name, x: home.locX, y: home.locY, z: home.locZ }) }); }
+        finally { Object.assign(LifeState, realLife); }
+        assert.strictEqual(inTown.plan, 'hunting', 'a route that found no way ends the visit');
+        assert(inTown.townTravelRetryAt > Date.now(), 'in a town the town pause holds');
+        assert.strictEqual(inTown.townWalkFailed, undefined, 'and no walk hold is set');
     }
 
     const buyerTarget = {

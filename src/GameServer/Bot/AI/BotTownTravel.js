@@ -219,13 +219,15 @@ function karmaTown() {
 }
 
 // A walk to town that found no way (ShoppingState: the visit's route exhausted on a
-// field). The body walks to that town again only from other ground (its declared
-// spot), by scroll, or once it stands in it. Our choice: C4 has no server walk; a
+// field). The body walks to town again only from other ground (its declared spot), by
+// scroll, or once it stands in it. The hold is on the ground, not on a town: the trip
+// owner and the merchant's town may name different towns, and a body that found no way
+// out of here finds none to another town either. Our choice: C4 has no server walk; a
 // player who cannot walk to town hunts on until he reads a scroll, moves or dies.
-function walkFailed(session, townName) {
-    if (townName) session.townWalkFailed = { town: townName, spotId: session.currentSpot?.id ?? null };
+function walkFailed(session) {
+    session.townWalkFailed = { spotId: session.currentSpot?.id ?? null };
 }
-const walkHeld = (session, town, alreadyInTown) => !alreadyInTown && session.townWalkFailed?.town === town.name
+const walkHeld = (session, alreadyInTown) => !alreadyInTown && !!session.townWalkFailed
     && session.townWalkFailed.spotId === (session.currentSpot?.id ?? null);
 
 // options.forced: a trip the held leaf did not order (a bag cleanup, a flight from unsafe
@@ -258,7 +260,7 @@ function request(session, bot, BotAI, reason, options = {}) {
         options.forceScrollOfEscape === true ? 'hot_errand' : 'hot', fare.fee, TripPayment.actorAdena(bot));
     if (wantsScroll && !affordable && options.forceScrollOfEscape === true) return 'unpaid';
     const usesScroll = wantsScroll && affordable;
-    if (!usesScroll && walkHeld(session, town, alreadyInTown)) return 'deferred';
+    if (!usesScroll && walkHeld(session, alreadyInTown)) return 'deferred';
     if (session.spotRelocation) {
         invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'town_trip');
         bot.automation?.abortAll?.(bot);

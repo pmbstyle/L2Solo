@@ -708,7 +708,7 @@ module.exports = {
                 // ground (BotTownTravel.walkFailed); an approach that failed inside a
                 // town keeps the town pause.
                 if (TownTransitPolicy.townAt(bot)) TownTransitPolicy.defer(session, bot, 'shopping_route_unreachable');
-                else BotTownTravel.walkFailed(session, target.town || town?.name);
+                else BotTownTravel.walkFailed(session);
                 session.plan = returningToCompanion ? 'following' : 'hunting';
                 // ARCH-NOTE: an unreachable shopping route also ends this town visit.
                 if (session.plan === 'hunting') raiseDecision(session, 'goal_failed:visit', { impossible: true });

@@ -252,7 +252,7 @@ try {
         // A walk to town that found no way is not walked again from the same ground, even for stock.
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
-        unreachable.session.townWalkFailed = { town: 'Giran', spotId: unreachable.session.currentSpot?.id ?? null };
+        unreachable.session.townWalkFailed = { spotId: unreachable.session.currentSpot?.id ?? null };
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
         const answers = [];
         TownTravel.request = (...args) => { const answer = savedPurchase.travel(...args); answers.push(answer); return answer; };
