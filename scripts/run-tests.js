@@ -1034,6 +1034,7 @@ const tests = [
     'tests/test_sword_dancer_spellsinger_skills.js',
     'tests/test_skill_damage_formulas.js',
     'tests/test_town_pathfinder.js',
+    'tests/test_town_ways.js',
     'tests/test_town_guard_pk.js',
     'tests/test_town_respawn.js',
     'tests/test_tcp_packet_framing.js',
