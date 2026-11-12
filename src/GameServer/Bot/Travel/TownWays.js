@@ -156,12 +156,11 @@ function next(points, from) {
 
 // The point a body heads for on its way, out to the town (outward: on to the
 // target's NPC) or back to the spot: on the way when it reached a point of it;
-// else on a spur it starts at, else on a spur it reached (the spot's spawn spurs
-// out; back, the town's NPC spurs, taken at their NPC only while the body stands
-// in that town), then the way from the spur's end; else the way's join. A spur is
-// stored for the point it starts at, so the table's order never hides it behind
-// an earlier spur passing near. A walk back with no way back gives none: the
-// spot walks as without a way.
+// else on a spur it reached (the spot's spawn spurs out, the one it is still at the
+// start of first: a spawn spur is stored for that point, so an earlier spur passing
+// near never hides it; back, the town's NPC spurs, taken at their NPC only while
+// the body stands in that town), then the way from the spur's end; else the way's
+// join. A walk back with no way back gives none: the spot walks as without a way.
 function wayPoint(way, from, outward, inTown = false, to = null) {
     if (!way) return null;
     const points = outward ? wayInto(way, to) : way.back;
@@ -169,8 +168,10 @@ function wayPoint(way, from, outward, inTown = false, to = null) {
     if (reachedOn(points, from) >= 0) return next(points, from);
     const entry = outward || inTown ? SPUR_ENTRY : -1;
     const spurs = outward ? way.spurs : way.townSpurs;
-    for (const spur of spurs) {
-        if (flat(spur[0], from) <= entry && onFloor(spur[0], from)) return spur[1] || next(points, from);
+    if (outward) {
+        for (const spur of spurs) {
+            if (reachedOn(spur, from, entry) === 0) return spur[1] || next(points, from);
+        }
     }
     for (const spur of spurs) {
         const reached = reachedOn(spur, from, entry);

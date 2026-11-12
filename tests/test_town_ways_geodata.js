@@ -7,8 +7,8 @@ require('../src/Global');
 // The town ways on the real map. (c) Every leg a body takes on a committed way
 // (from each way point, spawn point, town NPC and spur point, as the reader picks
 // it) is found by the smallest search a walk issues (2000 nodes, exact goal).
-// (a) The scroll-less errand walk from Karul Bugbear fields (20_12) to Hally in
-// Hunter's Village, as ShoppingState walks it (CompanionNavigationRecovery, MoveTo,
+// (a) The scroll-less errand walk from Karul Bugbear fields (20_12) and from the
+// next spot (20_13) to Hally in Hunter's Village, as ShoppingState walks it (CompanionNavigationRecovery, MoveTo,
 // the worker pool's search), reaches Hally; the straight leg found no way there.
 // (b) The walk back from Hally and from Garette to 20_12, as HuntingState starts
 // and drives it (sync 2000-node moves on main), reaches the spot's centre.
@@ -69,7 +69,8 @@ function driftGuard(file, catalogue) {
         for (const npc of TownServiceCatalog.rows().filter((row) => row.town === TownRespawn.towns[townKey].name)) {
             const at = townWays[0].npcs.findIndex((p) => p.locX === npc.locX && p.locY === npc.locY);
             const spur = at < 0 ? [] : townWays[0].townSpurs[at];
-            if (townWays.some((way) => spur.some((p) => {
+            // A way with no way back gives the walk back no leg (the reader's rule, the build's filter).
+            if (townWays.filter((way) => way.back.length).some((way) => spur.some((p) => {
                 const target = TownWays.wayPoint(way, p, false, true);
                 legs++;
                 return !target || !legWalks(p, target);
@@ -140,12 +141,13 @@ async function advance(f, tick, arrived, seconds) {
 }
 
 const CENTER = { locX: 123948, locY: 75896, locZ: -2605 };
+const CENTER_13 = { locX: 124307, locY: 81156, locZ: -2474 };
 const HALLY = { locX: 116646, locY: 74820, locZ: -2581, town: "Hunter's Village" };
 const GARETTE = { locX: 116109, locY: 75022, locZ: -2583 };
 
 // (a) bless1ng's position on 20_12 (run B), no scroll: the errand walk to Hally.
-async function errandWalk(id, start) {
-    const f = body(id, start, { currentSpot: { id: '20_12', center: { ...CENTER } } });
+async function errandWalk(id, start, spot = { id: '20_12', center: CENTER }) {
+    const f = body(id, start, { currentSpot: { id: spot.id, center: { ...spot.center } } });
     const target = { ...HALLY };
     let worst = 0;
     const walk = () => {
@@ -214,6 +216,7 @@ async function run() {
         // Each walk on its own body and clock queue: one walk's failure does not hide another's.
         const failures = [];
         for (const [name, walk] of [['errand walk from the field to Hally', () => errandWalk(2001505, { locX: 123700, locY: 75953, locZ: -2464 })],
+            ['errand walk from 20_13 to Hally', () => errandWalk(2001508, onFloor({ locX: 123340, locY: 79482, locZ: -2229 }), { id: '20_13', center: CENTER_13 })],
             ['walk back from Hally', () => walkBack(2001506, onFloor(HALLY))],
             ['walk back from Garette', () => walkBack(2001507, onFloor(GARETTE))]]) {
             timers.clear();
