@@ -22,6 +22,13 @@ const assert=require('node:assert/strict');
 Config.staticShotsDisabled=true;
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
+    if(message.queryProbe==='refuse-goal-answer') {
+        const real=Protocol.validateEnvelope;
+        Protocol.validateEnvelope=(m,...rest)=>{
+            if(m.type==='party_goal_result'&&m.payload.ok){Protocol.validateEnvelope=real;return {ok:false,reason:'forced_refusal',bytes:0};}
+            return real(m,...rest);
+        };
+    }
     if(message.queryProbe==='enable-static-shots') Config.staticShotsDisabled=false;
     if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-page') {
         const mode=message.queryProbe==='hold-meeting'?'meeting':'page';
@@ -284,6 +291,11 @@ function post(type, payload, id) {
     invalidReserve.joint.raidAssessment.supplies[0].reserveCost=invalidReserve.joint.raidAssessment.supplies[0].cash+1;
     assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidReserve),'worker').ok,
         'ready advice cannot authorize an unfunded static reserve');
+    // An answer the worker's own validator refuses is answered as a refusal at once: main waits on it.
+    worker.postMessage({ queryProbe: 'refuse-goal-answer' });
+    post('party_goal_request', { ...request, replyBy: Date.now() + 5000 }, 'refused');
+    const refused = await wait(message => message.type === 'party_goal_result' && message.msgId === 'refused');
+    assert.deepEqual(refused.payload, { ok: false, reason: 'party_goal_result_refused' });
     post('party_goal_request', { ...request, replyBy: timestamp }, 'expired');
     const expired = await wait(message => message.type === 'party_goal_result' && message.msgId === 'expired');
     assert.equal(expired.payload.ok, false);
