@@ -109,7 +109,8 @@ async function run() {
     // A cooled bot's poison keeps ticking on its monster (C4: an effect outlives
     // its caster's stay in the world), but it is nobody's hit any more: the
     // monster is left alive at 1 HP, nobody is paid for a kill and the server
-    // keeps running. A caster still there kills with its tick and is paid.
+    // keeps running. A caster still there does not kill with it either: a
+    // damage-over-time tick never takes the last HP point (Lisvus EffectDamOverTime).
     const Npc = invoke('GameServer/Npc/Npc');
     const Formulas = invoke('GameServer/Formulas');
     const monsters = [];
@@ -139,7 +140,7 @@ async function run() {
                 corpseTime: 7, radius: 10, size: 20, weapon: 0, shield: 0, reuseTime: 0, exp: 1000, sp: 100,
                 locX: 30, locY: 0, locZ: 0, head: 0 });
             monster.setHp(20);
-            EffectTicker.applyDot(session, session.actor, monster, EffectStore.apply(monster, { key: 'poison', id: 129, level: 1,
+            if (session) EffectTicker.applyDot(session, session.actor, monster, EffectStore.apply(monster, { key: 'poison', id: 129, level: 1,
                 type: 'debuff', dot: { damage: 30, count: 3, intervalMs: 20 }, durationMs: 60 }));
             monsters.push(monster);
             return monster;
@@ -156,12 +157,27 @@ async function run() {
         assert.strictEqual(left.fetchHp(), 1, 'its poison still ticks, down to 1 HP');
         await new Promise((resolve) => setTimeout(resolve, 300));
         assert.ok(left.fetchHp() > 1, 'the hurt monster regenerates after the departed caster\'s poison, as after any hit');
-        assert.strictEqual(fought.state.fetchDead(), true, 'a poisoner still in the world kills with its tick');
-        assert.deepStrictEqual(paid, ['StayingPoisoner'], 'only the poisoner still in the world is paid for a kill');
+        assert.strictEqual(fought.state.fetchDead(), false, 'a poisoner still in the world does not kill with its tick');
+        assert.deepStrictEqual(paid, [], 'nobody is paid: no tick killed');
+
+        // A monster's poison (its cast relay session, as Npc.castSkill builds it)
+        // leaves a bot at 1 HP, alive.
+        const victim = poisoner(2481521, 'PoisonedBot');
+        victim.actor.setHp(50);
+        const spider = { fetchId: () => 990003, fetchKind: () => 'Monster', fetchName: () => 'Poison Spider' };
+        const relay = { actor: spider, dataSendToMe() {}, dataSendToMeAndOthers() {} };
+        EffectTicker.applyDot(relay, spider, victim.actor, EffectStore.apply(victim.actor, { key: 'poison', id: 129, level: 1,
+            type: 'debuff', dot: { damage: 30, count: 3, intervalMs: 20 }, durationMs: 60 }));
+        monsters.push(victim.actor);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        assert.strictEqual(victim.actor.state.fetchDead(), false, 'a monster\'s poison does not kill the bot');
+        assert.strictEqual(victim.actor.fetchHp(), 1, 'it stops at 1 HP');
+        assert.deepStrictEqual(thrown, [], 'no tick takes the server down');
     } finally {
         process.removeListener('uncaughtException', onUncaught);
         Formulas.REGEN_TICK_MS = regenTick;
-        monsters.forEach((monster) => monster.automation.stopReplenish());
+        // A monster a tick left alive fights its poisoner back: end its fight with the test.
+        monsters.forEach((monster) => (monster.fetchKind ? monster.destructor({ dataSendToMe() {}, dataSendToMeAndOthers() {} }) : monster.automation.stopReplenish()));
         [World.removeNpc, Generics.experienceReward, Quests.onKill, Quests.onAttack] = previous;
     }
 }

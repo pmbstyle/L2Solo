@@ -200,7 +200,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     assert.strictEqual(fight.heldUntil, 1000 + Rules.resolve({ selfId: 101, level: 15 }).durationMs, 'the monster is held until the stun ends');
     assert.ok(ColdMobAction.landOnMob(mob, fight, { selfId: 223, level: 1, power: 100 }, caster, 0, constant(0)), 'a bleed lands');
     const bleed = Rules.resolve({ selfId: 223, level: 1 }).dot;
-    assert.strictEqual(ColdMobAction.dotDamage(fight, bleed.intervalMs * bleed.count), bleed.count * bleed.damageByLevel[0],
+    assert.strictEqual(ColdMobAction.dotDamage(fight, bleed.intervalMs * bleed.count, mob.maxHp), bleed.count * bleed.damageByLevel[0],
         'the bleed deals its ticks over its time');
     const stun = Rules.resolve({ selfId: 101, level: 15 });
     const boss = coldMob({ level: 40, vulnerabilities: { stunVuln: 0.1 } });
@@ -242,7 +242,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     ColdMobAction.coldMobAction(mob, fight, fighter, { time: 0, at: 0, rng: constant(0) });
     assert.ok(fighter.dots?.length === 1, 'the poison landed on the bot');
     const dot = invoke('GameServer/Combat/HitRules').dotOf(poisoner.skill.fetchSemantic(), poisoner.skill.fetchLevel(), poisoner.skill.fetchPower());
-    assert.strictEqual(ColdMobAction.dotDamage(fighter, 1e9), dot.count * dot.damage, 'every tick of it lands');
+    assert.strictEqual(ColdMobAction.dotDamage(fighter, 1e9, fighter.vitals.hp), dot.count * dot.damage, 'every tick of it lands');
 }
 
 // 10. T126: a bow shot below its MP does not leave (hot BowResources.consume); the cold archer stands
@@ -272,37 +272,39 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     assert.ok(!stun(coldMob({ maxHp: 1e6, pull: 3 }))?.heldFor, 'Stun Shot on one mob of a pull of three holds none');
 }
 
-// 13. A monster's poison outlives the kill: its ticks land after a won fight, as hot, and may kill.
+// 13. A damage-over-time tick never takes the last HP point, on either side
+// (HitRules.dotTickDamage, as hot EffectTicker; Lisvus EffectDamOverTime). A
+// monster's poison outlives the kill and ticks the winner down to 1 HP; in
+// the fight it leaves the bot at 1 HP, and the bot's bleed leaves the
+// monster at 1 HP: no tick wins or loses a fight.
 {
-    const poison = (damage) => ({ botDots: [{ key: 'poison', next: 1000, left: 3, damage, intervalMs: 3000 }] });
+    const poison = (damage, next = 1000) => ({ botDots: [{ key: 'poison', next, left: 3, damage, intervalMs: 3000 }] });
     const won = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20 }), mobHp: 1, timers: poison(50) });
     assert.strictEqual(won.result.won, true);
     assert.strictEqual(won.result.hp, 500 - 150, 'the poison ticks out after the kill');
-    const dead = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20 }), mobHp: 1, timers: poison(200) });
-    assert.ok(dead.result.won && dead.result.died && dead.result.hp === 0, 'the poison kills the winner');
+    const floored = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20 }), mobHp: 1, timers: poison(200) });
+    assert.ok(floored.result.won && !floored.result.died && floored.result.hp === 1, 'the poison leaves the winner at 1 HP');
+    const poisoned = soloFight({ classId: 0, level: 20, hp: 50, mob: coldMob({ level: 20, maxHp: 1e6 }),
+        timers: { botReadyAt: 5000, ...poison(100) } });
+    assert.ok(!poisoned.result.died && poisoned.result.hp >= 1, 'a monster\'s poison in the fight leaves the bot alive');
+    const bled = soloFight({ classId: 0, level: 20, mob: coldMob({ level: 20 }), mobHp: 10,
+        timers: { botReadyAt: 20000, mobReadyAt: 5000, mobFight: { dots: [{ key: 'bleed', next: 3000, left: 1, damage: 100, intervalMs: 3000 }] } } });
+    assert.ok(!bled.result.won && bled.mobHp === 1, 'the bot\'s bleed leaves the monster at 1 HP');
 }
 
-// 14. A bot's DoT that kills a party's monster is its caster's last hit: the soul crystal reads it.
+// 14. A party member's bleed leaves the party's monster at 1 HP: the tick wins
+// no fight (the member never acts in the slice; the monster acts at 5 s).
 {
-    const ColdSoulCrystal = invoke('GameServer/Bot/Population/ColdSoulCrystal');
-    const catalog = invoke('GameServer/Items/SoulCrystalProgression').catalog.npcs;
-    const npcId = Number(Object.keys(catalog).find(id => catalog[id].absorbType === 'LAST_HIT'
-        && ItemTemplateIndex.find(DataCache.npcs, Number(id))));
+    const npcId = Number(Object.keys(invoke('GameServer/Items/SoulCrystalProgression').catalog.npcs)
+        .find(id => ItemTemplateIndex.find(DataCache.npcs, Number(id))));
     const mob = ColdCombatProfile.npcCombatStats(ItemTemplateIndex.find(DataCache.npcs, npcId));
     const member = HuntCycle.referenceState(0, 20);
     const spot = { id: 'rules_party', avgLevel: mob.level, npcEntries: [{ selfId: npcId, count: 1 }] };
     const encounter = PveEncounter.save(null, PveEncounter.key([member], spot), mob, 10, TS, {
-        mobReadyAt: 1e9, readyAt: { [member.characterId]: 5000 },
+        mobReadyAt: 5000, readyAt: { [member.characterId]: 1e9 },
         mobFight: { dots: [{ key: 'bleed', next: 3000, left: 1, damage: 100, intervalMs: 3000, by: member.characterId }] } });
-    const outcome = ColdSoulCrystal.outcome, absorbers = [];
-    ColdSoulCrystal.outcome = (fighter) => { absorbers.push(fighter.state.characterId); };
-    try {
-        const fight = Resolver.resolvePartyFight({ members: [member], spot, targetNpcId: npcId, rng: constant(0.5), timestamp: TS, encounter });
-        assert.strictEqual(fight.won, true, 'the bleed kills the monster');
-        assert.deepStrictEqual(absorbers, [member.characterId], 'its caster\'s crystal absorbs');
-    } finally {
-        ColdSoulCrystal.outcome = outcome;
-    }
+    const fight = Resolver.resolvePartyFight({ members: [member], spot, targetNpcId: npcId, rng: constant(0.5), timestamp: TS, encounter });
+    assert.ok(!fight.won && fight.debug.remainingHp === 1, 'the bleed leaves the monster at 1 HP');
 }
 
 // 11. The hunt tables' formula meets a real mob's terms (T124): an undead mob by the

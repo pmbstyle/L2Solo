@@ -234,6 +234,8 @@ async function main() {
     // Run the actual poison timer through the real character death handler
     // and back into the clan service, rather than mocking lethal damage.
     const intervals = new Map();
+    // The tick's HP is the shared damage-over-time rule.
+    mocks['GameServer/Combat/HitRules'] = require('../src/GameServer/Combat/HitRules');
     const ticker = load('src/GameServer/Effects/EffectTicker.js', {
         setInterval: fn => { const token = {}; intervals.set(token, fn); return token; },
         clearInterval: token => intervals.delete(token), clearTimeout() {}

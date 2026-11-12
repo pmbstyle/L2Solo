@@ -143,7 +143,9 @@ function poison(session, state) {
     const effect = store.apply(session.actor, { key: 'clan_alliance_poison', id: Rules.POISON.skillId, level: 1, name: 'Poison of Death',
         type: 'debuff', category: 'clan_alliance_poison', dispellable: false, durationMs,
         stats: { immobile: true },
-        dot: { damage: Rules.POISON.damage, intervalMs: Rules.POISON.intervalMs, count: Math.ceil(durationMs / Rules.POISON.intervalMs) } });
+        // Poison of Death kills, unlike every other damage over time (Lisvus EffectDeathPoison has no 1 HP floor).
+        dot: { damage: Rules.POISON.damage, intervalMs: Rules.POISON.intervalMs, count: Math.ceil(durationMs / Rules.POISON.intervalMs),
+            kills: true } });
     session.actor.automation?.abortAll?.(session.actor);
     invoke('GameServer/Effects/EffectRestrictions').stopMovement(session, session.actor);
     const ticker = invoke('GameServer/Effects/EffectTicker');

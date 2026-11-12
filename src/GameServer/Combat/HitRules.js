@@ -284,6 +284,19 @@ function dotOf(semantic, level, power) {
     return { count: dot.count, intervalMs: dot.intervalMs, damage: damage ?? power };
 }
 
+// The HP damage over time takes from a target at hp (Lisvus
+// EffectDamOverTime.onActionTime): never the last point. A tick takes at most
+// hp - 1 and nothing at 1 HP or below, from a monster, a character or a
+// servitor alike, whoever cast it; a run of ticks with nothing between them
+// takes the same at once (hot passes one tick, cold a fight step's). Only
+// kills (the clan trial's Poison of Death, Lisvus EffectDeathPoison) takes it
+// all. A toggle that drains HP ends when its tick would reach the floor (its
+// caller's).
+function dotTickDamage(hp, damage, kills = false) {
+    const dealt = Math.max(0, Number(damage) || 0);
+    return kills ? dealt : Math.max(0, Math.min(dealt, (Number(hp) || 0) - 1));
+}
+
 module.exports = { melee, physicalSkill, magicSkill, expectedMelee, expectedPhysicalSkill, expectedMagicSkill, physicalSkillCritRate, blowLandChance, blowLands, resistStats, traitResistModifier,
     effectLandChance, ELEMENTAL_DAMAGE_TRAITS, DAMAGE_VULN_STATS, elementVulnStat, weaponVulnStat, raceStat, targetModifier, skillPower,
-    rollsMagicLevel, magicLevelChance, magicLevelLands, lethalStrike, absorbedHp, reflectedDamage, dotOf };
+    rollsMagicLevel, magicLevelChance, magicLevelLands, lethalStrike, absorbedHp, reflectedDamage, dotOf, dotTickDamage };
