@@ -1009,8 +1009,10 @@ class ColdSimulationCoordinator {
                 waitStarted = performance.now();
             });
             if (options.onWorkerWait && waitStarted !== undefined) options.onWorkerWait(performance.now() - waitStarted);
-            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy)
+            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy) {
+                FailureLog.note('cold.party_goal_stale_worker', new Error('party_goal_stale_worker'));
                 return { ok: false, reason: 'party_goal_stale_worker' };
+            }
             if (!result.ok) return result;
             if (JSON.stringify(result.sources) !== JSON.stringify(expected)
                 || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
