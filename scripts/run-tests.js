@@ -918,6 +918,7 @@ const tests = [
     'tests/test_party_capacity.js',
     'tests/test_party_rewards.js',
     'tests/test_npc_died_progress.js',
+    'tests/test_kill_failure_boundary.js',
     'tests/test_party_buff_targets.js',
     'tests/test_party_member_reader.js',
     'tests/test_party_bot_loot.js',

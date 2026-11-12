@@ -4,6 +4,7 @@ const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
+const FailureLog = require('../../../FailureLog');
 
 const PARTY_REWARD_RADIUS = 2500;
 const PendingSweep = invoke('GameServer/Bot/AI/PendingSweep');
@@ -146,9 +147,10 @@ function autoSweepSpoiledCorpse(npc, Generics) {
 
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
+    const { killEffect } = invoke('GameServer/Npc/Generics/Die');
 
     if (npc.minionBossObjectId) {
-        RaidBossMinionManager.onMinionDeath(World, npc);
+        killEffect('kill.minion', () => RaidBossMinionManager.onMinionDeath(World, npc));
     }
 
     if (npc.fetchIsPet?.() === true && npc.petData?.version === 1) {
@@ -158,9 +160,8 @@ function npcDied(session, actor, npc) {
 
     if (npc.fetchIsSummon?.() === true) {
         const summonOwner = npc.ownerSession || ownerSessionForSummon(npc);
-        invoke('GameServer/Quest/QuestService').onSummonDeath(summonOwner, npc).catch(error => {
-            utils.infoWarn('Quest', 'summon death callback failed: %s', error.message);
-        });
+        invoke('GameServer/Quest/QuestService').onSummonDeath(summonOwner, npc)
+            .catch(error => FailureLog.note('kill.quest', error));
         NpcObjectIndex.remove(World, npc);
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
         session.dataSendToMeAndOthers?.(invoke('GameServer/Network/Response').deleteOb(npc.fetchId()), npc);
@@ -177,24 +178,22 @@ function npcDied(session, actor, npc) {
     if (typeof actor?.fetchKind === 'function' && actor.fetchIsSummon?.() !== true) {
         // ConfuseMob's killer is an NPC, not the player whose session relayed
         // its packets. Preserve corpse/respawn handling without player credit.
-        actor.abortCombatState(session);
+        killEffect('kill.attack_end', () => actor.abortCombatState(session));
         return;
     }
     // End the completed attack/chase, but retain the player's combat stance
     // until its last-event timeout, as Lisvus clientStopAutoAttack does.
-    actor.automation.abortAll(actor);
+    killEffect('kill.attack_end', () => actor.automation.abortAll(actor));
 
     if (actor.isDead()) return;
 
     // Death is the authoritative end of the encounter. Let the bot that
     // successfully marked this corpse queue exactly one Sweeper cast, whether
     // it was a solo hunter or a party companion.
-    autoSweepSpoiledCorpse(npc, Generics);
+    killEffect('kill.sweep', () => autoSweepSpoiledCorpse(npc, Generics));
 
-    const rewardActor = ownerSession?.actor || actor;
-    const participants = rewardParticipants(session, npc);
     if (session?.accountId?.startsWith?.('bot_')) {
-        BotEventJournal.record({
+        killEffect('kill.journal', () => BotEventJournal.record({
             botId: session.actor?.fetchId?.(),
             eventType: 'kill',
             summary: `${session.actor?.fetchName?.() || 'Bot'} defeated ${npc.fetchName?.() || 'a monster'}.`,
@@ -202,33 +201,38 @@ function npcDied(session, actor, npc) {
             dedupeKey: `kill:${session.actor?.fetchId?.()}:${npc.fetchTemplateId?.() || npc.fetchId?.()}`,
             coalesceWindowMs: 30000,
             meta: { npcId: npc.fetchId?.(), npcName: npc.fetchName?.() || null }
-        });
+        }));
     }
     const PetRuntime = invoke('GameServer/Pets/PetRuntime');
-    const rewardLevel = Math.max(...participants.map(levelOf), Number(rewardActor.fetchLevel?.() || 1));
-    const base = invoke('GameServer/Progression/MobExperience').rewards(npc.fetchAcquiredExp(), npc.fetchRewardSp(),
-        rewardLevel, npc.fetchLevel?.());
-    const overhit = invoke('GameServer/Progression/OverhitReward').consume(npc, actor, base.exp);
-    if (overhit.eligible) session.dataSendToMe?.(invoke('GameServer/Network/Response').systemMessage(361));
-    const remainingShare = PetRuntime.rewardDamage(npc, overhit.adjustedExp, base.sp);
-    const rewards = partyRewardShares(participants, overhit.adjustedExp * remainingShare, base.sp * remainingShare);
+    let rewards = [];
+    killEffect('kill.rewards', () => {
+        const rewardActor = ownerSession?.actor || actor;
+        const participants = rewardParticipants(session, npc);
+        const rewardLevel = Math.max(...participants.map(levelOf), Number(rewardActor.fetchLevel?.() || 1));
+        const base = invoke('GameServer/Progression/MobExperience').rewards(npc.fetchAcquiredExp(), npc.fetchRewardSp(),
+            rewardLevel, npc.fetchLevel?.());
+        const overhit = invoke('GameServer/Progression/OverhitReward').consume(npc, actor, base.exp);
+        if (overhit.eligible) session.dataSendToMe?.(invoke('GameServer/Network/Response').systemMessage(361));
+        const remainingShare = PetRuntime.rewardDamage(npc, overhit.adjustedExp, base.sp);
+        rewards = partyRewardShares(participants, overhit.adjustedExp * remainingShare, base.sp * remainingShare);
+    });
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.
-    invoke('GameServer/Quest/QuestService').onKill(session, npc, actor).catch((error) => {
-        utils.infoWarn('Quest', 'kill callback failed: %s', error.message);
-    });
+    invoke('GameServer/Quest/QuestService').onKill(session, npc, actor)
+        .catch((error) => FailureLog.note('kill.quest', error));
 
-    rewards.forEach(({ session: memberSession, exp, sp }) => {
+    // Each member's share is its own consequence: one that fails does not cost the others theirs.
+    rewards.forEach(({ session: memberSession, exp, sp }) => killEffect('kill.rewards', () => {
         const pet = memberSession.actor.pet;
         const share = pet?.petData?.version === 1 && !pet.state.fetchDead() && !memberSession.actor.mounted
             ? invoke('GameServer/Pets/PetRules').typeForNpc(pet.fetchSelfId())?.ownerShare || 0 : 0;
         if (share) PetRuntime.award(pet, exp * share, sp * share);
         Generics.experienceReward(memberSession, memberSession.actor, exp * (1 - share), sp * (1 - share));
-    });
-    for (const reward of rewards) if (reward.session?.accountId?.startsWith('bot_')) {
+    }));
+    for (const reward of rewards) if (reward.session?.accountId?.startsWith('bot_')) killEffect('kill.progress', () => {
         const saved = reward.session.coldLifeState;
-        if (!saved) continue;
+        if (!saved) return;
         // The progress clock and counts are the body's row (stats.economyClock, playedHours,
         // frustration, lifelongKills; timing): a kill takes no loss, so no persona trait.
         const learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
@@ -240,8 +244,8 @@ function npcDied(session, actor, npc) {
         // in its spot's risk window and its recovery.
         const recorded = invoke('GameServer/Bot/Population/BotLifeState').recordNearFight(reward.session, saved, { won: true });
         reward.session.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...life } };
-    }
-    invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc);
+    });
+    killEffect('kill.shared_memory', () => invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc));
 }
 
 module.exports = npcDied;
