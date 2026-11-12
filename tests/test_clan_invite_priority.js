@@ -13,6 +13,9 @@ const dependencies = {
         relationship: () => 'stranger'
     },
     'GameServer/Bot/AI/BotServiceIdentity': { isStaticService: subject => !!subject.staticService },
+    // These cases invite as an ordinary clanmate; leader overrides have their
+    // own native hot/cold integration coverage.
+    'GameServer/Bot/AI/ClanLeaderPartyInvite': { isLeaderFor: () => false },
     'GameServer/SpeckMath': { Point3D: class { distance() { return 100000; } } },
     'GameServer/Social/InteractionMemoryRuntime': { assess: () => ({ ready: true }) },
     'GameServer/Clan/ClanService': { findById: id => id === 77 ? { members } : null },

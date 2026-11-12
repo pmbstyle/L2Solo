@@ -51,7 +51,7 @@ async function run() {
     // Shots at half a D-grade soulshot's usual board price: a unit's worth beats a gear
     // piece's priority on any table, so the shots' steps come first.
     const SHOTS = 1463, POTIONS = 1061;
-    sell(SHOTS, 5000, 6); sell(POTIONS, 50, 120);
+    sell(SHOTS, 5000, 6); sell(POTIONS, 5000, 120);
     // One bot's review on a visit and the state its plan was published on.
     let nextId = 9000;
     const review = (over = {}) => {
