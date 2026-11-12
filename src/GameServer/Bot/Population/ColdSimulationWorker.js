@@ -1674,10 +1674,8 @@ function requestPartyGoals(payload, msgId, admitted = false) {
                 buyOrderEscrow: payload.escrows[at], caller: 'workerPartyGoal', withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
             && partyMembersAvailable(members), { spots: planningSpots, bridgeReason });
-        if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
-            && !send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId))
-            // The validator refused the answer: main still waits for it, so refuse it at once.
-            send('party_goal_result', { ok: false, reason: 'party_goal_result_refused' }, msgId);
+        if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
+            send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);
     }).catch(error => {
         send('party_goal_result', { ok: false, reason: error.message || 'party_goal_failed' }, msgId);
     }).finally(() => {
@@ -1709,10 +1707,13 @@ function send(type, payload = {}, msgId = null, payloadBytes = null, meetingFall
         valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
     }
     if (!valid.ok) {
+        // A refused reply still ends its request: the fault names it (msgId) and main
+        // ends the waiter for it at once (no second answer of the reply's type).
         if (type !== 'fault') {
             parentPort.postMessage(Protocol.envelope('fault', epoch, {
                 reason: `out_${type}_${valid.reason}`,
-                bytes: Number(valid.bytes || 0)
+                bytes: Number(valid.bytes || 0),
+                msgId
             }));
         }
         return false;

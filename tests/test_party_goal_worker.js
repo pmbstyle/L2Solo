@@ -22,10 +22,10 @@ const assert=require('node:assert/strict');
 Config.staticShotsDisabled=true;
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
-    if(message.queryProbe==='refuse-goal-answer') {
+    if(message.queryProbe==='refuse-reply') {
         const real=Protocol.validateEnvelope;
         Protocol.validateEnvelope=(m,...rest)=>{
-            if(m.type==='party_goal_result'&&m.payload.ok){Protocol.validateEnvelope=real;return {ok:false,reason:'forced_refusal',bytes:0};}
+            if(m.type===message.type){Protocol.validateEnvelope=real;return {ok:false,reason:'forced_refusal',bytes:0};}
             return real(m,...rest);
         };
     }
@@ -291,14 +291,21 @@ function post(type, payload, id) {
     invalidReserve.joint.raidAssessment.supplies[0].reserveCost=invalidReserve.joint.raidAssessment.supplies[0].cash+1;
     assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidReserve),'worker').ok,
         'ready advice cannot authorize an unfunded static reserve');
-    // An answer the worker's own validator refuses is answered as a refusal at once: main waits on it.
-    worker.postMessage({ queryProbe: 'refuse-goal-answer' });
+    // An answer the worker's own validator refuses ends its request at once: the fault names the request.
+    worker.postMessage({ queryProbe: 'refuse-reply', type: 'party_goal_result' });
     post('party_goal_request', { ...request, replyBy: Date.now() + 5000 }, 'refused');
-    const refused = await wait(message => message.type === 'party_goal_result' && message.msgId === 'refused');
-    assert.deepEqual(refused.payload, { ok: false, reason: 'party_goal_result_refused' });
+    const refusal = await wait(message => message.type === 'fault' && message.payload.msgId === 'refused');
+    assert.equal(refusal.payload.reason, 'out_party_goal_result_forced_refusal');
     post('party_goal_request', { ...request, replyBy: timestamp }, 'expired');
     const expired = await wait(message => message.type === 'party_goal_result' && message.msgId === 'expired');
     assert.equal(expired.payload.ok, false);
+    assert(!messages.some(message => message.type === 'party_goal_result' && message.msgId === 'refused'),
+        'a refused answer is not answered a second time');
+    worker.postMessage({ queryProbe: 'refuse-reply', type: 'fence_ack' });
+    post('fence', { characterId: 701, deadlineAt: Date.now() + 500 }, 'fence-refused');
+    const fenceRefusal = await wait(message => message.type === 'fault' && message.payload.msgId === 'fence-refused');
+    assert.equal(fenceRefusal.payload.reason, 'out_fence_ack_forced_refusal');
+    assert(!messages.some(message => message.type === 'fence_ack' && message.msgId === 'fence-refused'));
     console.log('PASS native 256MiB worker: complete source replacement, protected goal, expired request; wire bytes',
         Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, request)), Protocol.byteLength(response));
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => worker.terminate());
