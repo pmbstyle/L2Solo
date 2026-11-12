@@ -588,7 +588,7 @@ parentPort.on('message', message => {
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'emptyask'), emptyAskProbe: id });
         const emptyAskResponse = await wait(message => message.probeId === 'emptyask');
         if (emptyAskResponse.error) throw Error(emptyAskResponse.error);
-        console.log('DT352 emptyAsk', JSON.stringify(emptyAskResponse.value));
+        console.log(JSON.stringify(emptyAskResponse.value));
         assert.deepEqual(emptyAskResponse.value, { built: true, asked: 1, woken: [true, true], kept: true },
             'a bot on ground it raised empty whose answer names no spot asks again, and the round there keeps the ask');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'arrival'), arrivalProbe: id });

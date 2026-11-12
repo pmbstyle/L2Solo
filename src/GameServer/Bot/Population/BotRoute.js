@@ -369,6 +369,10 @@ function occupationHolds(leaf, ground, excludedSpotIds, { emptyGround = null, he
     return !excludedSpotIds.has(id) && !(String(emptyGround ?? '') === id && heldSpotId != null && String(heldSpotId) !== id);
 }
 
+// Whether the ground under a bot holds no hunt for it: it has no ground, it stands on
+// ground its marks exclude, or on ground raised empty for it this stay. A held answer
+// is asked again there. The cold trip and the hot body (BotDecisionService.offGroundSpot)
+// both read it. Our choice: a C4 player finding nothing he can fight leaves his camp.
 function noHuntHere(ground, excludedSpotIds, emptyGround = null) {
     if (!ground) return true;
     const id = String(ground.id);
@@ -381,11 +385,12 @@ function noHuntHere(ground, excludedSpotIds, emptyGround = null) {
 // holds the bot on ground it still hunts (occupationHolds: no field trip before the errand
 // runs), ground the bot may not hunt alone (party-only ground, unsafeSoloGround)
 // that the choice leaves it on is fled (the search's evacuation, choose, nothing
-// kept; ground whose spawns admit none of its fights is the round's spot_empty), and with no spot it may take and no ground under it the bot asks the
+// kept; ground whose spawns admit none of its fights is the round's spot_empty), and with no spot it may take and no hunt on the ground under it (none, ground its marks
+// exclude, or ground raised empty for it this stay: noHuntHere) the bot asks the
 // earning decision again once per answer (Situations.spotAsk on the record: the
 // route carries spot_empty to the step, stepTrip; an answer to that ask with none
-// either leaves it where it is, counted earning:no_spot), and so does a bot standing on
-// ground its marks exclude (huntSpot sends it to the leveling goal first). Counted as
+// either leaves it where it is, counted earning:no_spot); a bot standing on
+// ground its marks exclude is sent by huntSpot to the leveling goal first. Counted as
 // route:trip:held_choice|evacuate|occupation. The held choice is read first, whatever
 // the trip does, and given to out.held (the step publishes it: huntSpotKeyOf).
 function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = null }) {
@@ -410,7 +415,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
     } else {
         EconomyDiagnostics.count('route', 'trip', 'held_choice');
         if (chosen?.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
-        // Ground its marks exclude (a contest lost, danger, deaths there) is no ground to stay on: it asks as a bot on none.
+        // Ground that holds no hunt (excluded by its marks: a contest lost, danger, deaths there; or raised empty this stay) is no ground to stay on: it asks as a bot on none.
         else if (noHuntHere(currentSpot, frame.excludedSpotIds, state.stats?.emptyGround)
             && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
             return { needed: false, ask: 'spot_empty' };
