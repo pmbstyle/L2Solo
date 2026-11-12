@@ -359,4 +359,27 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran luxury exchange cou
     assert(TownNpcApproach.canInteract(interaction, galladucci), 'Galladucci is in reach from his interaction point');
 });
 
+// An approach point stands on the NPC's floor: beside the Rune gatekeeper and the Elven Village warehouse counters a
+// radial point over a pillar or platform top is skipped, so bots are never sent to a point they cannot walk to.
+verifyGeodataWhenAvailable(GeodataEngine, [[21, 18], [21, 19]], 'Rune gatekeeper and Elven warehouse approach floors', () => {
+    const gatekeeper = { npcSelfId: 8320, locX: 43824, locY: -47664, locZ: -792, head: 0 };
+    for (let k = 2; k <= 5; k++) {
+        const angle = k * Math.PI / 8;
+        const bx = Math.round(gatekeeper.locX + Math.cos(angle) * 600), by = Math.round(gatekeeper.locY + Math.sin(angle) * 600);
+        const bz = GeodataEngine.getHeight(bx, by, gatekeeper.locZ);
+        const bot = { fetchId: () => 1000 + k, fetchLocX: () => bx, fetchLocY: () => by, fetchLocZ: () => bz };
+        const goal = TownNpcApproach.planOpen(null, bot, gatekeeper, 'town_gatekeeper').destination;
+        assert(Math.abs(GeodataEngine.getHeight(goal.locX, goal.locY, goal.locZ) - gatekeeper.locZ) <= 64,
+            `a bot coming from direction ${k} is sent to the Rune gatekeeper's floor`);
+        assert(GeodataEngine.findPath(gatekeeper.locX, gatekeeper.locY, gatekeeper.locZ, goal.locX, goal.locY, goal.locZ, 2000, { goalRadius: 16 }),
+            `the Rune gatekeeper's approach point from direction ${k} is joined to the NPC by a route`);
+    }
+    for (const [npcSelfId, locX, locY] of [[7151, 47868, 50167], [7152, 47912, 50170]]) {
+        const warehouse = { npcSelfId, locX, locY, locZ: -2983, head: 50000 };
+        const point = TownNpcApproach.pointsFor(warehouse).interaction;
+        assert(Math.abs(GeodataEngine.getHeight(point.locX, point.locY, warehouse.locZ) - warehouse.locZ) <= 64,
+            `the counter point of Elven warehouse ${npcSelfId} is on the NPC's floor`);
+    }
+});
+
 console.log('Town NPC front-side approach checks passed');

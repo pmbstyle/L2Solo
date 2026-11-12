@@ -70,6 +70,13 @@ function radialPoint(target, distance, radians) {
     };
 }
 
+// A point to talk to an NPC from stands on the floor nearest the NPC's z, and is none when that floor is more than
+// 64 from the NPC's (a pillar or roof top over the NPC): the rule canInteract applies to the actor.
+function onNpcFloor(point, target) {
+    const z = GeodataEngine.getHeight(point.locX, point.locY, Number(target.locZ));
+    return Math.abs(z - Number(target.locZ)) > 64 ? null : { ...point, locZ: z };
+}
+
 function hasLineOfSight(from, to) {
     if (!from || !to) return false;
     return GeodataEngine.canWalkStraight(
@@ -177,8 +184,8 @@ function pointsFor(target) {
     let visibleFallback = null;
     for (const distance of COUNTER_SEARCH_DISTANCES) {
         for (const angleOffset of SEARCH_OFFSETS) {
-            const interaction = projectedPoint(target, distance, angleOffset);
-            if (!hasInteractionLineOfSight(interaction, target)) continue;
+            const interaction = onNpcFloor(projectedPoint(target, distance, angleOffset), target);
+            if (!interaction || !hasInteractionLineOfSight(interaction, target)) continue;
             const staging = projectedPoint(target, STAGING_DISTANCE, angleOffset);
             visibleFallback ||= { staging: Object.freeze({ ...staging }), interaction: Object.freeze({ ...interaction }) };
             // Visibility alone can select a roof or a disconnected counter side.
@@ -219,8 +226,8 @@ function openPointFor(target, bot) {
 
     for (const distance of INTERACTION_SEARCH_DISTANCES) {
         for (const angleOffset of SEARCH_OFFSETS) {
-            const interaction = radialPoint(target, distance, preferredAngle + angleOffset);
-            if (hasLineOfSight(interaction, target)) return interaction;
+            const interaction = onNpcFloor(radialPoint(target, distance, preferredAngle + angleOffset), target);
+            if (interaction && hasLineOfSight(interaction, target)) return interaction;
         }
     }
 
@@ -230,8 +237,8 @@ function openPointFor(target, bot) {
 function openSlotsFor(target, fallback) {
     const candidates = [];
     for (let step = 0; step < 8; step++) {
-        const interaction = radialPoint(target, INTERACTION_DISTANCE, step * Math.PI / 4);
-        if (hasLineOfSight(interaction, target)) candidates.push(interaction);
+        const interaction = onNpcFloor(radialPoint(target, INTERACTION_DISTANCE, step * Math.PI / 4), target);
+        if (interaction && hasLineOfSight(interaction, target)) candidates.push(interaction);
     }
     return candidates.length ? candidates : [fallback];
 }
