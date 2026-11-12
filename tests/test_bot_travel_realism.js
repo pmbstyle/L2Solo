@@ -575,6 +575,69 @@ try {
     assert.strictEqual(unreachableShopSession.roleDecision.reason, 'shopping_route_unreachable',
         'ordinary NPC shops no longer provide a replacement shot route');
 
+    // A solo hunter whose walk to town found no way does not set off again from the same
+    // ground: not after the town pause would have ended, not ten minutes on. A scroll reads
+    // at once, and other ground (another declared spot) walks again.
+    {
+        const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+        const Response = invoke('GameServer/Network/Response');
+        const realNow = Date.now;
+        const realSkillStarted = Response.skillStarted;
+        const t0 = realNow();
+        const ground = { id: '20_13' };
+        const target = { actorId: null, name: 'Giran general shop', locX: 1000, locY: 1000, locZ: -100, town: 'Giran' };
+        const walker = bot({ locX: 30000, locY: 0, locZ: -100 });
+        let casting = false;
+        walker.state = { inMotion: () => false, setCasts(on) { casting = on; }, fetchCasts: () => casting };
+        walker.isDead = () => false;
+        const hunter = {
+            plan: 'shopping', partyCompanion: false, currentSpot: ground, shoppingTarget: target,
+            lastPathfinding: { requestedTo: target, routeUsable: false, at: t0 },
+            companionNavigationRecovery: {
+                key: CompanionNavigationRecovery.targetKey('shopping', target),
+                failures: CompanionNavigationRecovery.MAX_ROUTE_FAILURES - 1, lastFailureAt: 0, retryAt: 0
+            }
+        };
+        publishTravelSession(hunter, walker);
+        // A hot body: its raises wait in its bag for the worker's answer.
+        const realLife = { cachedState: LifeState.cachedState, nearPosts: LifeState.nearPosts, notifyNearFacts: LifeState.notifyNearFacts };
+        LifeState.cachedState = () => ({ phase: 'hot' });
+        LifeState.nearPosts = () => true;
+        LifeState.notifyNearFacts = () => {};
+        const town = { name: 'Giran', x: 1000, y: 1000, z: -100 };
+        const ai = { say() {}, getClosestTown: () => town };
+        try { ShoppingState.tick(hunter, walker, noTeleportGenerics, ai); } finally { Object.assign(LifeState, realLife); }
+        assert.strictEqual(hunter.plan, 'hunting', 'a walk that found no way ends the visit');
+        assert.strictEqual(hunter.nearRaise.names.filter(entry => entry.name === 'goal_failed:visit').length, 1,
+            'and the failed visit is raised once');
+        const reason = 'Heading to town for my planned improvement.';
+        const ask = () => { walker.moves.length = 0; return BotTownTravel.request(hunter, walker, ai, reason); };
+        global.setTimeout = () => 0;
+        Response.skillStarted = () => Buffer.alloc(0);
+        try {
+            for (const later of [61000, 600000]) {
+                Date.now = () => t0 + later;
+                assert.strictEqual(ask(), 'deferred', `no walk to the same town again from the same ground after ${later} ms`);
+                assert.strictEqual(walker.moves.length, 0, 'and no step is taken');
+                assert.strictEqual(hunter.plan, 'hunting');
+            }
+            hunter.townTravelRetryAt = 0;
+            const scroll = { fetchAmount: () => 1, fetchId: () => 1 };
+            walker.backpack = { fetchItemFromSelfId: id => id === 736 ? scroll : null, fetchItems: () => [], deleteItem() {} };
+            assert.strictEqual(ask(), 'escape', 'a bot with a scroll reads it');
+            walker.backpack = bot().backpack;
+            hunter.plan = 'hunting';
+            hunter.townEscape = undefined;
+            casting = false;
+            hunter.currentSpot = { id: '15_3' };
+            assert.strictEqual(ask(), 'walk', 'from other ground it walks again');
+        } finally {
+            Date.now = realNow;
+            global.setTimeout = originalSetTimeout;
+            Response.skillStarted = realSkillStarted;
+        }
+    }
+
     const buyerTarget = {
         actorId: 9001,
         name: 'BuyerBot',

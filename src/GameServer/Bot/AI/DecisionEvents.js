@@ -175,12 +175,6 @@ function raiseBag(stats, raise, impossible, where, subject, applied = 0) {
 }
 // A situation that waits in a body's bag for the worker's answer (raised, not yet answered).
 const inBag = (session, name) => !!session?.nearRaise?.names?.some(entry => entry.name === name);
-// A body's failed gear errand waits for the worker's answer to it: its goal_failed
-// raise of kind gear_errand is still in its bag. A town route that failed waits for it
-// (HuntingState: no trip on that route until the answer); the errand itself is held by
-// its mark (GearMarks), which every errand planner reads.
-const failureWaits = session => !!session?.nearRaise?.names?.some(entry => entry.name === 'goal_failed'
-    && entry.payload?.kind === 'gear_errand');
 // A real command rejection belongs to the accepted decision that attempted
 // it: late failures never invalidate a newer decision or raise an event twice.
 const rejections = {};
@@ -347,7 +341,7 @@ function receive(session, card, near) {
 }
 // The raise an answer (near: its raiseSeq, the raise it applied; its nearSeq, the
 // post it answers) settled: all of it, or the entries it applied (joined at or before
-// its seq: a failed gear errand's wait ends with its answer, failureWaits), the
+// its seq: a failed gear errand leaves the bag with its answer), the
 // impossible mark and the command it took. A command whose post was answered without it (refused or lost on the
 // way) is dropped and counted (FailureLog near.command_lost): the body never waits
 // for an answer that will not come.
@@ -437,5 +431,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, excludedSpotIds, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, inBag, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, excludedSpotIds, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

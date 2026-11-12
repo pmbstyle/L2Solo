@@ -177,12 +177,6 @@ function startShopping(session, bot, BotAI, reason, townName = null, options = {
         return false;
     }
 
-    // A failed physical town route defers every errand on that route,
-    // including stock, until the worker answers the failure it raised
-    // (DecisionEvents.failureWaits); an equipment failure alone must not block
-    // consumables. Hunt locally meanwhile.
-    if (session.roleDecision?.reason === 'shopping_route_unreachable' && DecisionEvents.failureWaits(session)) return 'deferred';
-
     const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
         .find(town => town.name === townName) : null;
     return BotTownTravel.request(session, bot, BotAI, reason, destination ? { ...options,

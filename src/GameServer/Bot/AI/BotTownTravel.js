@@ -218,6 +218,16 @@ function karmaTown() {
     return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
 }
 
+// A walk to town that found no way (ShoppingState: the visit's route exhausted on a
+// field). The body walks to that town again only from other ground (its declared
+// spot), by scroll, or once it stands in it. Our choice: C4 has no server walk; a
+// player who cannot walk to town hunts on until he reads a scroll, moves or dies.
+function walkFailed(session, townName) {
+    if (townName) session.townWalkFailed = { town: townName, spotId: session.currentSpot?.id ?? null };
+}
+const walkHeld = (session, town, alreadyInTown) => !alreadyInTown && session.townWalkFailed?.town === town.name
+    && session.townWalkFailed.spotId === (session.currentSpot?.id ?? null);
+
 // options.forced: a trip the held leaf did not order (a bag cleanup, a flight from unsafe
 // ground, a player's ask), kept through a deferral; its arrival wakes the build (ShoppingState.arrive).
 function request(session, bot, BotAI, reason, options = {}) {
@@ -230,10 +240,6 @@ function request(session, bot, BotAI, reason, options = {}) {
     // A physical teleport already submitted must settle first. Otherwise a
     // farm route must release movement before the selected town errand owns it.
     if (session.spotRelocation?.arrivalPending) return 'deferred';
-    if (session.spotRelocation) {
-        invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'town_trip');
-        bot.automation?.abortAll?.(bot);
-    }
     // A bot with karma walks to Floran, the town where a PK trades (design
     // 5.8): no scroll, no gatekeeper.
     const red = Karma.closesTowns(bot.fetchKarma?.());
@@ -252,6 +258,11 @@ function request(session, bot, BotAI, reason, options = {}) {
         options.forceScrollOfEscape === true ? 'hot_errand' : 'hot', fare.fee, TripPayment.actorAdena(bot));
     if (wantsScroll && !affordable && options.forceScrollOfEscape === true) return 'unpaid';
     const usesScroll = wantsScroll && affordable;
+    if (!usesScroll && walkHeld(session, town, alreadyInTown)) return 'deferred';
+    if (session.spotRelocation) {
+        invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'town_trip');
+        bot.automation?.abortAll?.(bot);
+    }
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
@@ -377,6 +388,7 @@ async function requestMeeting(session, bot, meeting, side) {
 module.exports = {
     SOE_CAST_MS,
     SOE_DISTANCE,
+    walkFailed,
     clearCombatTrip,
     hasCombatThreat,
     inCombat,

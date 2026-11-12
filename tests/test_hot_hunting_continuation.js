@@ -267,7 +267,7 @@ test('an unreachable sale route yields to local hunting during its retry', () =>
     const restoreAt = restores.length;
     try {
         f.session.plan = 'shopping';
-        f.session.shoppingTarget = { actorId: 12345, name: 'Remote buyer', town: 'Giran',
+        f.session.shoppingTarget = { actorId: 12345, name: 'Remote buyer', town: 'Oren',
             locX: 83510, locY: 148120, locZ: -3400 };
         f.session.shoppingEquipmentPlanChecked = true;
         f.session.shoppingWarehouseDone = true;
@@ -277,7 +277,7 @@ test('an unreachable sale route yields to local hunting during its retry', () =>
         Shopping.tick(f.session, f.bot, {}, f.ai);
         assert.equal(f.session.plan, 'hunting');
         assert.equal(f.session.shoppingTarget, undefined);
-        assert(f.session.townTravelRetryAt > Date.now(), 'a plain sale route must also establish a retry');
+        assert.equal(f.session.townWalkFailed?.town, 'Oren', 'a plain sale route that found no way is not walked again from this ground');
         const travel = invoke('GameServer/Bot/AI/BotTownTravel');
         assert.equal(travel.request(f.session, f.bot, f.ai, 'Sell loot.'), 'deferred');
         assert.deepEqual(f.session.moves, [], 'a failed route cannot restart on the next tick');
