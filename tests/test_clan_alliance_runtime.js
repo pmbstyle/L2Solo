@@ -54,7 +54,7 @@ const mocks = {
     'GameServer/Bot/AI/CompanionNavigationRecovery': { move: (...args) => { movements.push(args); return routeResult; } },
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => incomingThreat },
     'GameServer/Bot/AI/TownTransitPolicy': { townAt: () => null },
-    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, hasLineOfSight: () => true },
+    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, canWalkStraight: () => true },
     'GameServer/Bot/AI/BotSpotTravel': { tick() {}, cancel() {}, startViaEscape: (...args) => { trips.push(args); return false; } }
 };
 function load(relative, globals = {}) {

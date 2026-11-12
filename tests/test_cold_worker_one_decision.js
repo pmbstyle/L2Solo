@@ -326,6 +326,32 @@ module.exports.askProbe = async (id) => {
         return { built: plan.buildTaken === true, asked: asks() - before, woken: [Situations.woken(main, 'earning_spot'), Situations.woken(main, 'build')] };
     } finally { kernel.states.set(id, saved); }
 };
+// A far bot on its camp raised empty for it this stay (stats.emptyGround: the stay's spot_empty spent)
+// whose held earning answer names no spot (a save from before easier ground): that ground holds no hunt,
+// so its trip asks the decision again on the step that takes the build a situation woke; the ask reaches
+// main with the step's packet, and the round on the same ground (no fight, the stay's raise spent) keeps it.
+module.exports.emptyAskProbe = async (id) => {
+    const saved = kernel.states.get(id);
+    const asks = () => Object.entries(Situations.counts().raised).filter(([key]) => key.startsWith('spot_empty@'))
+        .reduce((sum, [, n]) => sum + n, 0);
+    try {
+        const ground = planningSpots.find(spot => Number(spot.minLevel) <= 20 && Number(spot.maxLevel) >= 20) || planningSpots[0];
+        const none = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').answerOf(null, 1);
+        const base = { ...saved.state, phase: 'cold', activity: 'hunting', spotId: ground.id, loc: { ...ground.center } };
+        const stats = Situations.raise({ ...saved.state.stats, woken: 0, waiting: 0, earning: none, equipmentPlan: null,
+            emptyGround: String(ground.id) }, 'goal_failed', null, Situations.place(base), id);
+        const state = { ...base, stats };
+        kernel.states.set(id, { ...saved, wishAdvisory: null, huntSpot: null, spotAsk: null, state });
+        const before = asks(), timestamp = Date.now();
+        const plan = await kernel.planLifecycle({ state, timestamp });
+        const main = mainRow(state, plan);
+        const projection = await kernel.projectResolve(plan.plannedState || state, { patch: {}, debug: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000 }, timestamp, plan);
+        return { built: plan.buildTaken === true, asked: asks() - before,
+            woken: [Situations.woken(main, 'earning_spot'), Situations.woken(main, 'build')],
+            kept: Situations.woken(projection.state.stats, 'earning_spot') };
+    } finally { kernel.states.set(id, saved); }
+};
 // A far bot's trip ends on its spot on the step that takes the decisions a situation woke, its
 // earning spot among them, and the units holding the spot turn it away (contest_lost, raised
 // by its round after the decision): the state it commits keeps its earning spot woken and the
@@ -429,7 +455,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'closedProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'askProbe', 'arrivalProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'pendingProbe', 'heldProbe', 'closedProbe', 'kitProbe', 'workshopProbe', 'rebuffProbe', 'askProbe', 'emptyAskProbe', 'arrivalProbe', 'occupationProbe', 'pageProbe', 'cellsProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -559,6 +585,12 @@ parentPort.on('message', message => {
         if (askResponse.error) throw Error(askResponse.error);
         assert.deepEqual(askResponse.value, { built: true, asked: 1, woken: [true, true] },
             'a bot whose answer names no spot asks again on its build\'s step, and main\'s row keeps the ask woken');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'emptyask'), emptyAskProbe: id });
+        const emptyAskResponse = await wait(message => message.probeId === 'emptyask');
+        if (emptyAskResponse.error) throw Error(emptyAskResponse.error);
+        console.log(JSON.stringify(emptyAskResponse.value));
+        assert.deepEqual(emptyAskResponse.value, { built: true, asked: 1, woken: [true, true], kept: true },
+            'a bot on ground it raised empty whose answer names no spot asks again, and the round there keeps the ask');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'arrival'), arrivalProbe: id });
         const arrivalResponse = await wait(message => message.probeId === 'arrival');
         if (arrivalResponse.error) throw Error(arrivalResponse.error);

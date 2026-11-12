@@ -87,8 +87,8 @@ function connected(from, to) {
     // each way, since a cell may open onto a neighbour that does not open back
     // (a steep slope, a ledge, a tree's skirt). Our choice: a body is shown
     // only where one could also have walked to.
-    return Geo.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)
-        && Geo.hasLineOfSight(to.locX, to.locY, to.locZ, from.locX, from.locY, from.locZ);
+    return Geo.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)
+        && Geo.canWalkStraight(to.locX, to.locY, to.locZ, from.locX, from.locY, from.locZ);
 }
 
 // A floor point a body can stand on: one geodata cell of room around it, rather than

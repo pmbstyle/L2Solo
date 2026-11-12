@@ -53,21 +53,55 @@ assert(templeBandShopPath && templeBandShopPath.length > 1, 'the removed temple 
     assert(out && out.length > 1, 'a body inside the tree skirt at 45868, 34914 has a route to the open ground');
     let from = skirt;
     for (const to of out) {
-        assert(GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+        assert(GeodataEngine.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
             'every leg of the route out is a straight walk');
         from = to;
     }
     const mob = { locX: 45820, locY: 34990, locZ: GeodataEngine.getHeight(45820, 34990, -3640) };
     assert(GeodataEngine.hasLineOfSight(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ),
         'a hunter standing there sees a mob on the ground beside the tree');
+    assert(GeodataEngine.hasLineOfSight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ),
+        'and the mob sees the hunter back across the one-way edge');
     assert(GeodataEngine.findPath(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ)?.length > 1, 'and reaches it');
-    assert.strictEqual(GeodataEngine.hasLineOfSight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ), false,
+    assert.strictEqual(GeodataEngine.canWalkStraight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ), false,
         'the skirt is not walked into from the ground');
     assert.strictEqual(GeodataEngine.findPath(ground.locX, ground.locY, ground.locZ, skirt.locX, skirt.locY, skirt.locZ), null,
         'no route leads into the skirt');
     const hollow = { locX: 45912, locY: 34872, locZ: -3640 };
     assert.strictEqual(GeodataEngine.findPath(ground.locX, ground.locY, ground.locZ, hollow.locX, hollow.locY, hollow.locZ), null,
         'no route leads into the hollow of the trunk');
+
+    // C4 sight is a height ray: bodies see each other over the low skirt
+    // (cells 24 above the ground) though neither walks across it, and the
+    // trunk (cells 136 above the ground) hides.
+    const east = { locX: 46080, locY: 34890, locZ: -3632 }, west = { locX: 45692, locY: 35010, locZ: -3656 };
+    const sees = (a, b) => GeodataEngine.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
+    const walks = (a, b) => GeodataEngine.canWalkStraight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
+    assert(sees(east, west) && sees(west, east), 'two bodies see each other over the tree skirt, both ways');
+    assert.strictEqual(walks(east, west) || walks(west, east), false, 'neither walks straight across the skirt');
+    const trunkEast = { locX: 46040, locY: 34890, locZ: -3640 }, trunkWest = { locX: 45768, locY: 34938, locZ: -3648 };
+    assert.strictEqual(sees(trunkEast, trunkWest) || sees(trunkWest, trunkEast), false, 'the trunk hides, both ways');
+}
+
+// The Elven ledge at 44794, 38981, -3400: every way off it drops 72 or more
+// (C4 bodies fall; the reverse climb stays refused). A body routed onto it
+// walks off again.
+{
+    const ledge = { locX: 44794, locY: 38981, locZ: -3400 };
+    const fields = { locX: 45640, locY: 38345, locZ: GeodataEngine.getHeight(45640, 38345, -3400) };
+    const out = GeodataEngine.findPath(ledge.locX, ledge.locY, ledge.locZ, fields.locX, fields.locY, fields.locZ, 8000);
+    assert(out && out.length > 1, 'a body on the ledge at 44794, 38981 has a route down to the fields');
+    let from = ledge, drop = 0;
+    for (const to of out) {
+        assert(GeodataEngine.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+            'every leg of the route off the ledge is a straight walk');
+        drop = Math.max(drop, from.locZ - to.locZ);
+        from = to;
+    }
+    assert(drop > 64, 'the way off the ledge drops more than a climb of 64');
+    const lower = out.find(point => ledge.locZ - point.locZ > 64);
+    assert.strictEqual(GeodataEngine.canWalkStraight(lower.locX, lower.locY, lower.locZ, ledge.locX, ledge.locY, ledge.locZ), false,
+        'nobody climbs back up more than 64');
 }
 
 console.log("Testing pathfinding to Talking Island south gate staging point...");

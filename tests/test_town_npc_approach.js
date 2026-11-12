@@ -27,10 +27,10 @@ function identifiedBotAt(actorId, locX, locY, locZ = -100) {
 }
 
 // Protocol/queue behavior should not depend on an installed terrain pack.
-const originalGeo = Object.fromEntries(['hasGeo', 'hasLineOfSight', 'getHeight', 'getCellData', 'checkVirtualObstacles']
+const originalGeo = Object.fromEntries(['hasGeo', 'canWalkStraight', 'getHeight', 'getCellData', 'checkVirtualObstacles']
     .map(key => [key, GeodataEngine[key]]));
 GeodataEngine.hasGeo = () => false;
-GeodataEngine.hasLineOfSight = () => true;
+GeodataEngine.canWalkStraight = () => true;
 GeodataEngine.getHeight = (x, y, z) => z;
 
 const target = {
@@ -170,7 +170,7 @@ for (let index = 0; index < 32; index++) {
     const edgeTarget = { ...target, npcSelfId: 7003 };
     const edgePoints = TownNpcApproach.pointsFor(edgeTarget);
     const edge = botAt(edgePoints.interaction.locX + 8, edgePoints.interaction.locY);
-    GeodataEngine.hasLineOfSight = (x, y) => x !== edge.locX || y !== edge.locY;
+    GeodataEngine.canWalkStraight = (x, y) => x !== edge.locX || y !== edge.locY;
     assert(!TownNpcApproach.hasLineOfSight(edge, edgeTarget));
     assert(TownNpcApproach.plan({}, edge, edgeTarget, 'shopping').ready,
         'a clipped arrival cell within 16 units of a visible counter point may complete interaction');
@@ -186,7 +186,7 @@ for (let index = 0; index < 32; index++) {
     const originalVisibility = InteractionGeometry.canSee;
     InteractionGeometry.canSee = () => true;
     GeodataEngine.hasGeo = () => true;
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
     GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? obstacleHeight : 0, nswe: 0 });
     GeodataEngine.checkVirtualObstacles = () => virtualWall;
     assert(TownNpcApproach.hasInteractionLineOfSight(from, to),
@@ -339,7 +339,7 @@ assert.strictEqual(outsideOpenBoundary.ready, false,
 {
     const npc = { ...botAt(72, 0, 0), fetchSelfId: () => 7097, fetchHead: () => 32768 };
     GeodataEngine.hasGeo = () => true;
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
     GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? 24 : 0, nswe: 0 });
     GeodataEngine.checkVirtualObstacles = () => false;
     const clientSight = InteractionGeometry.canSee;
@@ -357,6 +357,29 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran luxury exchange cou
     // The point plan() walks to (pointsFor): the bot can talk from there under the client geometry.
     const interaction = TownNpcApproach.pointsFor(galladucci).interaction;
     assert(TownNpcApproach.canInteract(interaction, galladucci), 'Galladucci is in reach from his interaction point');
+});
+
+// An approach point stands on the NPC's floor: beside the Rune gatekeeper and the Elven Village warehouse counters a
+// radial point over a pillar or platform top is skipped, so bots are never sent to a point they cannot walk to.
+verifyGeodataWhenAvailable(GeodataEngine, [[21, 18], [21, 19]], 'Rune gatekeeper and Elven warehouse approach floors', () => {
+    const gatekeeper = { npcSelfId: 8320, locX: 43824, locY: -47664, locZ: -792, head: 0 };
+    for (let k = 2; k <= 5; k++) {
+        const angle = k * Math.PI / 8;
+        const bx = Math.round(gatekeeper.locX + Math.cos(angle) * 600), by = Math.round(gatekeeper.locY + Math.sin(angle) * 600);
+        const bz = GeodataEngine.getHeight(bx, by, gatekeeper.locZ);
+        const bot = { fetchId: () => 1000 + k, fetchLocX: () => bx, fetchLocY: () => by, fetchLocZ: () => bz };
+        const goal = TownNpcApproach.planOpen(null, bot, gatekeeper, 'town_gatekeeper').destination;
+        assert(Math.abs(GeodataEngine.getHeight(goal.locX, goal.locY, goal.locZ) - gatekeeper.locZ) <= 64,
+            `a bot coming from direction ${k} is sent to the Rune gatekeeper's floor`);
+        assert(GeodataEngine.findPath(gatekeeper.locX, gatekeeper.locY, gatekeeper.locZ, goal.locX, goal.locY, goal.locZ, 2000, { goalRadius: 16 }),
+            `the Rune gatekeeper's approach point from direction ${k} is joined to the NPC by a route`);
+    }
+    for (const [npcSelfId, locX, locY] of [[7151, 47868, 50167], [7152, 47912, 50170]]) {
+        const warehouse = { npcSelfId, locX, locY, locZ: -2983, head: 50000 };
+        const point = TownNpcApproach.pointsFor(warehouse).interaction;
+        assert(Math.abs(GeodataEngine.getHeight(point.locX, point.locY, warehouse.locZ) - warehouse.locZ) <= 64,
+            `the counter point of Elven warehouse ${npcSelfId} is on the NPC's floor`);
+    }
 });
 
 console.log('Town NPC front-side approach checks passed');

@@ -249,15 +249,16 @@ try {
                 assert(Situations.woken(refused.session.decisionStats, 'build'), 'its failure wakes the build');
             } finally { TownTravel.request = request; Events.held = () => purchaseEconomy; }
         }
-        // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
-        const gearFailure = () => ({ seq: 1, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 1 }, seq: 1 }],
-            impossible: true, impossibleSeq: 1 });
+        // A walk to town that found no way is not walked again from the same ground, even for stock.
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
-        unreachable.session.nearRaise = gearFailure();
+        unreachable.session.townWalkFailed = { spotId: unreachable.session.currentSpot?.id ?? null };
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
+        const answers = [];
+        TownTravel.request = (...args) => { const answer = savedPurchase.travel(...args); answers.push(answer); return answer; };
         tick(unreachable);
-        assert.strictEqual(purchaseTrips, 2, 'a failed physical route is deferred even for stock instead of restarting each tick');
+        TownTravel.request = () => { purchaseTrips++; return 'escape'; };
+        assert.deepStrictEqual(answers, ['deferred'], 'a failed walk is deferred even for stock instead of restarting each tick');
         assert.strictEqual(unreachable.session.plan, 'hunting');
         assert.strictEqual(unreachable.session.spotRelocation, undefined);
         purchaseState.inventory = { 1835: { amount: 20 } };

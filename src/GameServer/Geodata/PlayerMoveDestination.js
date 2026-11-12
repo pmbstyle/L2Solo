@@ -17,7 +17,7 @@ function playerMoveDestination(actor, from, to) {
     if (Math.abs(start.z - from.locZ) > MAX_HEIGHT_CORRECTION
         || Math.abs(end.z - to.locZ) > MAX_HEIGHT_CORRECTION) return to;
     if (end.z === to.locZ) return to;
-    if (!GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, end.z)) return to;
+    if (!GeodataEngine.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, end.z)) return to;
 
     return { ...to, locZ: end.z };
 }

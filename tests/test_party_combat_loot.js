@@ -40,7 +40,7 @@ World.npc={spawns:[enemy]};
 World.fetchNpcsInRadius=(x,y,r)=>(World.npc.spawns || []).filter(n=>Math.hypot(n.fetchLocX()-x,n.fetchLocY()-y)<=r);
 World.fetchItem=async id=>World.items.spawns.find(i=>i.fetchId()===id);
 World.pickupItem=NativePickup.bind(World);
-Geo.hasLineOfSight=()=>true;
+Geo.canWalkStraight=()=>true;
 Data.fetchItemFromSelfId=(id,cb)=>cb({selfId:id,template:{name:'Adena'},etc:{stackable:true}});
 const purchases=[];
 World.purchaseItem=(s,id,amount)=>purchases.push([s.actor.fetchId(),id,amount]);

@@ -35,7 +35,7 @@ stub(World, 'user', { sessions: [] });
 stub(World, 'npc', { spawns: [] });
 stub(World, 'fetchNpcsInRadius', () => available);
 stub(invoke('GameServer/Bot/BotManager'), 'sessions', []);
-stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => true);
+stub(invoke('GameServer/Geodata/GeodataEngine'), 'canWalkStraight', () => true);
 stub(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
 stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'syncVisit', () => null);
 stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'needsVisit', () => false);
@@ -277,7 +277,7 @@ test('an unreachable sale route yields to local hunting during its retry', () =>
         Shopping.tick(f.session, f.bot, {}, f.ai);
         assert.equal(f.session.plan, 'hunting');
         assert.equal(f.session.shoppingTarget, undefined);
-        assert(f.session.townTravelRetryAt > Date.now(), 'a plain sale route must also establish a retry');
+        assert(f.session.townWalkFailed, 'a plain sale route that found no way is not walked again from this ground');
         const travel = invoke('GameServer/Bot/AI/BotTownTravel');
         assert.equal(travel.request(f.session, f.bot, f.ai, 'Sell loot.'), 'deferred');
         assert.deepEqual(f.session.moves, [], 'a failed route cannot restart on the next tick');
@@ -455,7 +455,7 @@ test('a deferred errand leaves only ground that admits none of its fights, as a 
     const restoreAt = restores.length;
     try {
         stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
-        stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => false);
+        stub(invoke('GameServer/Geodata/GeodataEngine'), 'canWalkStraight', () => false);
         Object.assign(f.session.coldLifeState.stats, holds(primary));
         available = [npcNear(alternative.center)];
         for (let i = 0; i < 4; i++) f.tick();
@@ -670,6 +670,36 @@ test('a body pushed off its ground with no spot published asks once, as the far 
     const f = fixture(primary.center, leaf, { ...empty, spotMarks: [{ spotId: primary.id, reason: 'contest_lost' }] });
     assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'no_hunting_route', 'its lost ground holds no hunt');
     assert(Situations.woken(f.session.coldLifeState.stats, 'earning_spot'), 'it asks the decision again (spot_empty)');
+    assert.equal(searchCalls.length, 0, 'main searches no spot');
+});
+
+test('a body on ground it raised empty with no spot asks once and walks where the answer sends it, as the far trip does', () => {
+    // Its stay's spot_empty spent (stats.emptyGround) and its answer naming none: that ground holds no
+    // hunt, with a hunting leaf or none (a build whose goal funds no step). A streak of empty scans keeps
+    // the stay's raise (noTargetTicks).
+    const none = at => ({ woken: 0, earning: { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at },
+        huntSpot: { spotId: null } });
+    for (const plan of [leaf, null]) {
+        const f = fixture(primary.center, plan, { ...none(1), emptyGround: primary.id });
+        f.session.noTargetTicks = 3;
+        const stats = () => f.session.coldLifeState.stats, raised = () => Number(stats().situationSeq || 0);
+        assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'no_hunting_route', 'its ground holds no hunt');
+        assert(Situations.woken(stats(), 'earning_spot'), 'it asks the decision again (spot_empty)');
+        assert.equal(raised(), 1);
+        Decision.suggest(f.session.botStatus, f.session);
+        assert.equal(raised(), 1, 'once per answer');
+        f.session.coldLifeState = { ...f.session.coldLifeState, stats: { ...stats(), ...holds(alternative) } };
+        const walk = Decision.suggest(f.session.botStatus, f.session);
+        assert.deepEqual([walk.action, walk.spot?.id], ['move_to_spot', alternative.id], 'it walks to the camp the answer names');
+    }
+    // A body with no leaf that holds a published camp elsewhere walks there and asks nothing.
+    const g = fixture(primary.center, null, { ...holds(alternative), emptyGround: primary.id });
+    g.session.noTargetTicks = 3;
+    const noSpot = Situations.counts().raised['earning:no_spot'] || 0;
+    const walk = Decision.suggest(g.session.botStatus, g.session);
+    assert.deepEqual([walk.action, walk.spot?.id], ['move_to_spot', alternative.id], 'its published camp');
+    assert(!Situations.woken(g.session.coldLifeState.stats, 'earning_spot'), 'no ask');
+    assert.equal(Situations.counts().raised['earning:no_spot'] || 0, noSpot, 'and no false no_spot');
     assert.equal(searchCalls.length, 0, 'main searches no spot');
 });
 

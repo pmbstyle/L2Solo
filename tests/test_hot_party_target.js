@@ -24,7 +24,7 @@ function actor(id, x = 0, kind = null) {
         automation: { replenishVitals() {} }, select() {}, moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
-    replace(Geo, 'hasLineOfSight', () => true);
+    replace(Geo, 'canWalkStraight', () => true);
     const group = [1, 2].map(id => ({ accountId: `bot_hot_target_${id}`, fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader] = group;

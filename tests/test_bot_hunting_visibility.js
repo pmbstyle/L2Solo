@@ -48,8 +48,8 @@ async function main() {
         replace(World, 'fetchNpcsInRadius', () => available);
         replace(World, 'fetchUser', () => Promise.reject(new Error('NPC')));
         replace(World, 'fetchNpc', id => Promise.resolve(available.find(target => target.fetchId() === id)));
-        const realRay = Geo.hasLineOfSight;
-        replace(Geo, 'hasLineOfSight', () => false);
+        const realWalk = Geo.canWalkStraight;
+        replace(Geo, 'canWalkStraight', () => false);
 
         const bot = {
             ...npc(2000001, 8), moving: false,
@@ -104,7 +104,7 @@ async function main() {
         session.currentTargetId = undefined;
         session.targetRetryAfter = {};
         available = [npc(99, 100)];
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         tick();
         assert.equal(session.currentTargetId, 99, 'ordinary visible hunting resumes');
         assert.equal(attacks.at(-1), 99);
@@ -178,7 +178,7 @@ async function main() {
         available = rows;
         bot.moving = false;
         let visible = new Set();
-        Geo.hasLineOfSight = (_x, _y, _z, x) => visible.has(x);
+        Geo.canWalkStraight = (_x, _y, _z, x) => visible.has(x);
         assert.equal(Hunting.findPreferredMonster(scanSession, bot, 2000, { readyOnly: true }), null);
         assert.equal(scanSession.huntTargetScanPending, true, 'four blocked ready mobs leave the scan pending');
         unready.add(305);
@@ -208,7 +208,7 @@ async function main() {
         bot.automation = new Automation();
         bot.session = session;
         bot.moves.length = 0;
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         let completions = 0;
         assert.equal(bot.automation.scheduleAction(session, bot, hidden, 700,
             () => { completions++; }, { action: 'attack', collisionAware: true }), false);
@@ -229,7 +229,7 @@ async function main() {
         bot.automation.scheduleAction(session, bot, hidden, 900, () => { completions++; });
         assert.equal(bot.moves.length, 3, 'a rooted bot cannot start a route to bypass an obstructed action');
         assert.equal(completions, 0);
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         bot.automation.scheduleAction(session, bot, hidden, 700, () => { completions++; }, { action: 'attack' });
         assert.equal(completions, 1, 'a visible in-range attack remains usable while rooted');
 
@@ -244,7 +244,7 @@ async function main() {
         replace(invoke('GameServer/Timer'), 'start', (_timer, callback) => { arrival = callback; });
         bot.automation.scheduleAction(session, bot, hidden, 0, () => { completions++; });
         assert.equal(typeof arrival, 'function');
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         const routesBeforeArrival = bot.moves.length;
         arrival();
         assert.equal(completions, 1, 'losing visibility during an approach must suppress its old callback');
@@ -254,7 +254,7 @@ async function main() {
         // A hunter that ended inside a tree's skirt: its cell opens on every
         // side, the ground round it does not open back into it. It takes the
         // mob it can walk out to; with none in sight it walks off to search.
-        Geo.hasLineOfSight = realRay;
+        Geo.canWalkStraight = realWalk;
         Geo.getCellData = (x, y, z) => {
             const cx = x >> 4, cy = y >> 4;
             const nswe = cy === 0 && cx === 1 ? 13 : cy === 0 && cx === -1 ? 14 : cx === 0 && cy === 1 ? 7 : cx === 0 && cy === -1 ? 11 : 15;

@@ -6,7 +6,7 @@ const OFFSETS = [-80, -56, -32, -16, 16, 32, 56, 80];
 
 function distance(a, b) { return Math.hypot(a.locX - b.locX, a.locY - b.locY); }
 function visible(a, b) {
-    return Geodata.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
+    return Geodata.canWalkStraight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
 }
 
 // This is deliberately stricter than the existing point-actor pathfinder.

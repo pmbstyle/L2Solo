@@ -83,10 +83,14 @@ async function main() {
             'a wall closing on a stationary player still permits stepping away from its plane');
 
         // Exercise the real geodata entry points against an unobstructed floor.
-        const original = { hasGeo: Geo.hasGeo, getCellData: Geo.getCellData };
+        const original = { hasGeo: Geo.hasGeo, getCellData: Geo.getCellData, readCell: Geo.readCell };
         try {
             Geo.hasGeo = () => true;
             Geo.getCellData = (x, y, z) => ({ z, nswe: 15 });
+            Geo.readCell = (_cx, _cy, slot) => {
+                slot.closed = false; slot.n = 1; slot.z[0] = from.locZ; slot.nswe[0] = 15;
+                return slot;
+            };
             assert(!Geo.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ));
             const path = Geo.findPath(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ, 1000, { debug: false });
             assert(path?.length, 'A* can route around the end of a wall on the synthetic open floor');

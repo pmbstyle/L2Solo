@@ -1009,6 +1009,7 @@ const tests = [
     'tests/test_recipe_book.js',
     'tests/test_common_craft_skill_migration.js',
     'tests/test_recipe_crafting.js',
+    'tests/test_recipe_data_path.js',
     'tests/test_recipe_persistence.js',
     'tests/test_manufacture_shop.js',
     'tests/test_restart_point_revive.js',

@@ -157,10 +157,10 @@ const nearbyPlayer = {
 };
 RuntimeWorld.user = { sessions: [previewSession, nearbyPlayer] };
 const originalFindPath = GeodataEngine.findPath;
-const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+const originalHasLineOfSight = GeodataEngine.canWalkStraight;
 try {
     GeodataEngine.findPath = () => null;
-    GeodataEngine.hasLineOfSight = () => true;
+    GeodataEngine.canWalkStraight = () => true;
     const diagnostics = moveTo(previewSession, previewActor, {
         from: { locX: 0, locY: 0, locZ: 0 },
         to: { locX: 500, locY: 0, locZ: 0 },
@@ -170,7 +170,7 @@ try {
     assert.deepStrictEqual(diagnostics.route, [previewPlan.waypoint], 'preview diagnostics should expose the route MoveTo will execute');
     assert.strictEqual(previewPlan.updatedAt, 123, 'previewing a sticky town route must not mutate the live route plan');
 
-    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.canWalkStraight = () => false;
     const blockedDiagnostics = moveTo(previewSession, previewActor, {
         from: { locX: 0, locY: 0, locZ: 0 },
         to: { locX: 500, locY: 0, locZ: 0 },
@@ -180,7 +180,7 @@ try {
     assert.deepStrictEqual(blockedDiagnostics.route, [], 'blocked direct fallback must not announce a through-wall segment');
 } finally {
     GeodataEngine.findPath = originalFindPath;
-    GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+    GeodataEngine.canWalkStraight = originalHasLineOfSight;
 }
 
 // NPCs and summons use their target/owner session to send packets. Their

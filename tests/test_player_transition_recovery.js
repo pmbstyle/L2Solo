@@ -20,11 +20,11 @@ function fixture(t = Recovery.transitions[0]) {
     const from = { ...loc }, to = { locX: Math.round(t.x + t.nx * 70), locY: Math.round(t.y + t.ny * 70), locZ: t.z };
     return { s, a, packets, from, to, loc: () => loc };
 }
-const originals = Object.fromEntries(['hasGeo', 'getCellData', 'hasLineOfSight'].map(k => [k, Geo[k]]));
+const originals = Object.fromEntries(['hasGeo', 'getCellData', 'canWalkStraight'].map(k => [k, Geo[k]]));
 try {
     Geo.hasGeo = () => true;
     Geo.getCellData = (x, y, z) => ({ z: z + 8, nswe: 15 });
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     let f = fixture();
     Recovery.command(f.s, f, 10000);
     assert.deepStrictEqual(f.packets.map(p => p[0]), [0x61, 1], 'Correct immediately and resume the requested move without teleport');
@@ -63,7 +63,7 @@ try {
     Recovery.command(f.s, { from: f.from, to: { ...f.from, locX: f.from.locX + 100 } }, 10001);
     Recovery.observe(f.s, f.from, 10002);
     assert.strictEqual(f.packets.length, 0, 'Redirection outward cancels approach');
-    for (const override of [{ hasGeo: () => false }, { hasLineOfSight: () => false }, { getCellData: () => ({ z: 0 }) }]) {
+    for (const override of [{ hasGeo: () => false }, { canWalkStraight: () => false }, { getCellData: () => ({ z: 0 }) }]) {
         const old = Object.fromEntries(Object.keys(override).map(k => [k, Geo[k]])); Object.assign(Geo, override);
         f = fixture(); Recovery.command(f.s, f, 10000);
         assert.strictEqual(f.packets.length, 0, 'Reject missing geo, walls and remote layers');
@@ -125,7 +125,7 @@ require('./helpers/verify_geodata_when_available')(Geo, [[24, 18], [23, 20], [17
         const end = { locX: Math.round(from.locX + t.nx * 32), locY: Math.round(from.locY + t.ny * 32) };
         end.locZ = Geo.getHeight(end.locX, end.locY, from.locZ);
         const clear = Math.abs(offset) <= t.width && Math.abs(end.locZ - from.locZ) <= 64
-            && Geo.hasLineOfSight(from.locX, from.locY, from.locZ, end.locX, end.locY, end.locZ);
+            && Geo.canWalkStraight(from.locX, from.locY, from.locZ, end.locX, end.locY, end.locZ);
         assert.deepStrictEqual(f.packets.map(p => p[0]), clear ? [0x61, 1] : [],
             `Stair lateral offset ${offset} must respect the installed geometry`);
     }

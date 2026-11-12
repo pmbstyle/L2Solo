@@ -164,12 +164,12 @@ try {
     const ActorQueries = require('../src/GameServer/World/ActorSpatialQueries');
     const real = { near: LifeState.walkersNear, byId: ActorQueries.byId, handoff: Owner.handoffToMain, spawn: Manager.loadAndSpawnBot,
         accept: Coordinator.acceptColdState, upsert: LifeState.upsertState, hasGeo: Geo.hasGeo, cell: Geo.getCellData, height: Geo.getHeight,
-        sight: Geo.hasLineOfSight };
+        walk: Geo.canWalkStraight };
     try {
         Geo.hasGeo = () => true;
         Geo.getCellData = (x, y, z) => ({ nswe: 15, z: Number(z) });
         Geo.getHeight = (x, y, z) => Number(z);
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         Owner.handoffToMain = async () => ({ ok: true, revision: 2 });
         Coordinator.acceptColdState = async () => ({ ok: true });
         let spawned = [];
@@ -381,7 +381,7 @@ try {
         Manager.loadAndSpawnBot = real.spawn;
         Coordinator.acceptColdState = real.accept;
         LifeState.upsertState = real.upsert;
-        Object.assign(Geo, { hasGeo: real.hasGeo, getCellData: real.cell, getHeight: real.height, hasLineOfSight: real.sight });
+        Object.assign(Geo, { hasGeo: real.hasGeo, getCellData: real.cell, getHeight: real.height, canWalkStraight: real.walk });
     }
     assert.ok(TravelRoutes.teleportPoints().length > 0);
     console.log('cold honest travel checks passed');

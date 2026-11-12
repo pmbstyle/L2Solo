@@ -381,7 +381,7 @@ async function run() {
     // killed out for now (its spawns admit the bot) raises nothing.
     const SpotService = invoke('GameServer/Bot/AI/SpotService'), Decision = invoke('GameServer/Bot/AI/BotDecisionService');
     const Tactics = invoke('GameServer/Bot/AI/SummonerTactics'), Rest = invoke('GameServer/Bot/AI/RestPolicy');
-    const savedCurrent = SpotService.findCurrentSpot, savedActor = Match.actorProfiles, savedReady = Match.actorReadyProfiles;
+    const savedFind = SpotService.findById, savedCurrent = SpotService.findCurrentSpot, savedActor = Match.actorProfiles, savedReady = Match.actorReadyProfiles;
     try {
         const Situations = invoke('GameServer/Bot/Situations');
         const raisedOn = stats => Number(Situations.woken(stats, 'build'));
@@ -390,10 +390,13 @@ async function run() {
             fetchKarma: () => 0, fetchMp: () => mp },
             // A body that holds its decisions (woken none, its answers held).
             coldLifeState: { ...state, characterId: id, spotId: field.id, stats: { ...state.stats, woken: 0,
-                wishSections: state.stats.wishSections || {}, equipmentPlan: null, earning: state.stats.earning ?? {} } }, noTargetTicks: 3,
+                wishSections: state.stats.wishSections || {}, equipmentPlan: null, earning: { spotId: field.id, at: 1 },
+                huntSpot: { spotId: field.id } } }, noTargetTicks: 3,
             heldEconomy: { decided: true, network: { activity: { activity: 'hunting', spotId: field.id } } } });
         const look = { available: true, mode: 'hunting', blockers: [], loc: { locX: 0, locY: 0, locZ: 0 } };
         SpotService.findCurrentSpot = () => hard;
+        // The body holds its field (an answer naming its ground), as a body that has decided.
+        SpotService.findById = id => [hard, easy].find(x => String(x.id) === String(id)) || savedFind.call(SpotService, id);
         const near = body(hard, 990008), dirty = () => raisedOn(near.coldLifeState.stats);
         assert.strictEqual(Decision.suggest(look, near).reason, 'ground_unhuntable', 'a hot body on ground it cannot hunt raises it');
         assert.strictEqual(dirty(), 1);
@@ -444,7 +447,7 @@ async function run() {
             Rest.restWaitsForMana = waitsForMana;
             Match.spotShares = shares;
         }
-    } finally { SpotService.findCurrentSpot = savedCurrent; Match.actorProfiles = savedActor; Match.actorReadyProfiles = savedReady; }
+    } finally { SpotService.findById = savedFind; SpotService.findCurrentSpot = savedCurrent; Match.actorProfiles = savedActor; Match.actorReadyProfiles = savedReady; }
 
     let stalled = { ...state, stats: { ...state.stats, spotRisk: recoveredRisk } };
     for (let i = 0; i < 3; i++) {

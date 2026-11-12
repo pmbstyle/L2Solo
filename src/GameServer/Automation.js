@@ -10,7 +10,7 @@ class Automation extends SelectedModel {
     static needsGeodataApproach(session, src, dst) {
         const bot = session?.actor === src && (session.constructor?.name === 'BotSession'
             || session.accountId?.startsWith?.('bot_'));
-        return !!bot && src !== dst && !invoke('GameServer/Geodata/GeodataEngine').hasLineOfSight(
+        return !!bot && src !== dst && !invoke('GameServer/Geodata/GeodataEngine').canWalkStraight(
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(),
             dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ()
         );

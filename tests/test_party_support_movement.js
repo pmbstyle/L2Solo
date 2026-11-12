@@ -39,7 +39,7 @@ function fixture() {
 
 const originals = {
     world: World.user, fetchNpcs: World.fetchNpcsInRadius,
-    findPath: Geodata.findPath, los: Geodata.hasLineOfSight, height: Geodata.getHeight,
+    findPath: Geodata.findPath, los: Geodata.hasLineOfSight, walk: Geodata.canWalkStraight, height: Geodata.getHeight,
     now: Date.now, timeout: global.setTimeout, clearTimeout: global.clearTimeout, clearInterval: global.clearInterval
 };
 let hazards = [];
@@ -54,6 +54,7 @@ global.clearTimeout = global.clearInterval = handle => timers.delete(handle);
 Date.now = () => clock;
 World.fetchNpcsInRadius = () => hazards;
 Geodata.hasLineOfSight = () => true;
+Geodata.canWalkStraight = () => true;
 Geodata.getHeight = (_x, _y, z) => z;
 Geodata.findPath = () => { throw new Error('support routes must keep pathfinding off the game thread'); };
 
@@ -213,6 +214,7 @@ async function nativeRoute(member, path, beforeReply = () => {}) {
     World.fetchNpcsInRadius = originals.fetchNpcs;
     Geodata.findPath = originals.findPath;
     Geodata.hasLineOfSight = originals.los;
+    Geodata.canWalkStraight = originals.walk;
     Geodata.getHeight = originals.height;
     Date.now = originals.now;
     global.setTimeout = originals.timeout;

@@ -76,8 +76,8 @@ function shopDepartureTarget(town, bot) {
         };
         point.locZ = GeodataEngine.getHeight(point.locX, point.locY, point.locZ);
         if (Math.abs(point.locZ - center.locZ) <= 64
-            && GeodataEngine.hasLineOfSight(center.locX, center.locY, center.locZ, point.locX, point.locY, point.locZ)
-            && GeodataEngine.hasLineOfSight(point.locX, point.locY, point.locZ, center.locX, center.locY, center.locZ)) {
+            && GeodataEngine.canWalkStraight(center.locX, center.locY, center.locZ, point.locX, point.locY, point.locZ)
+            && GeodataEngine.canWalkStraight(point.locX, point.locY, point.locZ, center.locX, center.locY, center.locZ)) {
             return { ...point, town: town.name };
         }
     }
@@ -176,12 +176,6 @@ function startShopping(session, bot, BotAI, reason, townName = null, options = {
         TownChatter.say(session, BotAI, 'shopping-deferred', Speech.lines('town.shopping-deferred'));
         return false;
     }
-
-    // A failed physical town route defers every errand on that route,
-    // including stock, until the worker answers the failure it raised
-    // (DecisionEvents.failureWaits); an equipment failure alone must not block
-    // consumables. Hunt locally meanwhile.
-    if (session.roleDecision?.reason === 'shopping_route_unreachable' && DecisionEvents.failureWaits(session)) return 'deferred';
 
     const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
         .find(town => town.name === townName) : null;
@@ -1105,16 +1099,12 @@ module.exports = {
                     DecisionEvents.raiseDecision(session, 'spot_dangerous',
                         { payload: { spotId: String(currentGround.id), reason: groundSafety.reason } });
                 }
-                const heldId = DecisionEvents.heldSpotId(session);
-                const pending = heldId === 'pending';
-                const held = heldId && !pending && heldId !== String(currentGround.id) ? SpotService.findById(heldId) : null;
-                const destination = held && LevelingRoutes.groundVerdict(held, { level: bot.fetchLevel() },
-                    { mode: 'solo', equipment: equippedItems(bot) }).allowed ? held : null;
                 // With none it asks once more; if that answer names none either it leaves
                 // for town (no spot to hunt is no reason to stay on ground it may not hunt).
                 // Its raise unanswered (pending), it stands off until the answer.
-                const none = !destination && !pending && DecisionEvents.needSpot(session) === 'none';
-                if (destination) DecisionEvents.spotHeld(session);
+                const off = DecisionService.offGroundSpot(session, currentGround, held => LevelingRoutes.groundVerdict(held,
+                    { level: bot.fetchLevel() }, { mode: 'solo', equipment: equippedItems(bot) }).allowed);
+                const destination = off.spot || null, none = off.ask === 'none';
                 session.lastDecision = {
                     action: destination ? 'move_to_spot' : none ? 'leave_for_town' : 'avoid_hunting_ground',
                     reason: groundSafety.reason,
@@ -1325,7 +1315,7 @@ module.exports = {
                     for (let attempt = 0; attempt < HuntingVisibility.CHECKS_PER_SCAN; attempt++) {
                         const wanderX = baseCoord.locX + utils.oneFromSpan(-2500, 2500);
                         const wanderY = baseCoord.locY + utils.oneFromSpan(-2500, 2500);
-                        if (!GeodataEngine.hasLineOfSight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
+                        if (!GeodataEngine.canWalkStraight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
                             wanderX, wanderY, bot.fetchLocZ())) continue;
                         bot.moveTo({ from: botLocation(bot),
                             to: { locX: wanderX, locY: wanderY, locZ: bot.fetchLocZ() } });

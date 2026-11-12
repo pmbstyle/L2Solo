@@ -17,7 +17,7 @@ const Geo = invoke('GameServer/Geodata/GeodataEngine');
 Data.init();
 
 const savedScan = World.fetchNpcsInRadius;
-const savedSight = Geo.hasLineOfSight;
+const savedSight = Geo.canWalkStraight;
 const savedScore = Scorer.score;
 const savedNpc = World.npc;
 
@@ -40,7 +40,7 @@ function spotIdChecks() {
         contexts.push(context);
         return savedScore(context);
     };
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     // Cell borders on both axes, on both sides of zero.
     const cases = [
         { bot: [5999, 100], npcs: [[5990, 100], [6001, 100], [6000, 100]] },
@@ -89,7 +89,7 @@ try {
     console.log('World grid checks passed');
 } finally {
     World.fetchNpcsInRadius = savedScan;
-    Geo.hasLineOfSight = savedSight;
+    Geo.canWalkStraight = savedSight;
     Scorer.score = savedScore;
     World.npc = savedNpc;
 }

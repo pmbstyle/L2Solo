@@ -71,11 +71,11 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // A failed gear errand is its own entry beside a pending goal_failed (its mark is its own
     // raise's), and its wait ends with the answer that applied it while a later raise still waits.
     Events.raiseDecision(session, 'goal_failed', { payload: { kind: 'gear_errand', key: 5 } });
-    assert(Events.failureWaits(session), 'the failed gear errand joins the bag and waits for its answer');
+    assert(Events.inBag(session, 'goal_failed'), 'the failed gear errand joins the bag and waits for its answer');
     const errandSeq = session.raiseSeq;
     Events.raiseDecision(session, 'spot_empty');
     await coordinator.onMessage(decided('partial', 7, 11, errandSeq));
-    assert(!Events.failureWaits(session), 'the answer that applied it ends the wait');
+    assert(!Events.inBag(session, 'goal_failed'), 'the answer that applied it ends the wait');
     assert.deepEqual(session.nearRaise?.names.map(entry => entry.name), ['spot_empty'], 'the later raise still waits');
     // The answer carries the worker's gear marks (forgotten at their situations): they are the body's,
     // and an errand failed after the raise it applied keeps its mark until its own answer.
@@ -95,7 +95,6 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     {
         const silent = { accountId: 'bot_near_order', arenaEphemeral: true, actor, coldLifeState: state };
         Events.raiseDecision(silent, 'goal_failed', { impossible: true, payload: { kind: 'gear_errand', key: 7 } });
-        assert(!Events.failureWaits(silent), 'no wait for an answer that will not come');
         assert(invoke('GameServer/Bot/AI/GearMarks').marked(Events.statsFor(silent), 7), 'its mark holds the errand');
     }
     // Two stalls refuse one item while the body waits for its answer: each refused quote is
