@@ -330,43 +330,46 @@ function applyManaHot(session, source, target, effect) {
     return true;
 }
 
+// Is a tick's caster still a body in the world? A character or a monster while
+// it is its session's body (a logout, a bot cooled or a new body on the session
+// leaves it behind). A servitor or a pet casts through a relay session that
+// keeps it as its body for good: it is there while its owner, a body in the
+// world, still has it out (an unsummon or the owner's teardown ends that).
+function casterPresent(session, source) {
+    if (!session || !source || session.actor !== source) return false;
+    if (source.fetchIsSummon?.() !== true && source.fetchIsPet?.() !== true) return true;
+    const owner = invoke('GameServer/Bot/AI/BotPvpThreats').character(source);
+    return !!owner && invoke('GameServer/Npc/SummonControl').activeSummon(owner) === source;
+}
+
 // One damage-over-time tick. It never takes the target's last HP point
 // (HitRules.dotTickDamage, Lisvus EffectDamOverTime); only Poison of Death
-// kills. A tick on another character or NPC is its caster's hit while the
-// caster is still its session's body. Once that body has left the world
-// (logout, a bot cooled, a new body on the session) the effect keeps ticking,
-// as in C4 (Lisvus L2Effect keeps its effector): the target loses HP down to 1
-// and the tick is nobody's hit: no hate, no kill, no reward.
+// kills. It is its caster's hit while the caster is a body in the world. A
+// tick of the target's own effect, or after its caster left (logout, a bot
+// cooled, a new body on the session, a servitor unsummoned), is nobody's hit,
+// as C4's effect ticks on after its effector left: a character keeps its own
+// damage rules without an attacker (it wakes and stands up; no hate, kill or
+// reward goes to anyone), an NPC loses HP and regenerates.
 function applyDamage(session, source, target, damage, kills = false) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(target, 'petrification')) return;
     const taken = HitRules.dotTickDamage(target.fetchHp(), damage, kills);
     if (!(taken > 0)) return;
-    if (session && source && target?.fetchId && source !== target) {
-        if (session.actor !== source) {
-            target.setHp(target.fetchHp() - taken);
-            if (target.statusUpdateVitals) target.statusUpdateVitals(target);
-            else if (target.broadcastVitals) target.broadcastVitals();
-            target.automation?.replenishVitals?.(target);
-            return;
-        }
-        if (target.fetchId() >= 2000000) {
-            invoke(path.actor).receivedHit(session, target, taken, { wakeSleep: true, source });
-        } else {
-            // Lisvus keeps an attackable NPC asleep when it takes DOT damage.
-            invoke(path.npc).receivedHit(session, source, target, taken, { wakeSleep: false });
-        }
+    const character = Number(target.fetchId?.()) >= 2000000;
+    if (source !== target && casterPresent(session, source)) {
+        if (character) invoke(path.actor).receivedHit(session, target, taken, { wakeSleep: true, source });
+        // Lisvus keeps an attackable NPC asleep when it takes DOT damage.
+        else invoke(path.npc).receivedHit(session, source, target, taken, { wakeSleep: false });
         return;
     }
-
+    if (character) {
+        invoke(path.actor).receivedHit(target.session || (session?.actor === target ? session : null), target, taken,
+            { wakeSleep: true, source: null });
+        return;
+    }
     target.setHp(target.fetchHp() - taken);
     if (target.statusUpdateVitals) target.statusUpdateVitals(target);
     else if (target.broadcastVitals) target.broadcastVitals();
-    // Self-applied damage (including the clan trial poison) bypasses
-    // ReceivedHit, so it must still complete the character death lifecycle.
-    const victimSession = target.session || (session?.actor === target ? session : null);
-    if (target.fetchHp() <= 0 && victimSession && target.fetchId?.() >= 2000000) {
-        invoke('GameServer/Actor/Generics/Die')(victimSession, target);
-    }
+    target.automation?.replenishVitals?.(target);
 }
 
 function applyManaDamage(target, damage) {

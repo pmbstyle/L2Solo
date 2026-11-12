@@ -33,8 +33,14 @@ function wakeBotOnDamage(victimSession, attacker) {
     }
 }
 
+// The hit's attacker: options.source, else the session's body. source null is
+// a hit with no attacker (a damage-over-time tick of the character's own
+// effect or of a caster that left; Lisvus PcStatus.reduceHp with no attacker):
+// the character's own rules hold (wake, stand up, death), none that needs an
+// attacker (CP shield, transfer pain, PvP and help memory, the bot's wake,
+// combat stance).
 function damageSource(session, options = {}) {
-    return options.source ?? session?.actor;
+    return options.source === null ? null : options.source ?? session?.actor;
 }
 
 function applyCombatPointShield(session, actor, hit, source) {
@@ -160,7 +166,7 @@ function receivedHit(session, actor, hit, options = {}) {
         }
         invoke('GameServer/Bot/AI/BotPvpThreats').record(actor, source);
     }
-    const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit), source);
+    const hpDamage = source ? applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit), source) : hit;
 
     if (options.wakeSleep !== false) {
         EffectRestrictions.wakeOnDamage(actor, victimSession || session);
@@ -192,9 +198,9 @@ function receivedHit(session, actor, hit, options = {}) {
         return;
     }
 
-    wakeBotOnDamage(victimSession, source);
+    if (source) wakeBotOnDamage(victimSession, source);
     actor.automation.replenishVitals(actor);
-    Generics.enterCombatState(session, actor);
+    if (source) Generics.enterCombatState(session, actor);
 }
 
 module.exports = receivedHit;

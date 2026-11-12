@@ -73,9 +73,11 @@ function creature(overrides = {}) {
             fetchCombats() { return !!this.combats; },
             setCombats(value) { this.combats = value; },
             fetchDead: () => overrides.dead ?? false,
+            fetchSeated: () => false,
             setHits() {},
             setCasts() {}
         },
+        automation: { replenishVitals() {} },
         isDead() { return this.state.fetchDead(); }
     };
 }

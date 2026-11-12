@@ -168,10 +168,23 @@ async function run() {
         const relay = { actor: spider, dataSendToMe() {}, dataSendToMeAndOthers() {} };
         EffectTicker.applyDot(relay, spider, victim.actor, EffectStore.apply(victim.actor, { key: 'poison', id: 129, level: 1,
             type: 'debuff', dot: { damage: 30, count: 3, intervalMs: 20 }, durationMs: 60 }));
-        monsters.push(victim.actor);
+        // A cooled bot's poison on a sitting, sleeping player: the tick is nobody's
+        // hit but the player's own rules hold: it stands up and wakes (Lisvus PcStatus).
+        const pk = poisoner(2481522, 'CooledPk'), sleeper = poisoner(2481523, 'Sleeper');
+        sleeper.accountId = 'player_sleeper';
+        sleeper.actor.state.setSeated(true);
+        EffectStore.apply(sleeper.actor, { key: 'sleep', id: 1069, level: 1, type: 'debuff', category: 'sleep', durationMs: 60000, stats: {} });
+        EffectTicker.applyDot(pk, pk.actor, sleeper.actor, EffectStore.apply(sleeper.actor, { key: 'poison', id: 129, level: 1,
+            type: 'debuff', dot: { damage: 10, count: 1, intervalMs: 40 }, durationMs: 40 }));
+        monsters.push(victim.actor, sleeper.actor);
+        BotManager.sessions = [pk];
+        World.user.sessions.push(victim, pk, sleeper);
+        assert.strictEqual((await Cooldown.transitionToColdState(pk, { characterId: 2481522, name: 'CooledPk' }, 'test_poison_cleanup')).ok, true);
         await new Promise((resolve) => setTimeout(resolve, 120));
         assert.strictEqual(victim.actor.state.fetchDead(), false, 'a monster\'s poison does not kill the bot');
         assert.strictEqual(victim.actor.fetchHp(), 1, 'it stops at 1 HP');
+        assert.strictEqual(sleeper.actor.state.fetchSeated(), false, 'a departed caster\'s tick stands the player up');
+        assert.ok(!EffectStore.list(sleeper.actor).some((effect) => effect.key === 'sleep'), 'and wakes it');
         assert.deepStrictEqual(thrown, [], 'no tick takes the server down');
     } finally {
         process.removeListener('uncaughtException', onUncaught);
