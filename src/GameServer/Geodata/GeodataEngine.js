@@ -595,14 +595,17 @@ const GeodataEngine = {
     // walked down and never up, and a body inside a tree's or a rock's skirt
     // walks out of it. Two clauses on the entered cell: it is not closed on
     // all four sides (Mobius GeoEngine.isCompletelyBlocked; a town building
-    // is such a cell here), and its floor lies within MAX_LAYER_STEP of the
-    // one left, up or down (our choice: Lisvus has no height limit on a step,
-    // Mobius refuses more than 40 up and nothing down). Returns the entered
-    // cell, its layer nearest the floor left, or null.
+    // is such a cell here), and its floor is at most MAX_LAYER_STEP above the
+    // one left: a step down any height is taken, a body falls (C4: Mobius
+    // GeoEngine HEIGHT_INCREASE_LIMIT refuses only a step up, and
+    // Creature.moveToLocation keeps a destination a character falls to;
+    // Lisvus moveCheck has no height limit). The 64 climb is our choice
+    // (Mobius 40). Returns the entered cell, its layer nearest the floor left,
+    // or null.
     stepTo(from, cellX, cellY, exit) {
         if ((from.nswe & exit) === 0) return null;
         const to = this.getCellData((cellX << 4) + 8, (cellY << 4) + 8, from.z);
-        return to.nswe !== 0 && Math.abs(to.z - from.z) <= MAX_LAYER_STEP ? to : null;
+        return to.nswe !== 0 && to.z - from.z <= MAX_LAYER_STEP ? to : null;
     },
 
     // The one straight walk (canWalkStraight, straightMoveEnd): the cells

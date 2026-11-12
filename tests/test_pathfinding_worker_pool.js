@@ -174,11 +174,12 @@ async function run() {
         assert.deepStrictEqual(realPath, [{ locX: 53027, locY: 102938, locZ: -1064 }],
             'the real worker boundary must return a structured-clone-safe geodata path');
 
-        // A Giran town corridor whose search is several times one 150 ms
+        // A Rune town corridor whose search is several times one 150 ms
         // worker turn: it continues over turns instead of failing.
         const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
         const giran = { startX: 83384, startY: 149256, startZ: -3400, goalRadius: 64, townCorridor: true };
-        const longCorridor = { ...giran, endX: 87500, endY: 151000, endZ: -4152, maxNodes: 150000,
+        const rune = { startX: 38208, startY: -48048, startZ: 896, goalRadius: 64, townCorridor: true };
+        const longCorridor = { ...rune, endX: 44704, endY: -47472, endZ: -792, maxNodes: 150000,
             navigationRevision: GeodataEngine.navigationRevision || 0 };
         const workBefore = realPool.stats().workerMs;
         const corridor = await realPool.request(longCorridor, { key: 'town:long', timeoutMs: 15000 }).catch((error) => error);

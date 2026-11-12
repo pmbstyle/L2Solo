@@ -164,8 +164,8 @@ assert.strictEqual(GeodataEngine.canWalkStraight(8, 8, 0, 168, 8, 0), false, 'bu
     assert.strictEqual(GeodataEngine.canWalkStraight(...at(2, 0), ...at(2, 1)), false,
         'a closed cell is not entered although its neighbour opens toward it');
     assert.strictEqual(GeodataEngine.findPath(...at(0, 0), ...at(3, 1), 500), null, 'no route ends inside the trunk');
-    assert.strictEqual(GeodataEngine.canWalkStraight(...at(8, 8, 200), ...at(9, 8)), false,
-        'a step whose floor lies more than a layer step below is not taken');
+    assert.strictEqual(GeodataEngine.canWalkStraight(...at(8, 8, 200), ...at(9, 8)), true,
+        'a step down any height is taken: a body falls as in C4');
     assert.strictEqual(GeodataEngine.canWalkStraight(...at(9, 8), ...at(8, 8, 200)), false, 'nor one that far above');
 }
 
