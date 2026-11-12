@@ -97,7 +97,11 @@ try {
             { getCellData: (x, y) => physicalDepth(x, y) < -30 ? { z: -3500, nswe: 15 } : cell(x, y) },
             { getCellData: (x, y) => physicalDepth(x, y) > 30 ? { z: -3500, nswe: 15 } : cell(x, y) },
             { canWalkStraight: (x, y, ...rest) => physicalDepth(x, y) > 0 && clear(x, y, ...rest) },
-            { canWalkStraight: (x, y, ...rest) => physicalDepth(x, y) < 0 && clear(x, y, ...rest) }
+            { canWalkStraight: (x, y, ...rest) => physicalDepth(x, y) < 0 && clear(x, y, ...rest) },
+            // A walk that drops from the roof the source resolves to is not a
+            // walk from the player's floor: the near apron still decides.
+            { canWalkStraight: () => true,
+                getCellData: (x, y) => physicalDepth(x, y) < -30 ? { z: -3500, nswe: 15 } : cell(x, y) }
         ]) {
             const old = Object.fromEntries(Object.keys(override).map(k => [k, Geo[k]]));
             Object.assign(Geo, override);

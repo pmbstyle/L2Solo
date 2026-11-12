@@ -41,6 +41,17 @@ function cancel(session) {
     clearTimeout(session.transitionAttempt?.timer);
     session.transitionAttempt = null;
 }
+// A player's report is a clear source only when the floor under it lies
+// within a step (64) of the reported z (our choice: C4 resolves a walk's
+// start to the nearest floor with no such check) and the walk from there reaches the
+// target. A player touching a jamb reports a cell whose only layer is the
+// roof above; a walk from that roof drops to any floor below it, which is
+// not a walk from where the player stands. Points this file reads from
+// geodata stand on their floor already.
+function walkFrom(p, to) {
+    return Math.abs(Geo.getCellData(p.locX, p.locY, p.locZ).z - p.locZ) <= 64
+        && Geo.canWalkStraight(p.locX, p.locY, p.locZ, to.locX, to.locY, to.locZ);
+}
 function crossing(t, from, to, plane = 0) {
     const start = depth(t, from), end = depth(t, to);
     if (end <= start || start > plane || end < plane) return null;
@@ -95,7 +106,7 @@ function schedule(session, p, now) {
     if (!Geo.hasGeo(p.locX, p.locY) || !Geo.hasGeo(entry.locX, entry.locY)) return;
     entry.locZ = Geo.getCellData(entry.locX, entry.locY, p.locZ).z;
     if (Math.abs(entry.locZ - p.locZ) > 64) return;
-    const clearApproach = Geo.canWalkStraight(p.locX, p.locY, p.locZ, entry.locX, entry.locY, entry.locZ);
+    const clearApproach = walkFrom(p, entry);
     if (!clearApproach) {
         // A player already touching a jamb may report a missing-floor cell.
         // Walk back out and toward the opening; wait for an actual clear-floor
@@ -180,8 +191,7 @@ function observe(session, p, now = Date.now()) {
     if (!Geo.hasGeo(p.locX, p.locY) || !Geo.hasGeo(loc.locX, loc.locY)) return false;
     loc.locZ = Geo.getCellData(loc.locX, loc.locY, p.locZ).z;
     if (Math.abs(loc.locZ - p.locZ) > 64) return false;
-    if (!Geo.canWalkStraight(p.locX, p.locY, p.locZ, loc.locX, loc.locY, loc.locZ)
-        && !crossesKnownGap(t, p, loc)) return false;
+    if (!walkFrom(p, loc) && !crossesKnownGap(t, p, loc)) return false;
     // No long-distance teleport lifecycle: this is a local correction, with
     // immediate authoritative position and no pet/party travel or 1s delay.
     cancel(session);
