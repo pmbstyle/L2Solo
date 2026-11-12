@@ -1,5 +1,4 @@
 const NpcAttacked = invoke('GameServer/Npc/Attacked');
-const { killEffect } = require('../../World/KillEffect');
 
 function receivedHit(session, actor, npc, hit, options = {}) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(npc, 'petrification')) return;
@@ -50,7 +49,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     npc.broadcastVitals();
 
     if (npc.fetchHp() <= 0) {
-        killEffect('kill.defeat_memory', () => invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc));
+        invoke('GameServer/World/KillEffect').killEffect('kill.defeat_memory', () => invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc));
         NpcAttacked(session, actor, npc, hit, options.npcAttacked);
         invoke(path.npc).die(session, actor, npc);
         return;

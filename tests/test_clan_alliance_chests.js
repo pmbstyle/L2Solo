@@ -9,6 +9,7 @@ DataCache.init();
 const world = { npc: { nextId: 1000000, spawns: [] }, user: { sessions: [] }, addNpcToGrid() {}, removeNpcFromGrid() {} };
 const kills = [];
 const mocks = {
+    'GameServer/World/KillEffect': require('../src/GameServer/World/KillEffect'),
     'GameServer/Progression/OverhitReward': { capture() {} },
     'GameServer/Effects/EffectStore': { hasDebuff: () => false },
     'GameServer/Pets/PetRuntime': { recordDamage() {} },
