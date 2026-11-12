@@ -1,6 +1,7 @@
 const World         = invoke('GameServer/World/World');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const NpcAggro      = invoke('GameServer/Npc/NpcAggro');
+const FailureLog    = invoke('FailureLog');
 
 const DEFAULT_RETREAT_DISTANCE = 850;
 const AGGRO_BUFFER = 120;
@@ -94,7 +95,8 @@ function directRouteUsable(geodata, from, to) {
             from.locX, from.locY, from.locZ,
             to.locX, to.locY, to.locZ
         ) === true;
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('ai.retreat_walk_check', error);
         return false;
     }
 }
@@ -102,7 +104,8 @@ function directRouteUsable(geodata, from, to) {
 function groundHeight(geodata, to, fallbackZ) {
     try {
         return geodata.getHeight(to.locX, to.locY, fallbackZ);
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('ai.retreat_height', error);
         return fallbackZ;
     }
 }
@@ -124,7 +127,8 @@ function routeCandidateOnce(options, geodata, from, requestedTo) {
                     routeStrategy: diagnostics.strategy || null
                 };
             }
-        } catch (_) {
+        } catch (error) {
+            FailureLog.note('ai.retreat_route_preview', error);
             // Fall back to a direct geodata check when preview diagnostics are
             // unavailable. The actual retreat command remains best-effort.
         }
