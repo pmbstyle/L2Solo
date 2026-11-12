@@ -1,5 +1,6 @@
 const BOT_WAKEUP_THROTTLE_MS = 750;
 const FailureLog = require('../../../FailureLog');
+const { killEffect } = require('../../World/KillEffect');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const PvpRules = invoke('GameServer/PvpRules');
 
@@ -180,12 +181,12 @@ function receivedHit(session, actor, hit, options = {}) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
-        invoke('GameServer/Social/CombatHelpMemory').recordDefeat(source, actor);
+        killEffect('death.defeat_memory', () => invoke('GameServer/Social/CombatHelpMemory').recordDefeat(source, actor));
         const killer = invoke('GameServer/Bot/AI/BotPvpThreats').character(source);
         if (killer && !ArenaCombatRules.suppressConsequences(killer, actor)) {
-            invoke('GameServer/Bot/AI/BotEnemyMemory').record(actor, killer, true);
+            killEffect('death.enemy_memory', () => invoke('GameServer/Bot/AI/BotEnemyMemory').record(actor, killer, true));
         }
-        if (hpBefore > 0 && !actor.fetchKind) creditKill(session, source, actor);
+        if (hpBefore > 0 && !actor.fetchKind) killEffect('death.pvp_credit', () => creditKill(session, source, actor));
 
         Generics.die(session, actor, { source, killer });
         return;

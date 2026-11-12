@@ -8,7 +8,7 @@
 // FailureLog logs its first stack and writes a trace failure record) and the others still run; a
 // death comes from a hit timer, where a throw would exit the server. C4 (Lisvus
 // L2Attackable.doDie, calculateRewards): a failed reward or quest notification is logged and the
-// death goes on.
+// death goes on. The character side is our choice by extension of that NPC rule.
 const FailureLog = require('../../FailureLog');
 
 function killEffect(site, effect) {

@@ -104,5 +104,21 @@ try {
         assert.deepStrictEqual([seen.posts, seen.journal], [['death'], 1], 'the died situation and the journal line still happen');
         assert.deepStrictEqual([count('death.exp_penalty'), count('death.life_row')], [1, 1], 'both failures are counted');
     }
+    // A character's killing hit: the defeat memory throws between HP 0 and the die call. The body
+    // still dies (die is reached with the killer) and the failure is counted once.
+    {
+        const ReceivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
+        const died = [];
+        replace(Generics, 'die', (session, actor, context) => { died.push([actor, context.killer]); });
+        replace(invoke('GameServer/Social/CombatHelpMemory'), 'recordDefeat', () => { throw new TypeError('defeat memory failed'); });
+        replace(invoke('GameServer/Social/CombatHelpMemory'), 'recordDamage', () => {});
+        let hp = 50;
+        const victim = { fetchHp: () => hp, setHp(value) { hp = value; }, statusUpdateVitals() {}, fetchKind: undefined,
+            state: { fetchSeated: () => false }, fetchId: () => 7004, effects: {} };
+        const attacker = { fetchId: () => 7005, fetchKind: 'npc' };
+        assert.doesNotThrow(() => ReceivedHit({ actor: attacker }, victim, 100), 'a failed defeat memory does not leave the hit');
+        assert.deepStrictEqual([hp, died.length, died[0]?.[0] === victim], [0, 1, true], 'the body at 0 HP still goes through die');
+        assert.strictEqual(count('death.defeat_memory'), 1, 'the failed memory is counted once');
+    }
     console.log('Kill consequences: one that fails is counted and the others still run');
 } finally { saved.reverse().forEach((restore) => restore()); }
