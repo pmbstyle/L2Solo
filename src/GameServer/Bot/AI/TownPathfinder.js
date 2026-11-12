@@ -399,9 +399,11 @@ function clearSessionRoute(session) {
 
 // The point a body heads for on its spot's town way: the way of the spot it walks to (a
 // relocation) or holds; back to the spot when the target is its centre; into the town when
-// the target lies in that town and the body is not in it yet or already on the way (an
-// NPC-to-NPC walk in town keeps its leg): on to the target's NPC by its spur, or to the
-// town end while that is nearer the target than the body. Null: no way applies.
+// the target lies in that town and the body is not in it yet or stands on a point of the way
+// to it: on to the target's NPC by its spur, or to the town end while that is nearer the target
+// than the body. A body in town off that way takes none (the town's own routing walks it); one
+// that stands on a point of it (the way out, then the target NPC's spur) follows it on, which an
+// NPC-to-NPC walk does when the body's NPC spur lies on that way. Null: no way applies.
 function townWayPoint(session, from, to) {
     const spotId = session?.spotRelocation?.spotId ?? session?.currentSpot?.id;
     const way = spotId == null ? null : TownWays.way(spotId);
@@ -441,10 +443,14 @@ const TownPathfinder = {
                 existing.updatedAt = now;
                 const fromTown = findTown(from);
                 const toTown = findTown(to);
+                // A leg of a town way keeps the way's spot: its give-up is traced the same.
                 return {
                     to: cloneLoc(existing.waypoint),
                     arrivalRadius: existing.arrivalRadius ?? null,
-                    diagnostics: createDiagnostics(from, to, existing.waypoint, fromTown, toTown, existing, 'sticky_waypoint')
+                    diagnostics: {
+                        ...createDiagnostics(from, to, existing.waypoint, fromTown, toTown, existing, 'sticky_waypoint'),
+                        ...(existing.townWay != null ? { townWay: existing.townWay } : {})
+                    }
                 };
             }
 
@@ -459,7 +465,7 @@ const TownPathfinder = {
         if (onWay) {
             const routePlan = session ? { townName: onWay.way.townName, finalTarget: cloneLoc(to),
                 waypoint: cloneLoc(onWay.point), arrivalRadius: TOWN_WAY_ARRIVAL_RADIUS,
-                createdAt: now, updatedAt: now, reason: 'town_way' } : null;
+                createdAt: now, updatedAt: now, reason: 'town_way', townWay: onWay.way.spotId } : null;
             if (session) session.townRoutePlan = routePlan;
             // townWay names the way a failed leg was on (the walk's give-up trace).
             return { to: cloneLoc(onWay.point), arrivalRadius: TOWN_WAY_ARRIVAL_RADIUS,

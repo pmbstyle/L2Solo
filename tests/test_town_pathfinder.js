@@ -163,6 +163,10 @@ try {
     assert(onOut(first.to), `the errand walk heads for its way, not the straight line (${JSON.stringify(first.to)})`);
     assert.strictEqual(first.diagnostics.reason, 'town_way');
     assert.strictEqual(first.diagnostics.townWay, '20_12');
+    // Held on the way's leg before it is reached, the walk still names its way: a give-up there is traced.
+    const held = TownPathfinder.routeWithSession(errand, variedActor(2001505), field, hally);
+    assert.strictEqual(held.diagnostics.reason, 'sticky_waypoint');
+    assert.strictEqual(held.diagnostics.townWay, '20_12', 'a held way leg names its way');
     // At that point the next leg is the way's next point (the sticky leg held until reached).
     const index = way.out.findIndex((p) => p.locX === first.to.locX && p.locY === first.to.locY);
     const second = TownPathfinder.routeWithSession(errand, variedActor(2001505), { ...first.to }, hally);
