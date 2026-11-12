@@ -377,8 +377,8 @@ async function run() {
     });
     assert.deepStrictEqual(
         { locX: moves[1].to.locX, locY: moves[1].to.locY, locZ: moves[1].to.locZ },
-        lectorApproach.interaction,
-        'an unreachable outer waypoint must fall back to the inner front-side point, not the NPC cell'
+        TownNpcApproach.talkPointFor(errand.target, bot.fetchId()),
+        'an unreachable outer waypoint must fall back to the bot\'s own front-side point, not the NPC cell'
     );
     assert.strictEqual(moves[1].pathMaxNodes, CompanionNavigationRecovery.INITIAL_ERRAND_PATH_MAX_NODES,
         'the inner front-side fallback should start with the inexpensive route budget');

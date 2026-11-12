@@ -128,10 +128,6 @@ try {
 
     publishTravelSession(shoppingSession, shopper);
 
-    const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
-    const otherShopper = {};
-    Slots.reserve(otherShopper, 'completed-visit', () => [1]);
-    Slots.reserve(shoppingSession, 'completed-visit', () => [1]);
     shoppingSession.townNpcApproach = { key: 'completed-visit', phase: 'interaction' };
     ShoppingState.scheduleRestock(shoppingSession, shopper, noTeleportGenerics, { say() {} });
 
@@ -140,9 +136,8 @@ try {
     assert.strictEqual(shoppingSession.preShopLocation, undefined);
     assert.strictEqual(shoppingSession.pendingFarmDepartureAnnouncement, true,
         'the next hunting-ground decision should announce a clear farming destination');
-    assert(!shoppingSession.townNpcQueue && !shoppingSession.townNpcSlot && !shoppingSession.townNpcApproach,
-        'finishing the visit must release all shop waiting state before hunting resumes');
-    Slots.release(otherShopper);
+    assert(!shoppingSession.townNpcApproach,
+        'finishing the visit must clear the approach state before hunting resumes');
 
     const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
     const departureBot = bot({ locX: 80456, locY: 147864, locZ: -3504 });
@@ -500,7 +495,6 @@ try {
         plan: 'getting_buffed',
         partyCompanion: true,
         townNpcApproach: seededGuideApproach.townNpcApproach,
-        townNpcSlot: seededGuideApproach.townNpcSlot,
         resumeAfterBuff: {
             plan: 'following',
             followPlayerSession: { actor: companionLeader, dataSendToMe() {} },

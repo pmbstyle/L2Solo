@@ -109,6 +109,7 @@ const mocks = {
     'GameServer/Bot/AI/BotTownTravel': { hasCombatThreat: () => false },
     'GameServer/Bot/AI/TownGatekeeperCatalog': { targetForTown: () => ({ town: 'TestTown', npcSelfId: 1 }) },
     'GameServer/Bot/AI/TownNpcApproach': { reset() {}, planOpen: () => ({ ready: true }) },
+    'GameServer/Bot/AI/TownNpcBodies': { seenBy: () => () => [] },
     'GameServer/Bot/AI/TownTransitPolicy': { townAt: a => a.x === 0 && a.y === 0 ? 'TestTown' : null,
         observeRecovery() {}, interact: () => true },
     'GameServer/Bot/BotAI': {

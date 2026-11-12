@@ -17,6 +17,7 @@ const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentS
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
@@ -509,8 +510,8 @@ module.exports = {
     workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
     tick(session, bot, Generics, BotAI) {
         arrive(session, bot);
-        // The receipt/return callback owns the rest of this visit. Rejoining
-        // the counter queue during its delay steals time from real shoppers.
+        // The receipt/return callback owns the rest of this visit; the approach state is cleared and
+        // not planned again until the next errand.
         if (session.shoppingDoneAnnounced) {
             TownNpcApproach.reset(session);
             return;
@@ -614,8 +615,7 @@ module.exports = {
         const target = CompanionNavigationRecovery.refreshTarget(session.shoppingTarget, targetActor);
         const distToTarget = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
             .distance(new SpeckMath.Point3D(target.locX, target.locY, target.locZ));
-        const npcApproach = TownNpcApproach.plan(session, bot, target, 'shopping');
-        if (npcApproach?.waiting) return;
+        const npcApproach = TownNpcApproach.plan(session, bot, target, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) });
         const readyToInteract = npcApproach?.ready === true
             || (!npcApproach && distToTarget <= (target.interactionDistance || 300));
 
