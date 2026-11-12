@@ -195,8 +195,13 @@ function start(npc, world, observers, random = Math.random) {
     // regions on behalf of an idle monster.
     if (!Geodata.hasGeo(from.locX, from.locY) || !Geodata.hasGeo(to.locX, to.locY)) return blocked();
     to.locZ = Geodata.getHeight(to.locX, to.locY, from.locZ);
+    // An idle drift step must be walkable back (our choice: Lisvus random walk
+    // asks moveCheck one way; a one-way step would leave the mob in a lower
+    // pocket it cannot walk back from). A step home needs no way back.
     if (!Number.isFinite(to.locZ) || !Geodata.canWalkStraight(
-        from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)) return blocked();
+        from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)
+        || (!awayFromHome(npc, from) && !Geodata.canWalkStraight(
+            to.locX, to.locY, to.locZ, from.locX, from.locY, from.locZ))) return blocked();
 
     const transport = { dataSendToMeAndOthers(packet) { sendToWatchers(npc, observers, packet); } };
     const wasRunning = npc.fetchStateRun();

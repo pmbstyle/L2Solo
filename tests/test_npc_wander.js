@@ -101,7 +101,7 @@ try {
         assert.equal(Wander.tick(world, { random: () => { randomCalls++; return 1 / 30; } }), 0);
         assert.equal(randomCalls, 1); assert.equal(rays, 0);
         assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 1);
-        assert.equal(rays, 1);
+        assert.equal(rays, 2, 'a step is walked out and back');
         assert.equal(npc.state.fetchTowards(), 'wander');
         stop(npc);
     });
@@ -357,7 +357,7 @@ try {
             assert.equal(Wander.start(npcs[i], world, world.user.sessions, moveRandom), true);
         }
         assert.equal(Wander.start(npcs.at(-1), world, world.user.sessions, moveRandom), false);
-        assert.equal(rays, Wander.MAX_ACTIVE_WALKS, 'no geo work when all movement slots are occupied');
+        assert.equal(rays, 2 * Wander.MAX_ACTIVE_WALKS, 'no geo work when all movement slots are occupied (a step is walked out and back)');
         world.user.sessions = [];
         npcs.forEach(stop);
         Wander.tick(world); // Cleanup must work without observers as well.
@@ -510,6 +510,26 @@ try {
         Geo.canWalkStraight = () => false;
         assert.equal(Wander.tick(world, { random: () => 0 }), 0);
         assert.equal(npc.fetchLocX(), 8);
+        Geo.canWalkStraight = () => true;
+        stop(npc);
+    });
+    check('a drift step down a one-way drop is refused, a step that walks back is taken', () => {
+        Geo.canWalkStraight = (fx) => fx === 8;
+        const npc = npcAt(); const world = worldFor([npc], [observer()]);
+        assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 0, 'the mob cannot walk back, it stays');
+        assert.equal(npc.fetchLocX(), 8);
+        Geo.canWalkStraight = () => true;
+        assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 1, 'a two-way step is taken');
+        assert.equal(npc.state.fetchTowards(), 'wander');
+        stop(npc);
+    });
+    check('a mob away from home walks home down a one-way drop instead of blinking home', () => {
+        Geo.canWalkStraight = (fx, fy, fz, tx) => tx < fx;
+        const npc = npcAt(); npc.model.locX = 2000;
+        const world = worldFor([npc], [observer(2000)]);
+        assert.equal(Wander.tick(world, { random: () => 0.99 }), 1, 'the step home is taken');
+        assert.equal(npc.state.fetchTowards(), 'wander');
+        assert.equal(npc.fetchLocX(), 2000, 'it walks, it is not sent home at once');
         Geo.canWalkStraight = () => true;
         stop(npc);
     });
