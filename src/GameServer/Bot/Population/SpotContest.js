@@ -4,7 +4,10 @@
 // until the party aggregate) that arrives on a spot meets the units standing there once,
 // at the arrival. Over room is per-target pressure: the hunters on the arriving unit's
 // target species, those with no target by the species' spawn share, against that share of
-// the spot's room (LevelingRoutes.capacityForSpot). Over room the arriving unit compares
+// the spot's room (LevelingRoutes.capacityForSpot). Over room with nobody else on its
+// species (no unit there on it, near a player or far, and no hunter without a target) the
+// arriving unit stays (first_come): the first come holds the spot, however thin its share
+// of the room. Else the arriving unit compares
 // itself with each standing unit by what a player sees (VisibleStrength: weapon grade and
 // glow, armour grade, people; no level), the standing unit's relationship read for at most
 // MAX_PEERS met units and MAX_DISPLACED displacement candidates (more: counted
@@ -21,7 +24,8 @@
 //   leftovers); else avoid, outmatched;
 // 3 else (even): a clanmate or friend there and under CROWDED: it stays (friends share);
 //   else it answers the first met stranger: share (stay, shared), dispute (stay, pvp) or
-//   leave ('crowded' at CROWDED or more, else 'even'): the first come holds the spot.
+//   leave ('crowded' at CROWDED or more, else 'even'): the first come holds the spot (a
+//   body near a player or an unread stranger there turns it away: neither answers it).
 // The answer of the unit that does not hold the spot by look is its persona's
 // (ResourceCompetitionPolicy.decide with it as the actor): avoid → leave; a party offer (no
 // party forms at the spot), a yield or a contest without PvP → share while the pressure is
@@ -120,6 +124,8 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         return settled(spot, arriving, { action: 'stay', pressure, reason: arriving.holds, displaced: outcome.displaced || [] });
     };
     const avoid = reason => ({ action: 'avoid', reason, spotId: String(spot.id) });
+    // Nobody else hunts its species here: the first come holds it, over room or not.
+    if (!peers.length && !(untargeted > 0)) return verdict({ action: 'stay', reason: 'first_come', displaced: [] });
     // unit answers other (a met unit, read: the pair's relationship read) at a pressure.
     const reply = (unit, other, read, atPressure, peerKey) => answer({ spot, npcId, unit, other, read, pressure: atPressure,
         key: `${key}:${peerKey}`, at, demand, capacity, personaFor, ownSide, pvp });

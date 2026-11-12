@@ -77,7 +77,10 @@ the hunters on the arriving unit's target species, the untargeted by spawn share
 against that species' share of the spot's room (`LevelingRoutes.capacityForSpot` times
 the spawn share, at least one place). Over room the arriving unit compares itself with
 each standing unit by what a player sees (`VisibleStrength`: weapon grade and glow, body
-armour grade, people with servitors; no level):
+armour grade, people with servitors; no level). An arrival over room that meets nobody on
+its species (no unit there on it, near a player or far, and no hunter without a target)
+stays (`first_come`): the first come holds the spot, however thin its share of the room.
+Otherwise:
 
 1. a stranger that looks stronger stands there: the arriving unit answers the strongest
    one: it leaves (`outmatched`), shares (`tolerated`) or disputes it (`pvp`);
