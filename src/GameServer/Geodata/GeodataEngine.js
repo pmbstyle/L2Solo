@@ -9,6 +9,11 @@ const REGION_OFFSET_Y = 18;
 const MAX_LAYER_STEP = 64;
 // A layer count is one byte in the L2J block format.
 const MAX_CELL_LAYERS = 256;
+// Sight (Lisvus GeoData MAX_SEE_OVER_HEIGHT, ELEVATED_SEE_OVER_DISTANCE): a
+// floor up to this far over the line of sight does not hide, and over the
+// first cells of the line the margin is taken over the start floor.
+const SEE_OVER_HEIGHT = 64;
+const SEE_OVER_NEAR_POINTS = 2;
 // The sides a body may leave a geodata cell by (its NSWE flags).
 const EAST = 1, WEST = 2, SOUTH = 4, NORTH = 8;
 const NEIGHBOURS = Object.freeze([{ dx: 0, dy: -1, exit: NORTH }, { dx: 0, dy: 1, exit: SOUTH },
@@ -21,6 +26,13 @@ const heightCell = newCellSlot();
 // The region lookup of a readCell call without a caller's memo: reset on
 // every such read, so nothing is kept between calls.
 const readCellRegion = { key: -1, str: '', buffer: null, index: null };
+// Scratch of one hasLineOfSight call: the two ends, the cell left and the
+// cell entered, the two corners of a diagonal step, and the call's region
+// lookup (reset at the start of each call).
+const sightEndA = newCellSlot(), sightEndB = newCellSlot();
+const sightPrev = newCellSlot(), sightCur = newCellSlot();
+const sightCornerNs = newCellSlot(), sightCornerEw = newCellSlot();
+const sightRegion = { key: -1, str: '', buffer: null, index: null };
 let sharedGeodata = null;
 
 function getSharedGeodata(directory) {
@@ -145,6 +157,49 @@ function nearestLayer(slot, z) {
         }
     }
     return best;
+}
+
+// The floor of a decoded cell nearest z, or z for a cell with no layer
+// (Lisvus getNearestZ).
+function nearestZ(slot, z) {
+    const layer = nearestLayer(slot, z);
+    return layer < 0 ? z : slot.z[layer];
+}
+
+// A cell the map knows: a layer, or a town obstacle over it (Lisvus hasGeoPos).
+function hasCellData(slot) {
+    return slot.n > 0 || slot.closed;
+}
+
+// Is the cell's layer nearest z open on every side in `sides` (Lisvus
+// checkNearestNswe): a town obstacle is closed, a cell with no layer open.
+function opensToward(slot, z, sides) {
+    if (slot.closed) return false;
+    if (slot.n === 0) return true;
+    return (slot.nswe[nearestLayer(slot, z)] & sides) === sides;
+}
+
+// The cell's layer at z or the lowest one above it, else z (Lisvus
+// MultilayerBlock.getNextHigherZ; a one-layer cell answers the higher of its
+// floor and z, ComplexBlock.getNextHigherZ).
+function nextHigherZ(slot, z) {
+    if (slot.closed || slot.n === 0) return z;
+    let higher = Infinity;
+    for (let l = 0; l < slot.n; l++) {
+        const layerZ = slot.z[l];
+        if (layerZ === z) return z;
+        if (layerZ > z && layerZ < higher) higher = layerZ;
+    }
+    return higher === Infinity ? z : higher;
+}
+
+function copyCell(from, to) {
+    to.n = from.n;
+    to.closed = from.closed;
+    for (let l = 0; l < from.n; l++) {
+        to.z[l] = from.z[l];
+        to.nswe[l] = from.nswe[l];
+    }
 }
 
 // The floor nearest z of a cell, or z for a cell with no layer.
@@ -397,8 +452,113 @@ const GeodataEngine = {
         return decodeCell(region.buffer, blockOffset, (localX >> 4) & 7, (localY >> 4) & 7, slot);
     },
 
+    // Does a body at one point see a body at another (C4: Lisvus
+    // GeoData.canSeeTarget and getLosGeoZ). A pure read of the map, the same
+    // answer whichever end asks. Each end stands on its cell's layer nearest
+    // its z (getNearestZ). The ray runs from the higher floor to the lower one
+    // over the cells under the line (LinePointIterator3D: Bresenham over cell
+    // x, cell y and world z); on each new cell its floor is the layer the
+    // cell left opens onto (anti-corner-cut on a diagonal,
+    // checkNearestNsweAntiCornerCut), else the next layer above
+    // (getNextHigherZ). A floor more than SEE_OVER_HEIGHT over the line hides
+    // the target; over the first SEE_OVER_NEAR_POINTS cells the margin is
+    // taken over the start floor, so a body sees over a lip at its feet. On a
+    // diagonal both corner cells must pass too, asked as Lisvus writes them:
+    // the north/south corner with the left cell's east/west side and the
+    // east/west corner with its north/south side (Mobius asks each corner its
+    // own side). Two floors of one cell never see each other; ends closer
+    // than 64 on cells with geodata see each other when their floors lie
+    // within SEE_OVER_HEIGHT. A cell with no geodata keeps the floor before
+    // it. Our choices: equal floors are traced from the end on the lower cell
+    // (Lisvus traces from the caller, so its answer can depend on who looks);
+    // a town virtual obstacle hides, and a body in one, at either end, is
+    // neither seen nor seeing (as the straight walk); no iteration cap
+    // (Lisvus answers not seen past 2000 line points; we trace the whole
+    // line, so we differ only for pairs whose line exceeds 2000 points, e.g.
+    // a height difference over 2000). The Garden of Eva barriers hide as walls. Callers: NPC
+    // aggro, assist, town guards, the NPC chase and its hits and casts, area
+    // skills, party support's aggro forecast; all on main.
     hasLineOfSight(fromX, fromY, fromZ, toX, toY, toZ) {
-        return this.walkStraight(fromX, fromY, fromZ, toX, toY, toZ, null);
+        sightRegion.key = -1;
+        let x = fromX, y = fromY, tx = toX, ty = toY;
+        let gx = x >> 4, gy = y >> 4, tgx = tx >> 4, tgy = ty >> 4;
+        this.readCell(gx, gy, sightEndA, sightRegion);
+        this.readCell(tgx, tgy, sightEndB, sightRegion);
+        if (sightEndA.closed || sightEndB.closed) return false;
+        let z = nearestZ(sightEndA, fromZ);
+        let tz = nearestZ(sightEndB, toZ);
+        let start = sightEndA;
+        let end = sightEndB;
+        if (tz > z || (tz === z && (tgx < gx || (tgx === gx && tgy < gy)))) {
+            let t = gx; gx = tgx; tgx = t;
+            t = gy; gy = tgy; tgy = t;
+            t = z; z = tz; tz = t;
+            t = x; x = tx; tx = t;
+            t = y; y = ty; ty = t;
+            start = sightEndB; end = sightEndA;
+        }
+        if (GardenOfEvaBarriers.blocks(x, y, z, tx, ty, tz)) return false;
+        if (gx === tgx && gy === tgy) return !hasCellData(end) || z === tz;
+        const dx = x - tx, dy = y - ty;
+        if ((dx * dx) + (dy * dy) < 4096 && hasCellData(start) && hasCellData(end)) {
+            return Math.abs(z - tz) <= SEE_OVER_HEIGHT;
+        }
+
+        const cellsX = Math.abs(tgx - gx), cellsY = Math.abs(tgy - gy), heightZ = Math.abs(tz - z);
+        const stepX = gx < tgx ? 1 : -1, stepY = gy < tgy ? 1 : -1, stepZ = z < tz ? 1 : -1;
+        const major = cellsX >= cellsY && cellsX >= heightZ ? 0 : (cellsY >= heightZ ? 1 : 2);
+        let error1 = (major === 0 ? cellsX : major === 1 ? cellsY : heightZ) >> 1;
+        let error2 = error1;
+        let prev = sightPrev, cur = sightCur;
+        copyCell(start, prev);
+        let sx = gx, sy = gy, sz = z;
+        let px = gx, py = gy, prevGeoZ = z, point = 0;
+        for (;;) {
+            if (major === 0) {
+                if (sx === tgx) break;
+                sx += stepX;
+                error1 += cellsY; if (error1 >= cellsX) { sy += stepY; error1 -= cellsX; }
+                error2 += heightZ; if (error2 >= cellsX) { sz += stepZ; error2 -= cellsX; }
+            } else if (major === 1) {
+                if (sy === tgy) break;
+                sy += stepY;
+                error1 += cellsX; if (error1 >= cellsY) { sx += stepX; error1 -= cellsY; }
+                error2 += heightZ; if (error2 >= cellsY) { sz += stepZ; error2 -= cellsY; }
+            } else {
+                if (sz === tz) break;
+                sz += stepZ;
+                error1 += cellsX; if (error1 >= heightZ) { sx += stepX; error1 -= heightZ; }
+                error2 += cellsY; if (error2 >= heightZ) { sy += stepY; error2 -= heightZ; }
+            }
+            if (sx === px && sy === py) continue;
+            this.readCell(sx, sy, cur, sightRegion);
+            let curGeoZ = prevGeoZ;
+            if (hasCellData(cur)) {
+                if (cur.closed) return false;
+                const ew = sx > px ? EAST : sx < px ? WEST : 0;
+                const ns = sy > py ? SOUTH : sy < py ? NORTH : 0;
+                const maxHeight = (point < SEE_OVER_NEAR_POINTS ? z : sz) + SEE_OVER_HEIGHT;
+                if (ns && ew) {
+                    const cornerNs = sightCornerNs, cornerEw = sightCornerEw;
+                    this.readCell(px, ns === NORTH ? py - 1 : py + 1, cornerNs, sightRegion);
+                    this.readCell(ew === EAST ? px + 1 : px - 1, py, cornerEw, sightRegion);
+                    const open = opensToward(cornerNs, prevGeoZ, ew) && opensToward(cornerEw, prevGeoZ, ns)
+                        && opensToward(prev, prevGeoZ, ns | ew);
+                    curGeoZ = open ? nearestZ(cur, prevGeoZ) : nextHigherZ(cur, prevGeoZ);
+                    if (curGeoZ > maxHeight) return false;
+                    const nsGeoZ = opensToward(prev, prevGeoZ, ew) ? nearestZ(cornerNs, prevGeoZ) : nextHigherZ(cornerNs, prevGeoZ);
+                    const ewGeoZ = opensToward(prev, prevGeoZ, ns) ? nearestZ(cornerEw, prevGeoZ) : nextHigherZ(cornerEw, prevGeoZ);
+                    if (nsGeoZ > maxHeight || ewGeoZ > maxHeight
+                        || nsGeoZ > nearestZ(cornerNs, sz) || ewGeoZ > nearestZ(cornerEw, sz)) return false;
+                } else {
+                    curGeoZ = opensToward(prev, prevGeoZ, ns | ew) ? nearestZ(cur, prevGeoZ) : nextHigherZ(cur, prevGeoZ);
+                    if (curGeoZ > maxHeight) return false;
+                }
+            }
+            const left = prev; prev = cur; cur = left;
+            px = sx; py = sy; prevGeoZ = curGeoZ; point++;
+        }
+        return true;
     },
 
     // May a body walk straight from one point to another: the straight walk

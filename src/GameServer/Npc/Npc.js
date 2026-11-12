@@ -504,7 +504,17 @@ class Npc extends NpcModel {
                 }
                 const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);
 
-                if (!this.hasCombatLineOfSight(actor)) {
+                // An attack needs the target in sight, a move needs a walk
+                // (Lisvus L2Character.doAttack): a mob that sees its target in
+                // range acts where it stands, one that sees it and can walk
+                // straight to it closes in, any other routes to it. In range is
+                // the 3D test actionStopCoords stops at, so that branch does
+                // not move.
+                const sees = this.hasCombatLineOfSight(actor);
+                const inRange = sees && Math.hypot(newDstX - this.fetchLocX(), newDstY - this.fetchLocY(),
+                    newDstZ - this.fetchLocZ()) <= actionRange;
+                if (!sees || !(inRange || GeodataEngine.canWalkStraight(this.fetchLocX(), this.fetchLocY(),
+                    this.fetchLocZ(), newDstX, newDstY, newDstZ))) {
                     const now = Date.now();
                     if (activePathTargetCoords) {
                         const pathTargetDrift = new SpeckMath.Point3D(
