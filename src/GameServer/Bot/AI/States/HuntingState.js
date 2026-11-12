@@ -1099,16 +1099,12 @@ module.exports = {
                     DecisionEvents.raiseDecision(session, 'spot_dangerous',
                         { payload: { spotId: String(currentGround.id), reason: groundSafety.reason } });
                 }
-                const heldId = DecisionEvents.heldSpotId(session);
-                const pending = heldId === 'pending';
-                const held = heldId && !pending && heldId !== String(currentGround.id) ? SpotService.findById(heldId) : null;
-                const destination = held && LevelingRoutes.groundVerdict(held, { level: bot.fetchLevel() },
-                    { mode: 'solo', equipment: equippedItems(bot) }).allowed ? held : null;
                 // With none it asks once more; if that answer names none either it leaves
                 // for town (no spot to hunt is no reason to stay on ground it may not hunt).
                 // Its raise unanswered (pending), it stands off until the answer.
-                const none = !destination && !pending && DecisionEvents.needSpot(session) === 'none';
-                if (destination) DecisionEvents.spotHeld(session);
+                const off = DecisionService.offGroundSpot(session, currentGround, held => LevelingRoutes.groundVerdict(held,
+                    { level: bot.fetchLevel() }, { mode: 'solo', equipment: equippedItems(bot) }).allowed);
+                const destination = off.spot || null, none = off.ask === 'none';
                 session.lastDecision = {
                     action: destination ? 'move_to_spot' : none ? 'leave_for_town' : 'avoid_hunting_ground',
                     reason: groundSafety.reason,

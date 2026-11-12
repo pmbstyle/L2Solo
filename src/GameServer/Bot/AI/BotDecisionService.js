@@ -88,6 +88,22 @@ function physicalLocation(status, session) {
 
 const BotDecisionService = {
     occupationKey,
+    // Where a body whose ground holds no hunt goes (suggest: its marks exclude it or it raised it
+    // empty; HuntingState: ground it may not hunt alone): the spot its held decisions name
+    // (DecisionEvents.heldSpotId, whatever its leaf) when the caller's verdict admits it (accept),
+    // as the cold trip reads its held choice. { pending } while its raise waits for the answer;
+    // { spot } other ground; { here } this ground; else it asks once per answer (needSpot) and
+    // { ask: 'ask' | 'wait' | 'none' } is the verdict.
+    offGroundSpot(session, ground, accept = () => true) {
+        const heldId = DecisionEvents.heldSpotId(session);
+        if (heldId === 'pending') return { pending: true };
+        const held = heldId != null ? SpotService.findById(heldId) : null;
+        if (held && accept(held)) {
+            DecisionEvents.spotHeld(session);
+            return String(held.id) === String(ground?.id ?? '') ? { here: true } : { spot: held };
+        }
+        return { ask: DecisionEvents.needSpot(session) };
+    },
     suggest(status, session) {
         if (!status || !status.available) {
             return {
@@ -200,9 +216,10 @@ const BotDecisionService = {
             if (heldId === 'pending') return { action: 'search_locally', reason: 'awaiting_hunt_answer' };
             const spot = heldId ? SpotService.findById(heldId) : null;
             if (spot) DecisionEvents.spotHeld(session);
-            // Off its ground by its marks (excludedSpotIds: a contest lost, danger, deaths there) with no
-            // spot published: that ground holds no hunt, it asks as a body on none does (needSpot below), as the cold trip does.
-            const displaced = !spot && !!physical && DecisionEvents.excludedSpotIds(session).has(String(physical.id));
+            // Its ground holds no hunt (BotRoute.noHuntHere: its marks exclude it, or it raised it
+            // empty this stay) and no spot was read above (a body with no hunting leaf reads none there).
+            const displaced = !spot && !!physical && Route().noHuntHere(physical, DecisionEvents.excludedSpotIds(session),
+                DecisionEvents.statsFor(session).emptyGround);
             // On its spot by the arrival rule (SpotService.arrivedAt: its ground or the arrival
             // radius), not an exact cell: a body that arrived on a neighbouring cell stays.
             // With none published, the ground its leaf plans holds it.
@@ -213,17 +230,31 @@ const BotDecisionService = {
                 if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
                 return { action: 'search_locally', reason: look === 'raised' ? 'ground_unhuntable' : 'selected_hunting_ground' };
             }
-            if ((completedVisit || displaced) && !spot) {
-                // Its answer names no spot it may take: it asks once more (spot_empty), and
-                // if that answer names none either it rests in town until a situation brings one
-                // (off its ground by its marks: it hunts where it stands, as a far bot left with no
-                // trip, getting ready first through the same look as on any ground).
-                const none = DecisionEvents.needSpot(session) === 'none';
-                if (!displaced) return none ? { action: 'rest', reason: 'no_hunting_spot' } : { action: 'search_locally', reason: 'no_hunting_route' };
+            if (displaced) {
+                // It goes where its held decisions send it, whatever its leaf, as the cold trip reads its
+                // held choice (offGroundSpot): other ground, it walks there; this ground, it hunts where
+                // it stands; none, it asks once per answer, and hunts where it stands meanwhile, getting
+                // ready first through the same look as on any ground.
+                const off = BotDecisionService.offGroundSpot(session, physical);
+                if (off.pending) return { action: 'search_locally', reason: 'awaiting_hunt_answer' };
+                if (off.spot) return { action: 'move_to_spot', reason: 'selected_hunting_ground', spot: off.spot,
+                    ...(occupied ? { deferredOccupation: occupationKey(leaf) } : {}) };
+                // On ground it raised empty, its ask keeps the stay's raise until the answer lands (the
+                // look was taken: the raise is its outcome; a look now would drop it on a short streak).
+                if ((off.ask === 'ask' || off.ask === 'wait')
+                    && String(DecisionEvents.statsFor(session).emptyGround ?? '') === String(physical.id)) {
+                    return { action: 'search_locally', reason: 'no_hunting_route' };
+                }
                 const look = groundLook(session, physical);
                 if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
                 if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
-                return { action: 'search_locally', reason: 'no_hunting_route' };
+                return { action: 'search_locally', reason: off.here ? 'selected_hunting_ground' : 'no_hunting_route' };
+            }
+            if (completedVisit && !spot) {
+                // Its answer names no spot it may take: it asks once more (spot_empty), and
+                // if that answer names none either it rests in town until a situation brings one.
+                const none = DecisionEvents.needSpot(session) === 'none';
+                return none ? { action: 'rest', reason: 'no_hunting_spot' } : { action: 'search_locally', reason: 'no_hunting_route' };
             }
             if (!spot) {
                 return { action: 'search_locally', reason: economy?.decided === false

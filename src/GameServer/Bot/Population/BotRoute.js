@@ -369,6 +369,12 @@ function occupationHolds(leaf, ground, excludedSpotIds, { emptyGround = null, he
     return !excludedSpotIds.has(id) && !(String(emptyGround ?? '') === id && heldSpotId != null && String(heldSpotId) !== id);
 }
 
+function noHuntHere(ground, excludedSpotIds, emptyGround = null) {
+    if (!ground) return true;
+    const id = String(ground.id);
+    return excludedSpotIds.has(id) || String(emptyGround ?? '') === id;
+}
+
 // The solo trip of a step: to the spot the bot's one choice names (heldHuntSpot,
 // kept on `owner`, the bot's kernel record), built from where it stands now; null:
 // no trip. What the trip adds is the executor's part: an accepted occupation leaf
@@ -405,7 +411,7 @@ function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, out = 
         EconomyDiagnostics.count('route', 'trip', 'held_choice');
         if (chosen?.spotId) { if (owner?.spotAsk) owner.spotAsk = null; }
         // Ground its marks exclude (a contest lost, danger, deaths there) is no ground to stay on: it asks as a bot on none.
-        else if ((!currentSpot || frame.excludedSpotIds.has(String(currentSpot.id)))
+        else if (noHuntHere(currentSpot, frame.excludedSpotIds, state.stats?.emptyGround)
             && Situations.spotAsk(owner || {}, state.stats.earning, state.characterId) === 'ask') {
             return { needed: false, ask: 'spot_empty' };
         }
@@ -582,4 +588,4 @@ function planKey(plan, request) {
         + `${plan?.requiresParty}|${request?.status}|${request?.priority}|${!!request?.materialParty}|${!!request?.suspendedFor}`;
 }
 
-module.exports = { choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, occupationHolds, huntSpot, heldHuntSpot, huntSpotHeld, huntSpotKeyOf, drop };
+module.exports = { noHuntHere, choose, record, leafChoice, leafFitReader, soloLevelFits, route, trip, occupationHolds, huntSpot, heldHuntSpot, huntSpotHeld, huntSpotKeyOf, drop };

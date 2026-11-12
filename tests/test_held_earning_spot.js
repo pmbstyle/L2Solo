@@ -457,6 +457,22 @@ function onWorker() {
             const still = { ...stranded, stats: { ...stranded.stats, earning: { ...stranded.stats.earning, at: 8 } } };
             assert.equal(tripOf(still), null, 'an answer to its ask with none either: it stays');
             assert.equal(Situations.counts().raised['earning:no_spot'], before + 1, 'counted');
+            // A far bot on its camp raised empty for it this stay (its spot_empty spent) whose answer names
+            // no spot: that ground holds no hunt; it asks once per answer, then stays. Not raised: it stays, no ask.
+            {
+                const emptied = { ...leveling, spotId: 'poor', loc: spots[0].center, stats: { ...leveling.stats, emptyGround: 'poor',
+                    earning: { ...leveling.stats.earning, spotId: null, at: 11 } } };
+                const record = {}, tripHere = state => BotRoute.trip(record, state, null, { spots, currentSpot: spots[0], timestamp: time(13) });
+                assert.equal(tripHere(emptied)?.ask, 'spot_empty', 'ground raised empty, no answer: it asks the decision again');
+                assert.equal(tripHere(emptied), null, 'and waits for the answer');
+                const noSpot = Situations.counts().raised['earning:no_spot'] || 0;
+                assert.equal(tripHere({ ...emptied, stats: { ...emptied.stats, earning: { ...emptied.stats.earning, at: 12 } } }), null,
+                    'none again: it stays');
+                assert.equal(Situations.counts().raised['earning:no_spot'], noSpot + 1, 'counted');
+                const held = { ...emptied, stats: { ...emptied.stats, emptyGround: null } };
+                assert.equal(BotRoute.trip({}, held, null, { spots, currentSpot: spots[0], timestamp: time(13) })?.ask, undefined,
+                    'its camp not raised: it holds it, no ask');
+            }
             // A far bot left in town after a visit whose build answers an errand it cannot run there (pvp,
             // a sale): no ground holds it, it walks to its held spot and the errand starts from the field.
             // On its camp the errand holds it.
