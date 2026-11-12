@@ -402,15 +402,18 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // Finish town services before waiting for a clan hunt. The pure shopping
     // resolver only advances its deadline and cannot buy, sell or leave town.
     if (['shopping', 'crafting', 'merchant'].includes(state.activity)) return 'command';
+    // A clan wait comes before the plan's own errands below: a waiter stands where
+    // it was called and main has no errand to carry out for it there, so a command
+    // would only hold it again, due at once. Published, the wait steps again on its
+    // row's next change (ClanPartyDuty.held); a released one goes back to its hunt
+    // (ClanPartyDuty.release), and its errand is that hunt's next step.
+    ClanPartyDuty ||= require('./ClanPartyDuty');
+    if (ClanPartyDuty.waiting(state) || ClanPartyDuty.released(state)) return resolverOrHeld(state);
     // Crystal inputs may still need buying or a trip. The native command must
     // consume this step's chosen wish before another clan review replaces its
     // preparation metadata; the pure hunt resolver cannot perform that work.
     if (plan.clanGoal?.clanId && (ClanCrystalSupply ||= require('../Economy/ClanCrystalSupply')).requirement(state)) return 'command';
     if ((BotCrystallization ||= require('../Economy/BotCrystallization')).ready(state)) return 'command';
-    // A published clan wait steps again on its row's next change (ClanPartyDuty.held);
-    // a released one goes back to its hunt (ClanPartyDuty.release).
-    ClanPartyDuty ||= require('./ClanPartyDuty');
-    if (ClanPartyDuty.waiting(state) || ClanPartyDuty.released(state)) return resolverOrHeld(state);
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
