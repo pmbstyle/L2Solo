@@ -43,6 +43,33 @@ const templeBandShopPath = GeodataEngine.findPath(
 );
 assert(templeBandShopPath && templeBandShopPath.length > 1, 'the removed temple band should leave a route to the general shop');
 
+// The tree at 45868, 34914 in the Elven fields: a body that ended inside its
+// skirt (a cell that opens west and south while the ground there does not open
+// back) walks out and reaches a mob; nobody walks in, and the trunk stays closed.
+{
+    const skirt = { locX: 45868, locY: 34914, locZ: -3632 };
+    const ground = { locX: 45596, locY: 34037, locZ: GeodataEngine.getHeight(45596, 34037, -3640) };
+    const out = GeodataEngine.findPath(skirt.locX, skirt.locY, skirt.locZ, ground.locX, ground.locY, ground.locZ);
+    assert(out && out.length > 1, 'a body inside the tree skirt at 45868, 34914 has a route to the open ground');
+    let from = skirt;
+    for (const to of out) {
+        assert(GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+            'every leg of the route out is a straight walk');
+        from = to;
+    }
+    const mob = { locX: 45820, locY: 34990, locZ: GeodataEngine.getHeight(45820, 34990, -3640) };
+    assert(GeodataEngine.hasLineOfSight(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ),
+        'a hunter standing there sees a mob on the ground beside the tree');
+    assert(GeodataEngine.findPath(skirt.locX, skirt.locY, skirt.locZ, mob.locX, mob.locY, mob.locZ)?.length > 1, 'and reaches it');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(mob.locX, mob.locY, mob.locZ, skirt.locX, skirt.locY, skirt.locZ), false,
+        'the skirt is not walked into from the ground');
+    assert.strictEqual(GeodataEngine.findPath(ground.locX, ground.locY, ground.locZ, skirt.locX, skirt.locY, skirt.locZ), null,
+        'no route leads into the skirt');
+    const hollow = { locX: 45912, locY: 34872, locZ: -3640 };
+    assert.strictEqual(GeodataEngine.findPath(ground.locX, ground.locY, ground.locZ, hollow.locX, hollow.locY, hollow.locZ), null,
+        'no route leads into the hollow of the trunk');
+}
+
 console.log("Testing pathfinding to Talking Island south gate staging point...");
 const startX = -84500;
 const startY = 242800;

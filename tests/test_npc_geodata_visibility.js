@@ -65,6 +65,42 @@ assert.strictEqual(
     'NSWE walls must block line of sight between adjacent cells'
 );
 
+// A tree as the map has it: the skirt cells open outward (downhill) only, the
+// ground around them does not open into the skirt, the trunk is closed.
+{
+    const skirt = { '2,2': { z: 0, nswe: 6 }, '3,2': { z: 24, nswe: 6 } };
+    const around = { '1,2': 14, '2,3': 7, '3,3': 7 }; // west of it: no east side; south of it: no north side
+    const trunk = new Set(['2,1', '3,1', '4,2']);
+    const ledge = { '8,8': 200 }; // a cell 200 above the ground round it
+    GeodataEngine.getCellData = (x, y) => {
+        const key = `${x >> 4},${y >> 4}`;
+        if (trunk.has(key)) return { z: 0, nswe: 0 };
+        if (skirt[key]) return { ...skirt[key] };
+        return { z: ledge[key] || 0, nswe: around[key] || 15 };
+    };
+    const at = (cx, cy, z = 0) => [(cx << 4) + 8, (cy << 4) + 8, z];
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 2), ...at(0, 2)), true,
+        'a body in a tree skirt walks out of it by the side its cell opens');
+    const out = GeodataEngine.findPath(...at(2, 2), ...at(0, 6), 500);
+    assert(out && out.length > 1, 'a body in a tree skirt has a route to the open ground');
+    let from = { locX: 40, locY: 40, locZ: 0 };
+    for (const to of out) {
+        assert(GeodataEngine.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ),
+            'every leg of the route out is a straight walk the same rule allows');
+        from = to;
+    }
+    assert(GeodataEngine.findPath(...at(3, 2, 24), ...at(0, 6), 500)?.length > 1, 'also from deeper in the skirt');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(0, 2), ...at(2, 2)), false, 'nobody walks into the skirt from the west');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 5), ...at(2, 2)), false, 'nor from the south');
+    assert.strictEqual(GeodataEngine.findPath(...at(0, 6), ...at(2, 2), 500), null, 'no route leads into the skirt');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(2, 0), ...at(2, 1)), false,
+        'a closed cell is not entered although its neighbour opens toward it');
+    assert.strictEqual(GeodataEngine.findPath(...at(0, 0), ...at(3, 1), 500), null, 'no route ends inside the trunk');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(8, 8, 200), ...at(9, 8)), false,
+        'a step whose floor lies more than a layer step below is not taken');
+    assert.strictEqual(GeodataEngine.hasLineOfSight(...at(9, 8), ...at(8, 8, 200)), false, 'nor one that far above');
+}
+
 const heightMap = [
     [160, 128, 96, 128, 96],
     [32, 96, 32, 192, 32],
