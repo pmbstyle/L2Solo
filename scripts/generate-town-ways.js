@@ -188,12 +188,27 @@ function spotTask(profile, counts) {
         const s = spur(from, start);
         if (s) spurs.push(s);
     }
-    counts.spawnJoinUnfixed += spawns.filter((from) => !joins({ out, spurs }, from, true)).length;
-    if (spurs.length) {
-        row.spurs = spurs.map((s) => ({ points: pack(s) }));
-        counts.spawnSpurs += spurs.length;
+    const kept = settled(out, spurs);
+    counts.spawnJoinUnfixed += spawns.filter((from) => !joins({ out, spurs: kept }, from, true)).length;
+    if (kept.length) {
+        row.spurs = kept.map((s) => ({ points: pack(s) }));
+        counts.spawnSpurs += kept.length;
     }
     return { row };
+}
+
+// The spur set the reader walks: every point of every spur, taken through
+// TownWays.wayPoint with the whole set (a later spur may start near an earlier
+// one's points), must lead to a leg that passes the search; a spur with a point
+// that does not is dropped (its spawn point is then counted unfixed).
+function settled(out, spurs) {
+    for (let i = 0; i < spurs.length; i++) {
+        const way = { out, spurs };
+        if (spurs[i].every((p) => { const target = TownWays.wayPoint(way, p, true); return !target || legWalks(p, target); })) continue;
+        spurs = spurs.filter((_, k) => k !== i);
+        i = -1;
+    }
+    return spurs;
 }
 
 // Does the first leg the reader takes from here (TownWays.wayPoint) pass the search?
