@@ -21,6 +21,11 @@ function sitAndStand(session, actor, data) {
 function walkAndRun(session, actor) {
     actor.state.setWalkin(!actor.state.fetchWalkin());
     session.dataSendToMeAndOthers(ServerResponse.walkAndRun(actor.fetchId(), actor.state.fetchWalkin() ? 0 : 1), actor);
+    // C4 has one movement multiplier, based on the active mode. Additive
+    // speed buffs give walking and running different multipliers (Lisvus
+    // L2Character.setIsRunning broadcasts UserInfo after ChangeMoveType).
+    session.dataSendToMe(ServerResponse.userInfo(actor));
+    session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
 }
 
 function basicAction(session, actor, data) {
