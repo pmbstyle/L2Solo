@@ -2994,7 +2994,7 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
 
 // The funded order belongs to the native party row. Worker patches may
 // advance the hunt and its loot cursor, but cannot mint/replay its escrow.
-function partyAgreementUnsafe(previous, proposed) {
+function partyAgreementUnsafe(previous, proposed, { allowHot = false } = {}) {
     const oldStats = jsonObject(previous?.statsJson), stats = jsonObject(proposed.statsJson);
     const oldAgreement = oldStats.agreement, agreement = stats.agreement;
     const ids = JSON.parse(proposed.memberIdsJson || previous?.memberIdsJson || '[]').map(Number);
@@ -3002,7 +3002,7 @@ function partyAgreementUnsafe(previous, proposed) {
     const touched = new Set();
     const ready = id => {
         const row = coldSimulationRow(id);
-        if (!row || row.phase !== 'cold') {
+        if (!row || (row.phase !== 'cold' && !(allowHot && row.phase === 'hot'))) {
             throw new Error('party_payment_owner_busy');
         }
         return row;
@@ -6935,6 +6935,25 @@ const Database = {
             return { ok: true, rows: ids.map(coldSimulationRow),
                 party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
         }, 'bot-life:party-lifecycle');
+    },
+
+    claimBotForClanLeader(request = {}) {
+        const characterId = Number(request.characterId);
+        return select('bot_life_state', ['partyId', 'statsJson'], 'characterId=?', [characterId]).then(async ([selected]) => {
+            if (!selected) return { ok: false, reason: 'missing_state' };
+            const stats = jsonObject(selected.statsJson);
+            const partyId = selected.partyId || stats.constPartySession?.groupId || stats.playerPartyTakeover?.partyId || null;
+            const [party] = partyId ? await select('bot_background_parties', ['*'], 'partyId=?', [partyId]) : [];
+            const agreement = jsonObject(party?.statsJson).agreement?.help;
+            const ids = [...new Set([characterId, ...(request.expectedMembers || []),
+                ...JSON.parse(party?.memberIdsJson || '[]'), ...(agreement?.helperIds || []), Number(agreement?.payerId || 0)].filter(Boolean))];
+            const guarded = { expectedPartyId: partyId, expectedPartyRevision: party?.revision ?? null,
+                expectedPartyStatus: party?.status || null, ...request };
+            return withCharacterFlushes(ids, () => inTransaction(() => require('./GameServer/Bot/Population/ClanLeaderPartyClaim').claim({
+                one, all, write, row: coldSimulationRow, now,
+                settleAgreement: (previous, proposed) => partyAgreementUnsafe(previous, proposed, { allowHot: true })
+            }, guarded), 'bot-life:clan-leader-invite'));
+        });
     },
 
     pauseConstPartyActivity(request = {}) {

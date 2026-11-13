@@ -8,6 +8,8 @@ const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulati
 const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const pendingActivations = new Set();
+const transitions = new Set();
+const playerInvitations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
 // An activation the bot's own state refuses (in transit, no placement a player
@@ -102,6 +104,15 @@ function restoreColdAfterActivationFailure(state) {
 }
 
 const HotActivation = {
+    pending: transitions,
+
+    holdForPlayerInvite(characterIds) {
+        const ids = [...new Set(characterIds.map(Number))];
+        if (ids.some(id => transitions.has(id) || playerInvitations.has(id))) return null;
+        ids.forEach(id => playerInvitations.add(id));
+        return () => ids.forEach(id => playerInvitations.delete(id));
+    },
+
     activate(stateOrName, reason = 'activation', options = {}) {
         const transitionStartedAt = Date.now();
         const loadState = typeof stateOrName === 'string'
@@ -110,6 +121,7 @@ const HotActivation = {
 
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
+            if (playerInvitations.has(state.characterId) && !options.clanLeaderInvite) return { ok: false, reason: 'player_invite_pending', state };
             const playerInvite = ['remote_invite', 'party_invite'].includes(reason);
             if (playerInvite && state.party?.partyId) return { ok: false, reason: 'already_grouped', state };
             const encounter = invoke('GameServer/Bot/Population/PvpEncounterRuntime').active(state);
@@ -117,7 +129,7 @@ const HotActivation = {
             if (state.stats?.coldCompetition?.wait?.combat && state.stats.coldCompetition.wait.until > Date.now()) {
                 return { ok: false, reason: 'cold_pvp_settling' };
             }
-            if (state.phase === 'hot' && !(options.constParty && state.stats?.constPartySession)) return { ok: false, reason: 'already_hot', state };
+            if (state.phase === 'hot' && !options.clanLeaderInvite && !(options.constParty && state.stats?.constPartySession)) return { ok: false, reason: 'already_hot', state };
             if (state.party?.partyId && options.interruptBackgroundActivity !== true
                 && !['remote_invite', 'party_invite'].includes(reason)) {
                 return invoke('GameServer/Bot/Population/HotPartyLifecycle').activate(state.party.partyId, reason, options);
@@ -170,6 +182,7 @@ const HotActivation = {
             // yield. Otherwise two concurrent visibility/invite requests can
             // both pass the guard and create independent hot AI sessions.
             pendingActivations.add(state.characterId);
+            transitions.add(state.characterId);
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             let craftActivation = false;
@@ -306,7 +319,7 @@ const HotActivation = {
                     else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });
-            });
+            }).finally(() => transitions.delete(state.characterId));
         });
     }
 };

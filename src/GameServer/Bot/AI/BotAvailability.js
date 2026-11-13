@@ -26,6 +26,7 @@ function reasonText(reason) {
         player_dead: 'you are dead',
         bot_dead: 'dead',
         already_grouped: 'already grouped',
+        const_party_changed: 'that invitation is no longer active',
         merchant_duty: 'merchant duty',
         relationship_unloaded: 'give me a moment before we decide',
         relationship_hostile: 'we still have a conflict to settle',
@@ -96,6 +97,7 @@ function emptyResult(playerSession, botSubject, options = {}) {
         reasonText: reasonText('missing_actor'),
         distance: null,
         clanmate: false,
+        clanLeader: false,
         relationship: shared.reason === 'relationship_hostile' ? 'hostile' : BotSocialMemory.relationship(memory),
         memory,
         sharedRelationship: shared.relation,
@@ -103,7 +105,8 @@ function emptyResult(playerSession, botSubject, options = {}) {
     };
 }
 
-// Player invitations depend on the relationship, level gap and membership.
+// The bot's own clan leader has priority; ordinary player invitations depend
+// on the relationship, level gap and membership.
 // Persona, income, recovery and current solo activities belong to autonomous
 // decisions and never veto joining a player's party.
 function socialRefusal(memory) {
@@ -122,11 +125,13 @@ const BotAvailability = {
 
         result.distance = distance(actorLocation(player), actorLocation(bot));
         result.clanmate = sameClan(player, bot);
+        result.clanLeader = invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').isLeaderFor(playerSession, botSession);
         const staticService = BotServiceIdentity.isStaticService(botSession);
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
-        else if (options.constParty === true) reason = 'available';
+        else if (options.constParty === true && !invoke('GameServer/Bot/AI/ConstPartySession').isCurrent(playerSession, botSession)) reason = 'const_party_changed';
+        else if (result.clanLeader || options.constParty === true) reason = 'available';
         else if (botSession.hotBackgroundPartyId || botSession.hotCompetitionCommit || botSession.coldLifeState?.party?.partyId
             || botSession.partyCompanion || botSession.followPlayerSession) reason = 'already_grouped';
         else if (result.relationshipReason) reason = result.relationshipReason;
@@ -150,11 +155,13 @@ const BotAvailability = {
         result.distance = distance(actorLocation(player), traveller
             ? invoke('GameServer/Bot/Population/ColdTrip').positionAt(state, timestamp) : state.loc);
         result.clanmate = sameClan(player, state);
+        result.clanLeader = invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').isLeaderFor(playerSession, state);
         const staticService = BotServiceIdentity.isStaticService(state);
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
-        else if (options.constParty === true) reason = 'available';
+        else if (options.constParty === true && !invoke('GameServer/Bot/AI/ConstPartySession').isCurrent(playerSession, state)) reason = 'const_party_changed';
+        else if (result.clanLeader || options.constParty === true) reason = 'available';
         else if (state.party?.partyId || state.partyId || state.stats?.backgroundPartyId
             || state.stats?.playerPartyTakeover?.playerId) reason = 'already_grouped';
         else if (result.relationshipReason) reason = result.relationshipReason;

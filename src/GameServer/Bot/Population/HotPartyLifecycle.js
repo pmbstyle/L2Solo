@@ -732,6 +732,7 @@ async function confirmMarkedRaidStart(party) {
 }
 
 module.exports = {
+    pauseForPlayerInvite: pauseRaidWorld,
     snapshotForConstPause(party, session) {
         const snapshot = captureHotRaidHp(party);
         pauseRaidWorld(snapshot, session);

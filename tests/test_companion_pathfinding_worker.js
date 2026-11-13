@@ -301,6 +301,31 @@ async function run() {
         );
         stopMove(budgetFixture);
 
+        // A real Resurrection request must keep its dead target valid while
+        // the geodata worker computes the detour around an obstacle.
+        const resFixture = fixture(budgetPool, { locX: 95227, locY: 22455, locZ: -2904 });
+        const corpse = { fetchId: () => 2001894, fetchIsOnline: () => true, isDead: () => true,
+            fetchLocX: () => 95400, fetchLocY: () => 22136, fetchLocZ: () => -2880 };
+        const resurrection = { fetchTargetKind: () => 'corpse_player', fetchDistance: () => 600 };
+        const originalNpcLookup = RuntimeWorld.fetchNpc, originalUserLookup = RuntimeWorld.fetchUser;
+        try {
+            RuntimeWorld.fetchNpc = async () => { throw new Error('not_npc'); };
+            RuntimeWorld.fetchUser = async () => corpse;
+            resFixture.actor.skillset = { fetchSkill: () => resurrection };
+            resFixture.actor.attack = { validateSkillTarget: () => true };
+            resFixture.actor.moveTo = coords => moveTo(resFixture.session, resFixture.actor, coords);
+            invoke('GameServer/Actor/Generics/SkillExec')(resFixture.session, resFixture.actor, { selfId: 1016, id: corpse.fetchId() });
+            await new Promise(setImmediate);
+            assert.strictEqual(resFixture.session.lastPathfinding.strategy, 'worker_geodata',
+                'a Resurrection corpse must not invalidate its own finished worker path');
+            assert.strictEqual(resFixture.actor.state.towards, 'move',
+                'a blocked Resurrection must start the valid detour toward its corpse');
+        } finally {
+            stopMove(resFixture);
+            RuntimeWorld.fetchNpc = originalNpcLookup;
+            RuntimeWorld.fetchUser = originalUserLookup;
+        }
+
         const abortedFixture = fixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(abortedFixture, { locX: 1000, locY: 0, locZ: 0 });
         const abortedPromise = abortedFixture.session.pendingPathRequest.promise;

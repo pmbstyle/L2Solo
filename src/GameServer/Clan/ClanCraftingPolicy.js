@@ -76,11 +76,19 @@ function requirements(recipe, inventory = {}, allowedRecipeIds = null, count = 1
     return demand;
 }
 
-function warehouseMaterials(plan, inventory, rows) {
+function warehouseMaterials(plan, inventory, rows, storedInventory = {}) {
     const recipe = resolveRecipe(plan?.recipeId);
+    // Personal storage belongs to the beneficiary too. It covers both direct
+    // inputs and their recipe subtrees without becoming executable bag stock.
+    const owned = { ...inventory };
+    for (const item of Object.values(storedInventory)) {
+        const id = Number(item.selfId);
+        owned[id] = { ...(owned[id] || {}), selfId: id,
+            amount: Number(owned[id]?.amount || 0) + Math.max(0, Number(item.amount || 0)) };
+    }
     // Personal storage rows have no kind, and dual recipes also consume weapons.
     // Count all available stock here; the recipe tree selects relevant items.
-    const combined = { ...inventory };
+    const combined = { ...owned };
     for (const row of rows) {
         const id = Number(row.selfId);
         const amount = Math.max(0, Number(row.amount || 0) - Number(row.reservedAmount || 0));
@@ -92,7 +100,7 @@ function warehouseMaterials(plan, inventory, rows) {
     for (const row of rows) available.set(Number(row.selfId), (available.get(Number(row.selfId)) || 0)
         + Math.max(0, Number(row.amount) - Number(row.reservedAmount || 0)));
     return [...demand].map(([selfId, required]) => ({ selfId,
-        amount: Math.min(available.get(selfId) || 0, Math.max(0, required - Number(inventory?.[selfId]?.amount || 0)))
+        amount: Math.min(available.get(selfId) || 0, Math.max(0, required - Number(owned[selfId]?.amount || 0)))
     })).filter(item => item.amount > 0);
 }
 

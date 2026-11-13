@@ -128,22 +128,26 @@ function setCollectiveTotalCastSpd(actor) {
     actor.setCollectiveCastSpd(base);
 }
 
-function setCollectiveTotalWalkSpd(actor) {
+// Lisvus CharStat.getMoveSpeed applies RUN_SPEED to the active template
+// speed, including walking. Keep both modes ready before they are selected.
+function movementSpeed(actor, templateSpeed) {
     const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
-    const base = Formulas.calcSpeed(dex, actor.fetchWalkSpd());
-    actor.setCollectiveWalkSpd(base);
-}
-
-function setCollectiveTotalRunSpd(actor) {
-    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
-    let base = Formulas.calcSpeed(dex, actor.fetchRunSpd());
+    let base = Formulas.calcSpeed(dex, templateSpeed);
     base += legacyBuffAdd(actor, 'windwalk', 'runSpdAdd');
     base += EffectStats.add(actor, 'runSpdAdd');
     const effectMultiplier = EffectStats.multiplier(actor, 'runSpdMul');
     if (effectMultiplier !== 1) {
         base = Math.round(base * effectMultiplier);
     }
-    actor.setCollectiveRunSpd(base);
+    return base;
+}
+
+function setCollectiveTotalWalkSpd(actor) {
+    actor.setCollectiveWalkSpd(movementSpeed(actor, actor.fetchWalkSpd()));
+}
+
+function setCollectiveTotalRunSpd(actor) {
+    actor.setCollectiveRunSpd(movementSpeed(actor, actor.fetchRunSpd()));
 }
 
 function hasStructuredBuffStat(actor, typeOrKey, stat) {

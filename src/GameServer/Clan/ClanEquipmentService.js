@@ -24,6 +24,7 @@ const RosterDemand = require('./ClanRosterDemand');
 const RaidEncounterScope = require('../RaidBoss/RaidEncounterScope');
 const ClanMembershipPolicy = require('./ClanMembershipPolicy');
 const ClanEquipmentPartyPolicy = require('../Bot/Population/ClanEquipmentPartyPolicy');
+const PersonalWarehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
 
 const metrics = {
     resolves: 0,
@@ -72,6 +73,7 @@ function planningFingerprint(clan) {
 function beneficiaryFingerprint(member) {
     return JSON.stringify(member && {
         inventory: member.inventory, adena: member.adena, region: member.currentRegion,
+        warehouse: PersonalWarehouse.contentIdentity(member),
         plan: member.stats?.equipmentPlan
     });
 }
@@ -394,7 +396,10 @@ async function suspendWaitingAssignments(clan, goal, previousGoal) {
 }
 
 async function handoffWarehouseMaterials(current, plan, clan, goal) {
-    const materials = (plan?.warehouseMaterials || [])
+    // A worker plan can precede a purchase or a personal warehouse transfer.
+    // Recheck ownership now and cap each handoff to the planned available stock.
+    const materials = Crafting.warehouseMaterials(plan, current.inventory || {}, plan?.warehouseMaterials || [],
+        PersonalWarehouse.inventory(current))
         .map((entry) => ({ selfId: number(entry.selfId), amount: Math.floor(number(entry.amount)) }))
         .filter((entry) => entry.selfId > 0 && entry.amount > 0);
     if (!materials.length) return { state: current, results: [] };

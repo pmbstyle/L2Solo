@@ -398,6 +398,9 @@ class Attack {
         // Tactical readers need the accepted cast, not skill availability:
         // reuse starts above, before this cast has dealt any damage.
         this.activeCast = { target: creature, skill, landsAt: Date.now() + skill.fetchCalculatedHitTime() };
+        if (skill.fetchTargetKind?.() === 'corpse_player') {
+            invoke('GameServer/Bot/AI/PartyRevivalService').noteCastStarted(session, actor, creature);
+        }
         HotPartyCastTracker.begin(session, actor, creature, skill);
         return magicSkill;
     }

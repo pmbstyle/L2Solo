@@ -17,10 +17,13 @@ let incomingThreat = null;
 let routeResult;
 const poisonEffects = [], spawnedChests = [];
 function actor(id, selfId, x = 0) {
-    return { x, y: 0, z: 0, dead: false, effects: {}, fetchId: () => id, fetchSelfId: () => selfId,
+    return { x, y: 0, z: 0, dead: false, classId: 2, hp: 100, mp: 100, effects: {}, fetchId: () => id, fetchSelfId: () => selfId,
         fetchClanId: () => 1, fetchIsOnline: () => true, fetchLevel: () => 1, isDead() { return this.dead; },
+        fetchClassId() { return this.classId; }, fetchHp() { return this.hp; }, fetchMaxHp: () => 100,
+        fetchMp() { return this.mp; }, fetchMaxMp: () => 100,
         fetchLocX() { return this.x; }, fetchLocY() { return this.y; }, fetchLocZ() { return this.z; },
-        state: { fetchCasts: () => false, fetchSeated: () => false }, automation: { abortAll() {} },
+        state: { fetchCasts: () => false, seated: false, fetchSeated() { return this.seated; },
+            setSeated(value) { this.seated = value; } }, automation: { abortAll() {} },
         backpack: { items: [], fetchItemFromSelfId: () => null, fetchItems: () => [], insertItem() {} } };
 }
 const leader = { actor: actor(1, 0), accountId: 'player', dataSendToMe() {} };
@@ -50,6 +53,7 @@ const mocks = {
     'GameServer/Actor/Generics/Die': (session, actor) => { actor.dead = true; },
     'GameServer/Network/Response': { itemsList() {}, sitAndStand() {} },
     'GameServer/Bot/AI/HotActorLodPolicy': { promote() {} },
+    'GameServer/Bot/AI/BotRoles': invoke('GameServer/Bot/AI/BotRoles'),
     'GameServer/Quest/QuestService': { questRates: () => ({ questSp: 1 }) },
     'GameServer/Bot/AI/CompanionNavigationRecovery': { move: (...args) => { movements.push(args); return routeResult; } },
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => incomingThreat },
@@ -98,6 +102,56 @@ async function main() {
     assert.strictEqual(fights.at(-1)[2], incomingThreat, 'courier defends against real attackers');
     assert.strictEqual(transitions.length, 0, 'self-defense does not fabricate quest progress');
     incomingThreat = null;
+    // Quest couriers use the same class policy as ordinary companions: weapon
+    // fighters can keep hunting without MP, including music fighters and dwarves.
+    for (const classId of [2, 6, 8, 21, 34, 55, 57, 88]) {
+        courier.actor.classId = classId;
+        courier.actor.mp = 0;
+        courier.actor.hp = 100;
+        for (const recovering of [false, true]) {
+            courier.clanAllianceRecovering = recovering;
+            courier.actor.state.seated = recovering;
+            const before = fights.length;
+            ai.tick(courier, courier.actor, {}, combat);
+            assert.strictEqual(fights.length, before + 1, `healthy melee class ${classId} hunts with zero MP (recovering=${recovering})`);
+            assert.strictEqual(courier.actor.state.seated, false, 'a recovered fighter stands up to continue');
+            assert.strictEqual(courier.clanAllianceRecovering, false, 'old mana recovery cannot hold a healthy fighter');
+        }
+    }
+    courier.actor.classId = 2;
+    courier.actor.hp = 60;
+    const beforeHpRest = fights.length;
+    ai.tick(courier, courier.actor, {}, combat);
+    assert.strictEqual(fights.length, beforeHpRest + 1, 'a fighter with sufficient HP does not start resting for zero MP');
+    courier.actor.hp = 34;
+    ai.tick(courier, courier.actor, {}, combat);
+    assert.strictEqual(fights.length, beforeHpRest + 1, 'a low-HP fighter still rests');
+    assert.strictEqual(courier.actor.state.seated, true);
+    assert(reports.at(-1).includes('recover HP before'), 'melee recovery asks for health rather than mana');
+    courier.actor.hp = 84;
+    ai.tick(courier, courier.actor, {}, combat);
+    assert.strictEqual(fights.length, beforeHpRest + 1, 'HP recovery continues until the safe health threshold');
+    courier.actor.hp = 85;
+    ai.tick(courier, courier.actor, {}, combat);
+    assert.strictEqual(fights.length, beforeHpRest + 2, 'a recovered fighter resumes at 85% HP even with zero MP');
+    // Spellcasters, caster buffers and archers retain their MP recovery.
+    for (const classId of [12, 17, 30, 52, 9]) {
+        courier.actor.classId = classId;
+        courier.actor.hp = 100;
+        courier.actor.mp = 19;
+        const before = fights.length;
+        ai.tick(courier, courier.actor, {}, combat);
+        assert.strictEqual(fights.length, before, `class ${classId} rests below 20% MP`);
+        assert.strictEqual(courier.actor.state.seated, true);
+        courier.actor.mp = 79;
+        ai.tick(courier, courier.actor, {}, combat);
+        assert.strictEqual(fights.length, before, `class ${classId} finishes MP recovery before hunting`);
+        courier.actor.mp = 80;
+        ai.tick(courier, courier.actor, {}, combat);
+        assert.strictEqual(fights.length, before + 1, `class ${classId} resumes at 80% MP`);
+        assert.strictEqual(courier.actor.state.seated, false);
+    }
+    courier.actor.classId = 2;
     await service.onKill(courier, herb);
     assert.strictEqual(transitions.length, 0, 'a living target is not a quest kill');
     herb.dead = true;

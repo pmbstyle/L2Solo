@@ -49,6 +49,7 @@ async function rotate({ handoffOk, oldPartyMembers }) {
     replace(LifeState, 'upsertState', async (state, reason) => { states.set(state.characterId, state); events.push(reason); return state; });
     replace(LifeState, 'applyClanMaterialTransfer', async () => ({ ok: false, code: 'warehouse_short' }));
     const plan = { strategy: 'craft', status: 'ready_to_craft', target: { selfId: 81, slot: 128 }, craftProviders: {},
+        materials: [{ selfId: 1865, amount: 1 }],
         warehouseMaterials: handoffOk ? [] : [{ selfId: 1865, amount: 1 }] };
     const member = { characterId: 2, name: 'Next', level: 40, phase: 'cold' };
     const clan = { id: 7, level: 3, members: [member], state: { updatedAt: 1, goal: oldGoal } };

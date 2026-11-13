@@ -259,6 +259,8 @@ try {
     const scrollResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(scrollResult.source, 'scroll', 'a living companion must fall back to its unlimited resurrection scroll');
     assert(healer.automation.scheduled, 'scroll resurrection should use the native move-and-cast path');
+    assert.strictEqual(healer.automation.scheduled[5].allowDeadTarget, true,
+        'scroll resurrection must permit a geodata approach to a corpse');
 
     // Companion following must schedule resurrection itself; the player does
     // not need to send a chat request after dying.

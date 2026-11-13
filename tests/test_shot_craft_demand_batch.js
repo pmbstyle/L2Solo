@@ -15,6 +15,15 @@ const probe = require('./helpers/workerEconomyDecision');
 const originalBoard = Afk.boardIndex;
 Market.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure());
 
+function recheckAt(state, craft, timestamp) {
+    // The worker and native check compare the same market snapshot. Elapsed
+    // wall time under suite load can legitimately invalidate a marginal lot.
+    const originalNow = Date.now;
+    Date.now = () => timestamp;
+    try { return Shots.recheck(state, craft); }
+    finally { Date.now = originalNow; }
+}
+
 (async () => {
     for (const recipeId of [20, 21, 317]) {
         const recipe = Recipes.resolveByRecipeId(recipeId), timestamp = Date.now(), board = new BoardIndex();
@@ -49,16 +58,16 @@ Market.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure())
                 ] }] });
             const selected = Policy.unpackStep(Policy.packStep(result.selected));
             assert.equal(selected?.craft?.recipeId, recipeId, 'the actual worker chooses the known shot recipe');
-            const native = Shots.recheck(state, selected.craft);
+            const native = recheckAt(state, selected.craft, timestamp);
             assert(native && native.expectedSold > 0, 'the selected larger quantity passes the native sale and craft recheck');
             assert(native.batches * recipe.mpCost <= state.vitals.mp, 'production remains within actual mana');
             assert(native.expectedSold <= Demand.forecast(recipe.productId, 'Giran', timestamp).applicableUnits,
                 'output sales stay bounded by observed demand');
             if (quantity === 10000) {
-                assert.equal(Shots.recheck({ ...state, vitals: { ...state.vitals, mp: recipe.mpCost } }, selected.craft), null,
+                assert.equal(recheckAt({ ...state, vitals: { ...state.vitals, mp: recipe.mpCost } }, selected.craft, timestamp), null,
                     'the larger command is refused when its mana is no longer available');
-                assert.equal(Shots.recheck({ ...state, inventory: { ...state.inventory,
-                    [recipe.productId]: { selfId: recipe.productId, amount: 1000000, stackable: true } } }, selected.craft), null,
+                assert.equal(recheckAt({ ...state, inventory: { ...state.inventory,
+                    [recipe.productId]: { selfId: recipe.productId, amount: 1000000, stackable: true } } }, selected.craft, timestamp), null,
                     'existing unsold output prevents another large production batch');
             }
             batches.push(native.batches);

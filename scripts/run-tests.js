@@ -7,6 +7,7 @@ const path = require('node:path');
 const notRunTests = new Map([]);
 
 const tests = [
+    'tests/test_clan_leader_party_invite.js',
     'tests/test_bot_buy_shop_free_wallet.js',
     'tests/test_cold_loot_item_instances.js',
     'tests/test_cold_missing_spot_occupation.js',
@@ -426,6 +427,7 @@ const tests = [
     'tests/test_bot_chat_voice.js',
     'tests/test_bot_clan_chat.js',
     'tests/test_clan_production.js',
+    'tests/test_clan_warehouse_personal_stock.js',
     'tests/test_clan_membership_recovery.js',
     'tests/test_clan_party_help.js',
     'tests/test_clan_party_rescue.js',
@@ -946,6 +948,7 @@ const tests = [
     'tests/test_native_ui_character_switch.js',
     'tests/test_party_pull_pause.js',
     'tests/test_party_revival.js',
+    'tests/test_party_revival_handoff.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinding_worker_pool.js',
     'tests/test_companion_pathfinding_worker.js',
