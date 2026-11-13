@@ -3,7 +3,6 @@ const FailureLog = require('../../../FailureLog');
 
 const Database = invoke('Database');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
-const C4Unseal = invoke('GameServer/Items/C4Unseal');
 const BotErrands = require('./BotErrands');
 const SavedStats = require('../SavedStats');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -31,8 +30,8 @@ function eligibility(state = {}, options = {}) {
     }
     if (options.hasWarehouseWorkflow === true) return { ok: false, reason: 'warehouse_state' };
     const stats = state.stats || {};
-    if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
-        && C4Unseal.sealedHeld(state.inventory))) return { ok:false, reason:'craft_state' };
+    // A Mammon visit under way is main's (its trip starts on a taken build: kernel lifecycleKind).
+    if (stats.mammonReturn) return { ok:false, reason:'craft_state' };
     const busy = BotErrands.busyWith(state, BotErrands.COLD_CLAIM);
     if (busy) return { ok: false, reason: BotErrands.CLAIM_REASONS[busy] };
     if (stats.backgroundPartyId && options.allowParty !== true) return { ok: false, reason: 'background_party' };
@@ -107,7 +106,7 @@ function withPersistedStats(state, result) {
         // readers of the cached state ask whether the bag or the kit moved.
         // Its updatedAt too: a settlement merged inside the commit moves it past
         // the worker's clock, and a command checkpoint built from the cache
-        // must match the row (L127: stale_command loop).
+        // must match the row (stale_command loop).
         const persisted = { ...state, ...Database.stateRevisions(row), name: row.characterName || state.name, stats,
             updatedAt: Number(row.updatedAt) || Number(state.updatedAt || 0) };
         // Board settlements, drops and native party payments can all change
@@ -121,12 +120,24 @@ function withPersistedStats(state, result) {
     }
 }
 
+// A far bot's committed memory into main's view (published to the worker from there).
+function acceptMemory(snapshots) {
+    if (!snapshots?.length) return snapshots;
+    const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    snapshots.forEach(snapshot => memory.accept(snapshot));
+    return snapshots;
+}
+
+// The memory events of a far bot's step main ran as a command (a displaced bot's
+// grievance): main's command writes the step in several transactions, so they are
+// written after its writes landed, as a step commit writes them.
+function commitMemory(characterId, memoryEvents) {
+    return Database.commitColdInteractionMemory({ characterId, memoryEvents }).then(acceptMemory);
+}
+
 function reflect(result, committedState = null) {
     if (!result?.ok || !result.characterId) return result;
-    if (result.memorySnapshots?.length) {
-        const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
-        result.memorySnapshots.forEach(snapshot => memory.accept(snapshot));
-    }
+    acceptMemory(result.memorySnapshots);
     LifeState.acceptSimulationOwnership(result.characterId, result, committedState);
     if (result.pkDrops?.length) {
         const row = result.row;
@@ -228,9 +239,6 @@ function commitBatch(entries = [], options = {}) {
                 maxHp: Number(nextState.vitals?.maxHp || 0),
                 mp: Number(nextState.vitals?.mp || 0),
                 maxMp: Number(nextState.vitals?.maxMp || 0),
-                ...(entry.proposal?.durable?.classId !== undefined ? {
-                    classId: Number(entry.proposal.durable.classId)
-                } : {}),
                 ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
                 ...(entry.proposal?.durable?.soulCrystals?.length ? { soulCrystals: entry.proposal.durable.soulCrystals } : {}),
                 ...(inventoryChanged ? { inventory: physicalInventory } : {}),
@@ -288,5 +296,6 @@ module.exports = {
     eligibility,
     persistencePatch,
     commitBatch,
+    commitMemory,
     handoffToMain
 };

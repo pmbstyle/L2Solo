@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B3: the main thread executes the card's step only while it still
+// The main thread executes the card's step only while it still
 // holds. Units or accepted incoming that arrived since the decision make a
 // purchase wait for the worker's new card (buyPending); a stale craft step and
 // a stale wealth craft write nothing; the cache keeps accepted incoming when a
@@ -28,6 +28,10 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
             loc: { locX: 0, locY: 0, locZ: 0 }, currentRegion: 'Giran', stats: {} }, 'fixture');
         const prepared = Life.cachedState(owner);
         assert.equal(prepared.inventory[ORE].amount, 5);
+        // A plan that waits raises its outcome where the bot is (recorded here: a raise on the
+        // row would move the revision the later plans are prepared on).
+        const raised = [];
+        stub(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseOn', (id, name) => { raised.push(name); return Promise.resolve(null); });
 
         const board = new BoardIndex();
         board.put({ id: 77, ownerId: 99, kind: 'sell_ad', custodyPolicy: 1, revision: 4, storeType: Afk.SELL ?? 1,
@@ -49,6 +53,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.deepEqual(Life.cachedState(owner).acceptedIncoming, { [ORE]: 2 });
         assert.equal((await Market.executePlan(prepared, take)).buyPending, true);
         assert.equal(bought, 1, 'accepted incoming since the decision never buys twice');
+        assert.deepEqual(raised, ['goal_done:goal'], 'units since the decision: its goal is done');
         // A buy ad for the same item waits too and publishes nothing.
         assert.equal((await Market.executePlan(prepared, { buyAds: [[ORE, 2, 237]] })).buyPending, true);
         assert.deepEqual(await Database.fetchAfkTradeShops(owner), records, 'a filled buy ad is not published');
@@ -88,8 +93,28 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         const older = { ...fresh, simulation: { ...fresh.simulation, revision: -1 } };
         assert.equal((await Market.executePlan(fresh, { shot: [1] }, { preparedState: older })).buyPending, true);
         assert.equal(shots, 0, 'a stale shot step is not executed');
+        assert.equal(raised.at(-1), 'goal_failed', 'a stale plan\'s step failed');
         await Market.executePlan(fresh, { shot: [1] });
         assert.equal(shots, 1, 'a held shot step is executed');
+        // The plan's own craft writes the row: its later bids stand on it (no stale plan, no
+        // failed goal for the worker); a write by anyone else before the plan still stales them.
+        restore.pop()();
+        stub(ShotEconomy, 'execute', async () => { shots++; return Life.upsertState({ ...Life.cachedState(owner) }, 'probe_craft'); });
+        const beforeCraft = Life.cachedState(owner);
+        const crafted = await Market.executePlan(beforeCraft, { shot: [1], buyAds: [] });
+        assert.equal(shots, 2, 'the craft step ran');
+        assert.notEqual(Life.cachedState(owner).simulation.revision, beforeCraft.simulation.revision, 'fixture: the craft wrote the row');
+        assert.notEqual(crafted.buyPending, true, 'its own write does not stale the plan\'s bids');
+        // A write by another that lands after the step's own (while the step still runs) stales them.
+        restore.pop()();
+        stub(ShotEconomy, 'execute', async () => { shots++; const own = await Life.upsertState({ ...Life.cachedState(owner) }, 'probe_craft');
+            await Life.upsertState({ ...Life.cachedState(owner) }, 'probe_outside'); return own; });
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { shot: [1], buyAds: [] })).stale, true,
+            'a write by another after the craft\'s own stales the plan\'s bids');
+        const moved = Life.cachedState(owner);
+        await Life.upsertState({ ...moved }, 'probe_outside');
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [] }, { preparedState: moved })).stale, true,
+            'a write by another before the plan stales its bids');
 
         // 7. A meeting settles: its goods reach the bag and every settlement
         //    writer replies with the projected SQL row in the same transaction

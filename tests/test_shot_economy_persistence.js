@@ -72,7 +72,7 @@ async function run() {
     // refused by its stale state, never by an empty wallet.
     const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 100000 });
     const fallback = await nativeReview(empty);
-    // Task 4 B3: review plans no shot purchase on main; the card of the
+    // The review plans no shot purchase on main; the card of the
     // core's root stock:shots buys. The crafters' demand row is the far
     // step's output (test_cold_shot_economy).
     assert.strictEqual(fallback.state.adena, empty.adena, 'review buys no shots on main');
@@ -222,7 +222,6 @@ async function run() {
         shopId: bookRecord.id, ownerId: seller.characterId, lineId: bookLine.id,
         amount: 1, expectedPrice: 30000, expectedRevision: bookRecord.revision
     });
-    await Afk.settleOwners(boughtBook.settlementOwners);
     const boughtState = await Life.syncExternalInventory(beforeBook.characterId, 'manual_book_settlement',
         Life.cachedState(beforeBook.characterId));
     assert(boughtState, 'the historical physical seller supplies the paid scroll');
@@ -232,7 +231,10 @@ async function run() {
     const buyerAfterBook = await balances(recipeBuyer.characterId);
     const sellerAfterBook = await balances(seller.characterId);
     assert.strictEqual(buyerAfterBook.life.adena, beforeBook.adena - 30000);
-    assert.strictEqual(sellerAfterBook.life.adena, sellerBeforeBook.life.adena + 30000);
+    // The far seller's price waits on the board for its own commit.
+    const [owed] = await DB.execute(['SELECT SUM(amount) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 57', [seller.characterId]]);
+    assert.deepStrictEqual(boughtBook.settlementOwners, [seller.characterId]);
+    assert.strictEqual(sellerAfterBook.life.adena + Number(owed.amount), sellerBeforeBook.life.adena + 30000);
     console.log('PHYSICAL_BOOK_TRADE', JSON.stringify({ buyerBefore: beforeBook.adena,
         buyerAfter: buyerAfterBook.life.adena, sellerBefore: sellerBeforeBook.life.adena,
         sellerAfter: sellerAfterBook.life.adena, learnedRecipes: await DB.fetchCharacterRecipes(recipeBuyer.characterId) }));

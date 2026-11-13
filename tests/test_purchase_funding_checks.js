@@ -39,14 +39,17 @@ assert.equal(Funding.summary().moneyPacketMissing, before + 1);
 const queue = Array.from({ length: 9 }, (_, i) => ({ key: String(i), funded: true, price: 100,
     ratio: (9-i) * 1e-4, object: { itemId: 100+i } }));
 const merged = Funding.packetFor({ queue, moneyPrice: 1e-5 }, 100000, 1000);
-assert.equal(merged.length, 28);
-assert.deepEqual(merged.slice(25), [1e-4, 900, 0]);
+const MergedPacket = require('../src/GameServer/Bot/Economy/StatsPacket');
+assert.equal(MergedPacket.fundedRows(merged), 8);
+assert.deepEqual([MergedPacket.fundedRatio(merged, 7), MergedPacket.fundedCumulative(merged, 7), MergedPacket.fundedItem(merged, 7)],
+    [1e-4, 900, 0], 'the merged tail carries no item');
 assert.equal(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { itemId: 108 }), 0);
-for (let i = 4; i < merged.length; i += 3) {
-    assert(merged[i] >= merged[1]);
-    assert(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { r: merged[i] }) >= 100);
+for (let row = 0; row < 8; row++) {
+    assert(MergedPacket.fundedRatio(merged, row) >= MergedPacket.moneyPrice(merged));
+    assert(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { r: MergedPacket.fundedRatio(merged, row) }) >= 100);
 }
-assert(Buffer.byteLength(JSON.stringify(merged)) <= 240);
+// Eight rows and their root ids.
+assert(Buffer.byteLength(JSON.stringify(merged)) <= 320);
 // Native basket bookkeeping retains the actual unpaid funded contribution.
 const originalPacket = [1000, .001, 0, 0, .1, 100, 2509, .05, 200, 1060];
 const paidA = Funding.packetAfterPurchase(originalPacket, 100, { r: .1, itemId: 2509 });
@@ -79,41 +82,75 @@ assert.deepEqual(protectedPaid, [1000, .001, 10, 77, .2, 80, 999, .1, 80, 2509, 
 
 // The saved and messaged stats packet arrays keep their slots (StatsPacket owns them).
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
-const written = Packet.money({ hourAdena: 1000, moneyPrice: .001, survivalReserve: 10, firstUnfundedPrice: 77 });
+const written = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 10, firstUnfundedPrice: 77 });
 Packet.addFunded(written, .2, 80, 999, 2); Packet.addFunded(written, .1, 180, 2509, 2); Packet.addFunded(written, .05, 280, 0, 2);
 assert.deepEqual(written, [1000, .001, 10, 77, .2, 80, 999, .05, 280, 0], 'a full packet merges the tail into its last row');
-assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protectedPacket), Packet.survivalReserve(protectedPacket),
+assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protectedPacket), Packet.refillReserve(protectedPacket),
     Packet.firstUnfundedPrice(protectedPacket), Packet.fundedRows(protectedPacket)], [1000, .001, 10, 77, 3]);
 assert.deepEqual([Packet.fundedRatio(protectedPacket, 1), Packet.fundedCumulative(protectedPacket, 1), Packet.fundedItem(protectedPacket, 1)], [.1, 180, 2509]);
 assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);
 assert.equal(Packet.hourAdena(undefined), undefined);
-const kit = { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000, shotCurrentAtBuild: 500, potionSurvivalTarget: 10,
-    gapHorizonHours: 2.5, shotsCanRestock: true, shotSurvivalTarget: 600, scrollHours: null };
-assert.deepEqual(Packet.stockTargets(kit), [1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]);
-assert.deepEqual(Packet.stockTargets({ ...kit, shotsCanRestock: false, scrollHours: 0.25 }).slice(7), [0, 600, 0.25]);
-assert.deepEqual(Packet.kitRow(Packet.stockTargets(kit)), { ...kit, complete: true });
-assert.deepEqual(Packet.kitRow([1061, 40, 1835, 3000, 500, 10, 2.5]), { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000,
-    shotCurrentAtBuild: 500, potionSurvivalTarget: 10, gapHorizonHours: 2.5, shotsCanRestock: false, shotSurvivalTarget: undefined,
-    scrollHours: null, complete: false }, 'a row from before the restock slots reads its targets only');
-assert.equal(Packet.kitRow([1061, 40, 1835, 3000, 500]).potionSurvivalTarget, undefined);
-assert.equal(Packet.kitRow([1061, 40, 1835, 3000]), null);
-assert.deepEqual([Packet.potionSurvivalTarget([1061, 40, 1835, 3000, 500, 10, 2.5]), Packet.gapHorizonHours([1061, 40, 1835, 3000, 500, 10, 2.5]),
-    Packet.potionSurvivalTarget(undefined)], [10, 2.5, undefined]);
+const rates = { shotId: 1835, shotUse: 1200, shotBenefit: 0.0002, shotsPay: true, shotsCanRestock: true, potionId: 1061, potionUse: 9.2,
+    potionRestUse: 3, potionBenefit: 0.01, scrollHours: null, outingHours: 2, gapHorizonHours: 2.5 };
+// The per-bot row; the spot's use per hour lives in the earning answer.
+const earning = { shotsPerHour: 1200, potionsPerHour: 9.2 };
+assert.deepEqual(Packet.kitRates(rates), [1835, 0.0002, 2, 1061, 3, 0.01, -1, 2, 2.5]);
+assert.deepEqual(Packet.kitRates({ ...rates, shotsCanRestock: false, scrollHours: 0.25 }).slice(2, 7), [1, 1061, 3, 0.01, 0.25],
+    'shots it holds pay, a restock does not');
+assert.equal(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false })[2], 0);
+assert.deepEqual(Packet.ratesOf(Packet.kitRates(rates), earning), rates);
+assert.deepEqual([Packet.ratesOf(Packet.kitRates(rates)).shotUse, Packet.ratesOf(Packet.kitRates(rates)).potionUse], [0, 0],
+    'no answer, no use');
+// The precision decisions read: three significant digits, the outing to a tenth of an hour, so a
+// loot pickup that moves the free slots by a fraction does not move the row.
+assert.deepEqual(Packet.kitRates({ ...rates, potionBenefit: 0.0123456, outingHours: 2.04, gapHorizonHours: 2.4567 }),
+    [1835, 0.0002, 2, 1061, 3, 0.0123, -1, 2, 2.46]);
+assert.equal(Packet.ratesOf([1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]), null, 'a saved targets row reads as no rates');
+assert.equal(Packet.ratesOf([1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.01, -1, 2, 2.5]), null, 'nor a row of the spot\'s use');
+assert.equal(Packet.ratesOf(undefined), null);
+// The line: one hour of the answer's use, whole units (the survival drinks for potions).
+assert.deepEqual([Packet.lineOf(Packet.kitRates(rates), earning, 'shots'), Packet.lineOf(Packet.kitRates(rates), earning, 'potions'),
+    Packet.outingHours(Packet.kitRates(rates)), Packet.gapHorizonHours(Packet.kitRates(rates)), Packet.lineOf(undefined, earning, 'potions')],
+[1200, 10, 2, 2.5, undefined]);
+assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false }), earning, 'shots'), 0,
+    'shots that do not pay have no line');
+// A finite-value purchase at a funded row's rank reads the money above the rows ranked before it
+// (as the build funded it: its own row is no money held from it); any other rank, the money above every row.
+{
+    const ranked = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 0, firstUnfundedPrice: 0 });
+    Packet.addFunded(ranked, .01, 300, 11); Packet.addFunded(ranked, .005, 800, 12);
+    const purse = { characterId: 1, adena: 1000, inventory: { 57: { selfId: 57, amount: 1000 } }, stats: { money: ranked } };
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: .005 }), 700, 'its own row is not held from it');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: .007 }), 200, 'an unfunded rank keeps every row held');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: Infinity }), 200, 'so does an unbounded one');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000 }), 200, 'and none');
+}
+// One jewel in two slots: two funded roots of one value per Adena. Each spends at its own root's
+// row (the second after the first slot's money), and a purchase pays its own root's row alone.
+{
+    const slots = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 100, firstUnfundedPrice: 0 });
+    Packet.addFunded(slots, .01, 300, 854, Packet.MONEY_ROWS, 'power:854:1');
+    Packet.addFunded(slots, .01, 700, 854, Packet.MONEY_ROWS, 'power:854:2');
+    const purse = { characterId: 1, adena: 1000, inventory: { 57: { selfId: 57, amount: 1000 } }, stats: { money: slots } };
+    const slot = key => Funding.goalTerms({ plan: { valueRate: .01, wishKey: key } });
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:1')), 900, 'the first slot reads the money above the reserve');
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:2')), 600, 'the second slot reads what the first slot\'s row leaves');
+    assert.equal(Funding.spendable(purse, 0, slot('power:854:3')), 200, 'a third slot the queue does not fund keeps both rows held');
+    assert.equal(Funding.spendable(purse, 0, { r: .01 }), 900, 'a spend naming no root reads by its ratio');
+    const paid = Funding.packetAfterPurchase(slots, 400, slot('power:854:2'));
+    assert.deepEqual([0, 1].map(row => [Packet.fundedCumulative(paid, row), Packet.fundedRoot(paid, row)]),
+        [[300, Packet.rootId('power:854:1')], [300, Packet.rootId('power:854:2')]], 'the second slot\'s purchase pays its own row');
+    assert.equal(Packet.fundedRows([1000, .001, 100, 0, .01, 300, 854]), 1, 'a packet without root ids reads as before');
+    assert.equal(Packet.fundedRoot(merged, 7), 0, 'the merged tail names no root');
+}
 assert.deepEqual(Packet.dangerPrice({ deathHours: 0.4, riskWeight: 1.5 }), [0.4, 1.5]);
 assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), Packet.deathHours(undefined)], [0.4, 1.5, undefined]);
 
 // ARCH-NOTE: the previous fixture pinned removed percentage reserves and a removed
 // priority ladder. The packet now proves planner/shop agreement on the real shared gate.
-const Population = invoke('GameServer/Bot/Population/PopulationService');
-const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const plan = { status: 'active', strategy: 'market', target: { selfId: 123, slot: 7 }, market: { price: 30000, sourceType: 'npc', town: 'Giran' } };
 const state = { ...saving, phase: 'cold', activity: 'hunting', currentRegion: 'Giran', inventory: {},
     stats: { ...saving.stats, equipmentPlan: plan }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } };
-assert.equal(Population.canResumeAffordableMarketPlan(state), false);
-assert.notEqual(lifecycleKind(state), 'command');
-const funded = { ...state, stats: { ...state.stats, money: [77000, 1e-5, 15000, 0, 4e-5, 30000, 123] } };
-assert.equal(Population.canResumeAffordableMarketPlan(funded), true);
-assert.equal(lifecycleKind(funded), 'command');
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -125,9 +162,10 @@ Life.upsertState = async state => state;
 Afk.canTradeRemotely = () => false;
 (async () => {
     try {
-        await Market.tryPurchase({ ...state, activity: 'shopping' }, { type: 'upgrade_gear',
+        const refused = await Market.tryPurchase({ ...state, activity: 'shopping' }, { type: 'upgrade_gear',
             target: { itemId: 123, adena: 30000 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
-        assert.equal(seenBudget, 0, 'the shop refuses the same unfunded item');
+        assert.equal(refused.reason, 'funding_short', 'the shop refuses the same unfunded item, for money');
+        assert.equal(seenBudget, undefined, 'a purse short of the step looks up no seller');
         console.log('Money queue budgets, survival, merge, escrow and planner/shop agreement: PASS');
     } finally { [Opportunity.bestOffer, Life.upsertState, Afk.canTradeRemotely] = originals; Economy.reset(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

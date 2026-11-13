@@ -31,7 +31,7 @@ function evaluate(session, bot, target) {
     if ((bot.state.fetchHits?.() || bot.state.fetchCasts?.()) &&
         Number(session.currentTargetId) !== Number(target.fetchId())) return null;
     // Do not turn a last hit into a chase or a pathfinding gamble.
-    if (!Geodata.hasLineOfSight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
+    if (!Geodata.canWalkStraight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
         target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())) return null;
 
     const actions = [];

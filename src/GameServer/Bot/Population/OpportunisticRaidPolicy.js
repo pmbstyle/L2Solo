@@ -4,17 +4,12 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Shots = invoke('GameServer/Inventory/ShotStock');
-const F = invoke('GameServer/Formulas');
-const HitRules = invoke('GameServer/Combat/HitRules');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Buffs = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Capabilities = require('../../Clan/ClanCandidateCapabilities');
 const Rewards = require('../../Actor/PartyRewardMath');
-const Minions = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const Supply = require('./RaidSupplyPolicy');
 const Priority = require('./RaidRosterPriority');
-const Healing = require('./RaidHealingEstimate');
-const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
 const BASE_CLASSES = new Set([0, 10, 18, 25, 31, 38, 44, 53]);
 const id = s => Number(s?.characterId);
 const isObjective = o => o?.opportunisticRaid === true && o.sourceKind === 'raid';
@@ -42,7 +37,7 @@ function candidateReady(s, timestamp = Date.now()) {
     const readiness = Gear.combatReadiness(s);
     if (role(s) !== 'damage') return true;
     const shot = Shots.planForState(s);
-    return readiness.weaponRank >= 1 && shot.perAction > 0;
+    return readiness.hasWeapon && shot.perAction > 0;
 }
 
 function available(s, timestamp = Date.now(), preparationId = null) {
@@ -142,7 +137,9 @@ function* levelShortlist(ranked, limit) {
 
 // Checkpoint after each equipment/shot inspection, power calculation and
 // shortlist entry. Roles and scores never outlive this pass.
-function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage = null, deferred = []) {
+// drainOnly: a search carried on past its allowance proposes only its deferred rosters
+// (fresh ones wait for the next search a situation wakes).
+function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage = null, deferred = [], drainOnly = false) {
     const pool = [], tanks = [], byId = new Map();
     for (const s of candidates) {
         if ((cooldowns.get(id(s)) || 0) <= timestamp && candidateReady(s, timestamp)) {
@@ -155,11 +152,11 @@ function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage 
     const anchors = [...tanks.slice(offset), ...tanks.slice(0, offset)].slice(0, 8);
     // Alternate a fresh, promising roster with the ordinary coverage queue.
     // It replaces one of the eight slots; neither lane can starve the other.
-    const priorityPass = coverage && coverage.passes++ % 2 === 0;
+    const priorityPass = !drainOnly && coverage && coverage.passes++ % 2 === 0;
     let priorityTank;
     if (priorityPass && tanks.length) {
         const scores = new Map();
-        for (const tank of tanks) { scores.set(id(tank), Priority.facts(tank, 'tank').score); yield; }
+        for (const tank of tanks) { scores.set(id(tank), Priority.facts(tank, 'tank', timestamp).score); yield; }
         const ranked = [...tanks].sort((a, b) => scores.get(id(b)) - scores.get(id(a)) || id(a) - id(b));
         priorityTank = ranked[coverage.priorityCursor++ % ranked.length];
         yield;
@@ -171,7 +168,7 @@ function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage 
             const wanted = role(s);
             if (wanted === 'healer' || wanted === 'damage') {
                 power.set(id(s), candidatePower(s));
-                if (priorityTank && Math.abs(priorityTank.level - s.level) <= 7) hints.set(id(s), Priority.facts(s, wanted));
+                if (priorityTank && Math.abs(priorityTank.level - s.level) <= 7) hints.set(id(s), Priority.facts(s, wanted, timestamp));
                 (wanted === 'healer' ? healers : damage).push(s);
             }
         }
@@ -237,7 +234,7 @@ function* candidateSteps(candidates, cooldowns, tankCursor, timestamp, coverage 
         // Drain surviving combinations before filling spare slots with more
         // ordinary ones. This also leaves room for both priority cohorts on
         // the next alternating pass, rather than dropping an untested tail.
-        const draining = proposals.length > freshCount;
+        const draining = drainOnly || proposals.length > freshCount;
         let examined = 0;
         for (const tank of anchors) {
             if (proposals.length === 8 || draining) break;
@@ -357,160 +354,11 @@ function rosters(...args) {
     return next.value;
 }
 
-function prepared(members, timestamp) {
-    let states = structuredClone(members).map(s => {
-        const p = Combat.profileFor(s);
-        return { ...s, vitals: { hp: p.maxHp, maxHp: p.maxHp, mp: p.maxMp, maxMp: p.maxMp } };
-    });
-    const resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
-    let at = timestamp;
-    for (let pass = 0; pass < 6; pass++) {
-        const preparation = resolver.prepareRaidParty(states, at);
-        states = preparation.memberResults.map(({ state, result }) => ({ ...state, ...result.patch }));
-        if (preparation.ready) return { states, at: preparation.nextResolveAt, ready: true };
-        const next = preparation.nextResolveAt;
-        states = states.map(s => ({ ...s, ...resolver.resolveRest({ ...s, activity: 'resting' }, next - at, next, { party: true }).patch }));
-        at = next;
-    }
-    return { states, at, ready: false };
-}
-
-function attack(p, target, charged) {
-    const cycle = Combat.normalAttackMs(p);
-    const hit = invoke('GameServer/Bot/Population/BackgroundResolver').combat;
-    let landed = 0;
-    for (let i = 0; i < 20; i++) landed += Number(hit.hitSucceeds(p.accur, target.evasion, () => (i + .5) / 20));
-    // The fight's modifier of a normal hit (HitRules.targetModifier: a knife meets no dagger weakness).
-    const modifier = HitRules.targetModifier({ weaponKind: p.equipment.weaponKind, race: target.race, undead: target.undead === true },
-        stat => Combat.npcVulnerability(target, stat), stat => Combat.statMultiplier(p, stat, Date.now()));
-    return { rate: 1000 / cycle, dps: F.calcPhysicalDamage(p.pAtk, 0, target.pDef, 0,
-        { soulshot: charged, rng: () => .5 }) * (1 + Math.min(1, p.critical / 1000))
-        * (landed / 20) * modifier * 1000 / cycle };
-}
-
-// Check native worn slots and compatible heavy body pieces. Grade is not a
-// defense stat: the combat profile below owns P.Def, enchants and passives.
-function tankArmor(state) {
-    const items = require('../../Item/ItemTemplateIndex');
-    const data = invoke('GameServer/DataCache');
-    const slots = new Set();
-    for (const row of Object.values(state.inventory || {})) {
-        if (!(row.amount > 0) || !(row.equipped || row.equippedCount > 0)) continue;
-        const item = items.find(data.items, row.selfId);
-        for (const slot of Gear.equippedSlotsFor(row, item?.etc?.slot)) {
-            if (slot === 8 && item?.template?.kind === 'Armor.Shield') slots.add(8);
-            if ([10, 11, 15].includes(slot) && item?.template?.kind === 'Armor.Chain') slots.add(slot);
-        }
-    }
-    return [...(!slots.has(8) ? ['raid_tank_shield'] : []),
-        ...(!(slots.has(15) || slots.has(10) && slots.has(11)) ? ['raid_tank_body'] : [])];
-}
-
-function assessment(members, spot, { timestamp = Date.now(), maxFightSeconds = 720, reserve = 1.3, preparation = null, fundSupplies = false } = {}) {
-    const reasons = [], unchecked = [];
-    const fail = reason => { if (!reasons.includes(reason)) reasons.push(reason); };
-    const result = details => ({ ready: reasons.length === 0, reason: reasons[0] || 'raid_ready',
-        reasons, unchecked, ...details });
-    if (!composition(members).ready) { fail('raid_composition'); unchecked.push('equipment', 'combat'); return result(); }
-    const level = Number(spot.avgLevel);
-    if (members.some(s => !levelAllowed(s, level))) { fail('raid_level'); unchecked.push('equipment', 'combat'); return result(); }
-    const requiredRank = Math.max(1, rankOf(Gear.gradeForLevel(level)));
-    const data = invoke('GameServer/DataCache');
-    const item = require('../../Item/ItemTemplateIndex');
-    for (const s of members) {
-        const g = Gear.combatReadiness(s);
-        if (!g.hasWeapon || g.armorCount < 2) fail('raid_equipment');
-        const credit = Math.min(.6, Math.max(0, (s.level - level - 2) / 10));
-        if (role(s) === 'damage' && g.weaponRank < Math.max(1, requiredRank - credit)) fail('raid_weapon_grade');
-        if (role(s) === 'tank') tankArmor(s).forEach(fail);
-    }
-    // Unsafe/missing equipment has no meaningful prepared combat forecast.
-    // Collect independent gear failures, but never spend a second simulation.
-    if (reasons.length) { unchecked.push('combat'); return result(); }
-    const prep = preparation || prepared(members, timestamp);
-    if (!prep.ready) { fail('raid_preparation_mana'); unchecked.push('combat'); return result(); }
-    const npc = item.find(data.npcs, spot.raidBossTemplateId);
-    const boss = Combat.npcCombatStats(npc);
-    if (!boss) { fail('raid_template_missing'); unchecked.push('combat'); return result(); }
-    const fighters = prep.states.map(s => ({ state: s, role: role(s), profile: Combat.fightProfile(s, prep.at) }));
-    // Reuse the single set of prepared profiles for independent failures.
-    const damage = fighters.filter(f => f.role !== 'healer');
-    const attacks = damage.map(f => ({ fighter: f, ...attack(f.profile, boss, true) }));
-    const grossDps = attacks.reduce((sum, a) => sum + a.dps, 0) * .85;
-    const regen = Number(npc.vitals?.revHp || 0) / 3;
-    if (!Number.isFinite(grossDps) || !Number.isFinite(regen) || fighters.some(f =>
-        ![f.profile.pDef, f.profile.maxHp].every(v => Number.isFinite(v) && v > 0))) {
-        fail('raid_profile_invalid'); unchecked.push('combat'); return result();
-    }
-    if (grossDps <= regen * 1.5) fail('raid_damage_below_regeneration');
-    const adds = Minions.filter(r => Number(r.bossId) === Number(npc.selfId)).map(r => ({
-        profile: Combat.npcCombatStats(item.find(data.npcs, r.minionId)), count: Number(r.max || r.min || 0) }));
-    const tank = fighters.find(f => f.role === 'tank');
-    const incoming = target => F.calcPhysicalDamage(target.pAtk, 0, tank.profile.pDef, 0, { rng: () => .5 })
-        * 1000 / F.calcMeleeAtkTime(target.atkSpd);
-    const bossIncoming = incoming(boss);
-    const addIncoming = adds.reduce((sum, a) => sum + (a.profile ? incoming(a.profile) * a.count : 0), 0);
-    const tankRequiredHp = (bossIncoming + addIncoming) * 12;
-    if (tank.profile.maxHp < tankRequiredHp) fail('raid_tank_survival');
-    const offense = invoke('GameServer/Npc/NpcSkills').combatSkillsFor({ fetchSelfId: () => npc.selfId,
-        fetchLevel: () => level, fetchMaxHp: () => boss.maxHp, fetchHp: () => boss.maxHp })
-        .filter(s => [Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN].includes(s.fetchSkillType()) && s.fetchPower() > 0);
-    let skillPressure = 0;
-    for (const skill of offense) {
-        const semantic = skill.fetchSemantic();
-        const area = ['aura', 'area', 'front_area'].includes(semantic.sourceTarget);
-        const targets = area ? fighters : [tank];
-        let total = 0;
-        for (const target of targets) {
-            const burst = skill.fetchSpell() ? F.calcMagicDamage(boss.mAtk, skill.fetchPower(), target.profile.mDef)
-                : F.calcPhysicalDamage(boss.pAtk, 0, target.profile.pDef, skill.fetchPower(), { rng: () => .5 });
-            if (burst * 1.3 > target.profile.maxHp) fail('raid_skill_burst_survival');
-            total += burst;
-        }
-        skillPressure += total / Math.max(3, skill.fetchReuseTime() / 1000, skill.fetchHitTime() / 1000 + 1);
-    }
-    const defense = { tankId: id(tank.state), pDef: tank.profile.pDef, maxHp: tank.profile.maxHp,
-        requiredHp: tankRequiredHp, bossDps: bossIncoming, guardDps: addIncoming };
-    // A nonpositive net DPS has no finite kill time. Do not manufacture a
-    // negative/Infinity duration or claim that mana/stock passed that fight.
-    if (!(grossDps > regen)) {
-        unchecked.push('duration', 'healing', 'supplies');
-        return result({ grossDps, regen, defense });
-    }
-    const addSeconds = adds.reduce((sum, a) => {
-        if (!a.profile) return sum;
-        const dps = damage.reduce((value, f) => value + attack(f.profile, a.profile, true).dps, 0) * .65;
-        return sum + a.profile.maxHp * a.count / Math.max(1, dps);
-    }, 0);
-    let seconds = boss.maxHp / (grossDps - regen) + addSeconds;
-    for (let i = 0; i < 4; i++) seconds = boss.maxHp / (grossDps - regen) + addSeconds * Math.max(1, Math.ceil(seconds / 300));
-    if (!Number.isFinite(seconds)) {
-        fail('raid_fight_too_long'); unchecked.push('healing', 'supplies');
-        return result({ grossDps, regen, defense });
-    }
-    if (seconds > maxFightSeconds) {
-        fail('raid_fight_too_long'); unchecked.push('healing', 'supplies');
-        return result({ seconds, grossDps, regen, defense });
-    }
-    const shotPlans = attacks.map(a => {
-        const f = a.fighter, plan = Shots.planForState(f.state);
-        const stock = Number(f.state.inventory?.[plan.selfId]?.amount || 0) + Shots.beginnerAmount(f.state, plan);
-        const required = Math.ceil(a.rate * seconds * plan.perAction * reserve);
-        return { id: id(f.state), selfId: plan.selfId, stock, required, perAction: plan.perAction };
-    });
-    if (shotPlans.some(s => !s.perAction || !fundSupplies && s.stock < s.required)) fail('raid_shot_reserve');
-    const healing = Healing.capacity(fighters.filter(f => f.role === 'healer'),
-        { ...tank.state, vitals: { ...tank.state.vitals, maxHp: tank.profile.maxHp } }, seconds, prep.at);
-    // Preserve the native 25% healing margin and the same respawning guards.
-    const healingRequired = (Math.max(bossIncoming, skillPressure) * seconds
-        + addIncoming * addSeconds * Math.max(1, Math.ceil(seconds / 300))) * 1.25;
-    if (healing < healingRequired) fail('raid_healing_mana');
-    const supplies = fundSupplies ? Supply.supplies(members, shotPlans) : null;
-    if (supplies?.some(s => s.missing > 0 && (!(s.price > 0) || !Number.isFinite(s.cost) || s.cash < s.cost)))
-        fail('raid_consumables_funds');
-    return result({ seconds, grossDps, regen, shotPlans, healing, healingRequired, defense,
-        ...(supplies ? { supplies } : {}),
-        ...(!reasons.length ? { kits: members.map(s => [id(s), Combat.kitHash(Combat.combatView(s)).join(':')]) } : {}) });
+const Forecast = require('./RaidCombatAssessment');
+const { prepared, tankArmor, equipmentFailures, damageEstimate } = Forecast;
+function assessment(members, spot, options = {}) {
+    return Forecast.assessment(members, spot, { ...options, roleFor: role,
+        compositionReady: composition(members).ready, levelAllowed });
 }
 
 // Re-read after the worker fences, before publishing any native actors. A new
@@ -519,7 +367,7 @@ function pullAdmission(members, objective) {
     if (!composition(members).ready || members.some(criminal)) return 'raid_composition_or_pk';
     if (members.some(s => !levelAllowed(s, objective.sourceLevel))) return 'raid_level';
     if (members.some(s => objective.assessment?.kits?.find(([key]) => key === id(s))?.[1]
-        !== Combat.kitHash(Combat.combatView(s)).join(':'))) return 'raid_equipment_changed';
+        !== Combat.kitEvents(s).join(':'))) return 'raid_equipment_changed';
     for (const s of members.filter(s => role(s) !== 'healer')) {
         const expected = objective.assessment?.shotPlans?.find(p => p.id === id(s));
         const plan = Shots.planForState(s);
@@ -530,4 +378,4 @@ function pullAdmission(members, objective) {
     return null;
 }
 
-module.exports = { isObjective, levelAllowed, recruitLevelAllowed, available, criminal, compatible, role, candidatePower, candidateReady, composition, candidateSteps, proposalSteps, rosterSteps, rosters, prepared, tankArmor, assessment, pullAdmission };
+module.exports = { isObjective, levelAllowed, recruitLevelAllowed, available, criminal, compatible, role, candidatePower, candidateReady, composition, candidateSteps, proposalSteps, rosterSteps, rosters, prepared, tankArmor, equipmentFailures, damageEstimate, assessment, pullAdmission };

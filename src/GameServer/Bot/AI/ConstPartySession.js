@@ -5,8 +5,8 @@ const life = () => invoke('GameServer/Bot/Population/BotLifeState');
 const database = () => invoke('Database');
 const manager = () => invoke('GameServer/Bot/BotManager');
 const ai = () => invoke('GameServer/Bot/BotAI');
-const marker = session => session?.coldLifeState?.stats?.constPartySession
-    || life().cachedState(Number(session?.actor?.fetchId?.()))?.stats?.constPartySession;
+const marker = session => (life().cachedState(Number(session?.actor?.fetchId?.()))
+    || session?.coldLifeState)?.stats?.constPartySession;
 
 function serialize(id, work, queue = pending) {
     const previous = queue.get(id) || Promise.resolve();
@@ -180,6 +180,12 @@ async function invite(player, actor, state, distribution) {
 
 module.exports = {
     has: session => !!marker(session),
+    isCurrent(player, subject) {
+        const id = Number(subject?.actor?.fetchId?.() || subject?.characterId);
+        const state = life().cachedState(id) || subject?.coldLifeState || subject;
+        const checkpoint = state?.stats?.constPartySession;
+        return checkpoint?.active === true && Number(checkpoint.playerId) === Number(player?.actor?.fetchId?.());
+    },
     async prepareFormation(player, actor, bots, isCurrent = () => true) {
         if (player.actor !== actor || !bots.length) return;
         const ids = new Set(bots.map(bot => Number(bot.characterId || bot.botId)));

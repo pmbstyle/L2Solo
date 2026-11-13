@@ -100,7 +100,7 @@ async function sell(state, id, price, count = 1) {
             const fund = s => Life.upsertState({ ...s, vitals: { ...s.vitals, mp: 424, maxMp: 424 },
                 stats: { ...s.stats, money: [500000, .000002, 0, 0] } }, 'c_shot_funding');
             state = await fund(state);
-            if (remote) state = await Life.upsertState({ ...state, activity: 'hunting' }, 'remote_recipe_start');
+            // A crafter selects its craft on a town visit (here Gludio's, the scroll is sold in Giran).
             const investment = Shots.recipeTarget(state, Shots.marketSnapshot(now), [], recipeId);
             assert(investment, `recipe ${recipeId}: finite public interest funds the scroll and inputs`);
             assert.equal(investment.route.exit.type, 'listing');
@@ -124,23 +124,35 @@ async function sell(state, id, price, count = 1) {
                 assert(state.stats.shotRecipeDemand.inputCash >= 0 && Number.isFinite(state.stats.shotRecipeDemand.inputCash),
                     'recipe procurement carries the executable series capital into public pricing');
                 assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(row => row.recipeId === recipeId));
+                const unknownBefore = structuredClone(state);
+                const unknown = await Shots.execute(state, { unknown: true }, now);
+                assert.deepEqual(unknown, unknownBefore,
+                    'an unprepared craft cannot clear the accepted recipe request or move its authority');
                 const procurement = await probe({ ...state, persona: Persona.of(state) }, { timestamp: now,
                     marketPlan: true, marketWarm: beforeSeek, recipes: { recipeBook: Codec.pack([]), knownShotRecipes: [] },
                     tables: [{ name: 'board', from: null, to: 0, full: true, removed: [], rows: boardRows() },
                         ...['personal_warehouse', 'clan_supplies'].map(name => ({ name, from: null, to: 0, full: true,
                             removed: [], rows: [] }))] });
-                assert.equal(procurement.warmCache[0][0], procurement.warmCache[2][0],
-                    'the pre-procurement wish graph reaches a stable warm baseline');
-                assert(procurement.warmCache[2][1] > procurement.warmCache[0][1],
-                    'the actual native cache serves repeated steps before the new recipe goal');
                 assert(procurement.economyPlan.buyAds?.some(row => row[0] === recipe.recipeItemId),
                     `the real worker prepares a public recipe request: ${JSON.stringify(procurement.economyPlan)}`);
                 assert.equal(procurement.economyPlan.shot, undefined,
                     'the funded recipe bid owns procurement without a second seek changing its revision');
                 state = await Life.upsertState({ ...state, stats: { ...state.stats,
                     ...procurement.statsPacket } }, 'shot_recipe_publication_fixture');
-                const published = await BotMarket.executePlan(state, procurement.economyPlan, { reviewGoal: false });
+                await Database.setItem(state.characterId, { selfId: 1864, name: 'Stem', amount: 2 });
+                state = await Life.refreshInventory(state);
+                await sell(state, 1864, 50, 2);
+                state = Life.cachedState(state.characterId);
+                const preparedRevision = state.simulation.revision;
+                const acceptedDemand = structuredClone(state.stats.shotRecipeDemand);
+                const published = await BotMarket.executePlan(state, { ...procurement.economyPlan,
+                    sell: [[1864, 1, 100, 'Giran', 0, 1000]], shop: 'Giran', buyShop: 0 }, { reviewGoal: false });
                 state = published.state;
+                assert(!published.buyPending, 'refreshing an unrelated sell shop cannot defer the accepted recipe bid');
+                assert(state.simulation.revision > preparedRevision, 'the real shop refresh moves native owner authority');
+                assert.equal(Afk.boardIndex().ownerLines(state.characterId).find(line => line.storeType === Afk.SELL
+                    && line.selfId === 1864)?.count, 1, 'the independent sale refresh also completes');
+                assert.deepEqual(state.stats.shotRecipeDemand, acceptedDemand, 'publication keeps the accepted procurement');
                 assert(Afk.boardIndex().ownerLines(state.characterId).some(line => line.storeType === Afk.BUY
                     && line.selfId === recipe.recipeItemId && line.count === 1),
                 'the native writer publishes the missing recipe bid before any seller exists');
@@ -155,23 +167,14 @@ async function sell(state, id, price, count = 1) {
             }
             state = await Shots.execute(state, learning, now);
             if (remote) {
-                assert.equal(state.stats.marketErrand?.purpose, 'recipe', 'remote scroll uses the shared market errand');
+                // A crafter buys its scroll in the town it stands in, never on an errand: in the
+                // field it keeps its want and buys nothing; in the seller's town it buys and learns.
+                assert.equal(state.stats.marketErrand ?? null, null, 'no crafter errand for a remote scroll');
                 assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(r => r.recipeId === recipeId));
-                // Resolve travel at its destination, then execute the real town
-                // purchase and sale lifecycle that receives the delivered scroll.
                 state = await Life.upsertState({ ...state, activity: 'shopping', currentRegion: 'Giran', loc: GIRAN,
                     stats: { ...state.stats, travel: null }, timing: {} }, 'remote_recipe_arrived');
-                const purchase = await invoke('GameServer/Bot/Economy/ColdMarketService').tryPurchase(state);
-                assert(purchase.purchased, 'the shared errand pays for the selected scroll');
-                state = purchase.state;
-                assert.equal(held(await Database.fetchItems(state.characterId), recipe.recipeItemId), 1);
-                await Life.learnCraftableRecipes({ ...state, stats: { ...state.stats, shotRecipeDemand: null } });
-                await Life.learnCraftableRecipes(state, { recipeIds: [] });
-                assert(!(await Database.fetchCharacterRecipes(state.characterId)).some(r => r.recipeId === recipeId),
-                    'unselected scrolls and an explicit empty selection are not learned automatically');
-                const visit = await invoke('GameServer/Bot/Economy/ColdMarketListingService').open(state);
-                state = visit.state;
-                assert.equal(state.stats.shotRecipeDemand, null, 'learning closes the paid recipe demand');
+                state = await Shots.execute(state, learning, now);
+                assert.equal(state.stats.shotRecipeDemand ?? null, null, 'learning closes the paid recipe demand');
                 assert(!Afk.ownerRecords(state.characterId).some(record => record.storeType === Afk.SELL
                     && record.lines.some(line => line.selfId === recipe.recipeItemId && line.count > 0)),
                 'the paid learning target is not republished as surplus');
@@ -192,7 +195,16 @@ async function sell(state, id, price, count = 1) {
                 [itemId]: { selfId: itemId, amount: 1000000 } } }, craftStep.craft), null,
             'unsold output prevents more production');
             const cashBefore = held(await Database.fetchItems(state.characterId), 57);
-            state = await Shots.execute(state, craftStep, now + 1);
+            if (recipeId === 21) {
+                const result = await BotMarket.executePlan(state, { shot: Policy.packStep(craftStep),
+                    buyAds: [], sell: [[1864, 2, 100, 'Giran', 0, 1000]], shop: 'Giran', buyShop: 0 },
+                { reviewGoal: false });
+                state = result.state;
+                assert(!result.buyPending, 'the plan carries its own successful craft into the independent empty buy batch');
+                assert.equal(Afk.boardIndex().ownerLines(state.characterId).find(line => line.storeType === Afk.SELL
+                    && line.selfId === 1864)?.count, 2,
+                'deferring the old buy batch still completes an independent native sale');
+            } else state = await Shots.execute(state, craftStep, now + 1);
             const made = await Database.fetchItems(state.characterId), units = lot.batches * recipe.productCount;
             const inputCost = gearCost + lot.batches * ore.amount * orePrice;
             assert.equal(held(made, itemId), units);
@@ -214,7 +226,10 @@ async function sell(state, id, price, count = 1) {
             await Afk.buyFromShop(buyer.characterId, offer.store, itemId, purchased,
                 { lineId: offer.lineId, expectedPrice: offer.price, expectedRevision: offer.expectedRevision, coldState: buyer });
             assert.equal(held(await Database.fetchItems(buyer.characterId), itemId), purchased);
-            assert.equal(held(await Database.fetchItems(state.characterId), 57), cashBefore - inputCost + purchased * offer.price);
+            // A cold seller's proceeds wait on the board until its own step commit takes them.
+            const [owed] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 57', [state.characterId]]);
+            assert.equal(held(await Database.fetchItems(state.characterId), 57) + Number(owed.amount),
+                cashBefore - inputCost + purchased * offer.price, 'the seller is paid the full price of the sold shots');
             assert.equal(Afk.offers(itemId, Afk.SELL).find(o => o.sourceId === state.characterId).count, units - purchased);
             if (recipeId === 21) withdrawnStep = learning;
             console.log('PASS C shot lifecycle', JSON.stringify({ recipeId, itemId, batches: lot.batches, units,
@@ -295,70 +310,69 @@ async function sell(state, id, price, count = 1) {
         assert.equal(investor.stats.shotCraft.series,null,'the rejected continuation clears its saved series');
         console.log('PASS native shot investment: negative first command, funded series, real MP, retained inputs, expiry and demand withdrawal');
 
-        // A remote gear purchase crosses the real town cleanup before the
-        // producer runs again. That physical input must not become equipment
-        // or sale stock, including when another copy is already worn.
+        // A crafter buys its craft's inputs only in the town it stands in (no errand): the
+        // shield it bought to crystallize for a shot craft is its kit's (ItemDisposition.kitGear)
+        // until the kit goes. It is not worn, nor offered for sale, also when another copy is
+        // already worn; once the kit no longer holds it (expired or dropped), it is gear again.
+        for (const alreadyWorn of [false,true]) {
+            const stamp = Date.now(), wornId = alreadyWorn ? 2495 : 18;
+            let smith = await seed([cash(3000000),{selfId:wornId,amount:1,equipped:true,slot:8},{selfId:2495,amount:1}],
+                {classId:57,level:40,name:'KitShieldSmith'});
+            const kit = when => ({...smith,stats:{...smith.stats,shotCraft:{preparing:{recipeId:324,
+                productId:Recipes.resolveByRecipeId(324).productId,batches:1,gearTarget:0,gearInputs:{},
+                crystalGear:2495,at:when}}}});
+            const holding = Life.reconcileEquipmentInventory(kit(stamp));
+            assert.equal(holding.inventory[2495].equippedCount,alreadyWorn?1:0,
+                'a bought crystal input never replaces the wearable shield');
+            assert.equal(holding.inventory[2495].amount,alreadyWorn?2:1,'the kept copy stays in the bag');
+            assert.equal(Disposition.productionInputAmounts(kit(stamp))[2495],1,'the kit holds the shield from sale');
+            assert(Life.reconcileEquipmentInventory(kit(stamp-31*60000)).inventory[2495].equippedCount>0,
+                'gear an expired kit no longer holds becomes available to the ordinary equipment optimizer');
+            const dropped = kit(stamp);
+            delete dropped.stats.shotCraft.preparing.crystalGear;
+            assert(Life.reconcileEquipmentInventory(dropped).inventory[2495].equippedCount>0,
+                'gear abandoned by production becomes available to the ordinary equipment optimizer');
+            console.log('PASS crystal gear held by the shot kit',JSON.stringify({alreadyWorn}));
+        }
+
+        // A smith in the town where the shield is sold buys it for its shot kit beside the
+        // shield it wears (or with another shield worn), crystallizes only the bought copy
+        // and crafts C shots; the worn shield stays worn.
         for (const alreadyWorn of [false,true]) {
             Market.reset();
-            const recipe = Recipes.resolveByRecipeId(324), stamp = Date.now();
+            const stamp = Date.now(), owners = [];
             const supplier = await seed([cash(1000000),{selfId:2495,amount:1}],
-                {name:'RemoteCrystalShield',town:'Gludio',loc:GLUDIO});
+                {name:'TownCrystalShield',town:'Gludio',loc:GLUDIO});
             const source = (await Database.fetchItems(supplier.characterId)).find(row=>row.selfId===2495);
             await Afk.publishBot(supplier.characterId,{kind:'shop',storeType:Afk.SELL,town:'Gludio',
                 lines:[{objectId:source.id,selfId:2495,count:1,price:150000,stackable:false,slot:8}]});
-            const consumer = await seed([cash(10000000)],{name:'RemoteShotConsumer'});
+            const consumer = await seed([cash(10000000)],{name:'TownShotConsumer'});
             await Afk.publishBot(consumer.characterId,{kind:'shop',storeType:Afk.BUY,town:'Giran',
                 lines:[{selfId:3949,count:4000,price:2000,stackable:true}]});
+            owners.push(supplier.characterId,consumer.characterId);
             const wornId = alreadyWorn ? 2495 : 18;
             let smith = await seed([cash(3000000),{selfId:wornId,amount:1,equipped:true,slot:8},
-                {selfId:3954,amount:1},{selfId:3031,amount:500}],{classId:57,level:40,name:'RemoteShieldSmith'});
+                {selfId:3954,amount:1},{selfId:3031,amount:500}],
+            {classId:57,level:40,name:'TownShieldSmith',town:'Gludio',loc:GLUDIO});
             await Persona.ensure(smith);
             await Database.setSkill({selfId:248,name:'Crystallize',level:2,passive:false},smith.characterId);
             smith = await Life.learnCraftableRecipes(smith,{recipeIds:[324]});
             smith = await Life.upsertState({...smith,vitals:{...smith.vitals,mp:424,maxMp:424},
-                stats:{...smith.stats,money:[500000,.000002,0,0]}},'remote_crystal_input_start');
+                stats:{...smith.stats,money:[500000,.000002,0,0]}},'town_crystal_input_start');
             const oldWorn = (await Database.fetchItems(smith.characterId)).find(row=>row.equipped && row.selfId===wornId).id;
-            const ask = async () => Policy.unpackStep(Policy.packStep((await probe({...smith,persona:Persona.of(smith)},
+            const selected = Policy.unpackStep(Policy.packStep((await probe({...smith,persona:Persona.of(smith)},
                 {timestamp:stamp,recipeEarning:true,recipes:{recipeBook:Codec.pack([324]),knownShotRecipes:[324]},
-                    boardRows:[supplier.characterId,consumer.characterId].flatMap(id=>Afk.ownerRecords(id)).map(row=>[row.id,rowOf(row)])})).selected));
-            const selected = await ask();
+                    boardRows:owners.flatMap(id=>Afk.ownerRecords(id)).map(row=>[row.id,rowOf(row)])})).selected));
             assert.equal(selected?.craft?.recipeId,324);
-            assert.equal(selected.craft.gear[0],2495);
+            assert.equal(selected.craft.gear[0],2495,'the shield sold in this town is the crystal source');
             smith = await Shots.execute(smith,selected,stamp);
-            assert.equal(smith.stats.shotCraft.preparing.crystalGearId,2495);
-            assert.equal(smith.stats.marketErrand?.selfId,2495,'the accepted gear travels through the common material errand');
-            smith = await Life.upsertState({...smith,activity:'shopping',currentRegion:'Gludio',loc:GLUDIO,
-                stats:{...smith.stats,travel:null},timing:{}},'remote_crystal_input_arrived');
-            const receipt = await invoke('GameServer/Bot/Economy/ColdMarketService').tryPurchase(smith);
-            assert(receipt.purchased,'the native market pays for the physical crystal input');
-            smith = receipt.state;
-            smith = await Life.upsertState(Life.reconcileEquipmentInventory(smith),'remote_crystal_input_reconciled');
-            assert.equal(smith.inventory[2495].equippedCount,alreadyWorn?1:0,
-                'a bought crystal input never replaces the wearable shield');
-            assert.equal(Disposition.productionInputAmounts(smith)[2495],1);
-            assert.equal(require('../src/GameServer/Bot/Economy/ShotCrystalInput').itemId(smith,stamp+31*60000),0,
-                'an expired material job releases the gear');
-            const abandoned = {...smith,stats:{...smith.stats,shotCraft:{...smith.stats.shotCraft,
-                preparing:{...smith.stats.shotCraft.preparing,crystalGearId:0}}}};
-            assert(Life.reconcileEquipmentInventory(abandoned).inventory[2495].equippedCount>0,
-                'gear abandoned by production becomes available to the ordinary equipment optimizer');
-            const cleanup = await invoke('GameServer/Bot/Economy/ColdMarketListingService').open(smith);
-            smith = cleanup.state;
-            assert(!Afk.ownerRecords(smith.characterId).some(row=>row.storeType===Afk.SELL
-                && row.lines.some(line=>line.selfId===2495 && line.count>0)),
-            'town cleanup cannot resell the paid crystal input');
-            assert((await Database.fetchItems(smith.characterId)).some(row=>row.id===oldWorn && row.equipped));
-            const continuation = await ask();
-            assert.equal(continuation?.craft?.recipeId,324,'the next worker cycle can consume the delivered input');
-            assert.equal(continuation.craft.gear[1],-1,'the delivered physical spare is now an owned source');
-            smith = await Shots.execute(smith,continuation,Date.now());
+            assert.equal(smith.stats.marketErrand ?? null,null,'the smith buys where it stands, no errand');
             const finished = await Database.fetchItems(smith.characterId);
-            assert(held(finished,3949)>0,'the remote handoff reaches real C-shot crafting');
-            assert.equal(held(finished,2495),alreadyWorn?1:0,'only the bought spare is crystallized');
-            assert(finished.some(row=>row.id===oldWorn && row.equipped),'the original wearable instance survives conversion');
-            for (const id of [supplier.characterId,consumer.characterId])
-                for (const row of Afk.ownerRecords(id)) await Afk.closeBotRecord(id,row.id);
-            console.log('PASS remote crystal gear handoff',JSON.stringify({alreadyWorn,units:held(finished,3949)}));
+            assert(held(finished,3949)>0,'the shield bought in town reaches real C-shot crafting');
+            assert.equal(held(finished,2495),alreadyWorn?1:0,'only the bought copy is crystallized');
+            assert(finished.some(row=>row.id===oldWorn && row.equipped),'the worn shield stays worn');
+            for (const id of owners) for (const row of Afk.ownerRecords(id)) await Afk.closeBotRecord(id,row.id);
+            console.log('PASS town crystal gear purchase',JSON.stringify({alreadyWorn,units:held(finished,3949)}));
         }
     } finally {
         await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true });

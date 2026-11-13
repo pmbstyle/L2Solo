@@ -33,23 +33,21 @@ const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const originalFloor = Floor.forState;
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const originalReserve = Economy.survivalReserve;
+const originalReserve = Economy.refillReserve;
 try {
     Floor.forState = () => null;
-    Economy.survivalReserve = () => 0;
+    Economy.refillReserve = () => 0;
     const leaf = { activity: 'shopping', itemId: 1835, amount: 10, valueHours: 1,
         price: 100, town: 'Giran', heldAtDecision: 0 };
     const remaining = Needs.evaluate({ characterId: 9911, inventory: { 1835: { amount: 2 } } },
         { errand: null, economy: { inputHash: 1, network: { activity: leaf } }, board: { heads: () => [] }, npcOffersFor: () => [] });
-    assert.equal(remaining[0].target.amount, 8);
-    assert.equal(remaining[0].plan.valueHours, 0.8, 'already acquired units cannot subsidise another trip for the remainder');
-} finally { Floor.forState = originalFloor; Economy.survivalReserve = originalReserve; }
+    assert.equal(remaining[0].target.amount, 8, 'already acquired units leave the remainder to buy');
+} finally { Floor.forState = originalFloor; Economy.refillReserve = originalReserve; }
 
-const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Remote = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Trip = invoke('GameServer/Bot/Population/ColdTrip');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
-const saved = { check: Market.canTravelForPurchase, remote: Remote.canTradeRemotely, trip: Trip.toTown };
+const saved = { remote: Remote.canTradeRemotely, trip: Trip.toTown };
 const now = Date.now();
 const errand = { selfId: 1835, amount: 100, town: 'Giran', purpose: 'shots', r: 0.02,
     survivalCost: 500, tag: [5], at: now };
@@ -57,42 +55,20 @@ const state = { characterId: 9911, activity: 'hunting', currentRegion: 'Field',
     loc: { locX: 20000, locY: 140000, locZ: -3000 }, stats: { marketErrand: errand } };
 const goal = { type: 'market_errand', target: { itemId: 1835, amount: 100 },
     plan: { expectedBenefit: 'market_errand', marketTown: 'Giran', purpose: 'shots' } };
-let checks = 0, travels = 0, allowed = false;
+let travels = 0;
 try {
     Remote.canTradeRemotely = () => false;
     Trip.toTown = () => { travels++; return { activity: 'traveling' }; };
-    Market.canTravelForPurchase = (_state, request) => {
-        checks++;
-        assert.equal(request.selfId, 1835);
-        assert.equal(request.amount, 100);
-        assert.equal(request.town, 'Giran');
-        assert.equal(request.r, 0.02);
-        assert.equal(request.survivalCost, 500);
-        assert.deepEqual(request.tag, [5], 'saved source and funding terms survive the execution gate');
-        return allowed;
-    };
-    assert.equal(GoalExecutor.beginMarketTravel(state, goal, now), null);
-    assert.equal(travels, 0, 'a refused purchase does not enter the travel owner');
-    allowed = true;
-    assert.equal(GoalExecutor.beginMarketTravel(state, goal, now).activity, 'traveling');
-    assert.equal(travels, 1);
-    assert.equal(GoalExecutor.beginMarketTravel({ ...state, activity: 'traveling' }, goal, now), null);
-    assert.equal(checks, 2, 'the gate never reconsiders an already accepted journey');
-    const sale = { type: 'sell_inventory', target: { cleanupReason: 'inventory_full' },
-        plan: { expectedBenefit: 'market_sale_inventory', marketTown: 'Giran' } };
-    assert.equal(GoalExecutor.beginMarketTravel(state, sale, now).activity, 'traveling');
-    assert.equal(checks, 2, 'forced unloading keeps its existing independent owner');
-    // The plan's own shopping step travels on the visit its build asked.
+    // An errand's road was weighed when it was taken (ColdMarketService.acquire), a plan
+    // step's by its build (visitPays): the trip goes as decided, the market is read there.
+    assert.equal(GoalExecutor.beginMarketTravel(state, goal, now).activity, 'traveling', 'the errand goes as decided');
+    assert.equal(GoalExecutor.beginMarketTravel({ ...state, activity: 'traveling' }, goal, now), null, 'an accepted journey is not begun twice');
     const stepGoal = { type: 'buy_craft_material', target: { itemId: 1835, amount: 100 },
         plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Giran', economyActivity: 'shopping', valueRate: 0.02 } };
-    let asked = 0;
-    Market.canTravelForPurchase = () => { asked++; return false; };
-    const plain = { ...state, stats: {} };
-    const went = GoalExecutor.beginMarketTravel(plain, stepGoal, now);
-    assert.equal(went?.activity, 'traveling', 'the plan\'s step goes and reads the market there');
-    assert.equal(asked, 0, 'no second trip question from the field');
+    assert.equal(GoalExecutor.beginMarketTravel({ ...state, stats: {} }, stepGoal, now)?.activity, 'traveling',
+        'the plan\'s step goes and reads the market there');
+    assert.equal(travels, 2);
 } finally {
-    Market.canTravelForPurchase = saved.check;
     Remote.canTradeRemotely = saved.remote;
     Trip.toTown = saved.trip;
 }

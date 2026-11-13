@@ -44,21 +44,23 @@ async function capture(state, options = {}, label = '') {
     const read = Coordinator.economyDecisions.decided(accepted);
     assert(read, 'genuine capture must be accepted for its exact original state key');
     assert.deepEqual(accepted.stats.money, captured.statsPacket.money);
-    const packet = accepted.stats.money;
-    assert(Array.isArray(packet) && packet.length >= 4 && packet.length <= 28 && (packet.length - 4) % 3 === 0);
+    const packet = accepted.stats.money, Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+    assert(Packet.hasMoney(packet) && Packet.fundedRows(packet) <= Packet.MONEY_ROWS);
     assert(packet.every(Number.isFinite), 'genuine stored money packet is numeric and finite');
     const wallet = Math.max(0, Number(state.adena ?? state.inventory?.[57]?.amount) || 0);
     const missingBefore = Funding.summary().moneyPacketMissing;
     const funding = [];
-    for (const query of [{ r: packet[1] / 2 }, { r: packet[1] }, { r: Infinity }, { free: true }, { upperBound: true }]) {
+    for (const query of [{ r: Packet.moneyPrice(packet) / 2 }, { r: Packet.moneyPrice(packet) }, { r: Infinity }, { free: true }, { upperBound: true }]) {
         let expected = 0;
-        if (query.upperBound) expected = Math.max(0, wallet - packet[2]);
-        else if (!(query.free && packet[3] !== 0)) {
+        if (query.upperBound) expected = Math.max(0, wallet - Packet.refillReserve(packet));
+        else if (!(query.free && Packet.firstUnfundedPrice(packet) !== 0)) {
             const ratio = query.free ? -Infinity : query.r;
-            if (query.free || ratio >= packet[1]) {
+            if (query.free || ratio >= Packet.moneyPrice(packet)) {
                 let higher = 0;
-                for (let at = 4; at + 2 < packet.length; at += 3) if (packet[at] > ratio) higher = packet[at + 1];
-                expected = Math.max(0, wallet - packet[2] - higher);
+                for (let row = 0; row < Packet.fundedRows(packet); row++) {
+                    if (Packet.fundedRatio(packet, row) > ratio) higher = Packet.fundedCumulative(packet, row);
+                }
+                expected = Math.max(0, wallet - Packet.refillReserve(packet) - higher);
             }
         }
         const actual = Funding.spendable(accepted, 0, query);

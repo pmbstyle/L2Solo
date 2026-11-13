@@ -31,57 +31,21 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     const known = await probe(state, { recipeEarning: true, recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll) });
     assert.equal(known.selected?.wealth?.recipeId, recipe.recipeId, 'full book is authoritative even with an empty public portfolio');
     assert(!known.selected.wealth.scroll, 'learned scroll is not bought twice');
-    // The planner's answer per mode stands while what it reads holds: main
-    // resending the same row and an ask of another mode keep the workshop and
-    // the route rows; a moved bag, wallet or MP band builds it anew (MP enters
-    // only as the band of its craft checks, WealthCraftPolicy.craftMpBand);
-    // every kept or rebuilt answer is the one a fresh build on that state gives.
+    // The planner's answer per mode stands while what it reads holds: an ask of
+    // another mode keeps the route rows; a visit's plan serves its step's clock only.
     const level = invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(state);
     const baseMp = Array.from({ length: 300 }, (_, k) => 1000 - k).find(mp => Craft.sameCraftMp(level, mp, mp + 1));
-    const band = Craft.craftMpBand(level, baseMp), insideMp = baseMp + 1, outsideMp = band[3] ? band[2] + 1 : band[2];
-    assert(baseMp && Number.isFinite(outsideMp), 'fixture: an MP band wider than one point');
     const crafter = { ...state, vitals: { ...state.vitals, mp: baseMp } };
-    const vitals = mp => ({ vitals: { ...crafter.vitals, mp } });
-    const material = recipe.materials[0].selfId;
-    // The workshop reads these stats fields (ColdSimulationWorker WORKSHOP_STATS):
-    // each one moved builds it anew; the combat kit, the wish sections and the
-    // hunt records it does not read keep it (HP too: no workshop rule reads it).
-    const readStats = ['workshop', 'dwarvenCraftLevel', 'race', 'equipmentPlan', 'wishFocus', 'craftStationId', 'craftShop',
-        'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand', 'clanMarketDemand', 'marketErrand', 'marketErrands',
-        'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft', 'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook',
-        'hennas', 'generatedIndex', 'playerPartyTakeover', 'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours',
-        'frustration', 'lifelongKills', 'exp', 'classId', 'money'];
-    const unread = { hp: { vitals: { ...crafter.vitals, mp: outsideMp, hp: 900 } },
-        combat: { stats: { coldCombat: { skills: [{ selfId: 1, level: 1 }], cooldowns: { 1: 1 }, effects: [] } } },
-        sections: { stats: { wishSections: { supply: 3 }, wishAdvisory: { focus: 'x' } } },
-        hunt: { stats: { huntEfficiency: { kills: 5 }, spotRisk: { a: 1 }, huntClock: { at: 1 }, lastReason: 'moved' } } };
-    const readMoves = Object.fromEntries(readStats.map(key => [`stats.${key}`, { stats: { [key]: [`moved:${key}`] } }]));
     const reuse = await probe(crafter, { recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll),
-        plannerReuse: { bag: { inventory: { [material]: { selfId: material, amount: 1, stackable: true } } },
-            wallet: { adena: state.adena - 1 }, mpInBand: vitals(insideMp), mpOutOfBand: vitals(outsideMp), ...unread,
-            maxMp: { vitals: { ...crafter.vitals, mp: outsideMp, hp: 900, maxMp: 999 } }, level: { level: state.level + 1 }, ...readMoves } });
-    assert.deepEqual(reuse.first, { occupation: 1, wish: 1, action: 1 }, 'one build per mode; the step\'s second action ask joins');
+        plannerReuse: {} });
+    assert.deepEqual(reuse.first, { wish: 1, showcase: 1 }, 'one build per mode; the step\'s second visit plan ask joins');
     assert.deepEqual(reuse.actionAgain, reuse.action);
-    assert.deepEqual(reuse.kept, { occupation: 1, wish: 1, action: 2 },
-        'the resent row keeps the workshop and the rows; a finished action serves its step only');
-    assert.deepEqual(reuse.keptWorkshop, reuse.workshop, 'the kept workshop is the one asked before the action');
+    assert.deepEqual(reuse.kept, { wish: 1, showcase: 2 },
+        'the resent row keeps the rows; a finished visit plan serves its step only');
     assert.deepEqual(reuse.keptRows, reuse.rows);
-    assert.deepEqual(reuse.freshWorkshop, reuse.keptWorkshop, 'a fresh build on the resent row gives the kept answer');
-    const built = { bag: 1, wallet: 1, mpInBand: 0, mpOutOfBand: 1, hp: 0, combat: 0, sections: 0, hunt: 0, maxMp: 1, level: 1,
-        ...Object.fromEntries(Object.keys(readMoves).map(name => [name, 1])) };
-    assert.deepEqual(Object.keys(reuse.moves), Object.keys(built));
-    for (const [name, move] of Object.entries(reuse.moves)) {
-        assert.equal(move.built, built[name], `a ${name} move ${built[name] ? 'builds the workshop anew' : 'keeps it'}`);
-        assert.deepEqual(move.answer, move.fresh, `the ${name} move's answer is a fresh build's`);
-    }
-    // The held card's craft is prepared again only out of the band.
-    const craftMp = await probe(crafter, { recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll),
-        craftMp: [[baseMp, baseMp], [baseMp, insideMp], [baseMp, outsideMp]] });
-    assert.deepEqual(craftMp.out, [{ asked: [], kept: true }, { asked: [], kept: true }, { asked: ['action'], kept: false }],
-        'an MP inside the band keeps the card\'s craft; out of it the action is asked');
+    assert.deepEqual(reuse.keptAction, reuse.action, 'the resent row gives the same visit plan');
     assert.equal(reuse.flight, 1, 'a build in flight goes on across main\'s resend of the same row');
-    assert.equal(reuse.afterEcho, 1, 'and its answer serves the resent row');
-    assert.deepEqual(reuse.echoedWorkshop, reuse.flown);
+    assert.deepEqual(reuse.echoed, reuse.flown);
     assert.equal(reuse.walkedBuilt, 1, 'the route rows are built anew when the bot\'s point moves');
     assert.equal(reuse.walkedRows.length, reuse.rows.length);
     console.log('PASS actual worker unknown recipe admission, empty book, selected source, uncapped knowledge and planner answers per mode');

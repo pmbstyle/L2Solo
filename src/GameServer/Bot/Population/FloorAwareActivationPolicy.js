@@ -94,7 +94,7 @@ function evaluateCandidate(state, context = {}, scan = {}) {
     }
 
     scan.geoChecks = Number(scan.geoChecks || 0) + 1;
-    const visible = geodata.hasLineOfSight(
+    const visible = geodata.canWalkStraight(
         playerLoc.locX, playerLoc.locY, playerLoc.locZ,
         candidateLoc.locX, candidateLoc.locY, candidateLoc.locZ
     ) === true;

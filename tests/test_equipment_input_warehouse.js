@@ -123,10 +123,12 @@ async function run() {
         assert.equal(Crystals.freeReader(separateConversion)(178), 0,
             'a new exchange cannot crystallize an older project’s prepared weapon');
         const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-        // Stock nobody sells takes no focus (T178): another bot sells the shots.
+        // Stock nobody sells takes no focus (T178): another bot sells the shots (the kind it
+        // fires holding none: the earning decision's own rule, ShotStock.planForState).
         const shotBoard = new BoardIndex();
         shotBoard.put({ id: 938050, ownerId: id + 9, storeType: 1, kind: 'shop', town: 'Giran',
-            lines: [{ lineId: 938051, selfId: 3949, count: 100000, price: 90, enchant: 0 }] });
+            lines: [{ lineId: 938051, selfId: invoke('GameServer/Inventory/ShotStock').planForState(native).selfId,
+                count: 100000, price: 90, enchant: 0 }] });
         const context = Economy.forState(native, { timestamp: 1800000000000, board: shotBoard, spots: [],
             routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
             rememberContext: false, withNodes: true, knowledgeEnabled: false });
@@ -245,6 +247,17 @@ async function run() {
         assert.equal(recoveredDeposit.count, 195, 'the recovered project parks only its own physical share');
         assert.equal(Native.amount(await Database.fetchItems(id), 1458), 185);
         assert.equal(Native.amount(await Database.fetchWarehouseItems(id), 1458), 195);
+        // The real projection, not this test's row source: a town withdrawal
+        // is seen by the same visit's next reader (the NPC sale right after).
+        Index.useRowSource(); await Index.init();
+        const parked = recoveredDeposit.state;
+        assert.equal(Index.inventory(parked)[1458]?.amount, 195);
+        const banked = (await Database.fetchWarehouseItems(id)).find(row => Number(row.selfId) === 1458);
+        await Database.transferWarehouseToInventory(id, { id: banked.id, selfId: 1458, name: banked.name, amount: 195, stackable: true });
+        const withdrawn = { ...parked, inventory: { ...parked.inventory, 1458: { ...parked.inventory[1458], amount: 380 } } };
+        assert.equal(Index.inventory(withdrawn)[1458], undefined, 'the committed withdrawal leaves no phantom banked share');
+        assert.equal(Disposition.saleCandidates(withdrawn, { unlimited: true, keptAmounts: {} }).find(row => row.selfId === 1458)?.count,
+            185, 'the same visit\'s sale cannot take the withdrawn project share');
         const guardedId = id + 3;
         await Native.character(Database, guardedId, 'GuardedCrystalInput', 'bot_guarded_crystal', point);
         await Database.execute(['UPDATE characters SET classId=40,level=57 WHERE id=?', [guardedId]]);

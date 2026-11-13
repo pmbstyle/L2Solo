@@ -66,20 +66,9 @@ const owned = Crystals.choices(held, () => null, station)[0];
 assert.equal(owned.selfId, 166, 'physical spares work without a market quote');
 assert.equal(owned.batchLimit, 2);
 {
-    const Network = invoke('GameServer/Bot/Economy/WishNetwork');
-    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
-    const quantities = Network.createQuantityInputs();
-    const captured = Crystals.choices(held, () => null, station, 0, 'd', quantities);
-    assert.deepEqual(captured, Crystals.choices(held, () => null, station),
-        'native quantity capture preserves every ranked crystallization choice');
-    const proof = quantities.finish();
-    assert(proof, 'actual held native inputs fit the bounded owner proof');
-    assert(Network.quantityInputsHold(proof, Providers.quantityReaders(held)));
     const consumed = { ...held, inventory: { ...held.inventory, 166: { ...held.inventory[166], amount: 1 } } };
     assert.equal(Crystals.choices(consumed, () => null, station)[0].batchLimit, 1,
         'native current free stock reduces the executable crystal batch');
-    assert.equal(Network.quantityInputsHold(proof, Providers.quantityReaders(consumed)), false,
-        'physical crystal inputs stay exact even while bag IDs, presence and gear capability are unchanged');
 }
 assert.deepEqual(state, before, 'source selection never mutates the live kit');
 
@@ -98,7 +87,7 @@ for (const id of Crystals.catalog()) if (![90, 166, 86].includes(id)) board.remo
 board.remove(86); board.remove(166);
 const deps = { board, spots: [], timestamp, npcOffersFor: () => [],
     routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
-        () => [true, 0, 0]), workshop: { known: true, recipeId: 0, incomePerHour: 0 } };
+        () => [true, 0, 0]) };
 Economy.reset();
 const expensive = Economy.forState(state, deps);
 const crystalPaths = context => context.projection.nodes.find(row => row.key === 'item:1458').paths
@@ -111,11 +100,8 @@ const cheaper = Economy.forState(published, deps);
 assert.deepEqual(cheaper.network.queue, expensive.network.queue,
     'a new quote of an unwatched input waits for the next decision');
 assert.strictEqual(cheaper.plan, expensive.plan, 'the published decision is held, not rebuilt');
-// The next decision: a raised sources section (the market's section) with a
-// new sequence, as a step's event raise publishes it, read by the bot's step.
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const nextDecision = from => ({ ...from, stats: { ...from.stats,
-    decisionSeq: Number(from.stats.decisionSeq || 0) + 1, wishDirty: Sections.sectionBit('sources') } });
+// The next decision: a situation woke the build (its gate), read by the bot's step.
+const nextDecision = from => ({ ...from, stats: { ...from.stats, decisionSeq: Number(from.stats.decisionSeq || 0) + 1 } });
 const refreshed = Economy.forState(nextDecision(published), { ...deps, caller: 'step' });
 assert(crystalPaths(refreshed).some(row => row.improvement.sourceSelfId === 166),
     'the newly listed cheap input enters at the next decision');

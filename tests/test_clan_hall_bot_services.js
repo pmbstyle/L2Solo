@@ -20,7 +20,7 @@ const Departure = require('../src/GameServer/ClanHall/Departure');
 const VisitPolicy = require('../src/GameServer/ClanHall/VisitPolicy');
 const VisitNeed = require('../src/GameServer/ClanHall/VisitNeed');
 const TableChannel = require('../src/GameServer/Bot/Population/ColdTableChannel').shared;
-const originalBestSpot = Spots.findBestSpot;
+const originalFindById = Spots.findById;
 const originalArrival = Spots.arrivalPointForState;
 const originalInvoke = global.invoke;
 const { lifecycleKind, ColdSimulationKernel } = invoke('GameServer/Bot/Population/ColdSimulationKernel');
@@ -64,6 +64,10 @@ Navigation.move = () => {
     return { status: 'moving' };
 };
 Runtime.applyRows([hallRow]);
+// The held earning answer, and the spot the worker's route publishes on it, which the hall's
+// departure reads (main never chooses a spot): the field it hunts.
+const heldReturn = { spotId: 'hall-return-test', shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at };
+const heldHunt = { spotId: 'hall-return-test' };
 function stateFor(id, classId = 88) {
     return {
         characterId: id,
@@ -86,7 +90,9 @@ function stateFor(id, classId = 88) {
             classId,
             classProgressionLevel: 60,
             classProgressionClassId: classId,
-            coldCombat: { effects: [], skills: [], skillSource: 'hot' }
+            coldCombat: { effects: [], skills: [], skillSource: 'hot' },
+            earning: heldReturn,
+            huntSpot: heldHunt
         },
         simulation: { revision: 0 }
     };
@@ -168,17 +174,26 @@ async function main() {
         const session = {
             actor: physical,
             plan: 'hunting',
+            decisionStats: { earning: heldReturn, huntSpot: heldHunt },
             dataSendToMe() {},
             dataSendToOthers() {},
             dataSendToMeAndOthers(packet, caster) { broadcasts.push({ packet, caster }); }
         };
         physical.session = session;
+        // The rebuff decision's hall answer (Bot/AI/Rebuff): a body visits its hall only on
+        // it, once; a far bot's step is its hall's while it is pending (VisitNeed.needed).
+        const hallAnswer = () => ({ via: 'hall', providerId: null, at });
+        const asking = extra => ({ ...session, decisionStats: { ...session.decisionStats, rebuff: hallAnswer() }, ...extra });
+        const answered = row => ({ ...row, stats: { ...row.stats, rebuff: hallAnswer() } });
         // A player cast reserves the manual cast window; bots bypass it even at zero MP.
         assert(Services.cast(session, magic, npc, 1059, at).ok);
         broadcasts.length = 0;
         mp = 0;
         const requested = Services.missing(physical, Runtime.owned(1), at).map(skill => skill.fetchSelfId());
+        assert.equal(Hot.tick(session, physical, at), false, 'no hall answer: no visit, missing buffs or not');
+        session.decisionStats = { ...session.decisionStats, rebuff: hallAnswer() };
         Hot.tick(session, physical, at);
+        assert.equal(session.decisionStats.rebuff.done, true, 'the answer is carried out once');
         assert.equal(mp, 0, 'bot support is independent of manager MP');
         assert.equal(Services.missing(physical, Runtime.owned(1), at).length, 0, 'one tick grants the whole requested set');
         for (const id of requested) assert(Effects.list(physical).some(effect => effect.id === id));
@@ -191,7 +206,7 @@ async function main() {
         }
         assert.equal(broadcasts[0].packet.readInt32LE(5), physical.fetchId());
         assert.equal(broadcasts[1].packet.readInt32LE(17), physical.fetchId());
-        const waiting = { ...session, actor: magic, clanHallVisit: null, clanHallRetryAt: 0 };
+        const waiting = asking({ actor: magic, clanHallVisit: null });
         Hot.tick(waiting, magic, at);
         assert.equal(Services.missing(magic, Runtime.owned(1), at).length, 0,
             'a second bot receives its full set at the same timestamp, even during a player cast');
@@ -201,13 +216,14 @@ async function main() {
         assert.equal(broadcasts.length, packetCount, 'fresh buffs do not trigger repeated animation');
         mp = 10000;
         const hotExpiry = Effects.list(physical).find((e) => e.id === 1204).expiresAt;
-        const blocked = { ...session, clanHallVisit: null, clanHallRetryAt: 0, currentTargetId: 55 };
+        const blocked = asking({ clanHallVisit: null, currentTargetId: 55 });
         assert.equal(Hot.tick(blocked, physical, at + 2000), false, 'combat target takes priority');
-        assert.equal(Hot.tick({ ...session, clanHallVisit: null, clanHallRetryAt: 0, clanAllianceQuest: {} }, physical, at), false);
+        assert.equal(blocked.decisionStats.rebuff.done, undefined, 'a blocked moment keeps the answer for a free one');
+        assert.equal(Hot.tick(asking({ clanHallVisit: null, clanAllianceQuest: {} }), physical, at), false);
         const remote = hotActor({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } });
         actors.push(remote);
         assert.equal(
-            Hot.tick({ ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0, followPlayerSession: {} }, remote, at),
+            Hot.tick(asking({ actor: remote, clanHallVisit: null, followPlayerSession: {} }), remote, at),
             false,
             'do not abandon a party'
         );
@@ -216,11 +232,11 @@ async function main() {
             { spotRelocation: {} }, { townEscape: {} }, { pendingTownTrip: {} },
             { clanAllianceQuest: {} }, { coldLifeState: { stats: { equipmentPlan: { clanGoal: {} } } } },
             { coldLifeState: { stats: { marketReturn: {} } } }
-        ]) assert.equal(Hot.tick({ ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0, ...guard }, remote, at),
+        ]) assert.equal(Hot.tick(asking({ actor: remote, clanHallVisit: null, ...guard }), remote, at),
             false, 'return for buffs must wait for combat, transport and existing duties');
         const nearby = hotActor({ ...state, loc: { ...def.spawn, locX: def.spawn.locX + 900 } });
         actors.push(nearby);
-        assert(Hot.tick({ ...session, actor: nearby, clanHallVisit: null, clanHallRetryAt: 0 }, nearby, at));
+        assert(Hot.tick(asking({ actor: nearby, clanHallVisit: null }), nearby, at));
         assert(moved > 0, 'visible bot approaches the manager instead of receiving remote buffs');
         mp = 0;
         const unbuffed = hotActor(state);
@@ -232,13 +248,19 @@ async function main() {
         assert.equal(Services.cast(null, unbuffed, npc, 1086, at + 10000, true).code, 'manager_busy',
             'manual casts retain their cast interval');
         mp = 10000;
-        assert(Cold.needed(state, at));
-        assert.equal(Cold.needed({ ...state, stats: { ...state.stats, pveEncounter: { hp: 10 } } }, at), false);
+        // The rebuff's read (VisitNeed.serves): the hall serves a free bot that lacks its
+        // support; a far bot's step is its hall's only on the answer, at a free moment of its hunt.
+        const owned = Runtime.owned(1);
+        assert.equal(Cold.needed(state), false, 'missing buffs alone are no visit');
+        assert(Cold.needed(answered(state)), 'a hall answer is the far bot\'s visit');
+        assert.equal(Cold.needed(answered({ ...state, activity: 'shopping' })), false, 'its town visit ends first');
+        assert(VisitNeed.serves(state, owned, true, at));
+        assert.equal(VisitNeed.serves({ ...state, stats: { ...state.stats, pveEncounter: { hp: 10 } } }, owned, true, at), false);
         assert.equal(
-            Cold.needed({ ...state, stats: { ...state.stats, equipmentPlan: { clanGoal: { goalKey: 'level' } } } }, at),
+            VisitNeed.serves({ ...state, stats: { ...state.stats, equipmentPlan: { clanGoal: { goalKey: 'level' } } } }, owned, true, at),
             false
         );
-        assert.equal(Cold.needed({ ...state, party: { partyId: 'party' } }, at), false);
+        assert.equal(VisitNeed.serves({ ...state, party: { partyId: 'party' } }, owned, true, at), false);
         // Death restart: where a dead bot of the hall's clan restarts, hot and cold.
         const hall = Runtime.owned(1);
         const restart = (extra, actor = physical) => Hot.restartHall({ plan: 'hunting', ...extra }, actor);
@@ -249,7 +271,7 @@ async function main() {
         assert.strictEqual(restart({ clanAllianceSupportLeaderId: 7 }), null);
         assert.strictEqual(restart({ plan: 'merchant' }), null, 'hot: a merchant restarts at its stall');
         assert.strictEqual(restart({}, { ...physical, fetchKarma: () => 10 }), null, 'hot: a red bot restarts in town');
-        // One rule for hot and cold (VisitPolicy, step 1.5): a party member and
+        // One rule for hot and cold (VisitPolicy): a party member and
         // a bot with an errand restart in town.
         assert.strictEqual(restart({ hotBackgroundPartyId: 'party' }), null, 'hot: a party member restarts in town');
         assert.strictEqual(restart({ coldLifeState: { stats: { marketReturn: { spotId: 'home' } } } }), null,
@@ -272,7 +294,7 @@ async function main() {
         for (const extra of [{ pvpEncounter: {} }, { accountId: 'bot_craft_probe' }, { plan: 'merchant' },
             { clanAllianceSupportLeaderId: 7 }]) {
             assert.strictEqual(VisitPolicy.mayUse(VisitPolicy.fromSession({ plan: 'hunting', ...extra }, remote)), false);
-            assert.strictEqual(Hot.tick({ ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0, ...extra },
+            assert.strictEqual(Hot.tick(asking({ actor: remote, clanHallVisit: null, ...extra }),
                 remote, at), false, `hot visit excluded: ${Object.keys(extra)[0]}`);
         }
         const dead = { ...state, activity: 'dead', vitals: { ...state.vitals, hp: 0 } };
@@ -288,9 +310,8 @@ async function main() {
         assert.strictEqual(Cold.needed({ ...dead, stats: { ...dead.stats, pvpEncounter: { key: 'e1' } } }, at), false,
             'cold: a bot in a PvP fight restarts in town');
         const distantState = { ...state, loc: { locX: 0, locY: 0, locZ: 0 } };
-        assert(Cold.needed(distantState, at), 'missing useful buffs trigger a cold visit from anywhere');
-        assert.equal(Cold.needed({ ...distantState, stats: { ...state.stats, marketReturn: {} } }, at), false);
-        assert.equal(Cold.needed({ ...distantState, stats: { ...state.stats, clanHallRetryAt: at + 10000 } }, at), false);
+        assert(VisitNeed.serves(distantState, owned, true, at), 'a clan member with no buffs goes to his hall from anywhere');
+        assert.equal(VisitNeed.serves({ ...state, stats: { ...state.stats, marketReturn: {} } }, owned, true, at), false);
         await Life.init();
         state = await Life.upsertState(state, 'hall_test_seed');
         assert(state);
@@ -313,30 +334,61 @@ async function main() {
         assert(requests?.[0].precomputedResult, 'worker requests a main-thread service operation');
         const returnSpot = { id: 'hall-return-test', name: 'Hunting field',
             center: { locX: 10000, locY: 15000, locZ: -3000 }, npcNames: [] };
-        let selection;
-        Spots.findBestSpot = (status, options) => { selection = { status, options }; return { spot: returnSpot }; };
+        Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
         Spots.arrivalPointForState = () => ({ ...returnSpot.center });
-        const safeDeparture = Departure.plan({ ...state, stats: { ...state.stats,
-            spotBackoffs: [{ spotId: 'dangerous', untilStep: 60 }] } }, Runtime.owned(1), at);
-        assert(safeDeparture);
-        assert.equal(selection.options.spotRetryAfter.dangerous, Infinity, 'do not return to a dangerous spot');
-        assert.equal(selection.options.mode, 'solo');
+        assert.equal(Departure.plan(state, Runtime.owned(1))?.spot.id, returnSpot.id, 'the hall sends the bot to its held spot');
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats,
+            spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1)), null, 'never to one it died at');
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: undefined } }, Runtime.owned(1)), null,
+            'with no published spot no teleport: main never chooses a spot');
+        // A player's command raised on the far row (BotLifeState.raiseOnRow writes its held
+        // answer) and not yet answered: the published spot predates it, so no teleport to
+        // the old spot; it leaves the hall as it came and the worker routes it. Answered (the
+        // worker publishes the commanded spot), the hall sends it there.
+        {
+            const Situations = invoke('GameServer/Bot/Situations');
+            const command = spotId => ({ ...state, stats: { ...state.stats,
+                ...Situations.delta('player_command', { spotId, at: at + 1 }, Situations.OPEN, state.stats).facts } });
+            const raised = command('hall-command-test');
+            assert.equal(raised.stats.huntSpot.spotId, returnSpot.id, 'fixture: the worker published the old spot');
+            assert.equal(Departure.plan(raised, Runtime.owned(1)), null, 'a command unanswered: no teleport to the old spot');
+            assert.equal(Departure.plan(command(returnSpot.id), Runtime.owned(1))?.spot.id, returnSpot.id,
+                'the commanded spot published: the hall sends it there');
+        }
+        // The far bot's departure is the spot the worker's route publishes for it (huntSpot), as
+        // published: a gear plan's source the route takes, the card's hunting leaf.
+        {
+            const leafSpot = { ...returnSpot, id: 'hall-leaf-test' }, sourceSpot = { ...returnSpot, id: 'hall-source-test' };
+            const byId = { [returnSpot.id]: returnSpot, [leafSpot.id]: leafSpot, [sourceSpot.id]: sourceSpot };
+            Spots.findById = id => byId[id] || originalFindById.call(Spots, id);
+            const plan = { status: 'active', strategy: 'direct_drop', next: { spotId: sourceSpot.id } };
+            const collecting = { ...state, stats: { ...state.stats, equipmentPlan: plan, huntSpot: { spotId: sourceSpot.id } } };
+            assert.equal(Departure.plan(collecting, Runtime.owned(1))?.spot.id, sourceSpot.id,
+                'a collector leaves the hall for the source its route takes');
+            assert.equal(Departure.plan({ ...collecting, stats: { ...collecting.stats, equipmentPlan: { ...plan, next: { spotId: leafSpot.id } } } },
+                Runtime.owned(1))?.spot.id, sourceSpot.id, 'the published spot is served as it stands: main judges no basis');
+            assert.equal(Departure.plan({ ...collecting, party: { partyId: 'bgp-hall' } }, Runtime.owned(1)), null,
+                'a party member\'s hunt is its party\'s');
+            assert.equal(Departure.plan({ ...state, stats: { ...state.stats, huntSpot: { spotId: leafSpot.id } } },
+                Runtime.owned(1))?.spot.id, leafSpot.id, 'the published leaf spot names the hall\'s departure spot');
+            Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
+        }
         // Karma closes the hall's teleport: any karma above 0 blocks it; none,
         // zero or negative karma does not.
         for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
-            assert.strictEqual(!!Departure.plan({ ...state, stats: { ...state.stats, karma } }, Runtime.owned(1), at), !blocked,
+            assert.strictEqual(!!Departure.plan({ ...state, stats: { ...state.stats, karma } }, Runtime.owned(1)), !blocked,
                 `hall departure with karma ${karma}`);
         }
-        assert.equal(Departure.plan({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } }, Runtime.owned(1), at), null,
+        assert.equal(Departure.plan({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } }, Runtime.owned(1)), null,
             'hall departure is not a free teleport from anywhere');
         Spots.arrivalPointForState = () => null;
-        assert.equal(Departure.plan(state, Runtime.owned(1), at), null, 'no teleport without a valid arrival point');
+        assert.equal(Departure.plan(state, Runtime.owned(1)), null, 'no teleport without a valid arrival point');
         Spots.arrivalPointForState = () => ({ ...returnSpot.center });
         let hotDestination;
         global.invoke = (name) => name === 'GameServer/Actor/Generics/TeleportTo'
             ? (_session, _actor, destination) => { hotDestination = destination; return true; }
             : originalInvoke(name);
-        const remoteSession = { ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0 };
+        const remoteSession = asking({ actor: remote, clanHallVisit: null });
         remote.session = remoteSession;
         assert(Hot.tick(remoteSession, remote, at));
         assert.deepEqual(hotDestination, def.spawn, 'a distant hot bot teleports to its owned hall');
@@ -356,17 +408,18 @@ async function main() {
         remote.fetchLocX = () => 0;
         remote.fetchLocY = () => 0;
         remote.fetchLocZ = () => 0;
-        assert.equal(Hot.tick({ ...remoteSession, spotRelocation: null, clanHallRetryAt: 0 }, remote, at + 60000), false,
-            'fresh buffs do not cause another remote visit');
-        const refreshingSession = { ...remoteSession, spotRelocation: null, clanHallRetryAt: 0 };
-        assert(Hot.tick(refreshingSession, remote, at + 1200000), 'ending hot buffs trigger the next return');
+        assert.equal(Hot.tick({ ...remoteSession, spotRelocation: null }, remote, at + 60000), false,
+            'a done answer causes no other visit');
+        const refreshingSession = asking({ actor: remote, clanHallVisit: null, spotRelocation: null });
+        assert(Hot.tick(refreshingSession, remote, at + 1200000), 'the next answer starts the next visit');
         assert.deepEqual(hotDestination, def.spawn);
         global.invoke = (name) => name === 'GameServer/Actor/Generics/TeleportTo'
             ? () => false : originalInvoke(name);
-        const failedSession = { ...remoteSession, spotRelocation: null, clanHallVisit: null, clanHallRetryAt: 0 };
+        const failedSession = asking({ actor: remote, spotRelocation: null, clanHallVisit: null });
         assert.equal(Hot.tick(failedSession, remote, at + 1200000), false);
         assert.equal(failedSession.clanHallVisit, null);
-        assert(failedSession.clanHallRetryAt > at + 1200000, 'failed teleports back off instead of looping');
+        assert.equal(failedSession.decisionStats.rebuff.done, true, 'a failed teleport holds the answer done: no loop');
+        assert.equal(Hot.tick(failedSession, remote, at + 1200001), false);
         global.invoke = (name) => name === 'GameServer/Actor/Generics/TeleportTo'
             ? (_session, _actor, destination) => { hotDestination = destination; return true; }
             : originalInvoke(name);
@@ -388,12 +441,13 @@ async function main() {
         assert.equal(Hot.tick(grouped, full, at + 1000), false);
         assert.equal(hotDestination, null, 'party members stay with their party after support');
         global.invoke = originalInvoke;
-        const recalled = await Cold.resolve({ ...state, loc: distantState.loc }, at);
+        const recalled = await Cold.resolve(answered({ ...state, loc: distantState.loc }), at);
         assert(recalled.ok && recalled.state.activity === 'clan_hall');
         assert.deepEqual(recalled.state.loc, def.spawn, 'cold return persists the owned hall destination');
         assert.equal(recalled.state.stats.coldCombat.effects.length, 0, 'cold bots also receive buffs only after arrival');
         assert(recalled.state.stats.clanHallVisit);
         assert.equal(recalled.state.stats.travel, null, 'remote return does not walk across the map');
+        assert.equal(recalled.state.stats.rebuff.done, true, 'the visit holds its answer done');
         const outcome = await Cold.resolve(recalled.state, at + 1200);
         assert(outcome?.ok, 'cold service snapshot persists');
         state = outcome.state;
@@ -406,16 +460,22 @@ async function main() {
         assert.deepEqual(state.loc, returnSpot.center, 'cold departure persists an immediate teleport');
         assert.equal(state.spotId, returnSpot.id);
         assert.equal(state.stats.travel, null, 'no gatekeeper or walking leg after hall support');
-        assert.equal(Cold.needed({ ...state, stats: { ...state.stats, clanHallRetryAt: 0 } }, at + 60000), false,
-            'fresh buffs prevent another cold round trip even without the retry cooldown');
-        assert(Cold.needed({ ...state, stats: { ...state.stats, clanHallRetryAt: 0 } }, at + 1200000),
-            'ending buffs trigger another remote visit');
+        assert.equal(Cold.needed(state), false, 'a done answer is no other round trip');
         const haste = state.stats.coldCombat.effects.find((e) => e.id === 1086);
         assert.equal(haste.level, 1, 'cold service preserves the C4 hall skill rank');
         assert(haste.expiresAt > at && haste.expiresAt < at + 1300000);
         const row = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]))[0];
         assert(JSON.parse(row.statsJson).coldCombat.effects.some((e) => e.id === 1086));
-        assert.equal(Cold.needed(state, at + 60000), false, 'no repeat visit while buffs are fresh');
+        assert.equal(VisitNeed.serves({ ...state, loc: { ...def.spawn } }, owned, true, at + 60000), false, 'fresh buffs: the hall has nothing to serve');
+        // An answer main does not carry out (here: nothing lacking now) drops only the answer.
+        const resting = { ...answered(state), activity: 'resting', stats: { ...answered(state).stats, restUntil: at + 90000 } };
+        const kept = await Cold.resolve(resting, at + 60000);
+        assert(kept.ok && kept.state.stats.rebuff.done, 'the answer is held done');
+        assert.equal(kept.state.activity, 'resting', 'the bot rests on');
+        assert.equal(kept.state.spotId, state.spotId, 'at its spot');
+        assert.equal(kept.state.stats.restUntil, at + 90000, 'to its rest\'s end');
+        assert.deepEqual(kept.state.loc, state.loc, 'no teleport');
+        state = kept.state;
         // The cold worker's view: the published 'clan_halls' row joined with
         // the catalog definition, and an EffectStore that knows no actor (the
         // worker's stub lists nothing).
@@ -426,12 +486,13 @@ async function main() {
         const liveList = Effects.list;
         Effects.list = () => [];
         try {
-            const unbuffed = { ...state, stats: { ...state.stats, clanHallRetryAt: 0, coldCombat: { effects: [] } } };
-            assert.equal(VisitNeed.needed(unbuffed, workerHall, published.managerPresent, at + 60000), true,
-                'worker: a hall bot without the buff needs the hall');
-            assert.equal(VisitNeed.needed({ ...state, stats: { ...state.stats, clanHallRetryAt: 0 } }, workerHall,
-                published.managerPresent, at + 60000), false, 'worker: the bot\'s own fresh buffs count, not the store');
-            assert.equal(VisitNeed.needed(unbuffed, workerHall, false, at + 60000), false,
+            const local = { ...state, loc: { ...def.spawn } };
+            const unbuffed = { ...local, stats: { ...state.stats, coldCombat: { effects: [] } } };
+            assert.equal(VisitNeed.serves(unbuffed, workerHall, published.managerPresent, at + 60000), true,
+                'worker: the hall serves a bot without the buff');
+            assert.equal(VisitNeed.serves(local, workerHall, published.managerPresent, at + 60000), false,
+                'worker: the bot\'s own fresh buffs count, not the store');
+            assert.equal(VisitNeed.serves(unbuffed, workerHall, false, at + 60000), false,
                 'worker: no visit while the manager is absent');
         } finally {
             Effects.list = liveList;
@@ -449,30 +510,30 @@ async function main() {
             ...state,
             loc: { ...def.spawn },
             vitals: { ...state.vitals, hp: 10 },
-            stats: { ...state.stats, clanHallRetryAt: 0, coldCombat: { effects: [] } }
+            stats: { ...state.stats, coldCombat: { effects: [] } }
         };
         const woundedActor = hotActor(wounded);
         actors.push(woundedActor);
-        const restingSession = { ...session, actor: woundedActor, clanHallVisit: null, clanHallRetryAt: 0 };
+        const restingSession = asking({ actor: woundedActor, clanHallVisit: null });
         woundedActor.session = restingSession;
         assert(Hot.tick(restingSession, woundedActor, at + 30000));
         assert.equal(Services.missing(woundedActor, Runtime.owned(1), at + 30000).length, 0);
         assert(restingSession.clanHallVisit && woundedActor.state.fetchSeated(),
             'instant hot buffs still allow the bot to stay for health recovery');
-        const recovering = await Cold.resolve(wounded, at + 30000);
+        const recovering = await Cold.resolve(answered(wounded), at + 30000);
         assert(recovering.ok && recovering.state.stats.clanHallVisit);
         assert.equal(recovering.state.activity, 'clan_hall', 'cold bots also stay to recover after receiving all buffs');
         assert.equal(Services.missing(Cold.actorFor(recovering.state, Runtime.owned(1)), Runtime.owned(1), at + 30000).length, 0);
         assert.deepEqual(recovering.state.loc, def.spawn);
         Runtime.applyRows([{ ...hallRow, functionsJson: '{"hp":100}' }]);
-        assert.equal(Cold.needed({ ...wounded, loc: distantState.loc }, at + 30000), false,
-            'recovery alone does not enable remote recall when the hall has no useful buffs');
+        assert.equal(Cold.needed({ ...wounded, loc: distantState.loc }), false,
+            'recovery alone is no visit: a hall-clan bot rests where it stands');
         Runtime.applyRows([hallRow]);
         const travelStart = {
             ...state,
             activity: 'hunting',
             loc: { ...def.spawn, locX: def.spawn.locX + 900 },
-            stats: { ...state.stats, clanHallRetryAt: 0, coldCombat: { ...state.stats.coldCombat, effects: [] } }
+            stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, effects: [] }, rebuff: hallAnswer() }
         };
         let walking = await Cold.resolve(travelStart, at + 60000);
         assert(walking.ok && walking.state.activity === 'traveling');
@@ -485,8 +546,7 @@ async function main() {
         const death = {
             ...state,
             activity: 'dead',
-            vitals: { ...state.vitals, hp: 0 },
-            stats: { ...state.stats, clanHallRetryAt: 0 }
+            vitals: { ...state.vitals, hp: 0 }
         };
         const respawned = await Cold.resolve(death, at + 80000);
         assert(respawned.ok);
@@ -513,8 +573,9 @@ async function main() {
         assert.equal(Services.missing(magic, Runtime.owned(1), at).length, 0);
         assert.equal(Services.cast(null, magic, npc, 1059, at, true).code, 'not_authorized');
         assert.equal(Services.buffBot(null, magic, npc, at, true).code, 'not_authorized');
-        assert.equal(Cold.needed(distantState, at), false, 'unpaid support cannot trigger a remote visit');
-        assert.equal(Hot.tick({ ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0 }, remote, at), false);
+        assert.equal(VisitNeed.serves({ ...state, loc: { ...def.spawn }, stats: { ...state.stats, coldCombat: { effects: [] } } },
+            Runtime.owned(1), true, at), false, 'unpaid support serves nobody');
+        assert.equal(Hot.tick(asking({ actor: remote, clanHallVisit: null }), remote, at), false);
         const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
         const weak = {
             ...state,
@@ -531,7 +592,7 @@ async function main() {
     } finally {
         actors.forEach((a) => Ticker.clearAll(a));
         global.invoke = originalInvoke;
-        Spots.findBestSpot = originalBestSpot;
+        Spots.findById = originalFindById;
         Spots.arrivalPointForState = originalArrival;
         World.npc = originalNpc;
         Approach.hasLineOfSight = originalLos;

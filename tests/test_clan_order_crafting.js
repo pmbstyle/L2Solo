@@ -155,7 +155,7 @@ async function main() {
         assert.notStrictEqual(moved.state.activity, 'traveling', 'a moved crafter must not trigger a chase');
         assert.deepStrictEqual(moved.state.stats.equipmentPlan, arrived.stats.equipmentPlan, 'the craft project survives');
         assert.strictEqual(Cold.beginTravel({ ...moved.state, activity: 'hunting' }), null,
-            'a moved crafter has a bounded retry delay');
+            'a moved crafter is asked again only at the build\'s next waking situation');
         assert.strictEqual(Cold.beginTravel({ ...arrived, activity: 'hunting' }), null,
             'a field hunter is not a town craft service');
         await LifeState.upsertState({ ...await LifeState.findByCharacterId(5300006),

@@ -90,7 +90,7 @@ function awayVector(from, threat, preferredPoint) {
 
 function directRouteUsable(geodata, from, to) {
     try {
-        return geodata.hasLineOfSight(
+        return geodata.canWalkStraight(
             from.locX, from.locY, from.locZ,
             to.locX, to.locY, to.locZ
         ) === true;
@@ -173,7 +173,7 @@ function evaluateCandidate(candidate, from, threat, hazards, radius) {
 
     hazards.forEach((npc) => {
         const hazard = point(npc);
-        // Each hazard at its own C4 aggro range (T114); options.aggroRadius overrides all.
+        // Each hazard at its own C4 aggro range; options.aggroRadius overrides all.
         const aggroRadius = radius ?? NpcAggro.aggroRadius(npc);
         const startDistance = distance2d(from, hazard);
         const endpointDistance = distance2d(candidate.to, hazard);

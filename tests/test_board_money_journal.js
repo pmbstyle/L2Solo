@@ -1,4 +1,4 @@
-// The N0 money check on the board (step 3.3): over a run of board moves and
+// Money is conserved on the board: over a run of board moves and
 // deals (shop, ads, a player's purchase, a seller's answer to a buy ad, a deal on a bot
 // the worker leases and the worker's commit, an expiry, the leave rule), the
 // economy journal's flows per item equal the change of everything held:
@@ -161,6 +161,7 @@ async function run() {
         { selfId: 1865, name: 'Varnish', amount: 10 }]);
     const buyer = await character('bot_money_buyer', [{ selfId: 57, name: 'Adena', amount: 50000 }]);
     const leased = await character('bot_money_leased', [{ selfId: 57, name: 'Adena', amount: 1000 }, { selfId: 1864, name: 'Stem', amount: 40 }]);
+    const near = await character('bot_money_near', [{ selfId: 57, name: 'Adena', amount: 1000 }, { selfId: 1864, name: 'Stem', amount: 10 }]);
     const leaver = await character('bot_money_leaver', [{ selfId: 57, name: 'Adena', amount: 9000 }, { selfId: 1864, name: 'Stem', amount: 30 }]);
     const player = await character('player_money', [{ selfId: 57, name: 'Adena', amount: 20000 }]);
     const heldBefore = await held();
@@ -177,33 +178,41 @@ async function run() {
     await AfkTrade.sellToShop(seller, AfkTrade.recordStore(buyAd.id), 1864, 20, { objectId: answer.objectId });
     await AfkTrade.publishBot(seller, ad('sell_ad', [await stemLine(seller, 10, 90)]));
     const leasedAd = await AfkTrade.publishBot(leased, { ...ad('sell_ad', [await stemLine(leased, 20, 100)]), kind: 'shop' });
-    // A far bot's step starts from its row; the player's deal moves the
-    // revision, so that step's commit is refused and the next step, from the
-    // dealt row, commits the hunt.
-    const stepRevision = LifeState.cachedState(leased).simulation.revision;
-    await AfkTrade.buyFromShop(player, AfkTrade.recordStore(leasedAd.id), 1864, 7);
+    // A far bot's step starts from its row; the player's deal leaves the
+    // price on the board without moving that row, so the step commits its hunt
+    // and merges the price in the same save: nothing lost, nothing twice.
     const leasedState = LifeState.cachedState(leased);
+    await AfkTrade.buyFromShop(player, AfkTrade.recordStore(leasedAd.id), 1864, 7);
+    await AfkTrade.settleOwners([leased]);
     const hunted = structuredClone(leasedState.inventory);
     hunted['57'].amount += 30;
-    const hunt = revision => Owner.commitBatch([{ revision,
-        nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted,
-            simulation: { ...leasedState.simulation, revision } },
+    const hunt = () => Owner.commitBatch([{ revision: leasedState.simulation.revision,
+        nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted },
         proposal: InventorySummary.bagChange(leasedState.inventory, hunted) }], { timestamp: Date.now() });
-    const [refused] = await hunt(stepRevision);
-    assert.strictEqual(refused.reason, 'stale_revision', 'the deal moved the revision under the step');
+    const [commit] = await hunt();
+    assert(commit.ok && commit.settled, 'the step started before the deal commits the hunt and the price');
+    const [replayed] = await hunt();
+    assert(!replayed.ok, 'a replay of the step is refused');
     // Small lots are no longer pruned by a fixed minimum (45a13735): the 13
     // remaining Stems stay listed and the owner's bag is untouched.
-    const [commit] = await hunt(leasedState.simulation.revision);
-    assert(commit.ok, 'the step from the dealt row commits');
-    await AfkTrade.settleOwners([leased]);
+    assert.strictEqual(LifeState.cachedState(leased).adena, 1000 + 30 + 700, 'the far row carries the hunt and the price once');
+    // A far bot that turns near (its row hot) before its step commit gets the
+    // price at that hand-over, with no step and no clock.
+    const nearAd = await AfkTrade.publishBot(near, { ...ad('sell_ad', [await stemLine(near, 10, 100)]), kind: 'shop' });
+    await AfkTrade.buyFromShop(player, AfkTrade.recordStore(nearAd.id), 1864, 4);
+    assert(Database.boardSettlementOwners().includes(near), 'the far owner\'s price waits on the board');
+    await LifeState.upsertState({ ...LifeState.cachedState(near), phase: 'hot' }, 'spawn');
+    for (let turn = 0; turn < 100 && Database.boardSettlementOwners().includes(near); turn++) await new Promise(resolve => setTimeout(resolve, 5));
+    const adena = (await Database.fetchItems(near)).filter(item => Number(item.selfId) === 57).reduce((sum, item) => sum + Number(item.amount), 0);
+    assert.strictEqual(adena, 1000 + 400, 'the bot handed to main holds the price in its bag');
     const expiring = await AfkTrade.publishBot(leaver, ad('sell_ad', [await stemLine(leaver, 10, 300)]));
     await AfkTrade.publishBot(leaver, ad('buy_ad', [{ selfId: 1865, name: 'Varnish', count: 10, price: 400, stackable: true }]));
     const standing = AfkTrade.activeShops().length;
-    assert.strictEqual(standing, 5, 'the seller\'s shop and ad, the leased shop, the leaver\'s two ads');
+    assert.strictEqual(standing, 6, 'the seller\'s shop and ad, the leased and near shops, the leaver\'s two ads');
     assert.notEqual(AfkTrade.recordStore(leasedAd.id), null, 'a small remaining lot stays listed');
     // Records close by events: the owners leave (the leave rule).
     assert.strictEqual(Number(expiring.expiresAt), 0, 'no record has a deadline');
-    for (const owner of [seller, leased, leaver, buyer]) await AfkTrade.leave(owner);
+    for (const owner of [seller, leased, near, leaver, buyer]) await AfkTrade.leave(owner);
     assert.strictEqual(AfkTrade.activeShops().length, 0, 'every record of the run is closed');
 
     const heldChange = difference(await held(), heldBefore);

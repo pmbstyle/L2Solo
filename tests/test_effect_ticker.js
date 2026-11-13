@@ -101,7 +101,59 @@ const expiringEffect = EffectStore.apply(expiringTarget, {
 });
 assert.strictEqual(EffectTicker.scheduleExpiry(expiringSession, expiringTarget, expiringEffect), true, 'Timed buff should schedule an expiry refresh');
 
+// A stat effect expiring sends what C4 sends for its target: a character its
+// UserInfo once, to its own client, and its CharInfo to the others; an NPC
+// debuffed by a player its NpcInfo to the players who see it and no UserInfo
+// (that packet describes the receiver's own character); a character released
+// (logged out, a bot cooled) nothing: its effects stopped with it.
+const FailureLog = require('../src/FailureLog');
+const Actor = invoke('GameServer/Actor/Actor');
+const DataCache = invoke('GameServer/DataCache');
+const Response = invoke('GameServer/Network/Response');
+const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+DataCache.init();
+const character = (id) => {
+    const session = { packets: [], observers: [],
+        dataSendToMe(packet) { this.packets.push(packet); },
+        dataSendToOthers(packet) { this.observers.push(packet); },
+        dataSendToMeAndOthers(packet) { this.packets.push(packet); this.observers.push(packet); } };
+    session.actor = new Actor(session, {
+        ...utils.crushOb(DataCache.classTemplates.find(row => row.classId === 1)),
+        id, name: `Expiry${id}`, username: `expiry_${id}`, classId: 1, level: 20, exp: DataCache.experience[19], sp: 0, hp: 80, mp: 30,
+        sex: 0, locX: 0, locY: 0, locZ: 0, head: 0, face: 0, hair: 0, hairColor: 0, title: '', karma: 0, pk: 0, pvp: 0, isGM: 0,
+        items: [], paperdoll: Array.from({ length: 16 }, () => ({}))
+    });
+    calculateStats(session, session.actor);
+    return session;
+};
+const slowed = (actor, key) => EffectStore.apply(actor, { key, id: 1160, level: 1, type: 'debuff', stats: { runSpdMul: 0.7 }, durationMs: 10 });
+const ofKind = (packets, kind) => packets.filter(packet => packet[0] === kind).length;
+const failuresBefore = { ...FailureLog.snapshot() };
+const caster = character(2000101), buffed = character(2000102), released = character(2000103);
+const npc = { effects: {}, vitals: 0, fetchKind: () => 'Monster', fetchId: () => 1014813, statusUpdateVitals() { this.vitals += 1; } };
+const nativeNpcInfo = Response.npcInfo;
+Response.npcInfo = () => Buffer.from([0x16]);
+assert(EffectTicker.scheduleExpiry(caster, npc, slowed(npc, 'npc_slow')), 'the NPC debuff schedules its expiry');
+assert(EffectTicker.scheduleExpiry(buffed, buffed.actor, slowed(buffed.actor, 'own_slow')), 'the character debuff schedules its expiry');
+assert(EffectTicker.scheduleExpiry(released, released.actor, slowed(released.actor, 'released_slow')), 'the released bot\'s debuff schedules its expiry');
+// The bot cools before its debuff ends (Cooldown: destructor, then no actor).
+released.actor.destructor();
+const releasedActor = released.actor;
+released.actor = null;
+released.packets.length = released.observers.length = 0;
+
 setTimeout(() => {
+    Response.npcInfo = nativeNpcInfo;
+    assert.deepEqual(FailureLog.snapshot()?.['combat.user_info'] ?? 0, failuresBefore['combat.user_info'] ?? 0, 'no expiry fails to send UserInfo');
+    assert.strictEqual(EffectStore.list(npc).length, 0, 'the NPC debuff expired');
+    assert.strictEqual(ofKind(caster.packets, 0x04), 0, 'the caster gets no UserInfo for the NPC');
+    assert.strictEqual(ofKind(caster.observers, 0x16), 1, 'the players who see the NPC get its NpcInfo');
+    assert(npc.vitals > 0, 'and its vitals');
+    assert.strictEqual(EffectStore.list(buffed.actor).length, 0, 'the character debuff expired');
+    assert.strictEqual(ofKind(buffed.packets, 0x04), 1, 'the character gets its UserInfo once');
+    assert.strictEqual(ofKind(buffed.observers, 0x03), 1, 'the others its CharInfo once');
+    assert.deepEqual(Object.keys(releasedActor.effectExpiryTimers || {}), [], 'a released character keeps no effect timer');
+    assert.strictEqual(released.packets.length + released.observers.length, 0, 'and sends nothing when its debuff would end');
     assert.strictEqual(target.fetchHp(), 44, 'Poison DoT should apply datapack damage on each tick');
     assert.strictEqual(target.effectTimers.poison, undefined, 'DoT ticker should clear itself after its count');
     assert.strictEqual(manaTarget.fetchMp(), 1, 'Mana damage-over-time should reduce MP on each tick and clamp above zero');

@@ -6,7 +6,7 @@ const OFFSETS = [-80, -56, -32, -16, 16, 32, 56, 80];
 
 function distance(a, b) { return Math.hypot(a.locX - b.locX, a.locY - b.locY); }
 function visible(a, b) {
-    return Geodata.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
+    return Geodata.canWalkStraight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
 }
 
 // This is deliberately stricter than the existing point-actor pathfinder.
@@ -48,48 +48,52 @@ function samples(path) {
     return result;
 }
 
-function build(path, checkBudget = () => {}) {
-    if (!Array.isArray(path) || path.length < 2) return { path, lanes: [] };
-    try {
-        checkBudget();
-        const center = samples(path);
-        if (!center) return { path, lanes: [] };
-        const lanes = OFFSETS.map((offset) => {
-            const lane = [{ ...center[0] }];
-            for (let index = 1; index < center.length - 1; index++) {
-                checkBudget();
-                const previous = lane[lane.length - 1];
-                const base = center[index], next = center[index + 1];
-                const tangent = center[index - 1];
-                const length = distance(tangent, next) || 1;
-                let selected = base;
-                // Keep narrower, fully checked lanes when a client doorway
-                // cannot fit the wider offsets. Never relax body clearance.
-                for (const scale of [1, 0.5, 0.25, 0.125]) {
-                    const candidate = {
-                        locX: Math.round(base.locX - (next.locY - tangent.locY) / length * offset * scale),
-                        locY: Math.round(base.locY + (next.locX - tangent.locX) / length * offset * scale),
-                        locZ: base.locZ
-                    };
-                    candidate.locZ = Geodata.getHeight(candidate.locX, candidate.locY, base.locZ);
-                    if (Math.abs(candidate.locZ - base.locZ) > 32 || !visible(base, candidate)) continue;
-                    if (clearSegment(previous, candidate) && clearSegment(candidate, next)) {
-                        selected = candidate;
-                        break;
-                    }
-                }
-                lane.push({ ...selected });
-            }
-            lane.push({ ...center[center.length - 1] });
-            return lane;
-        });
-        return { path, lanes };
-    } catch (error) {
-        // Optional diversity must not discard a path A* already found.
-        // Cancellation still propagates so an abandoned journey stays dead.
-        if (error?.code === 'PATH_BUDGET') return { path, lanes: [] };
-        throw error;
-    }
+// Builds the corridor in one go (buildSteps without pauses).
+function build(path) {
+    const steps = buildSteps(path);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
 }
 
-module.exports = { build, visible, clearSegment, distance, SPACING, MAX_POINTS, OFFSETS };
+// The lanes beside an A* path, pausing (yield) at its start and at each lane
+// point so a caller can stop it there or continue it on a later turn.
+function* buildSteps(path) {
+    if (!Array.isArray(path) || path.length < 2) return { path, lanes: [] };
+    yield;
+    const center = samples(path);
+    if (!center) return { path, lanes: [] };
+    const lanes = [];
+    for (const offset of OFFSETS) {
+        const lane = [{ ...center[0] }];
+        for (let index = 1; index < center.length - 1; index++) {
+            yield;
+            const previous = lane[lane.length - 1];
+            const base = center[index], next = center[index + 1];
+            const tangent = center[index - 1];
+            const length = distance(tangent, next) || 1;
+            let selected = base;
+            // Keep narrower, fully checked lanes when a client doorway
+            // cannot fit the wider offsets. Never relax body clearance.
+            for (const scale of [1, 0.5, 0.25, 0.125]) {
+                const candidate = {
+                    locX: Math.round(base.locX - (next.locY - tangent.locY) / length * offset * scale),
+                    locY: Math.round(base.locY + (next.locX - tangent.locX) / length * offset * scale),
+                    locZ: base.locZ
+                };
+                candidate.locZ = Geodata.getHeight(candidate.locX, candidate.locY, base.locZ);
+                if (Math.abs(candidate.locZ - base.locZ) > 32 || !visible(base, candidate)) continue;
+                if (clearSegment(previous, candidate) && clearSegment(candidate, next)) {
+                    selected = candidate;
+                    break;
+                }
+            }
+            lane.push({ ...selected });
+        }
+        lane.push({ ...center[center.length - 1] });
+        lanes.push(lane);
+    }
+    return { path, lanes };
+}
+
+module.exports = { build, buildSteps, visible, clearSegment, distance, SPACING, MAX_POINTS, OFFSETS };

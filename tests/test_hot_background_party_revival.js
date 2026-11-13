@@ -142,5 +142,30 @@ try {
     danger = false;
     stats.raidEncounter = { status: 'failed' };
     assert.strictEqual(Revival.tick(leader, leader, Generics).handled, false, 'a failed raid cannot restart resurrection in combat');
+    // A helper party keeps its own resurrection anchor, even while that
+    // anchor is the corpse. Tank/loot ownership remains on the main leader.
+    const coreFillers = Array.from({ length: 7 }, (_, i) => member(2000200 + i));
+    const helperProvider = member(2000300, [resurrection]);
+    group.push(...coreFillers, helperProvider);
+    [...coreFillers, helperProvider].forEach(session => World.insertUser(session));
+    const marker = { clanId: 77, ownerSection: 'goal', goalKey: 'helper-rescue', generation: 'native',
+        sourceId: 'raid:1', npcId: 1, raidInstanceId: 'instance', memberIds: group.map(s => s.actor.fetchId()),
+        coreMemberIds: [leader,healer,...coreFillers].map(s => s.actor.fetchId()), minPartySize: 11, maxPartySize: 11 };
+    stats.objective.fullRoster = marker; stats.raidEncounter = { status: 'active' };
+    stats.raidAdmission = { partyId: 'revival', marker, openedAt: now, startedAt: now,
+        members: marker.memberIds.map(id => [id,0,50,'fixture']) };
+    group.forEach(session => { session.actor.state.setCasts(false); session.raidPreparationComplete = true; });
+    // The previous safety case deliberately exhausted the main healer. Keep
+    // that group's idle-rest gate out of this subgroup-resurrection scenario.
+    healer.actor.mp = 100;
+    helperProvider.actor.hp = 100; helperProvider.actor.mp = 100;
+    fallen.actor.state.setDead(true); fallen.hotRaidCasualtyAt = now; fallen.deathTimerStart = now;
+    assert.strictEqual(Hot.partyLeader(helperProvider), fallen, 'the fallen helper leader remains the subgroup anchor');
+    assert.strictEqual(Hot.leader(helperProvider), leader, 'the main leader keeps shared raid/loot ownership');
+    assert.strictEqual(Revival.shouldTownRespawn(Hot.partyLeader(fallen), fallen, now), false,
+        'an available helper provider keeps the corpse for resurrection');
+    tick(helperProvider);
+    assert.strictEqual(requests.at(-1).s, helperProvider, 'a helper resurrects its own subgroup without borrowing the core');
+    assert.strictEqual(requests.at(-1).data.id, fallen.actor.fetchId());
     console.log('Hot background party resurrection checks passed');
 } finally { saved.reverse().forEach(fn => fn()); }

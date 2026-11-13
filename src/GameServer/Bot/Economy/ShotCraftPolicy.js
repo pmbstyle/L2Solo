@@ -102,12 +102,6 @@ function recipeTarget(state, index = null, knownRecipeIds = [], selectedRecipeId
     return best;
 }
 
-function availableMaterial(state, selfId) {
-    const reserved = ItemDisposition.reservedEquipmentAmounts(state);
-    return Math.max(0, Number(state.inventory?.[selfId]?.amount || 0)
-        - Math.max(Number(reserved[selfId] || 0), Number(state.stats?.clanMaterialDemand?.[selfId] || 0)));
-}
-
 function scrapCraftRoutes(state, knownRecipes, index) {
     const routes = [];
     const owned = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
@@ -266,7 +260,9 @@ function craftPlan(state, recipe, index) {
 
 function batchCount(state, candidate) {
     const mpPerBatch = Number(candidate.recipe.mpCost || 0);
-    const ownCrystals = availableMaterial(state, candidate.crystalId);
+    // The crystals the bot may spend: the native writer's free-units rule (its summary's
+    // protections and every reserve, a luxury exchange's or a clan's among them).
+    const ownCrystals = Wealth.freeOf(state, candidate.crystalId);
     const potential = ownCrystals + Number(candidate.gear?.crystals || 0);
     const availableMp = Number(state.vitals?.mp || 0) - Number(candidate.gear?.recipe?.mpCost || 0);
     return Math.max(0, Math.min(64, Number(candidate.batches || 1),
@@ -405,7 +401,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
                 // The whole gear purchase is cash up front. Crystals not used
                 // by this lot remain physical assets at the native NPC floor;
                 // public bids and hoped-for later shot sales add no value here.
-                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false,
+                processingHours: scored.processingHours, extraMp: scored.mp,
                 residualValue: Math.max(0, Number(gear.crystals) - missing) * crystalResidualPrice, gear,
                 score: scored.score, ownedInputs: gear.ownedInputs };
         };
@@ -557,7 +553,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     const ids = new Set();
     for (const row of knownRecipes || []) { ids.add(Number(row.recipeId ?? row)); yield 'recipe'; }
     for (const id of unpackKnown(options.knownShotRecipes || [])) { ids.add(id); yield 'recipe'; }
-    let best = null, recipeChoice = null;
+    let best = null, bestRate = 0, knownSeriesValue = 0, recipeChoice = null;
     const shared = { ...options, knownRecipes, searchMemo: new Map() };
     for (const id of SHOT_RECIPE_IDS) {
         const recipe = Recipes.resolveByRecipeId(id);
@@ -567,7 +563,11 @@ function* shotSearch(state, knownRecipes, context, options) {
         if (!plan) continue;
         const route = plan.first, series = plan.series;
         if (ids.has(id)) {
-            if (!best || series.valueHours > best.series.valueHours) best = plan;
+            // Known jobs compete on the same work hour: the priced series
+            // includes MP recovery, preparation and every required trip.
+            const rate = series.valueHours / Math.max(1 / 3600, series.hours);
+            knownSeriesValue = Math.max(knownSeriesValue, series.valueHours);
+            if (!best || rate > bestRate) { best = plan; bestRate = rate; }
             continue;
         }
         const owned = Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0;
@@ -585,7 +585,9 @@ function* shotSearch(state, knownRecipes, context, options) {
             && (!recipeChoice || decision.best.valueHours > recipeChoice.valueHours)) recipeChoice = {
             recipe, route, series, decision, valueHours: decision.best.valueHours };
     }
-    if (recipeChoice && (!best || recipeChoice.valueHours > best.series.valueHours)) {
+    // A new book repays its one-off purchase over its complete finite
+    // investment, against the strongest already-known series.
+    if (recipeChoice && (!best || recipeChoice.valueHours > knownSeriesValue)) {
         options.onSelection?.(recipeChoice.valueHours * recipeChoice.route.batches / recipeChoice.series.batches);
         return {
         recipeTarget: Number(recipeChoice.recipe.recipeId), recipeRoute: selectionFor({ ...recipeChoice.route,
@@ -596,7 +598,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     return best ? { craft: selectionFor({ ...best.first, horizonBatches: best.series.batches }) } : null;
 }
 function createShot(state, knownRecipes, context, options = {}) {
-    const cursor = { iterator: null, done: false, value: null, stage: 0, units: 0, mode: 'action', selectedValueHours: 0 };
+    const cursor = { iterator: null, done: false, value: null, stage: 0, units: 0, selectedValueHours: 0 };
     cursor.iterator = shotSearch(state, knownRecipes, context, { ...options,
         onSelection: value => { cursor.selectedValueHours = value; } });
     return cursor;
@@ -686,6 +688,6 @@ function unpackStep(step) {
 }
 
 module.exports = { SHOT_RECIPE_IDS, SHOT_PRODUCT_IDS, SHOT_RECIPE_ITEM_IDS, CRYSTAL_BY_RANK,
-    availableMaterial, fundedDemand, recipeTarget, scrapCraftRoutes, crystalRoute, craftCandidate,
+    fundedDemand, recipeTarget, scrapCraftRoutes, crystalRoute, craftCandidate,
     batchCount, eligible, decide, packKnown, unpackKnown, packStep, unpackStep,
     recipeShotSearch, recipeShotPlan, createShot, stepShot, resultShot, selectionFor, townCode, townForCode };

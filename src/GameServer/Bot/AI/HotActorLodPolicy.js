@@ -1,5 +1,5 @@
 const { DiagnosticMetricMap } = require('../Population/DiagnosticMetricMap');
-const DiagnosticConfig = require('../Population/PopulationConfig');
+const Config = require('../Population/PopulationConfig');
 const { CLIENT_VISIBILITY_RADIUS, inClientView } = invoke('GameServer/World/WorldConstants');
 const ActorQueries = require('../../World/ActorSpatialQueries');
 const FULL_ENTER_RADIUS = 3500;
@@ -80,7 +80,7 @@ const telemetry = {
 };
 
 function increment(name, count = 1) {
-    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    if (!Config.developerDiagnostics) return { enabled: false };
     telemetry.counters[name] = Number(telemetry.counters[name] || 0) + Math.max(0, Number(count) || 0);
 }
 
@@ -147,19 +147,19 @@ function evaluate(session, sessions = [], now = Date.now()) {
     ), Infinity);
     const context = playerContext(session, realPlayers, now, World);
     if (context) promote(session, context, now);
-    // Visible combat is full while it lasts and no longer: the combat stance
-    // (fetchCombats) stays on 15 s after the last landed blow or offensive cast
-    // (CombatStance, Lisvus), so its end is the event; no hold after it.
-    const visibleCombat = nearestDistance <= CLIENT_VISIBILITY_RADIUS && !!(
-        bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.()
-    );
+    // Combat is full while it lasts and no longer, seen by a player or not: a body a mob
+    // hits answers it (defends itself, drinks, retreats) as a C4 character does, or a hot
+    // bot out of every player's view stands still and dies. The combat stance
+    // (fetchCombats) stays on 15 s after the last landed blow, offensive cast or hit
+    // taken (CombatStance, Lisvus), so its end is the event; no hold after it.
+    const combat = !!(bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.());
 
     const heldPromotion = Number(state.promotedUntil || 0) > now;
     let tier;
     let reason;
-    if (visibleCombat) {
+    if (combat) {
         tier = 'full';
-        reason = 'visible_combat';
+        reason = 'combat';
     } else if (heldPromotion) {
         tier = 'full';
         reason = state.lastPromotionReason || 'promotion_hold';
@@ -169,7 +169,16 @@ function evaluate(session, sessions = [], now = Date.now()) {
     } else if (nearestDistance <= CLIENT_VISIBILITY_RADIUS) {
         tier = 'visible';
         reason = 'far_visible';
+    } else if (nearestDistance <= Config.keepHotRadius()) {
+        // Out of every player's view but within the radius bodies stay hot in: it lives on
+        // (hunts, rests, walks) at the far cadence. A C4 character acts unseen, and the cold
+        // simulation does not step a hot bot, so a body that waited for a player's sight
+        // here would stand frozen until it cooled or was seen.
+        tier = 'visible';
+        reason = 'out_of_view';
     } else {
+        // Beyond the keep radius: a body about to cool (the cooldown grace) or one held hot
+        // there (a merchant, a service bot) only waits.
         tier = 'preload';
         reason = (nearest ? nearest.count : realPlayers.length) ? 'outer_preload' : 'no_real_players';
     }
@@ -178,9 +187,9 @@ function evaluate(session, sessions = [], now = Date.now()) {
     state.nearestPlayerDistance = Number.isFinite(nearestDistance) ? Math.round(nearestDistance) : null;
     state.evaluatedAt = now;
     // playerVisible: a real player is within the client's view of the bot (the
-    // nearest one, from this same read); BotAI's far-away gate and local chat read it.
+    // nearest one, from this same read); BotAI's local chat reads it.
     return { tier, reason, nearestPlayerDistance: nearestDistance, playerVisible: nearestDistance <= CLIENT_VISIBILITY_RADIUS,
-        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion || visibleCombat };
+        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion || combat };
 }
 
 function nextTickDelay(session, context, random = Math.random) {
@@ -199,7 +208,7 @@ function shouldRefreshStatus(session, context, now = Date.now()) {
 
 function recordStatusRefresh(session, durationMs, now = Date.now()) {
     stateFor(session).lastStatusAt = now;
-    if (!DiagnosticConfig.developerDiagnostics) return;
+    if (!Config.developerDiagnostics) return;
     increment('statusRefreshes');
     telemetry.statusDurations.push(Math.max(0, Number(durationMs) || 0));
     if (telemetry.statusDurations.length > 512) telemetry.statusDurations.shift();
@@ -212,14 +221,14 @@ function budgetExceeded(context, tickStartedAt, now = Date.now()) {
 function recordDeferral() { increment('deferrals'); }
 
 function recordTick(tier, durationMs) {
-    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    if (!Config.developerDiagnostics) return { enabled: false };
     increment(tier === 'full' ? 'fullTicks' : tier === 'visible' ? 'visibleTicks' : 'preloadTicks');
     telemetry.tickDurations.push(Math.max(0, Number(durationMs) || 0));
     if (telemetry.tickDurations.length > 1024) telemetry.tickDurations.shift();
 }
 
 function recordPacketBroadcast(recipients, bytes) {
-    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    if (!Config.developerDiagnostics) return { enabled: false };
     const count = Math.max(0, Number(recipients) || 0);
     if (!count) { increment('packetSkips'); return; }
     increment('packetBroadcasts');
@@ -228,7 +237,7 @@ function recordPacketBroadcast(recipients, bytes) {
 }
 
 function recordSubsystem(name, durationMs, items = 0) {
-    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    if (!Config.developerDiagnostics) return { enabled: false };
     const key = String(name || 'unknown');
     const entry = telemetry.subsystems.get(key) || { durations: [], items: 0 };
     entry.durations.push(Math.max(0, Number(durationMs) || 0));
@@ -238,7 +247,7 @@ function recordSubsystem(name, durationMs, items = 0) {
 }
 
 function snapshot(sessions = []) {
-    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    if (!Config.developerDiagnostics) return { enabled: false };
     const population = { full: 0, visible: 0, preload: 0 };
     (Array.isArray(sessions) ? sessions : []).forEach((session) => {
         if (!isBotSession(session) || !session.actor) return;

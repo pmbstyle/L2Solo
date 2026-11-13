@@ -4,11 +4,14 @@ const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const World = invoke('GameServer/World/World');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 const original = {
     random: Math.random, findCurrentSpot: Spots.findCurrentSpot, findById: Spots.findById,
     getCellData: Geo.getCellData, getHeight: Geo.getHeight,
-    hasGeo: Geo.hasGeo, hasLineOfSight: Geo.hasLineOfSight
+    hasGeo: Geo.hasGeo, canWalkStraight: Geo.canWalkStraight, containsLocation: Spots.containsLocation,
+    npcsInRadius: World.fetchNpcsInRadius, sessionsNear: World.actorSessionsNear
 };
 const anchor = { locX: 83396, locY: 147904, locZ: -3404 };
 const roof = { locX: 82840, locY: 147257, locZ: -3032 };
@@ -26,7 +29,7 @@ try {
         // Real Giran geodata and the exact coordinates from EloraMoss's activation.
         assert(Math.abs(Geo.getHeight(roof.locX, roof.locY, anchor.locZ) - anchor.locZ) > 64,
             'the captured roof XY must not resolve to the street layer');
-        assert.strictEqual(Geo.hasLineOfSight(anchor.locX, anchor.locY, anchor.locZ,
+        assert.strictEqual(Geo.canWalkStraight(anchor.locX, anchor.locY, anchor.locZ,
             roof.locX, roof.locY, roof.locZ), false);
         samplePoint(anchor, roof);
         const result = Placement.resolve({ loc: anchor });
@@ -43,7 +46,7 @@ try {
             const selected = Placement.resolve({ loc: anchor });
             assert(selected);
             const p = selected.loc;
-            assert(Geo.hasLineOfSight(anchor.locX, anchor.locY, anchor.locZ, p.locX, p.locY, p.locZ));
+            assert(Geo.canWalkStraight(anchor.locX, anchor.locY, anchor.locZ, p.locX, p.locY, p.locZ));
             assert(Geo.getCellData(p.locX, p.locY, p.locZ).nswe);
         }
         invoke('GameServer/DataCache').init({ validate: false });
@@ -51,12 +54,12 @@ try {
             loc: { locX: -59968, locY: 188724, locZ: -4512 } }, { preferAnchor: true });
         assert(dungeonRaid, 'Kael raid profiles must resolve outside the ordinary hunting spot index');
         const rally = dungeonRaid.loc;
-        assert(Geo.hasLineOfSight(-60428, 188264, -4512, rally.locX, rally.locY, rally.locZ),
+        assert(Geo.canWalkStraight(-60428, 188264, -4512, rally.locX, rally.locY, rally.locZ),
             'the real dungeon rally is connected to Kael');
         const outdoorRaid = Placement.resolve({ spotId: 'raid:10357',
             loc: { locX: -2991, locY: 112359, locZ: -2995 } }, { preferAnchor: true });
         assert(outdoorRaid, 'Sukar historical spawn Z must ground onto its actual terrain');
-        assert(Geo.hasLineOfSight(-3451, 112819, -3448,
+        assert(Geo.canWalkStraight(-3451, 112819, -3448,
             outdoorRaid.loc.locX, outdoorRaid.loc.locY, outdoorRaid.loc.locZ),
             'the outdoor rally must be reachable from the actual boss ground');
         // Repiro arrivals depend on terrain. Validate the generated roster's
@@ -75,7 +78,7 @@ try {
             const rally = Placement.resolve({ ...leader, loc: arrivals[leader.characterId] },
                 { preferAnchor: true, placementRadius: 240 });
             assert(rally, 'a height-valid but unusable cliff anchor must recover to a connected rally');
-            assert(Geo.hasLineOfSight(64048,16048,bossFloor.locZ,rally.loc.locX,rally.loc.locY,rally.loc.locZ));
+            assert(Geo.canWalkStraight(64048,16048,bossFloor.locZ,rally.loc.locX,rally.loc.locY,rally.loc.locZ));
             for (const member of roster) {
                 const placed = Placement.resolve({ ...member, loc: rally.loc }, { placementRadius: 420 });
                 assert(placed, 'the whole nine must fit around the recovered leader');
@@ -83,18 +86,36 @@ try {
                 const p = placed.loc;
                 for (const [dx,dy] of [[0,0],[16,0],[-16,0],[0,16],[0,-16]])
                     assert(Geo.getCellData(p.locX+dx,p.locY+dy,p.locZ).nswe, 'each actor retains wall clearance');
-                assert(Geo.hasLineOfSight(rally.loc.locX,rally.loc.locY,rally.loc.locZ,p.locX,p.locY,p.locZ));
+                assert(Geo.canWalkStraight(rally.loc.locX,rally.loc.locY,rally.loc.locZ,p.locX,p.locY,p.locZ));
             }
         }
         assert(randomCalls <= 16 * 9 * Config.activationPlacementAttempts * 2,
             'recovery does not expand the random placement budget');
+
+        // A walker that just landed at Hunter's Village (gatekeeper Esmeralda) whose straight
+        // road crosses a walled yard east of the landing: shown where it can walk back to the
+        // landing, never inside the yard, which no path leaves.
+        const landingPoint = { locX: 117129, locY: 76917, locZ: -2689 };
+        const yard = { locX: 117600, locY: 77000, locZ: -2696 };
+        const stepBacks = Metrics.counters.walkerRoadStepBacks;
+        const startTownPlacements = Metrics.counters.walkerStartTownPlacements;
+        for (let round = 0; round < 8; round++) {
+            const walker = Placement.resolve({ loc: yard }, { roadFrom: landingPoint, roadFromLanding: true });
+            assert(walker, 'a walker in the landing town is shown');
+            const p = walker.loc;
+            assert(Geo.findPath(p.locX, p.locY, p.locZ, landingPoint.locX, landingPoint.locY, landingPoint.locZ, 30000,
+                { goalRadius: 64, goalZTolerance: 64 }), 'its body can walk to the landing');
+        }
+        assert.strictEqual(Metrics.counters.walkerStartTownPlacements, startTownPlacements + 8,
+            'each walker shown at its run start in the landing town is counted');
+        assert.strictEqual(Metrics.counters.walkerRoadStepBacks, stepBacks, 'none is counted as a road step back');
     }
 
     const flat = { locX: 0, locY: 0, locZ: 0 };
     Geo.hasGeo = () => true;
     Geo.getHeight = () => 0;
     Geo.getCellData = () => ({ z: 0, nswe: 15 });
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     samplePoint(flat, { locX: 100, locY: 0 });
     assert.strictEqual(Placement.resolve({ loc: flat }).loc.locX, 100);
     let sample = 0;
@@ -111,10 +132,13 @@ try {
     assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
         'the actor must have clearance from an adjacent wall');
     Geo.getCellData = () => ({ z: 0, nswe: 15 });
-    Geo.hasLineOfSight = (x, y, z, toX) => Math.abs(toX - x) <= 16;
+    Geo.canWalkStraight = (x, y, z, toX) => !(x === 116 && toX === 100);
+    assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
+        'a point that opens onto a neighbour which does not open back is not a place a body is shown at');
+    Geo.canWalkStraight = (x, y, z, toX) => Math.abs(toX - x) <= 16;
     assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
         'a clear endpoint behind a wall must still be rejected');
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     Geo.getCellData = (x) => ({ z: x, nswe: 15 });
     Geo.getHeight = (x) => x;
     assert.strictEqual(Placement.resolve({ loc: flat }).loc.locZ, 100,
@@ -134,13 +158,13 @@ try {
     const raid = { id: 'raid:10060', raidBoss: true, center: flat, arrivalPoints: [blocked, rally] };
     Spots.findById = () => raid;
     Geo.getCellData = (x, y) => ({ z: 0, nswe: x === blocked.locX && y === blocked.locY ? 0 : 15 });
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     assert.deepStrictEqual(Placement.resolve({ spotId: raid.id, loc: blocked }, { preferAnchor: true }).loc, rally,
         'a generated raid arrival inside a dungeon wall recovers at a checked rally on the boss floor');
-    Geo.hasLineOfSight = (x, y, z, tx) => Math.abs(x - tx) <= 16;
+    Geo.canWalkStraight = (x, y, z, tx) => Math.abs(x - tx) <= 16;
     assert.strictEqual(Placement.resolve({ spotId: raid.id, loc: blocked }), null,
         'an isolated rally behind another wall cannot recover the raid placement');
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     Geo.getCellData = (x, y) => ({ z: x === 0 && y === 0 ? 400 : 0,
         nswe: x === blocked.locX && y === blocked.locY ? 0 : 15 });
     Geo.getHeight = (x, y) => x === 0 && y === 0 ? 400 : 0;
@@ -148,15 +172,99 @@ try {
         'raid recovery must not silently switch the boss floor');
     Geo.getHeight = () => 0;
     Geo.getCellData = (x,y) => ({ z: 0, nswe: x === blocked.locX + 16 && y === blocked.locY ? 0 : 15 });
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     Math.random = () => 0;
     assert.deepStrictEqual(Placement.resolve({ spotId: raid.id, loc: blocked }, { preferAnchor: true }).loc, rally,
         'a height-valid anchor with a blocked adjacent cell must also enter rally recovery');
     Geo.getCellData = () => ({ z: 0, nswe: 15 });
-    Geo.hasLineOfSight = (x,y,z,tx,ty) => !(x === 0 && y === 0 && tx === blocked.locX && ty === blocked.locY);
+    Geo.canWalkStraight = (x,y,z,tx,ty) => !(x === 0 && y === 0 && tx === blocked.locX && ty === blocked.locY);
     assert.deepStrictEqual(Placement.resolve({ spotId: raid.id, loc: blocked }, { preferAnchor: true }).loc, rally,
         'a clear but isolated anchor cannot publish actors across a wall from the raid');
     Spots.findById = original.findById;
+
+    // A hunter on its held spot is shown by the mobs it hunts: 150-400 from a live mob of
+    // the species its unit competes for (its plan's target here), inside its spot, in sight
+    // of the mob, never within 100 of another body; not anywhere around its cold place.
+    Geo.getCellData = () => ({ z: 0, nswe: 15 });
+    Geo.getHeight = () => 0;
+    Geo.canWalkStraight = () => true;
+    const field = { id: '3_3', center: flat, npcEntries: [{ selfId: 20001, count: 5, level: 20 }, { selfId: 20002, count: 5, level: 20 }] };
+    Spots.findById = () => field;
+    Spots.containsLocation = (spot, loc) => Math.abs(loc.locX) < 3000 && Math.abs(loc.locY) < 3000;
+    const mob = (selfId, locX, dead = false) => ({ fetchSelfId: () => selfId, isDead: () => dead,
+        fetchLocX: () => locX, fetchLocY: () => 0, fetchLocZ: () => 0 });
+    World.fetchNpcsInRadius = () => [mob(20001, 0), mob(20002, 150, true), mob(20002, 2000), mob(20002, 5000)];
+    const body = { locX: 2150, locY: 0 };
+    World.actorSessionsNear = (loc, radius) => Math.hypot(loc.locX - body.locX, loc.locY - body.locY) <= radius ? [{}] : [];
+    const hunter = { characterId: 9100, level: 20, spotId: field.id, loc: flat,
+        stats: { equipmentPlan: { status: 'active', targetNpcId: 20002 } } };
+    const rolls = [0, 0, 0.25, 0.5];
+    Math.random = () => rolls.shift() ?? 0.5;
+    const byMob = Placement.resolve(hunter, { playerLoc: { locX: 0, locY: 2000, locZ: 0 } });
+    assert.deepStrictEqual(byMob.loc, { locX: 2000, locY: 275, locZ: 0 },
+        'by the live mob of its species, past the point another body stands on');
+    assert.strictEqual(byMob.spot, field, 'on its held spot');
+    assert.ok(Math.hypot(byMob.loc.locX - 2000, byMob.loc.locY) >= 150 && Math.hypot(byMob.loc.locX - 2000, byMob.loc.locY) <= 400);
+    // No live mob of its species there: around its cold place, within the fallback radius.
+    World.fetchNpcsInRadius = () => [mob(20001, 0), mob(20002, 2000, true)];
+    Math.random = () => 0.99;
+    const fallback = Placement.resolve(hunter);
+    assert.ok(Math.hypot(fallback.loc.locX, fallback.loc.locY) <= 600, 'the cold place within 600');
+    // A bot off its spot (shopping in town) is not drawn to its spot's mobs.
+    World.fetchNpcsInRadius = () => [mob(20002, 2000)];
+    const town = { locX: 9000, locY: 0, locZ: 0 };
+    Math.random = () => 0;
+    assert.deepStrictEqual(Placement.resolve({ ...hunter, loc: town }).loc, town);
+    // A shopper off its spot with the player standing on its anchor: the town radius
+    // (1400) leaves room past the 450 a body keeps from the player; the hunter's 600
+    // would not at this roll (300 from the player).
+    Math.random = () => 0.5;
+    const shopper = Placement.resolve({ ...hunter, activity: 'shopping', loc: town }, { playerLoc: town });
+    assert.ok(shopper, 'a shopper by a player at its anchor is still placed');
+    assert.ok(Math.hypot(shopper.loc.locX - town.locX, shopper.loc.locY) >= Config.activationMinPlayerDistance);
+    // A hunter's cold place 112 above its floor (a stored height over the terrain): shown
+    // on the floor under it, never refused at every scan.
+    World.fetchNpcsInRadius = () => [];
+    Geo.getCellData = () => ({ z: -112, nswe: 15 });
+    Geo.getHeight = () => -112;
+    Math.random = () => 0;
+    assert.strictEqual(Placement.resolve(hunter).loc.locZ, -112, 'on the floor under its place');
+    // A roof 70 over its cold place, the floor 80 under it and a lower floor 400 under it:
+    // shown on the floor right under, never on the lower one.
+    Geo.getCellData = (x, y, z) => ({ z: [70, -80, -400].reduce((a, b) => Math.abs(b - z) < Math.abs(a - z) ? b : a), nswe: 15 });
+    assert.strictEqual(Placement.resolve(hunter).loc.locZ, -80, 'on the floor right under its place');
+    // A hunter's cold place on ground with no room (pressed into rock, nothing roomy around
+    // it): shown at its spot's spawn point that has room, and the recovery is counted.
+    Geo.getHeight = () => 0;
+    Geo.getCellData = (x, y) => ({ z: 0, nswe: (x === 0 && y === 0) || Math.hypot(x, y) > 700 ? 15 : 0 });
+    const spawnPoint = { locX: 1500, locY: 0, locZ: 0 };
+    Spots.findById = () => ({ ...field, arrivalPoints: [{ locX: 300, locY: 300, locZ: 0 }, spawnPoint] });
+    const recoveries = Metrics.counters.spotPlaceRecoveries;
+    Math.random = () => 0.5;
+    const rallied = Placement.resolve(hunter);
+    assert.ok(rallied, 'a hunter in rock is shown');
+    assert.ok(Math.hypot(rallied.loc.locX - spawnPoint.locX, rallied.loc.locY - spawnPoint.locY) <= 600, 'by its spot\'s spawn point');
+    assert.strictEqual(Metrics.counters.spotPlaceRecoveries, recoveries + 1);
+    // The spawn point nearest it lies outside its spot's cells: shown by the nearest one inside.
+    const inside = { locX: -2000, locY: 0, locZ: 0 };
+    const inField = Spots.containsLocation;
+    Spots.findById = () => ({ ...field, arrivalPoints: [spawnPoint, inside] });
+    Spots.containsLocation = (spot, loc) => loc.locX < 1000 && inField(spot, loc);
+    const inSpot = Placement.resolve(hunter);
+    assert.ok(Math.hypot(inSpot.loc.locX - inside.locX, inSpot.loc.locY - inside.locY) <= 600, 'by its spot\'s spawn point inside the spot');
+    Spots.containsLocation = inField;
+    Spots.findById = () => field;
+    // A party whose leader's place a player stands on: the leader steps aside past the 450 a
+    // body keeps from him, the others around it, rather than the whole party refused.
+    Geo.getCellData = () => ({ z: 0, nswe: 15 });
+    const party = Placement.resolveGroup([{ characterId: 1, loc: flat }, { characterId: 2, loc: flat }], 0,
+        { playerLoc: flat }, 1800);
+    assert.ok(party, 'the party is shown');
+    for (const placed of party) assert.ok(Math.hypot(placed.loc.locX, placed.loc.locY) >= Config.activationMinPlayerDistance);
+    Spots.findById = original.findById;
+    Spots.containsLocation = original.containsLocation;
+    World.fetchNpcsInRadius = original.npcsInRadius;
+    World.actorSessionsNear = original.sessionsNear;
     assert.strictEqual(Placement.resolve({ loc: { ...flat, locZ: null } }), null);
     assert.strictEqual(Placement.resolve({}), null);
     console.log('Bot activation placement tests passed');
@@ -164,5 +272,8 @@ try {
     Math.random = original.random;
     Spots.findCurrentSpot = original.findCurrentSpot;
     Spots.findById = original.findById;
-    for (const key of ['getCellData', 'getHeight', 'hasGeo', 'hasLineOfSight']) Geo[key] = original[key];
+    Spots.containsLocation = original.containsLocation;
+    World.fetchNpcsInRadius = original.npcsInRadius;
+    World.actorSessionsNear = original.sessionsNear;
+    for (const key of ['getCellData', 'getHeight', 'hasGeo', 'canWalkStraight']) Geo[key] = original[key];
 }

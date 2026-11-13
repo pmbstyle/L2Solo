@@ -16,6 +16,7 @@ const counters = {
     npcPurchaseItems: 0,
     npcPurchaseAdena: 0,
     noOffer: 0,
+    fundingShort: 0,
     offerChanged: 0,
     purchaseFailed: 0,
     soldOut: 0,
@@ -231,6 +232,8 @@ module.exports = {
         });
     },
     noOffer() { add('noOffer'); },
+    // A shop purchase refused for money (ColdMarketService funding_short): no seller missing.
+    fundingShort() { add('fundingShort'); },
     offerChanged() { add('offerChanged'); },
     purchaseFailed() { add('purchaseFailed'); },
     closed(reason, items = 0) {

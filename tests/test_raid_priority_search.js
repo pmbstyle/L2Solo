@@ -9,6 +9,8 @@ invoke('GameServer/DataCache').init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
 const Priority = require('../src/GameServer/Bot/Population/RaidRosterPriority');
+require('../src/GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
+    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
 const Work = require('../src/GameServer/Bot/Population/RaidSearchWork');
 const { RaidRosterCoverage } = require('../src/GameServer/Bot/Population/RaidRosterCoverage');
 const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/OpportunisticRaidDirector');
@@ -55,7 +57,8 @@ async function run() {
     const forecasts = [];
     const targets = catalog.all().filter(s => s.avgLevel >= 43 && s.avgLevel <= 48);
     const dependencies = {
-        config: { opportunisticRaidSearchIntervalMs: 60000, opportunisticRaidIntervalMs: 900000,
+        now: () => at,
+        config: { opportunisticRaidIntervalMs: 900000,
             opportunisticRaidMemberCooldownMs: 1800000, opportunisticRaidAliveFraction: .5,
             opportunisticRaidMaxParties: 2, opportunisticRaidExpeditionMs: 2700000 },
         database: { execute: async () => [] },
@@ -88,8 +91,9 @@ async function run() {
         const report = service.snapshot().search;
         assert(report.lastSearch.rosterAttempts <= 8 && report.lastSearch.hydratedBots <= 72
             && report.lastSearch.socialChecks <= 288 && report.lastSearch.forecasts <= 12);
-        assert.equal(report.cpuBudget.debtMs, 18, 'the priority forecast pays the same 12 ms token budget, including overrun debt');
-        assert.deepEqual(LIMITS, { rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12 });
+        assert.equal(report.cpuBudget.availableMs, 90, 'the priority forecast spends 30 of the 120 ms minute budget');
+        assert.equal(report.cpuBudget.debtMs, 0);
+        assert.deepEqual(LIMITS, { rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 120, forecastWindowMs: 60000, forecastGapMs: 5000, workerLagMaxMs: 120, workerBusyMax: .9, targetCandidates: 24 });
     } finally { service.stop(); }
     // These bosses have identical boss-only hints. The native forecast rejects
     // Kraven's guards (their damage outruns the healers' mana) but admits the
@@ -119,7 +123,7 @@ async function run() {
             assert.deepEqual(forecasts, [{ ids: fixture.expected, boss: 10431 }],
                 `both priority and coverage pass ${pass} reach the feasible guarded boss before CPU debt stops the search`);
             assert(reserved && reserved.objective.assessment.ready);
-            assert.equal(guarded.snapshot().search.cpuBudget.debtMs, 18);
+            assert.equal(guarded.snapshot().search.cpuBudget.availableMs, 90);
             assert.deepEqual([...scoreCalls.values()], [1, 1], 'all roster queues share one score per boss per search');
         } finally { Priority.targetScore = score; guarded.stop(); }
     }

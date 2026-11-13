@@ -5,7 +5,7 @@
 // (where to hunt, which mob, which improvement) for its next context, route
 // and post-commit improvement. It reads the
 // worker's decision made on exactly that state instead of building the
-// network again on the main thread (L25). The native actor retains accepted
+// network again on the main thread. The native actor retains accepted
 // advice; one bounded saved prefix can cross a restart until its original
 // market deadline. Every use still takes the economy owner's event verdict.
 const FailureLog = require('../../../FailureLog');
@@ -14,17 +14,17 @@ const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
-const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
-const Reaction = require('../Economy/Reaction');
+const Situations = require('../Situations');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomicValuation = require('../Economy/EconomicValuation');
+const Trace = require('../DecisionTrace');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
 const SHOT_RECIPE_WATCH = 128 | kinds.indexOf('resale');
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
 function kindFor(code) { return kinds[code === SHOT_RECIPE_WATCH ? kinds.indexOf('resale') : code]; }
 // A wish row carrying only the urgent root's urgency: the leaf has no root of
-// its own, so no amount or price is published (MVP-1), only gapHorizonHours.
+// its own, so no amount or price is published, only gapHorizonHours.
 const URGENCY_ONLY = 62;
 class CompactActivity {
     constructor(leaf) {
@@ -44,7 +44,8 @@ class CompactActivity {
         if (leaf.targetId) this.targetId = leaf.targetId;
         if (leaf.funding) this.funding = true;
         if (leaf.items) this.items = leaf.items.slice(0, 8).map(Number);
-        if (leaf.craftReservations?.length) this.craftReservations = leaf.craftReservations;
+        // A shop step's own root bids its buyer may take back to pay it (WishNetwork).
+        if (leaf.bids?.length) this.bids = leaf.bids.slice(0, PurchaseFunding.STEP_BIDS).map(Number);
         if (leaf.activity === 'improving' && leaf.improvement) this.improvement = { ...leaf.improvement };
     }
 }
@@ -52,9 +53,7 @@ class CompactActivity {
 // One binary record keeps exact watch/material numbers, leaf fields and Float32 usefulness;
 // the public tuple fields are decoded on demand and are never retained twice.
 const encoder = new TextEncoder(), decoder = new TextDecoder();
-const WORKSHOP = 16384;
 const SHOT = 32768;
-const FEASIBILITY = 65536;
 // Keep the original two watch-count bits and use two spare header bits for
 // the shop's three requests plus five meeting adverts.
 const watchCount = counts => ((counts >>> 6) & 3) | (((counts >>> 17) & 3) << 2);
@@ -66,32 +65,11 @@ const MAX_SHOT_PAYLOAD_BYTES = MAX_SHOT_BYTES - COMMAND_HEADER_BYTES;
 const cardWireRoom = echo => MAX_BYTES - 48 - encoder.encode(JSON.stringify(echo ?? null)).length;
 function shotOffset(counts) {
     return 28 + (counts & 63) * 8 + watchCount(counts) * 21 + ((counts >>> 8) & 15) * 12
-        + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & WORKSHOP ? 32 : 0) + (counts & FEASIBILITY ? 8 : 0);
+        + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
 }
 function encodeShot(value) {
     const encoded = value ? encoder.encode(JSON.stringify(value)) : null;
     return encoded?.length > MAX_SHOT_PAYLOAD_BYTES ? encoder.encode(JSON.stringify({ unknown: true })) : encoded;
-}
-function workshopValues(value) {
-    if (!value || value.known === false) return [0, 0, NaN, NaN];
-    const recipeId = Number(value.recipeId || 0), productId = Number(value.productId || 0);
-    if (!recipeId && !productId && value.known === true) return [0, 0, 0, 0];
-    const income = Number(value.incomePerHour), cycle = Number(value.cycleHours);
-    return recipeId > 0 && productId > 0 && income > 0 && cycle > 0
-        && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
-}
-function unknownWorkshop() { return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
-// A known workshop with nothing to craft (the planner's answer to a bot it has no recipe search for).
-function noWorkshop() { return { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 }; }
-// The occupation planner's answer to a bot that is no service crafter and has
-// no own board line, known without the planner (no recipe search, no sale
-// feasibility to read): its occupation branch (ColdSimulationWorker) and the
-// step's shortcut before an ask (member, lifecycle) both return it. Else null:
-// the planner answers. board: the board mirror (ownerLines).
-function noCrafterWorkshop(state, board) {
-    if (require('../Economy/CraftEligibility').isServiceCrafter(state)
-        || board?.ownerLines(Number(state.characterId))?.length) return null;
-    return { ...noWorkshop(), feasibility: null };
 }
 class CompactDecision {
     constructor(updatedAt, echo, riskWeight, activity, data, flags) {
@@ -108,7 +86,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17], craftReservations: row[18] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17], bids: row[19] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -118,8 +96,9 @@ class CompactDecision {
     set stale(value) { this.flags = value ? this.flags | 1 : this.flags & ~1; }
     get held() { return !!(this.flags & 2); }
     set held(value) { this.flags = value ? this.flags | 2 : this.flags & ~2; }
-    get workshopStale() { return !!(this.flags & 4); }
-    set workshopStale(value) { this.flags = value ? this.flags | 4 : this.flags & ~4; }
+    // Decided on a near body's post (its hot row), not on the far bot's row.
+    get near() { return !!(this.flags & 4); }
+    set near(value) { this.flags = value ? this.flags | 4 : this.flags & ~4; }
     get counts() { return new DataView(this.data).getUint32(0, true); }
     get inputHash() { return new DataView(this.data).getUint32(4, true); }
     get usefulness() { return new Float32Array(this.data, 28, (this.counts & 63) * 2); }
@@ -156,30 +135,12 @@ class CompactDecision {
         return { horizonHours: view.getFloat64(at, true), huntPerHour: view.getFloat64(at + 8, true),
             plan: itemId ? { itemId, valueHours: view.getFloat64(at + 24, true) } : null };
     }
-    get workshop() {
-        const counts = this.counts;
-        if (!(counts & WORKSHOP) || this.workshopStale) return unknownWorkshop();
-        const at = 28 + (counts & 63) * 8 + watchCount(counts) * 21 + ((counts >>> 8) & 15) * 12
-            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
-        const view = new DataView(this.data);
-        const incomePerHour = view.getFloat64(at + 16, true), cycleHours = view.getFloat64(at + 24, true);
-        return { known: Number.isFinite(incomePerHour) && Number.isFinite(cycleHours),
-            recipeId: view.getFloat64(at, true), productId: view.getFloat64(at + 8, true), incomePerHour, cycleHours };
-    }
     get shot() {
         const counts = this.counts;
-        if (!(counts & SHOT) || this.workshopStale || this.stale || this.held) return null;
+        if (!(counts & SHOT) || this.stale || this.held) return null;
         const at = shotOffset(counts);
         const bytes = new DataView(this.data).getUint16(at, true);
         return JSON.parse(decoder.decode(new Uint8Array(this.data, at + 2, bytes)));
-    }
-    get feasibility() {
-        const counts = this.counts;
-        if (!(counts & FEASIBILITY) || this.workshopStale || this.stale) return null;
-        const at = 28 + (counts & 63) * 8 + watchCount(counts) * 21 + ((counts >>> 8) & 15) * 12
-            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & WORKSHOP ? 32 : 0);
-        const view = new DataView(this.data);
-        return [view.getUint32(at, true), view.getUint16(at + 4, true), view.getUint16(at + 6, true)];
     }
 }
 function compact(record) {
@@ -187,7 +148,6 @@ function compact(record) {
         const result = new CompactDecision(record.updatedAt, record.echo, record.riskWeight, null, record.data, record.flags);
         if (Object.hasOwn(record, 'stale')) result.stale = record.stale;
         if (Object.hasOwn(record, 'held')) result.held = record.held;
-        if (Object.hasOwn(record, 'workshopStale')) result.workshopStale = record.workshopStale;
         return result;
     }
     const pairs = record.usefulness || [], watch = record.watch || [], materials = record.materials || [], wish = record.wish;
@@ -195,22 +155,22 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
-        ...(leaf.craftReservations?.length ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null,
-            leaf.unitPrice ?? null, leaf.r ?? null, leaf.craftReservations]
+        // Slot 18 is empty: a card saved before keeps its craft inputs there, which no reader
+        // reads (the bot's craft hold carries them: CraftInputReservations).
+        ...(leaf.bids?.length ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null,
+            leaf.unitPrice ?? null, leaf.r ?? null, null, leaf.bids]
             : leaf.town || leaf.sourceType || leaf.unitPrice !== undefined || leaf.r !== undefined
             ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null,
                 ...(leaf.r !== undefined ? [leaf.r] : [])]
             : leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
-    const workshop = Object.hasOwn(record, 'workshop') ? workshopValues(record.workshop) : null;
-    const feasibility = Array.isArray(record.feasibility) && record.feasibility[2] <= 14 ? record.feasibility : null;
     const shot = encodeShot(record.shot);
-    const fixed = 28 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0) + (workshop ? 32 : 0)
-        + (feasibility ? 8 : 0) + (shot ? shot.length + 2 : 0) + activity.length;
+    const fixed = 28 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0)
+        + (shot ? shot.length + 2 : 0) + activity.length;
     const wireRoom = cardWireRoom(record.echo);
     const n = Math.min(40, Math.floor(pairs.length / 2), Math.max(0, Math.floor((wireRoom - fixed) / 8)));
     const data = new ArrayBuffer(fixed + n * 8), view = new DataView(data);
-    view.setUint32(0, n | ((w & 3) << 6) | ((w >>> 2) << 17) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0) | (workshop ? WORKSHOP : 0) | (shot ? SHOT : 0) | (feasibility ? FEASIBILITY : 0), true);
+    view.setUint32(0, n | ((w & 3) << 6) | ((w >>> 2) << 17) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0) | (shot ? SHOT : 0), true);
     view.setUint32(4, record.inputHash >>> 0, true);
     new Float32Array(data, 28, n * 2).set(pairs.subarray ? pairs.subarray(0, n * 2) : pairs.slice(0, n * 2));
     let at = 28 + n * 8;
@@ -220,9 +180,6 @@ function compact(record) {
     if (wish) { view.setUint8(at, wish[0]); view.setFloat64(at + 1, wish[1], true); view.setFloat64(at + 9, wish[2], true); at += 17; }
     if (clan) { view.setFloat64(at, clan.horizonHours, true); view.setFloat64(at + 8, clan.huntPerHour, true);
         view.setFloat64(at + 16, clan.plan?.itemId || 0, true); view.setFloat64(at + 24, clan.plan?.valueHours || 0, true); at += 32; }
-    if (workshop) { for (const value of workshop) { view.setFloat64(at, value, true); at += 8; } }
-    if (feasibility) { view.setUint32(at, feasibility[0], true); view.setUint16(at + 4, feasibility[1], true);
-        view.setUint16(at + 6, feasibility[2], true); at += 8; }
     if (shot) { view.setUint16(at, shot.length, true); new Uint8Array(data, at + 2, shot.length).set(shot); at += shot.length + 2; }
     new Uint8Array(data, at).set(activity);
     return new CompactDecision(record.updatedAt, record.echo, record.riskWeight, record.activity, data);
@@ -248,27 +205,22 @@ function cardWithShot(before, shot) {
     bytes.set(source.subarray(previousEnd), next);
     return compact({ echo: before.echo, data });
 }
-function refreshPreparedCraft(refreshed, shot, mp) {
-    const decision = cardWithShot(refreshed.decision, shot);
-    if (!decision) return null;
-    refreshed.economy.shot = shot;
-    return { ...refreshed, decision, advisory: { ...refreshed.advisory, card: decision, preparedMp: mp } };
-}
 
 // What a decision depends on beyond updatedAt: its echo, [decisionSeq,
 // activityLeaf, focus]. A card belongs to the decision whose echo it carries;
-// a moved fact raises a section (wishDirty) with a new sequence, so a card
-// holds while the state raised nothing and carries the same echo (echoHolds).
+// it holds while the state's build is not woken (a situation raised for it: a
+// new decision comes) and carries the same echo (echoHolds).
 function stateEcho(state = {}) {
     const stats = state.stats || {};
     return [Number(stats.decisionSeq || 0), Number(stats.activityLeaf || 0), stats.wishFocus?.[0] ?? null];
 }
 function echoHolds(state, echo) {
-    return Array.isArray(echo) && !(Number(state?.stats?.wishDirty) || 0)
+    return Array.isArray(echo) && !buildWoken(state)
         && !Sections.decisionRefusal(state || {}, echo[0], echo[1], echo[2]);
 }
-const sameEcho = (left, right) => Array.isArray(left) && Array.isArray(right)
-    && left[0] === right[0] && left[1] === right[1] && left[2] === right[2];
+// A raise for the build waits on the state (its woken bit as raised; a card names a
+// build that published, so a held answer the row lacks is no raise here).
+const buildWoken = state => !!((Number(state?.stats?.woken) || 0) & Situations.BITS.build);
 // A received or saved echo: two safe non-negative integers and a focus
 // that is null or a string of at most 128 characters.
 const validEcho = echo => Array.isArray(echo) && echo.length === 3
@@ -276,7 +228,7 @@ const validEcho = echo => Array.isArray(echo) && echo.length === 3
     && (echo[2] === null || typeof echo[2] === 'string' && echo[2].length <= 128);
 
 // Units a bot holds against a card's item: the bag and accepted incoming,
-// the two amounts the core subtracts from an order (MVP-3).
+// the two amounts the core subtracts from an order.
 function heldFor(state, itemId) {
     return Math.max(0, Number(state?.inventory?.[itemId]?.amount || 0))
         + Math.max(0, Number(state?.acceptedIncoming?.[itemId] || 0));
@@ -316,7 +268,7 @@ function capture(economy, state, seen = state) {
     const queue = economy?.network?.queue || [];
     const urgent = economy?.network?.gap || queue.find(row => row.key === economy?.network?.focus?.[0]) || queue[0];
     // The card's wish is the leaf's own root or none: another root's amount
-    // and price never stand in for the core's step (MVP-1).
+    // and price never stand in for the core's step.
     const wish = queue.find(row => row.key === leaf?.rootKey) || null;
     const urgency = !urgent ? 0 : urgent.key === 'stock:shots' ? URGENCY_SHOTS
         : urgent.key === 'stock:potions' ? URGENCY_POTIONS : URGENCY_STAGE;
@@ -332,7 +284,7 @@ function capture(economy, state, seen = state) {
     const usefulness = new Float32Array([...useful].filter(([id, value]) => id > 0 && (value > 0 || recipeValues.has(id)))
         .sort((a, b) => Number(recipeValues.has(b[0])) - Number(recipeValues.has(a[0]))
             || b[1] - a[1] || a[0] - b[0]).slice(0, 40).flat());
-    // The core's craft inputs to order only (MVP-3): a quantity-prepared
+    // The core's craft inputs to order only: a quantity-prepared
     // network (a stock reader) holds each input's remaining amount, stock and
     // accepted incoming subtracted once. A network without a stock reader has
     // no missing amounts, and no recipe walk guesses them.
@@ -355,10 +307,6 @@ function capture(economy, state, seen = state) {
         if (left > 0) missing.set(id, left); else missing.delete(id);
     }
     const activity = leaf ? new CompactActivity(leaf) : null;
-    if (activity) {
-        const rows = CraftInputReservations.heldCraftRows(seen, economy?.network?.craftNeeds);
-        if (rows.length) activity.craftReservations = rows;
-    }
     // A served plan keeps its decision's count (withHeldUnits): stamped anew, a
     // partial fill would order the whole amount again and a hunt lose its progress.
     const held = activity ? heldAtDecisionOf(activity, seen) : undefined;
@@ -399,11 +347,10 @@ function capture(economy, state, seen = state) {
         watch: (economy?.watchList || []).slice(0, 8).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth),
             row.shotRecipeInvestment === true ? SHOT_RECIPE_WATCH : kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
-        workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,
-        feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
+        shot: economy?.shot || null
     });
     if (Diagnostics.active()) Diagnostics.count('ready_card', 'build', 'decision_pack');
-    if (Diagnostics.active() && Diagnostics.enabled(state?.characterId)) Diagnostics.push({ owner: state.characterId,
+    if (Trace.detailed(state?.characterId)) Trace.detail({ owner: state.characterId,
         caller: 'cold_decision_capture', trigger: 'decision_pack', phase: 'decision_preparation',
         reason: 'prepared_card', inputHash: decision.inputHash, revision: state.simulation?.revision,
         decisionSeq: economy?.network?.decisionSeq, activityLeaf: economy?.network?.activityLeaf,
@@ -459,7 +406,7 @@ let basicsKeys = null;
 // The keys a view reads with no income search (EconomyContext.personal).
 const PERSONAL = new Set(['persona', 'price', 'timestamp']);
 // The view's basics (the hour-value foundation with its income route search)
-// are built on first read: GoalService.review through NeedsEvaluator reads
+// are built on first read: a goal read (NeedsEvaluator) reads
 // only the card's leaf. The build takes the view's timestamp and board, as
 // the eager build did. Without the money packet or before the first build the
 // view's own fields need them at once. An urgent bot's gap horizon reads them
@@ -495,23 +442,23 @@ function view(state, decision, deps = {}, preparedBase = null) {
         : personalUsefulness(known(id) || 0, state, personal().persona.understanding, enabled, id);
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
-    // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
-    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.stockTargets);
+    // The hours an urgent want may wait for a better price (PriceDecision.waitRate):
+    // the build's (its kit rates); a kit want before any build rated the kit waits none.
+    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.kitRates);
     const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(publishedHorizon()) ? publishedHorizon()
-        : decision.urgency === URGENCY_SHOTS
-        ? basics().stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
-            ? basics().stock('potions').targetHours
+        : decision.urgency === URGENCY_SHOTS || decision.urgency === URGENCY_POTIONS ? 0
             : EconomicValuation.stageHours(state, basics().hunt.expPerHour, basics().persona);
-    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
+    // The kit: the build's own when it prepared these basics, else its published rates over the bag (EconomyContext.keptKit).
+    let kit = preparedBase;
+    const kitOf = () => kit ||= invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state, baseDeps);
+    const own = { state, hourAdena, moneyPrice, refillReserve: valid ? Number(Packet.refillReserve(packet)) : base.refillReserve,
         board, network: { activity }, activity, wish,
-        craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]),
             ...(row[3] === SHOT_RECIPE_WATCH ? { shotRecipeInvestment: true } : {}) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
-        workshop: decision?.workshop || unknownWorkshop(),
         itemUsefulness, worth: id => certified.has(Number(id)) ? certified.get(Number(id))
             : known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
-        stock: kind => basics().stock(kind) };
+        stock: kind => kitOf().stock(kind), kitCost: (id, unitPrice) => kitOf().kitCost(id, unitPrice) };
     if (base) return { ...base, ...own, gapHorizonHours: gapHorizonHours() };
     // Own enumerable getters: a spread or a key walk of the view sees the
     // basics as before (and builds them); a write replaces the getter.
@@ -557,7 +504,7 @@ function economyFor(state, deps = {}) {
 // there is no saved per-bot graph and no second decision map.
 // activity: the state the economy was built on, when the published state
 // already left it (a trip started after the build).
-function advisory(economy, state, activity = state.activity, deps = {}) {
+function advisory(economy, state, activity = state.activity) {
     const card = capture(economy, state);
     const eventProof = economy?.eventProof?.() || null;
     // lazy: cycle EconomyContext creates accepted cards after its full build.
@@ -567,7 +514,7 @@ function advisory(economy, state, activity = state.activity, deps = {}) {
     // A card is held only by its event proof (the economy verdict).
     if (!eventProof) { if (diagnostic) Diagnostics.count('card', 'drop', 'no_proof'); return null; }
     if (diagnostic) {
-        // L115: the real size of every card, dropped or kept.
+        // the real size of every card, dropped or kept.
         const total = card.data.byteLength;
         Diagnostics.count('card', 'size', total <= 2048 ? 'le2k' : total <= 4096 ? '2-4k' : total <= 8192 ? '4-8k' : '8k+');
         if (total > MAX_BYTES) Diagnostics.count('card', 'drop', 'oversize_card');
@@ -578,10 +525,9 @@ function advisory(economy, state, activity = state.activity, deps = {}) {
     const accepted = { card, eventProof, characterId: Number(state.characterId), decisionSeq: packet ? Number(packet.decisionSeq || 0) : undefined,
         activityLeaf: packet ? Number(packet.activityLeaf || 0) : undefined,
         focus: packet ? packet.wishFocus?.[0] ?? null : undefined, baseline: packet?.wishSections,
-        activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp),
-        // The goal revision the build saw (main's context), the baseline of
-        // the goal refusal (refusal); not saved: a restored card refuses once.
-        ...(Number.isFinite(deps.goalRevision) ? { goalRevision: deps.goalRevision } : {}) };
+        // The build's own wish fields, re-proposed while its commit has not landed (pendingCommit).
+        decided: packet ? { wishFocus: packet.wishFocus, dormantWishes: packet.dormantWishes, craftHold: packet.craftHold } : null,
+        activity, mp: Number(state.vitals?.mp), preparedMp: Number(state.vitals?.mp) };
     const restartProof = Economy.restartEventProof(eventProof, accepted);
     accepted.saved = restartProof ? RestartDecision.encode({ ...accepted, eventProof: restartProof },
         Sections.baselineIdentity(accepted.baseline)) : null;
@@ -630,133 +576,146 @@ function readAdvisoryCard(record) {
         if (card.counts & ~131071 || (card.counts & 63) > 40 || ((card.counts >>> 8) & 15) > 8
             || card.flags || activity !== null && !activity?.activity) return null;
         // Validate all binary ranges before this becomes retained native data.
-        void card.usefulness; void card.watch; void card.materials; void card.workshop; void card.feasibility; void card.shot;
+        void card.usefulness; void card.watch; void card.materials; void card.shot;
         return card;
     } catch (error) { FailureLog.note('economy.codec:advisory_card', error); return null; }
 }
-function advisoryMatches(state, accepted) {
+// carried: the commit the card rides is in flight (the kernel's cardInFlight).
+function advisoryMatches(state, accepted, carried = false) {
     if (!accepted || accepted.characterId !== Number(state?.characterId)) return false;
-    return !Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
+    return !Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus)
+        || pendingCommit(state, accepted, carried);
 }
-function advisoryPublicationHolds(state, advice, previous = null) {
-    return advisoryMatches(state, advice) && !(Number(previous?.baseline?.at) > advice.baseline.at
+// A card this thread built whose decision the row does not carry yet: the row is the
+// decision the build replaced (one decisionSeq behind: only that build moved it).
+const unlanded = (state, accepted) => !!accepted?.decided && Number(state?.stats?.decisionSeq || 0) === accepted.decisionSeq - 1;
+// Such a card is still the answer to that row only while the commit it rides is in flight
+// (carried): main's rows sent before it lands (a write of the visit) or its command
+// answered that it waits (a trade preparation). A commit refused or dropped ends it: the
+// card goes and the bot builds, as for any card its row refuses. A restored card (no
+// build fields) or any other echo is refused.
+function pendingCommit(state, accepted, carried) {
+    return carried === true && unlanded(state, accepted);
+}
+// A publication dropped a card whose commit had not landed (counted: its commit was refused or dropped).
+function noteDropped(state, accepted) {
+    if (Diagnostics.active() && unlanded(state, accepted)) Diagnostics.count('card', 'drop', 'commit_unlanded');
+}
+function advisoryPublicationHolds(state, advice, previous = null, carried = false) {
+    return advisoryMatches(state, advice, carried) && !(Number(previous?.baseline?.at) > advice.baseline.at
         || Number(state.updatedAt || 0) > advice.card.updatedAt
             && Number(state.stats?.wishSections?.at) > advice.baseline.at);
 }
-// The bot's own hunting/resting/travelling inside one decision is not an
-// event (L70). After a result the card is only restamped and published.
-// Before an action it is executed only through a hunter's target
-// (activityPick.npcId, ColdSimulationKernel); a resting or travelling bot's
-// step is resolveRest/resolveTravel of its own state (BackgroundResolver),
-// the same after a rebuild. A traveller without a trip record falls
-// through to a fight there, so it takes the rebuild.
-// refusal: the first failing check's name, '' when the card holds (L114
-// diagnostics read it; canReuse is its boolean).
+// The card a far bot's step serves while no situation woke its build:
+// its proof's identity (EconomyContext.proofIdentity: the owner, the
+// recompute generation, the decision echo, the leaf) and the field guards its
+// execution needs. Nothing else is judged: what ended its leaf is raised by the
+// executor (EconomyContext.leafOutcome). refusal: the first failing check's name,
+// '' when the card holds; canReuse is its boolean.
 function refusal(state, accepted, deps = {}, options = {}) {
     if (!accepted || !accepted.card) return 'no_card';
     if (accepted.characterId !== undefined && accepted.characterId !== Number(state.characterId)) return 'no_card';
     if (!accepted.baseline) return 'no_sections';
-    // A card holds only by its event proof.
+    // A card holds only by its proof.
     if (!accepted.eventProof) return 'no_card';
     // lazy: cycle EconomyContext constructs and validates these cards.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    if (state.stats?.wishDirty) return 'wish_dirty';
-    const echo = Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
-    if (echo) return echo;
     // A card without a leaf reuses only as a completed (null) activity its
-    // proof names; any other leaf takes the native checks and the event
-    // verdict. Commands still prepare via their native owner.
+    // proof names. Commands still prepare via their native owner.
     const leaf = accepted.card.activity;
     const completedNull = leaf === null && accepted.activityLeaf === 0 && accepted.eventProof.activity === null;
     if (!leaf && !completedNull) {
         if (Diagnostics.active()) Diagnostics.count('card', 'leaf_kind_check', 'none');
         return 'leaf_kind';
     }
+    const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
+    if (identity && !(identity === 'decision_seq' && pendingCommit(state, accepted, options.carried))) return identity;
     if (state.incomingPending) return 'incoming';
-    if (!Economy.FIELD_ACTIVITIES.has(state.activity)) return `not_field:${state.activity}`;
+    // A card serves wherever the bot stands (the field, a town visit, a stall, a craft,
+    // death): its situations wake the build (an arrival its leaf did not order raises
+    // arrived_town). A far bot's held build lost (a restart, eviction) has no answer to
+    // serve: it builds.
+    if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
-        && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
-    // A goal change (main's goal revision moved since the build) is seen at
-    // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild. The held earning spot does not
-    // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
-    if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
-        && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
-    // A far bot's card lives on, so nothing else heals a lost held build: every
-    // read of the earning spot would search in full.
-    if (Reaction.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
-    // options.collect: a build of the same step on this state follows a
-    // refusal; the verdict collects and hands itself to it (forState).
-    const why = [], verdict = {};
-    const holds = Economy.eventProofHolds(state, accepted.eventProof, deps, { activity: accepted.activity, leaf,
-        baseline: accepted.baseline, mp: accepted.mp, timestamp: Number(deps.timestamp || Date.now()), why, verdict,
-        collect: options.collect === true && !!options.prepared, basics: options.basics });
-    if (options.prepared) options.prepared.eventVerdict = verdict;
-    return holds ? '' : `events:${why[0] || 'unproved'}`;
+        && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: load order unchecked
+    return '';
 }
 function canReuse(state, accepted, deps = {}, options = {}) {
     return !refusal(state, accepted, deps, options);
 }
-// options.why: an array that receives the refusal's name; options.prepared:
-// an object that receives the basics a reuse built (L120), so the caller does
-// not build them or their income route again for the same state and deps,
-// and the card's verdict; options.collect: the caller builds on this state
-// and deps when the card is refused (its verdict serves the build's).
-// The basics: a selling leaf's check in the card's verdict builds them on the
-// same state and deps right before (EconomyContext LEAF_CHECKS selling), with
-// nothing yielding or written between; that answer serves when it read the
-// held earning spot with no search (a search renews or moves the hold, after
-// which a second read keeps its answer but records no search) at the same time.
+// options.why: an array that receives the refusal's name. The served card's view
+// reads its basics only when a reader asks them (view: lazily), its kit from the
+// published rates (keptKit): a served step builds nothing.
 function refreshAdvisory(state, accepted, deps = {}, options = {}) {
-    const checked = {};
-    const refused = refusal(state, accepted, deps, { ...options, basics: checked });
+    const refused = refusal(state, accepted, deps, options);
     if (refused) { options.why?.push(refused); return null; }
-    const base = checked.base?.preparedIncomeRoute?.searched === false && checked.base.timestamp === Number(deps.timestamp || Date.now())
-        ? checked.base : invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
-    if (options.prepared) options.prepared.basics = base;
     // This new result is fenced to the actual publication and the accepted
     // decision's echo; never relax ColdEconomyDecisions.matches or any
     // native write guard.
     const decision = compact({ data: accepted.card.data.slice(0), updatedAt: Number(state.updatedAt || 0),
         echo: [accepted.decisionSeq, accepted.activityLeaf, accepted.focus], flags: 0 });
-    const economy = view(state, decision, deps, base);
+    const economy = view(state, decision, deps);
     economy.inputKey = String(decision.inputHash);
+    // Served, no decision taken: the step re-decides none of the build's answers
+    // (its bids stand: ColdEconomyPlan).
+    economy.served = true;
+    // The craft step the decision holds: a town visit's plan carries it out.
+    economy.shot = decision.shot;
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
-    economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
-        decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
+    // A card whose commit has not landed proposes its own decision again; else the row's.
+    const pending = pendingCommit(state, accepted, options.carried);
+    if (pending && Diagnostics.active()) Diagnostics.count('card', 'pending', 'served');
+    const held = pending ? { ...accepted.decided, decisionSeq: accepted.decisionSeq,
+        activityLeaf: accepted.activityLeaf } : state.stats;
+    economy.statsPacket = { wishFocus: held.wishFocus, dormantWishes: held.dormantWishes, craftHold: held.craftHold,
+        decisionSeq: held.decisionSeq, activityLeaf: held.activityLeaf, money: state.stats.money,
+        kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline,
         wishAdvisory: accepted.saved || null };
-    Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
-        decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });
+    // A served card is counted and clears no bit: only the decision taken does.
+    Situations.decided(state.stats, 'build', { caller: deps.caller || 'card', served: true });
+    Object.assign(economy.network, { focus: held.wishFocus, dormant: held.dormantWishes,
+        decisionSeq: held.decisionSeq, activityLeaf: held.activityLeaf });
     Object.defineProperty(economy, 'eventProof', { value: () => accepted.eventProof });
     return { economy, decision, advisory: { ...accepted, card: decision } };
 }
 
 // Compare the existing compact economic output, without decoding it or
 // keeping another per-owner snapshot. Input digest, publication clock and
-// validity/held flags are metadata. The feasibility fingerprint binds its
-// mask to board identities/revisions; the mask itself is an economic result.
+// validity/held flags are metadata.
 function sameEconomicOutput(before, after) {
     if (before.data.byteLength > MAX_BYTES || after.data.byteLength > MAX_BYTES) return null;
     if (before.data.byteLength !== after.data.byteLength || before.counts !== after.counts) return false;
-    const counts = before.counts;
-    const fingerprint = counts & FEASIBILITY ? 28 + (counts & 63) * 8 + watchCount(counts) * 21
-        + ((counts >>> 8) & 15) * 12 + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0)
-        + (counts & WORKSHOP ? 32 : 0) : -1;
     const left = new Uint8Array(before.data), right = new Uint8Array(after.data);
     for (let at = 16; at < left.length; at++) {
-        if (at >= 24 && at < 28 || at >= fingerprint && at < fingerprint + 4) continue;
+        if (at >= 24 && at < 28) continue;
         if (left[at] !== right[at]) return false;
     }
     return true;
 }
 
-// A published card made on exactly this state: the one check of decided(),
-// workshopFor() and feasibilityFor(). A hot bot's card is current by its post
+// A published card made on exactly this state: the one check of decided().
+// A hot bot's card is current by its post
 // number (nearSeq, checked on arrival), not by updatedAt: the body's row moves
 // on between posts.
 function current(state, entry) {
     return !!entry && !entry.stale && (state?.phase === 'hot' || entry.updatedAt === Number(state?.updatedAt || 0) && echoHolds(state, entry.echo));
+}
+// The held leaf a step's plan carries out, read by the step's projection (BotLifeState.prepareResolve
+// → Situations.detect: its own trip and arrival raise nothing): the worker's economy where the
+// worker projects the step, the plan's card where main applies it (a worker command's
+// precomputedPlan). One reader for both threads; none (a step without a plan): every move is an event.
+function stepLeaf(plan) {
+    if (plan?.economy) return plan.economy.network?.activity ?? null;
+    return plan?.economyDecision ? compact(plan.economyDecision).activity : null;
+}
+// A far bot's card that replaced one of another decision (its decisionSeq moved, the
+// echo's first field): the new answer is news for its clan (BotClanChat.onDecision). The
+// first card after a restart replaces none and tells nothing; so does the first after a
+// near body's card (the bot left a player's sight): that card was decided on another row,
+// its goal is no earlier goal of the far bot's. Main only.
+function told(state, card, previous) {
+    if (state?.phase !== 'cold' || !previous || previous.near || card.echo?.[0] === previous.echo?.[0]) return;
+    invoke('GameServer/Bot/AI/BotClanChat').onDecision(state, card, previous);
 }
 class ColdEconomyDecisions {
     constructor() {
@@ -769,6 +728,7 @@ class ColdEconomyDecisions {
     // drops into the bag keeps the worker's updatedAt, but the decision was
     // made on the bag before them: keep its numbers, but defer its wishes.
     // Returns the compact card (a near body's view reads the same one).
+    // state: the far bot's row the card was decided on (its clan hears a moved decision).
     accept(characterId, decision, committed = null, state = null) {
         const id = Number(characterId);
         if (!id) return;
@@ -782,9 +742,9 @@ class ColdEconomyDecisions {
             const same = previous ? sameEconomicOutput(previous, incoming) : null;
             Diagnostics.count('ready_card', same === null ? 'comparison_unavailable' : same ? 'unchanged' : 'changed',
                 same === null ? previous ? 'wide_packet' : 'not_retained' : 'economic_output');
-            if (Diagnostics.enabled(id)) {
+            if (Trace.detailed(id)) {
                 const activity = incoming.activity;
-                Diagnostics.push({ owner: id, caller: 'cold_decision_accept', phase: 'decision_publication',
+                Trace.detail({ owner: id, caller: 'cold_decision_accept', phase: 'decision_publication',
                     trigger: bagChanged ? 'native_bag_changed' : 'state_publication',
                     reason: same === null ? 'comparison_unavailable' : same ? 'economic_output_unchanged' : 'economic_output_changed',
                     inputHash: incoming.inputHash, wishKey: activity?.rootKey, item: activity?.itemId,
@@ -797,8 +757,10 @@ class ColdEconomyDecisions {
             // A card made before the round its state's event dirtied (loot,
             // level) is not served: decided() misses and main reads the
             // basics view until the next decision point.
-            card.stale = bagChanged || !!state?.stats?.wishDirty;
+            card.stale = bagChanged || buildWoken(state);
+            const previous = this.byId.get(id);
             this.byId.set(id, card);
+            told(state, card, previous);
         }
         else if (this.byId.has(id)) this.byId.get(id).stale = true;
         return incoming;
@@ -826,19 +788,31 @@ class ColdEconomyDecisions {
     matches(state, decision) {
         return !!decision && (decision.held || current(state, decision));
     }
-    // Observer inspection shares admission rules without affecting hit counters.
+    // A near body's decision, taken on its post: held as a far one, marked as of the hot row.
+    acceptNear(characterId, decision) {
+        const card = this.accept(characterId, decision);
+        if (card) card.near = true;
+        return card;
+    }
+    // An observer's read (a status window, the clan's chat, the world observer): the card the
+    // bot holds, current or not (it outlives its row's next publication, a loot or a level,
+    // until the next decision), never counted as a request. Never a permission to act: decided() is.
     inspect(state) {
-        const decision = this.byId.get(Number(state?.characterId));
-        return this.matches(state, decision) ? decision : null;
+        return this.byId.get(Number(state?.characterId)) || null;
     }
     activity(state) { return this.decided(state)?.activity || null; }
-    hold(id, decision) {
+    // state: the far bot's row the command holds the card on (as accept's).
+    hold(id, decision, state = null) {
         if (!decision) return;
         const card = compact(decision);
         card.held = true;
+        const previous = this.byId.get(Number(id));
         this.byId.set(Number(id), card);
+        told(state, card, previous);
     }
-    release(id) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale = true; } }
+    // A held card ends with its command: stale (served no more) unless the command left
+    // the row it was decided on as it was (moved false: a plan that changed nothing).
+    release(id, moved = true) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale ||= moved; } }
     forget(id) {
         if (this.byId.delete(Number(id)) && Diagnostics.active()) Diagnostics.count('ready_card', 'eviction', 'owner_release');
     }
@@ -847,25 +821,11 @@ class ColdEconomyDecisions {
         const entry = this.byId.get(Number(id)), clan = entry?.clan;
         return clan ? { ...clan, updatedAt: entry.updatedAt } : null;
     }
-    workshopFor(state) {
-        // A held strategic decision may survive a physical command. Its earning
-        // estimate cannot: the accepted publication must still match this bag.
-        const entry = this.byId.get(Number(state?.characterId));
-        return current(state, entry) ? entry.workshop : unknownWorkshop();
-    }
-    feasibilityFor(state) {
-        const entry = this.byId.get(Number(state?.characterId));
-        return current(state, entry) ? entry.feasibility : null;
-    }
-    staleWorkshop(id, expected) {
-        const entry = this.byId.get(Number(id));
-        if (entry && (!expected || entry.updatedAt === expected.updatedAt && sameEcho(entry.echo, expected.echo))) entry.workshopStale = true;
-    }
     clear() {
         if (Diagnostics.active() && this.byId.size) Diagnostics.count('ready_card', 'eviction', 'reset', this.byId.size);
         this.byId.clear();
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
-    unknownWorkshop, noWorkshop, noCrafterWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, noteDropped, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, cardWithShot, kindCode, kindFor, compact,
+    MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

@@ -173,7 +173,8 @@ try {
 }
 // The readers of one moment share the bot's matchup profiles, yet a state
 // changed in place after a read (a restock plan adds a virtual purchase to its
-// bag) reads its change: each read equals a fresh build (store: false).
+// bag) reads its change: each read equals a fresh build (store: false). A gear
+// change writes a new bag (a worn row is never edited in place).
 {
     const escort = { ...spot, id: '99_95', npcEntries: [{ selfId: 239, level: 49, count: 4 }], npcSelfIds: [239] };
     // Its own id: its kit is first built here, at this timestamp.
@@ -191,10 +192,10 @@ try {
     bag.inventory[1464] = { selfId: 1464, amount: 5000 };
     assert.equal(read(), true, 'fixture: shots back');
     const weapon = bag.inventory[161];
-    bag.inventory[weapon.selfId] = { ...weapon, equipped: false, equippedCount: 0,
-        instances: weapon.instances.map(item => ({ ...item, equipped: false })) };
+    bag.inventory = { ...bag.inventory, [weapon.selfId]: { ...weapon, equipped: false, equippedCount: 0,
+        instances: weapon.instances.map(item => ({ ...item, equipped: false })) } };
     read();
-    bag.inventory[weapon.selfId] = weapon;
+    bag.inventory = { ...bag.inventory, [weapon.selfId]: weapon };
     assert.equal(read(), true, 'the weapon worn again');
     bag.stats.coldCombat = { ...bag.stats.coldCombat, summon: { active: true, npcId: 12077, skillId: 1111, hp: 5000,
         maxHp: 5000, pAtk: 3000, pDef: 2000, accur: 200, critical: 10, atkSpd: 400, expiresAt: timestamp + 600000 } };

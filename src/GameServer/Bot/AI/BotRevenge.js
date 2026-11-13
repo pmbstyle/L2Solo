@@ -1,5 +1,6 @@
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Policy = require('../../Social/RevengePolicy');
+const { hotStanding } = require('../../Social/PvpAggression');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Arena = invoke('GameServer/World/ArenaCombatRules');
@@ -7,18 +8,34 @@ const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Budget = invoke('GameServer/Bot/AI/BotPvpChat');
 const Participation = invoke('GameServer/Bot/AI/BotConflictParticipation');
 
-const SCAN_MS = 5000;
-const RETRY_MS = Policy.RETRY_MS;
+const EnemyMet = require('../Population/EnemyMet');
+const Situations = require('../Situations');
+const { seeded } = require('./TendencyRoll');
 const ENCOUNTER_MS = 30000;
 const NOTICE_RADIUS = Policy.NOTICE_RADIUS;
 
-function assessment(session, target, now) {
+// The bot's relation to a character (its memory and their clans' war: the memory
+// runtime reads ClanWarRuntime's view, relation.war): the rule's first input, one lookup.
+function relationTo(session, target, now) {
     const identity = actor => ({ id: Number(actor.fetchId()), clanId: Number(actor.fetchClanId?.() || 0),
         partyId: actor.session?.coldLifeState?.party?.partyId });
-    return Policy.evaluate(Memory.assess(identity(session.actor), identity(target), {}, now), Voice.profile(session));
+    return Memory.assess(identity(session.actor), identity(target), {}, now);
 }
+// The one builder of the rule's inputs on main (RevengePolicy.evaluate): the relation, the
+// persona and the pair's C4 standing. A bot with karma starts no fight outside a mutual
+// clan war (the rule's own karma); a red target is free.
+function assessment(session, target, now, relation = relationTo(session, target, now)) {
+    const standing = hotStanding(target);
+    return Policy.evaluate(relation, Voice.profile(session),
+        { ownKarma: hotStanding(session.actor).karma, targetKarma: standing.karma, targetFlagged: standing.flagged,
+            war: relation.war?.mutual === true });
+}
+// A provocation or objective the bot still wants: revenge by its rule and roll; any
+// other by the rule's own karma (a bot with karma starts no fight outside a mutual war).
 function stillWanted(session, objective, now) {
-    return objective.reason !== 'revenge' || assessment(session, objective.target, now).chance > objective.revengeRoll;
+    if (objective.reason === 'revenge') return assessment(session, objective.target, now).chance > objective.revengeRoll;
+    return !Policy.startsNoFight({ ownKarma: hotStanding(session.actor).karma,
+        war: invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, objective.target).mutual === true });
 }
 
 function eligible(session, target) {
@@ -84,10 +101,12 @@ function flushPending(session, now = Date.now()) {
     Budget.record(session, pending.reason, now);
     session.nextPvpChatAt = now + ENCOUNTER_MS;
     delete session.pendingPvpProvocation;
-    if (!pending.attack || Risk.defenseDecision(session, [pending.target], { key: pending.key,
-        allyAllowed: member => Participation.supports(pending.participation, member)
-            && (!pending.participation || Participation.available(member, now))
-    }).action !== 'fight') return false;
+    // A war's allies are the members at mutual war with the target (onAttack recruits
+    // them); any other fight's are its participation vote's.
+    const allyAllowed = pending.reason === 'clan_war' ? member => warAlly(member, session, pending.target)
+        : member => Participation.supports(pending.participation, member)
+            && (!pending.participation || Participation.available(member, now));
+    if (!pending.attack || Risk.defenseDecision(session, [pending.target], { key: pending.key, allyAllowed }).action !== 'fight') return false;
     session.pvpRevenge = { target: pending.target, initiator: session, expiresAt: now + ENCOUNTER_MS,
         reason: pending.reason, participation: pending.participation, revengeRoll: pending.revengeRoll };
     return true;
@@ -99,9 +118,20 @@ function decisionKey(session, target, reason, now) {
     return [reason, Number(session.actor.fetchId()), Number(target.fetchId()), now];
 }
 
+// A party member who may join its initiator's war fight: a bot of its own, not a
+// companion, free, eligible and at mutual war with the target, near the initiator.
+function warAlly(member, initiator, target) {
+    return member === initiator || String(member.accountId || '').startsWith('bot_')
+        && !member.partyCompanion && !member.followPlayerSession && !member.staticService && !member.arenaEphemeral
+        && !member.pvpDefense && !member.pvpRevenge && !member.pvpEncounter && eligible(member, target)
+        && invoke('GameServer/Clan/ClanWarRuntime').between(member.actor, target).mutual
+        && Threats.distance(initiator.actor, member.actor) <= Threats.PARTY_RADIUS;
+}
+
 function request(session, target, reason, lines, attack = true, now = Date.now(), rng = Math.random, revengeRoll = null) {
     if (session.pendingPvpProvocation || session.pvpDefense || session.pvpRevenge || !eligible(session, target)) return false;
-    const participation = attack ? Participation.prepare(session, target, now, rng) : null;
+    // A war fight takes no participation vote: the clan's war decides who joins (warAlly).
+    const participation = attack && reason !== 'clan_war' ? Participation.prepare(session, target, now, rng) : null;
     session.pendingPvpProvocation = { target, reason, attack: attack && !participation?.blocked && !participation?.deescalated,
         participation, revengeRoll, text: lines[Math.floor(rng() * lines.length)], key: decisionKey(session, target, reason, now),
         expiresAt: now + ENCOUNTER_MS };
@@ -110,43 +140,73 @@ function request(session, target, reason, lines, attack = true, now = Date.now()
     return started;
 }
 
-function tryStart(session, now = Date.now(), rng = Math.random) {
-    // Clear karma through hunting before initiating another revenge fight.
-    if (session?.actor?.fetchKarma?.() > 0) {
-        delete session.pendingPvpProvocation;
-        return false;
-    }
-    if (session?.pendingPvpProvocation) return flushPending(session, now);
-    if (!String(session?.accountId || '').startsWith('bot_') || session.arenaEphemeral ||
-        session.staticService || session.partyCompanion || session.pvpDefense || session.pvpRevenge || session.pvpAggressors?.size ||
-        !['hunting', 'resting', 'following'].includes(session.plan) ||
-        now < Number(session.nextRevengeAt || 0)) return false;
-    if (!invoke('GameServer/Effects/EffectRestrictions').canUseBasicAction(session.actor)) return false;
-    const life = invoke('GameServer/Bot/Population/BotLifeState').cachedState(Number(session.actor.fetchId()));
-    if (now < Math.max(Number(life?.stats?.revengeUntil || 0), Number(life?.stats?.coldCompetition?.conflictUntil || 0))) return false;
-    if (now < Number(session.nextRevengeScanAt || 0)) return false;
-    const enemies = [...(Memory.views.get(Number(session.actor.fetchId()))?.characterIds || [])];
-    if (!enemies.length) return false;
-    session.nextRevengeScanAt = now + SCAN_MS;
-    for (const enemyId of enemies) {
-        const target = invoke('GameServer/Bot/AI/BotPvpIndex').actor(enemyId);
-        if (!eligible(session, target) || Threats.distance(session.actor, target) > NOTICE_RADIUS) continue;
-        const social = assessment(session, target, now);
-        if (!(social.chance > 0)) continue;
-        const decision = Risk.defenseDecision(session, [target], { key: decisionKey(session, target, 'revenge', now) });
-        if (decision.action !== 'fight') continue;
-        session.nextRevengeAt = now + RETRY_MS;
-        const roll = rng();
-        if (roll >= social.chance) return false;
-        const name = String(target.fetchName?.() || '').replace(/[\x00-\x1f]/g, '').slice(0, 24);
-        const lines = [
-            `${name}, we still have a score to settle.`,
-            `I remember what you did, ${name}.`,
-            `Remember me, ${name}? I haven't forgotten.`
-        ];
-        return request(session, target, 'revenge', lines, true, now, rng, roll);
-    }
-    return false;
+// A body that may start a fight it met (enemy_met) now: a bot's own body, in the field,
+// with no fight or provocation under way, able to act. A war fight also needs clan wars
+// on, and no player's follower or managed encounter (the guards of the former war scan).
+function ready(session, reason) {
+    return String(session?.accountId || '').startsWith('bot_') && !session.arenaEphemeral && !session.staticService
+        && !session.partyCompanion && !session.pvpDefense && !session.pvpRevenge && !session.pvpAggressors?.size
+        && !session.pendingPvpProvocation && ['hunting', 'resting', 'following'].includes(session.plan)
+        && (reason !== 'clan_war' || require('../../Clan/ClanWarConfig').enabled && !session.followPlayerSession && !session.pvpEncounter)
+        && invoke('GameServer/Effects/EffectRestrictions').canUseBasicAction(session.actor);
+}
+const LINES = {
+    revenge: name => [`${name}, we still have a score to settle.`, `I remember what you did, ${name}.`,
+        `Remember me, ${name}? I haven't forgotten.`],
+    // Ours: a war enemy met in the field.
+    clan_war: name => [`${name}, your clan picked this war.`, `For the clan, ${name}!`]
+};
+// An enemy met near a player (enemy_met): the bot starts the fight its rule
+// decided (reason revenge | clan_war, roll: the meeting's seeded roll, key: the meeting's)
+// when its body may, the target is in reach (NOTICE_RADIUS) and it can win by what it
+// sees (BotPvpRisk); seeded by the meeting, never re-rolled. Returns what happened
+// (counted enemy_met:<it> on main): started | pending | not_ready | not_eligible | too_far
+// | no_war | outmatched | refused. rng: the meeting's own draws (seeded by its key; a
+// test may pass its own).
+function meet(session, target, { reason, roll, key, rng = seeded(String(key)) }, now = Date.now()) {
+    if (!ready(session, reason)) return 'not_ready';
+    if (!eligible(session, target)) return 'not_eligible';
+    if (Threats.distance(session.actor, target) > NOTICE_RADIUS) return 'too_far';
+    if (reason === 'clan_war' && !invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, target).mutual) return 'no_war';
+    if (Risk.defenseDecision(session, [target], { key: decisionKey(session, target, reason, now) }).action !== 'fight') return 'outmatched';
+    const name = String(target.fetchName?.() || '').replace(/[\x00-\x1f]/g, '').slice(0, 24);
+    return request(session, target, reason, LINES[reason](name), true, now, rng, roll) ? 'started'
+        : session.pendingPvpProvocation ? 'pending' : 'refused';
+}
+const counted = outcome => { Situations.note(`enemy_met:${outcome}`); return outcome; };
+// Two bodies near a player met on a spot (the worker's spot_command, EnemyMet.hotCommand).
+// The World's records ({ actor, session }): the bodies registered now.
+function fromSpot(command, now = Date.now()) {
+    const World = invoke('GameServer/World/World');
+    const holder = World.registeredActorById?.(Number(command.actorId)), peer = World.registeredActorById?.(Number(command.peerId));
+    const session = holder?.session || holder?.actor?.session;
+    if (!session?.actor || !peer?.actor) return counted('no_body');
+    return counted(meet(session, peer.actor, command, now));
+}
+// A player's client first receives a bot's CharInfo (CharacterVisibility.afterSend): the
+// bot meets the player. Its grievance (its memory) or their clans' mutual war, by the same rule,
+// rolled once per (bot, player, the bot's stay: its spot post's number) and judged once a stay:
+// a re-entry into view on the same stay (a teleport, a DeleteObject, a body swap) rolls nothing
+// new and does nothing (session.playersMet, at most PLAYERS_A_STAY a stay, more counted). Cost:
+// one memory lookup per first CharInfo of a bot to a player; the persona and the standings only
+// with a grievance or a war.
+const PLAYERS_A_STAY = 32;
+function playerSeen(bot, player, now = Date.now()) {
+    const session = bot?.session;
+    if (!session || !String(session.accountId || '').startsWith('bot_') || !player || player === bot
+        || String(player.session?.accountId || '').startsWith('bot_')) return null;
+    const stay = Number(session.nearSpot?.seq || 0), playerId = Number(player.fetchId());
+    if (session.playersMet?.stay !== stay) session.playersMet = { stay, ids: new Set() };
+    const judged = session.playersMet.ids;
+    if (judged.has(playerId)) return null;
+    if (judged.size >= PLAYERS_A_STAY) { Situations.note('enemy_met:player_capped'); return null; }
+    judged.add(playerId);
+    const relation = relationTo(session, player, now);
+    if (!relation?.ready || !relation.personal && relation.war?.mutual !== true) return null;
+    const met = EnemyMet.player({ botId: bot.fetchId(), playerId, stay, social: assessment(session, player, now, relation) });
+    if (!met) return null;
+    Situations.note(`enemy_met:${met.reason}`);
+    return counted(meet(session, player, { ...met, key: `enemy_met:player:${bot.fetchId()}:${playerId}:${stay}` }, now));
 }
 
 // Party commitment begins with an actual hostile action, including a miss or
@@ -163,9 +223,7 @@ function onAttack(attacker, target, now = Date.now(), rng = Math.random) {
     if (objective?.reason === 'clan_war') {
         objective.startedAt ||= now;
         objective.expiresAt = now + ENCOUNTER_MS;
-        for (const member of party) if (member !== session && String(member.accountId || '').startsWith('bot_')
-            && !member.partyCompanion && !member.followPlayerSession && !member.pvpDefense && !member.pvpRevenge
-            && eligible(member, target) && invoke('GameServer/Clan/ClanWarRuntime').between(member.actor, target).mutual) {
+            for (const member of party) if (member !== session && warAlly(member, session, target)) {
             member.pvpRevenge = { ...objective, initiator: session };
         }
         return;
@@ -200,4 +258,4 @@ function onAttack(attacker, target, now = Date.now(), rng = Math.random) {
     }
 }
 
-module.exports = { decisionKey, request, flushPending, tryStart, onAttack, allows, eligible, SCAN_MS, RETRY_MS, ENCOUNTER_MS, NOTICE_RADIUS };
+module.exports = { decisionKey, request, flushPending, meet, fromSpot, playerSeen, onAttack, allows, eligible, ENCOUNTER_MS, NOTICE_RADIUS };

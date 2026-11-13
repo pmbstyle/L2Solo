@@ -10,7 +10,6 @@ const NativeChoice = require('./helpers/nativeMarketChoice');
 
 (async () => {
 const DataCache = invoke('GameServer/DataCache');
-const GoalPlanner = invoke('GameServer/Bot/Goals/GoalPlanner');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 DataCache.init();
 const NECKLACE = 910; // Necklace of Devotion, sold by NPCs
@@ -24,7 +23,7 @@ const loot = Object.fromEntries([[1864, 60], [1865, 15], [1866, 26], [1868, 108]
 // them: the gear is what the wallet weighs.
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const stocked = state => ({ ...state, inventory: { ...state.inventory,
-    1061: { selfId: 1061, amount: Economy.stockFor(state, 'potions').target } } });
+    1061: { selfId: 1061, amount: Economy.basics(state).stock('potions').target } } });
 const bot = (persona, equipmentPlan, adena = 2000000) => stocked({
     // Purchases are executable only over prepared routes from where the bot
     // stands (5e91bb1c): the hunting bot is near Giran.
@@ -45,10 +44,8 @@ async function choice(state, label) {
     const result = await NativeChoice.capture(state, { nativeRoutes: true }, label);
     assert.strictEqual(result.goals.length, 1, 'one worker leaf, not simultaneous buy and sale alternatives');
     const goal = result.goals[0], leaf = result.read.activity;
-    assert.strictEqual(goal.priority, 50);
     assert.strictEqual(goal.plan.wishKey, leaf.rootKey);
     assert.strictEqual(goal.plan.economyActivity, leaf.activity);
-    assert.deepStrictEqual(goal.blockers, []);
     if (leaf.activity === 'shopping') {
         assert.strictEqual(goal.target.itemId, leaf.itemId);
         assert.strictEqual(goal.plan.estimatedCost, leaf.price);
@@ -64,7 +61,7 @@ async function choice(state, label) {
         assert.strictEqual(goal.type, 'sell_inventory');
         assert.deepStrictEqual(goal.target.itemIds, leaf.items || []);
     }
-    assert.strictEqual(GoalPlanner.plan(result.goals, Date.now()).type, goal.type);
+    assert.strictEqual(result.goals[0].type, goal.type, 'the goal is the first need');
     return result;
 }
 const wealthChoice = await choice(bot(wealth, npcJewellery), 'wealth_original_2m');
@@ -80,6 +77,47 @@ assert(['hunting', 'selling'].includes(poorChoice.read.activity.activity), 'the 
 assert(Packet.firstUnfundedPrice(poorChoice.state.stats.money) > 0, 'a real unfunded gap remains');
 assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
     'the old jewellery plan alone cannot authorize its debit');
+
+// A sale leaf names no kind the last sale visit could not place (stats.marketSellSeen) with no
+// new buyer of it: it would only send the bot back to leave it in the bag again. A kind it did
+// not try (or a new buyer of one) opens only itself: the kinds the visit kept stay no sale.
+{
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const seller = bot(wealth, npcJewellery, 50000);
+    const kinds = state => Providers.liquidationCandidates(state, Economy.basics(state)).map(row => Number(row.selfId));
+    const seen = Disposition.saleSeen(seller).items;
+    assert(kinds(seller).some(id => seen.includes(id)), 'the loot is for sale');
+    const after = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: seen, buyers: null } } };
+    assert(Disposition.saleRetryHolds(after), 'fixture: nothing new since the visit');
+    assert.deepStrictEqual(kinds(after), kinds(seller).filter(id => !seen.includes(id)), 'the kinds the last visit kept are no sale');
+    const newKind = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: seen.slice(1), buyers: null } } };
+    assert.deepStrictEqual(kinds(newKind), kinds(seller).filter(id => !seen.slice(1).includes(id)),
+        'a kind the visit did not try is for sale, the kinds it kept are not');
+    // A grade crystal no sale leaf offers (it waits on the bot's own shop) is new to the
+    // retry, yet the leaf names none of the kinds the visit kept.
+    const crystal = { ...after, inventory: { ...after.inventory, 1458: { selfId: 1458, amount: 20, stackable: true } } };
+    assert.deepStrictEqual(kinds(crystal), kinds(after), 'a crystal in the bag sends no kept kind to sale again');
+    // Soul Ore bought for the shots the bot still wishes for (its craft hold) is no new goods:
+    // the retry holds and no sale offers it.
+    const ore = { ...after, inventory: { ...after.inventory, 1785: { selfId: 1785, amount: 30, stackable: true } },
+        stats: { ...after.stats, craftHold: [['stock:shots', [[1458, 10], [1785, 30]]]] } };
+    assert(Disposition.saleRetryHolds(ore), 'an input bought for a held craft does not end the sale retry');
+    assert(!kinds(ore).includes(1785), 'the held craft input is no sale');
+    // A new buyer of a kept kind opens that kind alone; a better bid on a kind the bag no longer
+    // holds sends the bot to sell nothing: the retry holds.
+    const bids = {};
+    Disposition.useBoard(() => ({ list: id => bids[id] ? [{ ownerId: 99, price: 1e9, count: 5 }] : [] }));
+    try {
+        const watched = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: [...seen, 1458], buyers: [...seen, 1458].map(() => [0, 0]) } } };
+        bids[1458] = true;
+        assert(Disposition.saleRetryHolds(watched), 'a bid on goods the bag no longer holds does not end the retry');
+        bids[seen[0]] = true;
+        assert(!Disposition.saleRetryHolds(watched), 'a new buyer of a kept kind ends the retry');
+        assert.deepStrictEqual(kinds(watched), kinds(seller).filter(id => id === seen[0] || !seen.includes(id)),
+            'the kind with a new buyer is for sale, the other kept kinds are not');
+    } finally { Disposition.useBoard(() => invoke('GameServer/AfkTrade/AfkTradeService').boardIndex()); }
+}
 
 const botOffer = { ...npcJewellery, partyNeedReason: 'market_fallback', market: { ...npcJewellery.market, sourceType: 'afk_bot_store' } };
 const ordinary = { ...bot({ primaryDrive: 'progress', traits: {} }, botOffer), level: 40,

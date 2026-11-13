@@ -24,7 +24,7 @@ assert.strictEqual(trial.trial, true);
 assert.strictEqual(trial.repeatable, false, 'finite public interest is never recurring income');
 assert.strictEqual(trial.prospective.applicableUnits, 4);
 assert(trial.prospective.willingUnits > 0 && trial.prospective.willingUnits < 4, 'interest is not guaranteed receipts');
-assert.strictEqual(trial.prospective.willingUnits, Price.willingUnitsAt(prior, Price.traderOf(persona), { price: 1000, applicableUnits: 4 }));
+assert.strictEqual(trial.prospective.willingUnits, 4 * Price.phi(persona.traits.assertiveness - 0.5));
 assert.deepStrictEqual(trial.prospective.authority, { recordId: 71, lineId: 72, revision: 3 });
 assert.strictEqual(trial.prospective.observedAt, timestamp);
 const Policy = invoke('GameServer/Bot/Economy/WealthCraftPolicy');
@@ -37,13 +37,13 @@ const evaluate = (exit, extra = {}) => Policy.drain(Policy.evaluatePrepared({ st
     recipe, basket, exit, context, ...extra }));
 assert(evaluate(trial).expectedSold > 0, 'a proven finite public bid can value one physical trial');
 assert.strictEqual(evaluate(trial, { batches: 2 }), null, 'native recheck cannot enlarge the first trial');
+assert.strictEqual(evaluate(trial, { recipe: { ...recipe, productCount: 5 } }), null,
+    'an unbacked order smaller than the minimum physical lot cannot justify surplus production');
 assert.strictEqual(evaluate({ ...trial, offer: { ...line, revision: 2 } }), null,
     'an inconsistent authority cannot turn a conditional bid into receipts');
 assert.strictEqual(evaluate({ ...trial, applicableUnits: NaN }), null, 'an unknown competitive tail stays unknown');
 assert.strictEqual(evaluate(trial, { context: { ...context, existingOutput: 4 } }), null,
     'existing output occupies the finite market before another batch');
-assert.strictEqual(Policy.chooseQuantity({ state: craftState, recipe, planFor: () => null,
-    exits: [trial], context, mode: 'occupation' }), null, 'a finite trial never supplies recurring craft income');
 assert.strictEqual(exit.trial, undefined, 'source metadata is not mutated');
 assert(Price.prospectiveExit(state, { ...exit, offer: offerFields(line) }, options).prospective,
     'main native offerFields sourceId/expectedRevision identity is supported');
@@ -74,4 +74,44 @@ assert.strictEqual(Price.prospectiveExit(state, trial, options).prospective, und
 assert.strictEqual(Belief.prior(999999, { board, characterId: 1, understanding: 0.5, timestamp }), null);
 assert.strictEqual(Price.prospectiveExit(state, { conditional: true, count: 1, price: 1,
     offer: { recordId: 71, lineId: 72, ownerId: 9, selfId: 999999, count: 1, price: 1 } }, options).prospective, undefined);
+
+// A posted WTB already declares its price. Cheap past recipe deals cannot
+// make a more generous current buyer less likely to pay its own quote.
+// These are the native Soulshot C scroll and the prices from the live stall.
+{
+    const recipeId = 1805, cheapHistory = { mu: Math.log(83072), K: 10.8 };
+    const saleAt = price => {
+        const bids = new BoardIndex();
+        bids.put({ id: 81, revision: 1, custodyPolicy: 1, ownerId: 19, storeType: BUY, town: 'Giran',
+            lines: [{ lineId: 82, selfId: recipeId, count: 1, price }] });
+        return Price.bidSale(state, bids.list(recipeId, BUY)[0], {
+            board: bids, persona, timestamp, belief: cheapHistory, units: 1 });
+    };
+    const sales = [125139, 250000, 500000].map(saleAt);
+    sales.forEach(sale => {
+        assert.strictEqual(sale.status, 'ready');
+        assert(sale.after.sold > 0 && sale.after.sold < 1, 'an unbacked one-scroll bid remains uncertain and finite');
+    });
+    for (let at = 1; at < sales.length; at++) {
+        assert(sales[at].forecast.willingUnits >= sales[at - 1].forecast.willingUnits,
+            'a higher posted WTB cannot reduce expected execution because of old cheap sales');
+        assert(sales[at].after.receipts > sales[at - 1].after.receipts,
+            'a higher WTB must improve expected receipts for the same physical scroll');
+    }
+    // The price-indexed public curve and a direct answer share the same
+    // quote confidence. Historical demand still follows ordinary ask pricing.
+    for (const price of [125139, 250000, 500000]) {
+        const market = { ownTrip: 0, npcLanded: Infinity, demand: {
+            origin: 'public_buy_interest', applicableUnits: 2,
+            atPrice: ask => ask <= price ? { applicableUnits: 2, backedUnits: 0, conditionalUnits: 2 } : null
+        } };
+        const [demand] = Price.demandAtPrice(cheapHistory, market, Price.traderOf(persona), price);
+        assert.strictEqual(demand.willingUnits, 2 * sales[0].forecast.willingUnits,
+            'aggregated BUY interest does not reapply the old market-price willingness');
+        assert.strictEqual(Price.demandAtPrice(cheapHistory, market, Price.traderOf(persona), price + 1).length, 0,
+            'an ask above the advertised BUY ceiling has no quoted demand');
+        assert(Price.demandAtPrice(cheapHistory, { ...market, npcLanded: price / 2 }, Price.traderOf(persona), price)[0].willingUnits
+            < demand.willingUnits, 'a cheaper NPC alternative still competes with conditional BUY interest');
+    }
+}
 console.log('prospective production pricing tests passed');

@@ -17,7 +17,7 @@ const BotSession = invoke('GameServer/Bot/BotSession');
 const Response = invoke('GameServer/Network/Response');
 const exclusions = require('../data/Npcs/wander-exclusions.json');
 const template = require('../data/Npcs/npcs.json').find(row => row.template.kind === 'Monster');
-const originalGeo = Object.fromEntries(['hasGeo', 'getHeight', 'hasLineOfSight', 'getCellData', 'findPath'].map(key => [key, Geo[key]]));
+const originalGeo = Object.fromEntries(['hasGeo', 'getHeight', 'hasLineOfSight', 'canWalkStraight', 'getCellData', 'findPath'].map(key => [key, Geo[key]]));
 const originals = { npc: World.npc, user: World.user };
 const created = new Set();
 let nextId = 8000000;
@@ -64,7 +64,7 @@ mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 10000 });
 try {
     Geo.hasGeo = () => true;
     Geo.getHeight = () => 0;
-    Geo.hasLineOfSight = () => true;
+    Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
     Geo.findPath = () => { throw Error('idle wandering must never invoke A*'); };
 
     check('all sourced classes and quest monster IDs remain stationary even when flattened to Monster', () => {
@@ -95,20 +95,20 @@ try {
 
     check('Lisvus probability is 1/30 per visible idle mob, shared sectors do not double-roll', () => {
         let randomCalls = 0, rays = 0;
-        Geo.hasLineOfSight = () => { rays++; return true; };
+        Geo.canWalkStraight = () => { rays++; return true; };
         const npc = npcAt();
         const world = worldFor([npc], [observer(), observer()]);
         assert.equal(Wander.tick(world, { random: () => { randomCalls++; return 1 / 30; } }), 0);
         assert.equal(randomCalls, 1); assert.equal(rays, 0);
         assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 1);
-        assert.equal(rays, 1);
+        assert.equal(rays, 2, 'a step is walked out and back');
         assert.equal(npc.state.fetchTowards(), 'wander');
         stop(npc);
     });
 
     check('no world scan, no idle timers, no geo work without real nearby observers', () => {
         let rays = 0;
-        Geo.hasLineOfSight = () => { rays++; return true; };
+        Geo.canWalkStraight = () => { rays++; return true; };
         const npc = npcAt();
         const world = worldFor([npc], [observer(8, { accountId: 'bot_hot' })]);
         Object.defineProperty(world.npc, 'spawns', { get() { throw Error('full world scan'); } });
@@ -126,7 +126,7 @@ try {
     check('hard geo budget under density, with a single visit per active sector and no A*', () => {
         let rays = 0, visits = 0;
         const selected = [];
-        Geo.hasLineOfSight = x => { rays++; selected.push(x); return false; };
+        Geo.canWalkStraight = x => { rays++; selected.push(x); return false; };
         const npcs = Array.from({ length: 2000 }, (_, i) => npcAt({ locX: 8 + i }));
         const world = worldFor(npcs, [observer(), observer(), observer()]);
         const sector = world.npc.grid['0_0'];
@@ -140,7 +140,7 @@ try {
     });
 
     check('one initial MoveToLocation, walking duration and authoritative interpolation/arrival', () => {
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         const npc = npcAt({ stateRun: true }); const player = observer(); const world = worldFor([npc], [player]);
         assert.equal(Wander.start(npc, world, [player], moveRandom), true);
         const movement = npc.automation.moveInterpolation;
@@ -323,7 +323,7 @@ try {
         assert.equal(Wander.start(npc, world, [player], moveRandom), false);
         assert.equal(player.packets.length, 0);
         Geo.hasGeo = () => true;
-        Geo.hasLineOfSight = originalGeo.hasLineOfSight;
+        Geo.canWalkStraight = originalGeo.canWalkStraight;
         Geo.getCellData = (x, _y, z) => ({ z, nswe: x < 16 ? 14 : 13 });
         assert.equal(Wander.start(npc, world, [player], moveRandom), false, 'wall');
         Geo.getCellData = (_x, _y, z) => ({ z: z < 32 ? 0 : 3000, nswe: 15 });
@@ -339,7 +339,7 @@ try {
     });
 
     check('overlapping observers receive one route each and unknown/out-of-range clients receive none', () => {
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         const npc = npcAt();
         const players = [observer(), observer(), observer(7000), observer(8, { knownNpcIds: new Set() })];
         const world = worldFor([npc], players);
@@ -352,12 +352,12 @@ try {
         const npcs = Array.from({ length: Wander.MAX_ACTIVE_WALKS + 1 }, () => npcAt({ walk: 1 }));
         const world = worldFor(npcs);
         let rays = 0;
-        Geo.hasLineOfSight = () => { rays++; return true; };
+        Geo.canWalkStraight = () => { rays++; return true; };
         for (let i = 0; i < Wander.MAX_ACTIVE_WALKS; i++) {
             assert.equal(Wander.start(npcs[i], world, world.user.sessions, moveRandom), true);
         }
         assert.equal(Wander.start(npcs.at(-1), world, world.user.sessions, moveRandom), false);
-        assert.equal(rays, Wander.MAX_ACTIVE_WALKS, 'no geo work when all movement slots are occupied');
+        assert.equal(rays, 2 * Wander.MAX_ACTIVE_WALKS, 'no geo work when all movement slots are occupied (a step is walked out and back)');
         world.user.sessions = [];
         npcs.forEach(stop);
         Wander.tick(world); // Cleanup must work without observers as well.
@@ -368,7 +368,7 @@ try {
 
     check('shared ticker runs aggro before wandering without adding another timer', () => {
         const npc = npcAt({ hostile: true }); const player = observer(); const world = worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         let callback, timerCount = 0;
         const token = { unref() {} };
         Aggro.startAggroTicker(world, { setTicker(fn, delay) { callback = fn; timerCount++; assert.equal(delay, 1000); return token; } });
@@ -381,7 +381,7 @@ try {
     });
     check('a chase with no attack either way for 2 minutes ends: a hit refreshes it, hate alone does not', () => {
         const npc = npcAt({ hostile: true }); const player = observer(1000); const world = worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         // The player runs at the mob's speed: it never comes into reach.
         player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
         Object.assign(player.actor, { fetchLevel: () => 40, fetchRadius: () => 8, fetchHead: () => 0, effects: {} });
@@ -410,7 +410,7 @@ try {
     });
     check('a mob swinging at a target that never fights back stays in the fight past 2 minutes', () => {
         const npc = npcAt({ hostile: true }); const player = observer(40); worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         player.actor.fetchRadius = () => 8;
         const calcHitChance = Formulas.calcHitChance;
         Formulas.calcHitChance = () => false;
@@ -422,7 +422,7 @@ try {
     });
     check('a mob casting at a target out of its reach stays in the chase past 2 minutes', () => {
         const npc = npcAt({ hostile: true }); const player = observer(1000); worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
         npc.canUseCombatSkillOn = () => true;
         npc.attack.remoteHit = () => {};
@@ -438,7 +438,7 @@ try {
     });
     check('a rooted mob keeps its chase past 2 minutes and drops it when it can move', () => {
         const npc = npcAt({ hostile: true }); const player = observer(1000); worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
         npc.enterCombatState(player, player.actor);
         mock.timers.tick(1100);
@@ -455,7 +455,7 @@ try {
         const inside = npcAt({ locX: 500, locY: 500 }), outside = npcAt({ locX: 2000, locY: 500 });
         for (const npc of [inside, outside]) npc.spawnDefinition = { spawn: {}, bounds };
         const world = worldFor([inside, outside], [observer(1500)]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         assert.equal(Wander.tick(world, { random: () => 0.99 }), 1);
         assert.equal(outside.state.fetchTowards(), 'wander');
         assert.notEqual(inside.state.fetchTowards(), 'wander');
@@ -464,7 +464,7 @@ try {
     check('a mob leaving a fight with no real player in view is back at once, one in view walks', () => {
         const bot = observer(3000, { accountId: 'bot_1' });
         const unseen = npcAt({ hostile: true }); const world = worldFor([unseen], [bot]);
-        Geo.hasLineOfSight = () => true;
+        Geo.hasLineOfSight = Geo.canWalkStraight = () => true;
         unseen.enterCombatState(bot, bot.actor);
         unseen.model.locX = 3000; World.addNpcToGrid(unseen);
         unseen.removeAggroTarget(bot, bot.actor);
@@ -498,19 +498,39 @@ try {
         const player = wireObserver(); player.knownNpcIds.add(npc.fetchId());
         player.actor.fetchLocX = () => 2000;
         const world = worldFor([npc], [player]);
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         assert.equal(Wander.tick(world, { random: () => 0.99 }), 1);
         assert.equal(npc.fetchLocX(), 8);
         assert.equal(player.packets.filter(packet => packet[0] === 0x28).length, 1, 'TeleportToLocation');
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         stop(npc);
     });
     check('a mob at home with a blocked random step stays put', () => {
         const npc = npcAt(); const world = worldFor([npc], [observer()]);
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         assert.equal(Wander.tick(world, { random: () => 0 }), 0);
         assert.equal(npc.fetchLocX(), 8);
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
+        stop(npc);
+    });
+    check('a drift step down a one-way drop is refused, a step that walks back is taken', () => {
+        Geo.canWalkStraight = (fx) => fx === 8;
+        const npc = npcAt(); const world = worldFor([npc], [observer()]);
+        assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 0, 'the mob cannot walk back, it stays');
+        assert.equal(npc.fetchLocX(), 8);
+        Geo.canWalkStraight = () => true;
+        assert.equal(Wander.tick(world, { random: rolls([0, 0.75, 0.75]) }), 1, 'a two-way step is taken');
+        assert.equal(npc.state.fetchTowards(), 'wander');
+        stop(npc);
+    });
+    check('a mob away from home walks home down a one-way drop instead of blinking home', () => {
+        Geo.canWalkStraight = (fx, fy, fz, tx) => tx < fx;
+        const npc = npcAt(); npc.model.locX = 2000;
+        const world = worldFor([npc], [observer(2000)]);
+        assert.equal(Wander.tick(world, { random: () => 0.99 }), 1, 'the step home is taken');
+        assert.equal(npc.state.fetchTowards(), 'wander');
+        assert.equal(npc.fetchLocX(), 2000, 'it walks, it is not sent home at once');
+        Geo.canWalkStraight = () => true;
         stop(npc);
     });
     console.log(`NPC wander: ${assertions} scenario groups passed`);

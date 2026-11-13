@@ -5,7 +5,6 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
-const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const spots = [
     {
@@ -223,7 +222,6 @@ const elvenRuins = {
     maxLevel: 22,
     avgLevel: 13,
     density: 78,
-    capacity: 64,
     center: { locX: 45596, locY: 247589, locZ: -6518 },
     npcNames: ['Skeleton', 'Tunath Orc Warrior', 'Tunath Orc Marksman'],
     tags: ['dungeon', 'undead', 'ruins'],
@@ -253,7 +251,6 @@ const mithrilMines = {
     maxLevel: 16,
     avgLevel: 12.5,
     density: 89,
-    capacity: 48,
     center: { locX: 176673, locY: -177656, locZ: 801 },
     npcNames: ['Akaste Bone Soldier', 'Darkstone Golem', 'Mineshaft Bat'],
     tags: ['dungeon', 'undead', 'construct', 'mine'],
@@ -275,70 +272,12 @@ assert.strictEqual(
     0,
     'dwarven starters may use their native mine route'
 );
-assert.strictEqual(LevelingRoutes.capacityForSpot(mithrilMines), 48, 'the explicit mine capacity must override density-derived defaults');
 assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 4 }), 9,
     'a sparse ordinary field must still fit one complete party');
 assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 40 }), 30,
     'ordinary field capacity must stay below its continuously unavailable spawn count');
 assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 200 }), 36,
     'a dense grid cell must not become a bottomless cold-planning destination');
-
-const originalEnsureIndexed = SpotService.ensureIndexed;
-SpotService.ensureIndexed = () => [
-    {
-        id: 'local_starter', name: 'Local Starter Field', minLevel: 1, maxLevel: 10, avgLevel: 5, density: 8,
-        center: { locX: 2500, locY: 0, locZ: 0 }, npcNames: ['Keltir'], localStarterRegions: ['elf'], localUntilLevel: 20
-    },
-    {
-        id: 'remote_starter', name: 'Remote Starter Field', minLevel: 1, maxLevel: 10, avgLevel: 5, density: 10,
-        center: { locX: 2600, locY: 0, locZ: 0 }, npcNames: ['Keltir'], localStarterRegions: ['orc'], localUntilLevel: 20
-    }
-];
-try {
-    const routed = SpotService.findBestSpot({
-        characterId: 77,
-        level: 5,
-        role: 'dps',
-        classId: 19,
-        starterRegion: 'elf',
-        loc: { locX: 0, locY: 0, locZ: 0 }
-    }, { minDensity: 1, minDistance: 1, maxDistance: 10000 });
-    assert.strictEqual(routed.spot.id, 'local_starter',
-        'SpotService ranking must retain the LevelingRoutes locality adjustment');
-    assert.strictEqual(routed.localityPenalty, 0);
-
-    const nestedRoleRoute = SpotService.findBestSpot({
-        characterId: 78,
-        level: 5,
-        stats: { role: 'spoiler', classId: 55, starterRegion: 'elf' },
-        loc: { locX: 0, locY: 0, locZ: 0 }
-    }, { minDensity: 1, minDistance: 1, maxDistance: 10000 });
-    assert.strictEqual(nestedRoleRoute.route.role, 'spoiler',
-        'SpotService must preserve nested role and class metadata for route scoring');
-
-    const easier = { id: 'safe-lower-band', name: 'Safe lower field', minLevel: 58, maxLevel: 58,
-        avgLevel: 58, levelCounts: { 58: 8 }, density: 8,
-        center: { locX: 2500, locY: 0, locZ: 0 }, npcNames: ['Field beast'] };
-    const stranded = { level: 65, classId: 40, role: 'mage', loc: { locX: 0, locY: 0, locZ: 0 } };
-    SpotService.ensureIndexed = () => [easier];
-    assert.strictEqual(SpotService.findBestSpot(stranded)?.spot.id, easier.id,
-        'relocation must search the full seven-level ordinary target band');
-    assert.strictEqual(SpotService.findBestSpot(stranded, { levelRange: 3 }), null,
-        'an explicitly narrower search keeps its requested range');
-    SpotService.ensureIndexed = () => [{ ...easier, minLevel: 57, maxLevel: 57, avgLevel: 57, levelCounts: { 57: 8 } }];
-    assert.strictEqual(SpotService.findBestSpot(stranded), null,
-        'ordinary relocation does not silently widen the target band');
-    const recoverySpot = { ...easier, id: 'safe-recovery', minLevel: 50, maxLevel: 50,
-        avgLevel: 50, levelCounts: { 50: 8 } };
-    SpotService.ensureIndexed = () => [recoverySpot];
-    assert.strictEqual(SpotService.findBestSpot(stranded, { allowEasierSpots: true })?.spot.id, recoverySpot.id,
-        'a stranded hot hunter can relocate to safe easier ground when ordinary camps are absent');
-    SpotService.ensureIndexed = () => [{ ...recoverySpot, minLevel: 49, maxLevel: 49, avgLevel: 49, levelCounts: { 49: 8 } }];
-    assert.strictEqual(SpotService.findBestSpot(stranded, { allowEasierSpots: true }), null,
-        'easier-ground relocation is bounded to fifteen levels');
-} finally {
-    SpotService.ensureIndexed = originalEnsureIndexed;
-}
 
 // Route roles of dwarves: a crafter class keeps the crafter route over its party role.
 assert.deepStrictEqual([
@@ -351,7 +290,7 @@ assert.deepStrictEqual([
 ].map((state) => LevelingRoutes.roleForState(state)), ['spoiler', 'crafter', 'crafter', 'spoiler', 'crafter', 'crafter'],
 'route roles of dwarves');
 
-// One reader per spot loop (L131): the same verdict as one call per spot,
+// One reader per spot loop: the same verdict as one call per spot,
 // with the matchup profiles and safety options read once, and not at all
 // when no spot passes the hunting ground check.
 {

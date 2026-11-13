@@ -26,7 +26,7 @@ const adapters = {
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/BotGear': { wishKitsFor: require('../src/GameServer/Bot/AI/BotGear').wishKitsFor },
     'GameServer/Bot/AI/GearGradeRule': require('../src/GameServer/Bot/AI/GearGradeRule'),
-    'GameServer/Bot/AI/GearAcquisitionPlanner': { sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
+    'GameServer/Bot/AI/GearAcquisitionPlanner': { combatReadiness: () => ({ hasWeapon: true }), sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn(),
         equipmentCandidate: () => true, equipmentItemBetter: (item, current) => !current },
     'GameServer/Bot/Population/ColdCombatProfile': { skillsFor: () => [], candidateProfiles: () => ({
@@ -83,6 +83,7 @@ const network = load('WishNetwork.js', name => {
     // WishNetwork reads the thread kind (c3a6771d); this fixture is the main thread.
     if (name === 'node:worker_threads') return require('node:worker_threads');
     if (name === './EconomyDiagnostics') return { active: () => false };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
     if (name === '../../../FailureLog') return require('../src/FailureLog');
@@ -99,6 +100,7 @@ const provider = load('WishProviders.js', name => {
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: () => true };
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false, laps: () => null };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './EconomicValuation') return valuation;
     if (name === './WishNetwork') return network;
     if (name === '../AI/PersonalGearProgression') return { assess: () => ({ required: false, gaps: new Map() }), gapFor: () => null, preparation: () => null, priority: () => 0, personal: () => false, allowsCGradeAcquisition: () => false, acquisitionRankFor: () => 'c',
@@ -264,9 +266,10 @@ const goalsModule = { exports: {} };
 new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join(root, '../Goals/NeedsEvaluator.js'), 'utf8'))(
     name => name.includes('ItemTemplateIndex') ? { find: () => null }
         : name.endsWith('Fnv1a') ? { fnv1a32: () => 1 }
+        : name.endsWith('FailureLog') ? require('../src/FailureLog')
         : name.endsWith('ColdEconomyDecision') ? ColdDecision : (() => { throw Error(name); })(),
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
-        : name.endsWith('EconomyContext') ? { survivalReserve: () => 0 }
+        : name.endsWith('EconomyContext') ? { refillReserve: () => 0 }
         : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0, leafRatio: () => 0 }
         : name.endsWith('DataCache') ? { items: [] }
         : name.endsWith('WishNetwork') ? invoke('GameServer/Bot/Economy/WishNetwork') : (() => { throw Error(name); })(),
@@ -347,7 +350,7 @@ assert(require('node:v8').serialize(richTransport).byteLength <= ColdDecision.MA
 NativeEconomy.reset();
 console.log('PASS native capture/transport/view: rich funded urgency, unknown arrival, stock horizons, empty queue and wire bound');
 
-// Identical facts (Task 2 D2/D3): the wish craft path, CraftProfitPolicy.craftFacts
+// Identical facts: the wish craft path, CraftProfitPolicy.craftFacts
 // and the producer's basket read one recipe through the one labour reader.
 {
     const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');

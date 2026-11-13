@@ -1,6 +1,6 @@
 'use strict';
-// The hunting leaf names a spot the bot may hunt (docs/architecture.md §2
-// route, BotRoute.leafFitReader): in a worker build a solo bot whose table
+// The hunting leaf names a spot the bot may hunt (the route,
+// BotRoute.leafFitReader): in a worker build a solo bot whose table
 // pick is unfit for it (a party-only ground, a raid spot, outside its level
 // window), excluded by its own risk marks, or missing from the catalog gets a
 // fitting spot of the income ranking (the money leaf: the first by income;
@@ -123,7 +123,7 @@ if (isMainThread) {
     assert.notEqual(progressOnly.leveling.spotId, progressOnly.earning.spotId, 'not the first by income');
 
     // Excluded: the bot's own risk exclusions (spots it was turned away from as full).
-    const turnedAway = { ...state, stats: { ...state.stats, capacityBackoffs: [...unfit].map(spotId => ({ spotId, untilStep: 50 })) } };
+    const turnedAway = { ...state, stats: { ...state.stats, spotBackoffs: [...unfit].map(spotId => ({ spotId, untilStep: 50 })) } };
     const plain = listed.map(id => spot(id));
     const excluded = build(turnedAway, plain);
     assert.equal(excluded.bestSpotId, fitting.earning.spotId, 'an excluded spot is no income pick');

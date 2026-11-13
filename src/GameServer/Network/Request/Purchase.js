@@ -39,7 +39,7 @@ async function consume(session, data) {
     const adminShop = session.activeAdminShop;
 
     // A shop on the board trades only through the board (PrivateStoreBuy):
-    // its window's store is a projection of the record (E43).
+    // its window's store is a projection of the record.
     if (store?.afkTrade === true) {
         session.dataSendToMe(ServerResponse.actionFailed());
         return;
@@ -48,7 +48,7 @@ async function consume(session, data) {
         const bought = [];
         let socialRecorded = false;
         // One social event for the lines that completed, whether the list ended
-        // whole or a later line failed (E253); never one event per line.
+        // whole or a later line failed; never one event per line.
         const recordBought = () => {
             if (socialRecorded || bought.length === 0) return;
             socialRecorded = true;
@@ -110,7 +110,7 @@ async function consume(session, data) {
         return;
     }
 
-    // An NPC list line must ask for a whole number of items, at least one (E286).
+    // An NPC list line must ask for a whole number of items, at least one.
     if (!data.list.every((item) => Number.isSafeInteger(item.amount) && item.amount >= 1)) {
         session.dataSendToMe(ServerResponse.actionFailed());
         return;

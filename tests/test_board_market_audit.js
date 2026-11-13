@@ -129,8 +129,11 @@ async function run() {
         const sale = await Database.createAfkTradeShop(owner, await sellShop(owner));
         await Database.buyFromAfkTradeShop(buyer, { shopId: sale.shop.id, ownerId: owner,
             lineId: sale.shop.lines[0].id, amount: 3, expectedPrice: 100, expectedRevision: 1 });
+        assert.strictEqual((await Database.settleBoardOwner(owner)).settled, false, 'a far owner\'s price waits for its own commit');
+        // The owner turned near before a commit merged it: main merges it.
+        await Database.execute(["UPDATE bot_life_state SET phase = 'hot' WHERE characterId = ?", [owner]]);
         await Database.execute([`CREATE TEMP TRIGGER audit_settlement_failure
-            BEFORE UPDATE OF inventorySummary ON main.bot_life_state WHEN NEW.characterId = ${owner}
+            BEFORE INSERT ON main.items WHEN NEW.characterId = ${owner}
             BEGIN SELECT RAISE(ABORT, 'injected settlement snapshot failure'); END`]);
         try { await assert.rejects(Database.settleBoardOwner(owner), /injected settlement snapshot failure/); }
         finally { await Database.execute(['DROP TRIGGER temp.audit_settlement_failure']); }
@@ -172,7 +175,7 @@ async function run() {
             const id = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
             const sale = (await Database.createAfkTradeShop(id, await sellShop(id))).shop;
             await Database.buyFromAfkTradeShop(buyer, { shopId: sale.id, ownerId: id, lineId: sale.lines[0].id, amount: 3 });
-            // The deal fenced the far owner's row: the step starts from its revision.
+            // The deal leaves the far owner's row alone: its step commits on that revision.
             const state = LifeState.cachedState(id);
             const revision = (await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [id]]))[0].simulationRevision;
             owners.push({ id, revision, state, request: { revision, nextState: structuredClone(state),
@@ -206,9 +209,10 @@ async function run() {
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 1000 }]);
         const sale = (await Database.createAfkTradeShop(owner, await sellShop(owner))).shop;
         await Database.buyFromAfkTradeShop(buyer, { shopId: sale.id, ownerId: owner, lineId: sale.lines[0].id, amount: 3 });
+        await Database.execute(["UPDATE bot_life_state SET phase = 'hot' WHERE characterId = ?", [owner]]);
         await Database.execute(['CREATE TABLE audit_deferred (ownerId INTEGER REFERENCES characters(id) DEFERRABLE INITIALLY DEFERRED)']);
         await Database.execute([`CREATE TEMP TRIGGER audit_commit_failure
-            AFTER UPDATE OF inventorySummary ON main.bot_life_state WHEN NEW.characterId = ${owner}
+            AFTER INSERT ON main.items WHEN NEW.characterId = ${owner}
             BEGIN INSERT INTO audit_deferred VALUES (99999999); END`]);
         try { await assert.rejects(Database.settleBoardOwner(owner), /FOREIGN KEY constraint failed/); }
         finally {
@@ -230,18 +234,17 @@ async function run() {
         assert.equal(line.custodyPolicy, 1);
         const state = LifeState.cachedState(owner), before = await bag(owner, 1864);
         const ctx = { characterId: owner, timestamp: Date.now(), saleCount: () => 2 };
-        const seen = new (invoke('GameServer/Bot/Economy/BoardLook').SeenLines)();
-        const review = MarketPricing.lookOwn(state, [line], ctx, seen);
+        const review = MarketPricing.lookOwn(state, [line], ctx);
         assert.equal(review.reprices[0].count, 2, 'stock correction does not wait for a price observation');
         assert.equal(review.reprices[0].price, line.price);
-        assert.equal(MarketPricing.lookOwn(state, [line], ctx, seen).reprices[0].count, 2,
+        assert.equal(MarketPricing.lookOwn(state, [line], ctx).reprices[0].count, 2,
             'a refused quantity correction is retried at the next own look');
         assert.equal((await BotMarket.applyReview(owner, review)).changed, 1);
         const fresh = AfkTrade.boardIndex().ownerLines(owner)[0];
         assert.equal(fresh.count, 2);
         assert.equal(await bag(owner, 1864), before, 'conditional quantity reduction returns no phantom items');
         assert.equal((await BotMarket.applyReview(owner, review)).changed, 0, 'old quantity corrections are revision fenced');
-        const withdraw = MarketPricing.lookOwn(state, [fresh], { ...ctx, saleCount: () => 0 }, seen);
+        const withdraw = MarketPricing.lookOwn(state, [fresh], { ...ctx, saleCount: () => 0 });
         assert.equal(withdraw.withdrawals.length, 1, 'fully reserved stock leaves the order book');
         await BotMarket.applyReview(owner, withdraw);
         assert.equal(AfkTrade.boardIndex().ownerLines(owner).length, 0);
@@ -418,7 +421,9 @@ async function run() {
             'another counter creates no passed buyer for this line');
         assert.strictEqual(MarketPricing.look({ stats: {}, activity: 'resting' }, [consumed], ctx), null);
         assert.strictEqual(await bag(owner, 1864) + 499 + await bag(buyer, 1864), 1000);
-        assert.strictEqual(await bag(owner, 57) + await bag(buyer, 57), 10000);
+        // The far owner's price waits on the board for its own commit.
+        const [owed] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 57', [owner]]);
+        assert.strictEqual(await bag(owner, 57) + Number(owed.amount) + await bag(buyer, 57), 10000);
     });
 
     await check('technical stock replacement preserves standing quote observations', async () => {

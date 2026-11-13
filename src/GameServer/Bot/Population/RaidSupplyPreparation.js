@@ -16,7 +16,7 @@ class RaidSupplyPreparation {
         for (const state of this.life.populationSeedStates()) {
             if (++scanned % 16 === 0) await yieldToLoop();
             const marker = Supply.held(state);
-            if (marker) { if (!groups.has(marker.id)) groups.set(marker.id, marker); }
+            if (marker && marker.owner !== 'clan') { if (!groups.has(marker.id)) groups.set(marker.id, marker); }
         }
         for (const marker of groups.values()) {
             await this.memory.ensureMany?.(marker.memberIds);
@@ -49,17 +49,24 @@ class RaidSupplyPreparation {
         const plan = { id, memberIds: members.map(s => s.characterId), startedAt: now,
             expiresAt: Math.min(objective.expiresAt, now + TIMEOUT_MS),
             objective: { ...objective, preparationId: id } };
-        const quotes = new Map();
+        const quotes = new Map(), claimed = new Map();
         for (const s of objective.assessment.supplies || []) {
             if (!(s.missing > 0)) continue;
             const state = members.find(m => m.characterId === s.id), cash = Supply.cash(state);
-            const quote = this.market.planPurchase(state, s.selfId, s.missing, { money: cash, purpose: 'raid_supply' });
-            if (!quote || quote.units < s.missing || !(quote.cost > 0) || !Number.isFinite(quote.cost)
-                || quote.cost + Math.max(0, this.market.tripFrom(state)(quote.town)) > cash) return null;
-            const priceCap = Math.max(Number(quote.npcPrice) || 0, ...(quote.lines || []).map(l => Number(l.price) || 0));
-            if (!(priceCap > 0)) return null;
+            const quote = this.market.planPurchase(state, s.selfId, s.missing, { money: cash, purpose: 'raid_supply', claimed });
+            if (!quote || quote.units < s.missing || !(quote.cost > 0) || !Number.isFinite(quote.cost)) return null;
+            const trip = quote.trip ?? (Number.isFinite(quote.landed) ? quote.landed - quote.cost
+                : this.market.tripFrom(state)(quote.town));
+            const { priceCap, cashNeeded } = Supply.quoteBudget(quote, s.missing, trip);
+            if (!(priceCap > 0) || !Number.isFinite(priceCap) || !Number.isFinite(cashNeeded) || cashNeeded > cash) return null;
+            for (const { line, count } of quote.lines || []) {
+                const key = `${line.recordId}:${line.lineId}`;
+                const total = (claimed.get(key) || 0) + count;
+                if (total > Number(line.count)) return null;
+                claimed.set(key, total);
+            }
             quotes.set(s.id, { selfId: s.selfId, target: s.target, priceCap, town: quote.town,
-                cashNeeded: quote.cost + Math.max(0, this.market.tripFrom(state)(quote.town)) });
+                cashNeeded });
             await yieldToLoop();
         }
         const saved = await this.fenced(plan.memberIds, async () => {
@@ -68,7 +75,7 @@ class RaidSupplyPreparation {
                 || !Policy.composition(current).ready
                 || !current.every((s, i) => current.slice(i + 1).every(peer => Policy.compatible(s, peer, this.memory.assess.bind(this.memory), now)))
                 || current.some(s => objective.assessment.kits?.find(([id]) => id === s.characterId)?.[1]
-                    !== Combat.kitHash(Combat.combatView(s)).join(':'))
+                    !== Combat.kitEvents(s).join(':'))
                 || current.some(s => quotes.has(s.characterId) && Supply.cash(s) < quotes.get(s.characterId).cashNeeded)) return null;
             // Partial reservations recover by releasing the incomplete plan.
             this.plans.set(id, plan);
@@ -142,7 +149,13 @@ class RaidSupplyPreparation {
             const check = await this.assess(states, spot, now);
             if (!this.active) return;
             if (!check.ready && /^(party_goal_|worker_|raid_assessment_unavailable)/.test(check.reason || '')) continue;
-            if (!check.ready || !this.bossFree(spot)) { await this.cancel(plan, 'raid_preparation_unavailable'); continue; }
+            const bossFree = check.ready ? this.bossFree(spot) : null;
+            this.onAssessment?.({ at:now, id:plan.id, bossId:plan.objective.raidBossTemplateId,
+                ready:check.ready, reason:check.reason, reasons:check.reasons || [], bossFree,
+                ...(check.seconds === undefined ? {} : { seconds:check.seconds }),
+                shortages:(check.shotPlans || []).filter(p => p.stock < p.required)
+                    .map(({ id,selfId,stock,required }) => ({ id,selfId,stock,required })) });
+            if (!check.ready || !bossFree) { await this.cancel(plan, 'raid_preparation_unavailable'); continue; }
             const party = await this.form(states, { ...plan.objective, assessment: check });
             if (party) this.plans.delete(plan.id);
         }

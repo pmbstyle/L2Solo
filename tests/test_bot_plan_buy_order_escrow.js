@@ -69,37 +69,12 @@ try {
     AfkTrade.ownerRecords = originalProjection;
 }
 
-// Every other funding check counts the same escrow: the funded re-price, the
-// resume after a rest, and the worker's lifecycle routing.
+// The funded re-price counts the same escrow.
 const reserve = Number(posting.market.reserve);
 const walletAfterBid = { ...state, adena: reserve };
 assert.strictEqual(GearAcquisitionPlanner.fundedMarketPlanForTarget(walletAfterBid, posting.target.selfId), null);
 assert(GearAcquisitionPlanner.fundedMarketPlanForTarget({ ...state, adena: WALLET - price }, posting.target.selfId,
     { buyOrderEscrow: price }), 'the funded re-price counts the escrow');
-const weaponState = { ...walletAfterBid, stats: { ...state.stats, equipmentPlan: { ...posting, target: { ...posting.target, slot: 7 } } } };
-const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
-assert.notStrictEqual(lifecycleKind(weaponState), 'command');
-// The worker's escrow is the board's sum (the kernel's buyOrderEscrow fact).
-const escrowFacts = { leaderParty: () => null, partyMembers: () => [], buyOrderEscrow: () => price,
-    hallNeeded: () => false, playerWaiting: () => false };
-assert.strictEqual(lifecycleKind(weaponState, escrowFacts), 'command', 'the worker routing counts the escrow');
-// A plan buying from another bot keeps its WTB (it buys remotely): its escrow
-// does not send the bot to town.
-const botPlanState = { ...weaponState, stats: { ...weaponState.stats, equipmentPlan: { ...weaponState.stats.equipmentPlan,
-    market: { ...posting.market, sourceType: 'afk_bot_store' } } } };
-assert.notStrictEqual(lifecycleKind(botPlanState, escrowFacts), 'command', 'a kept order is no trip');
-const PopulationServiceForResume = invoke('GameServer/Bot/Population/PopulationService');
-const savedProjection = AfkTrade.ownerRecords;
-try {
-    assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(weaponState), false);
-    AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: price, lines: [] }];
-    assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(weaponState), true,
-        'the resume after a rest counts the escrow');
-    assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(botPlanState), false,
-        'a kept order is no reason to leave for town');
-} finally {
-    AfkTrade.ownerRecords = savedProjection;
-}
 
 // A dual-sword plan buying its missing blade keeps the same reserve once its
 // bid sits in escrow (the blade route reads the escrow from the plan options).

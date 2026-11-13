@@ -119,7 +119,7 @@ async function withdrawForParty(session) {
     const broadcastWarning = safelyNotify('party withdrawal', () => notifyClosed(session, actor));
 
     session.plan = 'hunting';
-    raiseDecision(session, 'town');
+    raiseDecision(session, 'arrived_town');
     session.merchantStoreMutation = false;
 
     return {

@@ -13,7 +13,7 @@ function state(characterId, loc) {
 function geodata({ visible = true, loaded = true } = {}) {
     return {
         hasGeo: () => loaded,
-        hasLineOfSight: () => visible
+        canWalkStraight: () => visible
     };
 }
 
@@ -81,7 +81,7 @@ assert.strictEqual(missingGeo.reason, 'missing_geodata');
 let losCalls = 0;
 const cachedGeo = {
     hasGeo: () => true,
-    hasLineOfSight: () => {
+    canWalkStraight: () => {
         losCalls++;
         return false;
     }

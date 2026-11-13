@@ -198,6 +198,10 @@ const ClanService = {
             .then((result) => {
                 if (result.renamed.length) utils.infoSuccess('Clan', 'renamed %d legacy bot clans', result.renamed.length);
             })
+            .then(() => Database.migrateClanCrestIds())
+            .then((result) => {
+                if (result.migrated) utils.infoSuccess('ClanCrest', 'migrated %d legacy crest ids', result.migrated);
+            })
             .then(() => this.reload())
             .then(() => ClanCrestService.ensureAutonomousClans())
             .then((result) => result.assigned ? this.reload() : this.all())

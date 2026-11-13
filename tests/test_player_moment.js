@@ -1,69 +1,86 @@
-// What a far bot hears where it stands (Reaction): a change waits for its player's moment.
+// What a far bot hears where it stands (Situations): a change waits for its player's moment.
 'use strict';
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 require('../src/Global');
-const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+const Situations = invoke('GameServer/Bot/Situations');
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 
 const hunter = { characterId: 7, activity: 'hunting', spotId: 's', stats: {} };
 const leaf = { activity: 'hunting', spotId: 's' };
 
-const at = activity => Reaction.place({ phase: 'cold', activity, stats: {} });
-assert.equal(Reaction.hears('stores', at('resting')), true, 'a rest reads the clan\'s demand');
-assert.equal(Reaction.hears('warehouse', at('resting')), false, 'its own deposit and take raise nothing on a rest');
-assert.equal(Reaction.hears('warehouse', at('shopping')), false, 'nor on a town visit');
-assert.equal(Reaction.hears('warehouse', Reaction.place({ phase: 'cold', activity: 'shopping', stats: {} }, { activity: 'traveling' })), true, 'it is read as the bot arrives in town');
-// A bot at work weighs only the gear it follows; a real review weighs every candidate.
-const far = { ...hunter, phase: 'cold' };
-assert.equal(Reaction.quiet(far, 'wish_dirty'), true, 'a soft event on the spot');
-assert.equal(Reaction.quiet({ ...far, activity: 'traveling' }, 'refresh'), true, 'and on the road');
-assert.equal(Reaction.quiet({ ...far, activity: 'resting' }, 'wish_dirty'), true, 'a rest reads no gear');
-assert.equal(Reaction.quiet({ ...far, activity: 'shopping' }, 'wish_dirty'), false, 'so is the town');
-assert.equal(Reaction.quiet({ ...far, activity: 'grouped', partyId: 3 }, 'wish_dirty'), true, 'a party fight is work too');
-assert.equal(Reaction.quiet(far, 'check:short'), false, 'a failed goal chooses again');
-assert.equal(Reaction.quiet(far, 'goal'), false, 'a goal main moved too');
-assert.equal(Reaction.quiet(far, undefined), false, 'no card stood: no held build to follow');
-// Away on a solo hunt only the next wish within reach raises money; in reach of town the drift does too.
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], goalBudget: 5000, funding: 0 };
-const hunting = adena => ({ characterId: 7, phase: 'cold', activity: 'hunting', adena, stats: {} });
-const soft = state => Sections.softEvents(state, moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 });
-assert(!soft(hunting(1500)).includes('money'), 'a drift away on the hunt is no event');
-assert(soft(hunting(6000)).includes('money'), 'its goal in reach is');
-assert(!soft({ ...hunting(1500), partyId: 'bgp_1' }).includes('money'), 'a party member holds its plan too');
-assert.deepEqual(Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0.5, incomeError: 0 }, { buyOrderEscrow: 0, timestamp: 1 }), [],
-    'nor does the income reach it on the hunt');
-// The one table: what a bot hears where it stands.
+const at = activity => Situations.place({ phase: 'cold', activity, stats: {} });
+// The clan's call (its demand moved) and its clan changing wait for the bot's next stop.
+const raiseAt = (name, activity) => Situations.raise({ woken: 0, wishSections: {}, equipmentPlan: {}, earning: {} }, name, null, at(activity));
+assert(!Situations.woken(raiseAt('clan_call', 'hunting'), 'build') && Situations.woken(raiseAt('clan_call', 'resting'), 'build'),
+    'a rest reads the clan\'s demand');
+assert(Situations.woken(raiseAt('clan_changed', 'resting'), 'build'));
+// The build and the gear plan wake on their own situations only: the
+// money's crossings of its thresholds, not its drift; a new level or gear waits for its stop.
+for (const name of ['arrived_town', 'goal_failed', 'goal_done:goal', 'bag_full', 'stock_low:shots', 'stock_low:potions', 'source_stalled',
+    'goal_affordable:focus', 'out_of_money'])
+    assert(Situations.woken(raiseAt(name, 'hunting'), 'build'), `${name} wakes the build at once`);
+// A death wakes the earning spot (its search runs in a build), not the gear plan: a PvE death costs no
+// gear; low potions are bought, the spot holds; a party left keeps the gear plan.
+assert(Situations.woken(raiseAt('died', 'hunting'), 'earning_spot') && !Situations.woken(raiseAt('died', 'hunting'), 'gear_plan'));
+assert(!Situations.woken(raiseAt('stock_low:potions', 'hunting'), 'earning_spot') && !Situations.woken(raiseAt('party_left', 'hunting'), 'gear_plan'));
+assert(!Situations.woken(raiseAt('moved_by_world', 'shopping'), 'build'), 'moved_by_world wakes no build');
+assert(!Situations.woken(raiseAt('grade_changed', 'hunting'), 'build') && Situations.woken(raiseAt('grade_changed', 'resting'), 'build'), 'a new grade waits for the rest');
+assert(Situations.woken(raiseAt('grade_changed', 'resting'), 'gear_plan') && !Situations.woken(raiseAt('goal_affordable:focus', 'hunting'), 'gear_plan'),
+    'the gear plan wakes on the kit, not the purse');
+// A plan carried out (its piece bought and worn: no plan held) is no situation: a town visit's
+// step raised on it keeps the gear review asleep; a row with no bits yet (a new bot) reads it woken.
+{
+    const done = Situations.raise({ woken: 0, wishSections: {}, earning: {} }, 'goal_done:visit', null, at('shopping'));
+    assert(Situations.woken(done, 'build') && !Situations.woken(done, 'gear_plan'), 'a finished plan wakes no gear review');
+    assert(Situations.woken({}, 'gear_plan'), 'a new bot takes its first gear review');
+}
+// Its gear source failing wakes the gear review: a gear errand failed on its item (an offer
+// sold out: another is sought in the same town), as a craft route's stall; any other failed
+// step wakes the build only. A clan left drops a clan's gear plan: the review hears it.
+{
+    const errand = Situations.raise({ woken: 0, wishSections: {}, earning: {} }, 'goal_failed', { kind: 'gear_errand', key: 5 }, at('shopping'));
+    assert(Situations.woken(errand, 'build') && Situations.woken(errand, 'gear_plan'), 'a failed gear errand wakes the gear review');
+    assert(!Situations.woken(raiseAt('goal_failed', 'shopping'), 'gear_plan'), 'another failed step does not');
+    assert(Situations.woken(raiseAt('clan_changed', 'resting'), 'gear_plan'), 'a clan left or joined wakes it at the stop');
+}
+// A decision with no answer held reads woken until it holds one; a raise for another
+// decision leaves it so, it stores no bit of it.
+{
+    const raised = Situations.raise({ woken: 0, wishSections: {} }, 'goal_failed', null, at('hunting'));
+    assert(Situations.woken(raised, 'earning_spot'), 'no earning answer held: it reads woken');
+    assert(!Situations.woken({ ...raised, earning: null }, 'earning_spot'), 'an answer held: the build\'s raise left it asleep');
+}
+// The wallet against the decision's thresholds: its goal in reach as the budget stands
+// at or past it, out of money as it falls below the held leaf's funded row; a drift is nothing.
+// The build it wakes re-arms them; the agenda's move over the held baseline spends the passed ones.
+const baseline = { at: 100, affordAt: { at: 5000, kind: 'focus' }, fundedAt: 800 };
+const crossed = (now, given = baseline) => Sections.moneyCrossings(now, given);
+assert.deepEqual(crossed(1500), [], 'a drift is no event');
+assert.deepEqual(crossed(6000), ['goal_affordable:focus'], 'its goal in reach is');
+assert.deepEqual(crossed(700), ['out_of_money'], 'the held leaf unfunded is');
+assert.deepEqual(crossed(7000, Sections.unspent(baseline, 6000)), [], 'a threshold the agenda\'s move passed is spent');
+assert.deepEqual(crossed(700, Sections.unspent(baseline, 6000)), ['out_of_money'], 'the other one stands');
+assert.deepEqual(crossed(6000, { at: 100, affordAt: { at: 3000, kind: 'potions' } }), ['goal_affordable:potions'],
+    'a broke bot\'s survival potions name their kind');
+assert(Situations.DECISIONS.earning_spot.includes('goal_affordable:potions'), 'they wake the earning spot');
+// A far step's money comes from its own diff (detect): no per-step soft point. Money main added
+// between steps (a sale paid: the state before already holds it) is heard at the next step.
+const purse = (adena, stats = {}) => ({ ...hunter, phase: 'cold', adena, stats: { wishSections: baseline, ...stats } });
+assert(Situations.detect(purse(1000), purse(6000)).includes('goal_affordable:focus'), 'a far step hears its goal in reach');
+assert(Situations.detect(purse(6000), purse(6000)).includes('goal_affordable:focus'), 'and money main added between steps');
+assert(!Situations.detect(purse(1000), purse(1500)).some(name => name.startsWith('goal_affordable')), 'and nothing on a drift');
+// A board offer its build wants wakes the build, wherever the bot stands (heard at once).
+const heldAll = () => ({ woken: 0, waiting: 0, earning: { spotId: null }, wishSections: {} });
+const offered = Situations.raise(heldAll(), 'offer_posted', { itemId: 1, price: 1 }, Situations.place({ phase: 'cold', activity: 'hunting' }));
+assert.equal(offered.woken, Situations.BITS.build, 'offer_posted wakes the build alone, in the field too');
+// Where a far bot stands (place) and the step that reads its facts.
 const cold = (activity, extra = {}) => ({ ...hunter, phase: 'cold', activity, ...extra });
-const waitsFor = (state, ...links) => links.every(link => !Reaction.hears(link, Reaction.place(state)));
-const hearsAll = (state, ...links) => links.every(link => Reaction.hears(link, Reaction.place(state)));
-assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'relations', 'observation'), 'at work the links wait');
-assert(waitsFor(cold('hunting'), 'build') && hearsAll(cold('resting'), 'build'), 'a new level waits for the rest');
-assert(hearsAll(cold('hunting'), 'dead', 'riskDeaths', 'occupation', 'need_supply', 'need_bag', 'goal', 'market'), 'its fight, its place and a condition do not');
-assert(waitsFor(cold('resting'), 'supply', 'bag', 'quantity') && hearsAll(cold('resting'), 'funding', 'relations', 'stores'), 'a rest reads the money, the people and the clan');
-assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'build', 'recipes', 'relations', 'income_moved'), 'a visit works down its list');
-assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');
-assert(hearsAll(cold('resting'), 'income_moved') && waitsFor(cold('resting'), 'income_later'), 'a better spot reaches a rest on a hunt, not one on another job');
-assert(waitsFor(cold('resting'), 'offer_gone') && waitsFor(cold('traveling'), 'offer_gone'), 'who sells what is read at the market');
-assert.equal(Reaction.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
-assert(hearsAll(cold('crafting'), 'funding', 'money', 'supply', 'quantity'), 'a craft has no check for its end');
-assert(waitsFor(cold('resting'), 'money', 'short') && hearsAll(cold('resting'), 'funding', 'relations', 'stores', 'build'), 'a rest is no review of the purse');
-assert(Reaction.readsFacts(cold('traveling'), cold('shopping')), 'the step that arrives in town reads its facts');
-assert(!Reaction.readsFacts(cold('shopping'), cold('shopping')) && !Reaction.readsFacts(cold('traveling'), cold('traveling')), 'and only that step');
-assert(Reaction.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', { partyId: 'p' })), 'a party reads its round');
-assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }, cold('traveling')), ['money'], 'town reads the purse on arrival');
-assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }), [], 'and not again on the visit');
-assert(hearsAll(cold('merchant'), 'funding', 'money'), 'a stall hears its money');
-assert(waitsFor(cold('crafting'), 'own_move', 'own_preparation'), 'its own doing is no event anywhere');
-assert(hearsAll(cold('hunting', { stats: { tradeMeeting: [1] } }), 'funding', 'supply', 'relations'), 'nor on the way to a meeting');
-assert(waitsFor(cold('grouped', { partyId: 'p' }), 'build', 'money', 'quantity', 'own_move'), 'a party fight waits as a hunt');
-assert(hearsAll(cold('resting', { partyId: 'p' }), 'build', 'relations'), 'and a party reads at its rest');
-assert(hearsAll(cold('grouped', { partyId: 'p' }), 'party', 'dead', 'occupation'), 'a join, a role, a death do not wait');
-assert(hearsAll({ ...hunter, phase: 'hot' }, 'funding', 'quantity', 'own_move'), 'nor near a player');
-assert(hearsAll(cold('hunting'), 'threat', 'excluded', 'material_done', 'filled', 'sale', 'craft', 'target'), 'a failed check goes at once');
-assert(waitsFor(cold('hunting'), 'short', 'money') && waitsFor(cold('crafting'), 'short') && hearsAll(cold('shopping'), 'short'), 'short of a price it earns on: the shop reads its purse');
-assert(waitsFor(cold('hunting'), 'income_moved') && hearsAll(cold('resting'), 'income_moved'), 'a better spot waits for the rest');
-assert.equal(Reaction.placeName(Reaction.place(cold('traveling'))), 'work', 'a hunt or the road is work');
+assert.equal(Situations.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
+assert(Situations.readsFacts(cold('traveling'), cold('shopping')), 'the step that arrives in town reads its facts');
+assert(!Situations.readsFacts(cold('shopping'), cold('shopping')) && !Situations.readsFacts(cold('traveling'), cold('traveling')), 'and only that step');
+assert(Situations.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', { partyId: 'p' })), 'a party reads its round');
+assert.equal(Situations.placeName(Situations.place(cold('traveling'))), 'work', 'a hunt or the road is work');
 // Own trips: the bot's way out and back is no event far from a player; the world's push is.
 const trip = (travel, extra = {}) => cold('traveling', { stats: { travel }, ...extra });
 const back = { reason: 'return_after_market', spotId: 'other', townName: 'Giran', arrivalActivity: 'hunting' };
@@ -75,20 +92,9 @@ assert.equal(Sections.occupationPlanned(trip({ reason: 'death_pressure_replan', 
 assert.equal(Sections.occupationPlanned(trip({ reason: 'party_spot_replan' }, { partyId: 'p' }), leaf), false, 'a party\'s call stays an event');
 assert.equal(Sections.occupationPlanned(cold('hunting', { spotId: 'x' }), { activity: 'shopping' }), true, 'reaching its ground is no second event');
 assert.equal(Sections.occupationPlanned(cold('grouped', { spotId: 'x', partyId: 'p' }), { activity: 'shopping' }), true, 'nor a party\'s fight');
-assert.equal(Sections.occupationPlanned(cold('shopping'), leaf), false, 'and town is a moment');
+assert.equal(Sections.occupationPlanned(cold('shopping'), leaf), true, 'its town visit is its own (its arrival is the town\'s moment)');
+assert.equal(Sections.occupationPlanned(cold('shopping', { stats: { partyMarketReturn: { partyId: 'p' } } }), leaf), false,
+    'a market break its party called is not');
 assert.equal(Sections.occupationPlanned({ ...trip(back), phase: 'hot' }, leaf), false, 'nor a near bot');
-// At work money speaks when it reaches the goal, not at each price the last review read.
-const purse = adena => cold('hunting', { adena, stats: {} });
-const wallet = { wallet: 50, moneyError: -1, cashBounds: [0, 100], budgetBounds: [0, 100], goalBudget: 500 };
-const moneyHeard = state => Sections.softEvents(state, wallet, { board: null });
-assert.deepEqual([...moneyHeard(purse(150))], [], 'a next price is no event at work');
-assert.deepEqual([...moneyHeard(purse(500))], ['money'], 'the goal within reach is');
-assert.deepEqual([...moneyHeard({ ...purse(150), activity: 'resting' })], [], 'nor at a rest');
-assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['money'], 'there the goal speaks too');
-// The bot's own craft preparation asks no review far from a player; it stands in its state.
-const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-const preparing = cold('crafting', { stats: { decisionSeq: 3 } }), bits = Sections.sectionMask(['sources', 'benefits', 'money']);
-assert.deepEqual(Events.applyOwnRaise(preparing), preparing.stats, 'its own preparation raises nothing');
-assert.equal(Events.applyOwnRaise({ ...preparing, phase: 'hot' }).wishDirty, bits, 'a near bot raises');
 console.log('player moment ok');
 process.exit(0);

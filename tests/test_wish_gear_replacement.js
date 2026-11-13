@@ -64,7 +64,8 @@ function verify() {
     check('other slots survive weapon replacement', untouched, 2503);
     const changed = stateFor({ 93: gear(93) });
     const first = Providers.gearGain(changed, template(2503), timestamp, 1);
-    changed.inventory[93].enchant = 7;
+    // An enchant writes a new bag (a worn row is never edited in place).
+    changed.inventory = { ...changed.inventory, 93: { ...changed.inventory[93], enchant: 7 } };
     const second = Providers.gearGain(changed, template(2503), timestamp, 1);
     assert(second.attack < first.attack, 'changed build cannot reuse old weapon gain');
     Profile.forgetBuild(changed.characterId);

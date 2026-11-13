@@ -10,7 +10,7 @@ try {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const Geo = invoke('GameServer/Geodata/GeodataEngine');
     // Synthetic actors use an open test room; specific cases override its walls.
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
 
     function actor(id, classId = 0) {
         return {
@@ -213,12 +213,12 @@ try {
     assert.strictEqual(directFallbackMoves, 2, 'a usable preview should be followed by the actual movement command');
 
     leaderSession.partyPullState = {};
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     const hiddenPull = PartyPulling.tickBotPuller(pullerSession, pullerSession.actor,
         leaderSession, settings, {}, { executeCombat() { assert.fail('cannot pull an unseen mob'); } });
     assert.strictEqual(hiddenPull.idle, true, 'a puller must leave an unseen unengaged monster alone');
     assert.strictEqual(directFallbackMoves, 2, 'an unseen target must not even request a route preview');
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
 
     const incomingAdd = {
         ...reachableTarget,

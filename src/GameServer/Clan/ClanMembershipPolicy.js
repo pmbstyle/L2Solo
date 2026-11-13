@@ -1,15 +1,19 @@
+// A plan serving another clan's goal than the bot's clan (clanId): membership drops it.
+function foreignGoal(state, plan, clanId = Number(state?.stats?.clanId || 0)) {
+    return Number(plan?.clanGoal?.clanId || 0) > 0 && Number(plan.clanGoal.clanId) !== clanId;
+}
+
 // Membership is authoritative; joining keeps unrelated personal acquisition.
 function reconcileState(state, clanId = Number(state?.stats?.clanId || 0)) {
     const current = state.stats || {};
-    const plan = current.equipmentPlan;
-    const foreignGoal = Number(plan?.clanGoal?.clanId || 0) > 0 && Number(plan.clanGoal.clanId) !== clanId;
+    const foreign = foreignGoal(state, current.equipmentPlan, clanId);
     const request = current.partyRequest;
     const invalidRequest = Number(request?.clanId || 0) > 0 && Number(request.clanId) !== clanId;
     const invalidObjective = current.clanPartyObjective && Number(current.clanPartyObjective.clanId) !== clanId;
-    if (Number(current.clanId || 0) === clanId && !foreignGoal && !invalidRequest && !invalidObjective) return state;
+    if (Number(current.clanId || 0) === clanId && !foreign && !invalidRequest && !invalidObjective) return state;
     const stats = { ...current, clanId };
     let activity = state.activity;
-    if (foreignGoal) {
+    if (foreign) {
         delete stats.equipmentPlan;
         delete stats.craftReturn;
         delete stats.clanMaterialDemand;
@@ -87,5 +91,5 @@ function preserveGoalInvalidation(state, current = {}) {
     return { ...state, stats };
 }
 
-module.exports = { reconcileState, reconcileParty, activeGoalKeys, activeRaidGoalKeys,
+module.exports = { foreignGoal, reconcileState, reconcileParty, activeGoalKeys, activeRaidGoalKeys,
     reconcileGoals, preserveGoalInvalidation };

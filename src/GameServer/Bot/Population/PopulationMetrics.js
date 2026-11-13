@@ -3,6 +3,9 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const { monitorEventLoopDelay } = require('perf_hooks');
 const WorkerHeapTelemetry = require('./WorkerHeapTelemetry');
+// Main's loop delay with diagnostics: 5 ms tells one turn from the next (two tasks back to back with a timer
+// run between them read as two turns); 200 timer runs a second, native.
+const DELAY_RESOLUTION_MS = 5;
 
 function now() {
     return Date.now();
@@ -17,19 +20,41 @@ function emptyCounters() {
         skillUses: 0,
         heals: 0,
         partyBuffCasts: 0,
-        // Cold solo fights started and the mobs they pulled (F20): mobs per pull.
+        // Cold solo fights started and the mobs they pulled: mobs per pull.
         coldPulls: 0,
         coldPullMobs: 0,
-        // Cold solo area-skill hits that struck every mob of a pull (F20).
+        // Cold solo area-skill hits that struck every mob of a pull.
         coldAreaPullHits: 0,
-        // E69: solo rounds the spot share cut short, and the fights it did not start.
+        // solo rounds the spot share cut short, and the fights it did not start.
         coldShareBoundResolves: 0,
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
-        // Activations refused (HotActivation: in_transit, walker_endpoint_far, no_safe_activation_placement), by reason in
+        // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
         // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
+        // Bodies placed already inside a settled player's view (PopulationService.activationSettled:
+        // its last scan left no near row to the budget and it did not log in or teleport since):
+        // the ring's lead past the view (activationRadius) was too short for them. The bodies an
+        // arrival's or a budget cut's next scan places are not counted. Counted with or without
+        // developerDiagnostics.
+        lateInViewActivations: 0,
+        // Of those, walkers shown on their road (PopulationService.showWalkersNear); a walker
+        // that landed by a gatekeeper inside the view is not late.
+        lateInViewWalkers: 0,
+        // Bodies placed by a recovery of a place off the ground (ActivationPlacement), by kind:
+        // a walker by a step back toward its run's start, a bot on its spot (a raid included)
+        // at one of the spot's spawn points or its centre.
+        walkerRoadStepBacks: 0,
+        spotPlaceRecoveries: 0,
+        // Walkers whose road point was still in the town their run began in, shown at the
+        // run's start instead (ActivationPlacement).
+        walkerStartTownPlacements: 0,
+        // Hot bots' walks to their town's gatekeeper that failed (BotSpotTravel.recoverOrDefer),
+        // and the Scrolls of Escape a bot stuck in a town began after repeated failures
+        // (BotSpotTravel.startEmergencyScroll: an unreachable or a missing gatekeeper).
+        townDepartureRouteFailures: 0,
+        townStuckEscapes: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -81,7 +106,7 @@ function stats(values) {
     };
 }
 
-// The cold worker limit reads the median of the last three 1 s readings (L118): two of three late, not one.
+// The cold worker limit reads the median of the last three 1 s readings: two of three late, not one.
 const LAG_WINDOW = 3;
 
 const PopulationMetrics = {
@@ -172,7 +197,7 @@ const PopulationMetrics = {
         this.lagHistory.length = 0;
 
         if (Config.developerDiagnostics) {
-            this.delayHistogram = monitorEventLoopDelay({ resolution: 20 });
+            this.delayHistogram = monitorEventLoopDelay({ resolution: DELAY_RESOLUTION_MS });
             this.delayHistogram.enable();
             this.delayWindowStartedAt = now();
             this.heapObserver = WorkerHeapTelemetry.observe();
@@ -268,6 +293,31 @@ const PopulationMetrics = {
         this.counters.activationRefusals += 1;
         const key = String(reason || 'unknown');
         this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
+    },
+
+    recordLateInViewActivation(kind = null) {
+        this.counters.lateInViewActivations += 1;
+        if (kind === 'walker') this.counters.lateInViewWalkers += 1;
+    },
+
+    recordWalkerRoadStepBack() {
+        this.counters.walkerRoadStepBacks += 1;
+    },
+
+    recordSpotPlaceRecovery() {
+        this.counters.spotPlaceRecoveries += 1;
+    },
+
+    recordWalkerStartTownPlacement() {
+        this.counters.walkerStartTownPlacements += 1;
+    },
+
+    recordTownDepartureRouteFailure() {
+        this.counters.townDepartureRouteFailures += 1;
+    },
+
+    recordTownStuckEscape() {
+        this.counters.townStuckEscapes += 1;
     },
 
     recordCooldown(durationMs) {
@@ -478,14 +528,9 @@ const PopulationMetrics = {
         if (!Config.developerDiagnostics) return { enabled: false };
         const elapsedMs = Math.max(1, now() - (this.startedAt || now()));
         const histogram = this.delayHistogram;
-        const delay = {
-            resolutionMs: 20,
-            windowMs: histogram ? Math.max(0, now() - this.delayWindowStartedAt) : 0,
-            samples: Number(histogram?.count || 0),
-            p95Ms: histogram?.count ? Math.round(histogram.percentile(95) / 1e6) : 0,
-            p99Ms: histogram?.count ? Math.round(histogram.percentile(99) / 1e6) : 0,
-            maxMs: histogram?.count ? Math.round(histogram.max / 1e6) : 0
-        };
+        // Main's turn length over the summary's window (loopDelay: the resolution is off the numbers).
+        const delay = { resolutionMs: DELAY_RESOLUTION_MS, windowMs: histogram ? Math.max(0, now() - this.delayWindowStartedAt) : 0,
+            ...WorkerHeapTelemetry.loopDelay(histogram, DELAY_RESOLUTION_MS) };
         histogram?.reset();
         this.delayWindowStartedAt = now();
         const delta = {};

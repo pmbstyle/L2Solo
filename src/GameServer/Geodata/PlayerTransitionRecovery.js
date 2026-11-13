@@ -41,6 +41,17 @@ function cancel(session) {
     clearTimeout(session.transitionAttempt?.timer);
     session.transitionAttempt = null;
 }
+// A player's report is a clear source only when the floor under it lies
+// within a step (64) of the reported z (our choice: C4 resolves a walk's
+// start to the nearest floor with no such check) and the walk from there reaches the
+// target. A player touching a jamb reports a cell whose only layer is the
+// roof above; a walk from that roof drops to any floor below it, which is
+// not a walk from where the player stands. Points this file reads from
+// geodata stand on their floor already.
+function walkFrom(p, to) {
+    return Math.abs(Geo.getCellData(p.locX, p.locY, p.locZ).z - p.locZ) <= 64
+        && Geo.canWalkStraight(p.locX, p.locY, p.locZ, to.locX, to.locY, to.locZ);
+}
 function crossing(t, from, to, plane = 0) {
     const start = depth(t, from), end = depth(t, to);
     if (end <= start || start > plane || end < plane) return null;
@@ -66,7 +77,7 @@ function crossesKnownGap(t, from, to) {
         p.locZ = Geo.getCellData(p.locX, p.locY, t.z).z;
         if (Math.abs(p.locZ - t.z) > 24 || Math.abs(p.locZ - from.locZ) > 64) return false;
     }
-    const clear = (a, b) => Geo.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
+    const clear = (a, b) => Geo.canWalkStraight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ);
     return clear(points[0], points[1]) && clear(points[2], points[3]);
 }
 function schedule(session, p, now) {
@@ -95,7 +106,7 @@ function schedule(session, p, now) {
     if (!Geo.hasGeo(p.locX, p.locY) || !Geo.hasGeo(entry.locX, entry.locY)) return;
     entry.locZ = Geo.getCellData(entry.locX, entry.locY, p.locZ).z;
     if (Math.abs(entry.locZ - p.locZ) > 64) return;
-    const clearApproach = Geo.hasLineOfSight(p.locX, p.locY, p.locZ, entry.locX, entry.locY, entry.locZ);
+    const clearApproach = walkFrom(p, entry);
     if (!clearApproach) {
         // A player already touching a jamb may report a missing-floor cell.
         // Walk back out and toward the opening; wait for an actual clear-floor
@@ -108,7 +119,7 @@ function schedule(session, p, now) {
         if (!Geo.hasGeo(retreat.locX, retreat.locY)) return;
         retreat.locZ = Geo.getCellData(retreat.locX, retreat.locY, p.locZ).z;
         if (Math.abs(retreat.locZ - t.z) > 24
-            || !Geo.hasLineOfSight(retreat.locX, retreat.locY, retreat.locZ, entry.locX, entry.locY, entry.locZ)) return;
+            || !Geo.canWalkStraight(retreat.locX, retreat.locY, retreat.locZ, entry.locX, entry.locY, entry.locZ)) return;
     }
     if (steer && !attempt.approach) {
         attempt.approach = entry;
@@ -180,8 +191,7 @@ function observe(session, p, now = Date.now()) {
     if (!Geo.hasGeo(p.locX, p.locY) || !Geo.hasGeo(loc.locX, loc.locY)) return false;
     loc.locZ = Geo.getCellData(loc.locX, loc.locY, p.locZ).z;
     if (Math.abs(loc.locZ - p.locZ) > 64) return false;
-    if (!Geo.hasLineOfSight(p.locX, p.locY, p.locZ, loc.locX, loc.locY, loc.locZ)
-        && !crossesKnownGap(t, p, loc)) return false;
+    if (!walkFrom(p, loc) && !crossesKnownGap(t, p, loc)) return false;
     // No long-distance teleport lifecycle: this is a local correction, with
     // immediate authoritative position and no pet/party travel or 1s delay.
     cancel(session);

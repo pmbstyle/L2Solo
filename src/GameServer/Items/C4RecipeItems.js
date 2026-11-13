@@ -1,6 +1,9 @@
 const fs = require('fs');
+const path = require('path');
+const FailureLog = require('../../FailureLog');
 
-const RECIPE_DATA_PATH = 'data/Recipes/recipes.csv';
+// Beside the code, so the recipes load whatever folder the process starts in.
+const RECIPE_DATA_PATH = path.join(__dirname, '..', '..', '..', 'data', 'Recipes', 'recipes.csv');
 
 let recipeItems = null;
 let recipesById = null;
@@ -51,10 +54,12 @@ function loadRecipeItems() {
     recipesById = {};
     recipesByProductId = {};
     recipeVariantsByProductId = {};
-    const rows = fs.existsSync(RECIPE_DATA_PATH) ? fs.readFileSync(RECIPE_DATA_PATH, 'utf8')
-        .split(/\r?\n/)
-        .map(parseLine)
-        .filter(Boolean) : [];
+    let rows = [];
+    if (fs.existsSync(RECIPE_DATA_PATH)) {
+        rows = fs.readFileSync(RECIPE_DATA_PATH, 'utf8').split(/\r?\n/).map(parseLine).filter(Boolean);
+    } else {
+        FailureLog.note('recipes.data_missing', new Error(`recipe data not found: ${RECIPE_DATA_PATH}`));
+    }
     rows.forEach((recipe) => {
         if (!recipeItems[recipe.recipeItemId]) {
             recipeItems[recipe.recipeItemId] = recipe;

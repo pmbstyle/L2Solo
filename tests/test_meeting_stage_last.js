@@ -9,6 +9,7 @@ require('./helpers/databaseIsolation');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
@@ -58,7 +59,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 
         // The visit's earlier errands (a goal purchase) may take a pass of their own.
         for (let pass = 0; pass < 3 && !Meetings.hasPreparation(buyerId); pass++) {
-            assert((await Population.resolveColdState(Life.cachedState(buyerId))).ok, 'the visit pass runs');
+            assert((await Population.resolveColdState(Life.cachedState(buyerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(buyerId) }) })).ok, 'the visit pass runs');
             await settle();
         }
         assert.equal(Meetings.hasPreparation(buyerId), true, 'the sale visit staged a meeting for the shots');
@@ -71,7 +72,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         refuse();
         await settle();
         assert.equal(Meetings.hasPreparation(buyerId), false, 'the refused preparation is discarded');
-        await Population.resolveColdState(Life.cachedState(buyerId));
+        await Population.resolveColdState(Life.cachedState(buyerId), { precomputedResult: BackgroundResolver.resolveSolo({ state: Life.cachedState(buyerId) }) });
         await settle();
         assert(Number(Life.cachedState(buyerId).inventory[SHOT]?.amount || 0) > 0, 'after the refusal the NPC basket buys the shots');
         console.log('Staged meeting survives its pass: passed');

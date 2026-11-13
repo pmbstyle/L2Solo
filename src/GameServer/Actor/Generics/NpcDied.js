@@ -46,30 +46,30 @@ function ownerSessionForSummon(actor) {
     return (World.user?.sessions || []).find((session) => session.actor?.fetchId?.() === ownerId) || null;
 }
 
-function rewardParticipants(killerSession, killer, npc) {
+// Who shares a kill's EXP and SP: the killer and its party, each of them a
+// living body in the world within reward range of the corpse. A killer that is
+// dead, gone or too far gets nothing (Lisvus L2Attackable.calculateRewards
+// skips a damage dealer out of range or no longer knowing the monster).
+function rewardParticipants(killerSession, npc) {
     const leaderSession = partyLeaderSession(killerSession);
-    const leader = leaderSession?.actor;
-    if (!leader) return killer && !killer.isDead() ? [killerSession] : [];
+    const members = [killerSession];
+    if (leaderSession?.actor) {
+        members.unshift(leaderSession);
+        if (killerSession?.hotBackgroundPartyId) members.push(...invoke('GameServer/Bot/AI/HotBackgroundParty').roster(killerSession));
+        World.user.sessions.forEach((candidate) => {
+            if (
+                candidate !== leaderSession &&
+                candidate.partyCompanion === true &&
+                candidate.followPlayerSession === leaderSession
+            ) {
+                members.push(candidate);
+            }
+        });
+    }
 
-    const members = [leaderSession, killerSession];
-    if (killerSession?.hotBackgroundPartyId) members.push(...invoke('GameServer/Bot/AI/HotBackgroundParty').roster(killerSession));
-    World.user.sessions.forEach((candidate) => {
-        if (
-            candidate !== leaderSession &&
-            candidate.partyCompanion === true &&
-            candidate.followPlayerSession === leaderSession
-        ) {
-            members.push(candidate);
-        }
-    });
-
-    const nearbyMembers = uniqueSessions(members)
+    return uniqueSessions(members)
         .filter(isAliveOnline)
         .filter((memberSession) => distance2d(memberSession.actor, npc) <= PARTY_REWARD_RADIUS);
-
-    if (nearbyMembers.length > 0) return nearbyMembers;
-    if (killer && !killer.isDead()) return [killerSession];
-    return [];
 }
 
 function levelOf(session) {
@@ -192,7 +192,7 @@ function npcDied(session, actor, npc) {
     autoSweepSpoiledCorpse(npc, Generics);
 
     const rewardActor = ownerSession?.actor || actor;
-    const participants = rewardParticipants(session, rewardActor, npc);
+    const participants = rewardParticipants(session, npc);
     if (session?.accountId?.startsWith?.('bot_')) {
         BotEventJournal.record({
             botId: session.actor?.fetchId?.(),
@@ -229,13 +229,17 @@ function npcDied(session, actor, npc) {
     for (const reward of rewards) if (reward.session?.accountId?.startsWith('bot_')) {
         const saved = reward.session.coldLifeState;
         if (!saved) continue;
-        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-        const state = Economy.stateForActor(reward.session.actor, reward.session);
+        // The progress clock and counts are the body's row (stats.economyClock, playedHours,
+        // frustration, lifelongKills; timing): a kill takes no loss, so no persona trait.
         const learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
-        const life = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(state, {
+        const life = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(saved, {
             timestamp: Date.now(), startedAt: invoke('GameServer/Bot/AI/BotHuntEfficiency').SERVER_STARTED_AT,
-            kills: 1, persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: learning.knowledgeEnabled() });
-        reward.session.coldLifeState = { ...saved, stats: { ...saved.stats, ...life } };
+            kills: 1, knowledgeEnabled: learning.knowledgeEnabled() });
+        // Its kill counts as a far round's won fight: resolved and won (GearStall's kill count,
+        // stats.fightsWon; the readers that take wins as a share of resolved fights), and a win
+        // in its spot's risk window and its recovery.
+        const recorded = invoke('GameServer/Bot/Population/BotLifeState').recordNearFight(reward.session, saved, { won: true });
+        reward.session.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...life } };
     }
     invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc);
 }

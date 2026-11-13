@@ -9,7 +9,7 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const MAX_SPOTS = 8;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-// The ranked rows a fit walk reads, as EquipmentIncomeRoute.select's maxChecks.
+// The ranked rows a fit walk reads, as EquipmentIncomeRoute.search's maxChecks.
 const FIT_CHECKS = 32;
 // The bot hunts in a party or alone: the author keeps the two apart.
 function situationOf(state, mode) {
@@ -59,11 +59,11 @@ function netIncome(row, costs) {
         - Number(row.shots || 0) * costs.shots - Number(row.potions || 0) * costs.potions;
 }
 // What a round's shots and potions cost the bot, at the price the table's
-// rows pay for them (consumablePrices: the plan's shot, each potion its own).
+// rows pay for them, including both shot variants when a round switches.
 function consumedCost(state, after) {
     if (!after) return 0;
-    const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
-    const ids = [shots.selfId, ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const ids = [...Shots.combatShotIds(Shots.planForState(state)), ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
     return ids.reduce((total, id) => total + Math.max(0,
         Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0)) * botPrice(id), 0);
 }
@@ -82,21 +82,11 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 
     // Rows saved before income was recorded start their income from this sample.
     const mix = (field,value) => old && Number.isFinite(old[field]) ? Number(old[field])*0.75+value*0.25 : value;
     adena = Math.max(0,Number(adena)||0); loot = Math.max(0,Number(loot)||0); costs = Math.max(0,Number(costs)||0);
-    // The row's own noise: the mean relative deviation of a round's rates
-    // (exp and net income per ms of its cycle) from the row's. A reading
-    // inside it is the cycle's randomness, not an observation
-    // (DecisionSections.observationChanged); zero for a first sample.
-    const deviation = (now, before) => Number.isFinite(before) && before !== 0 ? Math.abs(now - before) / Math.abs(before) : 0;
-    const oldCycle = Number(old?.cycleMs);
-    const noise = old && oldCycle > 0 ? Math.max(deviation(exp / cycleMs, Number(old.exp) / oldCycle),
-        deviation((adena + loot - costs) / cycleMs,
-            (Math.max(0,Number(old.adena)||0) + Math.max(0,Number(old.loot)||0) - Math.max(0,Number(old.costs)||0)) / oldCycle)) : 0;
     const next = { spotId,signature:key,at:timestamp,samples:Math.min(32,(old?.samples||0)+1),
         exp:mix('exp',exp),cycleMs:mix('cycleMs',cycleMs),
         adena:mix('adena',adena),loot:mix('loot',loot),
         costs:mix('costs',costs),
         kills:mix('kills',Math.max(0,Number(kills)||0)),
-        noise:mix('noise',noise),
         partyRoster, source:'cold_round' };
     const rows = [next,...kept.filter(row=>row.spotId!==spotId || row.signature!==key)].slice(0,MAX_SPOTS);
 
@@ -105,7 +95,7 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 
 
 const { SERVER_STARTED_AT } = require('../Population/Uptime');
 
-// Time on the spot against all time (E36): the round time each record
+// Time on the spot against all time: the round time each record
 // schedules against the uptime that really passed until the next record,
 // two running sums that fade over the life of a row. A gap that spans a
 // restart, or a stint near the player (hot: no record), starts anew: it
@@ -153,14 +143,39 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const cycleMs = Math.max(0, Number(result.nextResolveAt || 0) - timestamp);
     const huntClock = nextClock(state, timestamp, cycleMs, startedAt);
     const items = result.materialize?.items || [];
-    const huntEfficiency = record(state, {
-        spotId: spotId || debug.spotId, cycleMs, exp, timestamp,
+    const round = { spotId: spotId || debug.spotId, cycleMs, exp, timestamp,
         adena: Number(result.materialize?.adena || 0), loot: lootValue(items),
         costs: consumedCost(state, result.patch?.inventory) + buffPurchaseCost(state, timestamp),
         kills: Number(debug.wins || 0), partyRoster: debug.partyRoster || null,
-        share: onSpotShare({ stats: { huntClock } })
-    });
-    return { ...life, huntEfficiency, huntClock };
+        share: onSpotShare({ stats: { huntClock } }) };
+    const huntEfficiency = record(state, round);
+    return { ...life, huntEfficiency, huntClock, stay: stayOf(state, round) };
+}
+// The bot's solo stay on its spot (what spot_disappoints weighs): its kills, its net income (adena and loot less
+// the round's costs) and its hunting time since it came to the spot. Only another spot starts a new stay (a new
+// earning answer, a level or a town trip keep it: a spot's income is judged over the kills it takes to tell, which
+// are more than a stay between two of those usually holds); a party round ends it (null: party rounds count into no
+// solo stay). judged: weighed against the held answer (once a stay). ~60 B in the stats.
+function stayOf(state, round) {
+    if (state.party?.partyId || state.partyId) return null;
+    const spotId = round.spotId == null ? null : String(round.spotId);
+    const stay = state.stats?.stay;
+    const same = !!stay && stay.spotId === spotId;
+    return { spotId, kills: (same ? stay.kills : 0) + round.kills, net: (same ? stay.net : 0) + round.adena + round.loot - round.costs,
+        ms: (same ? stay.ms : 0) + round.cycleMs, judged: same && stay.judged === true };
+}
+// The kills a stay needs before its income is weighed, and the sampling margin.
+const STAY_KILLS = 50, NOISE_Z = 2;
+// Does the stay disappoint its held earning answer? Once per stay, after STAY_KILLS kills on
+// the answer's own spot, its own net income an hour below the answer's unbiased expectation (answer.expected, not the
+// bot's belief) less the sampling noise of its kills: net/h < expected × (1 − NOISE_Z / √kills), taking a kill's
+// income as spread about its own mean (a coefficient of variation of 1: drops are lumpy), so two standard errors
+// of the mean: 0.717 of the expectation at 50 kills, 0.8 at 100, 0.9 at 400. A bot hunting at its spot's true rate
+// trips it about 2 % of the stays. earning: stats.earning (EquipmentIncomeRoute.answerOf). Pure.
+function disappoints(stay, earning) {
+    if (!stay || stay.judged || !(stay.kills >= STAY_KILLS) || !(stay.ms > 0)) return false;
+    if (!earning?.spotId || String(earning.spotId) !== stay.spotId || !(earning.expected > 0)) return false;
+    return stay.net / stay.ms * HOUR_MS < earning.expected * (1 - NOISE_Z / Math.sqrt(stay.kills));
 }
 function buffPurchaseCost(state, timestamp) {
     const purchase = state.stats?.lastBuffServicePurchase;
@@ -187,7 +202,7 @@ function scores(state, timestamp = Date.now(), mode) {
 // the NPC buy price, per hour of the hunt cycle and per kill, and the exp per
 // hour of that same row.
 // `share` is the bot's time on the spot against all its time: the hour of
-// a bot counts its trips, its town visits and its waits (E36).
+// a bot counts its trips, its town visits and its waits.
 function bestIncome(rows, share = 1) {
     let best = null;
     for (const row of rows) {
@@ -224,16 +239,18 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
     const tableRole = Table.roleFor(state);
     const level = levelOf(state);
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const shots = Shots.shotRows(Shots.planForState(state));
     const currentFits = !state.spotId || !fits || fits(state.spotId);
-    const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, true, rewardOptions);
+    const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, shots, rewardOptions);
     const costs = consumablePrices(state);
     const ranked = shots => Table.rankedIncome(tableRole, level, costs, -7, shots, rewardOptions);
-    let progress = current || Table.best(tableRole, level, true);
-    let row = current && netIncome(current, costs) > 0 ? current : ranked(true)[0] || ranked(false)[0];
+    let progress = current || Table.best(tableRole, level, shots);
+    let row = current && netIncome(current, costs) > 0 ? current : incomeRow(state, costs);
     const rowUnfit = fits && row && !fits(row.spotId || state.spotId);
     const progressUnfit = fits && progress && !fits(progress.spotId || state.spotId);
     if (rowUnfit || progressUnfit) {
-        const list = ranked(true).length ? ranked(true) : ranked(false);
+        const list = ranked(shots).length ? ranked(shots) : ranked(false);
         let earning = null, leveling = null;
         for (let at = 0; at < Math.min(list.length, FIT_CHECKS); at++) {
             const entry = list[at];
@@ -254,17 +271,28 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     const income = netIncome(row, costs);
     return { perHour: income * onSpotShare(state), perKill: row.kills > 0 ? income / row.kills : 0,
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
-        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId, useShots: row.useShots !== false };
+        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId,
+        useShots: row.useShots === false ? false : shots };
+}
+// The table's best net-income row in the bot's band, charged if any pays, else
+// uncharged (its consumables at their NPC prices): the row a bot with no spot of
+// its own earns on (huntIncome's table pick, huntHour) and the one its kit is
+// sized on with no spot (EquipmentIncomeRoute.spotUseOf, EconomyContext.foundation).
+// null: no row in the band.
+function incomeRow(state, costs = consumablePrices(state)) {
+    const table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
+    const tableRole = table.roleFor(state), level = levelOf(state);
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const shots = Shots.shotRows(Shots.planForState(state));
+    return table.rankedIncome(tableRole, level, costs, -7, shots, rewardOptions)[0]
+        || table.rankedIncome(tableRole, level, costs, -7, false, rewardOptions)[0] || null;
 }
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
     if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
     const costs = consumablePrices(state);
-    const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
-    const table = invoke('GameServer/Bot/AI/SpotValueTable');
-    const tableRole = table.roleFor(state);
-    const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, true, rewardOptions)[0]
-        || table.rankedIncome(tableRole, levelOf(state), costs, -7, false, rewardOptions)[0];
+    const row = incomeRow(state, costs);
     return Math.max(1, row ? netIncome(row, costs) : 0);
 }
 function hourValue(state, timestamp = Date.now(), mode) {
@@ -276,5 +304,5 @@ function hourValue(state, timestamp = Date.now(), mode) {
 // Kept as lifecycle adapters for callers which accepted earlier samples.
 function observe() {}
 function resetLevelBands() {}
-module.exports = { record, recordRound, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
-    resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
+module.exports = { record, recordRound, disappoints, STAY_KILLS, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
+    resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, incomeRow, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };

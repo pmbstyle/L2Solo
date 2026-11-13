@@ -55,7 +55,6 @@ async function main() {
     const originalSpotEnsure = SpotProfiles.ensure;
 
     let plannerCalls = 0;
-    let savedParty = null;
     GearAcquisitionPlanner.planFor = () => {
         plannerCalls += 1;
         return {
@@ -77,10 +76,7 @@ async function main() {
             stats: { equipmentPlan: clanPlan }
         }]]
     ]));
-    PartyState.createOrUpdate = async (party) => {
-        savedParty = party;
-        return party;
-    };
+    PartyState.createOrUpdate = async (party) => party;
     SpotProfiles.ensure = () => [];
 
     try {
@@ -90,8 +86,7 @@ async function main() {
             memberIds: [1, 2, 3, 4, 5, 6, 7],
             stats: {
                 objective: { clanId: 77, sourceKind: 'raid', raidBoss: true, spotId: 'raid:10029', minPartySize: 7 },
-                raidEncounter: { status: 'active' },
-                sessionReview: { at: 0, nextAt: 1 }
+                raidEncounter: { status: 'active' }
             }
         };
         PartyState.active = () => [raidParty];
@@ -148,14 +143,15 @@ async function main() {
         PartyState.active = () => [abandonedLegacyRaid];
         assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
             'a retreated legacy raid must not keep the clan equipment planner locked');
-        const abandonedReview = BackgroundPartyLifecycle.review(abandonedLegacyRaid,
-            abandonedLegacyRaid.memberIds.map((characterId) => ({
-                characterId,
-                level: 50,
-                activity: 'grouped',
-                party: { partyId: abandonedLegacyRaid.partyId },
-                stats: { clanPartyObjective: abandonedLegacyRaid.stats.objective }
-            })), Date.now());
+        const abandonedMembers = abandonedLegacyRaid.memberIds.map((characterId) => ({
+            characterId,
+            level: 50,
+            activity: 'grouped',
+            party: { partyId: abandonedLegacyRaid.partyId },
+            stats: { clanPartyObjective: abandonedLegacyRaid.stats.objective }
+        }));
+        const abandonedReview = BackgroundPartyLifecycle.release(abandonedLegacyRaid, abandonedMembers,
+            BackgroundPartyLifecycle.objectiveEnds(abandonedLegacyRaid, abandonedMembers, Date.now()).leaving, Date.now());
         assert.strictEqual(abandonedReview.party.status, 'dissolved',
             'the stale retreated raid roster must dissolve immediately when reviewed');
         assert([...abandonedReview.leaving.values()].every((reason) => reason === 'raid_failed'),
@@ -268,22 +264,74 @@ async function main() {
             spotId: 'clan-spot', stats: { objective: { priority: 'required' } } };
         PopulationService.markPartyRequirementsDue(refreshParty, null);
         assert(PopulationService.partyRequirementRefreshDue.has('bgp-clan-lock'), 'a new party is due for its member plans');
-        const refreshed = await PopulationService.applyWorkerPartyRequirements(refreshParty, { memberPlans: [], requirementRefreshedAt: Date.now() });
-        assert.deepStrictEqual(refreshed, [], 'a locked plan needs no party refresh write');
+        PopulationService.applyWorkerPartyRequirements(refreshParty, { requirementRefreshedAt: Date.now() });
+        assert(!PopulationService.partyRequirementRefreshDue.has('bgp-clan-lock'), 'a complete re-plan clears the due mark');
 
         assert.strictEqual(plannerCalls, 0, 'party refresh must not invoke the generic planner for clan goals');
-        assert(savedParty, 'party refresh should still publish its current party snapshot');
-        assert.strictEqual(
-            savedParty.stats.acquisitionGoal.target.selfId,
-            clanPlan.target.selfId,
-            'party refresh must keep the clan target item'
-        );
-        assert.strictEqual(
-            savedParty.stats.acquisitionGoal.clanGoal.goalKey,
-            clanPlan.clanGoal.goalKey,
-            'party refresh must keep the clan goal ownership metadata'
-        );
-
+        // The re-plan's objective (the worker's, carried on the leader's party row) keeps the clan target.
+        const kept = require('../src/GameServer/Bot/Population/PartyRequirementRefresh')
+            .partyObjective((await LifeState.cachedStatesForParties([refreshParty])).get('bgp-clan-lock'));
+        assert.strictEqual(kept.acquisitionGoal.target.selfId, clanPlan.target.selfId, 'party refresh must keep the clan target item');
+        assert.strictEqual(kept.acquisitionGoal.clanGoal.goalKey, clanPlan.clanGoal.goalKey,
+            'party refresh must keep the clan goal ownership metadata');
+        // A member with no weapon holding the locked clan plan: a C4 player without a weapon
+        // buys one first, so the NPC weapon bridge beats the clan lock, at the party re-plan
+        // and at the save that carries it. Once the bag holds a weapon the clan plan stands
+        // again; the clan's own goal write lands over the bridge.
+        {
+            const Refresh = require('../src/GameServer/Bot/Population/PartyRequirementRefresh');
+            const lockedMember = { characterId: 1001, name: 'ClanMember', level: 35, phase: 'cold', inventory: {},
+                party: { partyId: 'bgp-clan-lock' }, simulation: { revision: 3 }, stats: { equipmentPlan: clanPlan } };
+            const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+            const saved = { npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
+                finalizePlan: GearAcquisitionPlanner.finalizePlan };
+            const savedPlanFor = GearAcquisitionPlanner.planFor;
+            const bridge = { status: 'active', strategy: 'market', weaponBridge: true,
+                partyNeedReason: 'weapon_bridge', target: { selfId: 129, slot: 7 }, market: { price: 1 } };
+            Object.assign(GearAcquisitionPlanner, {
+                npcEquipmentBridgePlan: () => bridge,
+                finalizePlan: (_state, _previous, raw) => raw });
+            try {
+                const unarmed = { ...lockedMember, stats: { classId: 0, clanId: 77, equipmentPlan: clanPlan } };
+                const selection = Refresh.plan(unarmed, { spots: [], timestamp: Date.now(),
+                    planningOptions: { board: new BoardIndex() } });
+                assert.strictEqual(selection.acquisitionPlan?.target?.selfId, 129,
+                    'the re-plan of an unarmed clan-locked member takes the weapon bridge');
+                assert.notStrictEqual(Refresh.acquisitionRequirementKey(selection.acquisitionPlan),
+                    Refresh.acquisitionRequirementKey(clanPlan), 'so it sends the member plan');
+                const bridgeSave = { ...unarmed, stats: { ...unarmed.stats, equipmentPlan: bridge } };
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(bridgeSave, 'market_visit_complete', unarmed)
+                    .stats.equipmentPlan.target.selfId, 129, 'the save of an unarmed member keeps the bridge');
+                const armedSave = { ...bridgeSave,
+                    inventory: { 129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 } } };
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(armedSave, 'market_visit_complete', unarmed)
+                    .stats.equipmentPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'with a weapon in the bag the clan plan comes back');
+                const bridgeRow = bridgeSave;
+                assert.strictEqual(LifeState.preserveClanOwnedEquipmentState(unarmed, 'clan_equipment_goal', bridgeRow)
+                    .stats.equipmentPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'the clan goal write lands over the bridge');
+                // An unarmed member one material short of its clan craft finishes the craft
+                // before it takes the bridge; the finished craft keeps the clan goal.
+                const clanCraft = { ...clanPlan, strategy: 'craft', recipeId: 9301, grade: 'd',
+                    partyNeed: 'solo_ok', requiresParty: false, partyNeedReason: undefined,
+                    next: { spotId: 'clan-spot', npcId: 0, itemId: 9102 },
+                    materials: [{ selfId: 9102, amount: 10, missing: 1 }] };
+                GearAcquisitionPlanner.finalizePlan = saved.finalizePlan;
+                GearAcquisitionPlanner.planFor = (_state, options) => (options?.recipeId === clanCraft.recipeId
+                    ? { ...clanCraft, grade: 'c', clanGoal: undefined } : bridge);
+                const craftSelection = Refresh.plan({ ...unarmed, stats: { ...unarmed.stats, equipmentPlan: clanCraft } },
+                    { spots: [], timestamp: Date.now(), planningOptions: { board: new BoardIndex() } });
+                assert.strictEqual(craftSelection.acquisitionPlan?.finishBeforeUpgrade, true,
+                    'a clan craft one material from done is finished before the bridge');
+                assert.strictEqual(craftSelection.acquisitionPlan.target.selfId, clanCraft.target.selfId);
+                assert.strictEqual(craftSelection.acquisitionPlan.clanGoal?.goalKey, clanPlan.clanGoal.goalKey,
+                    'the finished clan craft keeps its clan goal');
+            } finally {
+                Object.assign(GearAcquisitionPlanner, saved);
+                GearAcquisitionPlanner.planFor = savedPlanFor;
+            }
+        }
         const finalized = GearAcquisitionPlanner.finalizePlan(
             { inventory: {} },
             clanPlan,

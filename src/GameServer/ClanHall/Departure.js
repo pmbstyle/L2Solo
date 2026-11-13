@@ -1,9 +1,14 @@
 const Services = require('./Services');
 const Karma = require('../Karma');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
-function plan(state, hall, timestamp = Date.now(), options = {}) {
+// The hall's departure teleports the bot to the spot it goes to when sent to hunt (the
+// worker's choice; main never chooses one): spotId, a hot body's
+// (DecisionEvents.heldSpotId), else a far bot's (DecisionEvents.heldSpotOf: its row).
+// None (none published, its exclusions rule it out: died, was full, unreachable) or
+// pending (a raise the worker has not answered may move it: a player's command): no
+// teleport, it leaves the hall as it came and the worker routes it.
+function plan(state, hall, options = {}) {
     if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Karma.closesTowns(state.stats?.karma))
         return null;
     const point = {
@@ -13,23 +18,17 @@ function plan(state, hall, timestamp = Date.now(), options = {}) {
     };
     if (!require('./Runtime').Policy.inside(hall, point) && !Services.near(point, Services.manager(hall)))
         return null;
-    const spotRetryAfter = { ...options.spotRetryAfter };
-    for (const id of SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp)) spotRetryAfter[id] = Infinity;
-    const selected = SpotService.findBestSpot({ ...state, spot: null }, {
-        mode: 'solo',
-        minDistance: 1,
-        maxDistance: Infinity,
-        equipment: options.equipment || Object.values(state.inventory || {}),
-        spotRetryAfter
-    });
-    if (!selected?.spot) return null;
-    const destination = SpotService.arrivalPointForState(state, selected.spot);
+    const spotId = options.spotId !== undefined ? options.spotId : invoke('GameServer/Bot/AI/DecisionEvents').heldSpotOf(state);
+    if (spotId == null || spotId === 'pending') return null;
+    const spot = SpotService.findById(spotId);
+    if (!spot) return null;
+    const destination = SpotService.arrivalPointForState(state, spot);
     if (!destination || !['locX', 'locY', 'locZ'].every(key => Number.isFinite(destination[key]))
-        || !SpotService.containsLocation(selected.spot, destination)) return null;
-    return { spot: selected.spot, destination };
+        || !SpotService.containsLocation(spot, destination)) return null;
+    return { spot, destination };
 }
 
-function hot(session, actor, hall, timestamp = Date.now()) {
+function hot(session, actor, hall) {
     const state = {
         ...session.coldLifeState,
         characterId: actor.fetchId(),
@@ -40,10 +39,7 @@ function hot(session, actor, hall, timestamp = Date.now()) {
         vitals: { hp: actor.fetchHp() },
         stats: { ...session.coldLifeState?.stats, classId: actor.fetchClassId(), karma: actor.fetchKarma?.() || 0 }
     };
-    const departure = plan(state, hall, timestamp, {
-        equipment: actor.backpack?.fetchItems?.() || [],
-        spotRetryAfter: session.spotRetryAfter
-    });
+    const departure = plan(state, hall, { spotId: invoke('GameServer/Bot/AI/DecisionEvents').heldSpotId(session) });
     return !!departure && invoke('GameServer/Bot/AI/BotSpotTravel').startFromClanHall(
         session, actor, departure.spot, departure.destination
     );

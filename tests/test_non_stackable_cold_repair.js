@@ -105,6 +105,32 @@ const Native = require('./helpers/nativeMarketFixture');
         assert.equal(worn.equipped, 1);
         assert.equal(worn.slot, 8);
         assert.deepEqual(await Database.splitNonStackableItems([19]), { rowsSplit: 0, copiesCreated: 0 });
+        // Two Crafted Daggers are two copies: a bag entry without slot or stack hints never
+        // merges them into one unwearable stack (stackability is the item's).
+        await Native.character(Database, 9404, 'TwoDaggers', 'bot_two_daggers');
+        for (let copy = 0; copy < 2; copy++) await Database.setItem(9404, { selfId: 220, name: 'Crafted Dagger', amount: 1 });
+        await Database.syncInventorySummary(9404, { 220: { selfId: 220, amount: 2 } });
+        assert.deepEqual((await Database.fetchItems(9404)).filter(row => row.selfId === 220).map(row => row.amount), [1, 1],
+            'a bare entry keeps one row per dagger');
+        // A Rogue drawn to Hawkeye wears its dagger until it owns a bow: a second dagger looted
+        // in a far round adds a copy and leaves the worn one on.
+        const Progression = invoke('GameServer/Bot/BotClassProgression');
+        let rogue = 9410;
+        while (Progression.futureClass(7, rogue) !== 9) rogue++;
+        await Native.character(Database, rogue, 'LootedDagger', 'bot_looted_dagger');
+        await Database.execute(['UPDATE characters SET classId = 7, level = 32 WHERE id = ?', [rogue]]);
+        await Database.setItem(rogue, { selfId: 220, name: 'Crafted Dagger', amount: 1, equipped: true, slot: 7 });
+        await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,activity,phase,
+            inventorySummary,statsJson,updatedAt) VALUES (?,'bot_looted_dagger','LootedDagger',32,'hunting','cold',?,?,1)`,
+        [rogue, Summary.saved(Life.inventorySummaryFromItems(await Database.fetchItems(rogue))),
+            JSON.stringify({ classId: 7, classProgressionClassId: 7, classProgressionLevel: 32 })]]);
+        const hunter = await Life.findByCharacterId(rogue);
+        const looted = await Life.prepareResolve(hunter, { patch: {}, events: [], debug: {}, nextResolveAt: Date.now() + 60000,
+            materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 220, name: 'Crafted Dagger', amount: 1, kind: 'Weapon.Knife',
+                rank: 'd', stackable: false }] } }, { timestamp: Date.now(), persist: false, projectClassProgression: true });
+        await Database.syncInventorySummary(rogue, looted.inventory);
+        assert.deepEqual((await Database.fetchItems(rogue)).filter(row => row.selfId === 220)
+            .map(row => [row.amount, row.equipped, row.slot]), [[1, 1, 7], [1, 0, 0]], 'the worn dagger stays worn after a looted copy');
         console.log('PASS cold stack repair: atomic projection, virtual loot, revisions, IDs and enchant survive hydration');
     } finally {
         await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true });

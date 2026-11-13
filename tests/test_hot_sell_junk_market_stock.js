@@ -11,7 +11,6 @@ const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SellJunk = invoke('GameServer/World/Generics/NpcBypasses/SellJunk');
-const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 // A bot's "Sell Unequipped Junk" sells what the cold town visit sells to the
@@ -64,16 +63,19 @@ const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'
 const EconomyCommit = invoke('GameServer/Bot/Economy/EconomyCommit');
 let learnedRows = null;
 
+const ratesFor = (level, classId) => require('./helpers/ratedKit')({ level, spotId: '-10_30', stats: { classId } }).stats;
 async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     const adena = { ...item(1, 57, 0) };
     const learned = [];
     learnedRows = learned;
+    // The kit rates the bot's build publishes (stats.kitRates), read by its sale.
+    const { kitRates, earning } = ratesFor(crafter?.level || 30, crafter?.classId || 0);
     const potionTarget = HealingPotionStock.targetAmountFor({ level: crafter?.level || 30,
-        spotId: '-10_30', stats: { classId: crafter?.classId || 0 } });
+        spotId: '-10_30', stats: { classId: crafter?.classId || 0, kitRates, earning } });
     const backpack = {
         items: [item(2, D_RECIPE, 1), item(3, CRYSTAL_D, 40), item(4, ANIMAL_BONE, 5),
             item(5, HEALING_POTION, potionTarget + 20), item(6, MATERIAL_RECIPE, 1), item(7, WOODEN_ARROW, 500),
-            item(8, ESCAPE_SCROLL, ScrollStock.TARGET_AMOUNT + 1), item(9, THIEF_KEY, 2), item(10, ANTIDOTE, 4), item(11, ENCHANT_ARMOR_D, 1), adena],
+            item(8, ESCAPE_SCROLL, 11), item(9, THIEF_KEY, 2), item(10, ANTIDOTE, 4), item(11, ENCHANT_ARMOR_D, 1), adena],
         stackableExists: () => Promise.resolve(adena),
         hasRecipe: (_actor, recipeId) => knownRecipeIds.includes(Number(recipeId)) || learned.includes(Number(recipeId)),
         fetchDwarvenCraftLevel: () => (crafter?.classId === ARTISAN.classId ? 4 : 0),
@@ -87,7 +89,7 @@ async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     // Prepare the same physical seller and native route used by the hot sale.
     const session = { accountId, actor: actor(backpack, crafter), currentSpot: { id: '-10_30' },
         coldLifeState: { characterId: 77, phase: 'hot', spotId: '-10_30', activity: 'shopping',
-            currentRegion: 'Giran', loc: world.town(), stats: {} }, dataSendToMe() {} };
+            currentRegion: 'Giran', loc: world.town(), stats: { kitRates, earning } }, dataSendToMe() {} };
     world.economyFor(MarketListingPolicy.actorState(session));
     await SellJunk(session, ['sell-junk']);
     await new Promise((resolve) => setImmediate(resolve));
@@ -129,15 +131,14 @@ async function run() {
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);
 
     const botSale = await sellJunk('bot_hot_hunter');
-    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0 } });
+    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0, ...ratesFor(30, 0) } });
     // Sell an actual target+20 stack under the native town-visit horizon.
     assert(keep > 0 && botSale.potionTarget === keep, `the native potion stock must match the real sale: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
-        // Step 3.2 (H12 narrowed): the Scrolls of Escape a bot reads for town
-        // trips are kept up to their restock target (ten since 71ff0f77); the
-        // surplus is sold. A no-grade recipe is a market item since b6eac2ed.
+        // Every Scroll of Escape a bot holds saves a walk to town and is kept.
+        // A no-grade recipe is a market item since b6eac2ed.
         [[D_RECIPE, 1], [CRYSTAL_D, 40], [ANIMAL_BONE, 5], [HEALING_POTION, keep], [MATERIAL_RECIPE, 1],
-            [ESCAPE_SCROLL, ScrollStock.TARGET_AMOUNT], [ENCHANT_ARMOR_D, 1]],
+            [ESCAPE_SCROLL, 11], [ENCHANT_ARMOR_D, 1]],
         'a hot bot keeps what its class uses and sells what no bot uses, as when cold');
 
     const crafterSale = await sellJunk('bot_hot_crafter', ARTISAN);

@@ -151,7 +151,8 @@ function interruptEscape(session, bot) {
     if (!session.townEscape) return false;
     session.townEscape = undefined;
     session.meetingTravel = undefined;
-    session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now() };
+    session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now(),
+        forced: session.townTripForced === true };
     session.plan = 'hunting';
     bot.state.setCasts(false);
     restoreSupplyHot(session, bot, 'supply_errand_interrupted');
@@ -217,19 +218,30 @@ function karmaTown() {
     return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
 }
 
+// A walk to town that found no way (ShoppingState: the visit's route exhausted on a
+// field). The body walks to town again only from other ground (its declared spot), by
+// scroll, or once it stands in it. The hold is on the ground, not on a town: the trip
+// owner and the merchant's town may name different towns, and a body that found no way
+// out of here finds none to another town either. Our choice: C4 has no server walk; a
+// player who cannot walk to town hunts on until he reads a scroll, moves or dies.
+function walkFailed(session) {
+    session.townWalkFailed = { spotId: session.currentSpot?.id ?? null };
+}
+const walkHeld = (session, alreadyInTown) => !alreadyInTown && !!session.townWalkFailed
+    && session.townWalkFailed.spotId === (session.currentSpot?.id ?? null);
+
+// options.forced: a trip the held leaf did not order (a bag cleanup, a flight from unsafe
+// ground, a player's ask), kept through a deferral; its arrival wakes the build (ShoppingState.arrive).
 function request(session, bot, BotAI, reason, options = {}) {
     if (session.partyCompanion === true && session.followPlayerSession && options.allowCompanion !== true) return 'companion';
     const pending = session.pendingTownTrip || {};
-    session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
+    const forced = options.forced === true || pending.forced === true;
+    session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now(), forced };
     if (Number(session.townTravelRetryAt || 0) > Date.now()) return 'deferred';
     if (inCombat(session, bot)) return 'deferred';
     // A physical teleport already submitted must settle first. Otherwise a
     // farm route must release movement before the selected town errand owns it.
     if (session.spotRelocation?.arrivalPending) return 'deferred';
-    if (session.spotRelocation) {
-        invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'town_trip');
-        bot.automation?.abortAll?.(bot);
-    }
     // A bot with karma walks to Floran, the town where a PK trades (design
     // 5.8): no scroll, no gatekeeper.
     const red = Karma.closesTowns(bot.fetchKarma?.());
@@ -248,9 +260,15 @@ function request(session, bot, BotAI, reason, options = {}) {
         options.forceScrollOfEscape === true ? 'hot_errand' : 'hot', fare.fee, TripPayment.actorAdena(bot));
     if (wantsScroll && !affordable && options.forceScrollOfEscape === true) return 'unpaid';
     const usesScroll = wantsScroll && affordable;
+    if (!usesScroll && walkHeld(session, alreadyInTown)) return 'deferred';
+    if (session.spotRelocation) {
+        invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'town_trip');
+        bot.automation?.abortAll?.(bot);
+    }
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
+    session.townTripForced = forced;
     session.shoppingRestock = undefined;
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
     if (options.announce !== false) {
@@ -273,7 +291,7 @@ function request(session, bot, BotAI, reason, options = {}) {
 
 async function requestMeeting(session, bot, meeting, side) {
     if (hasCombatThreat(session, bot) || bot.isDead() || session.meetingTravel || session.pendingActorTeleport) return;
-    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const Database = invoke('Database');
     const Routes = require('../Travel/TravelRoutes'), suffix = side ? 'B' : 'A';
     const token = session.meetingTravel = { id: meeting.id };
     const point = { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
@@ -281,8 +299,7 @@ async function requestMeeting(session, bot, meeting, side) {
     const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot);
     const cancelRoute = async reason => {
         session.meetingTravel = undefined;
-        const cancelled = await Database.cancelTradeMeeting(meeting.id, reason);
-        for (const row of Object.values(cancelled?.coldLifeRows || {})) Life.acceptLifecycleRow(row);
+        TradeMeetings.acceptRows(await Database.cancelTradeMeeting(meeting.id, reason));
         TradeMeetings.wake(bot.fetchId());
     };
     const pay = async (legId, fee, scroll) => {
@@ -290,8 +307,7 @@ async function requestMeeting(session, bot, meeting, side) {
         if (!valid() || latest?.state !== 'accepted') return null;
         const saved = JSON.parse(latest[`leg${suffix}`] || 'null');
         const sequence = saved?.legId === legId ? saved.sequence : latest[`nextLeg${suffix}`];
-        const paid = await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll);
-        const row = paid.coldLifeRows?.[bot.fetchId()]; if (row) Life.acceptLifecycleRow(row);
+        TradeMeetings.acceptRows(await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll));
         await invoke('GameServer/AfkTrade/AfkTradeService').syncOnlineInventory(bot.fetchId(), await Database.fetchItems(bot.fetchId(), 'town_travel_meeting'));
         return sequence;
     };
@@ -374,6 +390,7 @@ async function requestMeeting(session, bot, meeting, side) {
 module.exports = {
     SOE_CAST_MS,
     SOE_DISTANCE,
+    walkFailed,
     clearCombatTrip,
     hasCombatThreat,
     inCombat,

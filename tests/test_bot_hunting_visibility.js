@@ -48,7 +48,8 @@ async function main() {
         replace(World, 'fetchNpcsInRadius', () => available);
         replace(World, 'fetchUser', () => Promise.reject(new Error('NPC')));
         replace(World, 'fetchNpc', id => Promise.resolve(available.find(target => target.fetchId() === id)));
-        replace(Geo, 'hasLineOfSight', () => false);
+        const realWalk = Geo.canWalkStraight;
+        replace(Geo, 'canWalkStraight', () => false);
 
         const bot = {
             ...npc(2000001, 8), moving: false,
@@ -103,7 +104,7 @@ async function main() {
         session.currentTargetId = undefined;
         session.targetRetryAfter = {};
         available = [npc(99, 100)];
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         tick();
         assert.equal(session.currentTargetId, 99, 'ordinary visible hunting resumes');
         assert.equal(attacks.at(-1), 99);
@@ -136,9 +137,10 @@ async function main() {
         assert.equal(attacks.at(-1), 100);
 
         // The cold material hunt names its monster as well as its ground.
-        // An ordinary closer mob cannot silently replace that occupation.
+        // On its spot, an ordinary closer mob cannot silently replace that occupation.
         const previousActivity = session.heldEconomy.network.activity;
         session.heldEconomy.network.activity = { activity: 'hunting', itemId: 1874, amount: 1, npcId: 150 };
+        session.currentSpot = { id: '0_0' };
         session.currentTargetId = undefined;
         bot.moving = false;
         available = [npc(101, 30), npc(150, 200)];
@@ -150,25 +152,6 @@ async function main() {
         session.testIncoming = null;
         session.currentTargetId = undefined;
         session.heldEconomy.network.activity = previousActivity;
-
-        const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-        const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-        const oldTravel = Market.canTravelForPurchase, oldReject = Events.rejectSession;
-        try {
-            Market.canTravelForPurchase = () => false;
-            Events.rejectSession = () => { throw Error('a declined journey must not reroll the occupation'); };
-            session.heldEconomy.network.activity = { activity: 'shopping', itemId: 736, amount: 1,
-                town: 'Oren', rootKey: 'stock:scrolls' };
-            available = [npc(201, 100)];
-            tick();
-            assert.equal(session.currentTargetId, 201, 'an unprofitable separate shopping journey leaves the bot farming locally');
-            assert.equal(session.heldEconomy.network.activity.activity, 'shopping', 'local earning preserves the pending occupation');
-            assert.equal(session.spotRelocation, undefined, 'waiting for a worthwhile shopping visit cannot choose another field');
-        } finally {
-            Market.canTravelForPurchase = oldTravel; Events.rejectSession = oldReject;
-            session.heldEconomy.network.activity = previousActivity;
-            session.currentTargetId = undefined;
-        }
 
         session.currentSpot = { id: '0_0', center: { locX: 8, locY: 8, locZ: 0 } };
         session.noTargetTicks = 2;
@@ -195,7 +178,7 @@ async function main() {
         available = rows;
         bot.moving = false;
         let visible = new Set();
-        Geo.hasLineOfSight = (_x, _y, _z, x) => visible.has(x);
+        Geo.canWalkStraight = (_x, _y, _z, x) => visible.has(x);
         assert.equal(Hunting.findPreferredMonster(scanSession, bot, 2000, { readyOnly: true }), null);
         assert.equal(scanSession.huntTargetScanPending, true, 'four blocked ready mobs leave the scan pending');
         unready.add(305);
@@ -225,7 +208,7 @@ async function main() {
         bot.automation = new Automation();
         bot.session = session;
         bot.moves.length = 0;
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         let completions = 0;
         assert.equal(bot.automation.scheduleAction(session, bot, hidden, 700,
             () => { completions++; }, { action: 'attack', collisionAware: true }), false);
@@ -246,7 +229,7 @@ async function main() {
         bot.automation.scheduleAction(session, bot, hidden, 900, () => { completions++; });
         assert.equal(bot.moves.length, 3, 'a rooted bot cannot start a route to bypass an obstructed action');
         assert.equal(completions, 0);
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         bot.automation.scheduleAction(session, bot, hidden, 700, () => { completions++; }, { action: 'attack' });
         assert.equal(completions, 1, 'a visible in-range attack remains usable while rooted');
 
@@ -261,12 +244,35 @@ async function main() {
         replace(invoke('GameServer/Timer'), 'start', (_timer, callback) => { arrival = callback; });
         bot.automation.scheduleAction(session, bot, hidden, 0, () => { completions++; });
         assert.equal(typeof arrival, 'function');
-        Geo.hasLineOfSight = () => false;
+        Geo.canWalkStraight = () => false;
         const routesBeforeArrival = bot.moves.length;
         arrival();
         assert.equal(completions, 1, 'losing visibility during an approach must suppress its old callback');
         assert.equal(bot.moves.length, routesBeforeArrival + 1);
         bot.automation.abortAll(bot);
+
+        // A hunter that ended inside a tree's skirt: its cell opens on every
+        // side, the ground round it does not open back into it. It takes the
+        // mob it can walk out to; with none in sight it walks off to search.
+        Geo.canWalkStraight = realWalk;
+        Geo.getCellData = (x, y, z) => {
+            const cx = x >> 4, cy = y >> 4;
+            const nswe = cy === 0 && cx === 1 ? 13 : cy === 0 && cx === -1 ? 14 : cx === 0 && cy === 1 ? 7 : cx === 0 && cy === -1 ? 11 : 15;
+            return { z, nswe };
+        };
+        const skirtHunter = { ...bot, moves: [], moveTo(coords) { this.moves.push(coords); } };
+        skirtHunter.state = { ...bot.state, fetchTowards: () => false };
+        const skirtSession = { actor: skirtHunter, plan: 'hunting' };
+        assert.equal(Visibility.canSee(skirtHunter, npc(500, 100)), true, 'a hunter on a one-way cell sees the mob it can walk out to');
+        assert.equal(Visibility.canSee(npc(500, 100), skirtHunter), false, 'the cell is still not walked into');
+        available = [npc(500, 100)];
+        Hunting.tick(skirtSession, skirtHunter, {}, ai);
+        assert.equal(skirtSession.currentTargetId, 500, 'a hunter on a one-way cell takes the mob in front of it');
+        assert.equal(attacks.at(-1), 500);
+        skirtSession.currentTargetId = undefined;
+        available = [];
+        Hunting.tick(skirtSession, skirtHunter, {}, ai);
+        assert.equal(skirtHunter.moves.length, 1, 'with no mob in sight it walks off its cell to search');
         console.log('Hunting visibility: walls, floors, bounded scans, approach cancellation, wandering and self-defense passed');
     } finally {
         restores.reverse().forEach(restore => restore());

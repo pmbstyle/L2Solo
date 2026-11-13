@@ -30,15 +30,16 @@ function die(session, actor, context = {}) {
     }
 
     const victimSession = actor.session || session;
+    const killer = context.killer ?? context.source;
+    const killerPlayable = !!killer && killer !== actor && !killer.fetchKind;
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
     if (!ArenaDuelService.duelForActor?.(actor)) require('./PkDeathDrop').drop(victimSession, actor);
     if (typeof actor.fetchExp === 'function' && typeof actor.setExpSp === 'function' && !actor.fetchKind) {
-        const killer = context.killer ?? context.source;
         invoke('GameServer/Progression/DeathExperience').applyDeathPenalty(victimSession, actor, {
             timestamp: context.timestamp,
             arena: victimSession?.arenaEphemeral === true || !!victimSession?.arenaDuelId
                 || !!ArenaDuelService.duelForActor?.(actor),
-            killerPlayable: !!killer && killer !== actor && !killer.fetchKind,
+            killerPlayable,
             clanWar: context.clanWar === true || !!killer && Number(actor.fetchClanId?.()) > 0
                 && (Number(killer.fetchClanId?.()) > 0 || Number(killer.fetchOwnerId?.()) > 0)
                 && invoke('GameServer/Clan/ClanWarRuntime').between(killer, actor).outgoing,
@@ -84,9 +85,34 @@ function die(session, actor, context = {}) {
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
                 startedAt: Number(victimSession.botStartedAt || timestamp)
             });
-            victimSession.coldLifeState = { ...prior, stats: { ...prior.stats, ...progress } };
+            // Its death is a far round's (deaths, the spot's risk, recovery): the died situation
+            // re-decides its spot on the row that carries it.
+            const recorded = Life.recordNearFight(victimSession, prior, { died: true, timestamp, pvp: killerPlayable });
+            victimSession.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...progress } };
         }
         Life.notifyNearFacts(victimSession, 'death');
+        const Trace = invoke('GameServer/Bot/DecisionTrace');
+        if (Trace.on()) {
+            // Where and how the body died: the spot it hunts (the row's may be the one it left), what it was
+            // doing, the mobs still on it and its time since it went hot (near and far deaths compared).
+            const hotAt = Number(victimSession.populationHotAt) || 0;
+            // Its detail tier and the nearest player's distance at its last tick (HotActorLodPolicy).
+            const lod = victimSession.hotActorLod;
+            // A character's kill (a summon's: its owner's): who opened the fight, the victim's part
+            // in it and why the opener struck (PvpResponsibility).
+            const rival = killer && killer !== actor ? invoke('GameServer/Bot/AI/BotPvpThreats').character(killer) : null;
+            const fight = rival && rival !== actor
+                ? invoke('GameServer/Social/PvpResponsibility').assess(actor, rival, Number(context.timestamp || Date.now())) : null;
+            Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(victimSession.currentSpot?.id ?? prior?.spotId ?? ''),
+                ...(lod ? { tier: lod.tier, playerDist: lod.nearestPlayerDistance ?? undefined } : {}),
+                level: Number(actor.fetchLevel?.()) || undefined, plan: String(victimSession.plan || ''),
+                attackers: invoke('GameServer/Bot/AI/PartyAwareness').npcsAttackingActor(actor, 900).length,
+                ...(hotAt > 0 ? { durationMs: Math.max(0, Number(context.timestamp || Date.now()) - hotAt) } : {}),
+                killer: !killer || killer === actor ? 'unknown' : killer.fetchKind ? `npc:${killer.fetchSelfId?.() ?? '?'}`
+                    : `char:${killer.fetchId?.()}`,
+                ...(fight ? { opener: fight.openerId ? `char:${fight.openerId}` : 'unknown', role: fight.responsibility,
+                    why: fight.why || 'unknown' } : {}) });
+        }
         invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'death',

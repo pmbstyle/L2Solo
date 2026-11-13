@@ -251,12 +251,24 @@ function liquidationSlotCount(state, predicate, candidates = saleCandidates(stat
     }, 0);
 }
 
-function npcOnlySlotCount(state = {}, candidates) {
-    return liquidationSlotCount(state, item => isNpcOnlyItem(item, undefined, state), candidates);
+// The bag slots a sale of these candidates empties (the kit's bag hours,
+// EconomyContext.foundation): a stack only when it is sold whole, a piece of
+// gear one slot each, never a kind the last sale visit could not place
+// (stats.marketSellSeen: the next sale leaves it in the bag).
+function saleSlots(state, candidates) {
+    const tried = new Set(state.stats?.marketSellSeen?.items || []), sold = new Map();
+    for (const item of candidates) if (!tried.has(Number(item.selfId)))
+        sold.set(Number(item.selfId), (sold.get(Number(item.selfId)) || 0) + Number(item.count || 0));
+    let slots = 0;
+    for (const [selfId, count] of sold) {
+        const row = state.inventory?.[selfId], stackable = row?.stackable ?? templateFor(selfId)?.etc?.stackable;
+        slots += Array.isArray(row?.instances) || stackable === false ? count : count >= Number(row?.amount || 0) ? 1 : 0;
+    }
+    return slots;
 }
 
-function skillBookSlotCount(state = {}, candidates) {
-    return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item, undefined, state), candidates);
+function npcOnlySlotCount(state = {}, candidates) {
+    return liquidationSlotCount(state, item => isNpcOnlyItem(item, undefined, state), candidates);
 }
 
 // The board the sale retry reads: main's own by default, the worker's mirror
@@ -282,10 +294,16 @@ function buyersOf(board, ids, characterId) {
 
 // What a sale visit could not place (stats.marketSellSeen, written at its end
 // and at a hot sell trip's start): the kinds of sale candidates it left in the
-// bag (none, when it placed everything) and the board's buyers of them. The sale retry
-// holds while the bag offers no kind it did not try and no new or better buyer
-// of those came: a new fact, not a clock, sends the bot to sell again (maintainer,
-// 2026-11-05). Before the worker's board is ready only the kinds are compared.
+// bag (none, when it placed everything) and the board's buyers of them. A kind is
+// open for sale (openSaleKinds) when the visit did not try it or a new or better
+// buyer of it came: a new fact, not a clock, sends the bot to sell again (maintainer,
+// 2026-11-05). The sale retry holds while no kind in the bag is open; the build's sale
+// leaf offers open kinds only, and a held sale step is spent when none of its kinds left
+// is open (EconomyContext.saleSpent): one answer per kind for all three, so a new kind
+// (a crystal, an input bought for a craft) opens only itself, never the kinds the visit
+// already failed to place. Our choice after C4 play: a player who could not sell X does
+// not walk back to try X because he picked up Y; he sells Y, and X only when someone new
+// shouts WTB X. Before the worker's board is ready only the kinds are compared.
 // The kinds are read with the whole kit kept (its potions, its Scroll of
 // Escape; shots are the bot's own), not the kit targets, which read this retry:
 // restocking the kit in town is no new goods to sell.
@@ -301,18 +319,61 @@ function saleSeen(state) {
     return { items, buyers: board ? buyersOf(board, items, state.characterId) : null };
 }
 
+// The kinds of ids open for sale (a Set): all of them before any sale visit; after one, the
+// kinds it did not try and the tried ones whose foreign buyers on the board are new or better
+// than the visit saw (both threads: useBoard).
+function openSaleKinds(state, ids) {
+    const seen = state?.stats?.marketSellSeen, kinds = [...new Set((ids || []).map(Number))];
+    if (!Array.isArray(seen?.items)) return new Set(kinds);
+    const open = new Set(kinds.filter(id => !seen.items.includes(id)));
+    const tried = kinds.filter(id => !open.has(id));
+    const board = tried.length && Array.isArray(seen.buyers) ? boardSource() : null;
+    if (board) buyersOf(board, tried, state.characterId).forEach(([best, units], at) => {
+        const was = seen.buyers[seen.items.indexOf(tried[at])];
+        if (best > Number(was?.[0] || 0) || units > Number(was?.[1] || 0)) open.add(tried[at]);
+    });
+    return open;
+}
 function saleRetryHolds(state) {
-    const seen = state?.stats?.marketSellSeen;
-    if (!Array.isArray(seen?.items)) return false;
-    const tried = new Set(seen.items);
-    if (retryKinds(state).some(id => !tried.has(id))) return false;
-    const board = Array.isArray(seen.buyers) ? boardSource() : null;
-    return !board || buyersOf(board, seen.items, state.characterId)
-        .every(([best, units], at) => best <= Number(seen.buyers[at]?.[0] || 0) && units <= Number(seen.buyers[at]?.[1] || 0));
+    return Array.isArray(state?.stats?.marketSellSeen?.items) && openSaleKinds(state, retryKinds(state)).size === 0;
 }
 
 function soloSaleSlotLimit(state = {}, retry) {
     return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
+}
+
+// The cleanup thresholds, one rule for the bag fact's counts (cleanupCounted, over what
+// the bag holds) and the build's need (inventoryCleanupNeed, over its sale candidates):
+// NPC_ONLY_CLEANUP_MIN_SLOTS NPC-only slots (skill books among them: a player sells a book on
+// the trip he takes anyway, he does not walk to town for one); NPC_SURPLUS_GEAR_MIN_SLOTS
+// low-grade gear slots (lowGradeGear) in a bag of as many. A solo bot's half bag is each
+// caller's own (its inputs differ: the sale retry is the need's).
+const lowGradeGear = (kind, rank, price) => (String(kind || '').startsWith('Weapon.') || String(kind || '').startsWith('Armor.'))
+    && gradeIndex(rank) < gradeIndex('c') && price <= 50000;
+function cleanupThresholds({ slots, npcOnly, surplus }) {
+    return { npcOnly: npcOnly >= NPC_ONLY_CLEANUP_MIN_SLOTS,
+        surplus: slots >= NPC_SURPLUS_GEAR_MIN_SLOTS && surplus >= NPC_SURPLUS_GEAR_MIN_SLOTS };
+}
+// The cleanup counts of the bag fact (PartyMarketBreak.bagFact): the thresholds
+// (cleanupThresholds) over what the bag holds, read from the item templates alone, and a
+// solo bot's half bag. No sale walk (reservations), no sale retry (the board), no clock:
+// the build that bag_full wakes reads the whole rule (inventoryCleanupNeed). Worn pieces
+// and quest items count nothing.
+function cleanupCounted(state = {}) {
+    let slots = 0, npcOnly = 0, surplus = 0;
+    for (const item of Object.values(state.inventory || {})) {
+        const amount = Math.max(0, Number(item?.amount || 0));
+        if (amount <= 0) continue;
+        const held = Array.isArray(item.instances) ? item.instances.length : item.stackable === false ? amount : 1;
+        slots += held;
+        const template = templateFor(item.selfId);
+        const loose = held - Math.min(held, Number(item.equippedCount || (item.equipped ? 1 : 0)));
+        if (!loose || isQuestItem(item, template)) continue;
+        if (isNpcOnlyItem(item, template, state)) npcOnly += loose;
+        if (lowGradeGear(kindFor(item, template), template?.etc?.rank, basePrice(item, template))) surplus += loose;
+    }
+    const over = cleanupThresholds({ slots, npcOnly, surplus });
+    return !(state.party?.partyId || state.partyId) && slots >= HALF_FULL_CLEANUP_SLOTS || over.npcOnly || over.surplus;
 }
 
 function inventoryCleanupNeed(state = {}) {
@@ -320,21 +381,15 @@ function inventoryCleanupNeed(state = {}) {
     // One sale set serves every count below; it depends only on the state.
     const candidates = saleCandidates(state, { unlimited: true });
     const npcOnlySlots = npcOnlySlotCount(state, candidates);
-    const skillBookSlots = skillBookSlotCount(state, candidates);
     // Spare creation gear is sold during a town visit, but one unequipped
     // starter weapon must not send a newly spawned hunter straight to town.
     const limit = InventoryLimits.forState(state);
     const overCapacity = slots > limit;
-    const accumulatedNpcOnly = skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
     const surplusGearSlots = slots >= NPC_SURPLUS_GEAR_MIN_SLOTS
-        ? candidates.reduce((total, item) => {
-            const lowGradeGear = (String(item.kind || '').startsWith('Weapon.')
-                || String(item.kind || '').startsWith('Armor.'))
-                && gradeIndex(item.rank) < gradeIndex('c');
-            return total + (lowGradeGear && item.npcComparable !== false
-                && item.basePrice <= 50000 ? Number(item.count || 0) : 0);
-        }, 0) : 0;
-    const accumulatedSurplus = surplusGearSlots >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+        ? candidates.reduce((total, item) => total + (item.npcComparable !== false
+            && lowGradeGear(item.kind, item.rank, item.basePrice) ? Number(item.count || 0) : 0), 0) : 0;
+    const over = cleanupThresholds({ slots, npcOnly: npcOnlySlots, surplus: surplusGearSlots });
+    const accumulatedNpcOnly = over.npcOnly, accumulatedSurplus = over.surplus;
     // Solo bots only: a party member sells from the field (AFK listing) and leaves its
     // party for the market only with a full bag (PartyMarketBreak); and only with
     // something to sell, else the trip would repeat every retry period.
@@ -444,8 +499,17 @@ function collectedEquipmentInputs(state, plan = state?.stats?.equipmentPlan) {
         .filter(([, amount]) => amount > 0));
 }
 
+// The one piece of gear a shot kit's crystals come from (shotCraft.preparing.crystalGear),
+// while the kit holds: bought, crafted or owned to be crystallized, it is the kit's,
+// neither sold (productionInputAmounts) nor worn (GearAcquisitionPlanner.equipInventoryUpgrades).
+// 0 with none.
+function kitGear(state, timestamp = Date.now()) {
+    const shot = state?.stats?.shotCraft?.preparing;
+    return shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? Number(shot.crystalGear || 0) : 0;
+}
 // A selected finite production kit survives the ingredient trips. Selling
 // and storage retain it; the production executor still reads its own inputs.
+// A shot kit also holds its crystal gear (kitGear).
 function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
@@ -457,8 +521,16 @@ function productionInputAmounts(state, timestamp = Date.now()) {
         for (const [id,amount] of Object.entries(recipeInputAmounts(state.stats.shotCraft.series.recipeId,batches)))
             inputs[id] = Math.max(Number(inputs[id] || 0),amount);
     }
-    const gearId = require('./ShotCrystalInput').itemId(state,timestamp);
-    if (gearId) inputs[gearId] = Math.max(Number(inputs[gearId] || 0),1);
+    // A paid scroll can arrive before the town visit learns it. Its accepted
+    // learning target owns one copy through that handoff, including native
+    // sale checks that read only the persisted stats inside their transaction.
+    const wanted = state?.stats?.shotRecipeDemand;
+    const recipe = wanted && C4RecipeItems.resolveByRecipeId(Number(wanted.recipeId));
+    if (recipe && SHOT_PRODUCT_RANK[Number(recipe.productId)]
+        && Number(recipe.recipeItemId) === Number(wanted.itemId))
+        inputs[recipe.recipeItemId] = Math.max(Number(inputs[recipe.recipeItemId] || 0), 1);
+    const gear = kitGear(state, timestamp);
+    if (gear > 0) inputs[gear] = Number(inputs[gear] || 0) + 1;
     return inputs;
 }
 // A production kit: the recipe's materials for its batches.
@@ -697,16 +769,16 @@ function saleFreeAmount(state, item, reserved = {}, known = null) {
     invoke('GameServer/Bot/Economy/WealthCraftDecision').freeUnits(state, item, reserved, equippedCount, protectedAmount));
 }
 
-const { selectedCraftAmounts } = require('./CraftInputReservations');
+const { holdAmounts } = require('./CraftInputReservations');
 // The stock a sale keeps: potions, crafter ammunition and travel scrolls at
-// their restock targets, the held plan's published ones (EconomyContext.keptTargets,
-// L72), else the foundation. Ordinary bots retain their current ammunition
+// their restock targets, the build's kit rates over the bag (EconomyContext.keptTargets;
+// a bag no build rated yet is kept whole). Ordinary bots retain their current ammunition
 // independently of forecasts. One reading for the listing (saleCandidates'
 // default) and the board's sale count (MarketPricing), main and worker.
-function keptStock(state, reserved) {
-    const targets = invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { saleReservations: reserved });
+function keptStock(state) {
+    const targets = invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state);
     return {
-        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions }),
+        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions.target }),
         ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, null, targets.shots),
         ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
 }
@@ -717,7 +789,7 @@ function keptStock(state, reserved) {
 // asked by the card's check, the held build's verdict and the build. Inputs
 // (the key): the bag (an inventory object and its rows are replaced, never
 // edited), the merged reserves (equipment and production reserves,
-// clan, henna, the caller's reserved and kept stock), the arrows' sale amounts,
+// clan, henna, the caller's reserved, the craft hold and kept stock), the arrows' sale amounts,
 // the personal shot, the state fields the walk reads (characterId, shotCraft
 // product and unit price, clanMarketDemand, clanMaterialDemand), the options it
 // reads (limit, onlyNpc, presenceOnly) and its tables (item templates, newbie
@@ -737,7 +809,11 @@ function saleCandidates(state, options = {}) {
         reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
     for (const [id, amount] of Object.entries(options.reserved || {}))
         reserved[id] = Math.max(Number(reserved[id] || 0), Number(amount) + Number(clan[id] || 0));
-    const kept = options.keptAmounts || keptStock(state, reserved);
+    // The bot's standing craft hold over the bag walked here (CraftInputReservations.holdAmounts):
+    // every sale, listing, price and retry keeps the inputs of the crafts it still wishes for.
+    for (const [id, amount] of Object.entries(holdAmounts(state)))
+        reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
+    const kept = options.keptAmounts || keptStock(state);
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount + Number(clan[selfId] || 0));
     }
@@ -990,14 +1066,15 @@ module.exports = {
     isShotRecipeItem,
     isSkillBookItem,
     isStarterEquipment,
-    inventoryCleanupNeed,
+    cleanupCounted, inventoryCleanupNeed,
     inventorySlotCount,
     soloSaleSlotLimit,
+    saleSlots,
     saleSeen,
+    openSaleKinds,
     saleRetryHolds,
     useBoard,
     npcOnlySlotCount,
-    skillBookSlotCount,
     isWarehouseCandidate,
     npcLiquidationCandidates,
     unusedArrowCandidates,
@@ -1012,6 +1089,7 @@ module.exports = {
     equipmentMaterialAmounts,
     collectedEquipmentInputs,
     productionInputAmounts,
+    kitGear,
     recipeInputAmounts,
     saleReservations,
     capDeferredInputs,
@@ -1021,7 +1099,6 @@ module.exports = {
     reservationInputKey,
     saleCandidates,
     keptStock,
-    selectedCraftAmounts,
     saleFreeAmount,
     saleSummary,
     isSpareConsumable,

@@ -2,6 +2,7 @@
 // Combat math and composition remain owned by ClanRaidPolicy.
 const Demand = require('./ClanRosterDemand');
 const ReviewEvents = require('./ClanReviewEvents');
+const Expedition = require('./ClanRaidExpedition');
 // Invocation authority, never persisted or cached per actor/party.
 const nativeImpact = Symbol('native-raid-offensive-impact');
 const isNativeImpact = value => value === nativeImpact;
@@ -11,7 +12,8 @@ const exact = (left, right) => Array.isArray(left) && Array.isArray(right) && le
     && new Set(left).size === left.length && JSON.stringify(ids(left)) === JSON.stringify(ids(right));
 function identity(marker) {
     return marker && [marker.clanId, marker.ownerSection, marker.goalKey, marker.generation,
-        ids(marker.memberIds), marker.sourceId, marker.npcId, marker.raidInstanceId, marker.minPartySize, marker.maxPartySize];
+        ids(marker.memberIds), marker.sourceId, marker.npcId, marker.raidInstanceId, marker.minPartySize, marker.maxPartySize,
+        ids(Expedition.coreIds(marker)), ids(marker.unchargedHelperIds || [])];
 }
 const same = (left, right) => JSON.stringify(identity(left)) === JSON.stringify(identity(right));
 function inputFingerprint(member) {
@@ -23,8 +25,11 @@ const markerFor = party => party?.stats?.objective?.fullRoster || null;
 function valid(marker) {
     return marker?.clanId > 0 && ['goal', 'productionGoal'].includes(marker.ownerSection)
         && !!marker.goalKey && !!marker.generation && !!marker.sourceId && marker.npcId > 0 && !!marker.raidInstanceId
-        && marker.minPartySize === 9 && marker.maxPartySize === 9 && Array.isArray(marker.memberIds) && marker.memberIds.length === 9
-        && new Set(marker.memberIds).size === 9 && marker.memberIds.every(value => Number.isSafeInteger(value) && value > 0);
+        && Expedition.validGroups(marker) && marker.minPartySize === marker.memberIds.length && marker.maxPartySize === marker.memberIds.length
+        && (marker.unchargedHelperIds === undefined || Array.isArray(marker.unchargedHelperIds)
+            && marker.unchargedHelperIds.length <= 9 && new Set(marker.unchargedHelperIds).size === marker.unchargedHelperIds.length
+            && marker.unchargedHelperIds.every(value => Number.isSafeInteger(value) && Expedition.helper(marker, value)))
+        && marker.memberIds.every(value => Number.isSafeInteger(value) && value > 0);
 }
 function admitted(party, spot = null) {
     const marker = markerFor(party), proof = party?.stats?.raidAdmission;
@@ -78,7 +83,8 @@ function selectMembers(members, objective, options = {}) {
         && Number(member.clanId ?? member.stats?.clanId) === Number(marker.clanId)
         && same(member.stats?.clanPartyObjective?.fullRoster || member.stats?.partyRequest?.fullRoster, marker));
     return exact(selected.map(id), marker.memberIds)
-        && require('./ClanRaidPolicy').composition(selected, { desiredMembers: 9, requireCapabilities: true }).ready ? selected : [];
+        && require('./ClanRaidPolicy').composition(selected.filter(member => Expedition.coreIds(marker).includes(id(member))),
+            { desiredMembers: 9, requireCapabilities: true }).ready ? marker.memberIds.map(id => selected.find(member => member.characterId === id)) : [];
 }
 function admission(party, members, spot, options = {}) {
     const marker = markerFor(party);
@@ -110,8 +116,10 @@ function admission(party, members, spot, options = {}) {
         return fail('raid_resources_not_ready');
     }
     if (!options.arrived) return fail('party_assembling');
-    const assessment = options.assessment || require('./ClanRaidPolicy').assessment({ members: assessmentMembers(members) }, spot,
-        { assignedMemberIds: marker.memberIds }, { desiredMembers: 9, requireCapabilities: true, preferredMemberIds: marker.memberIds });
+    const assessment = options.assessment || require('./ClanRaidPolicy').assessment({ id: marker.clanId, members: assessmentMembers(members) }, spot,
+        { assignedMemberIds: marker.memberIds }, { desiredMembers: 9, requireCapabilities: true,
+            preferredMemberIds: marker.memberIds, fundSupplies: false, allowHelpers: false,
+            ...(marker.coreMemberIds ? { coreMemberIds: marker.coreMemberIds, unchargedHelperIds: marker.unchargedHelperIds || [] } : {}) });
     if (!assessment.ready || !exact((assessment.eligible || []).map(id), marker.memberIds)) return fail(assessment.reason || 'raid_roster_composition');
     return { ok: true, proof: { partyId: party.partyId, marker, openedAt: Number(options.timestamp || Date.now()),
         startedAt: options.phase === 'hot' ? null : Number(options.timestamp || Date.now()),

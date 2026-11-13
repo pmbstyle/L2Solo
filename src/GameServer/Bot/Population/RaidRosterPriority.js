@@ -22,9 +22,10 @@ for (const row of Minions) {
     guardsByBoss.get(id).push(row);
 }
 
-// Candidate ordering hints only: no profiles, simulation, market scans or social reads.
+// Candidate ordering hints: native attack facts and the indexed shot book,
+// without combat simulations or social reads.
 // Admission still hydrates all nine and runs the unchanged native forecast.
-function facts(state, role) {
+function facts(state, role, timestamp = Date.now()) {
     let armor = 0, weapon, weaponAttack = 0;
     const armorKinds = [], worn = new Map();
     const data = invoke('GameServer/DataCache');
@@ -65,13 +66,16 @@ function facts(state, role) {
         const cycle = F.normalAttackMs(speed, { bow: weapon?.template?.kind === 'Weapon.Bow',
             reuseDelay: weapon?.stats?.reuseDelay || 1500 });
         const shot = Shots.planForState(state);
-        const price = Number(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(shot.selfId));
         const stock = Number(state.inventory?.[shot.selfId]?.amount || 0) + Shots.beginnerAmount(state, shot);
-        const purchasable = price > 0 ? Supply.cash(state) / price : 0;
+        const required = Math.ceil(720 * 1000 / cycle * Math.max(1, shot.perAction) * 1.3);
+        const missing = Math.max(0, required - stock);
+        const purchasable = missing ? Supply.quote(state, shot.selfId, missing, { timestamp, money: Supply.cash(state) })?.units || 0 : 0;
         const seconds = (stock + purchasable) * cycle / (1000 * Math.max(1, shot.perAction) * 1.3);
         const attack = F.calcPAtk(Number(state.level), Number(base.str || 20), weaponAttack) * attackMul + attackAdd;
+        // No shot stock still leaves real weapon damage; it must not collapse
+        // every otherwise different DD to the same zero ordering hint.
         return { score: attack * 1000 / cycle
-            * Math.min(1, seconds / 720) };
+            * (.5 + .5 * Math.min(1, seconds / 720)) };
     }
     const buffs = new Map();
     let efficiency = 0;

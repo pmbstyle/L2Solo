@@ -1,9 +1,8 @@
 const BotErrands = require('./BotErrands');
-// Errands a member keeps through a contest; a retreat also waits out a PvP fight.
+// Errands a member keeps through a contest.
 const MEMBER_BUSY_FLAGS = ['supplyErrand', 'warehouseWorkflow', 'marketReturn'];
 const WAR_BUSY_FLAGS = [...MEMBER_BUSY_FLAGS, 'partyMarketReturn'];
 const WAR_PRESENT_BUSY_FLAGS = WAR_BUSY_FLAGS.filter(flag => flag !== 'marketReturn');
-const RETREAT_BUSY_FLAGS = ['pvpEncounter'];
 const BUSY_DETAILS = {
     pvp: 'member_pvp_encounter',
     player: 'member_supply_errand',
@@ -26,7 +25,7 @@ function principal(state, participant, memory) {
     return null;
 }
 
-function party(state, participant, event, { resume = null, revenge = false, retreat = false, at, leader }) {
+function party(state, participant, event, { resume = null, revenge = false, at, leader }) {
     if (!participant.partyId) return null;
     const fail = (detail, context) => failed('party_changed', detail, participant, participant.id, context);
     if (!state) return fail('party_missing');
@@ -37,7 +36,7 @@ function party(state, participant, event, { resume = null, revenge = false, retr
     if (ids.length < 2 || ids.length > 9) return fail('party_size_invalid', { actual: ids.length });
     if (!ids.includes(participant.id)) return fail('party_principal_missing');
     if (!ids.includes(state.leaderId)) return fail('party_leader_missing', { leaderId: state.leaderId });
-    if (!retreat && new Set(ids).size !== ids.length) return fail('party_duplicate_members');
+    if (new Set(ids).size !== ids.length) return fail('party_duplicate_members');
     if (!resume && state.spotId !== event.spotId) return fail('party_spot_changed', { expected: event.spotId, actual: state.spotId });
     const npcId = require('./PartyHuntingTarget').competitionNpcId(state, leader);
     if (!resume && !revenge && npcId !== event.npcId) return fail('party_target_changed', { expected: event.npcId, actual: npcId });
@@ -48,12 +47,12 @@ function party(state, participant, event, { resume = null, revenge = false, retr
 }
 
 function member(state, characterId, participant, event, { party: group, resume = null, revenge = false,
-    retreat = false, at, memory, participantAllowed, contestContextAllowed }) {
-    const fail = (detail, context) => failed(retreat ? 'member_busy_or_changed' : 'party_member_busy_or_changed', detail, participant, characterId, context);
+    at, memory, participantAllowed, contestContextAllowed }) {
+    const fail = (detail, context) => failed('party_member_busy_or_changed', detail, participant, characterId, context);
     if (!state) return fail('member_missing');
     if (state.phase !== 'cold') return fail('member_not_cold', { actual: state.phase });
     const war = (resume?.reason || event.action) === 'clan_war';
-    const activities = war ? ['grouped', 'hunting', 'resting', 'dead'] : resume || group ? ['grouped', 'hunting', 'resting'] : retreat ? ['hunting'] : ['grouped', 'hunting'];
+    const activities = war ? ['grouped', 'hunting', 'resting', 'dead'] : resume || group ? ['grouped', 'hunting', 'resting'] : ['grouped', 'hunting'];
     if (!activities.includes(state.activity)) return fail('member_activity', { actual: state.activity });
     if (!(state.vitals?.hp > 0) && !war) return fail('member_dead');
     if (partyIdOf(state) !== (participant.partyId || null)) return fail('member_party_changed', { actual: partyIdOf(state) });
@@ -62,17 +61,14 @@ function member(state, characterId, participant, event, { party: group, resume =
     const wait = state.stats?.coldCompetition?.wait;
     if (!resume && wait) return fail('member_competition_wait', { until: wait.until ?? null, expired: Number(wait.until) <= at });
     const flags = war ? BotErrands.staleWarMarketReturn(state, group) ? WAR_PRESENT_BUSY_FLAGS : WAR_BUSY_FLAGS : MEMBER_BUSY_FLAGS;
-    const busy = (retreat && BotErrands.busyWith(state, RETREAT_BUSY_FLAGS))
-        || (!resume && BotErrands.busyWith(state, flags));
+    const busy = !resume && BotErrands.busyWith(state, flags);
     if (busy) return fail(BUSY_DETAILS[busy]);
     if (!participantAllowed(state.characterId)) return fail('member_handoff_fenced');
     if (!resume && !contestContextAllowed(state, event)) return fail('member_contest_context_changed');
     if (memory.revision(state.characterId) === undefined) return fail('member_memory_unavailable');
-    const lastAt = Number(state.stats?.coldCompetition?.at || 0);
-    if (!resume && at - lastAt < (war ? 15000 : 120000)) return fail('member_decision_cooldown', { until: lastAt + (war ? 15000 : 120000) });
     if (resume && (state.stats?.pvpEncounter?.key !== resume.key || state.stats.pvpEncounter.sequence !== resume.sequence)) return fail('member_encounter_changed');
     if (!resume && !revenge && !group) {
-        if (!retreat && state.activity !== 'hunting') return fail('member_not_hunting');
+        if (state.activity !== 'hunting') return fail('member_not_hunting');
         const npcId = require('./PartyHuntingTarget').competitionNpcId(null, state);
         if (npcId !== event.npcId) return fail('member_target_changed', { expected: event.npcId, actual: npcId });
     }

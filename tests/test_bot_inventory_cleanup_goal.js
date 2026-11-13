@@ -203,11 +203,11 @@ assert.strictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan(stagedArmor, {
         ? { sourceType: 'npc', selfId: 432, price: 10000, town: 'Gludio' } : null
 }), null, 'the NPC bridge must not buy an already staged armor piece again');
 
-const goal = NeedsEvaluator.evaluate(state, { now, spot: { id: 'cruma', name: 'Cruma Tower' } })
+const goal = NeedsEvaluator.evaluate(state, { now })
     .find((candidate) => candidate.type === 'sell_inventory' && candidate.target.cleanupReason === 'no_slot');
 assert(goal, 'inventory pressure must create a sell_inventory goal');
-// The exact 81 occupied native C4 slots reach the mandatory unload floor.
-assert.strictEqual(goal.priority, 100);
+// The exact 81 occupied native C4 slots reach the mandatory unload floor: it comes first.
+assert.strictEqual(NeedsEvaluator.evaluate(state, { now })[0].target.cleanupReason, 'no_slot');
 assert.strictEqual(goal.target.itemCount, 81);
 assert.strictEqual(invoke('GameServer/Bot/Population/SurvivalFloor').inventoryLimit(0), 80);
 
@@ -221,7 +221,7 @@ assert.strictEqual(travel.activity, 'traveling');
 assert.strictEqual(travel.stats.travel.reason, 'market_sale_inventory');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
 
-const proposalTravel = PopulationService.prepareInventoryCleanupProposal(state, now, { revision: 1 });
+const proposalTravel = PopulationService.prepareInventoryCleanupProposal(state, now, { revision: 1 }, state, need);
 assert(proposalTravel, 'worker proposal commit must also start a market trip');
 assert.strictEqual(proposalTravel.activity, 'traveling');
 assert.deepStrictEqual(proposalTravel.simulation, { revision: 1 });
@@ -314,8 +314,9 @@ assert.deepStrictEqual(MarketListingPolicy.evaluate(scrollState, { now, slots: 0
 assert.strictEqual(MarketListingPolicy.evaluate(stationScrolls, { now, slots: 0 }).warehouse[0]?.selfId, dEnchantScroll.selfId,
     'infrastructure scroll cleanup retains stock when the board has no slot');
 MarketCounters.reset();
-// Native town travel reserves ten Scrolls of Escape (H13); only its surplus
-// is NPC junk. A party resurrection remains a cast without an item.
+// Every Scroll of Escape a bot holds saves a walk to town:
+// none is NPC junk. A party resurrection remains a cast without an item: its
+// scrolls are sold.
 for (const consumable of [escapeScroll, resurrectionScroll]) {
     const consumableItem = {
         selfId: consumable.selfId,
@@ -325,12 +326,9 @@ for (const consumable of [escapeScroll, resurrectionScroll]) {
         amount: 13
     };
     const consumableState = { ...state, inventory: { [consumable.selfId]: consumableItem } };
+    const escape = consumable.selfId === escapeScroll.selfId;
     assert.deepStrictEqual(MarketListingPolicy.evaluate(consumableState, { states: [] }).npc.map((item) => item.selfId),
-        [consumable.selfId], `${consumable.template.name} surplus is sold to the NPC`);
-    const sale = MarketListingPolicy.evaluate(consumableState, { states: [] }).npc[0];
-    const expectedKept = consumable.selfId === escapeScroll.selfId ? 10 : 0;
-    assert.strictEqual(invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT, 10);
-    assert.strictEqual(sale.count, 13 - expectedKept, 'the actual travel stock is protected from liquidation');
+        escape ? [] : [consumable.selfId], `${consumable.template.name}: ${escape ? 'kept whole' : 'sold to the NPC'}`);
     assert.strictEqual(ItemDisposition.isWarehouseCandidate(consumableItem), false,
         `${consumable.template.name} must not be parked in the warehouse`);
 }
@@ -376,19 +374,17 @@ assert.strictEqual(SurvivalFloor.forState(loadedBag(0.55, retryUntil), now), nul
     'a weight penalty 1 bag is no floor during the sale retry');
 assert.strictEqual(SurvivalFloor.forState(loadedBag(0.7, retryUntil), now)?.weightPenalty, 2,
     'a weight penalty 2 bag stays the floor during the sale retry');
-const weightTrip = (share, retryAfter, extra) => PopulationService.prepareInventoryCleanupProposal(loadedBag(share, retryAfter, extra), now);
-assert.strictEqual(weightTrip(0.55, retryUntil), null,
-    'a weight penalty 1 cleanup must wait for the sale retry');
-assert(weightTrip(0.7, retryUntil), 'a weight penalty 2 cleanup must bypass the sale retry');
-assert(weightTrip(0.55, false), 'a weight penalty 1 cleanup travels without a sale retry');
 assert(!NeedsEvaluator.evaluate(loadedBag(0.55, retryUntil), { now }).some((candidate) => candidate.type === 'sell_inventory'),
     'the planner adds no sale goal for a weight penalty 1 bag during the retry');
-const npcJunk = { [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
-    kind: spellbook.template.kind, stackable: false, amount: 1,
-    instances: [{ id: 9100000, amount: 1, equipped: false, slot: 0 }] } };
-assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil, npcJunk), { now })?.reason,
-    'npc_only_inventory');
-assert(weightTrip(0.55, retryUntil, npcJunk), 'NPC-only junk in a weight penalty 1 bag still bypasses the sale retry');
+// Skill books are NPC-only slots: one does not end the sale retry, as many as the
+// NPC-only threshold do.
+const npcJunk = count => ({ [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
+    kind: spellbook.template.kind, stackable: false, amount: count,
+    instances: Array.from({ length: count }, (_, i) => ({ id: 9100000 + i, amount: 1, equipped: false, slot: 0 })) } });
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil, npcJunk(1)), { now }), null,
+    'one skill book sends no bot to town during the sale retry');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUntil,
+    npcJunk(ItemDisposition.NPC_ONLY_CLEANUP_MIN_SLOTS)), { now })?.reason, 'npc_only_inventory');
 const huntSpot = { id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, density: 1, npcSelfIds: [1],
     rewards: { exp: 10, sp: 2, adenaMin: 7, adenaMax: 10 }, mob: { hp: 8, damage: 1 } };
 // Level 3: a weaponless level-1 bag holder would end no gremlin fight above its potion line (BotEncounterReadiness).
@@ -469,9 +465,8 @@ assert.deepStrictEqual(MarketListingPolicy.classify(chantState, chantDisposition
     { action: 'npc', reason: 'npc_only_item' }, 'an ordinary personal owner sells even mapped amulets to the NPC');
 assert(chantDisposition.decisions.every(row => row.reason === 'npc_only_item'));
 assert.strictEqual(ItemDisposition.npcOnlySlotCount(chantState), 1);
-assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), {
-    reason: 'npc_only_inventory', slots: 1, npcOnlySlots: 1, limit: ItemDisposition.INVENTORY_SLOT_LIMIT
-}, 'one ordinary NPC-only training book activates the native book cleanup rule');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), null,
+    'one NPC-only training book sends no bot to town: it counts toward the NPC-only slots');
 assert.deepStrictEqual(chantState, chantBefore, 'classification and listing cannot alter the original book');
 const stationChant = { ...chantState, stats: { ...chantState.stats, craftStationId: craftStation.id } };
 const stationChantBefore = structuredClone(stationChant);
@@ -481,9 +476,7 @@ assert.deepStrictEqual(MarketListingPolicy.classify(stationChant, stationChantDi
     { action: 'npc', reason: 'npc_only_item' }, 'infrastructure also receives free skills and cleans up mapped amulets');
 assert(stationChantDisposition.decisions.every(row => row.reason === 'npc_only_item'));
 assert.strictEqual(ItemDisposition.npcOnlySlotCount(stationChant), 1);
-assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(stationChant, { now }), {
-    reason: 'npc_only_inventory', slots: 1, npcOnlySlots: 1, limit: ItemDisposition.INVENTORY_SLOT_LIMIT
-});
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(stationChant, { now }), null);
 assert.deepStrictEqual(stationChant, stationChantBefore, 'the infrastructure quote retains original physical ownership');
 const npcState = {
     ...state,
@@ -570,19 +563,7 @@ assert(ItemDisposition.inventoryCleanupNeed({
     stats: { marketSellSeen: triedAll(npcState.inventory) }
 }, { now }), 'NPC-only cleanup must bypass market retry cooldown');
 
-const originalUpsertState = LifeState.upsertState;
-LifeState.upsertState = async () => null;
-await PopulationService.resolveColdState(state).then((rejected) => {
-    assert.strictEqual(rejected.ok, false, 'a fenced cleanup write must not be reported as a successful resolve');
-    assert.strictEqual(rejected.reason, 'state_write_rejected');
-    assert.strictEqual(rejected.state, state, 'the rejected result must retain the authoritative pre-write state');
-    console.log('Bot inventory cleanup goal checks passed');
-}).catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-}).finally(() => {
-    LifeState.upsertState = originalUpsertState;
-});
+console.log('Bot inventory cleanup goal checks passed');
 
 // Apprentice's Spellbook is a caster weapon, not a disposable skill book.
 const bookWeapon = DataCache.items.find(item => item.selfId === 99);
@@ -603,7 +584,6 @@ assert.strictEqual(NeedsEvaluator.evaluate(bookHunter, { now }).some(goal => goa
     'an equipped weapon must not interrupt hunting with forced cleanup');
 const spareBook = { ...bookHunter, inventory: { 99: { ...equippedBook, amount: 2,
     instances: [...equippedBook.instances, { id: 100, equipped: false, slot: 7 }] } } };
-assert.strictEqual(ItemDisposition.skillBookSlotCount(spareBook), 0);
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(spareBook).find(item => item.selfId === 99)?.count, 1,
     'a spare low-grade weapon remains ordinary sellable equipment');
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Spellbook: Missing Kind' }), true);

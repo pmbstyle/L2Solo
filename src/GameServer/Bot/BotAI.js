@@ -131,7 +131,7 @@ function stateFaulted(session, bot, plan, error, now = Date.now()) {
     FaultHold.fault(entry, now);
     if (entry.count !== FaultHold.QUARANTINE_AFTER) return;
     FailureLog.note('ai.state_left', error);
-    raiseDecision(session, 'sources', { impossible: true });
+    raiseDecision(session, 'goal_failed', { impossible: true });
     const own = ownPlan(session, bot);
     if (own === plan) return;
     bot.automation?.abortAll?.(bot);
@@ -410,25 +410,7 @@ const BotAI = {
     },
 
     getClosestNewbieGuide(locX, locY) {
-        const guides = [
-            { name: "Talking Island", npcSelfId: 7598, locX: -84081, locY: 243227, locZ: -3723, head: 9000 },
-            { name: "Elven Village", npcSelfId: 7599, locX: 45475, locY: 48359, locZ: -3060, head: 49152 },
-            { name: "Dark Elven Village", npcSelfId: 7600, locX: 12111, locY: 16686, locZ: -4582, head: 63240 },
-            { name: "Dwarven Village", npcSelfId: 7601, locX: 115632, locY: -177996, locZ: -905, head: 32768 },
-            { name: "Orc Village", npcSelfId: 7602, locX: -45032, locY: -113598, locZ: -192, head: 32768 }
-        ];
-        let closest = guides[0];
-        let minDist = Infinity;
-        guides.forEach(g => {
-            const dx = g.locX - locX;
-            const dy = g.locY - locY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDist) {
-                minDist = dist;
-                closest = g;
-            }
-        });
-        return closest;
+        return invoke('GameServer/Bot/AI/BotBuffs').closestGuide({ locX, locY });
     },
 
     triggerFarAwayChatEvent(session, bot) {
@@ -457,7 +439,6 @@ const BotAI = {
 
         const World = invoke('GameServer/World/World');
         const nativeActors = ActorQueries.native(World);
-        const onlinePlayerCount = nativeActors ? World.actorPresenceCount() : (realPlayerSessions(World) || []).length;
         lodContext = HotActorLodPolicy.evaluate(session, nativeActors ? World : realPlayerSessions(World) || [], tickStartedAt);
         PopulationService.recordHotTick(session);
         invoke('GameServer/Bot/Population/BotGlobalChat').offerReply(session, tickStartedAt);
@@ -480,7 +461,7 @@ const BotAI = {
         const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
         if (!botDead && !defendingPvp && session.buffServiceCasting) return;
         if ((botDead || defendingPvp) && session.clanHallVisit) {
-            invoke('GameServer/ClanHall/BotVisit').finish(session, bot, Date.now() + 300000);
+            invoke('GameServer/ClanHall/BotVisit').finish(session, bot);
         }
 
         // Accepted board custody owns travel and waiting before ordinary AI;
@@ -534,16 +515,10 @@ const BotAI = {
             return;
         }
 
-        if (!botDead && invoke('GameServer/Bot/Economy/BuffService').maybeAutoBuy(session, tickStartedAt)) return;
+        // Its rebuff answered a buffer: it buys once, at a free moment (BuffService).
+        if (!botDead && invoke('GameServer/Bot/Economy/BuffService').buyOnAnswer(session)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
-            // Far-away bot: light background event processing, skip everything else
-            if (Math.random() < 0.05) {
-                this.triggerFarAwayChatEvent(session, bot);
-            }
-            return;
-        }
 
         // Tiny chance to shout globally (e.g. 0.0005 chance per tick - roughly once every 2000 ticks or ~100 minutes per bot)
         if (Math.random() < 0.0005) {
@@ -606,7 +581,7 @@ const BotAI = {
             const ritualRescuePending = session.clanAllianceQuest
                 && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
             const rescueLeader = wasCompanion ? session.followPlayerSession
-                : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').leader(session) : null;
+                : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').partyLeader(session) : null;
             const hotParty = session.hotBackgroundPartyId
                 ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(session.hotBackgroundPartyId)
                 : null;
@@ -625,9 +600,7 @@ const BotAI = {
                 Generics.revive(session, bot, { delayMs: 0,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
-                raiseDecision(session, 'revived');
                 session.clanHallVisit = null;
-                session.clanHallRetryAt = 0;
                 session.deathTimerStart = undefined;
                 session.currentTargetId = undefined;
                 session.incomingThreatId = undefined;
@@ -652,7 +625,7 @@ const BotAI = {
                     spawnTarget = this.beginPartyTownRecovery(session, bot);
                 } else if (bot.fetchKarma() > 0) {
                     session.plan = session.pkProfile ? 'pk_hunting' : 'hunting';
-                    session.currentSpot = null;
+                    invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
                     session.noTargetTicks = 0;
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
@@ -666,7 +639,7 @@ const BotAI = {
                 } else {
                     session.plan = 'hunting'; // Reset plan
                     // A hot party member keeps the spot it hunts on: the party tick brings it back from town.
-                    if (!session.hotBackgroundPartyId) session.currentSpot = null;
+                    if (!session.hotBackgroundPartyId) invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
                     session.noTargetTicks = 0;
                     spawnTarget = recoveryHall?.spawn || this.getDeathRespawnTarget(session, bot, false);
                 }
@@ -715,7 +688,7 @@ const BotAI = {
         if (session.hotBackgroundPartyId && invoke('GameServer/Bot/AI/HotBackgroundParty').tick(session, bot, Generics, this)) return;
         const state = States[session.plan];
         if (!['resting', 'shopping'].includes(session.plan)) {
-            invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 0);
+            invoke('GameServer/AfkTrade/TradeMeetingService').breakChanged(session, 0);
         }
         if (state) {
             const stateName = session.plan;
@@ -800,7 +773,7 @@ const BotAI = {
         if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
             return true;
         }
-        // A solo bot on mobs heals itself by the rule hot and cold share (T107).
+        // A solo bot on mobs heals itself by the rule hot and cold share.
         if (!options.pvp && BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
             && SoloSelfHeal.tryInFight(session, bot, npc, Generics)) {
             return true;

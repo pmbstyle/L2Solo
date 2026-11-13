@@ -63,7 +63,9 @@ function plan(member, rows, stock) {
         fetchClassId: () => Number(member.classId)
     };
     const upgrade = Upgrade.findBestUpgrades({ actor }).find((entry) => entry.item === candidate);
-    if (!upgrade) return null;
+    // The clan hands an item only to a member whose role uses it: a weapon a bot with none
+    // would wear only as a stopgap (a mage's sword) stays for the knight who fights with it.
+    if (!upgrade || upgrade.stopgap) return null;
     const slot = upgrade.slot;
     const conflicts = new Set([slot]);
     if (slot === 7 || slot === 8) conflicts.add(14);

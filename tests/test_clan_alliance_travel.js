@@ -19,6 +19,8 @@ const mocks = {
     'GameServer/Bot/AI/BotTownTravel': { hasCombatThreat: () => threat },
     'GameServer/Bot/AI/TownGatekeeperCatalog': { targetForTown: () => ({ town: 'Test', npcSelfId: 1 }) },
     'GameServer/Bot/AI/TownNpcApproach': { reset() {}, planOpen: () => ({ ready: true }) },
+    'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
+    'GameServer/Bot/Population/PopulationMetrics': { recordTownStuckEscape() {}, recordTownDepartureRouteFailure() {} },
     'GameServer/Bot/AI/CompanionNavigationRecovery': { clear() {} },
     'GameServer/Bot/AI/TownTransitPolicy': { townAt: () => bot.x === 0 ? 'Test' : null, observeRecovery() {}, interact: () => true },
     'GameServer/Bot/BotAI': { getClosestTown: () => ({ name: 'Test', x: 0, y: 0, z: 0 }) },

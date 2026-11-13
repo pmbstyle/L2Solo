@@ -4,7 +4,7 @@ const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 
-// Owner: the one decision of "it got dangerous", hot and cold (E70, §13.6):
+// Owner: the one decision of "it got dangerous", hot and cold:
 // drink, run, sit or fight on, each priced in the bot's hours, and what a run
 // and a last strike are bound by. No live actor and no world: the hot adapter
 // is DangerMoment (each tick of a fight), the cold one BackgroundResolver
@@ -12,7 +12,7 @@ const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 // First choices, calibrated later by the hot harness:
 // the survival margin the solo gate admits (BotTargetMatchup.SOLO_GATE_MARGIN)
 // reads as a 0.15% lose chance, 0.8 of it as 5%, two thirds of it as 50%:
-// the gate sweep (T132) saw cold hunts rarely lost below an even ratio.
+// the gate sweep saw cold hunts rarely lost below an even ratio.
 const LOSE_SLOPE = 16;
 const ADMITTED_LOSE = 0.0015;
 // Only a viable escape receives this discount; faster pursuers rule it out.

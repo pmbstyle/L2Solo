@@ -110,6 +110,9 @@ function teleportTo(session, actor, coords, options = {}) {
         }
         Generics.updatePosition(session, actor, coords, { immediateNpcInfo: true, forceRefresh: true });
         PetTravel.finish(session, actor, movedPets, coords);
+        // A player lands among bots the client is loading: they are shown now, not at
+        // the next activation scan.
+        if (!isBotSession(session)) invoke('GameServer/Bot/Population/PopulationService').requestPhaseScan(actor.fetchId());
 
         // The leader must be at the destination before companions receive an
         // AI wakeup. Otherwise their follow tick still reads the old leader

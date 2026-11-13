@@ -2,7 +2,6 @@ const assert = require('assert');
 
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
@@ -10,7 +9,6 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const originals = {
-    inventoryCleanupNeed: ItemDisposition.inventoryCleanupNeed,
     applyResolve: LifeState.applyResolve,
     upsertState: LifeState.upsertState,
     recordMany: LifeEvents.recordMany
@@ -128,8 +126,7 @@ const fightResult = () => ({
         assert.strictEqual(await world.amount(payerId, 57), walletBefore - tripFee(trip), 'the fee leaves the physical wallet');
 
         // Command path: the worker's precomputed fight is applied before the
-        // trip; main decides the cleanup there, on a bag over the threshold.
-        ItemDisposition.inventoryCleanupNeed = () => ({ reason: 'market_surplus_inventory', slots: 40, npcOnlySlots: 0 });
+        // trip the build decided (its held stats.cleanupDue); main starts it there.
         const applied = [];
         const recorded = [];
         LifeState.applyResolve = async (state, result) => {
@@ -138,7 +135,7 @@ const fightResult = () => ({
         };
         LifeState.upsertState = async (state) => state;
         LifeEvents.recordMany = async (characterId, events) => { recorded.push(...events); };
-        const commandState = hunter(7302);
+        const commandState = { ...hunter(7302), stats: { cleanupDue: { reason: 'market_surplus_inventory', slots: 40, npcOnlySlots: 0 } } };
         const command = await PopulationService.resolveColdState(commandState, { precomputedResult: fightResult() });
         assert.strictEqual(command.ok, true);
         assert.strictEqual(applied.length, 1, 'the worker result is applied');
@@ -150,7 +147,6 @@ const fightResult = () => ({
 
         console.log('Cold cleanup keeps the resolve checks passed');
     } finally {
-        Object.assign(ItemDisposition, { inventoryCleanupNeed: originals.inventoryCleanupNeed });
         Object.assign(LifeState, { applyResolve: originals.applyResolve, upsertState: originals.upsertState });
         LifeEvents.recordMany = originals.recordMany;
         await world.close();

@@ -45,7 +45,7 @@ board.put({ id: 91, ownerId: 990472, storeType: 1, kind: 'shop', town: 'Giran',
     lines: [{ lineId: 92, selfId: higher.selfId, count: 1, enchant: 0, price: 1 }] });
 const review = board => Economy.forState(state, { board, spots: [], npcOffersFor: () => [], caller: 'meeting_prepare',
     routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-    workshop: null, workshops: () => [], knownRecipes: [] });
+    workshops: () => [], knownRecipes: [] });
 const empty = review(new BoardIndex());
 assert(!empty.projection.roots.some(key => key.startsWith(`power:${higher.selfId}:`)));
 const available = review(board);

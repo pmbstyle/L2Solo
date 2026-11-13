@@ -83,7 +83,8 @@ const mocks = {
     },
     'GameServer/Bot/AI/CompanionNavigationRecovery': {},
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => null },
-    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, hasLineOfSight: () => true },
+    'GameServer/Bot/AI/BotRoles': invoke('GameServer/Bot/AI/BotRoles'),
+    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, canWalkStraight: () => true },
     'GameServer/Effects/EffectStore': { prune() {} },
     'GameServer/Effects/EffectTicker': { clearAll() {}, refreshEffects() {} },
     'GameServer/Actor/Generics/CalculateStats': () => {},
@@ -95,6 +96,7 @@ const mocks = {
         restoreFromResurrection: () => ({ restored: 0, persistence: Promise.resolve() })
     },
     'GameServer/Bot/AI/BotEventJournal': { record: async () => {} },
+    'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
     'GameServer/Pets/PetTravel': { begin: () => [], finish() {} },
     'GameServer/Actor/Generics': { updatePosition(s, a, p) { a.x = p.locX; a.y = p.locY; a.z = p.locZ; } },
     'GameServer/Network/Response': {
@@ -206,10 +208,10 @@ assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoni
     const Economy = mocks['GameServer/Bot/Economy/EconomyContext'];
     const Valuation = mocks['GameServer/Bot/Economy/EconomicValuation'];
     mocks['GameServer/Bot/AI/KnowledgeLearning'] = invoke('GameServer/Bot/AI/KnowledgeLearning');
-    const prior = { characterId: 3, level: 20, stats: { dangerPrice: [2, 1], economyClock: now - 3600000,
+    const prior = { characterId: 3, level: 20, spotId: 'spot-a', stats: { dangerPrice: [2, 1], economyClock: now - 3600000,
         playedHours: 1, frustration: 1 } };
     const victim = { accountId: 'bot_death_price', actor: actor(3), coldLifeState: prior, populationActivating: true,
-        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+        currentSpot: { id: 'spot-a', center: { locX: 10000, locY: 10000, locZ: -3000 } }, dataSendToMeAndOthers() {}, dataSendToOthers() {} };
     victim.actor.session = victim;
     const persona = Economy.personal(prior, { timestamp: now }).persona;
     const expected = Valuation.progressStats(prior, { timestamp: now, losses: 1, lossHours: Valuation.liveDeathHours(2),
@@ -222,7 +224,36 @@ assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoni
     } finally { Economy.basics = basics; }
     assert(expected.frustration > 1, 'fixture: the death costs progress');
     // The VM realm's objects: compared by their JSON.
-    assert.strictEqual(JSON.stringify(victim.coldLifeState.stats), JSON.stringify({ ...prior.stats, ...expected }),
-        'the published death hours price the loss');
+    const priced = Object.fromEntries(Object.keys(expected).map(key => [key, victim.coldLifeState.stats[key]]));
+    assert.strictEqual(JSON.stringify(priced), JSON.stringify(expected), 'the published death hours price the loss');
+    // A death near a player counts as a far one: the death, the spot's risk and the
+    // leveling recovery; a second death there keeps the bot off the spot.
+    const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 1, 'the near death is counted');
+    assert.strictEqual(Risk.recoveryFor(victim.coldLifeState)?.levelPenalty, 2, 'the near death lowers the hunting level');
+    assert.strictEqual(Risk.excludedSpotIdsForStates([victim.coldLifeState]).has('spot-a'), false, 'one death leaves the spot open');
+    victim.actor.state.dead = false;
+    victim.actor.hp = 0;
+    die(victim, victim.actor);
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 2);
+    assert.strictEqual(Risk.excludedSpotIdsForStates([victim.coldLifeState]).has('spot-a'), true,
+        'two near deaths at the spot keep the bot off it, as two far deaths do');
+    // Only a monster's kill on the spot it hunts is the spot's, as a far hunting round's:
+    // a PvP death (a far one only adds to deaths) and a death off its spot (on the road,
+    // in town) count as deaths and leave the spot's record and the recovery as they were.
+    const spotRecord = () => JSON.stringify([victim.coldLifeState.stats.spotRisk, victim.coldLifeState.stats.huntingRecovery,
+        victim.coldLifeState.stats.spotBackoffs]);
+    const before = spotRecord();
+    victim.actor.state.dead = false;
+    victim.actor.hp = 0;
+    die(victim, victim.actor, { killer: actor(9, 10050) });
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 3, 'a PvP death is counted');
+    assert.strictEqual(spotRecord(), before, 'a PvP death is not the spot\'s');
+    victim.actor.state.dead = false;
+    victim.actor.hp = 0;
+    victim.actor.x = 30000;
+    die(victim, victim.actor);
+    assert.strictEqual(victim.coldLifeState.stats.deaths, 4, 'a death off its spot is counted');
+    assert.strictEqual(spotRecord(), before, 'a death off its spot is not the spot\'s');
 }
 console.log('Clan alliance immediate death recovery: native packets, town, continuation, stale landing, cancellation and scope passed');

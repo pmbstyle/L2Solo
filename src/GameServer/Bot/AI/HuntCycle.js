@@ -11,7 +11,7 @@ const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const Rewards = require('../Economy/SpotRewardExpectation');
 const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
-// The hunt cycle model (T60): what an hour of a kit earns at a spot, the one
+// The hunt cycle model: what an hour of a kit earns at a spot, the one
 // answer to "what does this gear, enchant, henna or potion add". The spot
 // table measures one kill of the reference bot (the role's class in the
 // author's kit, SpotValueTable.cycle): fight and rest seconds, the mob's
@@ -147,7 +147,7 @@ function kitFeatures(numbers, refNumbers, row, magic) {
         ratio(Math.max(1, numbers.mDef), Math.max(1, refNumbers.mDef)),
         ratio(Math.max(1, numbers.maxHp), Math.max(1, refNumbers.maxHp))];
 }
-// The features weighed by the part of a row's damage from spells (T108):
+// The features weighed by the part of a row's damage from spells:
 // P.Def meets the hits, M.Def the spells. The reader weighs by the row's
 // spellTaken, the generator by the author's kit's measured one.
 function weighFeatures(features, spellShare) {
@@ -216,10 +216,11 @@ function reader(state, ctx = {}) {
     return built;
 }
 function build(state, ctx) {
-    // The bot's class weighs against its own class's reference (Table.roleFor, T115).
+    // The bot's class weighs against its own class's reference (Table.roleFor).
     const role = Table.roleFor(state), level = Number(state.level) || 1;
     const ref = reference(role, level);
-    const shots = ctx.hunt?.useShots !== false;
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    const shots = ShotStock.shotRows(ShotStock.planForState(state), ctx.hunt?.useShots);
     // Shots and potions at their NPC prices, as the bot's hour (BotHuntEfficiency.huntIncome).
     const costs = Hunt.consumablePrices(state);
     const rewardOptions = { spoilSkillLevel: Rewards.spoilSkillLevel(state) };

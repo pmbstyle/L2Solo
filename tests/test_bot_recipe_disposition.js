@@ -13,6 +13,7 @@ const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListin
 const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 
 DataCache.init();
 
@@ -35,7 +36,7 @@ const original = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     refreshBuyerActivity: MarketBuyerActivity.refresh,
     depositCold: BotWarehouse.depositCold,
-    admit: Commit.admit, finish: Commit.finish
+    admit: Commit.admit, finish: Commit.finish, raiseOn: DecisionEvents.raiseOn
 };
 
 async function run() {
@@ -131,11 +132,16 @@ async function run() {
     LifeState.acceptLifecycleRow = state => state;
     Database.syncInventorySummary = () => Promise.resolve();
     LifeState.upsertState = (state) => Promise.resolve(state);
+    const raised = [];
+    DecisionEvents.raiseOn = (characterId, name) => { raised.push([characterId, name]); return Promise.resolve(null); };
 
     assert.equal(await LifeState.learnCraftableRecipes(craftState), craftState,
         'no accepted economic craft route leaves unselected scrolls intact');
+    assert.deepStrictEqual(raised, [], 'no recipe learned raises nothing');
     const updated = await LifeState.learnCraftableRecipes(craftState, { recipeIds: [recipe.recipeId] });
     assert.deepStrictEqual(learned, [{ characterId: 7001, recipeId: recipe.recipeId, type: recipe.type }]);
+    // A recipe learned wakes the bot's build where it is (recipe_learned).
+    assert.deepStrictEqual(raised, [[7001, 'recipe_learned']], 'a learned recipe raises recipe_learned');
     assert.strictEqual(updated.inventory[2298].amount, 1, 'learning must consume exactly one recipe item');
     assert.strictEqual(updated.inventory[2250].amount, 1, 'unselected no-grade recipes remain intact');
     assert.strictEqual(updated.inventory[spellbook.selfId].amount, 1, 'spellbooks must remain for NPC liquidation');
@@ -204,5 +210,6 @@ run().catch((error) => {
     BotWarehouse.depositCold = original.depositCold;
     Commit.admit = original.admit;
     Commit.finish = original.finish;
+    DecisionEvents.raiseOn = original.raiseOn;
     LifeState.reset?.();
 });

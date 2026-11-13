@@ -1395,7 +1395,7 @@ function resolveKeyed(skill, key) {
             resolved.clear();
             resolvedByField.clear();
             resolvedFields = 0;
-            // L126: SkillModels share these objects; a clear ends the sharing
+            // SkillModels share these objects; a clear ends the sharing
             // for models built later, so the live check counts clears.
             require('../Bot/Economy/EconomyDiagnostics').count('skill_rules', 'cache', 'clear');
         }

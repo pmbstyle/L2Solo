@@ -26,6 +26,7 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const RAID_MINIONS = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+const FailureLog = require('../../../FailureLog');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const HennaRules = invoke('GameServer/Henna/HennaRules');
 const C4WeaponSA = invoke('GameServer/Items/C4WeaponSA');
@@ -140,7 +141,7 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
 
     return {
         weaponKind: WeaponMask.weaponType(weapon?.template?.kind || fallback.weaponKind || '', weapon?.etc?.slot),
-        // The MP of one bow shot (user 10-29: bots pay it as players do).
+        // The MP of one bow shot (bots pay it as players do).
         bowMp: weapon?.template?.kind === 'Weapon.Bow' ? C4WeaponSA.expectedBowMp(weapon.selfId, weapon.etc?.mp) : 0,
         attackReuseDelay: number(weapon?.stats?.reuseDelay, 1500),
         pAtk: number(weapon?.stats?.pAtk, fallback.pAtk),
@@ -843,7 +844,7 @@ function numbersPass(kitPart, effects, timestamp, sourceOptions) {
         critical: power.critical, mCritRate, atkSpd: power.atkSpd, castSpd: power.castSpd, con: power.con, men: power.men,
         str: stats.str, dex: stats.dex,
         // Run speed as the hot CalculateStats.setCollectiveTotalRunSpd: the
-        // template's by DEX, plus and times the effects (the solo walk, T106);
+        // template's by DEX, plus and times the effects (the solo walk);
         // 0 without a template run speed.
         runSpd: Math.max(0, number(classTemplate(classId).speed?.run) && (Formulas.calcSpeed(stats.dex, number(classTemplate(classId).speed.run))
             + add(profile, 'runSpdAdd', timestamp, sources)) * multiplier(profile, 'runSpdMul', timestamp, sources)),
@@ -1128,24 +1129,28 @@ function spotSpawns(spot = {}, npcId) {
 }
 
 // The one owner of "which monster of a spot a kill takes": the cold roll
-// (npcForSpot) draws from it and the planners' expectation
-// (SpotRewardExpectation.killShare) reads its chances. entries: the kill's
+// (npcForSpot) draws from it and the spot table's mob numbers
+// (generate-spot-table spotMob) read its chances. entries: the kill's
 // candidates (huntable, after the hunters' matchup filter: entry.match);
-// encounterEntries: the huntable ones before that filter. An untargeted
-// kill draws from entries by killWeight. A targeted kill
-// (options.preferredNpcId among entries: an active plan's next hunt,
-// PartyHuntingTarget.planTargetNpcId, or a material party) takes its
-// target, unless an aggressive other monster of the encounter engages first (interruption, 0.25 by default): a direct-drop
-// plan travels to the intended monster, but it is still a real hunting
-// ground, so the bot is not immune to the rest of the encounter table; an
-// interrupted kill draws from those aggressive others by killWeight.
-function killDraw(entries, encounterEntries, options = {}) {
+// exposed: the groups that may engage the hunters first. An untargeted kill
+// draws from entries by killWeight. A targeted kill (options.preferredNpcId
+// among entries: a solo hunt's planned mob, PartyHuntingTarget.soloNpcId,
+// or a material party) takes its target, unless an aggressive other group of
+// exposed engages first (interruption, 0.25 by default; an interrupted kill
+// draws from those by killWeight). Aggression is not erased by what the
+// hunters prefer to fight (exposed: the huntable encounter before an
+// efficiency filter), but a solo hunter judged for survival stands where the
+// spawns it takes are, as on an untargeted hunt (the bot takes only the spawns
+// it can): exposed is then entries, and what comes at it first is
+// a group at a pull it survives, whatever it targeted (our choice; a C4 player
+// keeps clear of the aggressive packs it cannot take).
+function killDraw(entries, exposed, options = {}) {
     const preferredNpcId = number(options.preferredNpcId);
     const preferred = preferredNpcId > 0
         ? entries.find((entry) => number(entry.selfId) === preferredNpcId) || null
         : null;
     const interrupters = preferred
-        ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
+        ? exposed.filter((entry) => number(entry.selfId) !== preferredNpcId
             && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
         : [];
     const interruption = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
@@ -1219,8 +1224,9 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
         }) || candidates[0];
     };
     // One draw with the hunt tables' (killDraw, killChances): a direct-drop
-    // plan travels to its monster, yet nearby aggressive mobs may engage first.
-    const draw = killDraw(entries, encounterEntries, options);
+    // plan travels to its monster, yet nearby aggressive mobs may engage first:
+    // for a solo hunter judged for survival, only the groups and pulls it takes.
+    const draw = killDraw(entries, options.soloSafety ? entries : encounterEntries, options);
     const { preferred } = draw;
     const selected = preferred && (!draw.interrupters.length || rng() >= draw.interruption)
         ? preferred
@@ -1229,7 +1235,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     if (!npc) return null;
     const combat = npcCombatStats(npc);
     const explicitRaid = options.allowRaid === true && spot.raidBoss === true;
-    // A solo fight takes the whole pull of its spawn group (F20): one size of
+    // A solo fight takes the whole pull of its spawn group: one size of
     // the group's mix, among the sizes the hunter survives when safety judged it.
     const pull = options.pull && !explicitRaid
         ? BotPullEstimate.rollPulls(selected.match?.allowed || BotPullEstimate.pullsOf(selected), rng) : 0;
@@ -1300,10 +1306,73 @@ function wornPart(inventory, known = {}) {
     }
     return rows.sort().join(',');
 }
+// The worn part per inventory object, with its hash: it reads only the equipped
+// rows (selfId, amount, slots, instances, enchant) and the item templates
+// (DataCache.items and its length, checked on a hit: a reload or a page grown
+// into it). Rule: a worn row is never edited in place; a gear change writes a
+// new bag (cold updates replace the inventory object, as VisibleStrength.
+// stateLook relies on); the one bag edited in place, a fight's own copy,
+// changes only shot amounts (BackgroundResolver.spendColdShot). A breach is
+// seen under developer diagnostics: each hit is checked against a fresh
+// build, a mismatch counted (FailureLog kit_cache.stale) and answered fresh.
+const wornParts = new WeakMap();
+const NO_INVENTORY = Object.freeze({ text: 'no-inventory', worn: false, hash: fnv1a32('no-inventory') });
+function wornEntry(inventory) {
+    if (!inventory || typeof inventory !== 'object') return NO_INVENTORY;
+    const held = wornParts.get(inventory);
+    const known = {}, current = held !== undefined && held.items === DataCache.items && held.length === DataCache.items?.length
+        && !(PopulationConfig.developerDiagnostics && staleHit('worn', held.text, wornPart(inventory, known)));
+    if (current) return held;
+    const text = wornPart(inventory, known);
+    const entry = { items: DataCache.items, length: DataCache.items?.length, text, worn: known.worn === true, hash: fnv1a32(text) };
+    wornParts.set(inventory, entry);
+    return entry;
+}
+// The gear a fight turns on (the gear fact, DecisionSections.factsOf: gear_changed, hot
+// and cold): the worn weapon, the body armour's grade and the armour sets worn whole.
+// A ring, a shield or arrows, an enchant or a piece of the same grade is no new fight.
+// Read from the worn part's rows (selfId:slot:enchant), held on its entry: once per bag.
+const WEAPON_SLOTS = new Set([7, 14]), BODY_SLOTS = new Set([10, 15]);
+function gearOf(state) {
+    const entry = wornEntry(state?.inventory);
+    if (entry === NO_INVENTORY) return 0;
+    if (entry.gear !== undefined) return entry.gear;
+    let weapon = 0, body = 'none';
+    const ids = new Set();
+    for (const row of entry.text ? entry.text.split(',') : []) {
+        const [selfId, slot] = row.split(':').map(Number);
+        ids.add(selfId);
+        if (WEAPON_SLOTS.has(slot) && (!weapon || selfId < weapon)) weapon = selfId;
+        if (BODY_SLOTS.has(slot)) body = String(itemTemplate(selfId)?.etc?.rank || 'none').toLowerCase();
+    }
+    const sets = C4ArmorSets.activeSetsForEquippedIds(ids).map(set => set.chest).sort((a, b) => a - b);
+    return entry.gear = fnv1a32(`${weapon}|${body}|${sets.join(',')}`);
+}
+// A held kit part that no longer matches its fresh build (developer diagnostics).
+function staleHit(part, held, fresh) {
+    if (held === fresh) return false;
+    FailureLog.note('kit_cache.stale', new Error(`ColdCombatProfile ${part} part held ${held}, built ${fresh}`));
+    return true;
+}
 // The skills of a capture (stats.coldCombat).
 function skillsPart(saved) {
     const source = ['database', 'hot'].includes(saved.skillSource) ? 'learned' : saved.skillSource;
     return Array.isArray(saved.skills) ? `${source}:${saved.skills.map(skill => `${skill.selfId}:${skill.level}`).sort().join(',')}` : '';
+}
+// The skills part per skills array, with its hash: it reads the array's rows
+// (selfId, level) and the capture's skillSource, checked on a hit. Rule: a
+// capture writes a new array, none edits one in place (checked as wornEntry).
+const skillsParts = new WeakMap();
+const NO_SKILLS = Object.freeze({ text: '', hash: fnv1a32('') });
+function skillsEntry(saved) {
+    if (!Array.isArray(saved.skills)) return NO_SKILLS;
+    const held = skillsParts.get(saved.skills);
+    if (held && held.source === saved.skillSource
+        && !(PopulationConfig.developerDiagnostics && staleHit('skills', held.text, skillsPart(saved)))) return held;
+    const text = skillsPart(saved);
+    const entry = { source: saved.skillSource, text, hash: fnv1a32(text) };
+    skillsParts.set(saved.skills, entry);
+    return entry;
 }
 // The capture's numbers (stats.coldCombat); setEffects: its armour set
 // effects when the state has no inventory to derive them (savedSetEffects).
@@ -1312,30 +1381,35 @@ function capturePart(saved, setEffects = [], worn = false) {
     // those slots. The hot capture's redundant aggregate is not another kit.
     return JSON.stringify([saved.base || null, saved.henna || null, worn ? null : saved.equipment || null, ...setEffects]);
 }
-// The slow build inputs, no clock: class (saved, current), level, worn gear,
-// hennas, skills, the hot capture. A new array per call.
-function combatView(state) {
+// The slow build inputs, no clock, by name: class (saved, current), level,
+// worn gear, hennas, skills, the hot capture; worn and skills are their held
+// entries (text and hash).
+function kitParts(state) {
     const saved = state.stats?.coldCombat || {};
     const currentClassId = number(state.stats?.classId, number(state.classId));
     // Main publishes the current class in stats; worker hydration may also
     // carry its alias at the root. Both forms have the same native build.
-    const known = {}, worn = wornPart(state.inventory, known);
-    const hennas = [0, 1, 2].map(slot => number(state.stats?.hennas?.[slot]));
-    return [number(saved.classId, currentClassId), currentClassId, state.level, worn,
-        hennas.join(','), skillsPart(saved), capturePart(saved, savedSetEffects(state), known.worn)];
+    const worn = wornEntry(state.inventory);
+    return { savedClassId: number(saved.classId, currentClassId), currentClassId, level: state.level, worn,
+        hennas: `${number(state.stats?.hennas?.[0])},${number(state.stats?.hennas?.[1])},${number(state.stats?.hennas?.[2])}`,
+        skills: skillsEntry(saved), capture: capturePart(saved, savedSetEffects(state), worn.worn) };
+}
+// The kit parts' texts in their order, a new array per call. kitEvents hashes
+// the same parts in the same order.
+function combatView(state) {
+    const kit = kitParts(state);
+    return [kit.savedClassId, kit.currentClassId, kit.level, kit.worn.text, kit.hennas, kit.skills.text, kit.capture];
 }
 function buildHash(text) {
     return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
 }
-// One small hash per kit part (combatView's), no clock, in a new array: the
-// kit fact (DecisionSections.factsOf) and the kit profile store's hash.
-function kitHash(parts) {
-    const hashes = new Array(parts.length);
-    for (let index = 0; index < parts.length; index++) hashes[index] = fnv1a32(String(parts[index]));
-    return hashes;
-}
+// One small hash per kit part, in combatView's order, no clock, in a new
+// array: the kit fact (DecisionSections.factsOf) and the kit profile store's
+// hash. Worn and skills give their held hashes.
 function kitEvents(state = {}) {
-    return kitHash(combatView(state));
+    const kit = kitParts(state), hash = part => fnv1a32(String(part));
+    return [hash(kit.savedClassId), hash(kit.currentClassId), hash(kit.level), kit.worn.hash, hash(kit.hennas),
+        kit.skills.hash, hash(kit.capture)];
 }
 // The stat sources of a fighter (whose profile is the one read) at a hit's
 // time, held on the fighter for its fight (fightSources);
@@ -1505,7 +1579,7 @@ function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, profileFor, buildCount, buildMs, withBuildSite,
-    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
+    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitEvents, gearOf, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,

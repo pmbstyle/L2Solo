@@ -259,6 +259,23 @@ async function workerQueue(mode) {
     }finally{gate.resolve();await control?.catch(()=>null);await c.commandTail.catch(()=>null);
         Database.fetchSkill=fetchSkill;Database.learnBotSkill=learnBotSkill;global.setImmediate=realImmediate;stopGate.resolve();if(stop)await stop;}
 }
+// A named refusal (an act whose facts moved since its decision) is an outcome, counted
+// apart from failures; a failing operation keeps its name once ordinary names fill the map.
+async function refusalMetrics(){
+    for(let i=0;i<130;i++)await Database.execute(['SELECT 1',[]],`fixture:metric-name-${i}`);
+    const before=Database.stats(),was=before.operations['bot:improvement']||{refusals:0,failures:0};
+    const improve=error=>Database.applyBotImprovement(999999,{kind:'enchant'},{validate(){throw error;}}).then(()=>null,caught=>caught);
+    assert.equal((await improve(Error('improvement_missing_materials')))?.message,'improvement_missing_materials');
+    // The bot's row moved after the review (another writer committed it): the cold
+    // improvement keeps its held step, an outcome, not a writer failure.
+    assert.equal((await improve(Error('improvement_source_retired')))?.message,'improvement_source_retired');
+    assert.equal((await improve(TypeError('improvement broken')))?.message,'improvement broken');
+    assert.equal((await improve(Error('invalid_bot_henna')))?.message,'invalid_bot_henna');
+    const after=Database.stats(),op=after.operations['bot:improvement'];
+    assert(op,'the failing operation is counted under its own name');
+    assert.equal(op.refusals-was.refusals,2);assert.equal(op.failures-was.failures,2);
+    assert.equal(after.refusals-before.refusals,2);assert.equal(after.failures-before.failures,2);
+}
 async function check(name,work){try{await work();console.log('PASS',name);}catch(error){failures.push(name);console.error('FAIL',name,error.stack);}}
 (async()=>{
     directory=fs.mkdtempSync(path.join(process.cwd(),'tmp','skill-write-native-'));
@@ -274,6 +291,8 @@ async function check(name,work){try{await work();console.log('PASS',name);}catch
     if(!process.argv.includes('--api-only'))for(const mode of ['current','replace','stop','fence','changed']){
         await check(`actual integrated Worker first skill ${mode}`,()=>workerQueue(mode));
     }
+    // Last: its names fill the metrics map the checks above read by name.
+    await check('database refusals counted apart from failures, failures keep their names',refusalMetrics);
     if(failures.length)throw Error('skill admission contracts failed: '+failures.join(', '));
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     await Database.close();if(directory)fs.rmSync(directory,{recursive:true,force:true});

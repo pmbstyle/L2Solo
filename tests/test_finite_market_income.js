@@ -4,8 +4,6 @@ const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const Goals = invoke('GameServer/Bot/Goals/GoalService');
-const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 
 async function run() {
@@ -20,9 +18,9 @@ async function run() {
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
             stats: { classId: 1, shopTown: { town: 'Giran', at: 1 } }, timing: {},
             vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 } }, 'finite_income_test');
-        const trip = () => 0; trip.details = () => ({ known: true, hours: .25, fees: 1 });
+        const trip = () => 0; trip.details = town => town === 'Giran' ? { known: true, hours: .25, fees: 1 } : { known: true, hours: .5, fees: 2 };
         const deps = { board: new (invoke('GameServer/AfkTrade/BoardIndex').BoardIndex)(), spots: [],
-            workshop: null, knownRecipes: [], producerRecipes: [], tripCost: trip, knowledgeEnabled: false };
+            knownRecipes: [], producerRecipes: [], tripCost: trip, knowledgeEnabled: false };
         const context = Economy.forState(state, deps);
         const sale = context.projection.moneyPaths.find(row => row.kind === 'liquidate');
         assert(sale, 'real reachable spare materials offer a finite sale');
@@ -30,7 +28,7 @@ async function run() {
         assert.equal(sale.capacityCash, context.buyback(1867) * 10);
         assert.equal(sale.actionHours, .25);
         assert.equal(sale.cashFees, 1);
-        assert.equal(sale.town, 'Giran', 'a stored shop town is read as its town name');
+        assert.equal(sale.town, 'Giran', 'spare goods sell at the NPC town of the cheapest trip');
         assert.equal(sale.incomePerHour, undefined);
         const originalInvoke = global.invoke;
         try {
@@ -45,7 +43,6 @@ async function run() {
             const prepared = Economy.forState(farm, { ...deps, spots: [spot], hunt: { perHour: 1, bestSpotId: spot.id } });
             const finite = prepared.projection.moneyPaths.find(row => row.kind === 'liquidate');
             assert(finite, 'worker-native sale planning uses prepared inputs without a live World');
-            assert.equal(finite.town, 'Elven Village', 'sale town follows prepared farming origin, not the current Giran position');
             assert.equal(finite.capacityCash, sale.capacityCash);
             const Sources = require('../src/GameServer/Bot/Population/ColdOccupationSources');
             assert.equal(Sources.hasNpcSellerInTown('unknown-town'), false, 'no imagined NPC seller');
@@ -77,7 +74,6 @@ async function run() {
         const need = Needs.evaluate(state, options)[0];
         assert.equal(need.type, 'sell_inventory');
         assert.equal(need.plan.marketTown, sale.town);
-        await GoalState.set(id, { ...need, status: 'active' });
         const partialState = { ...state, inventory: { ...state.inventory,
             1867: { ...state.inventory[1867], reservedAmount: 7 } } };
         const partial = await Life.applyNpcLiquidation(partialState, [{ selfId: 1867, count: 10, npcPrice: 10 }]);
@@ -94,13 +90,8 @@ async function run() {
         Economy.reset();
         assert(!Economy.forState(after, deps).projection.moneyPaths.some(row => row.kind === 'liquidate'));
         const empty = { ...context, network: { ...context.network, activity: null } };
-        // A missing preparation holds the old goal; an authoritative empty
-        // graph ends it.
-        const held = await Goals.review(after, { ...options, economy: { ...empty, intentPending: true } });
-        assert.equal(GoalState.snapshot(id).current.status, 'active');
-        assert.equal(held, null);
-        await Goals.review(after, { ...options, economy: empty });
-        assert.equal(GoalState.snapshot(id).current.status, 'abandoned');
+        // A card with no leaf leaves the bot no goal: nothing keeps the sale's.
+        assert.equal(Needs.goal(after, { ...options, economy: empty }), null);
         console.log('PASS native finite projection / reservations / route / receipt / repeated receipt / goal refresh');
     } finally { Economy.reset(); await world.close(); }
 }

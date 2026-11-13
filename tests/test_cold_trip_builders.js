@@ -45,8 +45,7 @@ function digest(state) {
         travel: stats.travel || null,
         marketReturn: stats.marketReturn ?? null,
         craftReturn: stats.craftReturn ?? null,
-        mammonReturn: stats.mammonReturn ?? null,
-        mammonRetryAt: stats.mammonRetryAt ?? null
+        mammonReturn: stats.mammonReturn ?? null
     };
 }
 
@@ -90,17 +89,14 @@ async function cases() {
     out.market_sell = digest(GoalExecutor.beginMarketTravel(hunter(), {
         type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory', cleanupReason: 'inventory_full' }
     }, T));
-    // The trip builder is pinned here; whether a purchase trip pays for itself
-    // (24512a44) has its own fixture (test_acquisition_trip_value.js).
-    out.market_buy = withStubs([
-        [invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => true]
-    ], () => digest(GoalExecutor.beginMarketTravel(hunter(), {
+    out.market_buy = digest(GoalExecutor.beginMarketTravel(hunter(), {
         type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
-    }, T)));
+    }, T));
 
     const giranCenter = { locX: 83396, locY: 147904, locZ: -3400 };
+    // A party member's market return (a solo bot's visit end starts no trip: the worker routes it).
     const shopping = hunter({
-        activity: 'shopping', currentRegion: 'Giran', loc: giranCenter, spotId: null,
+        activity: 'shopping', currentRegion: 'Giran', loc: giranCenter, spotId: null, party: { partyId: 'pinned-party' },
         stats: { classId: 2, marketReturn: { loc: { ...SPOT.center }, regionName: SPOT.name, spotId: SPOT.id } }
     });
     out.market_return = withStubs([
@@ -177,7 +173,7 @@ async function cases() {
         stats: { ...mammonTrip.stats, travel: null } }, T)));
 
     // The hunting route (solo: its own time; party: the route's shared time)
-    // and the karma washing walk.
+    // and the karma washing walk (to its held earning answer: the wash's spot).
     const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
     const route = { needed: true, mode: 'solo', spotId: SPOT.id, regionName: SPOT.name, travelMs: 25000, to: { ...SPOT.center } };
     out.hunting_solo = digest(beginHuntingTrip(hunter(), route, T));
@@ -186,7 +182,7 @@ async function cases() {
     // the real arrival builder still chooses the offset and route.
     out.karma_washing = withStubs([
         [invoke('GameServer/Geodata/GeodataEngine'), 'getHeight', () => -2544]
-    ], () => digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100 } }), [{
+    ], () => digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100, woken: 0, earning: { spotId: 'wash' } } }), [{
         id: 'wash', name: 'Wash', minLevel: 35, maxLevel: 45, center: { locX: 40000, locY: 140000, locZ: -3000 },
         npcEntries: [{ selfId: 20001, level: 38 }]
     }], T).plannedState));

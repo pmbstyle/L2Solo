@@ -24,7 +24,7 @@ Recipes.resolveByRecipeId = id => Number(id) === root.recipeId ? root : Number(i
 Recipes.resolveByProductId = id => Number(id) === component.productId ? component : original.byProduct(id);
 Shops.publishedStationRecipes = () => ({ stationByRecipeId: new Map([[root.recipeId, { id: 'root' }], [component.recipeId, { id: 'component' }]]) });
 Market.saleDecision = () => ({ listings: [{ selfId: 1864, count: 20 }, { selfId: 1459, count: 4 }], npc: [], answers: [] });
-const economy = { network: { queue: [] }, craftReservations: {} };
+const economy = { network: { queue: [] } };
 async function run() {
     try {
         Data.init(); await Database.init(); await Life.init();

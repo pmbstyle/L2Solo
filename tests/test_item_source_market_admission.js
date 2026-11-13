@@ -85,7 +85,7 @@ async function run() {
     const validLine = saved.lines.find(line => line.selfId === 1865);
     const lookLines = Afk.boardIndex().ownerLines(owner);
     const review = Pricing.lookOwn(state, lookLines, { characterId: owner, timestamp: Date.now(),
-        canSell: () => true, canBuy: () => true }, new Map());
+        canSell: () => true, canBuy: () => true, npcOffersFor: () => [], trader: { assertiveness: .5, caution: .5, wait: 0 } });
     assert.equal(review.withdrawals.length, 1, 'unsupported retained SELL leaves even without fresh price observations');
     assert.equal(review.withdrawals[0].selfId, 1305);
     assert.equal((await Market.applyReview(owner, review)).changed, 1);
@@ -110,15 +110,17 @@ async function run() {
     const validBuy = grouped.lines.find(line => line.selfId === 1864);
     const heldWallet = await amount(57);
     const groupedReview = Pricing.lookOwn(state, Afk.boardIndex().ownerLines(owner),
-        { characterId: owner, timestamp: Date.now(), canSell: () => true, canBuy: () => true }, new Map());
-    assert.equal(groupedReview.withdrawals.length, 1);
-    assert.equal((await Market.applyReview(owner, groupedReview)).changed, 1);
+        { characterId: owner, timestamp: Date.now(), canSell: () => true, canBuy: () => true, npcOffersFor: () => [], trader: { assertiveness: .5, caution: .5, wait: 0 } });
+    assert.deepEqual(groupedReview.withdrawals.map(move => move.selfId), [1305]);
+    // Its withdrawal alone (the look may also price the valid sibling's bid).
+    const withdrawal = { withdrawals: groupedReview.withdrawals };
+    assert.equal((await Market.applyReview(owner, withdrawal)).changed, 1);
     assert.equal(await amount(57), heldWallet + 20, 'only invalid BUY remainder is refunded');
     const groupedKept = Afk.findOwnerProjection(owner).shop;
     assert.equal(groupedKept.id, grouped.id);
     assert.equal(groupedKept.lines[0].id, validBuy.id, 'valid same-record BUY root retains identity');
     assert.equal(groupedKept.escrowAdena, 20);
-    await Market.applyReview(owner, groupedReview);
+    await Market.applyReview(owner, withdrawal);
     assert.equal(await amount(57), heldWallet + 20, 'BUY refund replay is fenced');
     await Afk.stop(owner);
     const ad = id => ({ storeType: Afk.BUY, title: 'Legacy wish', town: 'Dion', lines: [{ selfId: id,

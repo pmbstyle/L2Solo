@@ -1,18 +1,31 @@
+const Situations = require('../Situations');
 const MIN_DEATHS_AT_SPOT = 2;
 const MIN_DEATH_RATE = 0.2;
 const RISK_WINDOW_VERSION = 2;
 const RISK_WINDOW_FIGHTS = 12;
 const MAX_LOW_WIN_RATE = 0.25;
-// Spot marks (died here, was full) live a number of the holder's own steps
+// Death marks (died here) live a number of the holder's own steps
 // (stats.stepCount: +1 per far step; a party's own rounds), not a clock.
-// Today's minutes as steps: a death mark 60, doubling per repeat up to 360;
-// "was full" 1 step after the step that wrote it.
+// Today's minutes as steps: a death mark 60, doubling per repeat up to 360.
 const BACKOFF_STEPS = 60;
 const MAX_BACKOFF_STEPS = 360;
 const MAX_BACKOFFS = 8;
-const CAPACITY_BACKOFF_STEPS = 1;
 const MAX_FAILED_HUNTS = 3;
 const FAILED_HUNT_RECOVERY_WINS = 3;
+// Spots a bot's situation ruled out (spot_unreachable, a walk or
+// gatekeeper relocation that failed; spot_dangerous on ground it may not hunt alone;
+// contest_lost, a spot contest it lost or a spot it found crowded at its arrival,
+// SpotContest): stats.spotMarks [{ spotId, reason: the situation's name }], the latest
+// MAX_SPOT_MARKS kept (the oldest dropped, counted). A mark lasts the bot's outing, whatever answers the
+// earning decision takes meanwhile: forgotten at the situations its reason's LIFETIME
+// lists (Situations' raise applies them, both threads), never by a clock. Our choice: a
+// C4 player who found a camp packed, out of reach or too dangerous does not go back to
+// it until his next trip from town, his death or new gear; a ground too dangerous alone
+// also when he leaves his party. A mark saved with another reason lasts the outing.
+const MAX_SPOT_MARKS = 8;
+const OUTING = Object.freeze(['arrived_town', 'arrived_town:own', 'died', 'gear_changed', 'grade_changed']);
+const LIFETIME = Object.freeze({ contest_lost: OUTING, spot_unreachable: OUTING,
+    spot_dangerous: Object.freeze([...OUTING, 'party_left']) });
 
 function normalizedSpotId(value) {
     const spotId = String(value || '').trim();
@@ -88,6 +101,8 @@ function recordResolve(previous = {}, sample = {}) {
         windowDeaths: Math.max(0, Number(base.windowDeaths || 0)) + Math.max(0, Number(sample.deaths || 0)),
         recoveryWins, unrecoveredDeaths,
         failedHuntRecoveryWins,
+        // The round hunted the spot for an item (its held step's material hunt there).
+        ...(sample.itemHunt === true ? { itemHunt: true } : {}),
         // A lucky kill must not erase repeated abandoned fights. Require a
         // short run of clean wins before trusting the same ground again.
         failedHunts: Math.min(MAX_FAILED_HUNTS,
@@ -96,13 +111,28 @@ function recordResolve(previous = {}, sample = {}) {
     };
 }
 
+// Ground the bot hunts for an item (its held step's material hunt) is left at its first
+// death there while that death is a fifth of its fights since it came (our choice): the
+// item has other sources and the market, and a bot that went back died there again (a
+// level-34 Puncher killed level 29-35 bots in 1-3 fights). Wins it had there before keep
+// it; any other ground (earning, progress, a gear plan's, a party's) takes two deaths
+// at a fifth of its fights. Totals are the state's after the round.
+function itemHuntDeath(state, risk, spotId) {
+    if (risk.itemHunt !== true) return null;
+    const deaths = Math.max(0, Number(state.stats?.deaths || 0) - Number(risk.deathsAtEntry || 0));
+    const fights = Math.max(0, Number(state.stats?.fightsResolved || 0) - Number(risk.fightsAtEntry || 0));
+    const deathRate = deaths / Math.max(1, fights);
+    return deaths >= 1 && deathRate >= MIN_DEATH_RATE
+        ? { spotId, deaths, fights, wins: Math.max(0, fights - deaths), deathRate, reason: 'death_pressure' } : null;
+}
+
 function deathPressure(state = {}, spotId = state.spotId) {
     const expectedSpotId = normalizedSpotId(spotId);
     const risk = state.stats?.spotRisk;
     if (!expectedSpotId || normalizedSpotId(risk?.spotId) !== expectedSpotId) return null;
 
     if (Number(risk.version || 0) === RISK_WINDOW_VERSION) {
-        return pressureForWindow({
+        return itemHuntDeath(state, risk, expectedSpotId) || pressureForWindow({
             spotId: expectedSpotId,
             fights: risk.windowFights,
             wins: risk.windowWins,
@@ -143,6 +173,40 @@ function recordRecovery(state, { deaths = 0, wins = 0, exp, expBeforeDeath, pres
     return recovery;
 }
 
+// One hunting record of a bot on its own, on either thread: a far round
+// (BotLifeState.prepareResolve) or a near body's won fight or death (BotLifeState.recordNearFight).
+// It moves the spot's risk window, marks the spot when the window turns to pressure (a mark
+// it did not hold) and moves the leveling recovery, so a death near a player counts as a far
+// one. A party member's record keeps its own risk as it was and writes no mark or recovery
+// (its party's risk, PartySpotRiskPolicy).
+// state: before the record; sample: spotId, fights, wins, deaths (a death is a fight), itemHunt
+// (its held step hunts the spot for an item), timestamp, exp after it, expBeforeDeath.
+// Returns the stats fields it writes (spotBackoffs only with a new mark).
+function recordHunt(state = {}, sample = {}) {
+    const stats = state.stats || {};
+    if (state.party?.partyId || state.partyId) return { spotRisk: stats.spotRisk };
+    const spotId = normalizedSpotId(sample.spotId);
+    const timestamp = Number(sample.timestamp || Date.now());
+    const deaths = Math.max(0, Number(sample.deaths || 0)), fights = Math.max(0, Number(sample.fights || 0));
+    const wins = Math.max(0, Number(sample.wins || 0));
+    const spotRisk = recordResolve(stats.spotRisk, {
+        spotId, itemHunt: sample.itemHunt === true, timestamp,
+        totalDeaths: Number(stats.deaths || 0), totalFights: Number(stats.fightsResolved || 0),
+        totalWins: Number(stats.fightsWon || 0), deaths, fights, wins,
+        // Only completed, abandoned hunts count. Pending encounter slices
+        // and pre-fight recovery have zero completed fights.
+        failedHunts: Math.max(0, fights - wins - deaths)
+    });
+    const after = { ...state, spotId, stats: { ...stats, spotRisk, deaths: Number(stats.deaths || 0) + deaths,
+        fightsResolved: Number(stats.fightsResolved || 0) + fights } };
+    const pressure = deathPressure(after);
+    const marked = pressure && !activeBackoffs(state).some(entry => entry.spotId === spotId)
+        ? withBackoff(after, backoffForStates([after], spotId, timestamp), timestamp).stats.spotBackoffs : null;
+    return { spotRisk, ...(marked ? { spotBackoffs: marked } : {}),
+        huntingRecovery: recordRecovery(state, { deaths, wins, exp: sample.exp, expBeforeDeath: sample.expBeforeDeath,
+            pressure: !!pressure }) };
+}
+
 // The holder's step counter: a bot's far steps (BotLifeState.prepareResolve),
 // a party's rounds (PartySpotRiskPolicy.state passes them as stats.stepCount).
 function stepCount(state = {}) {
@@ -172,13 +236,11 @@ function markInSteps(entry, counter, now) {
 }
 function marksInSteps(stats, now = Date.now(), counter = stepCount({ stats })) {
     if (!stats || typeof stats !== 'object') return stats;
-    for (const key of ['spotBackoffs', 'capacityBackoffs', 'clanHuntBackoffs']) {
+    for (const key of ['spotBackoffs', 'clanHuntBackoffs']) {
         if (Array.isArray(stats[key]) && stats[key].some(clockMark)) {
             stats[key] = stats[key].map(entry => markInSteps(entry, counter, now)).filter(Boolean);
         }
     }
-    const avoid = stats.coldCompetition?.avoid;
-    if (clockMark(avoid)) stats.coldCompetition = { ...stats.coldCompetition, avoid: markInSteps(avoid, counter, now) };
     return stats;
 }
 
@@ -216,21 +278,50 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
 }
 
 // The spots one holder's marks exclude, added to `excluded`: its active
-// death and "was full" marks, its competition avoid and its death pressure.
-// Returns the holder's step at which the first of those marks ends (Infinity:
-// none ends by itself; death pressure ends only by a resolve).
+// death marks, its death pressure and its situations' spot marks (spotMarks; a
+// party's on its held spot answer, PartySpotRiskPolicy).
+// Returns the holder's step at which the first
+// of those marks ends (Infinity: none ends by itself; death pressure ends only by
+// a resolve, a spot mark only by a situation of its lifetime).
 function addExclusions(state, excluded) {
     let untilStep = Infinity;
     const mark = (spotId, entry) => { excluded.add(spotId); untilStep = Math.min(untilStep, Number(entry.untilStep)); };
     activeBackoffs(state).forEach((entry) => mark(entry.spotId, entry));
-    (state.stats?.capacityBackoffs || []).filter(entry => markActive(entry, state))
-        .forEach(entry => mark(String(entry.spotId), entry));
-    const avoid = state.stats?.coldCompetition?.avoid;
-    if (normalizedSpotId(avoid?.spotId) && markActive(avoid, state)) mark(normalizedSpotId(avoid.spotId), avoid);
     const pressure = deathPressure(state);
     if (pressure) excluded.add(pressure.spotId);
+    for (const entry of spotMarks(state.stats)) excluded.add(entry.spotId);
     return untilStep;
 }
+
+// The spot marks of a stats object (written only through Situations' raise; a mark saved
+// with the answer it once lapsed with reads as a mark).
+function spotMarks(stats) {
+    if (!Array.isArray(stats?.spotMarks) || !stats.spotMarks.length) return [];
+    return stats.spotMarks.filter(entry => normalizedSpotId(entry?.spotId));
+}
+// The marks with one more: the spot's earlier mark replaced, the oldest past MAX_SPOT_MARKS
+// dropped (dropped: told the count). reason: the situation that marked it.
+function withSpotMark(stats, spotId, reason = 'excluded', dropped = null) {
+    const id = normalizedSpotId(spotId);
+    const kept = spotMarks(stats).filter(entry => String(entry.spotId) !== id);
+    if (!id) return kept;
+    if (kept.length >= MAX_SPOT_MARKS) dropped?.();
+    return [...kept, { spotId: id, reason: String(reason || 'excluded') }].slice(-MAX_SPOT_MARKS);
+}
+const isMarked = (stats, spotId) => spotMarks(stats).some(entry => String(entry.spotId) === String(spotId));
+// The marks situation `name` leaves (those whose reason's lifetime does not list it), or
+// null when it forgets none.
+function forget(stats, name) {
+    const marks = spotMarks(stats);
+    const kept = marks.filter(entry => !(LIFETIME[entry.reason] || OUTING).includes(name));
+    return kept.length === marks.length ? null : kept;
+}
+// The lifetimes declared where raises apply them (Situations.forgets): the facts a
+// forgetting raise writes, with what it dropped for the trace.
+Situations.forgets('spot', [...new Set(Object.values(LIFETIME).flat())], (stats, name) => {
+    const kept = forget(stats, name);
+    return kept ? { spotMarks: kept, forgot: spotMarks(stats).length - kept.length } : {};
+});
 
 // Callers still pass a time as the second argument; marks no longer read it.
 function excludedSpotIdsForStates(states = []) {
@@ -250,23 +341,6 @@ function exclusionVersion(state = {}) {
     const excluded = new Set();
     const untilStep = addExclusions(state, excluded);
     return { revision: [...excluded].sort().join(','), untilStep };
-}
-
-function withCapacityBackoff(state, spotId) {
-    // Each refusal renews the spots refused earlier in the same chain: with
-    // one hold between retries a bot can still pass up to MAX_BACKOFFS full
-    // spots, and congestion expires one backoff after the last refusal.
-    // The + 1 is the step being written: its own +1 at the soft point comes
-    // after this write, so the mark is still active at the next decision point.
-    const renewed = stepCount(state) + 1 + CAPACITY_BACKOFF_STEPS;
-    const retained = (state.stats?.capacityBackoffs || [])
-        .filter(entry => markActive(entry, state) && String(entry.spotId) !== String(spotId))
-        .map(entry => ({ spotId: entry.spotId, untilStep: Math.max(Number(entry.untilStep), renewed) }));
-    return { ...state, stats: { ...state.stats,
-        lastReason: 'route_capacity_full',
-        capacityBackoffs: [...retained, { spotId: String(spotId), untilStep: renewed }]
-            .slice(-MAX_BACKOFFS)
-    } };
 }
 
 function withBackoff(state = {}, backoff = null, timestamp = Date.now()) {
@@ -320,14 +394,19 @@ module.exports = {
     BACKOFF_STEPS,
     MAX_BACKOFF_STEPS,
     MAX_BACKOFFS,
+    MAX_SPOT_MARKS,
+    LIFETIME,
+    spotMarks,
+    forget,
+    withSpotMark,
+    isMarked,
     marksInSteps,
-    CAPACITY_BACKOFF_STEPS,
     MAX_FAILED_HUNTS,
     FAILED_HUNT_RECOVERY_WINS,
-    withCapacityBackoff,
     recordResolve,
     recoveryFor,
     recordRecovery,
+    recordHunt,
     deathPressure,
     activeBackoffs,
     backoffForStates,

@@ -100,9 +100,10 @@ async function persistState(current) {
         LifeState.cachedState = id => [tickProvider, tickBuyer].find(state => state.characterId === Number(id)) || null;
         LifeState.acceptSimulationOwnership = (_id, _revision, committed) => committed;
         Coordinator.markDirty = (_state, options) => { dirtyReasons.push(options.reason); return { ok: true }; };
-        const packet = invoke('GameServer/Bot/Economy/ColdBuffOffer').project(tickProvider, [tickProvider, tickBuyer], Date.now());
+        // The sale a far buyer's rebuff answered (its named provider at its spot).
+        const packet = invoke('GameServer/Bot/Economy/ColdBuffOffer').offer(tickProvider, tickBuyer, Date.now());
         const result = await Cold.applyOffer(packet);
-        assert.strictEqual(result.ok, true, 'the provider proposal settles a same-spot purchase');
+        assert.strictEqual(result.ok, true, 'the answered sale settles a same-spot purchase');
         assert.deepStrictEqual(dirtyReasons.sort(), ['buff_service_purchase', 'buff_service_sale']);
         const buyerRow = await Database.execute(['SELECT statsJson, adena FROM bot_life_state WHERE characterId = ?', [tickBuyerId]]);
         const sellerRow = await Database.execute(['SELECT adena, mp FROM bot_life_state WHERE characterId = ?', [tickProviderId]]);
@@ -213,7 +214,10 @@ async function persistState(current) {
         assert(autoQuote.price <= hotPlayer.backpack.fetchItemFromSelfId(57).fetchAmount() * 0.25);
         assert.strictEqual((await Database.fetchItems(playerId)).find(item => item.selfId === 57).amount, autoBuyerAdena);
         const sellerBeforeAuto = (await Database.fetchItems(hotProviderId)).find(item => item.selfId === 57).amount;
-        assert.strictEqual(Hot.maybeAutoBuy(playerSession), true, 'a nearby solo bot requests a useful buff');
+        // A body buys only when its rebuff answered a buffer, once per answer.
+        assert.strictEqual(Hot.buyOnAnswer(playerSession), false, 'no rebuff answer: no purchase');
+        playerSession.decisionStats = { rebuff: { via: 'buffer', providerId: null, at: 1 } };
+        assert.strictEqual(Hot.buyOnAnswer(playerSession), true, 'a nearby solo bot buys a useful buff on its answer');
         for (let attempt = 0; playerSession.buffServicePending && attempt < 100; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 10));
         }
@@ -225,6 +229,8 @@ async function persistState(current) {
         assert.strictEqual(hotPlayer.backpack.fetchItemFromSelfId(57).fetchAmount(), buyerAfterAuto);
         assert.strictEqual(sellerAfterAuto + buyerAfterAuto, sellerBeforeAuto + autoBuyerAdena,
             'native auto purchase conserves both physical wallets');
+        assert.strictEqual(playerSession.decisionStats.rebuff.done, true, 'the answer is carried out once');
+        assert.strictEqual(Hot.buyOnAnswer(playerSession), false, 'a done answer buys nothing more');
     } finally {
         Policy.hotSkills = originals.skills; Policy.serviceClass = originals.serviceClass;
         Manager.sessions = originals.sessions; Planner.needsSkill = originals.needs;

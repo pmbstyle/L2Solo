@@ -1,12 +1,12 @@
 'use strict';
 
-// Owner: when a solo bot on mobs heals itself, hot and cold alike (T107,
-// docs/game-decisions.md "Solo self-heal"). No fixed HP line:
+// Owner: when a solo bot on mobs heals itself, hot and cold alike.
+// No fixed HP line:
 // - in a fight, only when the bot would not outlive the mob otherwise (the
 //   damage it takes until the mob dies reaches its HP at the fight's pace) and
 //   the heal outgains what the bot loses during its cast;
 // - between fights, when the heal gives HP faster than sitting does (its cast
-//   plus the seated rest that wins its MP back, T100's price), and the bot
+//   plus the seated rest that wins its MP back, at its MP price), and the bot
 //   misses at least what it heals.
 // It reads the hot actor's API: a hot bot, or a cold profile through
 // ColdClassPolicy.actorFor. Party and PvP heals stay the author's
@@ -40,7 +40,7 @@ function selfHeal(semantic, targetKind, periodic) {
 
 // The heals a bot has: { skill, limit (its HP percent at most), amount, mp,
 // castMs }. A cold actor is one fixed profile (ColdClassPolicy.actorFor,
-// fixedProfile): its list is made once (T127 R2); a hot actor's per call
+// fixedProfile): its list is made once; a hot actor's per call
 // (its buffs move its numbers).
 const lists = new WeakMap();
 function candidates(actor, periodic) {

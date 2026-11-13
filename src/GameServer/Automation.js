@@ -10,7 +10,7 @@ class Automation extends SelectedModel {
     static needsGeodataApproach(session, src, dst) {
         const bot = session?.actor === src && (session.constructor?.name === 'BotSession'
             || session.accountId?.startsWith?.('bot_'));
-        return !!bot && src !== dst && !invoke('GameServer/Geodata/GeodataEngine').hasLineOfSight(
+        return !!bot && src !== dst && !invoke('GameServer/Geodata/GeodataEngine').canWalkStraight(
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(),
             dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ()
         );
@@ -578,33 +578,48 @@ class Automation extends SelectedModel {
         return false;
     }
 
+    // The run a body makes to pick an item up from where it stands: where it
+    // ends (`to`; null when the item is taken without a step) and whether the
+    // item can be taken there. C4 (Lisvus): thinkPickUp takes within 36 + the
+    // collision radius; onIntentionPickUp runs to 20 short of the item;
+    // L2Character.moveToLocation ends the run where a straight walk ends
+    // (GeoData.moveCheck). Our choice: no route, so an item behind an obstacle
+    // is out of reach from here for a bot and for a player's click alike
+    // (Lisvus looks for a path for a player). Asked by schedulePickup and by
+    // the party's choice of a collector.
+    static pickupRun(src, dst) {
+        const from = { locX: src.fetchLocX(), locY: src.fetchLocY(), locZ: src.fetchLocZ() };
+        const dx = dst.fetchLocX() - from.locX;
+        const dy = dst.fetchLocY() - from.locY;
+        const distance = Math.hypot(dx, dy);
+        const reach = 36 + Math.max(0, Number(src.fetchRadius?.()) || 0);
+        if (distance <= reach) return { from, to: null, inReach: true };
+        const ratio = Math.max(0, distance - 20) / distance;
+        const end = invoke('GameServer/Geodata/GeodataEngine').straightMoveEnd(from.locX, from.locY, from.locZ,
+            Math.round(from.locX + dx * ratio), Math.round(from.locY + dy * ratio), dst.fetchLocZ());
+        return {
+            from, to: { locX: end.locX, locY: end.locY, locZ: end.locZ },
+            inReach: end.reached || Math.hypot(dst.fetchLocX() - end.locX, dst.fetchLocY() - end.locY) <= reach
+        };
+    }
+
     schedulePickup(session, src, dst, callback) {
         const restrictions = invoke('GameServer/Effects/EffectRestrictions');
         if (!restrictions.canUseBasicAction(src)) return false;
         this.stopMoveInterpolation();
         if (session) session.activeMoveGoal = null;
-        const from = { locX: src.fetchLocX(), locY: src.fetchLocY(), locZ: src.fetchLocZ() };
-        const dx = dst.fetchLocX() - from.locX;
-        const dy = dst.fetchLocY() - from.locY;
-        const distance = Math.hypot(dx, dy);
-        // Lisvus thinkPickUp checks 36 + the actor's collision radius.
-        if (distance <= 36 + Math.max(0, Number(src.fetchRadius?.()) || 0)) {
+        const { from, to, inReach } = Automation.pickupRun(src, dst);
+        if (!to) {
             src.state.setTowards(false);
             callback();
             return true;
         }
-        if (!restrictions.canMove(src)) return false;
+        if (!inReach || !restrictions.canMove(src)) return false;
         const speed = src.state.fetchWalkin?.()
             ? src.fetchCollectiveWalkSpd() : src.fetchCollectiveRunSpd();
         if (!Number.isFinite(speed) || speed <= 0) return false;
-        // Match onIntentionPickUp's 20-unit approach offset. Do not add the
-        // generic movement timer's extra tick to every item in a loot pile.
-        const ratio = Math.max(0, distance - 20) / distance;
-        const to = {
-            locX: Math.round(from.locX + dx * ratio),
-            locY: Math.round(from.locY + dy * ratio),
-            locZ: Math.round(from.locZ + (dst.fetchLocZ() - from.locZ) * ratio)
-        };
+        // Do not add the generic movement timer's extra tick to every item in
+        // a loot pile.
         const ticks = 1000 * Math.hypot(to.locX - from.locX, to.locY - from.locY) / speed;
         session.dataSendToMeAndOthers(ServerResponse.moveToLocation(src.fetchId(), { from, to }), src);
         this.pickupTargetId = dst.fetchId();
@@ -628,6 +643,10 @@ class Automation extends SelectedModel {
         this.clearDestId();
         creature.state?.setTowards?.(false);
         Timer.clear(this.timer.action);
+        // A dropped pickup is over for whoever requested it: PickupExec and
+        // the ground loot queue read the generation.
+        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
+        this.pickupTargetId = null;
         Timer.clear(this.timer.pickup);
 
         const session = creature.session;
@@ -677,10 +696,7 @@ class Automation extends SelectedModel {
     }
 
     abortAll(creature, { notifyClient = true } = {}) {
-        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
-        this.pickupTargetId = null;
         this.abortMovement(creature, { notifyClient });
-        Timer.clear(this.timer.pickup);
     }
 }
 

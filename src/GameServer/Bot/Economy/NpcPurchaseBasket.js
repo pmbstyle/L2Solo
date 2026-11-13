@@ -4,14 +4,15 @@ const Commit = require('./EconomyCommit');
 const Diagnostics = require('./EconomyDiagnostics');
 const SavedStats = require('../SavedStats');
 const InventorySummary = require('../Population/InventorySummary');
+const Trace = require('../DecisionTrace');
 const MAX_LINES = 12;
 
 // No result history: bounded observations use the admission and returned receipt.
 function diagnostic(state, command, phase, reason, fields) {
     if (!Diagnostics.active()) return;
     Diagnostics.count('npc_basket', phase, reason);
-    if (!Diagnostics.enabled(state.characterId)) return;
-    Diagnostics.push({ ...fields, owner: Number(state.characterId), phase, reason, caller: 'NpcPurchaseBasket',
+    if (!Trace.detailed(state.characterId)) return;
+    Trace.detail({ ...fields, owner: Number(state.characterId), phase, reason, caller: 'NpcPurchaseBasket',
         commandId: command?.[0], sequence: command?.[2], revision: Number(state.simulation?.revision),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf) });
 }
@@ -59,13 +60,10 @@ function observe(lines, state, replayed) {
     }
 }
 
-function acceptResult(state, result, previousGoal, observation = null) {
-    const Goals = invoke('GameServer/Bot/Goals/GoalState');
+function acceptResult(state, result, observation = null) {
     let current = state;
     try {
         if (result.coldLifeRow) current = Commit.acceptRow(result.coldLifeRow);
-        if (result.goalRow && Goals.snapshot(state.characterId) === previousGoal) Goals.prime(state.characterId,
-            result.goalRow.goalJson, result.goalRow.updatedAt);
         if (observation && Diagnostics.active()) diagnostic(current, observation.command, 'npc_delivery', 'state_accepted', resultFields(result, observation.seller));
     } catch (error) {
         const row = result.coldLifeRow;
@@ -82,7 +80,6 @@ async function purchase(state, options = {}) {
     if (!options.seller || !Array.isArray(options.lines) || options.lines.length > MAX_LINES
         || !options.lines.length && !options.original) throw Error('invalid npc basket');
     const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const Goals = invoke('GameServer/Bot/Goals/GoalState'), previousGoal = Goals.snapshot(state.characterId);
     const started = Diagnostics.active() ? performance.now() : 0;
     let admitted, result, requestSeller;
     try {
@@ -113,7 +110,7 @@ async function purchase(state, options = {}) {
     }
     // A committed physical transaction cannot become a retryable unpaid action
     // because a cache, telemetry or actor delivery failed afterwards.
-    const current = acceptResult(admitted.state, result, previousGoal, Diagnostics.active()
+    const current = acceptResult(admitted.state, result, Diagnostics.active()
         ? { command: admitted.command, seller: requestSeller } : null);
     const lines = result.lines || [];
     observe(lines, current, result.replayed);

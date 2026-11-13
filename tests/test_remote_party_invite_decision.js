@@ -13,7 +13,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const Income = invoke('GameServer/Bot/Population/PartyIncomeComparison');
+const Income = invoke('GameServer/Bot/Population/PartyProgressComparison');
 const Merchant = invoke('GameServer/Bot/Economy/BotMerchantStoreService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Friends = invoke('GameServer/Bot/AI/BotFriendship');
@@ -59,7 +59,7 @@ async function run() {
         }));
         replace(Income, 'compare', (value) => {
             reviews.push(value.spotId);
-            return { accept: false, reason: 'solo_preferred' };
+            return { accept: false, reason: 'solo_sooner' };
         });
         replace(Population, 'requestActivation', async (value, reason, options) => {
             assert.equal(value, state);

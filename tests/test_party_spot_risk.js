@@ -54,13 +54,20 @@ async function run() {
     // A saved party row's clock marks become steps of the party's rounds once, at load.
     const loadedAt = 2_000_000, clockParty = { partyId: 'clock-party', memberIds: [1, 2] };
     clockParty.stats = Party.marksInSteps({ partySpotRisk: { partyId: 'clock-party', rosterKey: '1,2', rounds: 4,
-        spotBackoffs: [{ spotId: 'risky', startedAt: 1, until: loadedAt + 3 * 60000 }] },
-    coldCompetition: { avoid: { spotId: 'contested', until: loadedAt + 2 * 60000 } } }, 'clock-party', loadedAt);
-    assert.deepStrictEqual([...Party.excludedSpotIds(clockParty)].sort(), ['contested', 'risky']);
+        spotBackoffs: [{ spotId: 'risky', startedAt: 1, until: loadedAt + 3 * 60000 }] } }, 'clock-party', loadedAt);
+    assert.deepStrictEqual([...Party.excludedSpotIds(clockParty)].sort(), ['risky']);
     const roundsLater = n => ({ ...clockParty, stats: { ...clockParty.stats,
         partySpotRisk: { ...clockParty.stats.partySpotRisk, rounds: 4 + n } } });
-    assert.deepStrictEqual([...Party.excludedSpotIds(roundsLater(2))], ['risky'], 'two minutes of avoid last two rounds');
     assert.deepStrictEqual([...Party.excludedSpotIds(roundsLater(3))], [], 'three minutes of a death mark last three rounds');
+    // A party's spot mark (a contest lost at its arrival) holds over its next spot answers, for
+    // this party: a member who joins or leaves makes another party, and the mark goes.
+    const answered = (p, spotId, answerAt) => ({ ...p, spotId, stats: { ...p.stats, partySpot: { spotId, at: answerAt } } });
+    const marked = Party.withMark(answered(party, 'crowded', 1), 'crowded', 'contest_lost');
+    assert(Party.excludedSpotIds(marked, at).has('crowded'), 'the lost spot is excluded');
+    const elsewhere = answered(marked, 'calm', 2);
+    assert(Party.excludedSpotIds(elsewhere, at).has('crowded'), 'a new spot answer keeps the mark: no return to the packed spot');
+    assert.deepStrictEqual(Party.marks(elsewhere).map(mark => mark.spotId), ['crowded']);
+    assert(!Party.excludedSpotIds({ ...elsewhere, memberIds: [1, 2, 3, 4] }, at).has('crowded'), 'a member joined: the mark goes');
     console.log('Party risk: isolated history, persistence, roster changes, real group failures and uncontaminated solo state passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

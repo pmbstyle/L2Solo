@@ -45,6 +45,74 @@ const original = {
     skillReview: BotSkillTraining.review
 };
 
+// A hot body's refused quote (GearMarks) lives on its session; its cached row keeps the
+// activation snapshot. Its next errand, through the real offer query, skips the quote it
+// was refused and only that one, at a board stall or a player's live store, as a cold buyer does.
+function hotQuoteAdmission(bot, town) {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
+    const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+    const { BoardIndex, offerFields } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const saved = { boardIndex: AfkTrade.boardIndex, offerOf: AfkTrade.offerOf, townAt: TownTransitPolicy.townAt,
+        registered: World.registeredActorById, cachedState: LifeState.cachedState, user: World.user };
+    try {
+        const id = 920003;
+        const body = { ...bot, fetchId: () => id, fetchName: () => 'HotQuoteProbe' };
+        const activation = { characterId: id, phase: 'hot', level: 14, simulation: { revision: 1 }, inventory: {},
+            stats: { classId: 0, role: 'dps', money: [77000, 2e-5, 15000, 0, 2e-5, 500, 1] } };
+        let row = activation;
+        const session = { accountId: 'bot_hot_quote_probe', actor: body, plan: 'shopping', partyCompanion: false,
+            coldLifeState: activation,
+            heldEconomy: { decided: true, inputHash: 3, worth: () => 1000,
+                network: { activity: { activity: 'shopping', itemId: 1, amount: 1 } } } };
+        body.session = session;
+        LifeState.cachedState = characterId => Number(characterId) === id ? row : null;
+        World.registeredActorById = characterId => Number(characterId) === id ? body : null;
+        const board = new BoardIndex();
+        board.put({ id: 1, kind: 'shop', storeType: 1, ownerId: 9001, town: town.name, botOwned: true,
+            lines: [{ lineId: 11, selfId: 1, count: 1, price: 600 }] });
+        board.put({ id: 2, kind: 'shop', storeType: 1, ownerId: 9002, town: town.name, botOwned: true,
+            lines: [{ lineId: 21, selfId: 1, count: 1, price: 700 }] });
+        AfkTrade.boardIndex = () => board;
+        AfkTrade.offerOf = (line, at) => ({ ...offerFields(line, at), available: true });
+        World.user = { sessions: [] };
+        const plan = () => CompanionEquipmentShopping.planErrand(session, body, town);
+        assert.strictEqual(plan()?.price, 600, 'fixture: the cheapest stall is planned first');
+
+        // The seller refused the 600 quote (ShoppingState.equipmentPurchaseFailed's raise).
+        const refuse = price => DecisionEvents.raiseDecision(session, 'goal_failed', { impossible: true,
+            payload: { kind: 'gear_errand', key: 1, town: town.name, price, reason: 'afk_trade_shop_unavailable' } });
+        refuse(600);
+        assert.strictEqual(row.stats.gearMarks, undefined, 'fixture: the cached row keeps its activation snapshot');
+        const next = plan();
+        assert.strictEqual(next?.price, 700, 'a hot body refused at a stall plans the next one, not the same quote or none');
+        assert.strictEqual(next.sourceId, 9002);
+
+        // A player's live store refused its 650 quote: not planned again (the row marks it too,
+        // so only the live store's admission decides).
+        const seller = { fetchId: () => 990010, fetchName: () => 'LiveSeller', fetchLocX: () => -84000, fetchLocY: () => 243200,
+            fetchLocZ: () => -3723, fetchIsOnline: () => true, isDead: () => false, fetchPrivateStoreType: () => 1,
+            fetchPrivateStore: () => ({ kind: 'player', storeType: 1, items: [{ selfId: 1, count: 1, price: 650, objectId: 77 }] }) };
+        World.user = { sessions: [{ accountId: 'live_seller', actor: seller }] };
+        TownTransitPolicy.townAt = actor => actor === seller ? town.name : saved.townAt(actor);
+        assert.strictEqual(plan()?.sourceType, 'private_store', 'fixture: the live store is the cheapest offer left');
+        refuse(650);
+        row = { ...activation, stats: { ...activation.stats, gearMarks: DecisionEvents.statsFor(session).gearMarks } };
+        const afterLive = plan();
+        assert.strictEqual(afterLive?.price, 700, 'a refused live store quote is not planned again; the next stall is');
+        assert.strictEqual(afterLive.sourceType, 'afk_bot_store');
+
+        // A mark the body forgot (LIFETIME) no longer hides the stall, though the row still has it.
+        World.user = { sessions: [] };
+        row = { ...activation, stats: { ...activation.stats, gearMarks: [{ key: 1, town: town.name, price: 600 }] } };
+        session.coldLifeState = { ...session.coldLifeState, stats: { ...session.coldLifeState.stats, gearMarks: [] } };
+        assert.strictEqual(plan()?.price, 600, 'a quote mark the body forgot no longer hides that stall');
+    } finally {
+        AfkTrade.boardIndex = saved.boardIndex; AfkTrade.offerOf = saved.offerOf; TownTransitPolicy.townAt = saved.townAt;
+        World.registeredActorById = saved.registered; LifeState.cachedState = saved.cachedState; World.user = saved.user;
+    }
+}
+
 async function run() {
     BotSkillTraining.review = async () => null;
     let purchased = false;
@@ -129,6 +197,7 @@ async function run() {
     };
     const town = { name: 'Talking Island', x: -84081, y: 243227, z: -3723 };
 
+    hotQuoteAdmission(bot, town);
     World.user = { sessions: [] };
     World.npc = { spawns: [npc, alternateNpc] };
     MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
@@ -146,7 +215,6 @@ async function run() {
         'the hot companion must walk to the live NPC that owns the selected shop list');
     assert.strictEqual(session.coldLifeState.stats.equipmentPlan.target.selfId, 1,
         'the refreshed hot equipment plan must be retained on the session');
-
     MarketOpportunity.npcOffers = (selfId, townName) => (
         Number(selfId) === 1 && townName === town.name ? [offer, alternateOffer] : []
     );
@@ -246,6 +314,24 @@ async function run() {
     MarketOpportunity.bestOffer = (_itemId, options = {}) => options.budget >= 500 ? { ...offer, price: 500 } : null;
     assert.strictEqual(CompanionEquipmentShopping.planErrand(nonWish, genericBot, town), null,
         'an autonomous bot cannot spend its earmarked money on an item absent from the packet');
+
+    // One item in two slots: two funded roots of one value per Adena. The hot body budgets its
+    // leaf from its own slot's row, as the cold buyer does: the second slot after the first's money.
+    const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+    const slots = Packet.money({ hourAdena: 77000, moneyPrice: 2e-5, refillReserve: 15000, firstUnfundedPrice: 0 });
+    Packet.addFunded(slots, 4e-5, 100, 1, Packet.MONEY_ROWS, 'power:1:1');
+    Packet.addFunded(slots, 4e-5, 600, 1, Packet.MONEY_ROWS, 'power:1:2');
+    const slotBudget = rootKey => {
+        let budget = null;
+        MarketOpportunity.bestOffer = (_itemId, options = {}) => { budget = options.budget; return null; };
+        CompanionEquipmentShopping.planErrand({ ...genericSession, companionShopping: null,
+            heldEconomy: { decided: true, inputHash: 2, worth: () => 1e9, statsPacket: { money: slots },
+                network: { activity: { activity: 'shopping', itemId: 1, amount: 1, r: 4e-5, rootKey } } } }, genericBot, town);
+        return budget;
+    };
+    const first = slotBudget('power:1:1'), second = slotBudget('power:1:2');
+    assert(first > 100, 'fixture: the first slot can spend');
+    assert.strictEqual(first - second, 100, 'the second slot budgets after the first slot\'s row');
 
     World.user = { sessions: [] };
     MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased

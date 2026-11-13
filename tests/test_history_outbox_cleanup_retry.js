@@ -1,6 +1,6 @@
 'use strict';
 
-// L87: when the history thread reports moved outbox rows, the world deletes
+// When the history thread reports moved outbox rows, the world deletes
 // them through the write queue. A failed delete must not retry at once in a
 // microtask loop (a lasting SQLite fault would spin without yielding); it is
 // retried on the next report from the history thread.

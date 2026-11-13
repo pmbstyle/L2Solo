@@ -1,12 +1,15 @@
 'use strict';
 const { isMainThread } = require('node:worker_threads');
 const { createHash } = require('node:crypto');
+const FailureLog = require('../../../FailureLog');
 const CONTENT_IDENTITY = Symbol('warehouse_content_identity');
 const STOCK_INCLUDED = Symbol('warehouse_stock_included');
 const EMPTY_IDENTITY = createHash('sha256').update('[]').digest('hex');
 let ItemTemplateIndex = null;
-const records = new Map(), pending = new Set();
-let source = id => records.get(id), initialized = false, draining = false, revision = 0;
+// Owners published by a committed transfer before the boot read: their row is
+// newer than (or equal to) what that read can see, so the boot read skips them.
+const records = new Map(), committedBeforeInit = new Set();
+let source = id => records.get(id), initialized = false, revision = 0;
 let ready = null;
 let sourceReady = () => initialized;
 const LIMIT = 64;
@@ -33,21 +36,6 @@ function publish(id, rows) {
     records.set(id, row);
     require('../Population/ColdTableChannel').shared.changed('personal_warehouse', row);
 }
-async function drain() {
-    if (draining || !initialized) return;
-    draining = true;
-    try {
-        const Database = invoke('Database');
-        for (const id of [...pending].slice(0, 8)) {
-            pending.delete(id);
-            publish(id, await Database.fetchWarehouseItems(id));
-        }
-    } catch (error) { utils.infoWarn('BotWarehouse', 'asset projection: %s', error.message); }
-    finally {
-        draining = false;
-        if (pending.size) setImmediate(drain);
-    }
-}
 async function init() {
     if (!isMainThread || initialized) return;
     if (ready) return ready;
@@ -64,11 +52,11 @@ async function initialize() {
         if (list.length < LIMIT) list.push(row);
         byOwner.set(Number(row.characterId), list);
     }
-    for (const [id, items] of byOwner) publish(id, items);
+    for (const [id, items] of byOwner) if (!committedBeforeInit.has(id)) publish(id, items);
+    committedBeforeInit.clear();
     initialized = true;
     // lazy: worker only the main warehouse projection publishes readiness.
     require('../Population/ColdTableChannel').shared.flush();
-    void drain();
 }
 function inventory(state) {
     const row = source(Number(state?.characterId));
@@ -124,7 +112,16 @@ module.exports = { init, inventory, LIMIT, prepareRow, STOCK_INCLUDED,
     },
     version(state) { return Number(source(Number(state?.characterId))?.[1] || 0); },
     hasItems(state) { return !!source(Number(state?.characterId))?.[2]?.length; },
-    changed(id) { if (isMainThread) { pending.add(Number(id)); if (initialized) setImmediate(drain); } },
+    // Main owns the projection. A warehouse write passes the owner's rows read
+    // in its own transaction, so the next reader in the same town visit (the
+    // NPC sale right after a withdrawal) sees the committed stock, not the old.
+    committed(id, rows) {
+        if (!isMainThread) return;
+        try {
+            if (!initialized) committedBeforeInit.add(Number(id));
+            publish(Number(id), rows);
+        } catch (error) { FailureLog.note('warehouse.asset_projection', error); }
+    },
     useRowSource(reader, isReady) {
         source = reader || (id => records.get(id));
         sourceReady = reader ? (isReady || (() => false)) : () => initialized;

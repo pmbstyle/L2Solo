@@ -1,10 +1,9 @@
 'use strict';
 
-// What a review decided, in order (design rules, Agenda; user 11-03): the step the bot
+// What a review decided, in order: the step the bot
 // takes and the steps after it. A step that ends moves the held plan to the next with
 // no weighing; proof, money queue, bids and focus move as one. Only an agenda that has
 // no step left, or a native plan that failed, is a build.
-const Reaction = require('./Reaction');
 const Funding = require('./PurchaseFunding');
 const Network = require('./WishNetwork');
 
@@ -77,17 +76,20 @@ function moved(held, state, leaf, { queue, filled, rest }, ask) {
     const eventProof = Object.freeze({ ...plan.eventProof, activity: ask.identity(leaf),
         decision: Object.freeze([decisionSeq, activityLeaf, focus?.[0] ?? null]) });
     return { ...held, heldUnits: leaf.heldAtDecision, plan: { ...plan, eventProof,
-        statsPacket: { ...statsPacket, decisionSeq, activityLeaf, wishFocus: focus },
+        statsPacket: { ...statsPacket, decisionSeq, activityLeaf, wishFocus: focus, wishSections: ask.baseline(statsPacket.wishSections) },
         network: { ...network, queue, focus, activity: leaf, activityLeaf, decisionSeq, agenda: rest, filled } } };
 }
-// One entry: a held plan's step ended. why: the verdict's reason. A filled step leaves
+// One entry: a held plan's step ended on a town visit (the woken build's own check of
+// its leaf, EconomyContext.forState). why: the check's reason. A filled step leaves
 // the queue, a failed one only the plan: its root keeps its place and the review that
 // ends the agenda reads it, the stages that stood on it wait with it. Both ask for the
 // next seller: here at once, elsewhere after this town's steps. ask: the leaf's own
-// check, the best offer, a step's progress, the bag's count of an item, the identity.
+// check, the best offer, a step's progress, the bag's count of an item, the identity,
+// the baseline the move keeps (it takes the build: the facts now, as a build's, the
+// money thresholds the wallet passed spent).
 // Answers the held entry on its next step, or null: the agenda ended, a build decides.
 function advance(held, state, why, deps, ask) {
-    if (!Reaction.agendaHears(state, why) || deps.fullReview || !held?.plan.network.activity) return null;
+    if (!String(why).startsWith('check:') || deps.fullReview || !held?.plan.network.activity) return null;
     const { network } = held.plan, done = network.activity, agenda = network.agenda;
     if (!agenda) return null;
     // The step's progress, read once (its own check's count): what it brought in leaves the

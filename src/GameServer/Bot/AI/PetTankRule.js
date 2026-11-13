@@ -1,7 +1,7 @@
 'use strict';
 
-// Owner: how a solo owner fights beside its pet (docs/game-decisions.md,
-// "Summoner's pet takes the hits"), the hot SummonerTactics, the cold
+// Owner: how a solo owner fights beside its pet, which takes the hits, for
+// the hot SummonerTactics, the cold
 // BackgroundResolver, the solo gate (BotTargetMatchup) and the offline hunt
 // model alike. The mob hits whoever holds its hate (NpcHate; hate = damage): an
 // owner strikes only if its next hit stays under the pet's hate, so it never
@@ -43,7 +43,7 @@ function ownerCap(petDamage, ownerHit) {
 }
 
 // Does a solo owner under the mob, its pet dead, win with no pet? Then it strikes
-// and the recast waits (docs/game-decisions.md, T163): the cast is long, a new pet
+// and the recast waits: the cast is long, a new pet
 // starts from no hate and cannot take the mob. Below that it recasts, as striking
 // on regardless dies far more. The solo gate's own read, at the HP and MP left:
 // profiles, the bot's side (a pet to raise does not count); enemy, the mob with

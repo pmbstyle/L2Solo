@@ -35,10 +35,10 @@ async function checkDeferred(old, reason) {
     await flush();
     const row = await rowFor(old.characterId), cached = Life.cachedState(old.characterId);
     const request = JSON.parse(row.statsJson).partyRequest;
-    assert.equal(request.status, 'deferred');
-    assert.equal(request.attempts, 3);
-    assert(request.deferredUntil > at);
-    assert.equal(cached.simulation.revision, old.simulation.revision + 1, 'native deferral moves the revision');
+    assert.equal(request.status, 'closed', 'forming\'s no closes the request: no cooldown clock');
+    assert.equal(request.attempts, 3, 'forming\'s no counts one attempt');
+    assert.equal(request.deferredUntil, undefined);
+    assert.equal(cached.simulation.revision, old.simulation.revision + 1, 'native closing moves the revision');
     assert.equal(row.simulationRevision, cached.simulation.revision);
     assert.deepEqual(cached.stats.partyRequest, request, 'cache accepts the exact committed request');
     assert(snapshots.some(packet => packet.state === cached && packet.options.critical && packet.options.reason === 'party_request_deferred'),
@@ -50,9 +50,9 @@ async function checkDeferred(old, reason) {
     try {
         const planned = Request.partyRequestForPlan(workerState, workerState.stats.equipmentPlan, at + 2,
             { economy: { worth: () => 0 } });
-        assert.equal(planned.status, 'deferred', 'worker planning cannot bypass the published pause by rotating sources');
-        assert.equal(planned.deferredUntil, request.deferredUntil);
-        assert.equal(planned.attempts, request.attempts);
+        // The closed request is held until the bot's next build, which asks again.
+        assert.equal(planned.status, 'open', 'the next build asks again');
+        assert.equal(planned.attempts, request.attempts, 'a reopened request keeps its attempts');
     } finally { Material.request = originalRequest; }
     const [stale] = await Owner.commitBatch([{ revision: old.simulation.revision, nextState: old, options: { allowLifecycle: true } }]);
     assert.equal(stale.ok, false);
@@ -68,6 +68,10 @@ async function main() {
     assert.equal(await Life.deferUnformablePartyRequests([incompatible.characterId]), 1);
     await checkDeferred(incompatible, 'no_compatible_level_match');
     assert.equal(await Life.deferUnformablePartyRequests([incompatible.characterId]), 0, 'one rejection increments attempts exactly once');
+    // Forming's no closes a preferred request too: it is not judged again on every move.
+    const preferred = await seed(0, { priority: 'preferred' });
+    assert.equal(await Life.deferUnformablePartyRequests([preferred.characterId], 'forming_refused'), 1);
+    await checkDeferred(preferred, 'forming_refused');
 
     // Native data can change after the preliminary pending-write lookup. Only
     // RETURNING may supply the cache/worker publication, never that old SELECT.
@@ -89,7 +93,7 @@ async function main() {
     assert.equal(fresh.stats.partyRequest.spotId, 'new-source');
     assert.equal(fresh.stats.nativeMarker, 123);
     assert.deepEqual(kernel.states.get(raced.characterId).state.stats.partyRequest, fresh.stats.partyRequest);
-    console.log('PASS both native request deferrals publish exact critical worker snapshots, advance revision and refuse stale steps; concurrent native edits survive');
+    console.log('PASS native request closing publishes exact critical worker snapshots, advances revision and refuses stale steps; concurrent native edits survive');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     Coordinator.markDirty = originalDirty;

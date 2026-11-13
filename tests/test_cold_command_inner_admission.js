@@ -237,6 +237,31 @@ async function unregisteredPromise() {
     assert.equal(result.ok, false); assert.equal(result.reason, 'stale_command');
     assert.deepEqual(await facts(id), before, 'undefined command ownership is never an authority capability');
 }
+// A displaced far bot whose next step is a command: main's command commit writes its
+// grievance (SpotContest.grievance) and counts it once; a retried step's is not written again.
+async function commandGrievance() {
+    const id = await seed(), by = await seed(), Situations = invoke('GameServer/Bot/Situations');
+    const counted = () => Situations.counts().raised['spot:contest:grievance'] || 0, was = counted();
+    const grievance = invoke('GameServer/Bot/Population/SpotContest').grievance({ victim: id, by, step: 3, at: Date.now() - 1 });
+    const run = async () => {
+        const request = { ...command(Life.snapshot(id)), precomputedPlan: { memoryEvents: [grievance] } };
+        const c = new ColdSimulationCoordinator(), sent = [];
+        c.ready = true; c.workerEpoch = `grievance:${request.commandId}`;
+        c.worker = { postMessage(message) { sent.push(clone(message)); }, terminate: async () => {} };
+        c.population = Population;
+        await c.onMessage(Protocol.envelope('command_request', c.workerEpoch, { requests: [request] }, `grievance:${request.commandId}`),
+            c.worker, c.workerEpoch);
+        await c.commandTail;
+        return sent.find(message => message.type === 'command_ack').payload.results[0].ok;
+    };
+    const relation = async () => (await Database.loadInteractionMemories([id]))[0].relations.find(row => row.targetId === by);
+    assert.equal(await run(), true);
+    const held = await relation();
+    assert(held?.hostility > 0, 'the bot holds a grudge against the one that took its spot');
+    assert.equal(counted() - was, 1, 'counted once written');
+    assert.equal(await run(), true, 'a retried step commits again');
+    assert.deepEqual([await relation(), counted() - was], [held, 1], 'its grievance is written and counted once');
+}
 // Native version-family training writes must respect ROW floors.
 async function versionedTraining(key, mode, worker = false) {
     const id = await seed();
@@ -467,6 +492,7 @@ async function check(name, work) {
     await check('actual queued check is synchronous and refused work cleans up', malformedQueued);
     await check('unrelated error identity preserved and planned activity accepted', plannedStateAndFailure);
     await check('a missing registered whole promise is never authority', unregisteredPromise);
+    await check('a command step writes its grievance once', commandGrievance);
     if (failures.length) throw Error(`Inner native admission contracts failed: ${failures.join(', ')}`);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     await Database.close(); if (directory) fs.rmSync(directory, { recursive: true, force: true });

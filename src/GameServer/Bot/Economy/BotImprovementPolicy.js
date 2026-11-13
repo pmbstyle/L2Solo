@@ -130,9 +130,7 @@ function opportunities(state, ctx) {
                     price: price * cost.count, riskHours: ctx.hunt.perHour > 0 ? loss / ctx.hunt.perHour : Infinity }];
             }).filter(row => {
                 const held = positive(state.inventory?.[row.scrollId]?.amount);
-                ctx.quantityInputs?.physical(row.scrollId, held);
                 const cash = row.price - held * ctx.price(row.scrollId);
-                ctx.walletBoundary?.(cash);
                 return cash <= positive(state.adena);
             });
             if (!alternatives.length) continue;
@@ -193,7 +191,6 @@ function crystalPath(state, id, ctx, spots = []) {
     if (!target || target.stage <= 0 || target.stage > 10 || state.level < 40) return null;
     const held = Object.values(state.inventory || {}).filter(row => {
         if (!Native.catalog.crystals[row.selfId] && ![4662,4663,4664].includes(Number(row.selfId))) return false;
-        ctx.quantityInputs?.physical(row.selfId, positive(row.amount));
         return row.amount > 0;
     });
     if (held.length > 1 || held[0]?.amount > 1) return null;

@@ -22,7 +22,7 @@ function actor(id, x = 0, kind = null) {
         automation: { replenishVitals() {}, abortAll() {} }, select() {}, moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
-    replace(Geo, 'hasLineOfSight', () => true);
+    replace(Geo, 'canWalkStraight', () => true);
     const group = [1, 2, 3].map(id => ({ accountId: `bot_hot_party_${id}`, fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader, healer, follower] = group;
@@ -44,7 +44,7 @@ try {
     const AI = { executeCombat: (s, _bot, target) => attacks.push([s.actor.fetchId(), target.fetchId()]) };
     const tick = s => Party.tick(s, s.actor, Generics, AI, 10000);
     wanted.x = 1600;
-    Geo.hasLineOfSight = (_x, _y, _z, x) => x !== wanted.x;
+    Geo.canWalkStraight = (_x, _y, _z, x) => x !== wanted.x;
     tick(leader);
     assert.strictEqual(leader.backgroundHuntTarget, other,
         'a hidden objective mob must not draw the group past a visible local mob');
@@ -52,9 +52,9 @@ try {
     leader.nextBackgroundTargetScanAt = 0;
     attacks.length = 0;
     wanted.x = 400;
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     follower.partyGroundPickupInProgress = true;
-    follower.partyGroundPickupDeadlineAt = 15000;
+    follower.partyGroundPickupRun = 0;
     tick(leader);
     assert.strictEqual(leader.lastDecision.action, 'party_wait_loot', 'a fresh pull waits for the physical collector');
     assert.strictEqual(attacks.length, 0);
@@ -179,7 +179,7 @@ try {
     available = [remote];
     spot.arrivalPoints = [{ locX: 2800, locY: 0, locZ: 0 }];
     Geo.getCellData = () => ({ nswe: 15, z: 0 });
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     leader.actor.move = null;
     searchTick(leader, 68000);
     assert.strictEqual(leader.actor.move, null, 'hidden mobs and spawn points cannot lure the group out');
@@ -187,7 +187,7 @@ try {
 
     const crowd = [1, 2, 3, 4, 5].map(n => actor(100 + n, n * 100, 'Monster'));
     available = crowd;
-    Geo.hasLineOfSight = (_x, _y, _z, x) => x === 500;
+    Geo.canWalkStraight = (_x, _y, _z, x) => x === 500;
     searchTick(leader, 74000);
     assert.strictEqual(leader.backgroundHuntTarget, null);
     assert.strictEqual(leader.lastDecision.action, 'party_search_visibility');
@@ -195,12 +195,12 @@ try {
     searchTick(leader, 76000);
     assert.strictEqual(leader.backgroundHuntTarget, crowd[4], 'blocked candidates cannot starve a visible fifth mob');
 
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     leader.incoming = other;
     searchTick(leader, 78000);
     assert.strictEqual(attacks.at(-1)[1], other.fetchId(), 'visibility filtering must not erase an actual attacker');
     leader.incoming = null;
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
 
     const NpcIndex = require('../src/GameServer/World/NpcObjectIndex');
     const stale = actor(8801, 50, 'Monster'), replacement = actor(8802, 50, 'Monster');

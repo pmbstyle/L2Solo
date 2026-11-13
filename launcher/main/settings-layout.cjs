@@ -3,13 +3,13 @@
 // Presentation only: the server still reads every INI key normally.
 const hiddenFields = {
     BotPopulation: new Set([
-        'enabled', 'developerDiagnostics', 'coldWorkerHeapSnapshot', 'economyDiagnostics', 'economyDiagnosticsBotIds',
+        'enabled', 'developerDiagnostics', 'coldWorkerHeapSnapshot', 'decisionTrace',
         'backgroundResolverEnabled', 'backgroundPartyEnabled', 'opportunisticRaidsEnabled', 'opportunisticRaidAliveFraction',
-        'opportunisticRaidSearchIntervalMs', 'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
+        'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
         'opportunisticRaidMaxParties', 'opportunisticRaidMaxFightSeconds', 'opportunisticRaidShotReserve', 'opportunisticRaidExpeditionMs',
         'phasePolicyEnabled', 'backgroundGovernorEnabled', 'backgroundJobTickMs', 'backgroundGovernorWindowMs',
         'backgroundGovernorIdleBudgetMs', 'backgroundGovernorPlayerBudgetMs', 'backgroundGovernorIdleDbQueueMax',
-        'backgroundGovernorPlayerDbQueueMax', 'backgroundGovernorLagAbortMs', 'partyHistoryRetentionMs', 'partyHistoryCleanupBatchSize',
+        'backgroundGovernorPlayerDbQueueMax', 'backgroundGovernorLagAbortMs', 'partyHistoryRetentionMs', 'partyHistoryCleanupBatchSize', 'classMix',
         'activationRadius', 'maxActivationsPerScan', 'activationFloorDirectZ',
         'activationFloorGeoChecksPerScan', 'activationFloorCacheMs', 'activationFloorCacheLimit'
     ]),

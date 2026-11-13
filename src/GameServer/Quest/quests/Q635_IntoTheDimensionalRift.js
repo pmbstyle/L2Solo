@@ -9,7 +9,6 @@
 // two-way passage. A Dimension Keeper outside a catacomb remembers which one you
 // came from and sends you to the rift outpost; any Rift Post soldier there sends
 // you back to that same catacomb. The whole quest is that round trip.
-// See docs/c4/quests/imported-quests.md.
 const KEEPERS = Array.from({ length: 14 }, (_, index) => 8494 + index);
 const RIFT_POST = Array.from({ length: 6 }, (_, index) => 8488 + index);
 

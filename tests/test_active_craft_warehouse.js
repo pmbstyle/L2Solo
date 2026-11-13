@@ -50,17 +50,6 @@ try {
         'the exact craft accounts for stored units without treating them as executable');
     assert.deepEqual(stockFor(1864, 'resale:1890'), { owned: 0, incoming: 0 },
         'production cannot consume the equipment kit from its warehouse');
-    // A proof row under a root's scope reads what that root reads.
-    for (const root of ['power:300:14', 'power:301:14', 'resale:1890']) for (const id of [1864, 1869, 4113, 9999])
-        assert.deepEqual(stockFor(id, stockFor.scope(root, id)), stockFor(id, root), `${root} on ${id}`);
-    const unplanned = invoke('GameServer/Bot/Economy/EconomyContext').stockReader(
-        { ...state, stats: { ...state.stats, equipmentPlan: null } }, () => 0);
-    const { createQuantityInputs, quantityInputsHold } = invoke('GameServer/Bot/Economy/WishNetwork');
-    const quantities = createQuantityInputs();
-    for (const root of ['power:300:14', 'power:301:14'])
-        quantities.stock(1864, root, unplanned(1864, root), unplanned.scope(root, 1864));
-    assert.equal(quantityInputsHold(quantities.finish(), { stockFor }), false,
-        'a craft plan adopted after the build makes its root read the warehouse: the proof sees it');
     const protectedStock = { ...state, inventory: { ...state.inventory,
         1864: { ...state.inventory[1864], reservedAmount: 5 } } };
     const available = Policy.available(protectedStock, Object.values(Index.inventory(state)));
@@ -75,17 +64,9 @@ try {
     assert.equal(trip?.stats.travel.reason, 'craft_warehouse');
     const grouped = { ...state, partyId: 'test-party', activity: 'grouped' };
     assert.equal(Warehouse.beginCraftReturn(grouped, 1800000000000), null, 'the solo path never moves a party member');
-    const groupTrip = Warehouse.beginCraftReturn({ ...grouped, activity: 'hunting' }, 1800000000000, { allowParty: true });
-    assert.equal(groupTrip?.stats.travel.reason, 'craft_warehouse');
     const material = invoke('GameServer/Bot/Population/CraftMaterialParty');
     assert.equal(material.remaining(grouped, { targetId: 300, itemId: 1864, requiredTotal: 6 }), 0,
         'material party completion counts the owner’s reserved warehouse stock');
-    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
-    const party = { partyId: 'test-party', stats: { objective: { objectiveKey: 'test-hunt' } } };
-    const ticket = PartyBreak.warehouseDeparture(party, grouped, groupTrip, 1800000000000);
-    assert.equal(ticket.stats.partyMarketReturn.cleanupReason, 'craft_warehouse');
-    assert.equal(PartyBreak.warehouseDeparture({ ...party, stats: { ...party.stats, warOperation: { id: 'war' } } },
-        grouped, groupTrip, 1800000000000), null, 'a warehouse break cannot interrupt war');
     const oldProject = { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 455,
         target: { selfId: 284, slot: 14 }, heldInputs: { 1864: 1 } };
     const currentPlan = { ...state.stats.equipmentPlan, inputPreparation: oldProject };
@@ -190,38 +171,6 @@ try {
         assert.equal(Trade.retainedProjectIntents(reserved, { moneyPrice: 1 }, () => 100)
             .find(row => row.itemId === olderPart.selfId)?.amount, olderPart.amount,
         'pieces reserved for another obligation do not satisfy this craft');
-        const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-        const board = new BoardIndex(), record = {};
-        const review = require('../src/GameServer/Bot/Population/CraftMarketReview');
-        const candidate = { ...activePersonal, activity: 'hunting', stats: { ...activePersonal.stats, money: [1, 1, 0, 0] } };
-        // The review stands on facts, not a clock: due when a need is short and
-        // its facts (the need, own bids, the board's lines of the item) moved.
-        assert.equal(review.personalBidDue(candidate, record, board), true,
-            'a missing piece with no order gets a natural review at once');
-        assert.equal(review.personalBidDue(candidate, record, board), false,
-            'an unsuccessful review cannot spin while nothing moves');
-        board.put({ id: 870, ownerId: 42, storeType: 1, kind: 'sell_ad', town: 'Giran',
-            lines: [{ lineId: 871, selfId: olderPart.selfId, count: 1, price: 90 }] });
-        assert.equal(review.personalBidDue(candidate, record, board), true,
-            'a seller of the piece on the board is a new fact: reviewed promptly');
-        assert.equal(review.personalBidDue(candidate, record, board), false);
-        board.put({ id: 880, ownerId: candidate.characterId, storeType: 3, kind: 'buy_ad', town: 'Giran',
-            lines: [{ lineId: 881, selfId: olderPart.selfId, count: olderPart.amount, price: 100 }] });
-        assert.equal(review.personalBidDue(candidate, record, board), false,
-            'a sufficient standing bid suppresses an unnecessary replan');
-        board.remove(880);
-        assert.equal(review.personalBidDue(candidate, record, board), true, 'its own bid gone, the need is reviewed again');
-        const retainedOnly = { ...candidate, stats: { ...candidate.stats, equipmentPlan: {
-            status: 'active', strategy: 'direct_drop', target: { selfId: 76, slot: 7 }, inputPreparation: older
-        } } };
-        const retainedBoard = new BoardIndex();
-        assert.equal(review.personalBidDue(retainedOnly, {}, retainedBoard), true,
-            'a missing standing order is recovered even after switching to another goal');
-        const behindClan = { ...candidate, stats: { ...candidate.stats, equipmentPlan: { ...clanPlan, inputPreparation: older } } };
-        assert.equal(review.personalBidDue(behindClan, {}, retainedBoard), true,
-            'a clan objective cannot suppress the personal project behind it');
-        assert.equal(review.personalBidDue({ ...behindClan, stats: { ...behindClan.stats, equipmentPlan: clanPlan } }, {}, retainedBoard), false,
-            'a clan objective alone does not schedule a personal review');
     } finally { planner.considerable = originalConsiderable; }
     const clanBids = Trade.retainedProjectIntents(clanState, { moneyPrice: 1 }, () => 100);
     assert(clanBids.some(row => row.itemId === root.recipeItemId && row.amount === 1),
@@ -255,20 +204,6 @@ try {
             equipmentPlan: { ...offerState.stats.equipmentPlan, next: { itemId: 4113, kind: 'material_drop' } } } };
         assert.deepEqual(Choice.clanCraftPurchase(partFirst, econ, board), [1, root.recipeItemId, 1, 810, 811, 1, 500],
             'a recipe can be bought while the bot pursues a different key input');
-        const review = require('../src/GameServer/Bot/Population/CraftMarketReview');
-        const clanRecord = {};
-        clanRecord.clanMarketSeen = review.clanInputDue(partFirst, clanRecord, board);
-        assert(clanRecord.clanMarketSeen, 'the indexed review sees a recipe offer while the selected next input is a piece');
-        assert.equal(review.clanInputDue(partFirst, clanRecord, board), '',
-            'a reviewed offer is not reviewed again while nothing moves');
-        board.put({ id: 812, ownerId: 45, storeType: 1, kind: 'sell_ad', custodyPolicy: 1, revision: 1, town: 'Giran',
-            lines: [{ lineId: 813, selfId: root.recipeItemId, count: 1, price: 400 }] });
-        assert(review.clanInputDue(partFirst, clanRecord, board), 'a new offer of the recipe is reviewed at once');
-        board.remove(812);
-        const station = { ...partFirst, stats: { ...partFirst.stats, equipmentPlan: { ...partFirst.stats.equipmentPlan,
-            craftProviders: { [root.recipeId]: { publicStation: true } } } } };
-        assert.equal(review.clanInputDue(station, {}, board), '',
-            'a public station does not schedule a recipe purchase');
         const twoTowns = new BoardIndex();
         twoTowns.put({ id: 820, ownerId: 43, storeType: 1, kind: 'sell_ad', custodyPolicy: 1, revision: 1, town: 'Elven Village',
             lines: [{ lineId: 821, selfId: root.recipeItemId, count: 1, price: 100 }] });
@@ -370,9 +305,12 @@ try {
                 let result; do { result = it.next(); } while (!result.done);
                 return result.value;
             };
-            assert.equal(run(pausedRoot).buyAds?.[0]?.[0], 4113,
+            const funded = { ...pausedRoot, stats: { ...pausedRoot.stats, money: [100, .01, 0, 0] } };
+            assert.equal(run(funded).buyAds?.[0]?.[0], 4113,
                 'a temporary pricing failure carries the still-needed standing piece bid');
-            assert.deepEqual(run({ ...pausedRoot, inventory: { ...pausedRoot.inventory, 4113: item(4113, 2) } }).buyAds, [],
+            assert.deepEqual(run({ ...funded, adena: 100 }).buyAds, [],
+                'a pricing failure cannot preserve a standing bid the wallet cannot fund');
+            assert.deepEqual(run({ ...funded, inventory: { ...funded.inventory, 4113: item(4113, 2) } }).buyAds, [],
                 'the same bid may retire after the required pieces arrive');
         } finally {
             [Listing.traderContext, Listing.evaluate, Needs.evaluate, BuyAds.linesFor, BuyAds.goalMoney, Town.chooseTown] = saved;
@@ -381,6 +319,7 @@ try {
     }
     const visited = { ...state, stats: { ...state.stats, craftWarehouseVisit: trip.stats.craftWarehouseVisit } };
     assert.equal(Warehouse.beginCraftReturn(visited, 1800000000001), null, 'an unchanged failed visit cannot spin');
+    assert(Warehouse.beginCraftReturn(visited, 1800000000001, { decided: true }), 'the build\'s next waking situation asks it again');
     const changedBag = { ...visited, inventory: { ...visited.inventory, 1864: item(1864, 3) } };
     assert(Warehouse.beginCraftReturn(changedBag, 1800000000002), 'new loot can wake the same warehouse stock');
     const atStation = { ...state, inventory: { ...state.inventory, 1864: item(1864, 6), 1869: item(1869, 9) } };

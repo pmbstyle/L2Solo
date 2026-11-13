@@ -10,7 +10,7 @@ useRate('x50');
 const fs = require('node:fs'), path = require('node:path'), { Worker } = require('node:worker_threads');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-Config.staticShotsDisabled = false;
+assert.equal(Config.staticShotsDisabled, false, 'configured shot fallback is enabled for all bots by default');
 const Evidence = require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const Offers = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -28,7 +28,6 @@ async function nativePurchase(quote) {
     const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
     const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-    const Goals = invoke('GameServer/Bot/Goals/GoalState');
     const { character, amount } = require('./helpers/nativeMarketFixture');
     fixture.assertConfigured(options.default);
     await Database.init();
@@ -64,9 +63,7 @@ async function nativePurchase(quote) {
             'legacy goal publication cannot duplicate the native configured purchase');
         assert.deepEqual(BuyAds.linesFor(buyer, goal, { watchList: [], townFor: () => quote.town }), [],
             'the complete legacy buy batch cannot duplicate the native configured purchase');
-        const saved = await Goals.set(buyer.characterId, { ...goal, status: 'active' });
-        assert(saved);
-        const result = await Market.tryPurchase(buyer, saved.current);
+        const result = await Market.tryPurchase(buyer, goal);
         assert.equal(result.purchased, true);
         assert.equal(result.units, 25);
         const items = await Database.fetchItems(buyer.characterId);
@@ -82,7 +79,7 @@ async function nativePurchase(quote) {
         assert.equal(trades[0].unitPrice, quote.unitPrice);
         assert.equal(trades[0].town, quote.town);
         console.log('PASS selected configured quote reaches physical inventory/wallet and named market history');
-    } finally { await Afk._resetForTests(); Goals.reset(); await Database.close(); }
+    } finally { await Afk._resetForTests(); await Database.close(); }
 }
 async function workerQuote() {
     const observer = String.raw`

@@ -1,5 +1,5 @@
 'use strict';
-// Task 4 B5 N1: purchase -> material receipt -> craft -> equip on the real
+// Purchase -> material receipt -> craft -> equip on the real
 // native station recipe 198 (Crystal Staff). The bot holds part of the input,
 // a stubbed board meeting delivers the rest, the station crafts one staff and
 // the bot wears it: one product, equipped, the gear goal closed once.

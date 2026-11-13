@@ -82,7 +82,7 @@ async function run() {
     await Database.setCharacterRecipe(crafter.characterId, 20, 'dwarven');
     await Database.setSkill({ selfId: 172, name: 'Create Item', passive: false, level: 8 }, crafter.characterId);
     await Database.setSkill({ selfId: 248, name: 'Crystallize', passive: false, level: 1 }, crafter.characterId);
-    crafter = await Workshop.review(crafter);
+    crafter = await Workshop.publishListing(crafter);
     assert(Workshop.boardRecords().some(row => row.ownerId === crafter.characterId && row.entries.some(entry => entry.recipeId === 1)));
     assert.equal(Workshop.lookup(crafter.characterId, 1, { characterId: 800001, stats: {} }).entryPrice,
         invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe));
@@ -167,7 +167,9 @@ async function run() {
     const listing = await invoke('GameServer/Bot/Economy/ColdMarketListingService').open(craftedState,
         { town: craftedState.currentRegion });
     const records = Afk.ownerRecords(crafter.characterId);
-    const delivered = held(await Database.fetchItems(buyer.characterId), 1463);
+    // A far buyer's goods wait on the board for its own commit.
+    const [owed] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = 1463', [buyer.characterId]]);
+    const delivered = held(await Database.fetchItems(buyer.characterId), 1463) + Number(owed.amount);
     assert(listing.listed || delivered > 0 || records.some(record => record.lines.some(line => line.selfId === 1463)),
         `crafted surplus reaches its real board buyer or sell record: ${listing.reason}`);
     assert(delivered > 0 || records.some(record => record.lines.some(line => line.selfId === 1463)));

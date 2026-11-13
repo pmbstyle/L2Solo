@@ -1,5 +1,5 @@
 'use strict';
-// T141 (docs/game-decisions.md "Potions to save rest"): a solo bot drinks a
+// Potions to save rest (our choice): a solo bot drinks a
 // healing potion between fights when the rest it saves, at its own hour, is
 // worth more than the bottle's NPC price; one rule hot and cold; its potion
 // stock buys what the rule drinks.
@@ -34,7 +34,8 @@ function bot(classId, { hp = 1, mp = 1, bottles = 10, hour = 600000, keep = 0 } 
     state.characterId = 7000 + classId;
     state.vitals = { hp: profile.maxHp * hp, maxHp: profile.maxHp, mp: profile.maxMp * mp, maxMp: profile.maxMp };
     state.inventory[POTION] = { selfId: POTION, amount: bottles };
-    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: Packet.stockTargets({ potionId: POTION, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: keep }) } : {}) };
+    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], earning: { shotsPerHour: 0, potionsPerHour: keep }, kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: POTION,
+        potionUse: keep, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 }) } : {}) };
     return { state, profile };
 }
 
@@ -152,8 +153,10 @@ try {
     const seconds = cycle.rest * cycle.kph * 2;
     assert(stock.target * 336 / seatedPerSecond < seconds * 1.2,
         `the outing's stock saves no more than the outing's rest (${stock.target} bottles, ${seconds} s)`);
+    // Above its line (no survival drinks at 0 deaths) the stock is no field wish: the town visit buys it.
     const wish = Economy.forState(hunter(1e7), { timestamp: T }).network.queue.find(entry => entry.key === 'stock:potions');
-    assert(wish?.valueHours > 0, 'the stock is a wish of its own, at 0 deaths too');
+    assert.equal(wish, undefined, 'no field wish for the rest bottles: the visit buys them');
+    assert(stock.missing > 0 && stock.benefitPerUnit > 0, 'the visit\'s amount is worth buying');
     const poor = Economy.basics(hunter(price * 3), { timestamp: T }).stock('potions');
     assert(poor.target <= stock.survivalTarget + 3, `the wallet bounds the stock (${poor.target})`);
     const walletless = Economy.basics(hunter(0), { timestamp: T }).stock('potions');
@@ -161,7 +164,6 @@ try {
     // A build that keeps its foundation (a money build: the wallet is no
     // foundation section) bounds the stock by the wallet it has now.
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         // A held build proves itself only under a published code identity.
         const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration'), generation = Generation.metadata();
         Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
@@ -170,7 +172,8 @@ try {
         Economy.forget(native.characterId);
         const built = Economy.forState(native, { timestamp: T });
         const poorer = hunter(price * 3);
-        const dirty = { ...poorer, stats: { ...poorer.stats, ...built.statsPacket, wishDirty: Sections.sectionBit('money') } };
+        // A build woken while the bot is poorer (goal_affordable, its step's gate) reads that wallet.
+        const dirty = { ...poorer, stats: { ...poorer.stats, ...built.statsPacket } };
         const kept = Economy.forState(dirty, { timestamp: T, caller: 'step' }).stock('potions');
         const fresh = Economy.basics(dirty, { timestamp: T }).stock('potions');
         assert.equal(kept.target, fresh.target, `a money build reads the wallet it has (${kept.target}, ${fresh.target} fresh)`);

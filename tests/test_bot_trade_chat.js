@@ -63,7 +63,7 @@ async function main() {
             [500000, '500k'], [999999, '1kk'], [1500000, '1.5kk'], [1550000, '1.6kk'], [0, ''], [-1, ''], [NaN, '']]) {
             assert.strictEqual(Chat.price(input), expected);
         }
-        // The bots' stalls are gone (step 3.3): a merchant's tick says nothing;
+        // The bots' stalls are gone (the board replaced them): a merchant's tick says nothing;
         // the trade chat announces the board's records (below).
         reset();
         Merchant.tick(materialize(cold()));

@@ -63,7 +63,7 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     return instance;
 }
 
-// The spawns the spot catalogue counts (T123, SpotService.ensureIndexed):
+// The spawns the spot catalogue counts (SpotService.ensureIndexed):
 // one NPC per spawn definition of the game day, both periods, at its
 // datapack place (a territory's: a point drawn from a stream seeded by the
 // definition's place in the datapack), an ordinary group leader with its

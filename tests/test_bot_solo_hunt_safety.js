@@ -36,7 +36,7 @@ assert(Match.soloSurvival([fragile, servitor], target).eligible, 'native profile
 const withSummon = (owner, hp = servitor.maxHp) => Match.coldProfiles(owner, { stats: { coldCombat: {
     summon: { ...servitor, active: true, hp, expiresAt: at + 60000 }
 } } }, at);
-// The pet tanks first, as in C4 (user 10-29): a fragile owner hunts behind a
+// The pet tanks first, as in C4: a fragile owner hunts behind a
 // sound pet, not behind a pet with its HP nearly gone.
 assert(Match.soloSurvival(withSummon(fragile), target).eligible, 'a cold summon tanks for a fragile owner');
 assert(!Match.soloSurvival(withSummon(fragile, 1), target).eligible, 'a pet at 1 HP shields nothing');
@@ -117,7 +117,7 @@ try {
                 cycleMs: 60000, adena: spot === unsafe ? 100000 : 1000, costs: 100,
                 loot: 0, exp: 100, kills: 1 });
         }
-        assert.equal(Route.select(hunter, { spots: Spots.cache, timestamp: at, required: true })?.spot.id,
+        assert.equal(Route.search(hunter, { spots: Spots.cache, timestamp: at, required: true }).route?.spot.id,
             safe.id, 'the earning selector rejects higher income on mobs the equipped bot cannot survive');
         assert.equal(Spots.findForState(hunter, { timestamp: at, occupancy: {} })?.id, safe.id,
             'an active unsafe gear source cannot override ordinary hunt safety for a clan member or a solo bot');
@@ -355,8 +355,9 @@ async function run() {
     Cold.profileFor = Cold.fightProfile = () => ({ ...mage, accur: 100, evasion: 0, critical: 0, effects: [] });
     const savedCache = Spots.cache;
     try {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-        const ground = Sections.sectionBit('occupation') | Sections.sectionBit('sources');
+        const Situations = invoke('GameServer/Bot/Situations');
+        // Its ground raised: its earning spot and its build woken (spot_empty).
+        const ground = stats => Situations.woken(stats, 'earning_spot') && Situations.woken(stats, 'build');
         const stranded = { ...state, spotId: hard.id, simulation: { revision: 1 }, updatedAt: at,
             stats: { ...state.stats, lastReason: 'no_safe_solo_target' },
             timing: { activityStartedAt: at - 60000, lastResolvedAt: at - 60000, nextResolveAt: at } };
@@ -365,14 +366,14 @@ async function run() {
         assert.strictEqual(empty.debug.attemptedFights, 0, 'no spawn of the spot admits a fight alone');
         assert.strictEqual(empty.patch.stats.lastReason, 'no_safe_solo_target');
         const raised = await Life.prepareResolve(stranded, empty, { timestamp: at, persist: false, projectClassProgression: true });
-        assert.strictEqual(Number(raised.stats.wishDirty) & ground, ground, 'the empty spot raises its ground');
+        assert(ground(raised.stats), 'the empty spot raises its ground');
         Spots.cache = [hard, easy];
         assert.strictEqual(Spots.findForState(raised, { matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id, easy.id,
             'the search the raise asks leaves for ground the bot can hunt');
-        const next = { ...raised, stats: { ...raised.stats, wishDirty: 0 } };
+        const next = { ...raised, stats: { ...raised.stats, woken: 0 } };
         const again = Resolver.resolveSolo({ state: next, spot: hard, elapsedMs: 60000, timestamp: at + 60000, rng: () => 0.5 });
         const kept = await Life.prepareResolve(next, again, { timestamp: at + 60000, persist: false, projectClassProgression: true });
-        assert.strictEqual(Number(kept.stats.wishDirty) || 0, 0, 'a later empty round of the stay raises nothing');
+        assert(!((Number(kept.stats.woken) || 0) & Situations.BITS.build), 'a later empty round of the stay raises nothing');
     } finally { Cold.profileFor = originalProfile; Cold.fightProfile = originalFight; Spots.cache = savedCache; }
 
     // The same rule near a player: after the scans of the whole spot found no
@@ -380,20 +381,25 @@ async function run() {
     // killed out for now (its spawns admit the bot) raises nothing.
     const SpotService = invoke('GameServer/Bot/AI/SpotService'), Decision = invoke('GameServer/Bot/AI/BotDecisionService');
     const Tactics = invoke('GameServer/Bot/AI/SummonerTactics'), Rest = invoke('GameServer/Bot/AI/RestPolicy');
-    const savedCurrent = SpotService.findCurrentSpot, savedActor = Match.actorProfiles, savedReady = Match.actorReadyProfiles;
+    const savedFind = SpotService.findById, savedCurrent = SpotService.findCurrentSpot, savedActor = Match.actorProfiles, savedReady = Match.actorReadyProfiles;
     try {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-        const ground = Sections.sectionBit('occupation') | Sections.sectionBit('sources');
+        const Situations = invoke('GameServer/Bot/Situations');
+        const raisedOn = stats => Number(Situations.woken(stats, 'build'));
         Match.actorProfiles = Match.actorReadyProfiles = () => [{ ...mage, accur: 100, evasion: 0, critical: 0, effects: [] }];
         const body = (field, id, mp = 900) => ({ actor: { fetchId: () => id, fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
             fetchKarma: () => 0, fetchMp: () => mp },
-            coldLifeState: { ...state, characterId: id, spotId: field.id, stats: { ...state.stats } }, noTargetTicks: 3,
+            // A body that holds its decisions (woken none, its answers held).
+            coldLifeState: { ...state, characterId: id, spotId: field.id, stats: { ...state.stats, woken: 0,
+                wishSections: state.stats.wishSections || {}, equipmentPlan: null, earning: { spotId: field.id, at: 1 },
+                huntSpot: { spotId: field.id } } }, noTargetTicks: 3,
             heldEconomy: { decided: true, network: { activity: { activity: 'hunting', spotId: field.id } } } });
         const look = { available: true, mode: 'hunting', blockers: [], loc: { locX: 0, locY: 0, locZ: 0 } };
         SpotService.findCurrentSpot = () => hard;
-        const near = body(hard, 990008), dirty = () => Number(near.coldLifeState.stats.wishDirty) || 0;
+        // The body holds its field (an answer naming its ground), as a body that has decided.
+        SpotService.findById = id => [hard, easy].find(x => String(x.id) === String(id)) || savedFind.call(SpotService, id);
+        const near = body(hard, 990008), dirty = () => raisedOn(near.coldLifeState.stats);
         assert.strictEqual(Decision.suggest(look, near).reason, 'ground_unhuntable', 'a hot body on ground it cannot hunt raises it');
-        assert.strictEqual(dirty() & ground, ground);
+        assert.strictEqual(dirty(), 1);
         const seq = near.coldLifeState.stats.decisionSeq;
         assert.strictEqual(Decision.suggest(look, near).reason, 'selected_hunting_ground', 'once per empty streak');
         assert.strictEqual(near.coldLifeState.stats.decisionSeq, seq);
@@ -404,7 +410,7 @@ async function run() {
         SpotService.findCurrentSpot = () => easy;
         const killedOut = body(easy, 990009);
         assert.strictEqual(Decision.suggest(look, killedOut).reason, 'selected_hunting_ground', 'a spot only killed out for now');
-        assert.strictEqual(Number(killedOut.coldLifeState.stats.wishDirty) || 0, 0);
+        assert.strictEqual(raisedOn(killedOut.coldLifeState.stats), 0);
         // A summoner short only of its pet (the route's view, stubbed here, admits
         // the ground with the pet up): it raises the pet out of the fight when it
         // can, sits when the summon's MP is missing, waits on its feet while the
@@ -424,7 +430,7 @@ async function run() {
                 Tactics.summonSkill = () => castable ? { fetchSelfId: () => 1276 } : null;
                 summoner.noTargetTicks = 3;
                 const decision = Decision.suggest(look, summoner);
-                return [decision.action, decision.reason, summoner.noTargetTicks, Number(summoner.coldLifeState.stats.wishDirty) || 0];
+                return [decision.action, decision.reason, summoner.noTargetTicks, raisedOn(summoner.coldLifeState.stats)];
             };
             const pet = body(hard, 990010, 900), drained = body(hard, 990011, 10), cooling = body(hard, 990012, 900);
             assert.deepStrictEqual(decide(pet, true), ['summon', 'ground_needs_pet', 0, 0], 'it raises its pet out of the fight');
@@ -435,13 +441,13 @@ async function run() {
             assert.strictEqual(decide(cooling, false)[1], 'ground_unhuntable', 'a second wait on the stay raises its ground');
             const failed = decide(pet, true);
             assert.strictEqual(failed[1], 'ground_unhuntable', 'a summon that brought no pet raises its ground');
-            assert.strictEqual(failed[3] & ground, ground);
+            assert.strictEqual(failed[3], 1);
         } finally {
             Object.assign(Tactics, tactics);
             Rest.restWaitsForMana = waitsForMana;
             Match.spotShares = shares;
         }
-    } finally { SpotService.findCurrentSpot = savedCurrent; Match.actorProfiles = savedActor; Match.actorReadyProfiles = savedReady; }
+    } finally { SpotService.findById = savedFind; SpotService.findCurrentSpot = savedCurrent; Match.actorProfiles = savedActor; Match.actorReadyProfiles = savedReady; }
 
     let stalled = { ...state, stats: { ...state.stats, spotRisk: recoveredRisk } };
     for (let i = 0; i < 3; i++) {

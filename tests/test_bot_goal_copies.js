@@ -17,7 +17,7 @@ const PartyMarketBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const RequiredPartyFormation = invoke('GameServer/Bot/Population/RequiredPartyFormation');
 
-// Pins of the goal rules that live in several copies (step 1.4): rest
+// Pins of the goal rules that live in several copies: rest
 // thresholds, the inventory cleanup goal, stale shopping and party request
 // expiry, limits and objective spot.
 const now = 1_750_000_000_000;
@@ -50,8 +50,8 @@ assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })),
 
 // Genuine floor positives are separate from the unchanged ratio probes.
 const dead = bot(FIGHTER, ratios(0, 1), { activity: 'dead' });
-assert.deepStrictEqual(NeedsEvaluator.evaluate(dead, { now }), [{ type: 'recover', priority: 100,
-    target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' }, blockers: [] }]);
+assert.deepStrictEqual(NeedsEvaluator.evaluate(dead, { now }), [{ type: 'recover',
+    target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' } }]);
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Data = invoke('GameServer/DataCache');
 const wind = Data.skills.find(skill => Number(skill.selfId) === 1177);
@@ -63,9 +63,9 @@ caster.stats.coldCombat = Profile.legacySnapshot(caster, [{ selfId: 1177, level:
 assert.deepStrictEqual(caster.stats.coldCombat.skills.map(skill => [skill.selfId, skill.level, skill.mp]),
     [[1177, 1, rank.mp]], 'the owned capture preserves the authored cost');
 const cannotCast = { ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) - 1 } };
-assert.deepStrictEqual(NeedsEvaluator.evaluate(cannotCast, { now }), [{ type: 'recover', priority: 100,
+assert.deepStrictEqual(NeedsEvaluator.evaluate(cannotCast, { now }), [{ type: 'recover',
     target: { hpPct: undefined, mpPct: undefined },
-    plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }]);
+    plan: { kind: 'rest', expectedBenefit: 'restore_vitals' } }]);
 assert.strictEqual(recover({ ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) } }), false,
     'an affordable required cast removes the mandatory mana floor');
 assert.strictEqual(recover({ ...cannotCast, stats: { ...cannotCast.stats,
@@ -127,7 +127,7 @@ assert.strictEqual(partyRest(bot(MYSTIC, ratios(1, 0.19))), false);
 assert.strictEqual(partyRest(bot(TANK, ratios(1, 0.17))), true, 'a party tank rests for MP');
 assert.strictEqual(partyRest(bot(FIGHTER, ratios(1, 0.05))), false, 'a party fighter does not rest for MP');
 
-// Rest: activation near a player asks the same rule (step 1.5).
+// Rest: activation near a player asks the same rule.
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 0.1))), false,
     'activation: a solo fighter does not sit for MP');
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.34, 1))), true,
@@ -146,7 +146,7 @@ assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), true);
 
 // Inventory cleanup: the goal planner's goal.
-const originalNeed = ItemDisposition.inventoryCleanupNeed;
+const originalNeed = ItemDisposition.inventoryCleanupNeed, originalCounted = ItemDisposition.cleanupCounted;
 let needCalls = 0;
 const capacity = { reason: 'inventory_capacity', slots: 81, limit: 80, npcOnlySlots: 3 };
 ItemDisposition.inventoryCleanupNeed = () => { needCalls += 1; return capacity; };
@@ -161,46 +161,37 @@ try {
     const fullBag = { ...emptyBag, inventory: { [book.selfId]: { selfId: book.selfId,
         name: book.template.name, kind: book.template.kind, amount: 81, stackable: false,
         instances: Array.from({ length: 81 }, (_, i) => ({ id: 9600000 + i, amount: 1, equipped: false })) } } };
-    assert.deepStrictEqual(NeedsEvaluator.evaluate(fullBag, { now }), [{ type: 'sell_inventory', priority: 100,
+    assert.deepStrictEqual(NeedsEvaluator.evaluate(fullBag, { now }), [{ type: 'sell_inventory',
         target: { itemCount: 81, npcOnlySlots: undefined, cleanupReason: 'no_slot' },
-        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' },
-        blockers: [] }], 'a real 81-instance bag imposes the mandatory unload');
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' } }], 'a real 81-instance bag imposes the mandatory unload');
 
-    // Inventory cleanup: the clan-duty market break takes only a bag over 80.
+    // Inventory cleanup: the clan-duty market break takes only a bag over 80 (the
+    // fixture's bag fact at a count, its count the mocked need).
+    ItemDisposition.cleanupCounted = () => true;
     const clanParty = { partyId: 'clan-party', stats: { objective: { priority: 'required', clanGoalKey: 'clan:1' } } };
     const member = bot(FIGHTER, ratios(1, 1), { characterId: 42 });
-    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), true);
-    const breakGoal = PartyMarketBreak.goal(clanParty, member, { type: 'progress_level' }, now);
+    const breakGoal = PartyMarketBreak.goal(clanParty, member, now);
     assert.deepStrictEqual(breakGoal, {
-        type: 'sell_inventory', status: 'active', priority: 96,
+        type: 'sell_inventory', status: 'active',
         target: { itemCount: 81, npcOnlySlots: 3, cleanupReason: 'inventory_capacity' },
-        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' },
-        blockers: []
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' }
     }, 'the clan break goal is the planner cleanup goal');
     const callsBefore = needCalls;
-    const given = PartyMarketBreak.memberNeed(clanParty, member, now);
-    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now, given), true);
-    assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, null, now, given), breakGoal);
+    const given = PartyMarketBreak.bagNeed(member, now);
+    assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, now, given), breakGoal);
     PartyMarketBreak.departure(clanParty, member, { stats: {} }, now, given);
     assert.strictEqual(needCalls, callsBefore + 1, 'a passed need walks the bag once');
-    assert.strictEqual(PartyMarketBreak.memberNeed({ partyId: 'free', stats: {} }, member, now), null);
-    assert.strictEqual(needCalls, callsBefore + 1, 'an ordinary party does not walk the bag');
     const departure = PartyMarketBreak.departure(clanParty, member, { activity: 'traveling', stats: {} }, now);
     assert.deepStrictEqual(departure.stats.partyMarketReturn, {
         partyId: 'clan-party', characterId: 42, until: now + 15 * 60 * 1000,
         objective: { priority: 'required', clanGoalKey: 'clan:1' }, startedAt: now,
         cleanupReason: 'inventory_capacity', slots: 81, limit: 80
     });
-    const freeParty = { partyId: 'free', stats: {} };
-    const current = { type: 'sell_inventory' };
-    assert.strictEqual(PartyMarketBreak.goal(freeParty, member, current, now), current,
-        'an ordinary party keeps the member goal');
     ItemDisposition.inventoryCleanupNeed = () => ({ reason: 'npc_only_inventory', slots: 10, limit: 80 });
-    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now), false);
-    assert.strictEqual(PartyMarketBreak.goal(clanParty, member, current, now), null,
+    assert.strictEqual(PartyMarketBreak.goal(clanParty, member, now), null,
         'NPC junk does not break a clan duty');
 } finally {
-    ItemDisposition.inventoryCleanupNeed = originalNeed;
+    ItemDisposition.inventoryCleanupNeed = originalNeed; ItemDisposition.cleanupCounted = originalCounted;
 }
 assert(needCalls > 0);
 
@@ -220,24 +211,6 @@ assert.strictEqual(BackgroundResolver.staleShopping(shopper()), true);
 assert.strictEqual(BackgroundResolver.staleShopping(shopper({ supplyErrand: { itemId: 57 } })), false);
 assert.strictEqual(BackgroundResolver.staleShopping(shopper({ marketReturn: { spotId: 'home' } })), false);
 assert.strictEqual(BackgroundResolver.staleShopping(shopper({}, 'Giran')), false);
-
-// Party request expiry on the main thread.
-const request = (priority, age, extra = {}) => ({
-    ...bot(FIGHTER, ratios(1, 1)),
-    stats: { partyRequest: { status: 'open', priority, requestedAt: now - age, attempts: 2, objectiveKey: 'k', reviewAt: 5, ...extra } }
-});
-const fresh = request('required', 15 * 60 * 1000 - 1);
-assert.strictEqual(PopulationService.expirePartyRequestForState(fresh, now), fresh);
-assert.deepStrictEqual(PopulationService.expirePartyRequestForState(request('required', 15 * 60 * 1000), now).stats.partyRequest, {
-    status: 'deferred', priority: 'required', requestedAt: now - 15 * 60 * 1000, attempts: 3, objectiveKey: 'k', reviewAt: 5,
-    deferredUntil: now + 5 * 60 * 1000, expiredAt: now
-});
-const preferredFresh = request('preferred', 5 * 60 * 1000 - 1);
-assert.strictEqual(PopulationService.expirePartyRequestForState(preferredFresh, now), preferredFresh);
-assert.strictEqual(PopulationService.expirePartyRequestForState(request('preferred', 5 * 60 * 1000), now)
-    .stats.partyRequest.status, 'deferred');
-const deferred = request('required', 99 * 60 * 1000, { status: 'deferred' });
-assert.strictEqual(PopulationService.expirePartyRequestForState(deferred, now), deferred);
 
 // Party size limits: the main thread and the worker's formation proposal.
 assert.deepStrictEqual(PopulationService.partyLimitsForObjective(null), { maxSize: 5, minSize: 2, levelRange: undefined });
@@ -260,14 +233,6 @@ assert.strictEqual(RequiredPartyFormation.spotFor(bot(FIGHTER, ratios(1, 1), { s
 // The shared party request rules the main thread, the worker and the SQL
 // batch read.
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
-assert.strictEqual(PartyRequestPlanner.maxAgeMs('required'), 15 * 60 * 1000);
-assert.strictEqual(PartyRequestPlanner.maxAgeMs('preferred'), 5 * 60 * 1000);
-assert.strictEqual(PartyRequestPlanner.cooldownMs(), 5 * 60 * 1000);
-const open = request('preferred', 5 * 60 * 1000).stats.partyRequest;
-assert.deepStrictEqual(PartyRequestPlanner.expire(open, now), {
-    ...open, status: 'deferred', deferredUntil: now + 5 * 60 * 1000, expiredAt: now, attempts: 3
-});
-assert.strictEqual(PartyRequestPlanner.expire(undefined, now), undefined);
 assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective({ clanOperation: 'equipment', clanId: 3 },
     { minSize: 2, maxSize: 5, levelRange: 4 }), { maxSize: 5, minSize: 2, levelRange: 99 });
 assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective(null, { minSize: 3, maxSize: 4, levelRange: 6 }),

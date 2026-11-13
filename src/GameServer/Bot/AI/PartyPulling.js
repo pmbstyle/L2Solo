@@ -240,7 +240,7 @@ function cancelForRevival(leaderSession) {
 
 function attackRange(actor, target) {
     const role = BotRoles.inferRole(actor);
-    // The reach of a usable skill, not whether its MP pays now (T100 price).
+    // The reach of a usable skill, not whether its MP pays now (its MP price).
     const combat = BotCombatUtility.select(actor, target, role, { priceMana: false });
     const skillRange = Number(combat?.range);
     // This predicate decides whether normal combat may begin, rather than

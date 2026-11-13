@@ -57,25 +57,8 @@ function* reservations(state) {
     return Disposition.reservedEquipmentAmounts(state);
 }
 
-function* feasibility(state, { board, read = () => {} }, reserved = null) {
-    reserved ||= yield* reservations(state);
-    if (!reserved || !board) return null;
-    const Look = invoke('GameServer/Bot/Economy/BoardLook'), lines = board.ownerLines(state.characterId);
-    if (lines.length > Look.MAX_OWNED_LINES) return null;
-    let hash = 0x811c9dc5, blocked = 0, at = 0;
-    for (const line of lines) {
-        read(line.selfId); hash = Look.lineFingerprint(hash, line);
-        if (line.storeType === 1 && Look.indexedFeasibility(state, line, reserved) === false) blocked |= 1 << at;
-        at++; yield 'owned';
-    }
-    return [hash, blocked, lines.length];
-}
-
-// Whether a cold look may keep an own SELL line on sale: the mask's rule
-// (feasibility) on the state it looks at, its reservations read once at the
-// first line asked. A built mask describes its build's state and keys only the
-// lines, not the reservations and item flags its bits read, so a held build's
-// mask is no answer for a later state.
+// Whether a look may keep an own SELL line on sale (BoardLook.indexedFeasibility) on
+// the state it looks at, its reservations read once at the first line asked.
 function canSell(state, lines) {
     const Look = invoke('GameServer/Bot/Economy/BoardLook');
     let reserved;
@@ -111,8 +94,8 @@ function fixedBuyerOffersFor(id) {
     return Production.buyersDisabled() ? EMPTY : fixedBuy.get(Number(id)) || EMPTY;
 }
 
-// One value of an owned item for the wish and the producer (user 2026-10-10,
-// Q1): what the bot gets selling one unit now. NPC buyback, the top
+// One value of an owned item for the wish and the producer:
+// what the bot gets selling one unit now. NPC buyback, the top
 // QUOTE_DEPTH board bids of others and the enabled fixed buyers.
 function* exitValue(state, id, board = null) {
     initialise();
@@ -147,9 +130,11 @@ function craftLabour(state, timestamp = Date.now(), profile = null) {
 }
 
 // A bot with no plan hunts on and shops nothing: each reason says so once per
-// thread, with the first bot it met, for the live log.
+// thread, with the first bot it met, for the live log; told (prepare's onNoPlan): the
+// asker that counts its own unknown answer by the reason.
 const noPlanSeen = new Set();
-function noPlan(reason, state) {
+function noPlan(reason, state, told = null) {
+    told?.(reason);
     if (!noPlanSeen.has(reason)) {
         noPlanSeen.add(reason);
         utils.infoWarn('ColdWork', 'no occupation plan: %s (first bot %d)', reason, Number(state.characterId));
@@ -158,18 +143,17 @@ function noPlan(reason, state) {
 }
 
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
-    routeRows = null, routeKey = null, targetRecipe = null } = {}) {
+    routeRows = null, routeKey = null, targetRecipe = null, onNoPlan = null } = {}) {
     const packet = state.stats?.money;
-    if (!board) return noPlan('no_board', state);
-    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state);
-    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state);
-    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state);
+    if (!board) return noPlan('no_board', state, onNoPlan);
+    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state, onNoPlan);
+    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state, onNoPlan);
+    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state, onNoPlan);
     const admission = targetRecipe ? null : recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
     if (admission) readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
-    if (!reserved) return noPlan('unknown_reservations', state);
-    const preparedFeasibility = targetRecipe ? null : yield* feasibility(state, { board, read }, reserved);
+    if (!reserved) return noPlan('unknown_reservations', state, onNoPlan);
     const targetItems = targetRecipe ? new Set([Number(targetRecipe.productId), Number(targetRecipe.recipeItemId),
         ...(targetRecipe.materials || []).map(row => Number(row.selfId))]) : null;
     const ownStock = new Map(), routes = [];
@@ -180,7 +164,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
         ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(Packet.hourAdena(packet)) }) : null;
     const context = { timestamp, state, insideContext: true, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)),
-        survivalReserve: Number(Packet.survivalReserve(packet)), ...craftLabour(state, timestamp),
+        refillReserve: Number(Packet.refillReserve(packet)), ...craftLabour(state, timestamp),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
@@ -245,6 +229,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     // search prices the same input for batches 1..64 and across recipes.
     // A board change of a read item invalidates the request (planner
     // validation), so a table never outlives the board it was read from.
+    // A crafter buys its inputs and recipe only in the town it stands in (no
+    // errand to another town, ColdMarketService.acquire; temporary: cross-town
+    // craft errands return when the market is redesigned): none in the field.
     const purchaseTables = new Map();
     const preparePurchase = function* (owner, id, amount, query = {}) {
         read(id);
@@ -252,19 +239,20 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         const tableKey = `${Number(owner.characterId)}:${Number(id)}:${npc ? 1 : 0}`;
         let table = purchaseTables.get(tableKey);
         if (!table) {
+            const here = owner.activity === 'shopping' ? owner.currentRegion : null;
             // Static NPC stock is the only unlimited ingredient source admitted here.
-            const npcOffers = npc ? npcOffersFor(id) : EMPTY;
-            const towns = new Set(npcOffers.map(offer => offer.town));
-            // Every town of the list: an amount reads past the first asks until one town holds it.
-            for (const town of board?.towns(id, 1) || []) towns.add(town);
-            for (const town of towns) { if (townOrdinal.has(town)) yield* ensureTrip(town); yield 'quote'; }
-            table = OfferQuery.townTable(board, id, { quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
-                accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner), npcOffers, cost: trip });
+            const npcOffers = npc && here ? npcOffersFor(id).filter(offer => offer.town === here) : EMPTY;
+            if (here && townOrdinal.has(here)) yield* ensureTrip(here);
+            yield 'quote';
+            // The units other bots' trips claim are gone for this buyer (OfferQuery.takeableUnits).
+            table = OfferQuery.townTable(board, id, { towns: [here], quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
+                accept: line => !Number(line.enchant || 0) && OfferQuery.admits(line, owner),
+                countOf: line => OfferQuery.takeableUnits(line, owner), npcOffers, cost: trip });
             purchaseTables.set(tableKey, table);
         }
         const best = OfferQuery.cheapestIn(table, amount);
         yield 'candidate';
-        return best ? { ...best, tripDetails: trip.details(best.town), repeatable: best.npc === amount, routeKey: best.town } : null;
+        return best ? { ...best, tripDetails: trip.details(best.town), routeKey: best.town } : null;
     };
     const gearRowsFor = function* (rank) {
         for (const gear of gearByRank.get(rank) || []) {
@@ -274,26 +262,26 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             for (const offer of npcOffersFor(gear.selfId)) {
                 const price = Number(offer.price);
                 if (price > 0) yield { ...gear, source: 'npc', price, cash: price, count: 1,
-                    town: offer.town, ownerId: 0, repeatable: true };
+                    town: offer.town, ownerId: 0 };
                 else yield null;
             }
             let depth = 0;
             for (const line of board?.list(gear.selfId, 1) || []) {
                 if (depth++ === QUOTE_DEPTH) break;
                 if (Number(line.ownerId) !== Number(state.characterId) && !Number(line.enchant || 0) && Number(line.price) > 0
-                    && personalOfferAllowed(line, state)) {
+                    && OfferQuery.admits(line, state)) {
                     yield { ...gear, source: 'afk', price: Number(line.price), cash: Number(line.price), count: Number(line.count),
-                        town: line.town, ownerId: Number(line.ownerId), offer: line, repeatable: false };
+                        town: line.town, ownerId: Number(line.ownerId), offer: line };
                 } else yield null;
             }
         }
     };
-    return { context, feasibility: preparedFeasibility, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
+    return { context, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
         unknownRecipes: () => admission ? admission.rowsFor(craftLevel) : [],
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,

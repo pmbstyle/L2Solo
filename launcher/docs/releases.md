@@ -4,16 +4,12 @@
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The next stable versions are launcher `0.2.3` and server `0.1.2`. Schema-2 server packages still require launcher `0.2.0` or newer; this update does not raise the updater protocol requirement. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first. After its native jobs pass and the complete release is public, publish the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable server version is `0.1.3`, reusing the published launcher `0.2.3` installers. Schema-2 server packages still require launcher `0.2.0` or newer. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. If a release also updates the launcher, publish it first and wait for its native jobs and complete public release before publishing the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
 # After review, commit and integration of the intended release source:
-git tag launcher-v0.2.3
-git push origin launcher-v0.2.3
-
-# Wait for the launcher release workflow and all platform artifacts.
-git tag server-v0.1.2
-git push origin server-v0.1.2
+git tag server-v0.1.3
+git push origin server-v0.1.3
 ```
 
 Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI requires the tagged commit to be in `main`. Future server-only releases reuse the same launcher binaries until a new launcher version is published. PRs never publish releases. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases, but no longer trigger new publications.

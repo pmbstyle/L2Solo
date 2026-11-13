@@ -5,6 +5,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
@@ -43,12 +44,11 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         coordinator.worker = { postMessage: message => messages.push(message) }; coordinator.workerEpoch = 'plan:test';
         coordinator.tableChannel.flush = () => {};
         coordinator.reviewCommittedEconomy = async value => value;
-        stub(invoke('GameServer/Bot/Goals/GoalService'), 'review', async () => null);
         stub(Life, 'enqueueEquipmentGoalAdvanceForState', () => {});
         stub(invoke('GameServer/Bot/Population/BotLifeEvents'), 'recordMany', async () => {});
         stub(invoke('GameServer/Bot/Population/BotGlobalChat'), 'maybeAnnounce', () => {});
         const proposal = { revision: 0,
-            nextState: state, result: { events: [] }, economyEdges: 1,
+            nextState: state, result: { events: [] },
             economyPlan: { sell: [], withdraw: [line.lineId], buyAds: [], travel: null } };
         const result = { ok: true, characterId: id, nextState: state, proposal };
         // The worker's side of a commit: it flushes the proposal, takes main's
@@ -105,20 +105,18 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         const sentHash = fnv1a32(JSON.stringify(proposal.economyPlan));
         Object.assign(kernel.states.get(id), { economyPending: 1, economyPlanHash: sentHash });
         coordinator.ready = true;
-        const beforeRefused = messages.length;
+        const beforeRefused = messages.length, raised = [];
+        stub(Events, 'raiseOn', async (who, name, payload) => { raised.push([who, name, payload]); return null; });
         const refused = await review(moved.review);
         assert.equal(refused.ok, false);
         assert.equal(refused.reason, 'stale_command');
         assert.equal(onBoard(), true, 'a refused review withdraws nothing');
-        // The refused plan is no longer the one sent: the worker's refresh that
-        // reproduces it sends it again (ColdSimulationWorker publish), and main
-        // asks for that refresh after the ack that made the worker forget it.
+        // A race proves nothing about the stop: the plan is forgotten as sent and the
+        // held step stays (no goal_failed:visit, no rebuild), so the next step resends it.
         assert.equal(kernel.states.get(id).economyPlanHash, null, 'the refused review forgets the plan as sent');
-        assert.equal(kernel.states.get(id).economyPending, 1, 'the next state still asks for a refresh');
-        const after = messages.slice(beforeRefused).map(message => message.type === 'snapshot_page'
-            ? (message.payload.economyOwnerId === id && message.payload.reconcile === true ? 'refresh' : 'page') : message.type);
-        assert(after.indexOf('refresh') > after.indexOf('command_ack') && after.indexOf('command_ack') >= 0,
-            'main asks for the refresh after the refused ack');
+        assert.equal(kernel.states.get(id).economyPending, 1, 'the next state still pages the plan');
+        assert(messages.slice(beforeRefused).some(message => message.type === 'command_ack'), 'the refused review is acked');
+        assert.deepEqual(raised, [], 'a refused review raises no outcome: its held step stays');
         coordinator.ready = false;
         // The next step proposes the same plan again and its review runs it.
         const applied = await commit();
@@ -126,7 +124,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         assert.equal(onBoard(), false, 'the review command executes the committed plan');
         const heavy = coordinator.reviewCommittedEconomy;
         coordinator.reviewCommittedEconomy = () => { throw Error('ordinary_loot_main_pass'); };
-        assert.equal((await commit({ economyPlan: undefined, economyEdges: 0 })).review, null,
+        assert.equal((await commit({ economyPlan: undefined })).review, null,
             'an ordinary commit with nothing to review sends no review command');
         coordinator.reviewCommittedEconomy = heavy;
         assert.equal(Population.startLifecycleEconomyEvents, undefined);
@@ -174,7 +172,8 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
             'a same-quantity standing bid cannot retain a price above the worker prepared purchase limit');
         await assert.rejects(Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [],
             buyAds: [[1867, 5, 110]], buyCaps: [105], travel: null }, { step: work => work() }),
-        /economy_plan_bid_cap/, 'native publication rejects a quote above its prepared limit');
+        /economy_plan_bid_cap/, 'a quote above its prepared limit is a plan main and the worker disagree on: a fault');
+        assert.equal(Afk.ownerRecords(id).find(row => row.kind === 'buy_ad').lines[0].price, 100, 'the refused quote is not published');
         const standing = Afk.ownerRecords(id).find(row => row.kind === 'buy_ad');
         const bid = standing.lines[0];
         await Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
@@ -210,7 +209,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         await Afk.repriceBot(id, repriced.lines[0].id, 95, repriced.revision);
         state = await Life.upsertState({ ...Life.cachedState(id), activity: 'resting' }, 'resting_bid_fixture');
         await coordinator.afterCommit({ ...result, nextState: state, proposal: { ...proposal,
-            nextState: state, market: undefined, economyPlan: undefined, economyEdges: 0 } });
+            nextState: state, market: undefined, economyPlan: undefined } });
         assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 80,
             'an ordinary resting commit corrects a standing bid even without a wish plan or new market event');
         assert.equal(Life.cachedState(id).adena, walletBefore);

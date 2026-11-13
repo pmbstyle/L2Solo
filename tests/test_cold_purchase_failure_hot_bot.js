@@ -40,7 +40,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
         const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-        const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 
         DataCache.init();
         require('./helpers/huntingReturnFixture')('field', { locX: 100, locY: 200, locZ: -10 }, 'Field');
@@ -53,15 +52,15 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             reconcileBotClanGoals: Database.reconcileBotClanGoals,
             buyFromShop: AfkTrade.buyFromShop,
             bestOffer: MarketOpportunity.bestOffer,
-            reserve: MarketOpportunity.reserve,
-            clearGoal: GoalState.clear
+            reserve: MarketOpportunity.reserve
         };
 
         const bot = (characterId, extra = {}) => ({
-            characterId, accountName: `bot${characterId}`, name: `Buyer${characterId}`, level: 40, adena: 1000,
+            // A purse that pays the 1000 Adena sword above its reserve: the trades below are committed or refused by the store.
+            characterId, accountName: `bot${characterId}`, name: `Buyer${characterId}`, level: 40, adena: 100000,
             phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
             inventory: {
-                57: { selfId: 57, name: 'Adena', amount: 1000 },
+                57: { selfId: 57, name: 'Adena', amount: 100000 },
                 1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7, rank: 'none', kind: 'Weapon.Sword' }
             },
             stats: {
@@ -82,8 +81,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             Database.updateCharacterProgress = async () => {};
             Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
             Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
-            const goalClears = [];
-            GoalState.clear = (characterId) => { goalClears.push(characterId); return Promise.resolve(null); };
             MarketOpportunity.bestOffer = () => ({ ...afkOffer });
             MarketOpportunity.reserve = () => true;
             // The trade finds the bot hot: the AFK sync returns no cold state (H1).
@@ -116,17 +113,17 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                 target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8, adena: 24090 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
             assert.strictEqual(blocked.reason, 'incompatible_loadout', 'fixture: the shield is blocked');
             assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
-            assert(!goalClears.includes(86), 'the hot bot\'s goal is left to the cold side, as its plan is');
             assert(!bought.wanted, 'no trade-chat wish for a hot bot');
 
-            // A cold bot's failed purchase is written as before: it returns to its field.
+            // A cold bot's failed purchase is written as before: it returns to its field. A trade
+            // whose cold state did not sync is a failure (counted), not a seller's refusal.
             MarketOpportunity.bestOffer = () => ({ ...afkOffer });
             const cold = bot(78);
             await BotLifeState.upsertState(cold, 'seed');
             const coldFailed = await ColdMarketService.tryPurchase(cold, goal);
-            assert.strictEqual(coldFailed.reason, 'offer_changed');
+            assert.strictEqual(coldFailed.reason, 'purchase_failed');
             assert.strictEqual(BotLifeState.snapshot(78).phase, 'cold');
-            assert.strictEqual(BotLifeState.snapshot(78).activity, 'traveling', 'a cold bot without its purchase returns to farming');
+            assert.strictEqual(BotLifeState.snapshot(78).activity, 'resting', 'a cold bot without its purchase ends its visit: the worker returns it to farming');
             assert.strictEqual(BotLifeState.snapshot(78).stats.lastReason, 'market_no_offer_return');
 
             console.log('Cold purchase failure with a hot bot checks passed');
@@ -144,7 +141,6 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             AfkTrade.buyFromShop = originals.buyFromShop;
             MarketOpportunity.bestOffer = originals.bestOffer;
             MarketOpportunity.reserve = originals.reserve;
-            GoalState.clear = originals.clearGoal;
             // The outer fixture closes the native connection before retaining this exit code.
         });
     } finally {

@@ -52,7 +52,7 @@ for (const result of run('future-has-executable-alternative', [alternative, read
     assert.equal(result.gap?.key, 'future', 'a supported saving goal still holds the money');
     assert(result.activity);
 }
-for (const result of run('survival-reserve-preserved', [ready], { wallet: 20, survivalReserve: 20 })) {
+for (const result of run('survival-reserve-preserved', [ready], { wallet: 20, refillReserve: 20 })) {
     assert.equal(result.activity, null); assert.equal(result.available, 0); assert.equal(result.queue[0].funded, false);
 }
 for (const result of run('both-funded', [node('future', 100, 10, { executable: true, availableUnits: 1 }), ready], { wallet: 100 })) {
@@ -138,6 +138,7 @@ const mixed = moneyQueue([{ key: 'dream', valueHours: 100, price: 10, supported:
 assert.deepEqual(mixed.queue.map(row => [row.key, row.funded]), [['dream', false], ['bread', true], ['boots', false]]);
 assert.equal(mixed.gap.key, 'boots'); assert.equal(mixed.available, 4);
 const packet = PurchaseFunding.packetFor(mixed, 100, 0);
-assert.equal(packet.length, 7, 'the funded row after an unsupported one is published');
-assert.equal(packet[5], 4);
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+assert.equal(Packet.fundedRows(packet), 1, 'the funded row after an unsupported one is published');
+assert.deepEqual([Packet.fundedCumulative(packet, 0), Packet.fundedRoot(packet, 0)], [4, Packet.rootId('bread')]);
 done('money packet skips unsupported rows');

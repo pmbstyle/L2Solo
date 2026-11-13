@@ -13,10 +13,9 @@ const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Consumption = require('../Economy/ConsumptionDiagnostics');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const DecisionEvents = require('../AI/DecisionEvents');
-const DecisionSections = require('../Economy/DecisionSections');
-const Reaction = require('../Economy/Reaction');
-const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const Situations = require('../Situations');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -64,6 +63,18 @@ cache.subscribePublications(({ characterId, state, previousState }) => {
         notifyClassMigrationPending();
     }
 });
+// The lifecycles a bot's own row carries (its party request, its clan errands, a stay trip's return ticket), traced at
+// the commit that changes them: every committed state lands here (a step's commit, a main write, a native reply), a
+// projection never does; the boot's load (no state before) is no event. A stay trip's expiry is counted with the
+// trace off too.
+cache.subscribePublications(({ state, previousState }) => {
+    if (workerProjectorRole || !state || !previousState) return;
+    if (previousState.stats?.partyMarketReturn !== state.stats?.partyMarketReturn)
+        invoke('GameServer/Bot/Population/PartyMarketBreak').traceCommitted(previousState, state);
+    if (!Trace.on()) return;
+    invoke('GameServer/Bot/Population/PartyRequestPlanner').traceCommitted(previousState, state);
+    invoke('GameServer/Clan/ClanPurchaseCredit').traceCommitted(previousState, state);
+});
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -75,7 +86,7 @@ function notifyMarketReviewState(state, previous) {
     if (previous?.phase === state.phase && left.revision === right.revision) return;
     for (const listener of marketReviewListeners) {
         try { listener(state.characterId); }
-        catch (error) { utils.infoWarn('BotLife', 'market lifecycle listener failed: %s', error.message); }
+        catch (error) { FailureLog.note('botlife.market_listener', error); }
     }
 }
 
@@ -90,7 +101,7 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
         try {
             listener(state, reason);
         } catch (error) {
-            utils.infoWarn('BotLife', 'state change listener failed: %s', error.message);
+            FailureLog.note('botlife.change_listener', error);
         }
     });
     if (!state?.characterId || state.phase !== 'cold') return;
@@ -107,41 +118,95 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
     handle.unref?.();
 }
 
+// A near body's fight on its row (session.coldLifeState), recorded as a far round's
+// so a death near a player keeps the bot off that spot as a far death does.
+// outcome: won (its kill, NpcDied) or died (Die; pvp: a playable killed it), each one fight.
+// The spot's record (SpotRiskPolicy.recordHunt: risk window, death mark, leveling recovery)
+// takes only what a far hunting round's does: a fight with a monster on the spot it hunts
+// (SpotService.arrivedAt). A PvP death only adds to deaths, as a far one (ColdPvpResolver);
+// a fight off its spot (on the road, in town) is no hunt there. Main only; the row reaches
+// the worker by the body's next post.
+function recordNearFight(session, state, { won = false, died = false, pvp = false, timestamp = now() } = {}) {
+    const stats = state.stats || {};
+    const fights = died && pvp ? 0 : 1;
+    const counted = { fightsWon: Number(stats.fightsWon || 0) + (won ? 1 : 0),
+        fightsResolved: Number(stats.fightsResolved || 0) + fights, deaths: Number(stats.deaths || 0) + (died ? 1 : 0) };
+    const actor = session.actor;
+    const loc = actor && { locX: actor.fetchLocX?.(), locY: actor.fetchLocY?.(), locZ: actor.fetchLocZ?.() };
+    const spotId = fights && SpotService.arrivedAt(session.currentSpot, loc) ? session.currentSpot.id : null;
+    if (spotId == null) return { ...state, stats: { ...stats, ...counted } };
+    const exp = Number(actor?.fetchExp?.() ?? state.exp ?? 0);
+    // The held step's leaf, as the body's target scan reads it.
+    const leaf = session.heldEconomy?.network.activity || session.activationEconomyDecision?.activity;
+    const hunt = SpotRiskPolicy.recordHunt(state, { spotId, timestamp, fights: 1, wins: won ? 1 : 0, deaths: died ? 1 : 0,
+        itemHunt: String(leaf?.spotId) === String(spotId) && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(leaf),
+        exp, expBeforeDeath: died ? Number(actor?.deathExperience?.expBeforeDeath ?? exp) : exp });
+    return { ...state, stats: { ...stats, ...hunt, ...counted } };
+}
+
 // A near bot's body moved a fact (reason: bag, equip, level, death, revive,
-// near_spot, activated): its row goes to its slot in the worker, whose one fact
+// near_spot, near_left, activated): its row goes to its slot in the worker, whose one fact
 // function decides whether that is an event. A delivery, not a save: neither
-// the cache nor the database is written. The row is built on the next turn, so
-// it reads the body after the change; several changes in one turn stay one
-// queue entry per bot. The far poster's gate above stays for far bots.
+// the cache nor the database is written. The row is built once on the next turn
+// (session.nearPost: the turn's reasons), so it reads the body after every change
+// of the turn (a loot of several kinds is one post) and its facts are detected
+// once against the previous post: no situation is lost, the latest bag wins.
+// The far poster's gate above stays for far bots.
+// Does this body post its facts at all (a bot's own body, not an arena copy)? An
+// activating one posts once activated.
+const nearPosts = session => !!session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true;
+// A body's arrival on a spot and its leave are the spot aggregate's arrivals on the
+// background thread (its hot arrival hook): its post is critical (sent at once).
+const SPOT_POSTS = new Set(['near_spot', 'near_left']);
 function notifyNearFacts(session, reason) {
-    if (!session?.accountId?.startsWith?.('bot_') || session.arenaEphemeral === true) return;
+    if (!nearPosts(session)) return;
     // Ownership is persisted before enterWorld finishes. That provisional
     // body must not look like a changed kit to the occupation planner.
     if (session.populationActivating === true) return;
+    if (session.nearPost) {
+        if (!session.nearPost.includes(reason)) session.nearPost.push(reason);
+        return;
+    }
+    const reasons = session.nearPost = [reason];
     const handle = setImmediate(() => {
+        if (session.nearPost === reasons) session.nearPost = null;
+        // The turn's last spot post (near_spot / near_left) is the one the body stands by.
+        const spotReason = reasons.findLast(entry => SPOT_POSTS.has(entry));
+        const label = reasons.join(',');
         try {
             const actor = session.actor;
             if (!actor || session.populationActivating === true) return;
             const current = cache.get(Number(actor.fetchId()));
             if (current?.phase !== 'hot') return;
-            const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', reason,
+            const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', label,
                 { physicalLocation: true });
             // The cached row owns the revision (the handoff moved it);
             // session.coldLifeState may lag it.
             row.simulation = current.simulation;
             // The spot the bot was given, as a far traveler counts at its
-            // travel spot; loc stays physical.
-            row.spotId = session.currentSpot?.id ?? row.spotId;
+            // travel spot; loc stays physical. A body that left its spot stands on none.
+            row.spotId = session.currentSpot?.id ?? (spotReason === 'near_left' ? null : row.spotId);
             row.updatedAt = now();
-            // Not saved: the number of this post and the raise it carries.
+            // Not saved: the number of this post and the raise it carries,
+            // with the situations of the body's own facts (detected here).
             session.nearSeq = Number(session.nearSeq || 0) + 1;
             row.nearSeq = session.nearSeq;
-            if (session.nearRaise) row.raise = { ...session.nearRaise };
+            // Not saved either: the body's last spot post (near_spot / near_left), numbered,
+            // carried by every post: the background thread hears each arrival or leave once
+            // (ColdSimulationWorker.nearArrival), whatever spot a later post falls back to.
+            if (spotReason) session.nearSpot = { seq: Number(session.nearSpot?.seq || 0) + 1,
+                spotId: spotReason === 'near_left' ? null : session.currentSpot?.id ?? null };
+            if (session.nearSpot) row.nearSpot = session.nearSpot;
+            // lazy: worker the native market owner is main-thread only.
+            DecisionEvents.detectNear(session, row, invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(row.characterId));
+            if (session.nearRaise) row.raise = DecisionEvents.postedBag(session);
             // lazy: cycle the coordinator requires this module at its top.
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').markDirty(row,
-                { reason, critical: isCriticalSnapshotReason(reason, row) || !!row.raise, near: true });
+                { reason: label, critical: isCriticalSnapshotReason(label, row) || row.raise?.named === true
+                    || !!spotReason, near: true });
         } catch (error) {
-            utils.infoWarn('BotLife', 'near fact %s post failed: %s', reason, error.message);
+            // The post and the facts detected on it (DecisionEvents.detectNear): counted by site.
+            FailureLog.note('botlife.near_post', error);
         }
     });
     handle.unref?.();
@@ -324,22 +389,6 @@ function inventoryStateFromItems(state, items = []) {
     };
 }
 
-function equipmentTargetFulfilled(stats = {}, inventory = {}) {
-    const target = stats.equipmentPlan?.target;
-    const selfId = Number(target?.selfId || 0);
-    const slot = Number(target?.slot || 0);
-    if (selfId <= 0 || slot <= 0) return false;
-    const combineResultId = Number(stats.equipmentPlan?.combine?.resultId || 0);
-    if (combineResultId > 0 && selfId !== combineResultId) return false;
-    const item = inventory[String(selfId)];
-    const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item || {}, item?.slot);
-    return !!item?.equipped
-        && equippedSlots.some((equippedSlot) => (
-            equippedSlot === slot
-            || [7, 14].includes(equippedSlot) && [7, 14].includes(slot)
-        ));
-}
-
 // Whether the equipment plan, while it acts, wants an item: its target, its
 // next input or a material it still misses.
 function planWants(plan, itemId) {
@@ -372,17 +421,16 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
             ...progress.componentRequirement(plan)
         } } };
     }
-    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
+    if (!GearAcquisitionPlanner.equipmentTargetFulfilled(state, state.stats?.equipmentPlan)) return state;
     const stats = { ...(state.stats || {}) };
     if (Number(stats.marketWanted?.itemId || 0) === Number(plan?.target?.selfId || 0)) {
         stats.marketWanted = null;
-        stats.marketRetryAfter = null;
         stats.marketLead = null;
     }
     let retained = plan?.inputPreparation;
     while (retained && (retained.reason === 'cancelled'
         || !(retained.recipeId || retained.exchange?.kind === 'luxury_exchange' || retained.combine) || !retained.target?.selfId
-        || equipmentTargetFulfilled({ equipmentPlan: retained }, state.inventory))) retained = retained.inputPreparation;
+        || GearAcquisitionPlanner.equipmentTargetFulfilled(state, retained))) retained = retained.inputPreparation;
     if (retained) {
         // Completing a temporary equipment goal must not erase the separate
         // unfinished recipe that was waiting behind it.
@@ -394,7 +442,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
 }
 
 function reconcileEquipmentInventory(state = {}) {
-    const inventory = require('../Economy/ShotCrystalInput').equip(state,state.inventory || {},GearAcquisitionPlanner.equipInventoryUpgrades);
+    const inventory = GearAcquisitionPlanner.equipInventoryUpgrades(state, state.inventory || {});
     return reconcileFulfilledEquipmentPlan({
         ...state,
         inventory,
@@ -407,15 +455,14 @@ function reconcileEquipmentInventory(state = {}) {
 
 function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = null) {
     const authoritative = current || cache.get(Number(incoming.characterId)) || null;
-    const currentPlan = authoritative?.stats?.equipmentPlan;
-    if (!GearAcquisitionPlanner.clanGoalPlanLocked(authoritative || {}, currentPlan)) return incoming;
+    // The incoming bag decides what the save may replace (a weapon bridge while unarmed,
+    // a clan target it wears).
+    if (!authoritative || !GearAcquisitionPlanner.clanPlanKeptAgainst(authoritative, incoming?.stats?.equipmentPlan, incoming)) return incoming;
+    // The clan's own goal writes pass.
     if (['clan_equipment_goal', 'clan_equipment_beneficiary_rotated'].includes(String(reason))) return incoming;
-    if (equipmentTargetFulfilled(authoritative.stats || {}, incoming.inventory || {})) return incoming;
 
-    const currentGoalKey = String(currentPlan?.clanGoal?.goalKey || '');
-    const incomingGoalKey = String(incoming?.stats?.equipmentPlan?.clanGoal?.goalKey || '');
-    if (currentGoalKey && incomingGoalKey === currentGoalKey) return incoming;
-
+    const currentPlan = authoritative.stats.equipmentPlan;
+    const currentGoalKey = String(currentPlan.clanGoal.goalKey);
     const stats = {
         ...(incoming.stats || {}),
         equipmentPlan: currentPlan
@@ -431,7 +478,7 @@ function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = n
 function equipmentCompletionSignal(state = {}) {
     const clanGoal = state.stats?.equipmentPlan?.clanGoal;
     if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
-    if (!equipmentTargetFulfilled(state.stats, state.inventory)
+    if (!GearAcquisitionPlanner.equipmentTargetFulfilled(state, state.stats?.equipmentPlan)
         && !invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress').componentAcquired(state)) return null;
     return {
         clanId: Number(clanGoal.clanId),
@@ -474,7 +521,7 @@ function enqueueEquipmentGoalAdvance(signal) {
         }
         return result;
     }).catch((error) => {
-        utils.infoWarn('BotLife', 'failed to enqueue clan equipment advance for %s: %s', signal.goalKey, error.message || error);
+        FailureLog.note('botlife.clan_advance_enqueue', error);
         return null;
     });
 }
@@ -533,12 +580,10 @@ function inventoryAdena(inventory) {
 }
 
 // The bot's purchase gate on main. A worker command (`commanded`) already passed
-// the gear rules in its plan; the war ticket and the arrow stock still hold,
-// as the bag may have changed since the plan.
+// the gear rules in its plan; the arrow stock still holds, as the bag may have
+// changed since the plan.
 function marketPurchaseBlocker(state = {}, offer = {}, qty = 1, { commanded = false } = {}) {
     const selfId = Number(offer?.selfId || 0);
-    const warBlocker = require('./PartyMarketBreak').warSupplyPurchaseBlocker(state, selfId);
-    if (warBlocker) return warBlocker;
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
@@ -734,7 +779,7 @@ function rewriteMarketState(state, reason) {
             notifyColdSnapshot(snapshot, 'market_sale', { critical: true });
             return snapshot;
         }).catch((error) => {
-            utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
+            FailureLog.note('botlife.market_rollback', error);
             return null;
         });
 }
@@ -749,7 +794,7 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         tradeMeeting: cache.get(characterId)?.stats?.tradeMeeting || null,
-        ...Object.fromEntries(['playedHours', 'economyClock', 'frustration', 'lifelongKills', 'peoplePoints'].map(key => [key, session.coldLifeState?.stats?.[key] ?? cache.get(characterId)?.stats?.[key] ?? 0])),
+        ...Object.fromEntries(['playedHours', 'economyClock', 'frustration', 'lifelongKills', 'peoplePoints', 'fightsWon'].map(key => [key, session.coldLifeState?.stats?.[key] ?? cache.get(characterId)?.stats?.[key] ?? 0])),
         peopleEpisode: session.coldLifeState?.stats?.peopleEpisode ?? cache.get(characterId)?.stats?.peopleEpisode ?? null,
         ...(session.peopleKnowledge || {}),
         playedHours: invoke('GameServer/Social/RelationshipContext').playedHours(session, timestamp),
@@ -763,7 +808,6 @@ function recordFromSession(session, phase, reason = '') {
             flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: BotEnemyMemory.snapshot(session),
         pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
-        revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         clanLevelSpVersion: Number(cache.get(characterId)?.stats?.clanLevelSpVersion || 0),
         clanInventoryRevision: Number(cache.get(characterId)?.stats?.clanInventoryRevision || 0),
@@ -778,7 +822,6 @@ function recordFromSession(session, phase, reason = '') {
             ? Number(cache.get(characterId).stats.clanId || 0)
             : actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         clanHallVisit: session.clanHallVisit === undefined ? session.coldLifeState?.stats?.clanHallVisit || null : session.clanHallVisit,
-        clanHallRetryAt: session.clanHallRetryAt ?? session.coldLifeState?.stats?.clanHallRetryAt ?? 0,
         route: currentSpot?.route || null,
         equipment: equipmentSummaryFromInventory(inventory),
         // Cold combat must start from the exact same character model as the
@@ -1100,14 +1143,18 @@ function save(row, options = {}) {
 // caller compares again on its next pass (a party marks its re-plan due).
 function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
     const id = Number(member.characterId);
-    const statsEntries = Object.entries(stats), columnEntries = Object.entries(columns);
+    // The mind's keys (a leave's party_left bits) go to the mind column, the rest to the body.
+    const { body, mind } = SavedStats.split({ ...stats });
+    const statsEntries = Object.entries(body), mindEntries = Object.entries(mind), columnEntries = Object.entries(columns);
     const assignments = [
         ...(statsEntries.length ? [`statsJson = json_set(COALESCE(statsJson, '{}'), ${statsEntries.map(() => '?, json(?)').join(', ')})`] : []),
+        ...(mindEntries.length ? [`mindJson = json_set(COALESCE(NULLIF(mindJson, ''), '{}'), ${mindEntries.map(() => '?, json(?)').join(', ')})`] : []),
         ...columnEntries.map(([name]) => `${name} = ?`),
         'simulationRevision = simulationRevision + 1', 'updatedAt = ?'
     ];
     const params = [
         ...statsEntries.flatMap(([key, value]) => [`$.${key}`, JSON.stringify(value ?? null)]),
+        ...mindEntries.flatMap(([key, value]) => [`$.${key}`, JSON.stringify(value ?? null)]),
         ...columnEntries.map(([, value]) => value),
         now(), id, Number(member.simulation?.revision || 0)
     ];
@@ -1120,12 +1167,88 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
             if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
             return snapshot;
         }).catch((error) => {
-            utils.infoWarn('BotLife', 'failed held write %s for %s: %s', reason, id, error.message);
+            FailureLog.note('botlife.held_write', error);
             return null;
         });
 }
 
-// The world was paused while the server was down (L136): every persisted due
+// Main's raise on a far bot (Situations' one SQL writer of its bits): the
+// situations' bits, as Situations.raise computes them where main last saw the
+// bot, ORed into the row's mind with no read of the rest, and the revision moved,
+// so a worker step begun before it is refused stale_revision and rebases onto the
+// raised row; a whole-row save never carries a raise (its mind is fenced). names:
+// [[situation, payload|null], ...]. Resolves the accepted row's state (the cached
+// one, nothing written, when the bits add nothing), null when the row is not far
+// (the caller raises where the bot is now) or the write failed (counted). Cost:
+// one UPDATE per raise that adds a bit; main raises a few per far bot per hour.
+// The facts a raise carries (Situations.raisedFacts: a command's held answer, the
+// spot marks) are written whole, worked out over the cached row's: a worker
+// commit between that read and this write that moved them is overwritten (rare: a
+// body's raises ride its bag while it is hot; these land here only on its edge).
+// raises: [{ name, payload }] (DecisionEvents.raiseFar's). A decision a fact took
+// (player_command) is decided as its caller once the row raise landed (Situations.took).
+// A member's stay is woken only on a row in a party: the SQL reads the row's own party
+// field (the cached copy may be a leave or a join behind).
+function raiseOnRow(characterId, raises, reason = 'situation') {
+    const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
+    const bits = { woken: 0, waiting: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
+    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks, gearMarks: cached?.stats?.gearMarks,
+        backgroundPartyId: true, classId: cached?.stats?.classId }, written = {};
+    // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
+    let seen = Number(cached?.stats?.woken ?? Situations.FIRST);
+    for (const { name, payload = null } of raises) {
+        const one = Situations.delta(name, payload, where, facts);
+        const before = facts.earning?.spotId ?? null;
+        seen |= one.woken;
+        // In order: a decision a fact took clears what came before it (woken and on
+        // both waiting planes), a later raise wakes it again.
+        const taken = Situations.planes(one.taken);
+        bits.woken = (bits.woken | one.woken) & ~one.taken; bits.cleared = (bits.cleared | one.taken) & ~one.woken;
+        bits.waiting = (bits.waiting | one.waiting) & ~taken; bits.waitCleared = (bits.waitCleared | taken) & ~one.waiting;
+        bits.leaf ||= one.leaf;
+        for (const key of ['earning', 'spotMarks', 'gearMarks']) {
+            if (one.facts[key] !== undefined) facts[key] = written[key] = one.facts[key];
+        }
+        each.push({ name, payload, one, seen, before });
+        if (one.taken) seen &= ~one.taken;
+    }
+    const factKeys = Object.keys(written);
+    // Nothing to OR: no write, no revision move, no stale step for the worker.
+    if (!bits.woken && !bits.cleared && !bits.waiting && !bits.waitCleared && !bits.leaf && !factKeys.length) {
+        return Promise.resolve(cached?.phase === 'cold' ? cached : null);
+    }
+    const mind = "COALESCE(NULLIF(mindJson, ''), '{}')", at = path => `json_extract(${mind}, '$.${path}')`;
+    const solo = mask => `CASE WHEN json_extract(statsJson, '$.backgroundPartyId') IS NULL THEN ${mask} ELSE -1 END`;
+    const stay = Situations.BITS.party_stay;
+    // A raise whose only effect is a member's stay writes nothing on a solo row (the
+    // masked result ORs nothing): no revision move, no notify, nothing counted.
+    const stayOnly = !bits.cleared && !bits.waitCleared && !(bits.woken & ~stay) && !(bits.waiting & ~Situations.planes(stay));
+    return module.exports.serializeClanLevelUp(id, () => Database.execute([`UPDATE ${TABLE} SET
+        mindJson = json_set(${mind},
+            '$.woken', (COALESCE(${at('woken')}, ?) & ~?) | (? & ${solo(~stay)}),
+            '$.waiting', (COALESCE(${at('waiting')}, 0) & ~?) | (? & ${solo(~Situations.planes(stay))}),
+            '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
+            ${bits.leaf ? ", '$.activityLeaf', 0" : ''}${factKeys.map(key => `, '$.${key}', json(?)`).join('')}),
+        simulationRevision = simulationRevision + 1, updatedAt = ?
+        WHERE characterId = ? AND phase = 'cold'${stayOnly ? " AND json_extract(statsJson, '$.backgroundPartyId') IS NOT NULL" : ''}
+        RETURNING *`, [Situations.FIRST, bits.cleared, bits.woken, bits.waitCleared, bits.waiting,
+        ...factKeys.map(key => JSON.stringify(written[key])), now(), id], { read: true }]))
+        .then(([row] = []) => {
+            if (!row) return stayOnly && cache.get(id)?.phase === 'cold' ? cache.get(id) : null;
+            for (const { name, payload, one, seen: bitsThen, before } of each) {
+                Situations.counted(name, where, 0, one.woken, id, one.waiting, payload);
+                if (one.taken) Situations.took({ woken: bitsThen }, one, name, id, before);
+            }
+            const snapshot = module.exports.acceptNewerLifecycleRow(row);
+            if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
+            return snapshot;
+        }).catch((error) => {
+            FailureLog.note('botlife.raise_on_row', error);
+            return null;
+        });
+}
+
+// The world was paused while the server was down: every persisted due
 // time moves by the downtime, so a restart does not make all bots due at once,
 // and so does lastResolvedAt: the step's length is now - lastResolvedAt
 // (ColdSimulationKernel), so an unmoved stamp would credit the downtime as
@@ -1249,11 +1372,24 @@ function preserveStarterLootProvenance(previousInventory = {}, observedInventory
     }, {});
 }
 
+// Training is due when the level or class stands past what main last trained
+// (the stamp), when the class has a profession due at this level (a stamp
+// written over a class the record never took still heals), or a rank is unlearned.
 function classProgressionNeeded(state, classId, level) {
     const knownLevel = Number(state.stats?.classProgressionLevel || 0);
     const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
     return knownLevel < Number(level || 1) || knownClassId !== Number(classId)
+        || BotClassProgression.nextClass(classId, level, state.characterId) !== null
         || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(state);
+}
+
+// Main's training of a far bot: it advances the class its character row holds,
+// the one reconcile writes, never a state's stats.classId (a cold projection the
+// record has not taken yet). No row: nothing to train (null).
+function trainRecordedClass(characterId, level, options) {
+    return Database.execute(['SELECT classId FROM characters WHERE id = ? LIMIT 1', [Number(characterId)]], 'bot-life:class-record')
+        .then(rows => rows.length ? BotClassProgression.reconcile({ characterId, classId: Number(rows[0].classId), level,
+            seed: characterId }, options) : null);
 }
 
 // The far bots main trains after a commit: cold, alive.
@@ -1326,7 +1462,7 @@ const STALE_HOT_ACTIVITIES = new Set(['following', 'shopping', 'getting_buffed',
 // A row left hot by a restart (shutdown does not cool hot bots) is the copy
 // taken at activation: the hot session wrote its EXP, loot, spent potions and
 // shots and vitals only to the record (characters + items, skills).
-// The record wins (PER-7): the row is rebuilt from it before the worker reads
+// The record wins: the row is rebuilt from it before the worker reads
 // it, or the worker's first commit writes the stale copy back over the record.
 // The plan and the mind stay, and so does the row's position: the policy of
 // the activation is not saved, and a 'return' activation (forced near the
@@ -1463,8 +1599,41 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     };
     // The cold row of every cooling writer (writeColdRow, partySessionSnapshot
     // for the party and PvP cooldowns) takes the near raise still unanswered.
-    if (phase === 'cold') DecisionEvents.applyPendingRaise(session, merged.stats);
+    // Its detect baseline ends with the body.
+    if (phase === 'cold') {
+        DecisionEvents.applyPendingRaise(session, merged.stats, Situations.place(merged), merged.characterId);
+        session.nearFacts = null;
+    }
     return merged;
+}
+
+// A body cooled on its way (a cooldown, a failed spawn's rollback) goes on cold as it was
+// going; null when it was on no way. On its walk or trip to a spot before the arrival: a
+// walker shown on its road (HotActivation) walks the rest of its run from where it stands,
+// any other trip (a town gatekeeper, a scroll, a hot walk) is a cold trip there from where
+// it stands, its arrival raised cold as its trip said. In the town of its town trip
+// (BotTownTravel: plan shopping, preShopLocation where it set out): that town's visit with
+// its way back, which the cold visit carries out and ends. Without these a body cooled in
+// town stands on no spot there and its trip or visit is lost. Only a body whose place is
+// where it stands (`physical`) has a way from there, a walker's run excepted.
+function bodyTrip(session, preserved, merged, physical, timestamp) {
+    const relocation = session.spotRelocation;
+    if (relocation?.coldTrip?.run && !relocation.arrivalPending) return invoke('GameServer/Bot/Population/ColdTrip')
+        .resumeRun({ ...merged, spotId: relocation.spotId }, relocation.coldTrip, timestamp);
+    if (!physical) return null;
+    // A preserved spot's trip goes to a waypoint (a quest NPC), no hunting ground.
+    if (relocation?.spotId && relocation.destination && !relocation.arrivalPending && relocation.preserveSpot !== true) {
+        const spotId = relocation.spotId;
+        return require('./HuntingTravel').beginHuntingTrip({ ...merged, spotId }, { needed: true, mode: 'solo', spotId,
+            regionName: SpotService.findById(spotId)?.name, to: relocation.destination }, timestamp);
+    }
+    if (session.plan !== 'shopping' || !session.preShopLocation) return null;
+    const { locX, locY, locZ } = merged.loc;
+    const town = invoke('GameServer/World/TownRespawn').getClosestTown(locX, locY, locZ);
+    // It keeps the spot it left while in town, as a far bot's visit does (beginMarketTravel).
+    const spotId = session.currentSpot?.id || preserved.spotId || null;
+    return invoke('GameServer/Bot/Goals/GoalExecutor').visitHere({ ...merged, spotId }, town.name, { loc: { ...session.preShopLocation },
+        regionName: SpotService.findById(spotId)?.name || preserved.currentRegion || null, spotId }, timestamp);
 }
 
 // A stale cold snapshot can retain the previous hunting region while its
@@ -1665,105 +1834,24 @@ function publishDeferredPartyRequests(rows) {
     }
 }
 
-// The native batch writers publish the same safe clan pause as expireState.
-// Materialize the current rows inside this statement: neither a preliminary
-// SELECT nor a later repair may release a clan hold with its farm route intact.
-function partyRequestDeferralSql(selection, withReason = false) {
-    const clanStats = `json_set(deferred.statsJson,
-        '$.clanPartyObjective.status', 'deferred',
-        '$.clanPartyObjective.deferredUntil', json_extract(deferred.statsJson, '$.partyRequest.deferredUntil'),
-        '$.partyRequest.deferReason', 'party_assembly_timeout', '$.lastReason', 'party_assembly_timeout')`;
-    const released = `activity = 'party_wait' AND characterId IN (SELECT characterId FROM deferred WHERE clanDuty)`;
-    return `WITH deferred AS MATERIALIZED (
-        SELECT characterId, json_set(COALESCE(statsJson, '{}'),
-            '$.partyRequest.status', 'deferred',
-            '$.partyRequest.deferredUntil', CASE WHEN partyRequestStatus = 'deferred'
-                THEN json_extract(statsJson, '$.partyRequest.deferredUntil') ELSE ? + (ABS(characterId) % ?) END,
-            '$.partyRequest.expiredAt', ?,
-            '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0)
-                + CASE WHEN partyRequestStatus = 'open' THEN 1 ELSE 0 END
-            ${withReason ? ", '$.partyRequest.lastReason', ?" : ''}) AS statsJson,
-            NULLIF(json_extract(statsJson, '$.partyRequest.clanGoalKey'), '')
-                = json_extract(statsJson, '$.clanPartyObjective.clanGoalKey') AS clanDuty
-        FROM ${TABLE} WHERE ${selection}
-    ) UPDATE ${TABLE} SET
-        statsJson = (SELECT CASE WHEN clanDuty THEN
-            CASE WHEN json_extract(deferred.statsJson, '$.equipmentPlan.clanGoal.goalKey')
-                    = json_extract(deferred.statsJson, '$.partyRequest.clanGoalKey')
-                THEN json_remove(${clanStats}, '$.equipmentPlan') ELSE ${clanStats} END
-            ELSE deferred.statsJson END FROM deferred WHERE deferred.characterId = ${TABLE}.characterId),
-        activity = CASE WHEN ${released} THEN 'hunting' ELSE activity END,
-        activityStartedAt = CASE WHEN ${released} THEN ? ELSE activityStartedAt END,
-        nextResolveAt = CASE WHEN ${released} THEN ? ELSE nextResolveAt END,
-        simulationRevision = COALESCE(simulationRevision, 0) + 1,
-        updatedAt = ?
-    WHERE characterId IN (SELECT characterId FROM deferred) RETURNING *`;
-}
-
-// Start-up only: a request left open across a restart is deferred once here;
-// at run time each request expires at its own deadline (PartyAssemblyEvents).
-function expireStalePartyRequests() {
-    const timestamp = now();
-    const requiredMaxAge = PartyRequestPlanner.maxAgeMs('required');
-    const preferredMaxAge = PartyRequestPlanner.maxAgeMs('preferred');
-    const cooldownMs = PartyRequestPlanner.cooldownMs();
-    // Spread the next eligible formation attempts over at most two minutes so
-    // a restart cannot turn one historical queue into a new SQLite spike.
-    const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
-    const target = `phase = 'cold'
-        AND (partyId IS NULL OR partyId = '')
-        AND activity IN ('hunting', 'resting', 'party_wait')
-        AND ((partyRequestStatus = 'open'
-            AND partyRequestedAt <= ?
-            AND (COALESCE(partyRequestPriority, '') <> 'required' OR partyRequestedAt <= ?))
-            OR (partyRequestStatus = 'deferred'
-                AND json_extract(statsJson, '$.clanPartyObjective.status') = 'open'
-                AND NULLIF(json_extract(statsJson, '$.partyRequest.clanGoalKey'), '')
-                    = json_extract(statsJson, '$.clanPartyObjective.clanGoalKey')))`;
-    const sql = partyRequestDeferralSql(target);
-    const params = [
-        timestamp + cooldownMs,
-        Math.max(1, staggerMs),
-        timestamp,
-        timestamp - preferredMaxAge,
-        timestamp - requiredMaxAge,
-        timestamp,
-        timestamp + 1000,
-        timestamp
-    ];
-    const staleParams = [timestamp - preferredMaxAge, timestamp - requiredMaxAge];
-    const selectStale = () => Database.execute([
-        `SELECT characterId FROM ${TABLE} WHERE ${target}`,
-        staleParams
-    ]);
-    const waitForPending = (rows) => Promise.all((rows || [])
-        .map((row) => pendingWrites.get(Number(row.characterId || 0)))
-        .filter(Boolean)
-        .map((pending) => pending.catch(() => null)));
-    return selectStale()
-        .then(waitForPending)
-        .then(() => Database.execute([sql, params, { read: true }]))
-        .then((rows) => {
-            publishDeferredPartyRequests(rows);
-            if (rows.length) utils.infoWarn('BotLife', 'deferred %d stale party requests', rows.length);
-            return rows.length;
-        });
-}
-
+// Forming found no party for these open requests, required or preferred (no group, no
+// level match, its verdict's no): each is closed (PartyRequestPlanner.closed) and held
+// until the bot's next build, which asks again; no clock reopens it. The bot hunts on
+// where its route sends it (BotRoute.huntSpot: a support with no solo ground its held
+// answer's grey ground); a refusal never leaves it without a spot. Its next build comes
+// at its own situations (a town arrival, new gear or grade, a party left).
 function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
     const ids = [...new Set((characterIds || []).map((id) => Number(id)).filter(Boolean))].slice(0, 500);
     if (!ids.length) return Promise.resolve(0);
 
     const timestamp = now();
-    const cooldownMs = PartyRequestPlanner.cooldownMs();
-    const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
     const placeholders = ids.map(() => '?').join(', ');
     const selection = `characterId IN (${placeholders})
         AND phase = 'cold'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
         AND partyRequestStatus = 'open'
-        AND partyRequestPriority = 'required'`;
+        AND partyRequestPriority IN ('required', 'preferred')`;
     const selectCurrent = () => Database.execute([
         `SELECT characterId FROM ${TABLE} WHERE ${selection}`,
         ids
@@ -1772,23 +1860,27 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         .map((row) => pendingWrites.get(Number(row.characterId || 0)))
         .filter(Boolean)
         .map((pending) => pending.catch(() => null)));
-    const sql = partyRequestDeferralSql(selection, true);
+    const sql = `UPDATE ${TABLE}
+        SET statsJson = json_set(
+                COALESCE(statsJson, '{}'),
+                '$.partyRequest.status', 'closed',
+                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1,
+                '$.partyRequest.lastReason', ?
+            ),
+            simulationRevision = COALESCE(simulationRevision, 0) + 1,
+            updatedAt = ?
+        WHERE ${selection} RETURNING *`;
     const params = [
-        timestamp + cooldownMs,
-        Math.max(1, staggerMs),
-        timestamp,
         String(reason || 'no_compatible_level_match'),
-        ...ids,
         timestamp,
-        timestamp + 1000,
-        timestamp
+        ...ids
     ];
     return selectCurrent()
         .then(waitForPending)
         .then(() => Database.execute([sql, params, { read: true }]))
         .then((rows) => {
             publishDeferredPartyRequests(rows);
-            if (rows.length) utils.infoWarn('BotLife', 'deferred %d unformable party requests reason=%s', rows.length, String(reason || 'unknown'));
+            if (rows.length) utils.infoWarn('BotLife', 'closed %d unformable party requests reason=%s', rows.length, String(reason || 'unknown'));
             return rows.length;
         });
 }
@@ -1901,8 +1993,11 @@ function reconcilePersistedLoadouts() {
 
 const BotLifeState = {
     notifyNearFacts,
+    recordNearFight,
+    raiseOnRow,
+    nearPosts,
 
-    // Boot only: { startedAt, downtimeMs } of this restart, measured once (L136).
+    // Boot only: { startedAt, downtimeMs } of this restart, measured once.
     bootPause() {
         return measureBootPause();
     },
@@ -1944,7 +2039,7 @@ const BotLifeState = {
                     (SELECT karma FROM characters WHERE id = characterId))
                 WHERE COALESCE(json_extract(statsJson, '$.karma'), 0)
                     <> (SELECT karma FROM characters WHERE id = characterId)`, []]))
-            .then(() => Database.reconcileBotClanGoals?.()).then(() => removeRetiredStaticMerchantStates()).then(() => Database.recoverConstPartyActivities()).then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+            .then(() => Database.reconcileBotClanGoals?.()).then(() => removeRetiredStaticMerchantStates()).then(() => Database.recoverConstPartyActivities()).then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
@@ -2029,7 +2124,7 @@ const BotLifeState = {
 
     // A command refused because the row moved past the cache (NativeWriteCheckpoint
     // drift): the row is the owner of the checkpoint; read it back so the next
-    // command carries it instead of retrying the same stale copy forever (L127).
+    // command carries it instead of retrying the same stale copy forever.
     // A handoff in flight is published by its owner, not here.
     reloadRow(characterId, drift = []) {
         const id = Number(characterId);
@@ -2218,27 +2313,29 @@ const BotLifeState = {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
                     nextResolveAt: null,
-                    // The hot time is lived: the first cold step starts now (T126).
+                    // The hot time is lived: the first cold step starts now.
                     lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
                 inventory: InventorySummary.read(row.inventorySummary)
             };
             // Built without mergeSessionIntoLifeState: the near raise joins here.
-            DecisionEvents.applyPendingRaise(session, nextState.stats);
+            DecisionEvents.applyPendingRaise(session, nextState.stats, Situations.place(nextState), nextState.characterId);
+            session.nearFacts = null;
             return this.upsertState(nextState, reason, { releaseHot: true });
         }
 
         if (session.coldLifeState) {
             const physicalLocation = session.populationLocationPolicy === 'physical';
             const preserved = physicalLocation ? session.coldLifeState : recoverOrphanedGiranState(session.coldLifeState);
-            const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
+            const merged = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
-                // The hot time is lived: the first cold step's length starts now (T126).
+                // The hot time is lived: the first cold step's length starts now.
                 lastResolvedAt: now()
             });
+            const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
             return this.upsertState(nextState, reason, { releaseHot: true });
@@ -2698,6 +2795,11 @@ const BotLifeState = {
         const newDeath = (result.patch?.activity === 'dead' || result.debug?.died === true)
             && nextDeathsForPenalty > Number(state.stats?.deaths || 0);
         if (newDeath) {
+            if (Trace.on()) {
+                const death = result.events?.find(event => event?.type === 'death')?.meta;
+                Trace.record({ kind: 'death', bot: state.characterId, spot: String(death?.spotId ?? result.patch?.spotId ?? state.spotId ?? ''),
+                    killer: death?.killer > 0 ? `npc:${death.killer}` : death?.partyId ? 'party_fight' : 'unknown', level: Number(state.level) });
+            }
             progressionState = invoke('GameServer/Progression/DeathExperience').applyColdDeath(progressionState, {
                 timestamp,
                 cold: true
@@ -2721,29 +2823,21 @@ const BotLifeState = {
         const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems;
         const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
         const nextSpotId = result.patch?.spotId || state.spotId;
-        const previousRisk = state.stats?.spotRisk;
         const previousDeaths = Number(state.stats?.deaths || 0);
         const nextDeaths = Number(result.patch?.deathCount ?? previousDeaths);
-        const spotRisk = state.party?.partyId || state.partyId ? previousRisk : SpotRiskPolicy.recordResolve(previousRisk, {
+        // lazy: ColdEconomyDecision loads the economy modules that require this one.
+        const stepLeaf = options.stepPlan ? invoke('GameServer/Bot/Population/ColdEconomyDecision').stepLeaf(options.stepPlan) : null;
+        // The round's hunting record (risk window, death mark, recovery), as a near body's fight's.
+        const hunt = SpotRiskPolicy.recordHunt(state, {
             spotId: nextSpotId || null,
+            itemHunt: !!nextSpotId && String(stepLeaf?.spotId) === String(nextSpotId)
+                && invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(stepLeaf),
             timestamp,
-            totalDeaths: previousDeaths,
-            totalFights: Number(state.stats?.fightsResolved || 0),
-            totalWins: Number(state.stats?.fightsWon || 0),
             deaths: Math.max(0, nextDeaths - previousDeaths),
             fights: Number(result.debug?.fights || 0),
             wins: Number(result.debug?.wins || 0),
-            // Only completed, abandoned hunts count. Pending encounter slices
-            // and pre-fight recovery have zero completed fights.
-            failedHunts: Math.max(0, Number(result.debug?.fights || 0)
-                - Number(result.debug?.wins || 0) - Math.max(0, nextDeaths - previousDeaths))
+            exp, expBeforeDeath: experienceAward.totalExp
         });
-        const soloRiskState = { ...state, spotId: nextSpotId, stats: { ...state.stats, spotRisk } };
-        const soloPressure = !(state.party?.partyId || state.partyId) && SpotRiskPolicy.deathPressure(soloRiskState);
-        const newlyFailedSpot = soloPressure && !SpotRiskPolicy.activeBackoffs(state, timestamp)
-            .some(entry => entry.spotId === nextSpotId);
-        const failedSpotState = newlyFailedSpot ? SpotRiskPolicy.withBackoff(soloRiskState,
-            SpotRiskPolicy.backoffForStates([soloRiskState], nextSpotId, timestamp), timestamp) : null;
         // Resolver patches often carry a projected copy of the previous
         // stats so they can add lifecycle-specific fields such as cooldowns,
         // rest deadlines, travel state, or party affinity.  Merge that copy
@@ -2769,8 +2863,8 @@ const BotLifeState = {
         const stats = {
             ...patchedStats,
             // From the progressed state: a new death has already washed karma there.
-            karma: Math.max(0, Number(progressionState.stats?.karma ?? state.stats?.karma ?? 0) - Math.floor(
-                experienceAward.accepted / invoke('GameServer/Karma').XP_DIVIDER)),
+            karma: Math.max(0, Number(progressionState.stats?.karma ?? state.stats?.karma ?? 0)
+                - invoke('GameServer/Karma').karmaWashForExperience(experienceAward.accepted)),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
             fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
             deaths: Number(result.patch?.deathCount ?? state.stats?.deaths ?? 0),
@@ -2816,6 +2910,8 @@ const BotLifeState = {
                 nextAmount,
                 Number(previous.starterMobLootAmount || 0) + protectedStarterLoot
             );
+            // Loot adds to the stack the bag holds: its worn copies, instances and
+            // reserves stay (a looted second dagger must not unequip the first).
             const acquired = {
                 ...previous,
                 selfId: item.selfId,
@@ -2851,11 +2947,10 @@ const BotLifeState = {
         if (shotActions > 0) {
             const Shots = invoke('GameServer/Inventory/ShotStock');
             const shot = Shots.planForState(state);
-            const beginnerId = invoke('GameServer/Items/C4BeginnerShots').selfIdFor(shot.kind, shot.rank);
             // The private combat inventory already contains exact consumption,
-            // including beginner exhaustion followed by ordinary charges. Carry
-            // only those decreases, preserving this resolve's new loot.
-            for (const selfId of [shot.selfId, beginnerId].filter(Boolean)) {
+            // including switches between blessed, ordinary and beginner charges.
+            // Carry only those decreases, preserving this resolve's new loot.
+            for (const selfId of Shots.combatShotIds(shot)) {
                 const stock = inventory[String(selfId)], original = state.inventory?.[selfId];
                 if (!stock || !original) continue;
                 const remaining = result.patch?.inventory?.[selfId]?.amount;
@@ -2879,11 +2974,11 @@ const BotLifeState = {
         }
 
         if (consumeFacts) Consumption.attach(result, consumeFacts);
-        const equippedInventory = require('../Economy/ShotCrystalInput').equip({
+        const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
             ...state,
             level,
             stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
-        }, inventory,GearAcquisitionPlanner.equipInventoryUpgrades);
+        }, inventory);
         const nextActivity = result.patch?.activity || state.activity;
         const nextState = {
             ...state,
@@ -2917,18 +3012,9 @@ const BotLifeState = {
                 ...stats,
                 // Resolver patches commonly start from the prior state. Keep
                 // the baseline stamped for this resolve's actual destination.
-                spotRisk,
                 // Save the failed ground before revival/physical movement can
                 // change the routing origin and lose its exclusion.
-                ...(failedSpotState ? { spotBackoffs: failedSpotState.stats.spotBackoffs } : {}),
-                ...(!(state.party?.partyId || state.partyId) ? {
-                    huntingRecovery: SpotRiskPolicy.recordRecovery(state, {
-                        deaths: Math.max(0, nextDeaths - previousDeaths),
-                        wins: Number(result.debug?.wins || 0), exp,
-                        expBeforeDeath: experienceAward.totalExp,
-                        pressure: soloPressure
-                    })
-                } : {}),
+                ...hunt,
                 // The one record of a hunting round, solo or a party member's
                 // own share; the lifecycle owns actual death penalties and
                 // capped XP, so the sample takes the net exp.
@@ -2945,22 +3031,22 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: writtenAt
         };
-        // ARCH-NOTE: C1 lifecycle packets precede their fight; accept the
+        // ARCH-NOTE: lifecycle packets precede their fight; accept the
         // worker's focus event before classifying actual changed sections.
         // Direct projections receive an already projected packet as before.
         // Both threads: a worker step that decided before its round merges
         // that decision's packet here, so the event check below writes its
         // dirty bits after it (seen by the next decision point).
+        // Its bits land as the step's change over the state the round started from, then
+        // what the round raised (Situations.landMind): a raise after the decision stands.
         const beforeResolvePacket = options.statsPacketBeforeResolve === true && options.statsPacket;
-        if (beforeResolvePacket) Object.assign(nextState.stats, beforeResolvePacket);
-        // A detour's stand-in pair (BackgroundResolver.resolveTravel) holds only
-        // on the ground it names: any other spot write (a party arrival, the
-        // party-wait fallback, a pull) ends it here, each step on both threads,
-        // so a later return to that ground without the detour is an event.
-        const standIn = nextState.stats.standIn;
-        if (standIn && String(standIn.ground) !== String(nextState.spotId)) nextState.stats.standIn = null;
+        if (beforeResolvePacket) {
+            const { mind, ...keys } = beforeResolvePacket, round = mind && { woken: nextState.stats.woken, waiting: nextState.stats.waiting };
+            Object.assign(nextState.stats, keys);
+            if (mind) Situations.landMind(nextState.stats, mind, state.stats, round);
+        }
         let hard = [];
-        if (Reaction.readsFacts(state, nextState)) {
+        if (Situations.readsFacts(state, nextState)) {
             // A round records its rewards/resources/sample immediately. It
             // renews the decision only for a meaningful dependent event; a
             // retry derives that one event from the same accepted input.
@@ -2970,46 +3056,58 @@ const BotLifeState = {
                 // lazy: worker the native market owner is main-thread only; workers receive their mirrored escrow.
                 escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
             }
-            // options.leaf: the step's held leaf (the worker's), whose own trip
-            // and arrival raise nothing; none (main, a step without a plan):
-            // every move is an event.
+            // options.stepPlan: the step's plan, whose held leaf's own trip and arrival
+            // raise nothing (ColdEconomyDecision.stepLeaf, the worker's and main's alike).
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
-            hard = DecisionSections.events(state, nextState, escrow, options.leaf ?? null, result.debug?.unhuntable === true);
+            const seen = {};
+            hard = Situations.detect(state, nextState, { escrow, leaf: stepLeaf,
+                unhuntable: result.debug?.unhuntable === true, out: seen });
+            // A decided town trip for the bag (stats.cleanupDue) ends with the bag's need (its fact at 0).
+            if (nextState.stats.cleanupDue && !seen.facts.bagNeed) nextState.stats.cleanupDue = null;
         }
+        // The buffed fact, at every step (a rest's too): its last value is on the row.
+        const buffs = Situations.buffFact(nextState.stats, nextState.stats.coldCombat?.effects, timestamp,
+            { field: Situations.FIELD_ACTIVITIES.has(nextActivity), dead: nextActivity === 'dead' || Number(nextState.vitals?.hp) <= 0,
+                grouped: !!(nextState.party?.partyId || nextState.partyId) });
+        if (buffs) hard.push(buffs);
         // The bot's step counter, the clock of its spot marks (SpotRiskPolicy):
         // +1 once per resolved step, whichever thread resolves it (hot actor
         // sessions never come here, so a near bot's marks wait until it is far).
         nextState.stats.stepCount = SpotRiskPolicy.stepCount(state) + 1;
-        // The soft point (background thread, every far step, whatever its
-        // round): money, income and the watched market against the bot's own
-        // error; raised with the round's hard events in one bump.
-        const soft = !isMainThread && typeof options.softInputFor === 'function'
-            ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp), state) : [];
-        // checkSections: the sections a failed cheap check of this step raised
-        // before its projection (the worker's room at arrival), in the same bump.
-        DecisionEvents.raiseSections(state, nextState, hard, soft, options.checkSections || []);
+        // Then the step's stop: at a rest or in town what waited for it wakes.
+        const where = Situations.place(nextState, state);
+        // A solo far hunter's stay weighed at its rest, once: its own income below its held
+        // answer's expectation beyond its error. Cold only (a hot stint records no income: debt).
+        const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+        if (where === Situations.REST && !(nextState.party?.partyId || nextState.partyId)
+            && Hunt.disappoints(nextState.stats.stay, nextState.stats.earning)) {
+            nextState.stats.stay = { ...nextState.stats.stay, judged: true };
+            hard.push('spot_disappoints');
+        }
+        for (const name of hard) Situations.raise(nextState.stats, name, null, where, nextState.characterId);
+        Situations.stop(nextState.stats, where, nextState.characterId);
         // The worker's post-round economy ask: only a step that took no
         // decision before its round (a party member).
         if (!isMainThread && !state.stats?.tradeMeeting && !beforeResolvePacket) {
             const economyDeps = typeof options.economyDepsFor === 'function'
                 ? await options.economyDepsFor(nextState) : options.economyDeps || {};
             const calculationDeps = { ...economyDeps, timestamp };
+            // economyFor: { economy, stats }: its economy and the mind keys of a decision it took
+            // before it on its own copy of the projection (the workshop), written under the
+            // economy's packet.
             const advised = typeof options.economyFor === 'function' ? await options.economyFor(nextState, calculationDeps) : null;
-            const economy = advised || invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, calculationDeps);
-            Object.assign(nextState.stats, economy.statsPacket);
+            const economy = advised?.economy || invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, calculationDeps);
+            Object.assign(nextState.stats, advised?.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
         } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
-        // Ordinary worker steps commit directly, without main's missing-ground
-        // recovery. Drop their impossible decision too, using this round's mind.
-        if (result.debug?.reason === 'missing_spot') {
-            const accepted = { ...state, stats: { ...state.stats, ...options.statsPacket } };
-            nextState.stats = DecisionEvents.rejectedState(nextState, accepted, 'missing_spot').stats;
-        }
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
+        // Training is the level fact's consumer (skills come with the
+        // level, ours, not C4): a level or class past what the profile trained, or a skill
+        // book the round brought into the bag (its bag moved); no per-step scan else.
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId
-            || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(nextState);
+            || nextState.inventory !== state.inventory && invoke('GameServer/Skills/SkillBookCatalog').needsTraining(nextState);
         const characterId = nextState.characterId;
         // The cached input remains current until this resolve publishes its
         // own snapshot. Recheck that capability at assigned native writers.
@@ -3023,35 +3121,32 @@ const BotLifeState = {
             : nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
                 && state.phase === 'cold'
                 ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
+        const untrained = { classId: currentClassId, transitions: [] };
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            })) : BotClassProgression.reconcile({
-                characterId: nextState.characterId,
-                classId: currentClassId,
-                level,
-                seed: nextState.characterId
-            }, trainingWriteOptions))
-            : Promise.resolve({ classId: currentClassId, transitions: [] });
+            })) : trainRecordedClass(nextState.characterId, level, trainingWriteOptions).then(resolved => resolved || untrained))
+            : Promise.resolve(untrained);
 
         const prepared = progression.then((resolved) => {
             const classId = Number(resolved.classId || currentClassId);
             const role = BotRoles.inferRole({ classId, characterId: nextState.characterId });
+            // A projection carries the class for the bot's own fights only: the
+            // trained stamp and the transition record are main's training's, which
+            // wrote the class (its commit names that review while they lag).
+            const trained = options.projectClassProgression === true ? {} : {
+                classProgressionLevel: level,
+                classProgressionClassId: classId,
+                classTransitions: resolved.transitions?.length
+                    ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
+                    : nextState.stats?.classTransitions || []
+            };
             const progressedState = {
                 ...nextState,
                 party: { ...(nextState.party || {}), role },
-                stats: {
-                    ...(nextState.stats || {}),
-                    classId,
-                    role,
-                    classProgressionLevel: level,
-                    classProgressionClassId: classId,
-                    classTransitions: resolved.transitions?.length
-                        ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
-                        : nextState.stats?.classTransitions || []
-                }
+                stats: { ...(nextState.stats || {}), classId, role, ...trained }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
             const equippedProgressedState = reconcileEquipmentInventory(
@@ -3108,6 +3203,12 @@ const BotLifeState = {
                         ? Database.applyColdSoulCrystalResults(row.characterId, result.soulCrystals, nativeWriteOptions || {}) : null)
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, newDeath ? 'resolve_death' : 'resolve', nativeWriteOptions))
                     .then((deathDrop) => {
+                        // What waited for the bot on the board joined its bag
+                        // with this step (Database.syncInventorySummary).
+                        if (deathDrop?.settled?.inventorySummary) {
+                            row.inventorySummary = deathDrop.settled.inventorySummary;
+                            row.adena = deathDrop.settled.adena;
+                        }
                         if (deathDrop?.inventory) {
                             // The published state carries the row the drop read back.
                             row.simulationRevision = deathDrop.revision;
@@ -3147,11 +3248,11 @@ const BotLifeState = {
     applyResolve(state, result, options = {}) {
         return this.serializeClanLevelUp(state.characterId, () => {
             checkWorkerCommandAdmission(state, options);
-            const preparedOptions = { persist: true };
+            const preparedOptions = { persist: true, stepPlan: options.stepPlan ?? null };
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
             }
-            // ARCH-NOTE: C1/E3 lifecycle commands carry the worker's money queue;
+            // ARCH-NOTE: lifecycle commands carry the worker's money queue;
             // main preparation must retain that packet without rebuilding it.
             if (Object.prototype.hasOwnProperty.call(options, 'statsPacket')) {
                 preparedOptions.statsPacket = options.statsPacket;
@@ -3176,8 +3277,8 @@ const BotLifeState = {
                 options.beforeWrite?.();
                 if (cache.get(state.characterId) !== state) throw Error('cold_training_source_retired');
             });
-            const resolved = await BotClassProgression.reconcile({ characterId: state.characterId,
-                classId: state.stats?.classId || 0, level: state.level, seed: state.characterId }, { beforeWrite });
+            const resolved = await trainRecordedClass(state.characterId, state.level, { beforeWrite });
+            if (!resolved) return state;
             const row = await Database.publishColdTraining(state.characterId, resolved, { beforeWrite });
             return this.acceptLifecycleRow(row, 'automatic_skills');
         });
@@ -3413,7 +3514,7 @@ const BotLifeState = {
                 };
             });
             const equipped = options.equip === true
-                ? require('../Economy/ShotCrystalInput').equip(state,inventory,GearAcquisitionPlanner.equipInventoryUpgrades)
+                ? GearAcquisitionPlanner.equipInventoryUpgrades(state, inventory)
                 : inventory;
             const refreshed = {
                 ...state,
@@ -3435,46 +3536,12 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
-        const read = state;
-        if (invoke('GameServer/Bot/Population/RaidSoloBoundary').stale(state)) state = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);
         const timestamp = now();
         const cached = cache.get(Number(state.characterId));
-        const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
-        // `grouped` and party-route travel are not valid solo lifecycle
-        // states. Every detachment reason must return them to an actionable
-        // route, including capacity reclamation and friend priority.
-        const needsSoloResume = state.activity === 'grouped' || partyTravel;
-        const nextActivity = needsSoloResume ? 'hunting' : state.activity;
-        const nextState = {
-            ...state,
-            activity: nextActivity,
-            party: { ...(state.party || {}), partyId: null, leaderId: null },
-            stats: {
-                ...(state.stats || {}),
-                ...(partyTravel ? { travel: null } : {}),
-                backgroundPartyId: null,
-                partyBreakReason: reason,
-                partyRequest: null
-            },
-            timing: needsSoloResume
-                ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
-                : state.timing,
-            updatedAt: timestamp
-        };
-        // A party's release of a far member (applyWorkerPartyRequirements):
-        // only what the departure changes is written, held on the revision of
-        // the copy passed; false when a member write beat it. Its travel is
-        // kept or dropped, never a new paid trip, so no trip payment follows.
-        if (options.heldOnRevision === true) {
-            return writeHeldOnRevision(read, {
-                stats: Object.fromEntries(Object.entries(nextState.stats).filter(([key, value]) => value !== read.stats?.[key])),
-                columns: {
-                    partyId: null,
-                    ...(nextState.spotId !== read.spotId ? { spotId: nextState.spotId || null } : {}),
-                    ...(needsSoloResume ? { activity: nextActivity, activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 } : {})
-                }
-            }, `party_left_${reason}`);
-        }
+        // The one leave rule (BackgroundPartyLifecycle.releaseMember): the solo state,
+        // party_left raised on a far member's stats; each write below carries it on the
+        // revision it was built on.
+        const nextState = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle').releaseMember(state, timestamp, reason);
         const row = rowFromState(nextState);
         if (options.ownerHandoff === true) {
             return invoke('GameServer/Bot/Population/ColdSimulationOwner').handoffToMain(state, {
@@ -3605,7 +3672,6 @@ const BotLifeState = {
             stats: {
                 ...purchaseStats,
                 equipment,
-                marketRetryAfter: null,
                 marketWanted: null,
                 marketLead: null,
                 lastMarketPurchase: { selfId, qty: count, price, totalPrice, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
@@ -3766,22 +3832,6 @@ const BotLifeState = {
             : columns }, reason);
     },
 
-    // One member's plan from its party's requirement refresh
-    // (PopulationService.applyWorkerPartyRequirements), held on the revision
-    // of the copy read (writeHeldOnRevision: false when a member write beat
-    // it). A clan-locked plan or a foreign clan's goal is not replaced, as the
-    // full save would not replace it (null: nothing to write).
-    writePartyRequirementPlan(member, plan = null) {
-        const id = Number(member?.characterId), reason = 'party_requirement_refresh';
-        if (!id) return Promise.resolve(null);
-        const next = preserveClanOwnedEquipmentState({ ...member, stats: { ...(member.stats || {}), equipmentPlan: plan } },
-            reason, member);
-        if (next.stats.equipmentPlan !== plan || ClanMembershipPolicy.reconcileState(next).stats.equipmentPlan !== plan) {
-            return Promise.resolve(null);
-        }
-        return writeHeldOnRevision(member, { stats: { equipmentPlan: plan, lastReason: reason } }, reason);
-    },
-
     retireMarketErrand(characterId, expected) {
         const current = cache.get(Number(characterId));
         if (!current || current.phase !== 'cold' || !expected) return Promise.resolve(null);
@@ -3877,7 +3927,10 @@ const BotLifeState = {
                 if (learned.coldLifeRow) saved = EconomyCommit.acceptRow(learned.coldLifeRow);
                 if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
             }
-            if (changed) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
+            // The raise lands before the learner's next write (a craft of the learned recipe
+            // on the revision it moved), or after the bot's command: built on its row.
+            const raised = changed ? await invoke('GameServer/Bot/Economy/CraftWorkshopService').recipeLearned(state.characterId) : null;
+            if (raised) saved = DecisionEvents.withRaise(saved, raised);
             if (learnedShotTarget && saved.phase === 'cold' && !this.hotRow(saved.characterId)) {
                 saved = await this.upsertState({ ...saved, stats: { ...saved.stats, shotRecipeDemand: null } },
                     'shot_recipe_acquired') || saved;
@@ -4191,8 +4244,9 @@ const BotLifeState = {
         return cache.recent(cache.size);
     },
 
-    // Spot occupancy kept up to date at every state write (the hot body's kill
-    // share, SpotProfiles.spotHunters; the status line's per-spot count).
+    // Main's spot occupancy, a mirror of where the bots stand, kept up to date at
+    // every state write: the status line's per-spot count, the hot body's kill
+    // share (SpotProfiles.spotHunters, its tactics). No decision reads it: the spot aggregate is the worker's (SpotContest, EnemyMet).
     occupancyIndex() {
         return cache.occupancy;
     },

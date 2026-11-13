@@ -12,7 +12,7 @@ const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Generics = invoke(path.actor);
 
 // Which monster a hot party prefers when its leader scans for the next pull
-// (U10, step 1.5). The cold party resolver asks PartyHuntingTarget.npcId.
+// (one rule hot and cold). The cold party resolver asks PartyHuntingTarget.npcId.
 const saved = [];
 function replace(object, key, value) { const old = object[key]; saved.push(() => object[key] = old); object[key] = value; }
 function actor(id, x = 0, kind = null) {
@@ -24,7 +24,7 @@ function actor(id, x = 0, kind = null) {
         automation: { replenishVitals() {} }, select() {}, moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
-    replace(Geo, 'hasLineOfSight', () => true);
+    replace(Geo, 'canWalkStraight', () => true);
     const group = [1, 2].map(id => ({ accountId: `bot_hot_target_${id}`, fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader] = group;

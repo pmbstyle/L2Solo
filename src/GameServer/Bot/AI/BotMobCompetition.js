@@ -4,6 +4,7 @@ const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const ResourceCompetition = require('../../Social/ResourceCompetitionPolicy');
+const { hotStanding } = require('../../Social/PvpAggression');
 
 const CLAIM_MS = 15000;
 const COOLDOWN_MS = 120000;
@@ -13,8 +14,9 @@ const { randomUUID } = require('crypto');
 function attackChance(session, opponent, now = Date.now()) {
     const sourceId = Number(session?.actor?.fetchId?.()), targetId = Number(opponent?.fetchId?.());
     if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !Number.isSafeInteger(targetId) || targetId <= 0) return 0;
-    return ResourceCompetition.escalationChance(Voice.profile(session),
-        InteractionMemory.assess({ id: sourceId }, { id: targetId }, {}, now));
+    const relation = InteractionMemory.assess({ id: sourceId }, { id: targetId }, {}, now), target = hotStanding(opponent);
+    return ResourceCompetition.escalationChance(Voice.profile(session), relation, { ownKarma: hotStanding(session.actor).karma,
+        targetKarma: target.karma, targetFlagged: target.flagged, war: relation.war?.mutual === true });
 }
 
 // Called when an accepted swing/cast begins, with a damage fallback for

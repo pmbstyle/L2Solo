@@ -155,61 +155,11 @@ assert.equal(injured.vitals.hp, 0, 'periodic healing cannot resurrect a corpse')
 
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Estimate = invoke('GameServer/Clan/ClanRaidEstimate');
-const savedProfile = Combat.profileFor, savedNpc = Combat.npcForSpot;
-let profilesRead = 0;
-try {
-    Combat.profileFor = member => { profilesRead++; return { pAtk: member.pAtk, pDef: 500, maxHp: 5000,
-        maxMp: 1000, atkSpd: 400, skills: [], effects: [] }; };
-    Combat.npcForSpot = () => ({ maxHp: 50000, pAtk: 500, pDef: 300, atkSpd: 300 });
-    const roster = [{ characterId: 1, classId: 33, pAtk: 500 }, { characterId: 2, classId: 9, pAtk: 500 }];
-    const cache = new Map();
-    const estimate = Estimate.estimate(roster, spot, cache);
-    assert(Number.isFinite(estimate.fightSeconds) && estimate.fightSeconds > 0);
-    Estimate.estimate(roster, spot, cache);
-    assert.equal(profilesRead, 2, 'combat profiles are cached across the planning pass');
-    assert(Estimate.estimate(roster.map(m => ({ ...m, pAtk: 1000 })), spot).fightSeconds < estimate.fightSeconds,
-        'the economic estimate responds to real damage rather than just levels');
-} finally { Combat.profileFor = savedProfile; Combat.npcForSpot = savedNpc; }
-try {
-    Combat.profileFor = member => ({ pAtk: 500, mAtk: 1000, pDef: 500, maxHp: 5000,
-        maxMp: 20000, atkSpd: 400, castSpd: 333, skills: [], effects: [], ...member.profile });
-    Combat.npcForSpot = () => ({ maxHp: 150000, pAtk: 2000, pDef: 300, mDef: 200, atkSpd: 300 });
-    const tank = { characterId: 1, classId: 33 };
-    const heal = { selfId: 1011, level: 1, spell: true, power: 1000, mp: 20, hitTime: 1000 };
-    const healer = { characterId: 2, classId: 16, profile: { skills: [heal] } };
-    const quickHeal = Estimate.estimate([tank, healer], spot);
-    const slowHeal = Estimate.estimate([tank, { ...healer, profile: { skills: [{ ...heal, hitTime: 10000 }] } }], spot);
-    assert.equal(quickHeal.healingBudget, slowHeal.healingBudget);
-    assert(quickHeal.healingPerSecond > slowHeal.healingPerSecond);
-    assert(quickHeal.successChance > slowHeal.successChance, 'equal MP budgets cannot hide insufficient healing throughput');
-    const nuke = { selfId: 1230, level: 1, spell: true, power: 100, mp: 10, hitTime: 3000, reuse: 0 };
-    const mage = { characterId: 3, classId: 12, profile: { pAtk: 10, skills: [nuke], castSpd: 300 } };
-    const slow = Estimate.estimate([tank, healer, mage], spot);
-    const fast = Estimate.estimate([tank, healer, { ...mage, profile: { ...mage.profile, castSpd: 900 } }], spot);
-    assert(fast.damagePerSecond > slow.damagePerSecond && fast.fightSeconds < slow.fightSeconds,
-        'mage damage follows learned spell casting speed, not melee attack speed');
-    // One planning job asks every raid spot about one roster: what a member
-    // casts carries over, each boss still takes its own damage.
-    Combat.npcForSpot = picked => ({ maxHp: 150000, pAtk: 2000, pDef: 300, mDef: picked.mDef, atkSpd: 300 });
-    const softSpot = { ...spot, id: 'soft', raidBossTemplateId: 1, mDef: 100 }, hardSpot = { ...spot, id: 'hard', raidBossTemplateId: 2, mDef: 900 };
-    const job = new Map(), party = [tank, healer, mage];
-    assert.equal(Estimate.estimate(party, softSpot, job).damagePerSecond, Estimate.estimate(party, softSpot).damagePerSecond);
-    assert.equal(Estimate.estimate(party, hardSpot, job).damagePerSecond, Estimate.estimate(party, hardSpot).damagePerSecond);
-    Combat.npcForSpot = () => ({ maxHp: 150000, pAtk: 2000, pDef: 300, mDef: 200, atkSpd: 300 });
-    const reused = Estimate.estimate([tank, healer, { ...mage, profile: { ...mage.profile,
-        skills: [{ ...nuke, reuse: 12000 }] } }], spot);
-    assert(reused.damagePerSecond < slow.damagePerSecond, 'spell reuse limits damage');
-    const exhausted = Estimate.estimate([tank, healer, { ...mage, profile: { ...mage.profile, maxMp: 50 } }], spot);
-    assert(exhausted.damagePerSecond < slow.damagePerSecond, 'a mage cannot cast indefinitely without MP');
-    const bowProfile = { equipment: { weaponKind: 'Weapon.Bow', attackReuseDelay: 1500 } };
-    const bow = Estimate.estimate([{ characterId: 4, classId: 9, profile: bowProfile }], spot);
-    const Formulas = invoke('GameServer/Formulas');
-    const expected = Formulas.calcPhysicalDamage(500, 0, 300, 0) * 1000 / Formulas.calcBowAttackTimes(400, 1500).cycleMs;
-    assert.equal(bow.damagePerSecond, expected, 'archer damage includes the native bow reuse cycle');
-    const slowerBow = Estimate.estimate([{ characterId: 4, classId: 9,
-        profile: { equipment: { weaponKind: 'Weapon.Bow', attackReuseDelay: 3000 } } }], spot);
-    assert(slowerBow.damagePerSecond < bow.damagePerSecond);
-} finally { Combat.profileFor = savedProfile; Combat.npcForSpot = savedNpc; }
+// Clan economics now consume an admitted shared forecast, rather than the
+// old soft estimate made from incomplete synthetic combat profiles. Actual
+// damage/cache/shot parity is exercised in test_clan_raid_assessment; native
+// mage cast speed/reuse/MP/shot budgets in test_clan_raid_mage_offense, and
+// native healing cast timing and HoT budgets in test_raid_healing_estimate.
 invoke('GameServer/DataCache').init();
 const actualSpot = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById('raid:10372');
 // Owned characters fight with their learned kit only (113e1791); the roster
@@ -219,7 +169,7 @@ const actualEstimate = Estimate.estimate([4, 15, 52, 9, 21, 34, 2].map((classId,
     state.stats.coldCombat = Combat.legacySnapshot(state, Combat.skillRecordsFromTree(classId, 40));
     return state;
 }), actualSpot);
-assert(actualEstimate && Object.values(actualEstimate).every(Number.isFinite),
-    'real NPC, class and learned-skill profiles produce a finite economic estimate');
-assert(actualEstimate.healingBudget > 0 && actualEstimate.damagePerSecond > 0);
+assert.equal(actualEstimate.assessment.ready, false, 'learned skills do not manufacture missing worn equipment');
+assert(actualEstimate.assessment.reasons.includes('raid_equipment'));
+assert.equal(actualEstimate.estimate, null, 'a rejected native roster has no profitable raid route');
 console.log('Raid strategy: native orc healing, heal economy, contested resets, respawn generations and opportunity cost passed');

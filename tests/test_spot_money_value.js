@@ -102,7 +102,7 @@ try {
         const row = Table.value(s.id, 'dps', 50, true);
         return row ? Hunt.netIncome(row, Hunt.consumablePrices(fighter)) : 0;
     };
-    // The table ends at the deep-blue gap (drops at 30%, user 10-29): every camp a naked
+    // The table ends at the deep-blue gap (C4 drops at 30%): every camp a naked
     // L50 survives lies past it, so none pays and the fallback takes the closest safe ground.
     assert.equal(Math.max(...oracle.map(income)), 0, 'no camp past the deep-blue gap carries table income');
     const distance = s => Math.abs(s.avgLevel - fighter.level);
@@ -131,10 +131,8 @@ try {
     assert(oracle.every(spot => upper(spot)), 'cheap bound must retain every exact-safe camp');
     assert(Match.soloSpotUpperBound([{ survivalKnown: false }])(catalogue[0]), 'unknown kits remain neutral');
     const unplaced = { ...fighter, spotId: null, loc: {} };
-    assert.equal(Spots.findForState(unplaced, { ...options, hasRoom: () => false }), null,
-        'the weak-kit fallback cannot send an unplaced bot to a full camp');
-    const other = Spots.findForState(unplaced, { ...options, hasRoom: id => id !== picked.id });
-    assert(other && other.id !== picked.id, 'a full easy camp is skipped for another surviving camp');
+    const other = Spots.findForState(unplaced, { ...options, excludedSpotIds: new Set([String(picked.id)]) });
+    assert(other && other.id !== picked.id, 'an excluded easy camp is skipped for another surviving camp');
     assert(savedGate(other, unplaced, options), 'the alternative still passes native combat admission');
     console.log(`PASS full catalogue: ${world.npc.spawns.length} spawns, near=${near.length}, `
         + `fallback=${fallbackChecks}, picked=${picked.id} at ${picked.avgLevel}`);

@@ -88,8 +88,9 @@ let crafter;
     store.items[0].price = 10000;
     const beforePlayer = await amounts(player, 1864), beforeSeller = await amounts(seller, 1864);
     seller.shoppingTarget = { ...Market.offerTarget(selected.offer), sale: selected.sale };
-    const npcFile = require.resolve('../src/GameServer/World/Generics/NpcTalkResponse');
-    require(npcFile); stub(require.cache[npcFile], 'exports', () => {});
+    // The visit's NPC junk sale of what the buyer left is not this sale's subject.
+    const junkFile = require.resolve('../src/GameServer/World/Generics/NpcBypasses/SellJunk');
+    require(junkFile); stub(require.cache[junkFile], 'exports', () => Promise.resolve());
     let continued = 0; stub(Shopping, 'scheduleRestock', () => { continued++; });
     await Shopping.sellAndRestock(seller, seller.actor, {}, { say() {} });
     assert.equal(continued, 1);

@@ -203,8 +203,12 @@ async function run() {
         assert.notEqual(tableTown, 'Giran', 'D-grade stock has its own market town');
         assert.equal(opened.store?.town, tableTown, 'caller town cannot replace the opening town');
         const recordId = opened.store.id;
+        // A goal's bid as its build's plan row, posted by main (executePlan).
+        const postBid = (bidder, wanted) => Market.executePlan(bidder, { buyShop: AfkTrade.BUY,
+            buyAds: invoke('GameServer/Bot/Economy/BuyAdPolicy').linesFor(bidder, wanted, { watchList: [], board: AfkTrade.boardIndex() })
+                .map(line => [line.selfId, line.count, line.price]) }, { reviewGoal: false });
         state = await moveTo(id, TI, 'Talking Island');
-        await Market.reconcile(state, goal);
+        await postBid(state, goal);
         assert.equal(AfkTrade.ownerRecords(id).find(record => record.kind === 'buy_ad')?.town, tableTown);
         assert.equal(AfkTrade.ownerRecords(id).find(record => record.kind === 'buy_ad')?.id, recordId,
             'a move alone does not replace a standing ad');
@@ -217,10 +221,11 @@ async function run() {
             'the changed target is a genuinely useful and funded native NG helmet');
         const nextGoal = gearGoal(nextNative);
         assert.notEqual(nextGoal.target.itemId, goal.target.itemId, 'the authored NG kit wants a different helmet');
-        const next = await Market.reconcile(state, nextGoal);
-        assert.equal(next.shop?.town, 'Talking Island', 'a different wanted item chooses a new ad town');
+        await postBid(state, nextGoal);
+        const nextShop = AfkTrade.ownerRecords(id).find(record => record.storeType === AfkTrade.BUY);
+        assert.equal(nextShop?.town, 'Talking Island', 'a different wanted item chooses a new ad town');
         const center = ListingService.townCenter('Talking Island');
-        assert(Math.hypot(next.shop.locX - center.locX, next.shop.locY - center.locY) < 2500,
+        assert(Math.hypot(nextShop.locX - center.locX, nextShop.locY - center.locY) < 2500,
             'the persisted Talking Island ad uses its own town coordinates');
         const sourceId = await floranSource(nextNative, 'StandingKarmaSource');
         const pkNative = await moveToKarma(nextNative, 'group_f_karma_standing');

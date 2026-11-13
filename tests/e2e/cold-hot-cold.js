@@ -3,12 +3,12 @@
 // A player comes to a crowd of cold bots and leaves again. The population's own policy has to heat
 // the bots near the player (cold -> hot through the handoff, the bots shown to the player: CharInfo)
 // and cool them after the player has gone (hot -> cold after cooldownGraceMs, 120 s, beyond
-// cooldownRadius, 11000), with their rows whole and no worker fault or afterCommit error on the way.
+// cooldownRadius, 9000), with their rows whole and no worker fault or afterCommit error on the way.
 // Run: node scripts/perf.js run --save=<id> --scenario=script --script=tests/e2e/cold-hot-cold.js --warmup=2 --minutes=10
 
 const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 const NEAR = 3000;
-// Far enough from town that leaving it puts the crowd past cooldownRadius (11000).
+// Far enough from town that leaving it puts the crowd past cooldownRadius (9000).
 const AWAY = 14000;
 
 module.exports = {

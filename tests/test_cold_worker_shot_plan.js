@@ -1,4 +1,4 @@
-process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts the optional worker telemetry bridge.
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts the worker's decision trace bridge.
 const assert = require('node:assert/strict');
 const { useRate, useGeneral } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
@@ -20,7 +20,7 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
 const { npcPlanningCatalogRows } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const root = path.resolve(__dirname, '..');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '710021';
+Config.decisionTrace = true;
 // Keep the original native fixture and assertions, with both literal UUID
 // database paths configured and asserted before the first connection.
 async function createWorld(characters) {
@@ -44,16 +44,21 @@ async function createWorld(characters) {
 const observer = String.raw`
 module.exports.shotProbe = async () => {
     const entry = kernel.states.get(710021), state = entry.state, timestamp = Date.now();
-    // New loot (an edge) runs the round's action plan.
+    // A round, then the crafter's town visit, whose plan selects its craft step.
     const result = await kernel.projectResolve(state, { patch: {}, materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 1864, amount: 1 }] },
         debug: {}, events: [], nextResolveAt: timestamp + 60000 }, timestamp);
     const index = require('../Economy/ShotMarketIndex').native(), market = index.marketSnapshot(timestamp);
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(result.state, { timestamp });
+    const visiting = { ...result.state, activity: 'shopping', currentRegion: 'Giran' };
+    const visitEconomy = invoke('GameServer/Bot/Economy/EconomyContext').forState(visiting, { timestamp });
+    const visit = await occupationFor(visiting, timestamp, { economy: visitEconomy, stock: visitEconomy.stock('shots'), caller: 'probe' }, 'showcase');
     const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(result.state);
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(20);
     const candidate = require('../Economy/ShotCraftPolicy').craftCandidate(result.state, recipe, { ...market, offersFor: (...args) => index.offersFor(...args), context: { ...economy, mpPerHour: regen.mp * 1200 } });
-    const crafted = { ...state, stats: { ...state.stats, shotCraft: { recipeId: 20 } },
-        inventory: { ...state.inventory, 1463: { selfId: 1463, amount: 1000000 } } };
+    // The crafter's own stock over the kit its first build rated (a loaded row holds no
+    // rates until its build runs: the whole bag is then its own keep).
+    const crafted = { ...result.state, stats: { ...result.state.stats, shotCraft: { recipeId: 20 } },
+        inventory: { ...result.state.inventory, 1463: { selfId: 1463, amount: 1000000 } } };
     kernel.upsert({ state: crafted });
     const before = index.marketSnapshot(timestamp, crafted).unlistedSupply.get(1463);
     const proposed = { ...crafted, inventory: { ...crafted.inventory, 1463: { selfId: 1463, amount: 1000100 } } };
@@ -65,7 +70,7 @@ module.exports.shotProbe = async () => {
     const duplicate = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
     kernel.remove(state.characterId);
     const removed = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
-    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: [...market.shotDemand.get(1463)], orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: result.economyPlan, edges: result.economyEdges, state: result.state,
+    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: [...market.shotDemand.get(1463)], orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: visit?.economyPlan, state: result.state,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/World\/World\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
@@ -123,7 +128,7 @@ parentPort.on('message', message => {
         const diagnosticCoordinator = new ColdSimulationCoordinator(); diagnosticCoordinator.worker = worker; diagnosticCoordinator.workerEpoch = epoch;
         worker.on('message', message => {
             messages.push(message);
-            if (message.type === 'economy_diagnostics') diagnosticCoordinator.onMessage(message, worker, epoch);
+            if (message.type === 'decision_trace') diagnosticCoordinator.onMessage(message, worker, epoch);
         }); worker.on('error', error => { fault = error; });
         const wait = async predicate => { const deadline = Date.now() + 60000;
             while (!messages.some(predicate)) { if (fault) throw fault;
@@ -137,7 +142,7 @@ parentPort.on('message', message => {
             rows: catalog.slice(at, at + Protocol.MAX_BATCH), done: at + Protocol.MAX_BATCH >= catalog.length });
         const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
-        send('init', { config: { loopIntervalMs: 1000, developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '710021' } }, 'init');
+        send('init', { config: { loopIntervalMs: 1000, developerDiagnostics: true, decisionTrace: true } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
         // Finite funded demand and explicit finite inputs/scroll. E2 correctly
         // refuses to invent a missing recipe or ingredient source from a bid.
@@ -150,10 +155,10 @@ parentPort.on('message', message => {
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'probe'), shotProbe: true });
         const response = await wait(message => message.probeId === 'probe'); if (response.error) throw Error(response.error);
         const result = response.value;
-        console.log(JSON.stringify({ edges: result.edges, shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
+        console.log(JSON.stringify({ shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
         const selectedStep = Policy.unpackStep(result.plan?.shot);
-        assert(result.edges & 1); assert(selectedStep?.recipeTarget > 0, 'native worker with no known recipe selects a profitable executable recipe');
-        assert(messages.some(message => message.type === 'economy_diagnostics'), 'worker emits sampled decision telemetry on the separate developer bridge');
+        assert(selectedStep?.recipeTarget > 0, 'a crafter\'s town visit with no known recipe selects a profitable executable recipe');
+        assert(messages.some(message => message.type === 'decision_trace'), 'the worker sends its decision trace to main');
         assert.deepEqual(result.forbiddenLoaded, [], 'pure craft decision loads no World actor, Network or database implementation');
         assert.equal(result.indexHooks.overlay, result.indexHooks.before + 100, 'projected own stock has a transient overlay');
         assert.equal(result.indexHooks.held, undefined, 'foreign stock is never exposed by a global snapshot');
@@ -193,21 +198,17 @@ parentPort.on('message', message => {
         const coordinator = new ColdSimulationCoordinator();
         coordinator.fenceBot = () => { throw Error('economic_fence_forbidden'); };
         const Market = require('../src/GameServer/Bot/Economy/BotAfkMarketService');
-        const Goals = invoke('GameServer/Bot/Goals/GoalService'), originalReview = Goals.review;
-        Goals.review = async () => null;
         const wallet = state.adena;
-        try {
-            const execution = await Market.executePlan(state, { shot: result.plan.shot, sell: [], withdraw: [], buyAds: [], travel: null },
-                { beforeWrite: () => {}, step: work => coordinator.step('economyPlan', id, work) });
-            assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === recipe.recipeId),
-                'main executes the worker recipe target from a genuine physical scroll');
-            assert.equal(execution.state.adena, wallet - 1, 'the quoted recipe price is paid once');
-            assert.equal((await Database.fetchItems(sellerId)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0);
-            assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0,
-                'learning consumes the delivered physical scroll');
-            assert.equal(coordinator.counters.fences, 0);
-            assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
-        } finally { Goals.review = originalReview; }
+        const execution = await Market.executePlan(state, { shot: result.plan.shot, sell: [], withdraw: [], buyAds: [], travel: null },
+            { beforeWrite: () => {}, step: work => coordinator.step('economyPlan', id, work) });
+        assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === recipe.recipeId),
+            'main executes the worker recipe target from a genuine physical scroll');
+        assert.equal(execution.state.adena, wallet - 1, 'the quoted recipe price is paid once');
+        assert.equal((await Database.fetchItems(sellerId)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0);
+        assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === recipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 0,
+            'learning consumes the delivered physical scroll');
+        assert.equal(coordinator.counters.fences, 0);
+        assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
         // An owned book without a supported profitable exit is held. Neither
         // ownership nor an old recipe-target packet invents a craft opportunity.
         const ownedRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(317);
@@ -226,11 +227,11 @@ parentPort.on('message', message => {
         await invoke('HistoryDatabase').flush();
         // The history worker may still be appending a later bridged batch while
         // this reads: only newline-terminated (whole) rows are parsed.
-        const diagnostics = fs.readFileSync(path.join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8').split('\n').slice(0, -1).map(JSON.parse);
-        // The bridge is bounded (64 records a second): whether the later town
-        // choice survives depends on the wall-clock second it lands in, so the
-        // check is that this bot's worker records reach the writer at all.
-        assert(diagnostics.some(row => row.owner === id && row.thread === 'worker'), 'sampled worker choices reach the existing history writer');
+        const trace = fs.readFileSync(path.join(fixture.directory, 'logs/decision-trace.jsonl'), 'utf8').split('\n').slice(0, -1).map(JSON.parse);
+        assert.equal(trace[0].type, 'decision_trace_header');
+        assert.match(trace[0].build, /^([0-9a-f]{40}|unknown)$/); assert(trace[0].run);
+        // The trace is rate-bounded: the check is that this bot's worker records reach the history writer at all.
+        assert(trace.some(row => row.bot === id && row.thread === 'worker'), 'the worker\'s decisions reach the history writer');
         console.log('Native worker executable recipe decision, physical purchase, own-stock privacy, held unsupported book, zero economy fences and margin rejection passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

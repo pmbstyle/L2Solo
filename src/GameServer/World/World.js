@@ -638,6 +638,10 @@ const World = {
         const availability = BotAvailability.evaluate(session, targetSession, options);
         const bot = targetSession.actor;
 
+        if (availability.available && availability.clanLeader && !options.clanLeaderPrepared && !options.constParty) {
+            return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, targetSession, distribution, source);
+        }
+
         // Load remembered grievances before answering a hot invitation, just
         // as the remote path does. An unloaded preview is not a refusal.
         if (availability.reason === 'relationship_unloaded' && !options.relationshipLoaded) {
@@ -672,7 +676,8 @@ const World = {
             return false;
         }
 
-        if (!PartyCompanionService.reserveCapacity(session, capacityReservation)) {
+        if (!PartyCompanionService.isActiveCompanion(targetSession, session)
+            && !PartyCompanionService.reserveCapacity(session, capacityReservation)) {
             BotSocialMemory.recordEvent(session, targetSession, 'invite_attempt', source);
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
             session.dataSendToMe(ServerResponse.joinParty(0));
@@ -796,7 +801,12 @@ const World = {
                 return false;
             }
 
-            await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
+            const preview = BotAvailability.evaluateState(session, state, { ...options, loadMemory: false });
+            if (preview.available && preview.clanLeader && !options.clanLeaderPrepared && !options.constParty) {
+                return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, state, distribution, source);
+            }
+
+            if (!preview.clanLeader) await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
             if (session.actor !== actor) return false;
             const availability = BotAvailability.evaluateState(session, state, options);
             if (!availability.available) {
@@ -838,6 +848,7 @@ const World = {
                 playerLoc: actorLoc(actor),
                 forceNearPlayer: true,
                 interruptBackgroundActivity: true,
+                clanLeaderInvite: options.clanLeaderPrepared === true && availability.clanLeader,
                 constParty: options.constParty === true
             }).then((result) => {
                 if (session.actor !== actor) {

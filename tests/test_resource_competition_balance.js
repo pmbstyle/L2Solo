@@ -7,14 +7,17 @@ const people = Array.from({ length: 1700 }, (_, i) => Persona.generate({ charact
 const neutral = { ready: true, personal: null };
 const grievance = { ready: true, personal: { affinity: -8, trust: -8, hostility: 12, fear: 2 } };
 const friendly = { ready: true, personal: { affinity: 20, trust: 20, hostility: 0, fear: 0 } };
-const ordinary = Policy.escalationChance({ traits: {} }, neutral);
+// Against a red PK (no C4 standing at stake) the old balance; a white opponent weighs turning red.
+const ordinary = Policy.escalationChance({ traits: {} }, neutral, { targetKarma: 240 });
 assert(ordinary > 0.3 && ordinary < 0.5, 'ordinary strangers can answer a provocation without usually fighting');
+const white = Policy.escalationChance({ traits: {} }, neutral);
+assert(white > 0.15 && white < ordinary, 'turning red holds back an ordinary stranger, not every one');
 assert.strictEqual(Policy.escalationChance({ traits: {} }, { ready: false }), 0);
 assert.strictEqual(Policy.escalationChance({ traits: {} }, friendly), 0, 'ordinary friends tolerate an isolated encroachment');
 assert(Policy.escalationChance({ traits: { caution: 1, empathy: 1, resilience: 1, assertiveness: 0 } }, neutral) === 0,
     'there is no mandatory PvP probability floor for peaceful personalities');
-assert(Policy.escalationChance({ traits: {} }, grievance) > ordinary);
-assert(Policy.escalationChance({ traits: {} }, { ...grievance, personal: { ...grievance.personal, fear: 30 } }) < ordinary);
+assert(Policy.escalationChance({ traits: {} }, grievance) > white);
+assert(Policy.escalationChance({ traits: {} }, { ...grievance, personal: { ...grievance.personal, fear: 30 } }) < white);
 const probation = { ...grievance, clanSocial: { selfDiscipline: { stage: 'probation' } } };
 assert(Policy.escalationChance({ traits: {} }, probation) < Policy.escalationChance({ traits: {} }, grievance));
 
@@ -37,9 +40,11 @@ for (const [name, sizes] of Object.entries({ solo: [1, 1], solo_party: [1, 3], p
         }
         counts[relationName] = { pvp, contests };
     }
-    assert(counts.neutral.pvp > samples * 0.06 && counts.neutral.pvp < samples * 0.3, `${name}: crowded neutral encounters sometimes become PvP, with a large peaceful majority`);
+    console.log(name, JSON.stringify(counts));
+    // Lower bound 0.03: a white opponent's karma cost holds back ~40 % of escalations.
+    assert(counts.neutral.pvp > samples * 0.03 && counts.neutral.pvp < samples * 0.3, `${name}: crowded neutral encounters sometimes become PvP, with a large peaceful majority`);
     assert(counts.grievance.pvp > counts.neutral.pvp * 1.3, `${name}: remembered offenses materially increase escalation`);
-    // Upper limits raised (user, 2026-10-05): neutral 0.25 -> 0.3, grievance 0.4 -> 0.5; the 11 persona types and the +-0.2 spread of step 3.1
+    // Upper limits raised: neutral 0.25 -> 0.3, grievance 0.4 -> 0.5; the 11 persona types and their +-0.2 spread
     // add bolder bots (brawlers), so resentful party-vs-solo encounters reach ~43% and neutral party-vs-party ~27%.
     assert(counts.grievance.pvp < samples * 0.5, `${name}: even resentful hunters usually resolve competition without PvP`);
     assert(counts.friendly.pvp < counts.neutral.pvp / 10, `${name}: friendship protects cooperation`);

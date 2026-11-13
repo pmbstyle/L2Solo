@@ -36,7 +36,7 @@ function kernelWith(proposals) {
         resolveSolo: async () => ({}),
         emit: (type, payload, msgId, payloadBytes) => {
             if (type !== 'proposal_batch') return;
-            // L9: the size handed to the worker's send() is the real JSON size.
+            // The size handed to the worker's send() is the real JSON size.
             assert.strictEqual(payloadBytes, Protocol.byteLength(payload));
             // The measured sizes travel next to the proposals and match what
             // the main thread would measure; the whole message still fits.
@@ -142,7 +142,7 @@ function kernelBatches(proposals) {
     }
 }
 
-// L9: the envelope size built from a known payload size is the real JSON
+// The envelope size built from a known payload size is the real JSON
 // size, and the 256 KB limit still refuses an oversized message by it.
 {
     const payload = { proposals: [proposal(9, 1, 'ж🙂"\\'.repeat(50))], proposalBytes: [1], capacityBlocked: true };

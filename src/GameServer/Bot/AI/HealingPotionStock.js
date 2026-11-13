@@ -46,15 +46,25 @@ function useThreshold(value) {
 function targetAmountFor(value) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
-    // The stock rule needs no wish network (L25).
-    return Economy.stockFor(state, 'potions').target;
+    // The kit rates over the bag (EconomyContext.keptTargets): no wish network, no price.
+    return Economy.keptTargets(state).potions.target;
 }
 
+// The potion a level band buys, as last quoted, by selfId: its details are static,
+// its price is read per call (botBuyPrice: the NPC price table, the server rate),
+// so the key is exactly (band's selfId, price) and a moved price rebuilds it.
+// Shared and frozen: callers only read it.
+const purchaseQuotes = new Map();
 function purchasePotionFor(value) {
     const level = Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1;
     const choice = PURCHASE_BY_LEVEL.find((entry) => level <= entry.maxLevel) || PURCHASE_BY_LEVEL[0];
     // The NPC's price at the current rate (x10: 660 for a 330 Healing Potion).
-    return { ...detailsFor(choice.selfId), price: StaticMerchantPricing.botBuyPrice(choice.selfId) };
+    const price = StaticMerchantPricing.botBuyPrice(choice.selfId);
+    const held = purchaseQuotes.get(choice.selfId);
+    if (held?.price === price) return held;
+    const quote = Object.freeze({ ...detailsFor(choice.selfId), price });
+    purchaseQuotes.set(choice.selfId, quote);
+    return quote;
 }
 
 // The shared operating reserve, read from a cold state or a hot actor.
@@ -140,11 +150,14 @@ function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
     // The budget needs the review; the same review gives the target. Main
-    // reads the plan's published kit (keptKit: a near bot's decision is taken in the background).
+    // reads the build's kit rates (keptKit: a near bot's decision is taken in
+    // the background), as the worker does for a target it is given.
     const onMain = require('node:worker_threads').isMainThread;
-    const context = options.context || (onMain ? Economy.keptKit(state)
-        : options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state));
-    const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
+    const context = options.context || (onMain || options.targetAmount !== undefined ? Economy.keptKit(state) : Economy.forState(state));
+    // kit: the visit's own amounts (NpcRestockPlan.collect at the local quote, a hot visit's held kit);
+    // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
+    const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'potions');
+    const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory
         ? amountInInventory(options.inventory, potion.selfId)
@@ -154,11 +167,11 @@ function restockPlan(value, options = {}) {
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice ?? potion.price) || 0);
-    const reserve = Math.max(0, Number(options.reserve ?? context.survivalReserve) || 0);
+    const reserve = Math.max(0, Number(options.reserve ?? context.refillReserve) || 0);
     const desired = Math.max(0, targetAmount - stockAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(potion.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, potion.selfId, PurchaseFunding.survivalTranche(context, potion.selfId, unitPrice), PurchaseFunding.quoteScale(context.stock('potions').unitPrice, unitPrice));
+    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, potion.selfId, PurchaseFunding.survivalTranche(context, potion.selfId, unitPrice), PurchaseFunding.quoteScale(estimate, unitPrice));
     const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
@@ -215,7 +228,7 @@ function selectPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
     const safeMaxHp = Math.max(1, Number(maxHp || hp || 1));
     const safeHp = Math.max(0, Number(hp || 0));
     const hpRatio = safeHp / safeMaxHp;
-    // The danger moment (E70, DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
+    // The danger moment (DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
     if (!options.dangerMoment && hpRatio > (options.pvp ? 0.65 : useThreshold(roleOrActor))) return null;
     const available = availablePotions(inventory, hpRatio, options);
     if (!available.length) return null;
@@ -260,7 +273,7 @@ function tryUseInCombat(session, actor, target, options = {}) {
     if (actor.state?.fetchCasts?.() || (activeHot && !options.pvp)) return null;
 
     const targetId = Number(target.fetchId?.() ?? target.id ?? 0);
-    // A bot that took the danger moment for this target drinks only by it (E70);
+    // A bot that took the danger moment for this target drinks only by it;
     // the potion HoT and the item reuse limit the bottles, as on the cold side.
     if (!options.dangerMoment && !options.pvp && session.dangerMoment?.targetId === targetId) return null;
 

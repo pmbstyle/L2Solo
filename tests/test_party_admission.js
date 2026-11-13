@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { PartyAdmission, priority } = require('../src/GameServer/Bot/Population/PartyAdmission');
-const config = { maxBackgroundParties: 3 };
+const config = { maxPlayingPopulation: 12 };
 const parties = [{ stats: { capacityPool: 'social' } }, { stats: { objective: { priority: 'required' } } }];
 const admission = new PartyAdmission();
 const release = admission.reserve(parties, config);
@@ -9,7 +9,7 @@ assert.strictEqual(admission.reserve(parties, config), null, 'every producer sha
 release(); release();
 assert.strictEqual(admission.pending, 0);
 assert.strictEqual(new PartyAdmission().reserve([...parties, {}], config), null, 'all persisted origins count after restart');
-assert.strictEqual(admission.reserve([], { maxBackgroundParties: 0 }), null);
+assert.strictEqual(admission.reserve([], { maxPlayingPopulation: 0 }), null);
 const at = 1800000000000;
 const freshRequired = { status: 'open', priority: 'required', requestedAt: at };
 const oldPreferred = { status: 'open', priority: 'preferred', requestedAt: at - 290000 };

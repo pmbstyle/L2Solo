@@ -8,6 +8,90 @@ const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 
 const PARTY_REVIVE_TIMEOUT_MS = 60000;
 const PARTY_REVIVE_APPROACH_DISTANCE = 1500;
+const APPROACH_STALL_MS = 5000;
+const APPROACH_RETRY_MS = 15000;
+const ATTEMPT_WAIT_GRACE_MS = 25000;
+const REVIVE_ANIMATION_MS = 3000;
+const failedApproaches = new WeakMap();
+
+function position(actor) {
+    return { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+}
+
+function distance(a, b) {
+    return Math.hypot(a.locX - b.locX, a.locY - b.locY, a.locZ - b.locZ);
+}
+
+function approachKey(provider, target) {
+    return `${provider.actor.fetchId()}:${target.actor.fetchId()}`;
+}
+
+function recentlyFailed(leaderSession, provider, target, now) {
+    const failures = failedApproaches.get(leaderSession);
+    const key = approachKey(provider, target);
+    const failure = failures?.get(key);
+    if (!failure) return false;
+    if (now >= failure.until || failure.provider !== provider.actor || failure.target !== target.actor
+        || failure.deathStartedAt !== target.deathTimerStart
+        || distance(position(provider.actor), failure.from) >= 64
+        || distance(position(target.actor), failure.to) >= 64) {
+        failures.delete(key);
+        return false;
+    }
+    return true;
+}
+
+function noteFailedApproach(leaderSession, provider, target, now) {
+    let failures = failedApproaches.get(leaderSession);
+    if (!failures) failedApproaches.set(leaderSession, failures = new Map());
+    for (const [key, failure] of failures) if (failure.until <= now) failures.delete(key);
+    failures.set(approachKey(provider, target), {
+        provider: provider.actor, target: target.actor,
+        from: position(provider.actor), to: position(target.actor),
+        deathStartedAt: target.deathTimerStart, until: now + APPROACH_RETRY_MS
+    });
+    // At most nine providers and nine corpses belong to one party.
+    if (failures.size > 81) failures.delete(failures.keys().next().value);
+}
+
+function castingResurrection(provider, attempt) {
+    if (!provider?.actor.state?.fetchCasts?.()) return false;
+    const cast = provider.actor.attack?.activeCast;
+    return !!cast && Number(cast.target?.fetchId?.()) === Number(attempt.targetId)
+        && cast.skill?.fetchTargetKind?.() === 'corpse_player';
+}
+
+function noteCastStarted(session, actor, target) {
+    const owner = session?.partyCompanion ? session.followPlayerSession
+        : session?.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').partyLeader(session) : null;
+    const attempt = owner?.partyRevivalAttempt;
+    if (attempt?.providerId !== actor.fetchId() || attempt.targetId !== target.fetchId()) return;
+    // A fast native cast can begin and land between two AI ticks. Record
+    // acceptance here so its stand-up animation is still protected then.
+    attempt.casting = true;
+    attempt.castFinishedAt = null;
+}
+
+function preserveCast(provider, attempt, now) {
+    if (castingResurrection(provider, attempt)) {
+        attempt.casting = true;
+        attempt.castFinishedAt = null;
+        return true;
+    }
+    if (!attempt.casting) return false;
+    // doRevive keeps the corpse flag during its stand-up animation. A
+    // completed native cast must not trigger a duplicate resurrection.
+    attempt.castFinishedAt ??= now;
+    return now - attempt.castFinishedAt < REVIVE_ANIMATION_MS;
+}
+
+function readyToCast(provider, target, skill) {
+    const from = position(provider.actor), to = position(target.actor);
+    if (Math.hypot(from.locX - to.locX, from.locY - to.locY) > Number(skill.fetchDistance?.() || 0)) return false;
+    const geo = invoke('GameServer/Geodata/GeodataEngine');
+    return geo.canWalkStraight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)
+        && geo.hasLineOfSight(from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ);
+}
 
 function withinReviveApproach(provider, target) {
     return Math.hypot(provider.fetchLocX() - target.fetchLocX(), provider.fetchLocY() - target.fetchLocY()) <= PARTY_REVIVE_APPROACH_DISTANCE
@@ -165,21 +249,33 @@ function clearExpiredAttempt(leaderSession, dead, now) {
         leaderSession.partyRevivalAttempt = null;
         return;
     }
-    if (target && provider && !withinReviveApproach(provider.actor, target.actor)) {
-        if (provider.currentTargetId === attempt.targetId) {
-            provider.actor.automation?.abortAll?.(provider.actor);
-            provider.currentTargetId = undefined;
-            provider.actor.unselect?.();
-            provider.pendingPartyChatResult = undefined;
-        }
-        leaderSession.partyRevivalAttempt = null;
+    if (castingResurrection(provider, attempt)) {
+        preserveCast(provider, attempt, now);
         return;
     }
-    const targetStillDead = dead.some((memberSession) => (
-        Number(memberSession.actor?.fetchId?.()) === Number(attempt?.targetId)
-    ));
-    if (attempt && (!targetStillDead || now - Number(attempt.startedAt || 0) > 25000)) {
-        leaderSession.partyRevivalAttempt = null;
+    if (!target) {
+        // Also invalidate an old approach if somebody else revived its target.
+        cancelAttempt(leaderSession);
+        return;
+    }
+    if (preserveCast(provider, attempt, now)) return;
+    if (!withinReviveApproach(provider.actor, target.actor)) {
+        cancelAttempt(leaderSession);
+        return;
+    }
+    const current = position(provider.actor);
+    attempt.lastProgressAt ??= attempt.startedAt;
+    attempt.position ??= current;
+    if (distance(current, attempt.position) >= 32) {
+        attempt.lastProgressAt = now;
+        attempt.position = current;
+    }
+    const path = provider.lastPathfinding;
+    const rejectedPath = path?.at >= attempt.startedAt && path.routeUsable === false
+        && !provider.pendingPathRequest && !provider.actor.state?.inMotion?.();
+    if (attempt.casting || rejectedPath || now - attempt.lastProgressAt >= APPROACH_STALL_MS) {
+        noteFailedApproach(leaderSession, provider, target, now);
+        cancelAttempt(leaderSession);
     }
 }
 
@@ -193,7 +289,7 @@ function castScroll(session, actor, target, skill) {
     });
     actor.automation.scheduleAction(session, actor, target, skill.fetchDistance(), () => {
         actor.attack.remoteHit(session, target, skill);
-    });
+    }, { allowDeadTarget: true });
 }
 
 function cancelAttempt(leaderSession) {
@@ -201,12 +297,26 @@ function cancelAttempt(leaderSession) {
     if (!attempt) return;
     const provider = partySessions(leaderSession).find(s => s.actor.fetchId() === attempt.providerId);
     if (provider?.actor) {
+        const matchesAttempt = request => Number(request?.id) === Number(attempt.targetId)
+            && Number(request?.selfId) === Number(attempt.skillId);
+        // An unrelated native cast can own the action slot while our request
+        // waits behind it. Drop only that queued/stored resurrection so it
+        // cannot fire later after a different provider takes over.
+        if (provider.actor.attack?.queue?.name === 'skill' && matchesAttempt(provider.actor.attack.queue.data)) {
+            provider.actor.attack.resetQueuedEvent();
+        }
+        if (matchesAttempt(provider.actor.storedSpell)) provider.actor.storedSpell = undefined;
+        if (provider.pendingPartyChatResult?.kind === 'resurrection'
+            && Number(provider.pendingPartyChatResult.targetId) === Number(attempt.targetId)) {
+            provider.pendingPartyChatResult = undefined;
+        }
+    }
+    if (provider?.actor && !(provider.actor.state?.fetchCasts?.() && provider.actor.attack?.activeCast)) {
         invoke('GameServer/Bot/AI/BotPvpTactics').stop(provider, provider.actor);
         if (provider.currentTargetId === attempt.targetId) {
             provider.currentTargetId = undefined;
             provider.actor.unselect?.();
         }
-        if (provider.pendingPartyChatResult?.kind === 'resurrection') provider.pendingPartyChatResult = undefined;
     }
     leaderSession.partyRevivalAttempt = null;
 }
@@ -221,8 +331,13 @@ function tick(session, leaderSession, Generics) {
     // still dead. Do not hold the old attempt until its timeout: the next
     // provider tick must immediately pick the next corpse.
     clearExpiredAttempt(leaderSession, dead, now);
+    const activeAttempt = leaderSession.partyRevivalAttempt;
+    if (activeAttempt && preserveCast(partySessions(leaderSession)
+        .find(s => s.actor.fetchId() === activeAttempt.providerId), activeAttempt, now)) {
+        return { handled: activeAttempt.providerId === session.actor.fetchId(), waiting: true, targetId: activeAttempt.targetId };
+    }
     if (dead.length === 0) {
-        leaderSession.partyRevivalAttempt = null;
+        failedApproaches.delete(leaderSession);
         return { handled: false, dead };
     }
     const combat = background
@@ -243,7 +358,20 @@ function tick(session, leaderSession, Generics) {
         if (combat.active && provider && !safeCombatProvider(provider, leaderSession,
             resurrectionSkill(provider.actor) || resurrectionScrollSkill())) {
             cancelAttempt(leaderSession);
-        } else return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
+        } else {
+            // A geodata detour ends without invoking the original action.
+            // Retry from the reached position instead of holding an idle lease.
+            if (provider === session && !provider.actor.state?.inMotion?.() && !provider.pendingPathRequest
+                && !provider.actor.state?.fetchCasts?.() && !provider.actor.isBlocked?.()
+                && provider.lastPathfinding?.at >= attempt.startedAt && provider.lastPathfinding.routeUsable === true
+                && now - Number(attempt.lastRequestedAt || attempt.startedAt) >= 1000) {
+                const target = dead.find(s => s.actor.fetchId() === attempt.targetId);
+                const skill = target && (attempt.source === 'skill'
+                    ? resurrectionSkill(provider.actor) : resurrectionScrollSkill());
+                if (skill) requestResurrection(provider, target.actor, skill, attempt, Generics, now);
+            }
+            return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
+        }
     }
 
     // The leader is the party's anchor.  Restore them first even if another
@@ -259,24 +387,29 @@ function tick(session, leaderSession, Generics) {
         .raidBossByObjectId(leaderSession.partyRaidEngagement.bossId);
     const eligibleProviders = availableProviders.filter(s => !raidBoss
         || !invoke('GameServer/RaidBoss/RaidCurse').isAboveRaidThreshold(s.actor, raidBoss));
-    const targetSession = rescueTargets.filter(target => eligibleProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
+    const targetSession = rescueTargets.filter(target => eligibleProviders.some(provider => withinReviveApproach(provider.actor, target.actor)
+        && !recentlyFailed(leaderSession, provider, target, now))).sort((a, b) => (
         Number(b === leaderSession) - Number(a === leaderSession) ||
         Number(a.actor.fetchId()) - Number(b.actor.fetchId())
     ))[0];
     if (!targetSession) return { handled: false, dead };
     const providers = eligibleProviders
         .filter((memberSession) => withinReviveApproach(memberSession.actor, targetSession.actor))
+        .filter(s => !recentlyFailed(leaderSession, s, targetSession, now))
         .filter((memberSession) => !memberSession.actor.state?.fetchCasts?.())
-        .filter(s => !(background || combat.active) || invoke('GameServer/Effects/EffectRestrictions').canCast(s.actor))
+        .filter(s => invoke('GameServer/Effects/EffectRestrictions').canCast(s.actor))
         .filter(s => !combat.active || safeCombatProvider(s, leaderSession,
             resurrectionSkill(s.actor) || resurrectionScrollSkill()));
     const skilled = providers
         .map((providerSession) => ({ session: providerSession, skill: resurrectionSkill(providerSession.actor) }))
         .filter((entry) => entry.skill)
         .filter(entry => !combat.active || safeCombatProvider(entry.session, leaderSession, entry.skill))
+        .map(entry => ({ ...entry, ready: readyToCast(entry.session, targetSession, entry.skill) }))
         .sort((a, b) => {
             const Roles = invoke('GameServer/Bot/AI/BotRoles');
-            return Number(Roles.inferRole(a.session.actor) === 'healer') - Number(Roles.inferRole(b.session.actor) === 'healer')
+            return Number(b.ready) - Number(a.ready)
+                || Number(Roles.inferRole(a.session.actor) === 'healer') - Number(Roles.inferRole(b.session.actor) === 'healer')
+                || distance(position(a.session.actor), position(targetSession.actor)) - distance(position(b.session.actor), position(targetSession.actor))
                 || Number(a.session.actor.fetchId()) - Number(b.session.actor.fetchId());
         })[0] || null;
     const provider = skilled?.session || providers.sort((a, b) => Number(a.actor.fetchId()) - Number(b.actor.fetchId()))[0] || null;
@@ -293,39 +426,53 @@ function tick(session, leaderSession, Generics) {
             session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(session.actor), session.actor);
         }
     }
-    leaderSession.partyRevivalAttempt = {
+    const newAttempt = leaderSession.partyRevivalAttempt = {
         providerId: session.actor.fetchId(),
         targetId: targetSession.actor.fetchId(),
         source: skilled ? 'skill' : 'scroll',
-        startedAt: now
+        startedAt: now,
+        lastProgressAt: now,
+        position: position(session.actor)
     };
 
-    if (skilled) {
-        session.currentTargetId = targetSession.actor.fetchId();
-        session.actor.select?.({ id: targetSession.actor.fetchId() });
-        invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
-            target: targetSession.actor,
-            skill,
-            kind: 'resurrection'
-        });
-        Generics.skillExec(session, session.actor, {
-            id: targetSession.actor.fetchId(),
-            selfId: skill.fetchSelfId(),
-            ctrl: false
-        });
-    } else {
-        castScroll(session, session.actor, targetSession.actor, skill);
-    }
+    requestResurrection(session, targetSession.actor, skill, newAttempt, Generics, now);
 
     return {
         handled: true,
         target: targetSession.actor,
-        source: skilled ? 'skill' : 'scroll'
+        source: newAttempt.source
     };
+}
+
+function requestResurrection(session, target, skill, attempt, Generics, now) {
+    attempt.lastRequestedAt = now;
+    attempt.skillId = skill.fetchSelfId();
+    if (attempt.source === 'skill') {
+        session.currentTargetId = target.fetchId();
+        session.actor.select?.({ id: target.fetchId() });
+        invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
+            target,
+            skill,
+            kind: 'resurrection'
+        });
+        Generics.skillExec(session, session.actor, {
+            id: target.fetchId(),
+            selfId: skill.fetchSelfId(),
+            ctrl: false
+        });
+    } else {
+        castScroll(session, session.actor, target, skill);
+    }
 }
 
 function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     if (!isRescueMember(deadSession, leaderSession) || !leaderSession?.actor?.fetchIsOnline?.()) return true;
+    const attempt = leaderSession.partyRevivalAttempt;
+    const members = partySessions(leaderSession);
+    if (attempt?.targetId === deadSession.actor.fetchId()) {
+        const provider = members.find(s => s.actor.fetchId() === attempt.providerId);
+        if (isAlive(provider) && preserveCast(provider, attempt, now)) return false;
+    }
     // A remote courier cannot be rescued by this group. A fight elsewhere
     // must not pause its town recovery or send support across the map.
     if (!partySessions(leaderSession).some(s => isAlive(s) && withinReviveApproach(s.actor, deadSession.actor))) return true;
@@ -349,16 +496,14 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
         deadSession.partyReviveCombatPauseStartedAt = undefined;
     }
 
-    const members = partySessions(leaderSession);
     const living = members.filter(isAlive);
     if (living.length === 0) return true;
     if (!background && living.length === 1 && living[0] === leaderSession && !playerCanResurrect(leaderSession)) return true;
 
     // A cast accepted before the deadline must be allowed to land, including
     // the native stand-up animation. Failed attempts remain time-bounded.
-    const attempt = leaderSession.partyRevivalAttempt;
     if (attempt?.targetId === deadSession.actor.fetchId()
-        && now - Number(attempt.startedAt || 0) < 25000
+        && now - Number(attempt.startedAt || 0) < ATTEMPT_WAIT_GRACE_MS
         && living.some(s => s.actor.fetchId() === attempt.providerId
             && withinReviveApproach(s.actor, deadSession.actor))) return false;
 
@@ -378,6 +523,7 @@ module.exports = {
     combatResurrectionAllowed,
     learnedResurrectionSkills,
     resurrectionSkill,
+    noteCastStarted,
     playerCanResurrect,
     tick,
     noteCompanionDeath,

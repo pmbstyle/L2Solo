@@ -89,6 +89,7 @@ const mocks = {
     'GameServer/World/World': world,
     'GameServer/Bot/BotManager': { botPartySay(s, message) { reports.push(message); return true; } },
     'GameServer/Bot/AI/HotActorLodPolicy': { promote() {} },
+    'GameServer/Bot/AI/BotRoles': invoke('GameServer/Bot/AI/BotRoles'),
     'GameServer/Effects/EffectStore': { apply(a, effect) { a.effects[effect.key] = effect; return effect; },
         remove(a, key) { delete a.effects[key]; } },
     'GameServer/Effects/EffectTicker': { applyDot() {}, scheduleExpiry() {}, refreshEffects() {}, clear() {} },
@@ -103,7 +104,7 @@ const mocks = {
     'GameServer/Quest/QuestService': { questRates: () => ({ questSp: 1 }) },
     'GameServer/World/Generics/SpawnNpcs': { despawnQuestNpc: (w, npc) => despawn(npc) },
     'GameServer/Bot/AI/PartyAwareness': { npcThreateningActor: () => null },
-    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, hasLineOfSight: () => true },
+    'GameServer/Geodata/GeodataEngine': { getHeight: (x, y, z) => z, canWalkStraight: () => true },
     'GameServer/Bot/AI/BotEventJournal': { record: async () => {} },
     'GameServer/Bot/Population/BotLifeState': { notifyNearFacts() {} },
     'GameServer/Bot/AI/BotTownTravel': { hasCombatThreat: () => false },
@@ -117,6 +118,8 @@ const mocks = {
         beginPartyTownRecovery: BotAI.beginPartyTownRecovery,
         getDeathRespawnTarget: () => ({ locX: 0, locY: 0, locZ: 0 })
     },
+    'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
+    'GameServer/Bot/Population/PopulationMetrics': { recordTownStuckEscape() {}, recordTownDepartureRouteFailure() {} },
     'GameServer/Bot/AI/CompanionNavigationRecovery': { clear() {}, move(s, a, loc) {
         movements.push({ id: a.fetchId(), ...loc }); place(a, loc); return { status: 'started' };
     } }

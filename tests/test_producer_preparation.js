@@ -25,9 +25,9 @@ const adapters = {
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/BotGear': { wishKitsFor: require('../src/GameServer/Bot/AI/BotGear').wishKitsFor },
     'GameServer/Bot/AI/GearGradeRule': require('../src/GameServer/Bot/AI/GearGradeRule'),
-    'GameServer/Bot/AI/GearAcquisitionPlanner': { sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
+    'GameServer/Bot/AI/GearAcquisitionPlanner': { combatReadiness: () => ({ hasWeapon: true }), sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn() },
-    'GameServer/Bot/Population/ColdCombatProfile': { candidateProfiles: () => ({
+    'GameServer/Bot/Population/ColdCombatProfile': { skillsFor: () => [], candidateProfiles: () => ({
         before: { pAtk: 100, pDef: 100, mDef: 100 }, after: () => ({ pAtk: 200, pDef: 100, mDef: 100 }) }) },
     'GameServer/Bot/Economy/BotImprovementPolicy': { opportunities: () => [], crystalPath: () => null },
     'GameServer/Items/C4RecipeItems': { resolveVariantsByProductId: id => allowCraft && id === 101 ? [recipe] : [], resolveByRecipeId: id => id === 301 ? recipe : null },
@@ -79,6 +79,7 @@ const network = load('WishNetwork.js', name => {
     // WishNetwork reads the thread kind (c3a6771d); this fixture is the main thread.
     if (name === 'node:worker_threads') return require('node:worker_threads');
     if (name === './EconomyDiagnostics') return { active: () => false };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
@@ -93,6 +94,7 @@ adapters['GameServer/Items/NpcSellRules'] = { npcBuyPrice: () => 0 };
 adapters['GameServer/Bot/Economy/PriceBelief'] = { prior: () => ({ mu: Math.log(100) }), sigma: () => 0.3 };
 const nativePrice = load('PriceDecision.js', name => require(path.resolve(root, name)), invokeAdapter);
 const producerPrice = { ...nativePrice, bidSale: (...args) => supported ? nativePrice.bidSale(...args) : { status: 'unknown' } };
+const Wealth = require('../src/GameServer/Bot/Economy/WealthCraftDecision');
 const provider = load('WishProviders.js' , name => {
     if (name === '../../Items/SoulCrystalProgression') return adapters['GameServer/Items/SoulCrystalProgression'];
     if (name === '../../Items/C4DualSwordCombinations') return adapters['GameServer/Items/C4DualSwordCombinations'];
@@ -116,6 +118,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './ShotTradeDemand') return require('../src/GameServer/Bot/Economy/ShotTradeDemand');
     if (name === './EconomyDiagnostics') return { active: () => false, laps: () => null };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './EconomicValuation') return valuation;
     // Synthetic origins are admitted; the solver is the network under test.
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: recipe => !!recipe };
@@ -125,7 +128,7 @@ const provider = load('WishProviders.js' , name => {
     if (name.endsWith('ItemTemplateIndex')) return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './BotImprovementPolicy') return { isCaster: () => false };
     if (name === './WishPurchaseEvidence') return require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
-    if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0) };
+    if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0), refused: Wealth.refused };
     throw Error(name);
 }, invokeAdapter);
 const context = { timestamp: 1, persona, board, hunt: { perHour: 100, expPerHour: 0 }, deathHours: 0,
@@ -151,7 +154,7 @@ put(21, 202, 4, 1);
 function prepare({ wallet = 1000, reserve = 0, deps = {} } = {}) {
     const projection = provider.build(state, context, { board, knownRecipes: [301], ...deps });
     const result = new network.WishNetwork().build({ actorKey: 'producer:1', inputKey: 'producer',
-        ...projection, characterId: 1, wallet, survivalReserve: reserve, hourAdena: 100, persona, remembered: false,
+        ...projection, characterId: 1, wallet, refillReserve: reserve, hourAdena: 100, persona, remembered: false,
         stockFor: id => ({ owned: Math.max(0, Number(state.inventory[id]?.amount || 0) - Number(state.inventory[id]?.protectedAmount || 0)),
             incoming: Number(state.acceptedIncoming?.[id] || 0) }) });
     return { projection, result, watch: intent.project(state, result, projection, () => 1) };
@@ -169,6 +172,13 @@ delete state.accountName;
 let prepared = prepare();
 let rootWish = prepared.result.queue.find(row => row.key === 'resale:101');
 assert(rootWish, 'conditional public interest creates a finite producer goal before whole ingredient supply');
+// A craft refused at the act (a near or far bot's) is not nominated again until
+// the bot's next town look reads the market anew.
+state.stats.wealthRefused = Wealth.refusedMark(state, 301);
+assert(!prepare().projection.roots.includes('resale:101'), 'a refused craft is not picked again before the next town look');
+state.stats.townLook = { n: 2 };
+assert(prepare().projection.roots.includes('resale:101'), 'the next town look reads the market anew');
+delete state.stats.wealthRefused; delete state.stats.townLook;
 assert.equal(rootWish.plan.kind, 'craft');
 assert.equal(rootWish.plan.batches, 1);
 assert.equal(rootWish.plan.repeatable, false);

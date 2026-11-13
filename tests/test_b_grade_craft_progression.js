@@ -76,7 +76,7 @@ function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = nu
     const service = { characterId: 990412, recipeId, price: fee, entryPrice: fee,
         capacityBatches: 1, townName: 'Giran', loc: station.loc, publicStation: true };
     const context = Economy.forState(state, { timestamp, board, spots: [], npcOffersFor: () => [],
-        workshop: null, knownRecipes: [], withNodes: true, knowledgeEnabled: false,
+        knownRecipes: [], withNodes: true, knowledgeEnabled: false,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: id => id === recipeId ? [service] : [], caller: 'meeting_prepare' });
     const productNode = context.projection.nodes.find(row => row.key === `item:${recipe.productId}`);
@@ -167,7 +167,7 @@ async function verifyNativeCrafts() {
                     { 57: { selfId: 57, amount: 1000 } }, station.loc, { craftStationId: station.id });
             owners.set(station.id, owner.characterId);
             await Shops.ensureRecipes(owner.characterId, Shops.profileFor(owner));
-            owner = await Workshops.review(Life.cachedState(owner.characterId));
+            owner = await Workshops.publishListing(Life.cachedState(owner.characterId));
             const provider = { ...plan.craftProviders[recipeId], characterId: owner.characterId };
             let buyer = await seed(`bot_b_craft_${recipeId}`, `Buyer${recipeId}`, state.classId, 55,
                 { ...state.inventory, 57: { selfId: 57, amount: state.adena } }, station.loc,
@@ -227,7 +227,7 @@ async function verifyNativeCrafts() {
                 assert.equal(invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(buyer)[recipe.productId], 1,
                     'the base remains protected until its unseal receipt');
                 const held = Economy.forState({ ...buyer, activity: 'hunting' }, { timestamp, board: new BoardIndex(), spots: [],
-                    npcOffersFor: () => [], workshop: null, workshops: () => [], knownRecipes: [], caller: 'meeting_prepare',
+                    npcOffersFor: () => [], workshops: () => [], knownRecipes: [], caller: 'meeting_prepare',
                     routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
                 assert.equal(held.network.activity?.kind, 'mammon_unseal', 'owned base needs no remaining workshop');
                 const resumed = Providers.personalCraftPlan(buyer, held);
@@ -268,7 +268,7 @@ async function verifyNativeCrafts() {
                 const operations = [];
                 for (let step = 0; step < 12; step++) {
                     const economy = Economy.forState(customer, { timestamp: Date.now(), board: new BoardIndex(), spots: [],
-                        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], caller: 'meeting_prepare',
+                        npcOffersFor: Sources.npcOffersFor, knownRecipes: [], caller: 'meeting_prepare',
                         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
                         workshops: id => id === recipeId ? [{ ...provider, recipeId, entryPrice: provider.price,
                             capacityBatches: 1, townName: 'Giran', loc: station.loc }] : [] });
@@ -410,7 +410,7 @@ if (isMainThread) {
         && ['d', 'c'].includes(Data.items.find(item => item.selfId === row.selfId)?.etc?.rank)) delete state.inventory[id];
     const provider = plan.craftProviders[457];
     const context = Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [],
-        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], caller: 'meeting_prepare',
+        npcOffersFor: Sources.npcOffersFor, knownRecipes: [], caller: 'meeting_prepare',
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: id => id === 457 ? [{ ...provider, recipeId: id, entryPrice: provider.price,
             capacityBatches: 1, townName: 'Giran', loc: station.loc }] : [] });
@@ -434,7 +434,7 @@ if (isMainThread) {
     const inputId = selected.crystalPreparation.exchange.itemId;
     interrupted.inventory[inputId] = { selfId: inputId, amount: 1, equipped: false };
     const resumed = Economy.forState(interrupted, { timestamp, board: new BoardIndex(), spots: [],
-        npcOffersFor: Sources.npcOffersFor, workshop: null, workshops: () => [], knownRecipes: [],
+        npcOffersFor: Sources.npcOffersFor, workshops: () => [], knownRecipes: [],
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
     assert.equal(resumed.network.activity.rootKey, `crystal_input:${plan.target.selfId}:${plan.target.slot}`);
     assert.equal(resumed.network.activity.kind, 'crystallize');

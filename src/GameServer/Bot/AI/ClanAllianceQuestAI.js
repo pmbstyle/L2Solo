@@ -1,6 +1,7 @@
 const Service = invoke('GameServer/Clan/ClanAllianceService');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const Travel = invoke('GameServer/Bot/AI/BotSpotTravel');
+const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Rules = Service.Rules;
 
 function returnLanding(session, target) {
@@ -14,7 +15,7 @@ function returnLanding(session, target) {
             const y = Math.round(center.locY + Math.sin(angle) * radius);
             const z = geo.getHeight(x, y, center.locZ);
             if (Number.isFinite(z) && Math.abs(z - center.locZ) <= 128
-                && geo.hasLineOfSight(x, y, z, center.locX, center.locY, center.locZ)) {
+                && geo.canWalkStraight(x, y, z, center.locX, center.locY, center.locZ)) {
                 return { locX: x, locY: y, locZ: z };
             }
         }
@@ -129,7 +130,9 @@ function tick(session, bot, Generics, ai) {
     }
     const hp = bot.fetchHp?.() / Math.max(1, bot.fetchMaxHp?.());
     const mp = bot.fetchMp?.() / Math.max(1, bot.fetchMaxMp?.());
-    const needsMana = nextAction === 'herb';
+    // Weapon fighters can continue the herb hunt on basic attacks. Only
+    // classes whose normal combat needs MP should wait for mana recovery.
+    const needsMana = nextAction === 'herb' && Roles.shouldRestForMana(bot);
     if (hp < 0.35 || needsMana && mp < 0.2 || session.clanAllianceRecovering && (hp < 0.85 || needsMana && mp < 0.8)) {
         Service.report(session, 'recovering', needsMana ? 'I need to recover HP and MP before continuing my assignment.'
             : 'I need to recover HP before continuing my assignment.');

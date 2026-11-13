@@ -104,7 +104,7 @@ function check(proof, row) {
 }
 
 // Failure-only detail: the checkpoint fields the row moved past the command's
-// copy, as the diagnostic's differences (the save failure log, L127) and as
+// copy, as the diagnostic's differences (the save failure log) and as
 // `checkpointDrift`, the names the caller reloads. A fence moves only the
 // revision and updatedAt; a real state change also moves activity or the clocks.
 function refuseDrift(captured, current, row) {

@@ -6,6 +6,7 @@ const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyRisk = require('./PartySpotRiskPolicy');
 const TableChannel = require('./ColdTableChannel').shared;
 const RaidEncounterScope = invoke('GameServer/RaidBoss/RaidEncounterScope');
+const Trace = require('../DecisionTrace');
 
 const TABLE = 'bot_background_parties';
 const cache = new Map();
@@ -169,6 +170,29 @@ function acceptedParty(snapshot) {
     }
     return snapshot;
 }
+// A committed party row against the one it replaces (acceptRow; the boot's reload is no event), traced once per
+// event: formed (a new row: revision 0), each member joined, its end (status left active/hot: the reason every
+// ending write names on the row; under the leader it had, an ended row may hold no members) and a raid's outcome
+// (stats.raidEncounter defeated or failed).
+const LIVE = new Set(['active', 'hot']);
+function traceChange(current, next) {
+    const party = next.partyId, bot = Number(next.leaderId), objective = next.stats?.objective;
+    if (!current) {
+        if (LIVE.has(next.status) && next.revision === 0) Trace.record({ kind: 'party', bot, party, phase: 'formed',
+            members: next.memberIds.length, reason: String(objective?.reason || 'none'), spot: String(next.spotId ?? '') });
+        return;
+    }
+    if (!LIVE.has(next.status)) {
+        Trace.record({ kind: 'party', bot: Number(current.leaderId), party, phase: 'dissolved', outcome: next.status,
+            reason: String(next.stats?.partyBreakReason || 'unnamed'), members: current.memberIds.length });
+    } else {
+        const before = new Set(current.memberIds.map(Number));
+        for (const id of next.memberIds) if (!before.has(Number(id))) Trace.record({ kind: 'party', bot: Number(id), party, phase: 'joined' });
+    }
+    const raid = next.stats?.raidEncounter?.status;
+    if ((raid === 'defeated' || raid === 'failed') && current.stats?.raidEncounter?.status !== raid)
+        Trace.record({ kind: 'raid', bot, party, phase: 'outcome', outcome: raid, npcId: Number(objective?.raidBossTemplateId || objective?.npcId) || undefined });
+}
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -225,7 +249,7 @@ function normalize(row) {
     };
 }
 
-// The bots' downtime (BotLifeState.bootPause, L136) moves the active parties'
+// The bots' downtime (BotLifeState.bootPause) moves the active parties'
 // due times too: the party row is the leader's scheduling authority. Before
 // loadActive, so the cache reads the moved row (its updatedAt moves by the same
 // delta, so the party commit fence still matches the row).
@@ -394,6 +418,7 @@ const BackgroundPartyState = {
 
     acceptRow(row) {
         const snapshot = normalize(row);
+        if (Trace.on()) traceChange(cache.get(snapshot.partyId), snapshot);
         return acceptedParty(snapshot);
     },
 
@@ -459,10 +484,11 @@ const BackgroundPartyState = {
         return activeOf(new Set((partyIds || []).map(String)), reader);
     },
 
-    setStatus(partyId, status = 'inactive') {
+    // reason: why the party ends (stats.partyBreakReason, the row keeps it).
+    setStatus(partyId, status, reason) {
         const party = this.find(partyId);
         if (!party) return Promise.resolve(null);
-        return this.createOrUpdate({ ...party, status });
+        return this.createOrUpdate({ ...party, status, stats: { ...party.stats, partyBreakReason: reason } });
     },
 
     size() { return cache.size; },

@@ -155,7 +155,7 @@ function fearOf(actor, others, now = Date.now()) {
     return fear;
 }
 
-// Can I win? Own side exactly, the other side by what a player sees (U26).
+// Can I win? Own side exactly, the other side by what a player sees.
 // key: the decision's key parts, for its one roll (default: this bot, the
 // first threat, now).
 function defenseDecision(session, threats, { allyAllowed = () => true, key = null } = {}) {

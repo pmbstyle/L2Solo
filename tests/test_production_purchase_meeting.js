@@ -36,6 +36,19 @@ const opts = rows => ({ timestamp: now, boardRows: rows, recipes: { recipeBook: 
     const certificate = Intent.decode(accepted.request.lines[0].certificate);
     assert.equal(certificate.key, `production:${recipe.recipeId}`);
     assert.equal(certificate.amount, item.amount);
+    // Another root of the same value per Adena holds the whole wallet in the money queue: the
+    // production root, funded by none of its rows, has no money. The worker refuses the meeting
+    // as the native accept does (the same terms: the lowest certificate's root), never admitting
+    // one the accept then refuses for money.
+    const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const held = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 0, firstUnfundedPrice: 0 });
+    Packet.addFunded(held, certificate.valueRate, state.adena, 854, Packet.MONEY_ROWS, 'power:854:1');
+    const heldState = { ...state, stats: { ...state.stats, money: held } };
+    await assert.rejects(probe(heldState, opts(records)), /trade_meeting_funding/,
+        'the worker refuses a meeting whose root\'s money another root of its ratio holds');
+    assert.equal(Funding.spendable(heldState, 0, Intent.meetingTerms(accepted.request.lines, 0)), 0,
+        'and the native accept reads the same empty purse');
     assert.deepEqual(accepted.forbiddenLoaded, []);
     const changed = records.filter(([id]) => id !== 910100);
     await assert.rejects(probe(state, opts(changed)), /trade_meeting_need_changed/,

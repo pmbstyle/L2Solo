@@ -1,13 +1,16 @@
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 
-// Line-of-sight checks per idle tick, and how far the actor may move before a
-// blocked scan restarts at its first candidate (limits.md).
+// Straight-walk checks per idle tick, and how far the actor may move before a
+// blocked scan restarts at its first candidate.
 const CHECKS_PER_SCAN = 4;
 const RESUME_RANGE = 128;
 
+// A bot takes and keeps a mob it can walk straight to (our choice: a C4 player
+// also takes mobs he only sees over a low obstacle, but a bot with no way to
+// such a mob would hold it for ever).
 function canSee(actor, target) {
-    return Geodata.hasLineOfSight(
+    return Geodata.canWalkStraight(
         actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
         target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()
     );

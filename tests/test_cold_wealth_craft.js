@@ -14,7 +14,6 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const Service = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
 const Policy = invoke('GameServer/Bot/Economy/WealthCraftPolicy');
@@ -199,15 +198,7 @@ async function run() {
     assert.strictEqual(crafted, false);
     assert.strictEqual(Market.buyOrderEscrow(state.characterId), 1,
         'a refused stale craft never releases or consumes the accepted pledge');
-    const result = await Service.tryCraft(state, 1000000);
-    const repeat = await Service.tryCraft(state, 1000001);
-    for (const current of [result, repeat]) {
-        assert.strictEqual(current.crafted, false, 'unchanged original service state cannot craft without a funded native gain');
-        assert.strictEqual(current.state.adena, originalState.adena);
-        assert.deepStrictEqual(current.state.inventory, {});
-        assert.strictEqual(current.state.vitals.mp, 100);
-    }
-    assert.strictEqual(Service.eligible(result.state), true, 'a no-craft result introduces no arbitrary eligibility timer');
+    assert.strictEqual(Service.eligible(stale.state), true, 'a no-craft result introduces no arbitrary eligibility timer');
 
     const away = { ...state, characterId: 9006, name: 'AwayCrafter', activity: 'hunting', currentRegion: 'Dion',
         loc: { locX: 17000, locY: 145000, locZ: -3000 } };
@@ -239,15 +230,6 @@ async function run() {
     assert.strictEqual(Policy.craftMargin(leather, 10000, 3000), 7000, 'original static-exit cash gain, not a native paid craft');
     assert.deepStrictEqual(Profit.materials([{ id: 12, selfId: 1867, amount: 6 }], leather), [{ id: 12, selfId: 1867, amount: 6 }]);
 
-    // Main waits for the exact guarded worker action; it does not rescan a
-    // learned recipe catalogue when no published opportunity is available.
-    let emptyReads = 0;
-    Database.fetchCharacterRecipes = async () => { emptyReads += 1; return []; };
-    const idle = { ...state, characterId: 9005, name: 'WaitingCrafter' };
-    for (const now of [1000000, 1000001, 1000000 + 5 * 60 * 1000]) {
-        assert.strictEqual((await Service.tryCraft(idle, now)).reason, 'no_profit');
-    }
-    assert.strictEqual(emptyReads, 0, 'unpublished lifecycle does not scan the learned recipe catalogue');
     assert.strictEqual(purchases.length, 0);
     assert.strictEqual(crafted, false);
     assert.strictEqual(sold, false);
@@ -305,9 +287,17 @@ async function run() {
         Recipes.resolveByRecipeId = recipeId => recipeId === recipe.recipeId ? recipe : null;
     }
     const writesBefore = purchases.length;
+    // The row raise (BotLifeState.raiseOnRow, an SQL writer: this test has no
+    // database): the raised bits on the row main holds.
+    const nativeRaise = LifeState.raiseOnRow;
+    LifeState.raiseOnRow = async (id, raises) => {
+        const row = LifeState.cachedState(id) || state, stats = { ...row.stats };
+        for (const { name, payload } of raises) invoke('GameServer/Bot/Situations').raise(stats, name, payload);
+        return { ...row, stats };
+    };
     const blockedBuyer = await Service.execute(state, forbiddenExit);
     assert.strictEqual(blockedBuyer.reason, 'buyer_changed', 'even a remote personal buyer is rejected before acquiring craft inputs');
-    assert.strictEqual(blockedBuyer.state.stats.wishDirty, Sections.sectionBit('sources'));
+    assert(invoke('GameServer/Bot/Situations').woken(blockedBuyer.state.stats, 'build'), 'the rejection wakes the build');
     assert.strictEqual(blockedBuyer.state.stats.activityLeaf, 0, 'native buyer rejection retires only the accepted work');
     assert.deepStrictEqual(blockedBuyer.state.inventory, state.inventory);
     assert.strictEqual(blockedBuyer.state.adena, state.adena, 'a source event cannot buy inputs or acquire knowledge');
@@ -318,7 +308,7 @@ async function run() {
     try {
         const rejected = await Service.rejectAccepted(state);
         assert.strictEqual(rejected.adena, state.adena + 3, 'a rejection preserves the newest native wallet after an await');
-        assert.strictEqual(rejected.stats.wishDirty, Sections.sectionBit('sources'));
+        assert(invoke('GameServer/Bot/Situations').woken(rejected.stats, 'build'));
         assert.strictEqual(await Service.rejectAccepted(state), rejected);
         assert.strictEqual(sourceWrites, 1, 'one accepted failure persists one source event, never a repeated invalidation loop');
     } finally { LifeState.cachedState = beforeCached; LifeState.upsertState = beforePersist; }
@@ -328,17 +318,18 @@ async function run() {
         assert.deepStrictEqual(refused.state.stats.wealthRefused.recipes, [recipe.recipeId], 'the refusal marks its recipe');
     }
     assert.strictEqual(purchases.length, writesBefore);
+    LifeState.raiseOnRow = nativeRaise;
     Admission.configureTradeAdmission(id => LifeState.cachedState(Number(id)),
         id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);
     console.log(JSON.stringify({ scope: 'declared unit clock plus genuine native unfunded execution',
         recipeId: recipe.recipeId, productId, wallet: originalState.adena, cash: unit.basket.cashCost,
         revenue: unit.revenue, labour, net: unit.expectedProfit, breakEven, ratio, nativePacket,
-        resultReasons: [blocked.reason, result.reason, repeat.reason], remoteTripCost: trip,
-        physicalCommerceClaim: false, purchases: purchases.length, crafted, sold, emptyReads }));
+        resultReasons: [blocked.reason, stale.reason], remoteTripCost: trip,
+        physicalCommerceClaim: false, purchases: purchases.length, crafted, sold }));
     console.log('Cold wealth craft checks passed');
 }
 run().catch(error => { console.error(error.stack); process.exitCode = 1; }).finally(() => {
-    Workshop.remove(9001); Workshop.remove(9005);
+    Workshop.remove(9001);
     AfkTrade._resetForTests();
     for (const key of ['fetchCharacterRecipes', 'fetchItems', 'craftInventoryItems']) Database[key] = originals[key];
     for (const key of ['offers', 'buyFromShop', 'sellToShop']) AfkTrade[key] = originals[key];

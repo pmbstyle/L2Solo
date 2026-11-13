@@ -78,10 +78,10 @@ const hunter = { ...actor, fetchClassId: () => 9, fetchLevel: () => template.tem
     fetchCollectivePAtk: () => 10000, fetchCollectiveMAtk: () => 100,
     fetchCollectivePDef: () => 10000, fetchMaxHp: () => 100000,
     backpack: { fetchTotalWeaponKind: () => 'Weapon.Bow' }, skillset: { skills: [] } };
-const savedScan = World.fetchNpcsInRadius, savedSight = Geo.hasLineOfSight;
+const savedScan = World.fetchNpcsInRadius, savedSight = Geo.canWalkStraight;
 try {
     World.fetchNpcsInRadius = () => [hot, neutralNpc];
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     const session = { actor: hunter, plan: 'hunting' };
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), neutralNpc,
         'the native hunt scan must skip the closer arrow-resistant mob');
@@ -92,14 +92,14 @@ try {
     const local = candidate(910001, 100, hunter.fetchLevel() - 7);
     const hidden = candidate(910002, 500);
     World.fetchNpcsInRadius = () => [local, hidden];
-    Geo.hasLineOfSight = (_x, _y, _z, x) => x === 100;
+    Geo.canWalkStraight = (_x, _y, _z, x) => x === 100;
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local,
         'a preferred level behind a wall must not beat a visible weaker monster');
 
     const easier = candidate(910003, 100, hunter.fetchLevel() - 10);
     const tooLow = candidate(910004, 100, hunter.fetchLevel() - 16);
     const recovery = { allowEasierTargets: true };
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     World.fetchNpcsInRadius = () => [easier];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null,
         'ordinary target scans retain their level band');
@@ -147,11 +147,11 @@ try {
     World.fetchNpcsInRadius = () => [blue, hidden];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
         'an ordinary target still outranks negative-score easier recovery');
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     World.fetchNpcsInRadius = () => [blue];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
         'a negative-score fallback cannot chase a mob through a wall');
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     const tiredHunter = { ...hunter, fetchHp: () => 1 };
     const tiredSession = { actor: tiredHunter, plan: 'hunting' };
     assert.strictEqual(Hunting.findPreferredMonster(tiredSession, tiredHunter, 2500,
@@ -177,7 +177,7 @@ try {
         fetchMaxHp: () => 10 };
     assert.strictEqual(Hunting.findPreferredMonster({ actor: weak, plan: 'hunting' }, weak, 2500, recovery), null,
         'lower-level recovery still requires a survivable encounter');
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
         'easier targets still require line of sight');
 
@@ -191,7 +191,7 @@ try {
     const packMate = (id, x) => Object.assign(candidate(id, x), { fetchHostile: () => false, fetchClanName: () => 'pack', fetchClanHelpRadius: () => 600 });
     const pack = [1, 2, 3, 4, 5, 6].map(n => packMate(930000 + n, 300 + n));
     const stray = Object.assign(candidate(930010, 1400), { fetchHostile: () => false, fetchClanName: () => '' });
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     World.fetchNpcsInRadius = () => [...pack, stray];
     assert.strictEqual(Hunting.findPreferredMonster({ actor: lean, plan: 'hunting' }, lean, 2500), stray,
         'the pack is refused, the lone mob of its species taken');
@@ -223,7 +223,7 @@ try {
     const crowded = [1, 2, 3, 4, 5].map(n => Object.assign(candidate(920000 + n, n * 100), { fetchHostile: () => false, fetchClanName: () => '' }));
     World.fetchNpcsInRadius = () => crowded;
     const checked = [];
-    Geo.hasLineOfSight = (_x, _y, _z, x) => { checked.push(x); return x === 500; };
+    Geo.canWalkStraight = (_x, _y, _z, x) => { checked.push(x); return x === 500; };
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null,
         'the unchecked fifth candidate cannot win after the first four fail visibility');
     assert.deepStrictEqual(checked, [100, 200, 300, 400], 'visibility work stays bounded');
@@ -232,7 +232,7 @@ try {
         'the next scan must reach a visible candidate beyond the blocked prefix');
     assert.deepStrictEqual(checked, [100, 200, 300, 400, 500]);
     assert.strictEqual(session.huntTargetScanPending, false);
-    Geo.hasLineOfSight = () => false;
+    Geo.canWalkStraight = () => false;
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null);
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null);
     assert.strictEqual(session.huntTargetScanPending, false, 'an exhausted hidden-only scan must finish');
@@ -241,11 +241,11 @@ try {
     // room after movement. A replacement list is searched from its start.
     Hunting.findPreferredMonster(session, hunter, 2500);
     World.fetchNpcsInRadius = () => [local];
-    Geo.hasLineOfSight = () => true;
+    Geo.canWalkStraight = () => true;
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local);
 } finally {
     World.fetchNpcsInRadius = savedScan;
-    Geo.hasLineOfSight = savedSight;
+    Geo.canWalkStraight = savedSight;
 }
 const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40,
     density: 10, npcEntries: [{ selfId: template.selfId, count: 10 }], mob: { hp: 1, damage: 1 },
@@ -277,17 +277,17 @@ const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40
     assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible,
         'a pack verdict cannot poison a later single-mob spot');
     assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher] }).avoided);
-    const originalScan = World.fetchNpcsInRadius, originalSight = Geo.hasLineOfSight, originalScore = Scorer.score;
+    const originalScan = World.fetchNpcsInRadius, originalSight = Geo.canWalkStraight, originalScore = Scorer.score;
     const checked = [];
     try {
         World.fetchNpcsInRadius = () => [hot];
-        Geo.hasLineOfSight = () => true;
+        Geo.canWalkStraight = () => true;
         Scorer.score = context => { checked.push(context.targetMatchup); return originalScore(context); };
         Hunting.findPreferredMonster({ actor: hunter, plan: 'hunting' }, hunter, 2500);
         assert(checked.length > 0 && checked.every(match => match.eligible),
             'hot solo candidates use the same survival gate for resistant mobs');
     } finally {
-        World.fetchNpcsInRadius = originalScan; Geo.hasLineOfSight = originalSight; Scorer.score = originalScore;
+        World.fetchNpcsInRadius = originalScan; Geo.canWalkStraight = originalSight; Scorer.score = originalScore;
     }
 }
 assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [archer] }).avoided);

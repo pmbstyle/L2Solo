@@ -1,7 +1,7 @@
 // Pins today's cold fight outcomes so the solo and party bot turns can share
 // one implementation without changing any result: fixed-seed solo fights,
 // fixed-seed party fights, a party of one against the solo fight, cold action
-// delays and the clan raid estimate's cast cycle.
+// delays. Clan raid casting is covered by test_clan_raid_mage_offense.js.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -16,8 +16,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PveEncounter = require('../src/GameServer/Bot/Population/ColdPveEncounter');
 
-// resolveFight and castCycle are module-private: compile a second copy of
-// each file that also exports them.
+// resolveFight is module-private: compile a second copy that exports it.
 function loadWith(file, extra) {
     const full = path.join(__dirname, '../src', file);
     const copy = new Module(full, module);
@@ -28,8 +27,7 @@ function loadWith(file, extra) {
 }
 const resolveFight = loadWith('GameServer/Bot/Population/BackgroundResolver.js',
     '\nmodule.exports.__resolveFight = resolveFight;').__resolveFight;
-const castCycle = loadWith('GameServer/Clan/ClanRaidEstimate.js',
-    '\nmodule.exports.__castCycle = castCycle;').__castCycle;
+
 
 const TS = 1_791_060_000_000;
 function seeded(seed) {
@@ -440,18 +438,5 @@ assert.ok(focused.critical > plainSorcerer.critical, 'Focus raises the physical 
 assert.strictEqual(focused.mCritRate, plainSorcerer.mCritRate, 'a physical critical buff does not change spell criticals');
 const unarmed = ColdCombatProfile.profileFor({ ...sorcerer, inventory: {} }, TS);
 assert.strictEqual(unarmed.mCritRate, 8, 'no weapon: the base 8 per mille');
-
-// ---------- clan raid estimate cast cycle ----------
-const sorcererProfile = ColdCombatProfile.profileFor(sorcerer, TS);
-const SkillRules = invoke('GameServer/Skills/C4SkillRules');
-const nuke = sorcererProfile.skills.find((skill) => !skill.passive && skill.spell !== false && Number(skill.power) > 0
-    && SkillRules.resolve(skill).skillType === SkillRules.DAMAGE);
-assert.strictEqual(nuke.selfId, 1177, 'the sorcerer nuke is Wind Strike');
-assert.strictEqual(Math.round(castCycle(sorcererProfile, nuke) * 1000) / 1000, 3613.953,
-    'raid estimate cast cycle of Wind Strike (a robe-set sorcerer has no robe-only cast speed penalty)');
-assert.strictEqual(Math.round(castCycle({ castSpd: 333, atkSpd: 333, effects: [], skills: [] }, { spell: true, hitTime: 4000, reuse: 0 })), 4000,
-    'raid estimate cast cycle: base cast time at cast speed 333');
-assert.strictEqual(Math.round(castCycle({ castSpd: 1332, atkSpd: 333, effects: [], skills: [] }, { spell: true, hitTime: 1000, reuse: 0 })), 500,
-    'raid estimate cast cycle: the C4 500 ms cast floor');
 
 console.log('test_cold_combat_parity passed');

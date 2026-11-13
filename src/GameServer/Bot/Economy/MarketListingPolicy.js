@@ -181,7 +181,7 @@ function heldDisposition(chosen) {
             market: { buyback: chosen.priced.market.buyback } } : null };
 }
 
-// The bot's sale at a market visit or a review (group E): the author's hard
+// The bot's sale at a market visit or a review: the author's hard
 // rules first; every other item goes by one expected-value decision (the
 // board at its best ask, the NPC buy-back now, a buy ad answered in its town,
 // or keeping it), one roll. Public interest and recent purchases rank the
@@ -220,10 +220,7 @@ function evaluate(state, options = {}) {
     };
     const rollKey = item => ['dispose', ctx.characterId, item.selfId,
         ...(options.decisionPoint != null ? [options.decisionPoint] : rollFacts(state, ctx, item.selfId))];
-    const craftReservations = ctx.economy?.craftReservations
-        || ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
-    const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
-        reserved: { ...options.reserved, ...craftReservations } });
+    const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true });
     const owned = (ctx.board?.ownerLines?.(Number(state.characterId)) || [])
         .filter(line => line.storeType === BoardRules.SELL);
     const kept = options.kept || new Map(owned

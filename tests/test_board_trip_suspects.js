@@ -1,4 +1,4 @@
-// Suspects of step 3.3 group C, checked on a board in a test database:
+// Suspected faults of trading by trips, checked on a board in a test database:
 // E45 a buy ad and a sell line cross in two towns with no trip;
 // E46 a bot's shop moves to another town at a review;
 // E47 D-grade shots are routed as no-grade;
@@ -68,7 +68,7 @@ async function run() {
     await AfkTrade.init();
 
     // E45: a bot's buy ad in Dion and another bot's sell ad in Giran cross;
-    // nobody travels, so no deal may happen (design 4.4, 4.6).
+    // nobody travels, so no deal may happen.
     await check('E45', async () => {
         // A bot's buy ad reserves money only through its worker's money packet
         // (5d87d87a): the packet funds the 20 Varnish bid (4000) at r .001.
@@ -90,7 +90,7 @@ async function run() {
         assert.strictEqual(trades, 0, `E45: ${trades} deal(s) between Giran and Dion with no trip`);
     });
 
-    // E46: a bot's shop stays in its town (design 4.15, N51): a review after
+    // E46: a bot's shop stays in its town: a review after
     // the bot moved its hunt to another village keeps it where it stands.
     await check('E46', async () => {
         const owner = await bot('bot_e46_owner', 'E46Owner', [{ selfId: VARNISH, name: 'Varnish', amount: 30 }]);

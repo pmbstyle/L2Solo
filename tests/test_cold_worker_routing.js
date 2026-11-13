@@ -116,6 +116,11 @@ try {
         assert.equal(BotRoute.trip({}, lostGround, { activity: 'hunting', spotId: targetSpot.id },
             { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() })?.spotId, targetSpot.id,
         'ready crystal inputs cannot prevent a selected hunting trip from recovering missing ground');
+        // A bot that holds a spot but stands off it (in town after a visit) with a gear
+        // plan's inputs ready goes to hunt there when its leaf says hunt.
+        assert.equal(BotRoute.trip({}, { ...lostGround, spotId: targetSpot.id }, { activity: 'hunting', spotId: targetSpot.id },
+            { spots: [currentSpot, targetSpot], currentSpot: null, timestamp: Date.now() })?.spotId, targetSpot.id,
+        'ready crystal inputs do not hold a bot off the spot its hunting leaf names');
         assert.equal(BotRoute.trip({}, lostGround, { activity: 'improving' },
             { spots: [currentSpot, targetSpot], currentSpot, timestamp: Date.now() }), null,
         'a selected native improvement still executes before any hunting trip');
@@ -135,99 +140,75 @@ try {
     assert.strictEqual(BotRoute.leafChoice(leafHunter, { activity: 'hunting', spotId: 'raid:1' },
         { spots: [currentSpot, { ...targetSpot, id: 'raid:1', raidBoss: true }], timestamp: leafAt }), null,
         'a raid profile is never a solo leaf trip');
-    const avoiding = { ...leafHunter, stats: { coldCompetition: { avoid: { spotId: targetSpot.id, untilStep: 10 } } } };
+    const avoiding = { ...leafHunter, stats: { spotMarks: [{ spotId: targetSpot.id, reason: 'contest_lost', answer: null }] } };
     assert.strictEqual(BotRoute.leafChoice(avoiding, { activity: 'hunting', spotId: targetSpot.id },
-        { spots: [currentSpot, targetSpot], timestamp: leafAt }), null, 'an avoided spot is not a leaf trip');
+        { spots: [currentSpot, targetSpot], timestamp: leafAt }), null, 'a spot its contest lost is not a leaf trip');
     assert.strictEqual(BotRoute.leafChoice(leafHunter, { activity: 'resting' },
         { spots: [currentSpot, targetSpot], timestamp: leafAt }), null);
 
-    // The kept route (BotRoute.trip on the bot's kernel record): a step that
-    // moves none of its inputs walks to the kept spot even when a new search
-    // would choose another; a route section, a plan / request field the
-    // search reads, or a leaf trip makes the next trip start search again.
-    const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+    // The held choice (BotRoute.trip on the bot's kernel record): a step that
+    // moves none of its inputs walks to the held spot even when a new search
+    // would choose another; moved route facts (the step's drop), a plan / request
+    // field the search reads, or a leaf make the next trip start choose again.
     const otherSpot = { ...targetSpot, id: 'other-field', name: 'Other fields' };
     const keptSpots = [currentSpot, targetSpot, otherSpot];
     const keptHunter = { ...leafHunter, characterId: 10 };
     let searched = targetSpot;
     SpotProfiles.findForState = () => searched;
-    const record = { route: null };
-    const tripTo = (leaf = null) => BotRoute.trip(record, keptHunter, leaf,
-        { spots: keptSpots, currentSpot, timestamp: leafAt })?.spotId;
-    const stepDrops = (mask, before, after) => {
-        const why = BotRoute.dropReason(mask & Sections.COMPUTED.route, before, after);
-        if (why) BotRoute.drop(record, why);
-        return why;
-    };
-    const waitPlan = { status: 'active', strategy: 'direct_drop', partyNeed: 'required', next: { spotId: 'source', npcId: 7 } };
+    const record = {};
+    const sourcePlan = { status: 'active', strategy: 'direct_drop', next: { spotId: 'source', npcId: 7 } };
     const openRequest = { status: 'open', priority: 'preferred' };
-    const quiet = { plan: waitPlan, request: openRequest };
+    let hunter = { ...keptHunter, stats: { equipmentPlan: sourcePlan, partyRequest: openRequest } };
+    const tripTo = (leaf = null) => BotRoute.trip(record, hunter, leaf,
+        { spots: keptSpots, currentSpot, timestamp: leafAt })?.spotId;
+    const planned = (plan, request = openRequest) => { hunter = { ...hunter, stats: { ...hunter.stats, equipmentPlan: plan, partyRequest: request } }; };
     // The search's answer flips, so a trip shows whether it searched or kept.
     const flipSearch = () => { searched = searched === targetSpot ? otherSpot : targetSpot; };
-    assert.strictEqual(tripTo(), targetSpot.id, 'the first trip start searches');
+    assert.strictEqual(tripTo(), targetSpot.id, 'the first trip start chooses');
     flipSearch();
-    assert.strictEqual(stepDrops(Sections.sectionMask(['money', 'supply']), quiet, quiet), '');
-    assert.strictEqual(tripTo(), targetSpot.id, 'a step that moves no route input keeps its route');
-    assert.strictEqual(stepDrops(Sections.sectionMask(['occupation']), quiet, quiet), 'sections');
-    assert.strictEqual(tripTo(), otherSpot.id, 'a moved route section searches again');
+    assert.strictEqual(tripTo(), targetSpot.id, 'a step that moves no input keeps its choice');
+    BotRoute.drop(record, 'sections');
+    assert.strictEqual(tripTo(), otherSpot.id, 'moved route facts choose again');
     flipSearch();
-    assert.strictEqual(stepDrops(0, quiet, { ...quiet, plan: { ...waitPlan, next: { spotId: 'new-source', npcId: 7 } } }), 'plan');
-    assert.strictEqual(tripTo(), targetSpot.id, 'a new plan destination searches again');
+    planned({ ...sourcePlan, next: { spotId: 'new-source', npcId: 7 } });
+    assert.strictEqual(tripTo(), targetSpot.id, 'a new plan destination chooses again');
     flipSearch();
-    assert.strictEqual(stepDrops(0, quiet, { ...quiet, request: { ...openRequest, status: 'deferred' } }), 'plan',
-        'a party request deferred (the party wait starts) drops the route');
-    assert.strictEqual(tripTo(), otherSpot.id);
+    planned(hunter.stats.equipmentPlan, { ...openRequest, status: 'deferred' });
+    assert.strictEqual(tripTo(), otherSpot.id, 'a party request deferred chooses again');
     flipSearch();
-    assert.strictEqual(stepDrops(0, quiet, { ...quiet, request: { ...openRequest, priority: 'required' } }), 'plan');
-    assert.strictEqual(tripTo(), targetSpot.id);
-    flipSearch();
-    assert.strictEqual(tripTo({ activity: 'hunting', spotId: otherSpot.id }), otherSpot.id, 'the leaf trip goes first');
-    assert.strictEqual(tripTo(), otherSpot.id, 'after a leaf trip the next trip start searches, not the old kept spot');
-    const allowSpot = invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState;
+    assert.strictEqual(tripTo({ activity: 'hunting', spotId: otherSpot.id }), otherSpot.id, 'the leaf goes first');
+    hunter = keptHunter;
+    const groundVerdict = invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict;
     try {
-        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => true;
         for (const activity of ['shopping', 'crafting', 'selling', 'improving']) {
             assert.strictEqual(tripTo({ activity, itemId: 736, town: 'Oren' }), undefined,
                 `a ${activity} decision reaches its executor instead of starting a hunting detour`);
         }
-        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => false;
+        // Ground it may not hunt alone (party-only ground, the ground rule).
+        invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = spot => ({ allowed: String(spot?.id) !== currentSpot.id });
         assert(tripTo({ activity: 'shopping', itemId: 736, town: 'Oren' }),
             'an unsafe-ground evacuation still owns safety before an ordinary purchase');
-    } finally { invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = allowSpot; }
+    } finally {
+        invoke('GameServer/Bot/AI/LevelingRoutes').groundVerdict = groundVerdict;
+    }
     SpotProfiles.findForState = () => { throw Error('search failed'); };
     BotRoute.drop(record, 'test');
     assert.strictEqual(tripTo(), undefined, 'a failed search starts no trip');
     SpotProfiles.findForState = () => targetSpot;
     assert.strictEqual(tripTo(), targetSpot.id, 'a failed search is not kept: the next trip start searches');
-    // ROUTE-ROOM-2: the worker's room filter refuses a leaf trip to a full
-    // spot other than the bot's own (the search decides); the bot's own spot
-    // is never full to it (here it stands elsewhere, displaced from it).
-    const roomTrip = (hunter, hasRoom) => BotRoute.trip({ route: null }, hunter,
-        { activity: 'hunting', spotId: otherSpot.id },
-        { spots: keptSpots, currentSpot, timestamp: leafAt, hasRoom })?.spotId;
-    assert.strictEqual(roomTrip(keptHunter, id => id !== otherSpot.id), targetSpot.id,
-        'a leaf trip to a full spot is not taken: the search decides');
-    assert.strictEqual(roomTrip({ ...keptHunter, spotId: otherSpot.id }, () => false), otherSpot.id,
-        'the leaf trip to the bot\'s own spot is taken even when it counts as full');
-    // ROUTE-ROOM-3: the kept route obeys the same filter: one to a full spot
-    // other than the bot's own is dropped and the search decides; one to the
-    // bot's own spot is kept.
-    SpotProfiles.findForState = () => otherSpot;
-    const keptRoom = (hunter, hasRoom) => {
-        const owner = { route: null };
-        const walk = (room) => BotRoute.trip(owner, hunter, null,
-            { spots: keptSpots, currentSpot, timestamp: leafAt, hasRoom: room })?.spotId;
-        assert.strictEqual(walk(null), otherSpot.id, 'fixture: the route is kept on the first search');
-        SpotProfiles.findForState = () => targetSpot;
-        return walk(hasRoom);
-    };
-    assert.strictEqual(keptRoom(keptHunter, id => id !== otherSpot.id), targetSpot.id,
-        'a kept route to a spot that is full now is dropped: the search decides');
-    SpotProfiles.findForState = () => otherSpot;
-    assert.strictEqual(keptRoom(keptHunter, () => true), otherSpot.id, 'a kept route to a spot with room is kept');
-    SpotProfiles.findForState = () => otherSpot;
-    assert.strictEqual(keptRoom({ ...keptHunter, spotId: otherSpot.id }, () => false), otherSpot.id,
-        'a kept route to the bot\'s own spot is kept even when it counts as full');
+    // The crowd is no input of the choice: a leaf's spot full of other bots is still the
+    // trip (the crowd is met at arrival), and the held choice does not move while the spot
+    // fills on the way.
+    const crowdRecord = {};
+    const crowdTrip = () => BotRoute.trip(crowdRecord, keptHunter, { activity: 'hunting', spotId: otherSpot.id },
+        { spots: keptSpots, currentSpot, timestamp: leafAt })?.spotId;
+    const packed = count => ({ physicalSize: () => count, physicalCount: () => count, spotVersion: () => count });
+    try {
+        SpotProfiles.useOccupancy(() => packed(100));
+        assert.strictEqual(crowdTrip(), otherSpot.id, 'a leaf\'s spot full of bots is still the trip');
+        SpotProfiles.useOccupancy(() => packed(200));
+        assert.strictEqual(crowdTrip(), otherSpot.id, 'filling on the way drops nothing');
+    } finally { SpotProfiles.useOccupancy(null); }
     SpotProfiles.findForState = routeTargetForState;
 
     const raidSpot = {
@@ -266,20 +247,44 @@ try {
     try {
         assert.strictEqual(SpotService.standingSpot(raidMembers[0], standingCatalog).id, raidSpot.id,
             'the cold resolver must receive the virtual raid profile instead of its surrounding grid sector');
+        // A raid member left far from the raid (in town after it) stands where its body is, not at the boss.
+        const farFromRaid = { ...raidMembers[0], loc: { locX: 80000, locY: 140000, locZ: -3000 } };
+        assert.strictEqual(SpotService.standingSpot(farFromRaid, standingCatalog).id, fieldSpot.id,
+            'far from its raid: the spot under it');
+        assert.strictEqual(SpotService.standingSpot(farFromRaid, [raidSpot]), null, 'far from its raid on no spot: none');
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id }, standingCatalog).id, fieldSpot.id,
             'an ordinary declared spot yields to the spot under the bot');
         assert.strictEqual(SpotService.standingSpot({ ...raidMembers[0], spotId: currentSpot.id, loc: null }, standingCatalog).id,
-            currentSpot.id, 'with no spot under the bot its declared spot stands');
+            currentSpot.id, 'with no position known its declared spot stands');
+        // Off any spot's cell, the declared spot stands only once the body has arrived there
+        // (the arrival radius): a body in town after a visit stands on none.
+        const declaredSpot = { id: 'declared-field', name: 'Declared field', center: { locX: 10000, locY: 10000, locZ: 0 } };
+        const offCell = [declaredSpot];
+        assert.strictEqual(SpotService.standingSpot({ spotId: declaredSpot.id, loc: { locX: 10700, locY: 10000, locZ: 0 } }, offCell),
+            declaredSpot, 'a body inside the arrival radius stands on its declared spot');
+        assert.strictEqual(SpotService.standingSpot({ spotId: declaredSpot.id, loc: { locX: 30000, locY: 10000, locZ: 0 } }, offCell),
+            null, 'a body far from its declared spot stands on none');
+        // A bot rested in town keeps its field as its spot: its held choice of that field
+        // is a trip there, not "already there" (no rest-in-town loop on a missing spot).
+        const restedInTown = { characterId: 11, phase: 'cold', activity: 'hunting', level: 18, spotId: declaredSpot.id,
+            loc: { locX: 30000, locY: 10000, locZ: 0 }, stats: {} };
+        const routeAt = Date.now();
+        assert.strictEqual(BotRoute.record(restedInTown, { spotId: declaredSpot.id }, null, [],
+            { spots: offCell, currentSpot: null, timestamp: routeAt })?.spotId, declaredSpot.id,
+        'a body far from its declared spot starts the trip to it');
+        assert.strictEqual(BotRoute.record({ ...restedInTown, loc: { locX: 10700, locY: 10000, locZ: 0 } },
+            { spotId: declaredSpot.id }, null, [], { spots: offCell, currentSpot: declaredSpot, timestamp: routeAt }), null,
+        'a body that has arrived there takes no trip');
     } finally {
         SpotService.findCurrentSpot = originalFindCurrentSpot;
     }
 
-    // A competition avoid only marks the spot (ColdCompetitionRetreat): the
+    // A contest lost (turned away or displaced at an arrival) only marks the spot: the
     // route the worker searches excludes it and moves the bot off it.
     const retreatAt = Date.now();
     const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
         spotId: currentSpot.id, loc: { locX: 1, locY: 2, locZ: 3 },
-        stats: { coldCompetition: { avoid: { spotId: currentSpot.id, untilStep: 10 } } } };
+        stats: { spotMarks: [{ spotId: currentSpot.id, reason: 'contest_lost', answer: null }] } };
     SpotProfiles.findForState = (state, options) => {
         assert(options.excludedSpotIds.has(currentSpot.id), 'voluntary avoidance reaches the real route selector');
         assert.strictEqual(options.timestamp, retreatAt);
@@ -310,30 +315,26 @@ try {
     assert.strictEqual(batchRouteFor(22)?.spotId, targetSpot.id,
         'a third decision is not refused at planning: the room is checked at arrival');
 
-    // "Was full" marks (the arrival check itself: test_room_at_arrival.js):
-    // a chain of them, and the searches they clear.
+    // A contest lost at an arrival (SpotContest; the contest itself: test_room_at_arrival.js),
+    // here a standing bot displaced by a stronger one (its step wake's payload): the spot is
+    // marked for the outing, and the next search takes another.
     const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-    const atStep = (value, stepCount) => ({ ...value, stats: { ...value.stats, stepCount } });
-    const markedState = Risk.withCapacityBackoff({
+    const Situations = invoke('GameServer/Bot/Situations');
+    const markedState = {
         characterId: 23,
         phase: 'cold',
         activity: 'hunting',
         spotId: targetSpot.id,
         loc: { locX: 1, locY: 2, locZ: 3 },
-        stats: { equipmentPlan: { status: 'active', strategy: 'direct_drop' } }
-    }, targetSpot.id);
-    const refusedAt = Risk.stepCount(markedState);
-    let chained = markedState;
-    for (let index = 1; index < Risk.MAX_BACKOFFS; index += 1) {
-        chained = Risk.withCapacityBackoff(atStep(chained, refusedAt + index), `chain_${index}`);
-    }
-    const chainEnd = refusedAt + Risk.MAX_BACKOFFS - 1;
-    assert.strictEqual(Risk.excludedSpotIdsForStates([atStep(chained, chainEnd + 1)]).size, Risk.MAX_BACKOFFS,
-        'every spot found full along a chain stays excluded, so the bot can reach a free spot');
-    assert.strictEqual(Risk.excludedSpotIdsForStates([atStep(chained, chainEnd + 1 + Risk.CAPACITY_BACKOFF_STEPS)]).size, 0,
-        'the whole chain expires one backoff after the last full spot');
-    assert.strictEqual(markedState.stats.lastReason, 'route_capacity_full');
-    assert.strictEqual(markedState.stats.spotBackoffs, undefined);
+        stats: Situations.raise({ equipmentPlan: { status: 'active', strategy: 'direct_drop' } }, 'contest_lost',
+            { spotId: targetSpot.id, reason: 'displaced', by: 99 }, Situations.OPEN, 23)
+    };
+    assert(Risk.excludedSpotIdsForStates([markedState]).has(String(targetSpot.id)), 'the spot of a lost contest is excluded');
+    assert(Situations.woken(markedState.stats, 'earning_spot'), 'a lost contest wakes the earning spot');
+    assert(Risk.excludedSpotIdsForStates([{ ...markedState, stats: { ...markedState.stats,
+        earning: { spotId: 'free-destination', at: 5 } } }]).has(String(targetSpot.id)), 'the next held answer keeps the mark');
+    assert.strictEqual(Risk.excludedSpotIdsForStates([{ ...markedState, stats: Situations.raise({ ...markedState.stats }, 'arrived_town',
+        null, Situations.OPEN, 23) }]).size, 0, 'its next trip from town forgets it');
     const originalCache = SpotProfiles.cache;
     const savedFind = SpotProfiles.findForState;
     const savedPhysical = SpotService.findCurrentSpot;
@@ -361,12 +362,10 @@ try {
         tags: ['dungeon', 'catacomb'],
         tagsAuthoritative: true
     };
-    const unqualifiedCurrentSpot = {
-        id: 'dangerous-room-grid-without-area',
-        name: 'Nearby ordinary fields'
-    };
-    SpotService.findCurrentSpot = () => unqualifiedCurrentSpot;
-    SpotProfiles.findForState = () => unqualifiedCurrentSpot;
+    // The bot stands on party-only ground (the spot under it) and the search answers that
+    // ground again: it flees to the safe spot.
+    SpotService.findCurrentSpot = () => dangerousSpot;
+    SpotProfiles.findForState = () => dangerousSpot;
     const emergencyRoute = routeFor({
         characterId: 24,
         phase: 'cold',
@@ -376,7 +375,7 @@ try {
         currentRegion: dangerousSpot.name,
         loc: { locX: 1, locY: 2, locZ: 3 },
         stats: { routeMode: 'party' }
-    }, unqualifiedCurrentSpot, null, [], [targetSpot]);
+    }, dangerousSpot, null, [], [targetSpot]);
     assert(emergencyRoute, 'a detached solo bot must receive a route out of party-only content');
     assert.strictEqual(emergencyRoute.spotId, targetSpot.id);
     assert.strictEqual(emergencyRoute.reason, 'unsafe_ground_evacuation');
@@ -410,7 +409,7 @@ try {
             spotId: dangerousSpot.id, currentRegion: dangerousSpot.name,
             loc: { locX: 1, locY: 2, locZ: 3 }, stats: { routeMode: 'party' }
         };
-        const routeAgain = () => routeFor(evacuationState, unqualifiedCurrentSpot, null, [], catalog);
+        const routeAgain = () => routeFor(evacuationState, dangerousSpot, null, [], catalog);
         const first = routeAgain();
         assert(first && alternatives.some(spot => spot.id === first.spotId),
             'evacuation must still choose a safe destination');
@@ -444,6 +443,25 @@ try {
     assert.strictEqual(partyRoute.mode, 'party');
     assert.strictEqual(Object.keys(partyRoute.destinations).length, 2);
     assert.deepStrictEqual(partyRoute.destinations['3'], destinationFor(members[1]));
+    // No spot elsewhere has room for the whole party: it stays on its own ground while
+    // that ground fits it; a ground it outgrew is none (the party breaks up).
+    SpotProfiles.findForState = () => null;
+    SpotService.findCurrentSpot = () => targetSpot;
+    const crowded = { ...party, spotId: targetSpot.id };
+    const crowdedMembers = level => members.map(m => ({ ...m, level, spotId: targetSpot.id }));
+    const crowdedChoice = level => BotRoute.choose(crowdedMembers(level)[0], targetSpot, crowded, crowdedMembers(level),
+        { spots: [currentSpot, targetSpot], timestamp: Date.now() })?.spotId;
+    assert.strictEqual(crowdedChoice(19), targetSpot.id, 'no room elsewhere keeps the party on its ground');
+    assert.strictEqual(crowdedChoice(60), null, 'a ground the party outgrew is no answer');
+    // A spot the party only met at (party income) holds while it stands for the party;
+    // outgrown, the objective ends and the party routes as any other (here: no ground).
+    const meeting = level => BotRoute.choose(crowdedMembers(level)[0], targetSpot,
+        { ...crowded, stats: { objective: { reason: 'party_progress', spotId: targetSpot.id } } }, crowdedMembers(level),
+        { spots: [currentSpot, targetSpot], timestamp: Date.now() });
+    assert.deepStrictEqual(meeting(19), { spotId: targetSpot.id }, 'a fitting meeting spot holds the party');
+    assert.deepStrictEqual(meeting(60), { spotId: null, objectiveEnded: true }, 'an outgrown meeting spot ends the objective');
+    SpotService.findCurrentSpot = () => currentSpot;
+    SpotProfiles.findForState = routeTargetForState;
 
     const dungeonPoint = { locX: 145224, locY: 120001, locZ: -4500 };
     const lair = { ...targetSpot, id: '24_20:antharas_lair', center: dungeonPoint, name: "Antharas' Lair" };
@@ -537,8 +555,8 @@ try {
     }, requestPlan, 1000, { economy: { worth: () => 0 } });
     assert.strictEqual(request.status, 'open', 'the worker must create a durable party request for a required plan');
     assert.strictEqual(request.priority, 'required');
-    const config = invoke('GameServer/Bot/Population/PopulationConfig');
-    const expiredRequest = PartyRequestPlanner.partyRequestForPlan({
+    // No age closes a held request (C4 has no LFG timeout): an hour on, it stays open.
+    const heldRequest = PartyRequestPlanner.partyRequestForPlan({
         characterId: 4,
         activity: 'hunting',
         stats: {
@@ -548,9 +566,9 @@ try {
                 requestedAt: 1000
             }
         }
-    }, requestPlan, 1000 + Math.max(30000, Number(config.partyRequestMaxAgeMs) || 15 * 60 * 1000) + 1, { economy: { worth: () => 0 } });
-    assert.strictEqual(expiredRequest.status, 'deferred', 'the worker request helper must preserve deferred recovery semantics');
-    assert.strictEqual(expiredRequest.attempts, 1);
+    }, requestPlan, 1000 + 60 * 60 * 1000, { economy: { worth: () => 0 } });
+    assert.strictEqual(heldRequest.status, 'open', 'the worker request helper holds an unanswered request open');
+    assert.strictEqual(heldRequest.requestedAt, 1000);
 
     const fallbackSpot = { id: 'solo-fallback', name: 'Solo fallback' };
     GearAcquisitionPlanner.safeFallbackForPlan = () => ({ spotId: fallbackSpot.id, npcId: 321 });

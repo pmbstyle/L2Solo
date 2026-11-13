@@ -123,9 +123,15 @@ function authoredKitInputs(actor, session) {
     const rawShots = plan.perAction > 0 ? positive(tableRow.shots) : 0;
     const benefit = Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(tableRow.exp)));
     const hourAdena = Hunt.huntHour(hunt, state);
-    const shotUse = benefit < rawShots * shotPrice / hourAdena ? 0 : rawShots;
+    // Rates at the precision the kit keeps them (StatsPacket.roundRate).
+    const roundRate = invoke('GameServer/Bot/Economy/StatsPacket').roundRate;
+    // The use per hour is the table's at the spot the bot stands on (the income row its hour is priced on
+    // without one): the fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
+    const useRow = (state.spotId && Table.value(state.spotId, Table.roleFor(state), state.level, true))
+        || Hunt.incomeRow(state);
+    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : plan.perAction > 0 ? positive(useRow.shots) : 0);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const potionUse = positive(tableRow.potions);
+    const potionUse = roundRate(positive(useRow.potions));
     const potionPrice = price(potionId);
     const escapePrice = price(736);
     const shotHeld = positive(state.inventory[plan.selfId]?.amount);
@@ -137,22 +143,24 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    const survivalReserve = (escapeCost > 0 ? listPrice(736) * Math.max(0, 1 - escapeHeld) : 0)
-        + Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
-        + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
+    // The reserve holds one outing's refill of each kind used (whole units, never
+    // under one hour of use), whatever the bag holds; no Scroll of Escape in it.
+    const outingHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
+    const refillOf = use => use > 0 ? Math.max(Math.ceil(use), Math.ceil(use * outingHours)) : 0;
+    const refillReserve = refillOf(shotUse) * listPrice(plan.selfId) + refillOf(potionUse) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,
         weaponId: actor.backpack.fetchEquippedWeapon().fetchSelfId(), perAction: plan.perAction,
         shotId: plan.selfId, shotUse, shotPrice, shotHeld, benefit, potionId, potionUse, potionPrice, potionHeld,
-        potionUnitPrice, potionReserve, escapePrice, escapeHeld, escapeCost, survivalReserve };
+        potionUnitPrice, potionReserve, escapePrice, escapeHeld, escapeCost, refillReserve };
 }
 function fundAuthoredKit(actor, session, extraCost, label) {
     const inputs = authoredKitInputs(actor, session);
-    const amount = Math.ceil(inputs.survivalReserve + inputs.potionReserve + extraCost(inputs));
+    const amount = Math.ceil(inputs.refillReserve + inputs.potionReserve + extraCost(inputs));
     actor.backpack.fetchItemFromSelfId(57).setAmount(amount);
     // The native reserve is an oracle only after the independent input is set.
-    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(inputs.state), inputs.survivalReserve);
+    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(inputs.state), inputs.refillReserve);
     const { state, ...values } = inputs;
     console.log('AUTHORED_FUNDED_INPUTS', JSON.stringify({ label, characterId: actor.fetchId(), level: actor.fetchLevel(),
         ...values, fundedAdena: amount }));
@@ -165,7 +173,7 @@ function fundAuthoredKit(actor, session, extraCost, label) {
 function workerMoneyPacket(session, inputs) {
     const previous = session.coldLifeState || {};
     session.coldLifeState = { ...previous, stats: { ...previous.stats, money: [Math.round(inputs.hourAdena),
-        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.survivalReserve), 0] } };
+        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.refillReserve), 0] } };
 }
 
 function publishNativeEquipmentShop(actor, town) {
@@ -1074,9 +1082,9 @@ try {
         getClosestNewbieGuide: () => ({ locX: 0, locY: 0, locZ: 0 }),
         say() {}
     });
-    assert.strictEqual(inviteBotSession.plan, 'getting_buffed', 'a low-level companion accepted while resting in town should recover at the Newbie Guide');
-    assert.strictEqual(inviteBot.state.fetchSeated(), false, 'Newbie Guide recovery should stand the invited companion up');
-    assert.strictEqual(inviteBotSession.roleDecision.reason, 'newbie_guide_recovery', 'the city recovery transition should be visible in companion status');
+    // C4: the Newbie Guide only buffs, it restores no HP/MP: a low companion rests where it is.
+    assert.notStrictEqual(inviteBotSession.plan, 'getting_buffed', 'a low-level companion accepted while resting in town walks to no Newbie Guide');
+    assert.strictEqual(inviteBot.state.fetchSeated(), true, 'it stays seated: no walk to the Newbie Guide to recover');
 
     const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
     movingBot.state.setTowards('move');
@@ -2224,14 +2232,14 @@ try {
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
 
     const pullGeo = invoke('GameServer/Geodata/GeodataEngine');
-    const savedPullSight = pullGeo.hasLineOfSight;
+    const savedPullSight = pullGeo.canWalkStraight;
     try {
-        pullGeo.hasLineOfSight = () => false;
+        pullGeo.canWalkStraight = () => false;
         FollowingState.tick(autoPullTankSession, autoPullTank, { skillExec() {} }, {
             say() {}, executePvPCombat() {},
             executeCombat() { assert.fail('automatic tank pulling must not select a mob behind a wall'); }
         });
-    } finally { pullGeo.hasLineOfSight = savedPullSight; }
+    } finally { pullGeo.canWalkStraight = savedPullSight; }
 
     const scoredPuller = fakeActor(2000099, { locX: 0, locY: 0, level: 40, classId: 5 });
     const scoredLeader = fakeActor(2000100, { locX: 0, locY: 0, level: 40, classId: 0 });
@@ -2379,7 +2387,7 @@ try {
     assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
     assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
 
-    const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 21 });
+    const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 26 });
     Object.keys(overleveledRefreshBot.activeBuffs).forEach((key) => { overleveledRefreshBot.activeBuffs[key] = 0; });
     const overleveledRefreshSession = fakeSession('bot_overleveled_refresh_party', overleveledRefreshBot);
     overleveledRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
@@ -2390,8 +2398,8 @@ try {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.notStrictEqual(overleveledRefreshSession.roleDecision?.reason, 'wait_for_newbie_guide_town', 'companions above level 20 must not wait for Newbie Guide buffs');
-    assert.notStrictEqual(overleveledRefreshSession.plan, 'getting_buffed', 'companions above level 20 must not start a Newbie Guide trip');
+    assert.notStrictEqual(overleveledRefreshSession.roleDecision?.reason, 'wait_for_newbie_guide_town', 'companions past the guide level cap (25) must not wait for Newbie Guide buffs');
+    assert.notStrictEqual(overleveledRefreshSession.plan, 'getting_buffed', 'companions past the guide level cap (25) must not start a Newbie Guide trip');
 
     const refreshLeader = fakeActor(2000034, { locX: -84081, locY: 243227, locZ: -3723, level: 10 });
     const refreshLeaderSession = fakeSession('player_refresh_party', refreshLeader);
@@ -2421,22 +2429,9 @@ try {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.strictEqual(recoverySession.plan, 'getting_buffed', 'a low-level companion already in a Newbie Guide town should recover there instead of sitting');
-    assert.strictEqual(recoverySession.roleDecision.reason, 'newbie_guide_recovery', 'Newbie Guide recovery should be visible in bot status');
-
-    // An abandoned guide trip waits for its retry time: the companion sits instead.
-    const retryRecoveryBot = fakeActor(2000077, { locX: -84001, locY: 243227, locZ: -3723, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
-    const retryRecoverySession = fakeSession('bot_newbie_retry_recovery_party', retryRecoveryBot);
-    retryRecoverySession.followPlayerSession = recoveryLeaderSession;
-    retryRecoverySession.partyCompanion = true;
-    retryRecoverySession.plan = 'following';
-    retryRecoverySession.newbieGuideRetryAt = Date.now() + 60000;
-    publishSessions([recoveryLeaderSession, retryRecoverySession]);
-    FollowingState.tick(retryRecoverySession, retryRecoveryBot, {}, {
-        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
-        say() {}, executeCombat() {}, executePvPCombat() {}
-    });
-    assert.strictEqual(retryRecoverySession.plan, 'resting', 'a companion whose guide route waits for its retry time should rest instead of retrying the trip');
+    // C4: the Newbie Guide only buffs: a low companion sits even beside it.
+    assert.strictEqual(recoverySession.plan, 'resting', 'a low-level companion in a Newbie Guide town sits to recover');
+    assert.strictEqual(recoverySession.roleDecision.reason, 'resting', 'it recovers seated, no guide trip');
 
     const fieldRecoveryBot = fakeActor(2000045, { locX: 0, locY: 0, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
     const fieldRecoverySession = fakeSession('bot_field_recovery_party', fieldRecoveryBot);
@@ -2522,7 +2517,9 @@ try {
     assert.strictEqual(physicalShotQuote.price,
         Pricing.sellersOf(authoredShotInputs.shotId).find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price,
         'the scene quote must equal the independently authored static merchant price');
-    assert.strictEqual(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour, authoredShotInputs.shotUse,
+    // At the precision the kit rates keep (StatsPacket.roundRate).
+    assert.strictEqual(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour,
+        authoredShotInputs.shotUse,
         'the native economic output must agree with the independently funded input');
 
     const assertFundedStockKitUnchanged = recordPhysicalKit(errandBot, errandSession.accountId);
@@ -2534,6 +2531,9 @@ try {
     };
     publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
     deliverNearDecision(errandSession);
+    // The spot's kit use lives in the bot's earning answer, the one it held solo.
+    const errandStats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(errandSession);
+    errandStats.earning = { ...errandStats.earning, shotsPerHour: authoredShotInputs.shotUse, potionsPerHour: authoredShotInputs.potionUse };
     FollowingState.tick(errandSession, errandBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),

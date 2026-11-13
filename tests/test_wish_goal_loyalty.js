@@ -51,3 +51,56 @@ const alone = new WishNetwork().build({ actorKey: 'character:99', inputKey: 'alo
     persona: { traits: { commitment: 0.5 } }, previous: {}, reconsider: true });
 assert.equal(alone.focus[0], STOCK, 'with no goal the stock is the focus');
 console.log('wish goal loyalty ok');
+
+// A board offer alone (offer_posted, MarketBuyerWaiters' wake) weighs the held step only
+// against buying the offered item: a hunter who hears a WTS shout for an item he would not
+// buy keeps hunting on the same seed, however a re-priced rival root reads; one whose buy
+// of that item beats the hunt takes the shop step. Another situation of the build in the
+// same wake (a full bag, one released at a stop) is the full reconsideration.
+{
+    const Situations = require('../src/GameServer/Bot/Situations');
+    const HUNT = 'power:201:6', DEAR = 'power:202:7', CHEAP = 'power:203:8';
+    const offerNetwork = new WishNetwork();
+    const offerBuild = (decisionSeq, activityLeaf, dearValue, offered = 0) => offerNetwork.build({ actorKey: 'character:120',
+        characterId: 120, inputKey: `offer:${dearValue}`, remembered: false, decisionSeq, activityLeaf, wallet: 10000, hourAdena: 100,
+        persona: { traits: { commitment: 0.5 } }, previous: { focus: [HUNT, 0, 0] }, roots: [HUNT, DEAR, CHEAP], reconsider: true, offered,
+        nodes: [{ key: HUNT, need: 'power', valueHours: 1, paths: [{ activity: 'hunting', costHours: 1 }] },
+            ...[[DEAR, 202, dearValue], [CHEAP, 203, 0.2]].map(([key, itemId, valueHours]) => ({ key, need: 'power', valueHours,
+                paths: [{ kind: 'buy', activity: 'shopping', itemId, costHours: 1, town: 'Giran', tripHours: 0, tripFees: 0 }] }))] });
+    // The mind a build reads: its held build, the offer raised on it where it hunts.
+    const mind = (...raises) => raises.reduce((stats, [name, payload = null, where = Situations.OPEN]) =>
+        Situations.raise(stats, name, payload, where, 120), { woken: 0, waiting: 0, situationSeq: 4, wishSections: {}, earning: {} });
+    const offered = (...raises) => Situations.offerWoke(mind(...raises));
+    assert.equal(offered(['offer_posted', { itemId: 203, price: 10 }]), 203, 'an offer alone names its item to the build');
+    assert.equal(offered(['offer_posted', { itemId: 203, price: 10 }], ['bag_full']), 0, 'a full bag after it: the full review');
+    assert.equal(offered(['goal_done:goal'], ['offer_posted', { itemId: 203, price: 10 }]), 0, 'so does a step done before it');
+    assert.equal(offered(['offer_posted', { itemId: 203, price: 10 }], ['offer_posted', { itemId: 203, price: 9 }]), 203,
+        'the same item offered cheaper is the same offer');
+    // A far bot on its hunt: a clan call waits for its next stop.
+    const hunting = Situations.place({ phase: 'cold', activity: 'hunting' });
+    const waited = mind(['clan_call', null, hunting], ['offer_posted', { itemId: 203, price: 10 }, hunting]);
+    assert.equal(Situations.offerWoke(waited), 203, 'a call that waits for the next stop does not wake the build yet');
+    assert.equal(Situations.offerWoke(Situations.stop(waited, Situations.REST, 120)), 0, 'its stop releases it: the full review');
+    let huntLeaf = 0, huntSeq = 0;
+    for (let seq = 1; !huntLeaf && seq <= 50; seq++) {
+        const pick = offerBuild(seq, 0, 1);
+        if (pick.activity?.activity === 'hunting') { huntLeaf = pick.activityLeaf; huntSeq = seq; }
+    }
+    assert(huntLeaf > 0, 'fixture: a held hunting step');
+    let rolled = 0;
+    for (let seq = huntSeq; seq < huntSeq + 30; seq++) {
+        // The dear root re-priced past the loyalty margin: the full review rolls the step again.
+        if (offerBuild(seq, huntLeaf, 6).decisionSeq !== seq) rolled++;
+        const kept = offerBuild(seq, huntLeaf, 6, offered(['offer_posted', { itemId: 203, price: 10 }]));
+        assert.equal(kept.activityLeaf, huntLeaf, 'an offer whose buy does not beat the hunt keeps the hunting step');
+        assert.equal(kept.decisionSeq, seq, 'on the same seed');
+        assert.equal(kept.focus[0], HUNT, 'and the focus');
+        const bought = offerBuild(seq, huntLeaf, 6, offered(['offer_posted', { itemId: 202, price: 10 }]));
+        assert.deepEqual([bought.activity.kind, bought.activity.itemId], ['buy', 202], 'an offer whose buy beats it takes the shop step');
+        assert.equal(bought.decisionSeq, seq + 1, 'under a new seed');
+        const full = offerBuild(seq, huntLeaf, 6, offered(['offer_posted', { itemId: 203, price: 10 }], ['bag_full']));
+        assert.equal(full.decisionSeq, seq + 1, 'another situation in the wake rolls the step again');
+    }
+    assert.equal(rolled, 30, 'fixture: the full review rolls the held step');
+    console.log('offer alone keeps the held step unless its buy beats it: PASS');
+}

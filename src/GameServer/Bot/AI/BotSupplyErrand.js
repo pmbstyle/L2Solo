@@ -91,8 +91,8 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
     const adena = actorAdena(bot);
     if (cost <= 0) return { ok: false, reason: 'supply_price_invalid' };
     // A board writer keeps the reserve (companionTerms); an NPC takes the whole wallet.
-    const money = isBoardSource(Market.sourceType) ? PurchaseFunding.spendable({ ...session.coldLifeState, adena }, 0,
-        PurchaseFunding.companionTerms(selfId)) : adena;
+    const money = isBoardSource(Market.sourceType) ? PurchaseFunding.payable({ ...session.coldLifeState, adena },
+        invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(bot.fetchId()), PurchaseFunding.companionTerms(selfId)) : adena;
     if (money < cost) return { ok: false, reason: 'not_enough_adena', cost, adena, itemName: Market.itemName };
 
     const BotAI = invoke('GameServer/Bot/BotAI');

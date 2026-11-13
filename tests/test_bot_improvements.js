@@ -143,6 +143,61 @@ async function main() {
         assert.equal(action.state.adena,state.adena-symbol.price);assert(Profile.profileFor(action.state).base.str>plain.base.str);
         console.log('PASS paid native class henna and actual cold stat effect');
 
+        // A far bot's held henna, drawn on its town visit, ends its held step: the bot does not
+        // walk back to the symbol maker on its next step with its slots full or the dye spent.
+        const Situations = invoke('GameServer/Bot/Situations');
+        state=await seed([{selfId:symbol.dyeSelfId,name:'Dye',amount:symbol.dyeAmount*2}],{classId:3,activity:'shopping',
+            stats:{decisionSeq:7,activityLeaf:12345,wishDirty:0,woken:0,wishSections:{at:1}}});
+        assert(!Situations.woken(state.stats,'build'));
+        const hennaCard={riskWeight:1,activity:{activity:'improving',improvement:{kind:'henna',symbolId:symbol.id,riskHours:0}}};
+        const drawn=await invoke('GameServer/Bot/Economy/BotImprovementService').reviewCold(state,{decide:()=>hennaCard});
+        assert.equal(drawn.changed,true);assert.equal(drawn.state.stats.hennas[0],symbol.id);
+        const row=Life.cachedState(state.characterId);
+        assert(Situations.woken(row.stats,'build'),'the drawn henna wakes the build: it chooses the step after it');
+        assert.equal(drawn.state.simulation.revision,row.simulation.revision,'the visit writes on after the raise');
+        console.log('PASS a drawn cold henna ends its held step');
+
+        // A near body whose improvement is done waits for the worker's answer: its next tick,
+        // on the card that still names the step, enchants nothing.
+        state=await seed([{selfId:weapon.selfId,name:weapon.template.name,amount:1},{selfId:951,name:'Scroll',amount:2}]);
+        const nearWeapon=(await DB.fetchItems(state.characterId)).find(row=>row.selfId===weapon.selfId);
+        const actor={fetchId:()=>state.characterId,isDead:()=>false,fetchIsOnline:()=>true};
+        const body={actor,accountId:state.accountName,nearRaise:{seq:1,names:[{name:'goal_done:goal',payload:null,seq:1}]},
+            heldEconomy:{state,statsPacket:{},network:{activity:{activity:'improving',
+                improvement:{kind:'enchant',objectId:nearWeapon.id,itemId:weapon.selfId,from:0,scrollId:951}}}}};
+        const World=invoke('GameServer/World/World'), registered=World.registeredActorById, record={session:body};
+        World.registeredActorById=id=>Number(id)===state.characterId?record:registered.call(World,id);
+        try {
+            assert.equal(await invoke('GameServer/Bot/Economy/BotImprovementService').reviewHot(body),null);
+        } finally { World.registeredActorById=registered; }
+        assert.equal((await DB.fetchItems(state.characterId)).find(row=>row.id===nearWeapon.id).enchant,0);
+        console.log('PASS a near body does not run its done improvement again before the answer');
+
+        // A near body that cooled while its enchant was written: the committed step ends once
+        // on its cold row (the build wakes), so the row does not take the same step again.
+        state=await seed([{selfId:weapon.selfId,name:weapon.template.name,amount:1},{selfId:951,name:'Scroll',amount:2}],
+            {stats:{decisionSeq:7,activityLeaf:12345,wishDirty:0,woken:0,wishSections:{at:1}}});
+        state=await Life.upsertState({...state,phase:'hot'},'fixture_near');
+        assert(!Situations.woken(state.stats,'build'));
+        const goneWeapon=(await DB.fetchItems(state.characterId)).find(row=>row.selfId===weapon.selfId);
+        const gone={actor:{fetchId:()=>state.characterId,isDead:()=>false,fetchIsOnline:()=>true},accountId:state.accountName,
+            heldEconomy:{state,statsPacket:{},network:{activity:{activity:'improving',
+                improvement:{kind:'enchant',objectId:goneWeapon.id,itemId:weapon.selfId,from:0,scrollId:951}}}}};
+        const goneRecord={session:gone}, write=DB.applyBotImprovement;
+        World.registeredActorById=id=>Number(id)===state.characterId?goneRecord:registered.call(World,id);
+        DB.applyBotImprovement=(...args)=>write.apply(DB,args).then(async result=>{
+            goneRecord.retired=true;
+            await Life.upsertState({...Life.cachedState(state.characterId),phase:'cold'},'fixture_cooled',{releaseHot:true});
+            return result;
+        });
+        try {
+            assert.equal((await invoke('GameServer/Bot/Economy/BotImprovementService').reviewHot(gone)).result,'success');
+        } finally { World.registeredActorById=registered; DB.applyBotImprovement=write; }
+        assert.equal((await DB.fetchItems(state.characterId)).find(row=>row.id===goneWeapon.id).enchant,1);
+        assert(Situations.woken(Life.cachedState(state.characterId).stats,'build'),'the cooled row wakes its build: the step is done');
+        assert(!gone.nearRaise,'nothing raised in the gone body\'s bag');
+        console.log('PASS a near body gone during its improvement still ends the step on its row');
+
         state=await seed([],{level:52});
         action=await apply(state,{kind:'crystal_quest',starterId:4629});state=action.state;
         assert.equal(state.stats.soulCrystalQuest,true);assert.equal(state.inventory[4629].amount,1);

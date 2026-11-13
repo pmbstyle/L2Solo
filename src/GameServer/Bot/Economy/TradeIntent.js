@@ -7,7 +7,7 @@ const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const Funding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const { MAX_DEPTH } = require('./WishNetwork');
-const PartyAdmission = require('../Population/PartyAdmission');
+const { admits } = require('./OfferQuery');
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 // Selected NPC and configured shot quotes already have a native purchase owner.
 // Public BUY ads describe alternative player supply, not a duplicate store job.
@@ -146,7 +146,7 @@ function retainedProjectIntents(state, network, worth, board = null, routeDetail
             if (!Number.isSafeInteger(amount) || !amount) continue;
             let estimate = Number(worth(id)) || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id));
             if (board?.list) {
-                const allowed = PartyAdmission.personalOfferAllowed;
+                const allowed = admits;
                 const offers = board.list(id, 1), money = offers.length && routeDetails
                     ? Funding.spendable(state, 0, { r: Funding.significant(rate) }) : 0;
                 let quote = null;
@@ -188,8 +188,17 @@ function purchaseWorth(intent, moneyPrice) {
 // A quantitative network already owns allocation and batch rounding. Readers
 // only project that result; they never subtract physical stock a second time.
 function preparedProject(network, worth, limit, state, survivalReserve) {
+    return watchRows(network.queue, worth, (wish, row) => shotRecipeInvestment(state, network, wish, row, survivalReserve))
+        ?.slice(0, limit) ?? null;
+}
+// The watch rows of a money queue in its order, one per item: the first root whose
+// paths need an item owns its bid (the board holds one bid per item). The bid plan
+// publishes them (preparedProject, which prices each row through rowOf); the network
+// reads whose root a standing bid is (WishNetwork: a shop step spends only its own
+// root's bids). Null on a root key the certificate cannot carry.
+function watchRows(queue, worth, rowOf = (wish, row) => row) {
     const watched = new Set(), result = [];
-    for (const wish of network.queue || []) {
+    for (const wish of queue || []) {
         if (!wish.object?.itemId && !wish.object?.materials) continue;
         try { rootTuple(wish.key); } catch (_) { return null; }
         // Keep the chosen acquisition first. A craft alternative can add
@@ -198,10 +207,10 @@ function preparedProject(network, worth, limit, state, survivalReserve) {
         const rows = wishRows(wish, worth, false);
         for (const [id, row] of wishRows(wish, worth, true)) if (!rows.has(id)) rows.set(id, row);
         for (const [id, row] of rows) if (!watched.has(id)) {
-            watched.add(id); result.push(shotRecipeInvestment(state, network, wish, row, survivalReserve));
+            watched.add(id); result.push(rowOf(wish, row));
         }
     }
-    return result.slice(0, limit);
+    return result;
 }
 
 // One learned scroll serves the whole accepted shot series. Splitting its
@@ -226,7 +235,7 @@ function shotRecipeInvestment(state, network, wish, row, survivalReserve) {
     const funded = { ...state, stats: { ...state.stats,
         money: Funding.packetFor(network, network.hourAdena, survivalReserve ?? Funding.operatingReserve(state)) } };
     const cap = Math.max(0, Math.floor(Math.min(Number(wanted.maxSpend), wish.valueHours / network.moneyPrice - inputCash,
-        Funding.spendable(funded, 0, { r: row.valueRate }) - inputCash)));
+        Funding.spendable(funded, 0, Funding.intentTerms(row)) - inputCash)));
     return { ...row, worth: cap, valueHours: cap * network.moneyPrice, shotRecipeInvestment: true };
 }
 
@@ -316,9 +325,12 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
     const packet = state?.stats?.money;
     let valueRate = intent.valueRate;
     if ((state?.stats?.wishFocus?.[0] === wish.key || wish.key.startsWith('stock:')) && Array.isArray(packet)) {
+        // The wish's own row: its root's, else (a packet without root ids) its item's.
+        const root = Packet.rootId(wish.key);
         for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
-            const ratio = Packet.fundedRatio(packet, row);
-            if (Number(Packet.fundedItem(packet, row)) === Number(wish.object?.itemId) && ratio > 0 && ratio >= Packet.moneyPrice(packet)) {
+            const ratio = Packet.fundedRatio(packet, row), own = Packet.fundedRoot(packet, row);
+            if ((own ? own === root : Number(Packet.fundedItem(packet, row)) === Number(wish.object?.itemId))
+                && ratio > 0 && ratio >= Packet.moneyPrice(packet)) {
                 valueRate = Number(ratio); break;
             }
         }
@@ -327,4 +339,16 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
         : { ...intent, amount: leaf.amount, worth: leaf.unitPrice, valueRate,
             valueHours: intent.valueHours * leaf.amount / intent.amount };
 }
-module.exports = { rootTuple, rootKey, encode, decode, project, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource, shotRecipeCap };
+// A meeting side's funding terms, the same for the worker that prepares it and the native accept:
+// it pays at its lowest-ranked certificate's place in its money queue (that root's row); a side
+// whose lines carry none spends ahead of the queue (r Infinity, as before certificates).
+function meetingTerms(lines, side) {
+    let lowest = null;
+    for (const line of lines || []) {
+        if (line.payer !== side || !line.certificate) continue;
+        const intent = decode(line.certificate);
+        if (!lowest || intent.valueRate < lowest.valueRate) lowest = intent;
+    }
+    return lowest ? Funding.intentTerms(lowest) : { r: Infinity };
+}
+module.exports = { rootTuple, rootKey, meetingTerms, encode, decode, project, watchRows, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource, shotRecipeCap };

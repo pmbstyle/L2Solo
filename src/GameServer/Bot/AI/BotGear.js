@@ -73,7 +73,7 @@ function flattenItem(item) {
 
 // A datapack row with a real name: legacy placeholders are named '0' or '_'
 // (Flail 163, Heavy Flail 170: no C4 source, l2hub.info/c4 lists none), and no
-// bot plans, wishes for or wears them (T118).
+// bot plans, wishes for or wears them.
 function isNamedItem(item = {}) {
     const name = String(item.template?.name ?? item.name ?? '').trim();
     return name.length > 0 && name !== '0' && !/^_+$/.test(name);
@@ -357,11 +357,13 @@ function buildJewels(rank, level) {
 
 // A plan depends only on class, level and the static catalog, but goal review
 // asks for it for every bot on every pass; each build scans the catalog about
-// a dozen times. Callers get their own copy so the cached plan stays intact.
+// a dozen times. Callers get their own copy so the cached plan stays intact;
+// options.shared: the cached plan itself, frozen, for a caller that only reads
+// it (PersonalGearProgression.assess).
 let planCatalog = null;
 const plans = new Map();
 
-function planFor(character) {
+function planFor(character, options = {}) {
     const level = Number(character.fetchLevel?.() || character.level || character.stats?.level || 1);
     const classId = Number(BotRoles.classIdOf(character) ?? 0);
     const catalog = allItems();
@@ -372,13 +374,23 @@ function planFor(character) {
     // A split-kit first class gears for its future second class's role.
     const role = BotRoles.inferRole(BotRoles.kitClassId(character) ?? classId);
     const key = `${classId}:${role}:${level}`;
-    if (!plans.has(key)) plans.set(key, buildPlan(classId, level, role));
+    if (!plans.has(key)) {
+        plans.set(key, deepFreeze(buildPlan(classId, level, role)));
+    }
     const plan = plans.get(key);
+    if (options.shared === true) return plan;
     return {
         ...plan,
         hint: structuredClone(plan.hint),
         items: plan.items.map((item) => ({ ...item }))
     };
+}
+
+function deepFreeze(value) {
+    if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+    Object.freeze(value);
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+    return value;
 }
 
 function buildPlan(classId, level, role) {

@@ -125,7 +125,7 @@ const plannedStates = [...states, {
             status: 'active',
             strategy: 'market',
             target: { selfId: 9000 },
-            materials: [{ selfId: 1864, missing: 3, marketFallback: true }]
+            materials: [{ selfId: 1864, missing: 3 }]
         }
     }
 }];

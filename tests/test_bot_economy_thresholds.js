@@ -10,7 +10,6 @@ const Data = invoke('GameServer/DataCache');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const Karma = invoke('GameServer/Karma');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const BuyStore = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
@@ -19,26 +18,25 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const { captureAndRead } = require('./helpers/nativeEconomyPolicyAssertions');
 const NOW = 1791343645000;
 
-// ARCH-NOTE: FX-E1 removed the level/percentage floor. Sum the native hourly
-// whole-unit stock deficits and escape cost independently; no wish network is built here.
+// No level or percentage floor: the reserve holds one outing's refill of each
+// kind (whole units, never under one hour of use), whatever the bag holds; the
+// escape scroll is no part. No wish network is built here.
 function reserveInputs(state) {
     const base = Economy.basics(state, { timestamp: NOW });
     const stocks = ['shots', 'potions'].map(kind => {
         const stock = base.stock(kind);
-        return { selfId: stock.itemId, perHour: stock.usePerHour,
+        return { selfId: stock.itemId, perHour: stock.usePerHour, hours: stock.targetHours, refill: stock.refill,
             held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.survivalPrice };
     });
-    // The kit at the merchant's price, the one the counter's survival tranche pays.
-    const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.stock('scrolls').survivalPrice,
-        usable: !Karma.closesTowns(state.stats?.karma) };
-    // A fractional hourly use is bought as whole units (24512a44): the survival
-    // stock is ceil(use per hour), so both purchase tranches stay executable.
-    const expected = stocks.reduce((sum, row) => sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0)
-        + (escape.usable ? Math.max(0, 1 - escape.held) * escape.unitPrice : 0);
-    assert.strictEqual(base.survivalReserve, expected, 'native E1 reserve is the explicit hourly kit plus escape deficit');
+    // The kit at the merchant's price, the one the counter's tranche pays. A fractional hourly use
+    // is bought as whole units (24512a44).
+    for (const row of stocks) if (!row.held) assert.strictEqual(row.refill, row.perHour > 0
+        ? Math.max(Math.ceil(row.perHour), Math.ceil(row.perHour * row.hours)) : 0, 'the refill is an outing of use, at least an hour');
+    const expected = stocks.reduce((sum, row) => sum + row.refill * row.unitPrice, 0);
+    assert.strictEqual(base.refillReserve, expected, 'native E1 reserve is the outing refill');
     assert.strictEqual(Gear.operationalAdenaReserve(state), expected, 'gear reads the same E1 reserve');
-    console.log(JSON.stringify({ reserveInputs: { level: state.level, wallet: Funding.budget(state), stocks, escape }, expected }));
-    return { expected, stocks, escape };
+    console.log(JSON.stringify({ reserveInputs: { level: state.level, wallet: Funding.budget(state), stocks }, expected }));
+    return { expected, stocks };
 }
 
 (async () => {
@@ -64,14 +62,9 @@ const kitState = { characterId: 9104, name: 'ReserveInputs', phase: 'cold', acti
     stats: { classId: 2, classProgressionClassId: 2, classProgressionLevel: 46 } };
 const emptyKit = reserveInputs(kitState);
 assert(emptyKit.stocks.some(row => row.perHour > 0), 'the native table must exercise an actual consumable deficit');
-const partialKit = { ...kitState, inventory: { ...kitState.inventory, 736: { selfId: 736, amount: 1 },
-    ...Object.fromEntries(emptyKit.stocks.map((row, index) => [row.selfId, { selfId: row.selfId, amount: index ? 1 : 3 }])) } };
-assert.strictEqual(reserveInputs(partialKit).escape.held, 1, 'one held escape scroll removes its deficit');
 const coveredKit = { ...kitState, inventory: { ...kitState.inventory, 736: { selfId: 736, amount: 1 },
     ...Object.fromEntries(emptyKit.stocks.map(row => [row.selfId, { selfId: row.selfId, amount: Math.ceil(row.perHour) }])) } };
-assert.strictEqual(reserveInputs(coveredKit).expected, 0, 'a full native hourly kit needs no second reserve');
-assert.strictEqual(reserveInputs({ ...kitState, stats: { ...kitState.stats, karma: 1 } }).escape.usable, false,
-    'closed towns do not reserve an unusable escape purchase');
+assert.strictEqual(reserveInputs(coveredKit).expected, emptyKit.expected, 'the reserve holds the next refill whatever the bag holds');
 
 // ARCH-NOTE: C1 cold readers defer on a missing decision. Actual worker
 // capture/accept checks the selected native activity; it need not be selling.
@@ -80,12 +73,10 @@ const reserveCapture = await captureAndRead(kitState, { timestamp: NOW });
 // packet oracle from the actual worker's price/use inputs, never its saved R.
 const nativeReserve = reserveCapture.captured.reserveInputs;
 assert(nativeReserve && nativeReserve.stocks.length === 2);
-const workerReserve = nativeReserve.stocks.reduce((sum, row) =>
-    sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0)
-    + (nativeReserve.escape.usable ? Math.max(0, 1 - nativeReserve.escape.held) * nativeReserve.escape.unitPrice : 0);
-assert.strictEqual(Packet.survivalReserve(reserveCapture.state.stats.money), Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
+const workerReserve = nativeReserve.stocks.reduce((sum, row) => sum + row.refill * row.unitPrice, 0);
+assert.strictEqual(Packet.refillReserve(reserveCapture.state.stats.money), Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
 console.log(JSON.stringify({ mainReserve: emptyKit.expected, nativeReserveInputs: nativeReserve, expectedWorkerReserve: workerReserve }));
-assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), Packet.survivalReserve(reserveCapture.captured.statsPacket.money),
+assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), Packet.refillReserve(reserveCapture.captured.statsPacket.money),
     'a reader uses the genuine saved worker reserve');
 const material = Data.items.find(row => Number(row.selfId) === 1864);
 assert(material, 'the declared sale stock has an authored C4 item');

@@ -108,8 +108,10 @@ function creditKill(session, source, victim) {
     if (victim === owner) {
         const isBotSession = invoke('GameServer/World/World').isBotSession;
         const isPlayer = (character) => !!character.session && !isBotSession(character.session);
+        const fact = invoke('GameServer/Social/PvpResponsibility').assess(attacker, victim);
         invoke('PvpJournal').hotKill({ attacker, victim, outcome, attackerKarma: attacker.fetchKarma(),
-            playerInvolved: isPlayer(attacker) || isPlayer(victim), at: Date.now() });
+            playerInvolved: isPlayer(attacker) || isPlayer(victim), reason: `${fact.responsibility}:${fact.why || 'unknown'}`,
+            at: Date.now() });
     }
     if (outcome !== 'none') {
         const tally = PvpRules.tallyAfterKill({ pvp: attacker.fetchPvp(), pk: attacker.fetchPk(), karma: attacker.fetchKarma(),

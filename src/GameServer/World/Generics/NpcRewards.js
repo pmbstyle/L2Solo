@@ -24,14 +24,17 @@ function awardDrop(world, session, npc, selfId, amount) {
 }
 
 function spawnGroundDrop(world, session, npc, selfId, amount) {
-    const point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
-    const coords = point.toCoords();
-    // Resolve the scattered point on the corpse's floor. Copying NPC Z (or
-    // subtracting from it) leaves loot floating on slopes or below the floor.
-    coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, npc.fetchLocZ());
+    const scattered = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin().toCoords();
+    // The drop lies where a straight walk from the corpse toward the scattered
+    // point gets, on that walk's floor (C4: Lisvus L2ItemInstance.ItemDropTask
+    // and Mobius Item.dropMe put it at the move check's result). It is never
+    // inside a tree or behind a wall, where its collector could not stand.
+    // The scatter itself is ours: a 50 circle (C4: a box of 70 each way).
+    const landing = GeodataEngine.straightMoveEnd(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
+        Math.round(scattered.locX), Math.round(scattered.locY), npc.fetchLocZ());
     const leaderSession = PartyCompanionService.groundLootLeader(session);
     world.spawnItem(session, selfId, amount, {
-        ...coords,
+        locX: landing.locX, locY: landing.locY, locZ: landing.locZ,
         // Ground items have no native owner metadata in this runtime. Keep a
         // lightweight provenance marker so an idle party never treats another
         // group's nearby drop as its own recovery work.

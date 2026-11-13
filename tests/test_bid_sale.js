@@ -33,13 +33,13 @@ assert.equal(result.after.sold, 3, 'a backed buyer takes only its count');
 assert.equal(result.after.residual, 7);
 assert.equal(result.gross, 3 * 500 + 7 * 10);
 
-// A conditional bid holds no money: only the willingness read from the
-// seller's belief at the bid price, fewer than its count.
+// A conditional bid holds no money: its declared price gives uncertain
+// finite execution, fewer than its count.
 board = new BoardIndex();
 const conditional = put(board, { ownerId: 7, storeType: 3, count: 20, price: 500, custodyPolicy: 1 });
 result = sale(board, conditional, { units: 50 });
 const belief = PriceBelief.prior(ITEM, { board, characterId: 42, timestamp, understanding: 0.3, marketTrades: {} });
-const willing = Price.willingUnitsAt(belief, Price.traderOf(persona), { price: 500, applicableUnits: 20 });
+const willing = 20 * Price.phi(persona.traits.assertiveness - 0.5);
 assert.equal(result.status, 'ready');
 assert(willing > 0 && willing < 20, `willingness ${willing} is below the advertised count`);
 assert.equal(result.forecast.willingUnits, willing);
@@ -101,75 +101,26 @@ assert.equal(answer.line.lineId, answerBid.lineId);
 assert.equal(answer.count, 4, 'the physical answer offers the bid count; the trade checks the money');
 assert(answer.outcome.sold < 4, 'its value counts only the expected paid units');
 assert.equal(answer.outcome.sold, expected.after.sold);
-// A bilateral rejection is scoped to the actual quantity and buyer's exact
-// state and market sources. Other bids and larger fills remain candidates.
-const Refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
-const Admission = invoke('GameServer/Bot/Population/PartyAdmission');
-let buyer = { characterId: 7, phase: 'cold', updatedAt: 10, simulation: { revision: 2 } };
-Admission.configureTradeAdmission(id => Number(id) === 7 ? buyer : null);
-let sourcesCurrent = true;
-const request = { actorA: 7, actorB: 42, lines: [{ payer: 0, selfId: ITEM, enchant: 0,
-    count: 4, price: 500, adId: answerBid.recordId, adRevision: answerBid.revision }] };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => sourcesCurrent);
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a rejected full fill chooses the next bid instead of starting the same meeting');
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 3, residualUnitValue: 10 }).line.price, 500,
-    'another quantity retains its own fresh consent');
-sourcesCurrent = false;
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'changed market sources reopen the previously refused fill');
-sourcesCurrent = true;
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => sourcesCurrent);
-buyer = { ...buyer, simulation: { revision: 3 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a new buyer authority reopens the fill');
-buyer = { ...buyer, adena: 10000, stats: { money: [100, 0, 0, 0] }, loc: { locX: 1, locY: 1, locZ: 0 } };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => true,
-    { minimumFree: 1000 });
-buyer = { ...buyer, adena: 9000, updatedAt: 20, simulation: { revision: 4 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a guaranteed alternative remains valid across an unrelated buyer step with sufficient free money');
-buyer = { ...buyer, adena: 500 };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'the guaranteed alternative reopens when free money no longer covers it');
-buyer = { ...buyer, adena: 9000 };
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => true,
-    { minimumFree: 1000 });
-buyer = { ...buyer, loc: { locX: 2, locY: 1, locZ: 0 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a changed route reopens the fill');
-buyer = { ...buyer, loc: { locX: 1, locY: 1, locZ: 0 } };
-let specificSource = true;
-Refusals.remember(buyer, board, request, { selfId: ITEM, enchant: 0, units: 4, cost: 2000 }, () => specificSource,
-    { fundingDominance: true });
-buyer = { ...buyer, adena: 500, stats: { money: [100, 0, 0, 500] }, updatedAt: 30, simulation: { revision: 5 } };
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 450,
-    'a strictly cheaper funded alternative dominates even when buyer funds or revision change');
-specificSource = false;
-assert.equal(Pricing.bestAnswer(ITEM, ctx, { units: 6, residualUnitValue: 10 }).line.price, 500,
-    'a change to the actual alternative immediately reopens the bid');
-Refusals.clear();
-Admission.configureTradeAdmission(() => null);
-// A seller answering a remote buy ad is the traveler. Its own protected
-// funding, not the buyer's wallet, decides whether it can pay the fare.
-const distantSeller = { characterId: 42, phase: 'cold', activity: 'hunting', adena: 1000000,
+// A seller answering a remote buy ad is the traveler. Its own wallet, not
+// the buyer's, decides whether it can pay the fare, an unfunded wish or not.
+const distantSeller = { characterId: 42, phase: 'cold', activity: 'hunting', adena: 1,
     loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
 const fareCtx = Pricing.traderContext(distantSeller, { board, timestamp, persona,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board } });
 assert.equal(Pricing.bestAnswer(ITEM, fareCtx, { units: 6, residualUnitValue: 10 }), null,
-    'a distant conditional bid cannot select a seller whose goal protects its fare');
-const fundedCtx = Pricing.traderContext({ ...distantSeller, stats: { money: [1000, .001, 0, 0] } }, { board, timestamp, persona,
+    'a distant conditional bid cannot select a seller whose wallet is below its fare');
+const fundedCtx = Pricing.traderContext({ ...distantSeller, adena: 1000000 }, { board, timestamp, persona,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board } });
 assert(Pricing.bestAnswer(ITEM, fundedCtx, { units: 6, residualUnitValue: 10 }),
-    'the same bid is immediately eligible once the seller has free fare');
-// The caller's own belief of the item is used for the willingness read: a
-// seller who believes the item is worth more expects more buyers at a bid.
+    'the same bid is immediately eligible once the seller has wallet funds the fare');
+// A caller's old valuation must not replace the current buyer's declared
+// willingness. It still prices an ordinary ask and the retained goods.
 const dearer = { ...belief, mu: belief.mu + 1 };
 board = new BoardIndex();
 const readOnce = put(board, { ownerId: 7, storeType: 3, count: 20, price: 500, custodyPolicy: 1 });
 assert.equal(sale(board, readOnce, { units: 50 }).forecast.willingUnits, willing);
-assert(sale(board, readOnce, { units: 50, belief: dearer }).forecast.willingUnits > willing,
-    'a passed belief replaces the belief read again');
+assert.equal(sale(board, readOnce, { units: 50, belief: dearer }).forecast.willingUnits, willing,
+    'a different historical centre cannot change execution of the same public bid');
 
 // A backed bid is answered with its count and valued in full.
 board = new BoardIndex();

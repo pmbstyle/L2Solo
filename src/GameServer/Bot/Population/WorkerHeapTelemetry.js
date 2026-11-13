@@ -66,28 +66,38 @@ function heapsLine(heaps) {
 // (young generation) or for a mark-compact (old).
 const GC_KINDS = { [constants.NODE_PERFORMANCE_GC_MINOR]: 'minor', [constants.NODE_PERFORMANCE_GC_MAJOR]: 'major',
     [constants.NODE_PERFORMANCE_GC_INCREMENTAL]: 'incremental', [constants.NODE_PERFORMANCE_GC_WEAKCB]: 'weak' };
-function addPause(pauses, entry) {
+function addPause(shared, entry) {
     const kind = GC_KINDS[entry.detail?.kind] || 'other';
-    const sum = pauses[kind] ||= { count: 0, ms: 0, maxMs: 0 };
+    const sum = shared.pauses[kind] ||= { count: 0, ms: 0 };
     sum.count += 1;
     sum.ms += entry.duration;
-    if (entry.duration > sum.maxMs) sum.maxMs = entry.duration;
+    for (const longest of shared.pauseMaxima) if (!(longest[kind] >= entry.duration)) longest[kind] = entry.duration;
+}
+// A loop-delay window of a monitorEventLoopDelay histogram, in ms: a sample is the time between two runs of
+// its timer, so the resolution comes off (a task that held the loop L ms reads L to L - resolution). The turn
+// length of main (PopulationMetrics) and the worker (its turn window), as the run summary reports it.
+function loopDelay(histogram, resolutionMs) {
+    const samples = Number(histogram?.count || 0);
+    if (!samples) return { samples: 0, p95Ms: 0, p99Ms: 0, maxMs: 0 };
+    const ms = ns => Math.max(0, Math.round(Number(ns) / 1e6 - resolutionMs));
+    return { samples, p95Ms: ms(histogram.percentile(95)), p99Ms: ms(histogram.percentile(99)), maxMs: ms(histogram.max) };
 }
 // The GC observer of this isolate; every thread that reports v8Heap starts it once when developer
 // diagnostics are on, the perf live recorder starts it on main, and heapRecord() reads its window. Each
 // observe() gets its own handle on the one observer; it stops when the last handle is closed, so
 // PopulationMetrics stopping does not end the recorder's window. A handle opened with { pauses: true }
-// (the recorder) also has the isolate's GC pauses summed by kind: cumulative { kind: { count, ms, maxMs } }
-// from the first such handle while the observer lives (the reader takes deltas); with none open the
-// observer only tests a count per GC entry.
+// (the recorder, the worker's turn window) also has the isolate's GC pauses by kind: { kind: { count, ms, maxMs } },
+// count and ms cumulative from the first such handle while the observer lives (the reader takes deltas), maxMs
+// the longest pause since this handle's last read (a window's longest, not boot's); with none open the observer
+// only tests a count per GC entry.
 let active = null;
 function observe({ pauses: wantsPauses = false } = {}) {
     if (!active) {
         const window = new MajorGcHeap();
-        const shared = { window, observer: null, handles: 0, pauseHandles: 0, pauses: {} };
+        const shared = { window, observer: null, handles: 0, pauseMaxima: new Set(), pauses: {} };
         shared.observer = new PerformanceObserver(list => {
             for (const entry of list.getEntries()) {
-                if (shared.pauseHandles) addPause(shared.pauses, entry);
+                if (shared.pauseMaxima.size) addPause(shared, entry);
                 if (entry.detail.kind !== constants.NODE_PERFORMANCE_GC_MAJOR) continue;
                 const at = entry.startTime + entry.duration;
                 if (performance.now() - at > LATE_MS) { window.late++; continue; }
@@ -99,18 +109,24 @@ function observe({ pauses: wantsPauses = false } = {}) {
     }
     const shared = active;
     shared.handles += 1;
-    if (wantsPauses) shared.pauseHandles += 1;
+    const longest = wantsPauses ? {} : null;
+    if (longest) shared.pauseMaxima.add(longest);
     let open = true;
     return { window: shared.window, snapshot: at => ({ ...shared.window.snapshot(at), v8Heap: heapRecord(at) }),
-        pauses: () => (wantsPauses ? Object.fromEntries(Object.entries(shared.pauses).map(([kind, sum]) => [kind,
-            { count: sum.count, ms: Math.round(sum.ms), maxMs: Math.round(sum.maxMs * 10) / 10 }])) : null),
+        pauses: () => {
+            if (!longest) return null;
+            const read = Object.fromEntries(Object.entries(shared.pauses).map(([kind, sum]) => [kind,
+                { count: sum.count, ms: Math.round(sum.ms), maxMs: Math.round((longest[kind] || 0) * 10) / 10 }]));
+            for (const kind of Object.keys(longest)) longest[kind] = 0;
+            return read;
+        },
         close: () => {
             if (!open) return;
             open = false;
-            if (wantsPauses) shared.pauseHandles -= 1;
+            if (longest) shared.pauseMaxima.delete(longest);
             if (--shared.handles > 0) return;
             shared.observer.disconnect();
             if (active === shared) active = null;
         } };
 }
-module.exports = { MAX_SAMPLES, WINDOW_MS, LATE_MS, MajorGcHeap, observe, heapRecord, heapsLine };
+module.exports = { MAX_SAMPLES, WINDOW_MS, LATE_MS, MajorGcHeap, observe, heapRecord, heapsLine, loopDelay };

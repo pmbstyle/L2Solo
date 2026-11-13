@@ -2,6 +2,7 @@ const assert = require('assert');
 require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const Stall = invoke('GameServer/Bot/AI/GearStall');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 DataCache.init();
@@ -18,7 +19,7 @@ async function run() {
     LifeState.upsertState = async (value) => value;
     try {
         // The physical buy stall that abandoned the plan on expiry is gone
-        // (step 3.3: a buy ad returns its escrow and the bot reviews again);
+        // (a buy ad returns its escrow and the bot reviews again);
         // the planner's own abandonment stands for it here.
         const abandoned = Planner.abandonAcquisition(state, 75, now);
         assert.strictEqual(abandoned.stats.equipmentPlan.status, 'abandoned');
@@ -51,23 +52,165 @@ async function run() {
     assert.strictEqual(Planner.abandonAcquisition(clanState, 75, now), clanState,
         'an individual purchase timeout must not cancel a clan-owned objective');
 
+    // A gear errand the bot failed where it acts (goal_failed of kind gear_errand) marks its item
+    // and wakes the build and the gear plan (its source failed); the reviews exclude it until a
+    // situation of its lifetime forgets it (GearMarks.LIFETIME), never the review it woke.
+    {
+        const Marks = require('../src/GameServer/Bot/AI/GearMarks');
+        const Situations = invoke('GameServer/Bot/Situations');
+        const markedFor = () => Number(Situations.counts().raised['gear_mark:incompatible_loadout'] || 0);
+        const before = markedFor();
+        const failed = Situations.raise({ ...state.stats, woken: 0 }, 'goal_failed', { kind: 'gear_errand', key: 2566, impossible: true, reason: 'incompatible_loadout' });
+        assert(Marks.marked(failed, 2566), 'the failure marks its item');
+        assert.strictEqual(markedFor(), before + 1, 'each mark is counted by what failed');
+        assert(Situations.woken(failed, 'build') && Situations.woken(failed, 'gear_plan'), 'the failure wakes the build and the gear plan');
+        assert(Planner.replanContextFor({ ...state, stats: failed }, plan, now).excludedTargetIds.includes(2566), 'the gear plan excludes it');
+        // The next item fails too (the review took it instead): both stay out, so no review
+        // goes back to the first while the town visit lasts.
+        const reviewed = { ...failed, woken: 0 };
+        const second = Situations.raise(reviewed, 'goal_failed', { kind: 'gear_errand', key: 75, impossible: true });
+        assert.deepEqual(Planner.replanContextFor({ ...state, stats: second }, plan, now).excludedTargetIds.filter(id => [2566, 75].includes(id)).sort((a, b) => a - b),
+            [75, 2566], 'the second failure\'s review plans without both');
+        // The money the build waited for, a new grade or new gear forget every mark, and wake the
+        // gear plan (its source changed).
+        for (const name of ['goal_affordable:focus', 'grade_changed', 'gear_changed']) {
+            const freed = Situations.raise({ ...second, woken: 0 }, name);
+            assert.deepEqual(Marks.keys(freed), [], `${name} forgets the marks`);
+            assert(Situations.woken(freed, 'gear_plan'), `${name} wakes the gear plan`);
+        }
+        // A town arrival, a death or a board offer (a marked item is no purchase: no offer of it
+        // is watched) changes neither the shop's answer nor the money: the marks stay.
+        for (const name of ['arrived_town', 'died', 'goal_failed:visit', 'offer_posted']) {
+            assert.deepEqual(Marks.keys(Situations.raise({ ...second, woken: 0 }, name)), [2566, 75], `${name} keeps the marks`);
+        }
+        // A shop step refused at its seller marks only that quote (hot and cold raise alike): the
+        // item stays a purchase elsewhere, the gear plan is not woken (its items did not move), the
+        // build is; a posted offer the build wants ends the quote mark, not the item marks.
+        const quoted = Situations.raise({ ...second, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 75, town: 'Giran', price: 1000, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual([Marks.keys(quoted), Marks.quotes(quoted)], [[2566, 75], [[75, 'Giran', 1000]]], 'the refusal marks its quote');
+        assert(Marks.refused(quoted, { selfId: 75, town: 'Giran', price: 1000 }) && !Marks.refused(quoted, { selfId: 75, town: 'Giran', price: 900 }),
+            'only that quote is refused');
+        assert(Situations.woken(quoted, 'build') && !Situations.woken(quoted, 'gear_plan'), 'the refusal wakes the build, not the gear plan');
+        const posted = Situations.raise({ ...quoted, woken: 0 }, 'offer_posted');
+        assert.deepEqual([Marks.keys(posted), Marks.quotes(posted)], [[2566, 75], []], 'offer_posted ends the quote mark only');
+        // Refusals of nine items never push out an item mark (the gear plan would take the
+        // item again, unwoken): the quote the cap drops marks its item instead (a dropped quote
+        // would be taken and refused again while the bot stays in town), counted as a quote mark
+        // past its cap; the gear plan is woken.
+        const droppedOf = name => Number(Situations.counts().raised[`${name}:dropped`] || 0);
+        const [quotesBefore, itemsBefore] = [droppedOf('quote_mark'), droppedOf('gear_mark')];
+        let refusedAt = second;
+        for (let key = 101; key <= 109; key++) refusedAt = Situations.raise({ ...refusedAt, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key, town: 'Giran', price: 1000, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual(Marks.keys(refusedAt), [2566, 75, 101], 'the item marks stay, the dropped quote\'s item is marked');
+        assert.deepEqual(Marks.quotes(refusedAt).map(([key]) => key), [102, 103, 104, 105, 106, 107, 108, 109], 'the oldest quote went');
+        assert(Situations.woken(refusedAt, 'gear_plan'), 'the item mark wakes the gear plan');
+        assert.deepEqual([droppedOf('quote_mark') - quotesBefore, droppedOf('gear_mark') - itemsBefore], [1, 0], 'the drop is counted as a quote mark');
+        // Nine sellers of one item refused: the ninth drops the item's oldest quote, so the item
+        // is marked (its lifetime, the gear plan woken) in place of its quotes.
+        let oneItem = second;
+        for (let price = 1001; price <= 1008; price++) oneItem = Situations.raise({ ...oneItem, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 500, town: 'Giran', price, impossible: true, reason: 'no_affordable_offer' });
+        assert.deepEqual(Marks.quotes(oneItem).map(([key]) => key), Array(8).fill(500), 'eight refusals fill the quotes');
+        const ninth = Situations.raise({ ...oneItem, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 500, town: 'Giran', price: 1009, impossible: true, reason: 'no_affordable_offer' });
+        assert(Marks.marked(ninth, 500) && !Marks.quotes(ninth).length, 'the ninth marks the item in place of its quotes');
+        assert(Situations.woken(ninth, 'gear_plan'), 'the item mark wakes the gear plan');
+        assert.deepEqual(Marks.keys(Situations.raise({ ...ninth, woken: 0 }, 'offer_posted')), [2566, 75, 500], 'it lasts as an item mark');
+        // Seven sellers of one item and one of another refused, then an eighth seller of the
+        // first: the cap drops the first item's oldest quote, so that item is marked in place of
+        // all its quotes; its dropped seller is never taken and refused again.
+        let mixed = second;
+        for (let price = 2001; price <= 2007; price++) mixed = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 600, town: 'Giran', price, impossible: true, reason: 'no_affordable_offer' });
+        mixed = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 700, town: 'Giran', price: 3000, impossible: true, reason: 'no_affordable_offer' });
+        const eighth = Situations.raise({ ...mixed, woken: 0 }, 'goal_failed',
+            { kind: 'gear_errand', key: 600, town: 'Giran', price: 2008, impossible: true, reason: 'no_affordable_offer' });
+        assert(Marks.marked(eighth, 600) && !Marks.refused(eighth, { selfId: 600, town: 'Giran', price: 2008 }), 'the first item is marked');
+        assert.deepEqual(Marks.quotes(eighth), [[700, 'Giran', 3000]], 'the other item keeps its quote');
+    }
+    // A craft route stalls after STALL_KILLS kills that collect nothing, whatever the time.
+    const killed = (value, kills) => ({ ...value, stats: { ...value.stats, fightsWon: kills } });
     const stamped = Planner.finalizePlan(state, null, plan, {}, now);
-    const stalled = Planner.replanContextFor(state, stamped, now + 5 * 3600000);
+    assert.deepStrictEqual(stamped.stall, { kills: Stall.STALL_KILLS, kind: 'craft' });
+    assert.strictEqual(Planner.replanContextFor(killed(state, Stall.STALL_KILLS - 1), stamped, now + 50 * 3600000).failure, null,
+        'fewer kills than the stall: no failure, however long');
+    const stalled = Planner.replanContextFor(killed(state, Stall.STALL_KILLS), stamped, now + 1);
     assert.strictEqual(stalled.failure.reason, 'craft_stalled');
     assert(stalled.excludedMaterialIds.includes(75));
-    const progressState = { ...state, inventory: { 75: { selfId: 75, amount: 1 } } };
-    assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 5 * 3600000).failure, null,
-        'actually acquiring a component must prevent a no-progress timeout');
+    // The far step that crosses the stall raises source_stalled once (the build judges it).
+    const Situations = invoke('GameServer/Bot/Situations');
+    const planned = value => ({ ...value, activity: 'hunting', stats: { ...value.stats, equipmentPlan: stamped } });
+    const step = (from, to) => Situations.detect(planned(killed(state, from)), planned(killed(state, to)));
+    assert(step(Stall.STALL_KILLS - 5, Stall.STALL_KILLS).includes('source_stalled'), 'the crossing raises source_stalled');
+    assert(!step(Stall.STALL_KILLS, Stall.STALL_KILLS + 5).includes('source_stalled'), 'past the crossing nothing more');
+    assert(!step(0, 5).includes('source_stalled'), 'before it nothing');
+    // Near a player the body's kills count too (NpcDied: one kill count): its post crosses the stall.
+    const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+    const posted = Sections.semanticFacts(planned(killed(state, Stall.STALL_KILLS - 1)));
+    assert(Situations.detect({}, planned(killed(state, Stall.STALL_KILLS)), { facts: posted, body: true }).includes('source_stalled'),
+        'a body\'s post that crosses it raises source_stalled');
+    // A bot that levels past the band of the source its route took (Death Knight, level 50:
+    // a hunter goes at most seven levels below itself) is not sent there again: the step that
+    // outgrows it raises source_stalled, which wakes the gear plan, and that review drops the
+    // route's verdict on it. Inside one grade nothing else wakes the plan.
+    {
+        const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
+        const drop = { status: 'active', strategy: 'direct_drop', target: { selfId: 2566, slot: 14 },
+            next: { spotId: 'death-knight', npcId: 136, itemId: 2566 }, routedSpotId: 'death-knight' };
+        const at = level => ({ ...state, level, activity: 'hunting', stats: { ...state.stats, equipmentPlan: drop } });
+        assert.strictEqual(Sections.routedSourceOf(at(57)), 'death-knight', 'fixture: the route takes the source in its band');
+        assert(!Situations.detect(at(56), at(57)).includes('source_stalled'), 'a level inside the band raises nothing');
+        const outgrown = Situations.detect(at(57), at(58));
+        assert(outgrown.includes('source_stalled'), 'the level that outgrows the routed source raises source_stalled');
+        const raised = Situations.raise({ ...state.stats, woken: 0 }, 'source_stalled');
+        assert(Situations.woken(raised, 'gear_plan'), 'which wakes the gear plan');
+        const reviewed = Selection.withRoutedSource(at(58), drop, [], now);
+        assert.strictEqual(Sections.routedSourceOf({ ...at(58), stats: { ...state.stats, equipmentPlan: reviewed } }), null,
+            'after the review the route no longer takes the outgrown source');
+        assert(!Situations.detect(at(58), { ...at(59), stats: { ...state.stats, equipmentPlan: reviewed } }).includes('source_stalled'),
+            'a source the route already refuses raises nothing more');
+        // The fact counts the voluntary hunt floors the source lies below (seven levels for a
+        // hunt, fifteen on an equipment earning route) and reads no wish focus: a bot on an
+        // earning route (power: focus) holding a source ten levels below it raises nothing when
+        // its focus changes, and raises once at each floor its level crosses. A baseline is the
+        // decision's own facts at its build.
+        const economic = level => ({ ...at(level), stats: { ...at(level).stats, wishFocus: ['power:2566'] } });
+        const built = value => ({ ...value, stats: { ...value.stats, wishSections: { at: 1, ...Sections.semanticFacts(value) } } });
+        const refocused = built(economic(60));
+        assert(!Situations.detect(refocused, { ...refocused, stats: { ...refocused.stats, wishFocus: ['sell:57'] } })
+            .includes('source_stalled'), 'a wish focus change with no level change raises nothing');
+        const crossed = (from, to) => { const before = built(economic(from));
+            return Situations.detect(before, { ...economic(to), stats: { ...economic(to).stats, wishSections: before.stats.wishSections } })
+                .includes('source_stalled'); };
+        assert(!crossed(56, 57), 'inside the hunt floor nothing');
+        assert(crossed(57, 58), 'crossing the hunt floor raises');
+        assert(!crossed(58, 65), 'between the floors nothing');
+        assert(crossed(65, 66), 'crossing the earning route floor raises once more');
+        assert(!crossed(66, 70), 'past both floors nothing');
+        // A party member's hunt is its party's; a verdict naming another spot is no routed source.
+        const member = level => ({ ...at(level), party: { partyId: 'bgp-outgrown' } });
+        assert(!Situations.detect(member(57), member(58)).includes('source_stalled'), 'a party member outgrowing raises nothing');
+        const elsewhere = level => ({ ...at(level), stats: { ...state.stats, equipmentPlan: { ...drop, routedSpotId: 'other-spot' } } });
+        assert(!Situations.detect(elsewhere(57), elsewhere(58)).includes('source_stalled'),
+            'a plan whose verdict names another spot raises nothing');
+    }
+    const progressState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 1 } } }, Stall.STALL_KILLS);
+    assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 1).failure, null,
+        'actually acquiring a component must prevent a no-progress stall');
     const refreshed = Planner.finalizePlan(progressState, stamped, plan, {}, now + 5 * 3600000);
     assert.strictEqual(refreshed.acquisitionProgress.at, now + 5 * 3600000);
+    assert.strictEqual(refreshed.stall.kills, 2 * Stall.STALL_KILLS, 'progress moves the stall on by its kills');
     const cappedBaseline = Planner.finalizePlan(progressState, null, plan, {}, now);
-    const excessState = { ...state, inventory: { 75: { selfId: 75, amount: 2 } } };
-    assert.strictEqual(Planner.replanContextFor(excessState, cappedBaseline, now + 5 * 3600000).failure?.reason,
+    const excessState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 2 } } }, 2 * Stall.STALL_KILLS);
+    assert.strictEqual(Planner.replanContextFor(excessState, cappedBaseline, now + 1).failure?.reason,
         'craft_stalled', 'extra copies beyond recipe needs must not hide a missing component');
     const acquiredPlan = { ...plan, next: { itemId: 75, amount: 1, requiredTotal: 1 } };
     assert.strictEqual(Planner.bestSourceForPlan(progressState, acquiredPlan, []), null,
         'an acquired ingredient must stop retaining its old farming route');
-    const legacy = Planner.replanContextFor(state, plan, now + 5 * 3600000);
+    const legacy = Planner.replanContextFor(killed(state, 10 * Stall.STALL_KILLS), plan, now + 5 * 3600000);
     assert.strictEqual(legacy.failure, null, 'legacy craft plans need a progress baseline first');
 
     // A ready intermediate recipe is cheaper than farming its rare full drop.
@@ -83,7 +226,7 @@ async function run() {
     assert.strictEqual(missingRoutes, null, 'a recipe with unavailable pieces is not an available route');
     const needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
     const nestedState = { ...state, activity: 'hunting', inventory: { 1869: { selfId: 1869, amount: 2 } },
-        stats: { ...state.stats, equipmentPlan: { ...plan, marketFallback: true,
+        stats: { ...state.stats, equipmentPlan: { ...plan,
             next: { itemId: 1869, amount: 3, requiredTotal: 3 } } } };
     // The common economy now owns the missing quantity. The goal adapter
     // forwards its selected shopping leaf and resolves the displayed name.
