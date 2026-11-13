@@ -149,6 +149,12 @@ const activeSkills = require('../data/Skills/Active/active.json');
                 dataSendToMeAndOthers(packet) { packets.push(packet); } };
             actor.session = session;
             sessions.push(session);
+            if (kind === 'dead bot') {
+                session.partyCompanion = true;
+                session.followPlayerSession = { partyRevivalAttempt: {
+                    providerId: actor.fetchId(), targetId: target.fetchId(), startedAt: Date.now()
+                } };
+            }
             actor.attack.queueTimer = callback => timers.push(callback);
             if (rooted) Store.apply(actor, { key: 'root', id: 1201, type: 'debuff', durationMs: 60000 });
             if (kind === 'revived during approach') {
@@ -167,6 +173,8 @@ const activeSkills = require('../data/Skills/Active/active.json');
             if (kind === 'dead bot') {
                 assert.equal(started, true, 'Resurrection must still start on a dead character');
                 assert.equal(actor.canUseSkill(resurrection), false, 'a valid Resurrection starts its reuse');
+                assert.equal(session.followPlayerSession.partyRevivalAttempt.casting, true,
+                    'native acceptance must protect even a Resurrection that lands between AI ticks');
                 actor.automation.abortAll(actor, { notifyClient: false });
                 continue;
             }

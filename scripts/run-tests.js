@@ -948,6 +948,7 @@ const tests = [
     'tests/test_native_ui_character_switch.js',
     'tests/test_party_pull_pause.js',
     'tests/test_party_revival.js',
+    'tests/test_party_revival_handoff.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinding_worker_pool.js',
     'tests/test_companion_pathfinding_worker.js',

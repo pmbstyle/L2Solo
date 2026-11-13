@@ -119,7 +119,7 @@ function skillExec(session, actor, data) {
                     }
                     actor.attack.remoteHit(session, user, skill);
                 }
-            });
+            }, { allowDeadTarget: skill.fetchTargetKind() === 'corpse_player' });
         }).catch((err) => {
             cancelFailedSupportTarget(session, actor, data, skill);
             utils.infoWarn('GameServer', 'Skill -> ' + err);
