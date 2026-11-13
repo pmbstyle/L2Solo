@@ -89,6 +89,7 @@ const mocks = {
     'GameServer/World/World': world,
     'GameServer/Bot/BotManager': { botPartySay(s, message) { reports.push(message); return true; } },
     'GameServer/Bot/AI/HotActorLodPolicy': { promote() {} },
+    'GameServer/Bot/AI/BotRoles': invoke('GameServer/Bot/AI/BotRoles'),
     'GameServer/Effects/EffectStore': { apply(a, effect) { a.effects[effect.key] = effect; return effect; },
         remove(a, key) { delete a.effects[key]; } },
     'GameServer/Effects/EffectTicker': { applyDot() {}, scheduleExpiry() {}, refreshEffects() {}, clear() {} },
