@@ -35,6 +35,7 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-11-13** Bot AI improvements, clan raid expeditions, party and movement fixes
 - **2026-11-09** Shot production and recipe supply, bot recovery, inventory and cross-floor combat fixes, Windows launcher updates
 - **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
 - **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
@@ -56,11 +57,11 @@ Optional but recommended for a better experience
 - **2026-09-04** Player clan warehouse use for equipment exchange, bug fixes
 - **2026-09-02** AFK trade, market observer, xN mob fix
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
-- **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 
 <details>
 <summary>Earlier</summary>
 
+- **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 - **2026-08-27** Add LLM-driven clan management
 - **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 - **2026-08-25** Bot clans update follow-up, bug fixes
@@ -178,9 +179,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <!-- STABLE_DOWNLOADS -->
 | Platform | Download |
 |----------|----------|
-| **Windows** | [L2Solo-Launcher-0.2.3-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.3-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-mac-arm64.dmg) |
-| **Linux** | [L2Solo-Launcher-0.2.3-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-linux-x86_64.AppImage) |
+| **Windows** | [L2Solo-Launcher-0.2.3-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.3/L2Solo-Launcher-0.2.3-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.3-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.3/L2Solo-Launcher-0.2.3-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.3-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.3/L2Solo-Launcher-0.2.3-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
 On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.
