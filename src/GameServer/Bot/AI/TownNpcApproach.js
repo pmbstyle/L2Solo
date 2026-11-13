@@ -1,5 +1,4 @@
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
-const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
 const InteractionGeometry = invoke('GameServer/Geodata/NpcInteractionGeometry');
 
 const STAGING_DISTANCE = 240;
@@ -10,11 +9,11 @@ const STAGING_ARRIVAL_RADIUS = 64;
 // larger goal radius can stop just around a shop wall with no line of sight.
 const INTERACTION_ARRIVAL_RADIUS = 16;
 const STAGING_READY_RADIUS = 80;
-const COUNTER_RESERVATION_DISTANCE = 240;
 // Give bots a little room to interact without micro-adjusting at the counter.
 // Line of sight and the 300-unit hard cap still guard interaction.
 const INTERACTION_READY_RADIUS = 48;
 const OPEN_INTERACTION_READY_RADIUS = 144;
+const OPEN_ARRIVAL_CHECK_RADIUS = 32;
 const OPEN_APPROACH_SPREAD_STEPS = 9;
 const OPEN_APPROACH_SPREAD_ANGLE = Math.PI / 12;
 const MAX_INTERACTION_DISTANCE = 300;
@@ -22,11 +21,11 @@ const INTERACTION_SEARCH_DISTANCES = Object.freeze([INTERACTION_DISTANCE, 48, 32
 const COUNTER_SEARCH_DISTANCES = Object.freeze([INTERACTION_DISTANCE, 96, 120, 48, 32]);
 const INTERACTION_SEARCH_STEPS = 32;
 const POINT_CACHE_LIMIT = 256;
-
-// Exact door captures can be added here when an NPC's spawn heading does not
-// point through the public entrance. Most C4 town NPCs already face the player
-// side of their counter, so the generic heading-derived points are enough.
-const APPROACH_OVERRIDES = Object.freeze({});
+// Talking places on a counter front are spread this far apart, and a body within TALK_POINT_GAP of a place
+// makes it taken for the next bot that picks (two bodies in one model are what a player sees as a stack).
+const FRONT_STEP = 24;
+const FRONT_SIDE_STEPS = 4;
+const TALK_POINT_GAP = 16;
 const pointCache = new Map();
 
 function pointOf(actor) {
@@ -120,9 +119,10 @@ function canInteract(from, target, points = null) {
     if (!from || !target || distance2d(from, target) > MAX_INTERACTION_DISTANCE
         || Math.abs(Number(from.locZ) - Number(target.locZ)) > 64) return false;
     if (hasInteractionLineOfSight(from, target)) return true;
-    const interaction = (points || pointsFor(target))?.interaction;
-    return !!interaction && distance2d(from, interaction) <= INTERACTION_ARRIVAL_RADIUS
-        && hasInteractionLineOfSight(interaction, target);
+    // Without the caller's own place, any place of the counter front is a validated arrival point.
+    const places = points ? [points.interaction] : (pointsFor(target)?.front || []);
+    return places.some(place => !!place && distance2d(from, place) <= INTERACTION_ARRIVAL_RADIUS
+        && hasInteractionLineOfSight(place, target));
 }
 
 function reachableCounterSlot(staging, interaction) {
@@ -167,15 +167,31 @@ function cachePoints(key, points) {
     return points;
 }
 
+// The places along the counter front a bot can talk from: the base point first, then points beside it
+// (FRONT_STEP apart, at the base distance and one step farther), each on the NPC floor, in reach, seen from the
+// NPC, walkable from the base point and reachable from staging. C4 has no exclusive place at a merchant
+// (L2Character.canInteract is a radius test), so this is only room for bodies to stand apart.
+function frontFor(target, staging, interaction) {
+    const dx = interaction.locX - Number(target.locX), dy = interaction.locY - Number(target.locY);
+    const length = Math.hypot(dx, dy) || 1;
+    const front = [interaction];
+    for (const extra of [0, FRONT_STEP]) for (let side = -FRONT_SIDE_STEPS; side <= FRONT_SIDE_STEPS; side++) {
+        if (!extra && !side) continue;
+        const scale = (length + extra) / length, offset = side * FRONT_STEP;
+        const point = onNpcFloor({
+            locX: Math.round(Number(target.locX) + dx * scale - dy / length * offset),
+            locY: Math.round(Number(target.locY) + dy * scale + dx / length * offset),
+            locZ: Number(target.locZ)
+        }, target);
+        if (point && distance2d(point, target) <= MAX_INTERACTION_DISTANCE
+            && hasInteractionLineOfSight(point, target) && hasLineOfSight(interaction, point)
+            && reachableCounterSlot(staging, point)) front.push(Object.freeze(point));
+    }
+    return Object.freeze(front);
+}
+
 function pointsFor(target) {
     if (!target?.npcSelfId || normalizedHeading(target) === null) return null;
-    const override = APPROACH_OVERRIDES[Number(target.npcSelfId)] || null;
-    if (override) {
-        return {
-            staging: override.staging ? { ...override.staging } : projectedPoint(target, STAGING_DISTANCE),
-            interaction: override.interaction ? { ...override.interaction } : projectedPoint(target, INTERACTION_DISTANCE)
-        };
-    }
 
     const key = pointCacheKey(target);
     const cached = pointCache.get(key);
@@ -187,7 +203,10 @@ function pointsFor(target) {
             const interaction = onNpcFloor(projectedPoint(target, distance, angleOffset), target);
             if (!interaction || !hasInteractionLineOfSight(interaction, target)) continue;
             const staging = projectedPoint(target, STAGING_DISTANCE, angleOffset);
-            visibleFallback ||= { staging: Object.freeze({ ...staging }), interaction: Object.freeze({ ...interaction }) };
+            visibleFallback ||= {
+                staging: Object.freeze({ ...staging }), interaction: Object.freeze({ ...interaction }),
+                front: Object.freeze([Object.freeze({ ...interaction })])
+            };
             // Visibility alone can select a roof or a disconnected counter side.
             const stagingZ = GeodataEngine.getHeight(staging.locX, staging.locY, staging.locZ);
             if (Math.abs(stagingZ - staging.locZ) > 64) continue;
@@ -195,7 +214,8 @@ function pointsFor(target) {
             if (!reachableCounterSlot(staging, interaction)) continue;
             return cachePoints(key, Object.freeze({
                 staging: Object.freeze(staging),
-                interaction: Object.freeze(interaction)
+                interaction: Object.freeze(interaction),
+                front: frontFor(target, staging, interaction)
             }));
         }
     }
@@ -206,10 +226,35 @@ function pointsFor(target) {
             Number(target.npcSelfId), Math.round(Number(target.locX)), Math.round(Number(target.locY)));
         return cachePoints(key, Object.freeze(visibleFallback));
     }
+    const raw = Object.freeze(projectedPoint(target, INTERACTION_DISTANCE));
     return cachePoints(key, Object.freeze({
         staging: Object.freeze(projectedPoint(target, STAGING_DISTANCE)),
-        interaction: Object.freeze(projectedPoint(target, INTERACTION_DISTANCE))
+        interaction: raw,
+        front: Object.freeze([raw])
     }));
+}
+
+// The first point from startIndex on, in index order, with no occupied body (plain {locX, locY}) within
+// TALK_POINT_GAP; all occupied, the start point. The one pick for counter places and open-air places, hot and cold.
+function freePoint(points, startIndex, occupied = []) {
+    if (!points?.length) return null;
+    const start = Math.abs(Math.trunc(Number(startIndex) || 0)) % points.length;
+    for (let i = 0; i < points.length; i++) {
+        const point = points[(start + i) % points.length];
+        if (!occupied.some(body => distance2d(body, point) <= TALK_POINT_GAP)) return point;
+    }
+    return points[start];
+}
+
+// Where this bot talks to this NPC from: its own place on the counter front (actorId picks the start), moved
+// on to the next place when `occupied` bodies stand on it. Hot plan() and cold travel (which passes no bodies).
+function talkPointFor(target, actorId, occupied = []) {
+    return freePoint(pointsFor(target)?.front, actorId, occupied);
+}
+
+// True when a body with a lower actor id stands on the point: of two bots on one point the higher id moves.
+function yieldsPoint(bodies, point, actorId) {
+    return bodies.some(body => distance2d(body, point) <= TALK_POINT_GAP && Number(body.actorId) < actorId);
 }
 
 function openPointFor(target, bot) {
@@ -232,6 +277,16 @@ function openPointFor(target, bot) {
     }
 
     return radialPoint(target, INTERACTION_DISTANCE, preferredAngle);
+}
+
+// The places around an open-air NPC a bot is sent to (on its floor, in sight) and the one nearest its own bearing
+// point to start from, so a route to it exists (a free bearing point can stand on a pillar or roof top).
+function openStart(slots, preferred) {
+    let best = 0;
+    slots.forEach((point, index) => {
+        if (distance2d(point, preferred) < distance2d(slots[best], preferred)) best = index;
+    });
+    return best;
 }
 
 function openSlotsFor(target, fallback) {
@@ -257,7 +312,6 @@ function targetKey(kind, target) {
 
 function reset(session) {
     if (!session) return;
-    Slots.release(session);
     delete session.townNpcApproach;
     session.townRoutePlan = null;
 }
@@ -271,8 +325,10 @@ function skipStaging(session) {
     return true;
 }
 
-function plan(session, bot, target, kind = 'town_npc') {
-    let points = pointsFor(target);
+// options.bodiesNear(target) -> plain {locX, locY, actorId} of the other bodies near the NPC, asked only when a
+// place is picked or checked; none given, the pick sees no bodies.
+function plan(session, bot, target, kind = 'town_npc', options = {}) {
+    const points = pointsFor(target);
     if (!points) return null;
 
     const botPoint = pointOf(bot);
@@ -280,10 +336,11 @@ function plan(session, bot, target, kind = 'town_npc') {
     const key = targetKey(kind, target);
     let state = session?.townNpcApproach;
     if (state?.key !== key) {
-        Slots.release(session);
-        const alreadyAtFront = distance2d(botPoint, points.interaction) <= INTERACTION_READY_RADIUS
-            && distance2d(botPoint, target) <= MAX_INTERACTION_DISTANCE;
-        state = { key, phase: alreadyAtFront ? 'interaction' : 'staging' };
+        // A bot already standing on a place of the counter front keeps it.
+        const standing = points.front.filter(point => distance2d(botPoint, point) <= INTERACTION_READY_RADIUS
+            && distance2d(botPoint, target) <= MAX_INTERACTION_DISTANCE)
+            .sort((a, b) => distance2d(botPoint, a) - distance2d(botPoint, b))[0] || null;
+        state = { key, phase: standing ? 'interaction' : 'staging', ...(standing && { talkPoint: standing }) };
         if (session) {
             session.townNpcApproach = state;
             session.townRoutePlan = null;
@@ -299,37 +356,26 @@ function plan(session, bot, target, kind = 'town_npc') {
         }
     }
 
-    // Everyone can walk to the shop in parallel. Reserve its scarce counter
-    // places only for the short final approach, after reaching the public side.
-    const nearCounter = state.phase === 'interaction'
-        && distance2d(botPoint, points.interaction) <= COUNTER_RESERVATION_DISTANCE
-        && Math.abs(botPoint.locZ - points.interaction.locZ) <= 64;
-    if (session && actorId && nearCounter) {
-        const base = points;
-        points = Slots.reserve(session, `counter:${pointCacheKey(target)}`, () => {
-            const dx = base.interaction.locX - target.locX, dy = base.interaction.locY - target.locY;
-            const length = Math.hypot(dx, dy) || 1;
-            const candidates = [base];
-            for (const offset of [-80, -40, 40, 80]) {
-                const shift = (point) => ({
-                    locX: Math.round(point.locX - dy / length * offset),
-                    locY: Math.round(point.locY + dx / length * offset), locZ: point.locZ
-                });
-                const interaction = shift(base.interaction), staging = shift(base.staging);
-                if (hasInteractionLineOfSight(interaction, target) && hasLineOfSight(base.interaction, interaction)
-                    && hasLineOfSight(base.staging, staging)
-                    && reachableCounterSlot(staging, interaction)) candidates.push({ interaction, staging });
-            }
-            return candidates;
-        }, distance2d(botPoint, base.interaction) <= INTERACTION_READY_RADIUS ? 0 : actorId);
-        if (!points) return { ready: false, waiting: true };
-    } else Slots.release(session);
+    // The bot picks its place on the counter front once, when it turns to the counter, and holds it.
+    if (state.phase === 'interaction' && !state.talkPoint) {
+        state.talkPoint = talkPointFor(target, actorId, options.bodiesNear?.(target) || []) || points.interaction;
+    }
+    // On reaching its place, a bot with another body of a lower id on it picks again with the bodies now there.
+    if (state.phase === 'interaction' && state.talkPoint && state.checkedPoint !== state.talkPoint
+        && distance2d(botPoint, state.talkPoint) <= INTERACTION_READY_RADIUS) {
+        state.checkedPoint = state.talkPoint;
+        const bodies = options.bodiesNear?.(target) || [];
+        if (yieldsPoint(bodies, state.talkPoint, actorId)) {
+            state.talkPoint = talkPointFor(target, actorId, bodies) || state.talkPoint;
+        }
+    }
+    const own = state.talkPoint || points.interaction;
 
     const ready = state.phase === 'interaction'
-        && distance2d(botPoint, points.interaction) <= INTERACTION_READY_RADIUS
-        && Math.abs(botPoint.locZ - points.interaction.locZ) <= 64
-        && canInteract(botPoint, target, points);
-    const destination = state.phase === 'staging' ? points.staging : points.interaction;
+        && distance2d(botPoint, own) <= INTERACTION_READY_RADIUS
+        && Math.abs(botPoint.locZ - own.locZ) <= 64
+        && canInteract(botPoint, target, { interaction: own });
+    const destination = state.phase === 'staging' ? points.staging : own;
 
     return {
         ready,
@@ -344,7 +390,7 @@ function plan(session, bot, target, kind = 'town_npc') {
         arrivalRadius: state.phase === 'staging'
             ? STAGING_ARRIVAL_RADIUS
             : INTERACTION_ARRIVAL_RADIUS,
-        points
+        points: { staging: points.staging, interaction: own }
     };
 }
 
@@ -352,23 +398,23 @@ function plan(session, bot, target, kind = 'town_npc') {
 // enter shops. Approach them directly from the bot's side and spread nearby
 // bots around the interaction circle so a party does not funnel through one
 // artificial coordinate.
-function planOpen(session, bot, target, kind = 'town_npc') {
+function planOpen(session, bot, target, kind = 'town_npc', options = {}) {
     if (!target || !Number.isFinite(Number(target.locX)) || !Number.isFinite(Number(target.locY))) return null;
 
     const botPoint = pointOf(bot);
     const key = `${targetKey(kind, target)}:open:${Number(bot?.fetchId?.() ?? bot?.actorId ?? 0)}`;
     let state = session?.townNpcApproach;
     if (state?.key !== key) {
-        Slots.release(session);
-        const preferredPoint = openPointFor(target, bot);
-        const candidates = openSlotsFor(target, preferredPoint);
-        const preferred = candidates.reduce((best, point, index) =>
-            distance2d(point, preferredPoint) < distance2d(candidates[best], preferredPoint) ? index : best, 0);
+        const preferred = openPointFor(target, bot);
+        const slots = openSlotsFor(target, preferred);
+        const slotIndex = openStart(slots, preferred);
+        const destination = freePoint([...slots.slice(slotIndex), ...slots.slice(0, slotIndex)], 0,
+            options.bodiesNear?.(target) || []);
         state = {
             key,
             phase: 'interaction',
-            destination: candidates[preferred],
-            preferred,
+            slots,
+            destination,
             readyOnEntry: distance2d(botPoint, target) <= OPEN_INTERACTION_READY_RADIUS
                 && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64 && hasLineOfSight(botPoint, target)
         };
@@ -379,17 +425,20 @@ function planOpen(session, bot, target, kind = 'town_npc') {
         }
     }
 
-    const nearNpc = distance2d(botPoint, target) <= COUNTER_RESERVATION_DISTANCE
-        && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64;
-    if (!state.readyOnEntry && session && Number(bot?.fetchId?.() || 0) && nearNpc) {
-        const assigned = Slots.reserve(session, `open:${pointCacheKey(target)}`,
-            () => openSlotsFor(target, state.destination), state.preferred ?? Math.abs(Number(bot.fetchId())));
-        if (!assigned) return { ready: false, waiting: true };
-        state.destination = assigned;
-    } else Slots.release(session);
+    // On reaching its place, a bot with another body of a lower id on it picks again with the bodies now there.
+    if (state.slots && !state.checked && distance2d(botPoint, state.destination) <= OPEN_ARRIVAL_CHECK_RADIUS) {
+        state.checked = true;
+        const bodies = options.bodiesNear?.(target) || [];
+        if (yieldsPoint(bodies, state.destination, Number(bot?.fetchId?.() ?? bot?.actorId ?? 0))) {
+            const held = state.slots.indexOf(state.destination);
+            const next = freePoint([...state.slots.slice(held), ...state.slots.slice(0, held)], 0, bodies);
+            if (next !== state.destination) { state.destination = next; state.checked = false; }
+        }
+    }
+
     const ready = distance2d(botPoint, target) <= OPEN_INTERACTION_READY_RADIUS
         && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64
-        && (state.readyOnEntry || !session?.townNpcSlot || distance2d(botPoint, state.destination) <= 32)
+        && (state.readyOnEntry || distance2d(botPoint, state.destination) <= 32)
         && hasLineOfSight(botPoint, target);
 
     return {
@@ -408,8 +457,6 @@ function planOpen(session, bot, target, kind = 'town_npc') {
 }
 
 module.exports = {
-    APPROACH_OVERRIDES,
-    COUNTER_RESERVATION_DISTANCE,
     INTERACTION_ARRIVAL_RADIUS,
     INTERACTION_DISTANCE,
     INTERACTION_READY_RADIUS,
@@ -422,6 +469,7 @@ module.exports = {
     hasLineOfSight,
     hasInteractionLineOfSight,
     canInteract,
+    freePoint,
     npcTarget,
     pointOf,
     plan,
@@ -431,5 +479,6 @@ module.exports = {
     projectedPoint,
     reset,
     skipStaging,
+    talkPointFor,
     targetKey
 };

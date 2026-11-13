@@ -21,7 +21,7 @@ delete offCi.CI;
 const check = (strict = true) => spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'check-tables.js'), `--root=${root}`, ...(strict ? ['--strict'] : [])],
     { encoding: 'utf8', env: strict ? process.env : offCi });
 const table = (file, generator, fingerprint) => put(file, JSON.stringify({ header: { generator, revision: 'abc123', fingerprint }, rows: [] }));
-const SPOT = 'scripts/generate-spot-table.js', HUNT = 'scripts/hunt-tables/build.js';
+const SPOT = 'scripts/generate-spot-table.js', HUNT = 'scripts/hunt-tables/build.js', WAYS = 'scripts/generate-town-ways.js';
 
 // The list names files of this checkout (a rename or move updates it, else `npm run check` fails).
 for (const kind of Object.keys(TableFingerprint.INPUTS)) {
@@ -29,7 +29,7 @@ for (const kind of Object.keys(TableFingerprint.INPUTS)) {
 }
 
 try {
-    for (const input of new Set([...TableFingerprint.INPUTS.spot, ...TableFingerprint.INPUTS.hunt])) {
+    for (const input of new Set(Object.values(TableFingerprint.INPUTS).flat())) {
         if (/\.(js|json)$/.test(input)) put(input, `// ${input}\n`);
         else put(`${input}/a.json`, '{"a":1}\n');
     }
@@ -50,11 +50,33 @@ try {
     table('data/Bots/spot-table.json', SPOT, TableFingerprint.fingerprint('spot', root));
     table('data/Bots/hunt/mobs.json', HUNT, TableFingerprint.fingerprint('hunt', root));
     table('data/Bots/hunt/henna.json', HUNT, undefined);
+    // The town ways: the server walks every far walk by the straight leg without them.
     let result = check();
+    assert.strictEqual(result.status, 1, 'a tree without its town ways fails on CI');
+    assert.match(result.stderr, /error: Bot table data\/Bots\/town-ways\.json is missing\. Build it on the fork: tables\/ways\//);
+    assert.strictEqual(check(false).status, 0, 'off CI a missing table only warns');
+    table('data/Bots/town-ways.json', WAYS, TableFingerprint.fingerprint('ways', root));
+    result = check();
     assert.strictEqual(result.status, 0, `current tables pass: ${result.stderr}`);
     assert.match(result.stderr, /warning: Bot table data\/Bots\/hunt\/henna\.json \(built at abc123\): no fingerprint/,
         'a table built before fingerprints only warns');
-    assert.match(result.stdout, /2 tables match their inputs, 1 warning/);
+    assert.match(result.stdout, /3 tables match their inputs, 1 warning/);
+    const engine = 'src/GameServer/Geodata/GeodataEngine.js';
+    put(engine, '// a changed step rule\n');
+    result = check();
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /error: Stale bot table data\/Bots\/town-ways\.json .*: 1 input file changed since: src\/GameServer\/Geodata\/GeodataEngine\.js\. Rebuild on the fork: tables\/ways\//,
+        'the walk search moves the town ways alone');
+    assert.doesNotMatch(result.stderr, /spot-table\.json|mobs\.json/);
+    put(engine, `// ${engine}\n`);
+    // A moved service NPC (its spawn source) leaves a stale spur: the town ways alone are stale.
+    const gatekeepers = 'src/GameServer/World/C4LateTownGatekeepers.js';
+    put(gatekeepers, '// a moved gatekeeper\n');
+    result = check();
+    assert.match(result.stderr, /error: Stale bot table data\/Bots\/town-ways\.json .*: 1 input file changed since: src\/GameServer\/World\/C4LateTownGatekeepers\.js\./,
+        'the service NPC rows the spurs are built on move the town ways');
+    assert.doesNotMatch(result.stderr, /spot-table\.json|mobs\.json/);
+    put(gatekeepers, `// ${gatekeepers}\n`);
 
     put('src/GameServer/Formulas.js', '// a changed formula\n');
     assert.notStrictEqual(TableFingerprint.compute('spot', root).hash, spot.hash, 'a changed input: another fingerprint');

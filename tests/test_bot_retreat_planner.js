@@ -105,6 +105,18 @@ assert.strictEqual(routedPlan.selectedAngle, 0, 'candidate scoring should use th
 assert.strictEqual(routedPlan.routeStrategy, 'test_astar');
 assert.strictEqual(routedPlan.safe, true, 'the actual preview polyline should own aggro safety');
 
+// A throwing route preview still gives the direct plan, and the failure is counted.
+const FailureLog = invoke('FailureLog');
+const previewFailures = () => Number(FailureLog.snapshot()?.['ai.retreat_route_preview'] || 0);
+const failuresBefore = previewFailures();
+const brokenPreviewPlan = BotRetreatPlanner.plan(bot, threat, {
+    world: { fetchNpcsInRadius: () => [threat] },
+    geodata: openGeodata,
+    previewRoute() { throw new Error('preview broke'); }
+});
+assert.strictEqual(brokenPreviewPlan.selectedAngle, 0, 'a broken preview falls back to the direct check');
+assert(previewFailures() > failuresBefore, 'a broken route preview is counted');
+
 // Each hazard at its own C4 aggro range (T114): the same A* polyline 700 from an
 // NPC that sees 1000 (data/Npcs/aggro-ranges.json, 7039) is not the safe pick.
 const farSight = { ...routedHazard, fetchSelfId: () => 7039 };

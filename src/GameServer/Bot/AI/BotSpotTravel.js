@@ -4,6 +4,7 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
 const TownGatekeeperCatalog = invoke('GameServer/Bot/AI/TownGatekeeperCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const Trace = invoke('GameServer/Bot/DecisionTrace');
@@ -246,7 +247,7 @@ function startEmergencyScroll(session, bot, spot, destination, preserveSpot = fa
 function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
     const relocation = session?.spotRelocation;
     if (!relocation || relocation.method !== 'town_gatekeeper' || relocation.arrivalPending) return false;
-    const approach = TownNpcApproach.planOpen(session, bot, relocation.gatekeeper, 'town_gatekeeper');
+    const approach = TownNpcApproach.planOpen(session, bot, relocation.gatekeeper, 'town_gatekeeper', { bodiesNear: TownNpcBodies.seenBy(bot) });
     if (approach?.ready && !bot.isDead?.() && !BotTownTravel.hasCombatThreat(session, bot)) {
         relocation.startedAt = Date.now();
         return tick(session, bot);
@@ -254,7 +255,7 @@ function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
     const diagnostic = session.lastPathfinding;
     // A timeout while queued is not evidence of impassable geometry. A
     // completed usable path without physical progress can be a stuck executor.
-    const confirmed = !approach?.waiting && !session.pendingPathRequest && !diagnostic?.error && (reason === 'gatekeeper_route_unreachable'
+    const confirmed = !session.pendingPathRequest && !diagnostic?.error && (reason === 'gatekeeper_route_unreachable'
         || (diagnostic?.routeUsable === true && !diagnostic.error
             && diagnostic.at >= relocation.startedAt && !session.pendingPathRequest));
     if (!confirmed) TownTransitPolicy.observeRecovery(session, bot, recoveryKey(relocation), true);
@@ -322,12 +323,7 @@ function tick(session, bot) {
 
     TownTransitPolicy.observeRecovery(session, bot, recoveryKey(relocation));
 
-    const approach = TownNpcApproach.planOpen(session, bot, relocation.gatekeeper, 'town_gatekeeper');
-    if (approach?.waiting) {
-        TownTransitPolicy.observeRecovery(session, bot, recoveryKey(relocation), true);
-        TownTransitPolicy.interact(relocation, bot, false);
-        return true;
-    }
+    const approach = TownNpcApproach.planOpen(session, bot, relocation.gatekeeper, 'town_gatekeeper', { bodiesNear: TownNpcBodies.seenBy(bot) });
     const interacted = TownTransitPolicy.interact(relocation, bot, approach?.ready === true);
     if (approach?.ready && !interacted) return true;
     if (interacted) {

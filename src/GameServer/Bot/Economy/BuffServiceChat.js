@@ -23,7 +23,7 @@ function onDuty(session, timestamp = Date.now()) {
     // counter, or during an errand, parks the buffer and blocks its departure.
     if (!town || Math.hypot(actor.fetchLocX() - town.center.locX, actor.fetchLocY() - town.center.locY) > SERVICE_SQUARE_RADIUS
         || Math.abs(actor.fetchLocZ() - town.center.locZ) > 128
-        || session.townNpcApproach || session.townNpcSlot || session.townNpcQueue
+        || session.townNpcApproach
         || session.spotRelocation || session.pendingTownTrip || session.shoppingRestock
         || session.townEscape || session.companionTownTransit || session.clanAllianceQuest
         || actor.state?.inMotion?.() || actor.state?.fetchTowards?.()) {

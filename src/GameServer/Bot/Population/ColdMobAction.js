@@ -94,9 +94,10 @@ function addDot(holder, key, dot, landedAt, by = null) {
     holder.dots.push({ key: String(key || ''), next: landedAt + intervalMs, left: count, damage, intervalMs,
         ...(by !== null ? { by } : {}) });
 }
-// The damage a holder's dots deal up to time (their ticks at or before it);
+// The HP a holder's dots take up to time (their ticks at or before it) from
+// its hp before them: never the last point (HitRules.dotTickDamage, as hot);
 // finished ones leave. holder.dotBy: the caster of the latest tick.
-function dotDamage(holder, time) {
+function dotDamage(holder, time, hp) {
     if (!holder.dots?.length) return 0;
     let damage = 0, ended = false, lastAt = -Infinity;
     for (const dot of holder.dots) {
@@ -112,7 +113,7 @@ function dotDamage(holder, time) {
         if (dot.left <= 0) ended = true;
     }
     if (ended) holder.dots = holder.dots.filter((dot) => dot.left > 0);
-    return damage;
+    return HitRules.dotTickDamage(hp, damage);
 }
 
 // An effect's land chance in percent on a cold monster (HitRules.effectLandChance

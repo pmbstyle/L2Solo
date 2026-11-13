@@ -928,6 +928,13 @@ class ColdSimulationCoordinator {
                 this.failures.protocolFaults += 1;
                 this.failures.faultsByStage[payload.stage || 'unknown'] = (this.failures.faultsByStage[payload.stage || 'unknown'] || 0) + 1;
             }
+            // The worker will not answer this request (its reply refused by the worker's own
+            // validator, or the request refused or failed there): its waiter ends now, as at its timeout.
+            if (typeof payload.msgId === 'string' && this.waiters.has(payload.msgId)) {
+                const waiter = this.waiters.get(payload.msgId);
+                this.waiters.delete(payload.msgId);
+                waiter.reject(new Error(String(payload.reason || 'worker_reply_refused')));
+            }
             break;
         default:
             break;
@@ -1002,8 +1009,10 @@ class ColdSimulationCoordinator {
                 waitStarted = performance.now();
             });
             if (options.onWorkerWait && waitStarted !== undefined) options.onWorkerWait(performance.now() - waitStarted);
-            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy)
+            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy) {
+                FailureLog.note('cold.party_goal_stale_worker', new Error('party_goal_stale_worker'));
                 return { ok: false, reason: 'party_goal_stale_worker' };
+            }
             if (!result.ok) return result;
             if (JSON.stringify(result.sources) !== JSON.stringify(expected)
                 || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
@@ -2234,7 +2243,7 @@ class ColdSimulationCoordinator {
             await Promise.all(commitAcks);
             return { ok: true, reason: 'fenced', ...fenced, economyDecision: takeDecision() };
         } catch (error) {
-            DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
+            DiagnosticConfig.developerDiagnostics && error.message === 'cold_worker_fence_timeout' && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {

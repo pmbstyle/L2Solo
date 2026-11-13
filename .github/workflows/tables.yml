@@ -1,11 +1,12 @@
 name: Tables
 
 # Rebuilds the measured bot tables of one commit: the spot table
-# (scripts/generate-spot-table.js, split in shares) and the hunt tables
-# (scripts/hunt-tables/build.js). Started by a push to tables/<what>/<name>
-# (~/Games/tools/tables.sh), what = all | spot | hunt | probe (12 spots,
+# (scripts/generate-spot-table.js, split in shares), the hunt tables
+# (scripts/hunt-tables/build.js) and the town ways (scripts/generate-town-ways.js,
+# split in shares). Started by a push to tables/<what>/<name>
+# (~/Games/tools/tables.sh), what = all | spot | hunt | ways | probe (12 spots,
 # short hunts: compares a run here with the same run elsewhere). The tables
-# come back as the run's artifacts spot-table and hunt-tables.
+# come back as the run's artifacts spot-table, hunt-tables and town-ways.
 # tables/pick/<name>/<spot ids>[/<class lines>] (ids by comma, ':' in an id
 # written '@'; pick-full: the table's hours, pick: probe hours) measures only
 # those spots' rows and curves: the artifact spot-pick, never a spot table.
@@ -27,6 +28,7 @@ jobs:
     outputs:
       spot: ${{ steps.plan.outputs.spot }}
       hunt: ${{ steps.plan.outputs.hunt }}
+      ways: ${{ steps.plan.outputs.ways }}
       args: ${{ steps.plan.outputs.args }}
       merge: ${{ steps.plan.outputs.merge }}
       pick: ${{ steps.plan.outputs.pick }}
@@ -37,9 +39,10 @@ jobs:
         run: |
           what=$(echo "$REF" | cut -d/ -f2)
           case "$what" in
-            all) echo "spot=true" >> $GITHUB_OUTPUT; echo "hunt=true" >> $GITHUB_OUTPUT ;;
+            all) echo "spot=true" >> $GITHUB_OUTPUT; echo "hunt=true" >> $GITHUB_OUTPUT; echo "ways=true" >> $GITHUB_OUTPUT ;;
             spot) echo "spot=true" >> $GITHUB_OUTPUT ;;
             hunt) echo "hunt=true" >> $GITHUB_OUTPUT ;;
+            ways) echo "ways=true" >> $GITHUB_OUTPUT ;;
             probe) echo "spot=true" >> $GITHUB_OUTPUT
                    echo "args=--spots=12 --hours=0.25 --curve-hours=0.25" >> $GITHUB_OUTPUT ;;
             pick|pick-full)
@@ -51,7 +54,7 @@ jobs:
                    [ "$what" = pick ] && args="$args --hours=0.25 --curve-hours=0.25"
                    echo "spot=true" >> $GITHUB_OUTPUT; echo "pick=true" >> $GITHUB_OUTPUT
                    echo "args=$args" >> $GITHUB_OUTPUT; echo "merge=--out=pick/spot-pick.json" >> $GITHUB_OUTPUT ;;
-            *) echo "unknown tables '$what' (all, spot, hunt, probe, pick, pick-full)"; exit 1 ;;
+            *) echo "unknown tables '$what' (all, spot, hunt, ways, probe, pick, pick-full)"; exit 1 ;;
           esac
 
   spot-rows:
@@ -186,4 +189,65 @@ jobs:
         with:
           name: hunt-tables
           path: data/Bots/hunt/
+          retention-days: 14
+
+  # ~450 spots within 25 km of their town, one A* each (p50 ~0.4M nodes, cap
+  # 1.5M): ~30 min of one core in all; 8 shares of one process each keep a job
+  # near 5 min beside its catalogue and geodata setup.
+  town-ways:
+    name: Town ways (${{ matrix.shard }}/8)
+    needs: plan
+    if: needs.plan.outputs.ways == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      # The ways are searched on the server's map, from the catalogue's spot centres.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
+      - run: node --max-old-space-size=4096 scripts/generate-town-ways.js --shard=${{ matrix.shard }}/8 --out=parts/ways-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ways-${{ matrix.shard }}
+          path: parts/ways-${{ matrix.shard }}.json
+          retention-days: 3
+
+  town-ways-merge:
+    name: Town ways table
+    needs: [plan, town-ways]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      # The towns' spurs are searched here, on the same map.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ways-*
+          path: parts
+          merge-multiple: true
+      - run: node --max-old-space-size=4096 scripts/generate-town-ways.js --merge --parts=parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: town-ways
+          path: data/Bots/town-ways.json
           retention-days: 14

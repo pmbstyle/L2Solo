@@ -4,6 +4,7 @@ const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 
@@ -163,8 +164,7 @@ module.exports = {
             town: guide.name,
             head: guide.head
         };
-        const guideApproach = TownNpcApproach.planOpen(session, bot, guideTarget, 'newbie_guide');
-        if (guideApproach?.waiting) return;
+        const guideApproach = TownNpcApproach.planOpen(session, bot, guideTarget, 'newbie_guide', { bodiesNear: TownNpcBodies.seenBy(bot) });
         const readyToInteract = guideApproach?.ready === true;
 
         if (!readyToInteract) {

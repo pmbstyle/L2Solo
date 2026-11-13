@@ -49,7 +49,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     npc.broadcastVitals();
 
     if (npc.fetchHp() <= 0) {
-        invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc);
+        invoke('GameServer/World/KillEffect').killEffect('kill.defeat_memory', () => invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc));
         NpcAttacked(session, actor, npc, hit, options.npcAttacked);
         invoke(path.npc).die(session, actor, npc);
         return;

@@ -62,13 +62,18 @@ function load(file, dependencies, extra = '', globals = {}) {
 
     let observed;
     const die = load('GameServer/Actor/Generics/Die.js', {
-        'GameServer/Progression/DeathExperience': { applyDeathPenalty: (_s, _a, context) => { observed = context; throw new Error('captured'); } }
+        'GameServer/Progression/DeathExperience': { applyDeathPenalty: (_s, _a, context) => { observed = context; } },
+        'GameServer/Network/Response': { die() {} }, 'GameServer/Actor/Generics/CalculateStats': () => {},
+        'GameServer/Skills/ChargeLifecycle': { clear() {} }, 'GameServer/Effects/EffectStore': { prune() {} },
+        'GameServer/Effects/EffectTicker': { clearAll() {}, refreshEffects() {} }, 'GameServer/Clan/ClanAllianceService': { onDeath() {} }
     });
-    const victim = { isDead: () => false, fetchExp() {}, setExpSp() {} };
+    const victim = { isDead: () => false, fetchId: () => 1, fetchExp() {}, setExpSp() {}, destructor() {},
+        state: { destructor() {}, setDead() {} } };
     const owner = {};
     const summon = { fetchKind() {} };
     for (const [context, expected] of [[{ source: summon, killer: owner }, true], [{ source: summon }, false], [{ killer: victim }, false], [{}, false]]) {
-        assert.throws(() => die({ actor: victim }, victim, context), /captured/);
+        observed = null;
+        die({ actor: victim, dataSendToMeAndOthers() {} }, victim, context);
         assert.equal(observed.killerPlayable, expected);
     }
 

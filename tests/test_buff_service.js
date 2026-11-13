@@ -265,7 +265,7 @@ async function persistState(current) {
             'finishing a purchase inside Helvetia must not start or retain a ten-minute buff shift');
         assert.strictEqual(shopSession.buffServiceShiftUntil, 0);
         for (const ongoing of [
-            { townNpcQueue: { key: 'counter' } }, { townNpcApproach: { phase: 'interaction' } },
+            { townNpcApproach: { phase: 'interaction' } },
             { spotRelocation: { method: 'town_gatekeeper' } }, { pendingTownTrip: {} }
         ]) {
             const busy = { actor: serviceActor, plan: 'hunting', ...ongoing };

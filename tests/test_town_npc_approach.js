@@ -4,7 +4,8 @@ require('../src/Global');
 
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
-const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
+const World = invoke('GameServer/World/World');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const InteractionGeometry = invoke('GameServer/Geodata/NpcInteractionGeometry');
 const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
@@ -18,6 +19,8 @@ function botAt(locX, locY, locZ = -100) {
         fetchLocZ() { return this.locZ; }
     };
 }
+
+function distance2d(a, b) { return Math.hypot(a.locX - b.locX, a.locY - b.locY); }
 
 function identifiedBotAt(actorId, locX, locY, locZ = -100) {
     return {
@@ -47,6 +50,22 @@ const target = {
 const points = TownNpcApproach.pointsFor(target);
 assert.deepStrictEqual(points.staging, { locX: 1240, locY: 1000, locZ: -100 });
 assert.deepStrictEqual(points.interaction, { locX: 1072, locY: 1000, locZ: -100 });
+
+{
+    // The talking place: the actorId picks the start; a body on it sends the next bot on to the next place.
+    const front = points.front;
+    assert(front.length > 4, 'a counter front has room for several bodies');
+    assert.deepStrictEqual(front[0], points.interaction, 'the first place is the base interaction point');
+    const start = TownNpcApproach.talkPointFor(target, 0);
+    assert.deepStrictEqual(start, front[0]);
+    assert.deepStrictEqual(TownNpcApproach.talkPointFor(target, front.length * 7 + 2), front[2],
+        'the actor id picks its start place');
+    assert.deepStrictEqual(TownNpcApproach.talkPointFor(target, 0, [{ locX: start.locX + 5, locY: start.locY }]), front[1],
+        'a body on the start place sends the next bot to the next place');
+    assert.deepStrictEqual(TownNpcApproach.talkPointFor(target, 0, front.map(({ locX, locY }) => ({ locX, locY }))), front[0],
+        'with every place taken the bot stands on its start place');
+    assert.strictEqual(TownNpcApproach.talkPointFor({ ...target, head: null }, 0), null);
+}
 
 const session = {};
 const behind = botAt(824, 1000);
@@ -88,10 +107,9 @@ assert.strictEqual(TownNpcApproach.pointsFor({ ...target, head: null }), null,
 for (let index = 0; index < 32; index++) {
     const session = {};
     const approach = TownNpcApproach.plan(session, identifiedBotAt(2200000 + index, 4000, 4000), target, 'shopping');
-    assert(approach.destination && !approach.waiting,
-        'distant shoppers must walk to the shop even when there are more shoppers than counter places');
-    assert(!session.townNpcSlot && !session.townNpcQueue,
-        'a cross-town walk must not reserve a counter place');
+    assert.deepStrictEqual([approach.phase, approach.destination.locX, approach.destination.locY],
+        ['staging', points.staging.locX, points.staging.locY],
+        'distant shoppers must walk to the shop street whatever their number');
     TownNpcApproach.reset(session);
 }
 
@@ -102,68 +120,22 @@ for (let index = 0; index < 32; index++) {
     }));
     for (const { session, bot } of shoppers) {
         const approach = TownNpcApproach.planOpen(session, bot, gate, 'town_gatekeeper');
-        assert(approach.destination && !approach.waiting,
-            'all departing shoppers must walk to the gatekeeper instead of queuing inside the shop');
-        assert(!session.townNpcSlot && !session.townNpcQueue);
+        assert(distance2d(approach.destination, gate) <= TownNpcApproach.INTERACTION_DISTANCE + 0.5,
+            'all departing shoppers must walk to a place at the gatekeeper instead of queuing inside the shop');
         bot.locX = gate.locX + 200;
         bot.locY = gate.locY;
     }
     const arrivals = shoppers.map(({ session, bot }) => TownNpcApproach.planOpen(session, bot, gate, 'town_gatekeeper'));
-    assert.strictEqual(arrivals.filter(approach => !approach.waiting).length, 8,
-        'the gatekeeper interaction places are shared only by nearby arrivals');
+    assert(arrivals.every(approach => !approach.ready && distance2d(approach.destination, gate) <= TownNpcApproach.INTERACTION_DISTANCE + 0.5),
+        'every arrival 200 from the gatekeeper keeps walking to its own place: nobody is held back or ready early');
     shoppers.forEach(({ session }) => TownNpcApproach.reset(session));
 }
 
 {
-    const key = 'queue-fairness';
-    const points = () => [{ locX: 1 }, { locX: 2 }];
-    const shoppers = Array.from({ length: 5 }, () => ({}));
-    assert(Slots.reserve(shoppers[0], key, points, 0, 1000));
-    assert(Slots.reserve(shoppers[1], key, points, 1, 1000));
-    assert.strictEqual(Slots.reserve(shoppers[2], key, points, 0, 1000), null);
-    assert.strictEqual(Slots.reserve(shoppers[3], key, points, 0, 1000), null);
-    Slots.release(shoppers[0]);
-    assert.strictEqual(Slots.reserve(shoppers[4], key, points, 0, 1100), null,
-        'a newcomer must not steal the free place from the oldest waiting shopper');
-    assert.strictEqual(Slots.reserve(shoppers[3], key, points, 0, 1100), null,
-        'polling earlier must not overtake an older ticket');
-    assert(Slots.reserve(shoppers[2], key, points, 0, 1100));
-    Slots.release(shoppers[3]);
-    Slots.release(shoppers[1]);
-    assert(Slots.reserve(shoppers[4], key, points, 0, 1200),
-        'cancelling a queued errand must immediately let the next shopper proceed');
-    shoppers.forEach(Slots.release);
-
-    const absent = {}, waiting = {}, next = {};
-    const onePoint = () => [{ locX: 1 }];
-    assert(Slots.reserve(absent, 'queue-expiry', onePoint, 0, 1000));
-    assert.strictEqual(Slots.reserve(waiting, 'queue-expiry', onePoint, 0, 1000), null);
-    assert.strictEqual(Slots.reserve(next, 'queue-expiry', onePoint, 0, 1000), null);
-    assert.strictEqual(Slots.reserve(next, 'queue-expiry', onePoint, 0, 2000), null);
-    assert(Slots.reserve(next, 'queue-expiry', onePoint, 0, 1000 + Slots.LEASE_MS),
-        'abandoned leases and tickets must expire without retaining an actor');
-    assert.strictEqual(Slots.reserve(absent, 'queue-expiry', onePoint, 0, 1001 + Slots.LEASE_MS), null,
-        'an expired owner must rejoin the queue rather than revive its old lease');
-    Slots.reserve(absent, 'other-shop', onePoint, 0, 1002 + Slots.LEASE_MS);
-    Slots.release(next);
-    assert(Slots.reserve(waiting, 'queue-expiry', onePoint, 0, 1003 + Slots.LEASE_MS),
-        'changing shops must cancel the previous waiting ticket');
-    [absent, waiting, next].forEach(Slots.release);
-}
-
-{
-    const session = { shoppingDoneAnnounced: true };
-    const owner = {};
-    Slots.reserve(owner, 'finished-shopping', () => [1]);
-    Slots.reserve(session, 'finished-shopping', () => [1]);
+    const session = { shoppingDoneAnnounced: true, townNpcApproach: { key: 'finished-shopping', phase: 'interaction' } };
     invoke('GameServer/Bot/AI/States/ShoppingState').tick(session, {}, {}, {});
-    assert(!session.townNpcQueue && !session.townNpcSlot,
-        'a completed shopper awaiting its return callback must leave the queue immediately');
-    assert(Slots.reserve(session, 'finished-shopping', () => [1]) === null);
-    Slots.release(owner);
-    invoke('GameServer/Bot/AI/States/ShoppingState').tick(session, {}, {}, {});
-    assert(Slots.reserve({}, 'finished-shopping', () => [1]),
-        'a completed shopper must not reserve the next place while waiting for its return');
+    assert(!session.townNpcApproach,
+        'a completed shopper awaiting its return callback must not keep an approach to the counter');
 }
 
 {
@@ -255,39 +227,173 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter ap
     }));
     for (const { session, bot } of shoppers) {
         const approach = TownNpcApproach.plan(session, bot, helvetia, 'shopping');
-        assert(approach.destination && !approach.waiting,
-            'all 32 distant shoppers must start walking instead of waiting across town');
-        assert(!session.townNpcSlot && !session.townNpcQueue,
-            'walking across town must neither reserve a counter nor enter its local queue');
+        assert.deepStrictEqual([approach.phase, approach.destination.locX, approach.destination.locY],
+            ['staging', helvetiaPoints.staging.locX, helvetiaPoints.staging.locY],
+            'all 32 distant shoppers must start walking to the street instead of waiting across town');
         Object.assign(bot, helvetiaPoints.staging);
     }
-    const arrivals = shoppers.map(({ session, bot }) => TownNpcApproach.plan(session, bot, helvetia, 'shopping'));
-    const occupied = arrivals.filter(approach => !approach.waiting);
-    assert(occupied.length >= 1 && occupied.length <= 5,
-        'only the validated counter places may be occupied at once');
-    assert.strictEqual(new Set(occupied.map(row => `${row.destination.locX}:${row.destination.locY}`)).size,
-        occupied.length, 'each admitted shopper must own a distinct counter place');
-    let completed = 0;
-    // Reverse polling reproduces a scheduler that favors late arrivals.
-    for (let wave = 0; wave < 32 && completed < shoppers.length; wave++) {
-        for (const shopper of [...shoppers].reverse()) {
-            if (shopper.done) continue;
-            const { session, bot } = shopper;
-            const approach = TownNpcApproach.plan(session, bot, helvetia, 'shopping');
-            if (approach.waiting) continue;
+    // Bodies stand where earlier shoppers stopped, as World reports them.
+    const standing = [];
+    const sessionsNear = World.actorSessionsNear;
+    World.actorSessionsNear = () => standing.map(actor => ({ actor }));
+    try {
+        const arrivals = [];
+        for (const { session, bot } of shoppers) {
+            const approach = TownNpcApproach.plan(session, bot, helvetia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) });
             const destination = approach.destination;
+            assert(helvetiaPoints.front.some(place => place.locX === destination.locX && place.locY === destination.locY),
+                'each shopper is sent to a place of the counter front');
             const path = GeodataEngine.findPath(bot.locX, bot.locY, bot.locZ,
                 destination.locX, destination.locY, destination.locZ, 5000,
                 { debug: false, goalRadius: approach.arrivalRadius, goalZTolerance: 64 });
-            assert(path?.length, 'each queued shopper must receive a reachable counter place');
+            assert(path?.length, 'each shopper receives a reachable counter point');
             Object.assign(bot, path.at(-1));
-            assert(TownNpcApproach.plan(session, bot, helvetia, 'shopping').ready);
-            TownNpcApproach.reset(session);
-            shopper.done = true;
-            completed++;
+            assert(TownNpcApproach.plan(session, bot, helvetia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) }).ready,
+                'each shopper can talk from where it stopped');
+            standing.push(bot);
+            arrivals.push(destination);
         }
-    }
-    assert.strictEqual(completed, 32, 'every shopper must reach the counter despite reversed tick order');
+        assert(new Set(arrivals.map(row => `${row.locX}:${row.locY}`)).size > 5,
+            'the shoppers spread over the counter front instead of the five old places');
+    } finally { World.actorSessionsNear = sessionsNear; }
+});
+
+verifyGeodataWhenAvailable(GeodataEngine, [[17, 25]], 'Silvia counter, several shoppers at once', () => {
+    const silvia = { actorId: 7003, npcSelfId: 7003, name: 'Silvia', town: 'Talking Island',
+        locX: -83789, locY: 240799, locZ: -3717, head: 32768 };
+    const base = TownNpcApproach.pointsFor(silvia);
+    const standing = [];
+    const sessionsNear = World.actorSessionsNear;
+    World.actorSessionsNear = () => standing.map(actor => ({ actor }));
+    const apart = (a, b) => Math.hypot(a.locX - b.locX, a.locY - b.locY);
+    // One shopper from the staging point to its end of the walk, left standing there as its body.
+    const arrive = (id) => {
+        const bot = identifiedBotAt(id, base.staging.locX, base.staging.locY, base.staging.locZ);
+        const session = {};
+        const approach = TownNpcApproach.plan(session, bot, silvia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) });
+        assert(base.front.some(place => place.locX === approach.destination.locX && place.locY === approach.destination.locY),
+            `shopper ${id} is sent to a place of the counter front`);
+        assert(Math.abs(GeodataEngine.getHeight(approach.destination.locX, approach.destination.locY, silvia.locZ)
+            - silvia.locZ) <= 64, `shopper ${id}'s place is on Silvia's floor`);
+        const path = GeodataEngine.findPath(bot.locX, bot.locY, bot.locZ, approach.destination.locX,
+            approach.destination.locY, approach.destination.locZ, 5000, { goalRadius: approach.arrivalRadius, goalZTolerance: 64 });
+        assert(path?.length, `shopper ${id}'s place is reachable from the staging point`);
+        Object.assign(bot, path.at(-1));
+        standing.push(bot);
+        return { id, bot, session, destination: approach.destination };
+    };
+    try {
+        // The reported pair: the first shopper's body stays on its place while the buy runs.
+        const first = arrive(2000510);
+        assert(TownNpcApproach.plan(first.session, first.bot, silvia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(first.bot) }).ready);
+        TownNpcApproach.reset(first.session);
+        const second = arrive(2000995);
+        assert(apart(second.destination, first.bot) >= 16,
+            'a second shopper must not walk onto the body of a shopper still at the counter');
+        standing.length = 0;
+
+        // Eight shoppers one after another, each body staying: no two stand on one point, all talk at once.
+        const shoppers = [2000510, 2000995, 2000511, 2000512, 2000513, 2000514, 2000515, 2000516].map(arrive);
+        for (let i = 0; i < shoppers.length; i++) for (let j = i + 1; j < i + shoppers.length && j < shoppers.length; j++) {
+            assert(apart(shoppers[i].bot, shoppers[j].bot) >= 16,
+                `shoppers ${shoppers[i].id} and ${shoppers[j].id} stand on one point at the counter`);
+            assert(shoppers[i].destination.locX !== shoppers[j].destination.locX
+                || shoppers[i].destination.locY !== shoppers[j].destination.locY, 'destinations differ');
+        }
+        for (const { session, bot } of shoppers) {
+            assert(TownNpcApproach.plan(session, bot, silvia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) }).ready, 'every shopper talks from its own place');
+        }
+        standing.length = 0;
+
+        // Two ids that start on one place: the later one moves on to the next free place.
+        const front = base.front;
+        const early = arrive(2000510), late = arrive(2000510 + front.length);
+        assert(apart(early.bot, late.bot) >= 16, 'ids starting on one place do not stack bodies');
+        standing.length = 0;
+
+        // Two ids on one start place pick in the same moment (neither sees a body) and both walk there: on
+        // arrival the higher id picks again, the lower keeps its place, and the two end apart.
+        {
+            const lowId = 2000510, highId = 2000510 + front.length;
+            const pair = [lowId, highId].map(id => {
+                const bot = identifiedBotAt(id, base.staging.locX, base.staging.locY, base.staging.locZ);
+                const session = {};
+                const approach = TownNpcApproach.plan(session, bot, silvia, 'shopping');
+                return { id, bot, session, approach };
+            });
+            assert.deepStrictEqual(pair[0].approach.destination, pair[1].approach.destination, 'the same moment picks one place');
+            for (const one of pair) {
+                const to = one.approach.destination;
+                const path = GeodataEngine.findPath(one.bot.locX, one.bot.locY, one.bot.locZ, to.locX, to.locY, to.locZ,
+                    5000, { goalRadius: one.approach.arrivalRadius, goalZTolerance: 64 });
+                Object.assign(one.bot, path.at(-1));
+                standing.push(one.bot);
+            }
+            const [low, high] = pair;
+            const lowPlan = TownNpcApproach.plan(low.session, low.bot, silvia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(low.bot) });
+            const highPlan = TownNpcApproach.plan(high.session, high.bot, silvia, 'shopping', { bodiesNear: TownNpcBodies.seenBy(high.bot) });
+            assert.deepStrictEqual(lowPlan.destination, low.approach.destination, 'the lower id keeps its place');
+            assert.notDeepStrictEqual(highPlan.destination, high.approach.destination, 'the higher id picks another place');
+            const path = GeodataEngine.findPath(high.bot.locX, high.bot.locY, high.bot.locZ, highPlan.destination.locX,
+                highPlan.destination.locY, highPlan.destination.locZ, 5000, { goalRadius: highPlan.arrivalRadius, goalZTolerance: 64 });
+            Object.assign(high.bot, path.at(-1));
+            assert(apart(low.bot, high.bot) >= 16, 'after arrival the two bots stand apart');
+            for (const one of pair) assert(TownNpcApproach.plan(one.session, one.bot, silvia, 'shopping',
+                { bodiesNear: TownNpcBodies.seenBy(one.bot) }).ready, 'both talk from their places');
+            standing.length = 0;
+        }
+
+        // Hot = cold: with no bodies near, the destination is the pure pick the clan hall travel uses.
+        for (const id of [2000510, 2000995, 2000511]) {
+            const bot = identifiedBotAt(id, base.interaction.locX, base.interaction.locY, base.interaction.locZ);
+            bot.locX = base.staging.locX; bot.locY = base.staging.locY; bot.locZ = base.staging.locZ;
+            const approach = TownNpcApproach.plan({}, bot, silvia, 'shopping');
+            assert.strictEqual(approach.phase, 'interaction');
+            const own = TownNpcApproach.talkPointFor(silvia, id);
+            assert.deepStrictEqual([approach.destination.locX, approach.destination.locY], [own.locX, own.locY],
+                `shopper ${id}'s hot destination is the pure pick`);
+        }
+    } finally { World.actorSessionsNear = sessionsNear; }
+});
+
+verifyGeodataWhenAvailable(GeodataEngine, [[17, 25]], 'Talking Island gatekeeper, eight bots one after another', () => {
+    const gatekeeper = { actorId: 7006, npcSelfId: 7006, name: 'Gatekeeper', town: 'Talking Island',
+        locX: -84108, locY: 244604, locZ: -3729, head: 0 };
+    gatekeeper.locZ = GeodataEngine.getHeight(gatekeeper.locX, gatekeeper.locY, gatekeeper.locZ);
+    const standing = [];
+    const sessionsNear = World.actorSessionsNear;
+    World.actorSessionsNear = () => standing.map(actor => ({ actor }));
+    try {
+        const bots = [];
+        for (let i = 0; i < 8; i++) {
+            const angle = (i - 3.5) * Math.PI / 60;
+            const x = Math.round(gatekeeper.locX + Math.cos(angle) * 600), y = Math.round(gatekeeper.locY + Math.sin(angle) * 600);
+            const bot = identifiedBotAt(2000510 + i, x, y, GeodataEngine.getHeight(x, y, gatekeeper.locZ));
+            const session = {};
+            const options = { bodiesNear: TownNpcBodies.seenBy(bot) };
+            let approach = TownNpcApproach.planOpen(session, bot, gatekeeper, 'town_gatekeeper', options);
+            Object.assign(bot, approach.destination);
+            approach = TownNpcApproach.planOpen(session, bot, gatekeeper, 'town_gatekeeper', options);
+            Object.assign(bot, approach.destination);
+            standing.push(bot);
+            bots.push({ bot, session, options });
+        }
+        for (let i = 0; i < bots.length; i++) {
+            assert(TownNpcApproach.planOpen(bots[i].session, bots[i].bot, gatekeeper, 'town_gatekeeper', bots[i].options).ready,
+                `bot ${i} talks to the gatekeeper from where it stands`);
+            for (let j = i + 1; j < bots.length; j++) assert(distance2d(bots[i].bot, bots[j].bot) >= 16,
+                `bots ${i} and ${j} stand on one point at the gatekeeper`);
+        }
+    } finally { World.actorSessionsNear = sessionsNear; }
+});
+
+verifyGeodataWhenAvailable(GeodataEngine, [[20, 22]], 'Dion side front point, service without the bot own point', () => {
+    const npc = { npcSelfId: 7060, locX: 17999, locY: 144484, locZ: -3046, head: 6000 };
+    const front = TownNpcApproach.pointsFor(npc).front;
+    const bot = identifiedBotAt(1, 18088, 144536, -3048);
+    assert(front.some(place => distance2d(bot, place) <= TownNpcApproach.INTERACTION_ARRIVAL_RADIUS),
+        'the bot stands on a side place of the counter front');
+    assert(TownNpcApproach.canInteract(bot, npc), 'a service at a side place is not refused');
 });
 
 const firstOpenSession = {};

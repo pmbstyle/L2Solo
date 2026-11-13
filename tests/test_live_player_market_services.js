@@ -51,7 +51,8 @@ let crafter;
     const tickRestores = restores.length;
     stub(invoke('GameServer/Bot/Economy/BotImprovementService'), 'chosen', () => null);
     stub(invoke('GameServer/Bot/Economy/WishProviders'), 'personalCraftPlan', () => null);
-    stub(invoke('GameServer/Bot/AI/TownNpcApproach'), 'plan', () => ({ waiting: true }));
+    stub(invoke('GameServer/Bot/AI/TownNpcApproach'), 'plan', () => ({ ready: false }));
+    stub(invoke('GameServer/Bot/AI/CompanionNavigationRecovery'), 'move', () => ({ status: 'started' }));
     const selectCounter = () => {
         seller.shoppingTarget = undefined;
         seller.shoppingLiveBuyerChecked = undefined;
