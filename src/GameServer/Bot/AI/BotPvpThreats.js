@@ -103,13 +103,18 @@ function record(victim, source, now = Date.now()) {
 function context(session, now = Date.now()) {
     const party = members(session);
     const nearby = party.filter(member => distance(member.actor, session.actor) <= PARTY_RADIUS);
-    const partyIds = new Set(party.map(member => id(member.actor)));
+    const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
+    const commander = Commands.commanderFor(session.partyCompanion ? session.followPlayerSession : session);
+    const combatParty = commander?.commandParties?.size ? Commands.combatSessions(commander) : party;
+    const combatNearby = combatParty.filter(member => distance(member.actor, session.actor) <= PARTY_RADIUS);
+    const partyIds = new Set(combatParty.map(member => id(member.actor)));
     const found = new Map();
-    for (const member of nearby) {
+    for (const member of combatNearby) {
         for (const [attackerId, entry] of member.pvpAggressors || []) {
             const attacker = index().actor(attackerId);
-            if (!alive(attacker) || partyIds.has(attackerId) || inPeace(attacker) ||
-                now - entry.at > MEMORY_MS || !nearby.some(ally => distance(ally.actor, attacker) <= PARTY_RADIUS)) {
+            if (!alive(attacker) || partyIds.has(attackerId) || inPeace(attacker)
+                || invoke('GameServer/Bot/AI/PartyAwareness').isCombatAlly(session, attacker) ||
+                now - entry.at > MEMORY_MS || !combatNearby.some(ally => distance(ally.actor, attacker) <= PARTY_RADIUS)) {
                 member.pvpAggressors.delete(attackerId);
                 continue;
             }

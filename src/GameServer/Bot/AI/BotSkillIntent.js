@@ -41,6 +41,7 @@ function equivalentActive(target, skill) {
 }
 
 function debuffUseful(actor, target, skill, { primary = false, fleeing = false } = {}) {
+    if (actor.session && !invoke('GameServer/Bot/AI/HotPartyCastTracker').mayCast(actor.session, target, skill)) return false;
     if (!alive(target) || !inRange(actor,target,skill)) return false;
     if (invoke('GameServer/Bot/AI/BotActionFeedback').blocked(actor,target,skill)) return false;
     const semantic = skill.fetchSemantic?.() || {};

@@ -111,6 +111,9 @@ class Attack {
     }
 
     meleeHit(session, creature) {
+        if (!invoke('GameServer/Bot/AI/ClanCommandParty').canAttack(session, creature)) return;
+        const commandScope = HotPartyCastTracker.scopeFor(session);
+        if (session?.partyCompanion && commandScope && HotPartyCastTracker.protectedControl(commandScope, creature)) return;
         if (session?.pvpHandoffPending) return;
         const actor = session.actor;
         const raidParty = invoke('GameServer/Clan/ClanRaidRoster').offensiveParty(session);
@@ -242,6 +245,7 @@ class Attack {
 
             hits.forEach((entry, index) => {
                 const target = entry.target;
+                if (!this.commandImpactAllowed(session, actor, target)) return;
                 if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
                 if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
                 // A target that stepped away still takes a started swing or a
@@ -323,6 +327,7 @@ class Attack {
             return;
         }
         if (!this.validateSkillTarget(session, actor, creature, skill)) return;
+        if (!HotPartyCastTracker.mayCast(session, creature, skill)) return;
 
         if (actor.canUseSkill?.(skill) === false) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'reuse');
@@ -534,6 +539,8 @@ class Attack {
     }
 
     applyRemoteCastEffect(session, actor, target, skill, { corpseAreaCast, raidParty, shotState, magicSkill, selfEffectOnly, castWeapon, openingPayment }) {
+        if ((skill.fetchTargetKind?.() === 'enemy' || corpseAreaCast)
+            && !this.commandImpactAllowed(session, actor, target, skill)) return;
         if ((skill.fetchTargetKind?.() === 'enemy' || corpseAreaCast)
             && !invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty, openingPayment)) return;
         if (skill.fetchTargetKind?.() === 'enemy') {
@@ -1391,7 +1398,26 @@ class Attack {
         return false;
     }
 
+    commandImpactAllowed(session, actor, target, skill = null) {
+        if (this.blockedPvpDefense(session, actor, target, skill)) return false;
+        if (session?.partyCompanion && session.actor === actor) {
+            const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
+            if (!Commands.canAttack(session, target)) return false;
+            if (skill?.fetchSkillType?.() === C4SkillRules.AGGRO_DAMAGE && !Commands.canTaunt(session, target)) return false;
+            const scope = HotPartyCastTracker.scopeFor(session);
+            if (scope && (!skill || HotPartyCastTracker.isDamageSkill(skill))
+                && HotPartyCastTracker.protectedControl(scope, target)) return false;
+        }
+        return true;
+    }
+
     blockedPvpDefense(session, actor, target, skill = null) {
+        if (session?.partyCompanion && session.actor === actor && actor !== target
+            && (!skill || skill.fetchTargetKind?.() === 'enemy')
+            && invoke('GameServer/Bot/AI/PartyAwareness').isCombatAlly(session.followPlayerSession, target)) {
+            invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, actor);
+            return true;
+        }
         if (actor?.fetchOwnerId?.() && target && !target.fetchKind && actor !== target &&
             (!skill || skill.fetchTargetKind?.() === 'enemy')) {
             const owner = invoke('GameServer/Bot/AI/BotPvpThreats').character(actor);

@@ -71,7 +71,7 @@ function alliedForHeal(provider, target) {
 function support(session, bot, context, Generics, now) {
     if (bot.state?.fetchCasts?.()) return false;
     const wounded = context.members.map(member => member.actor)
-        .filter(actor => Intent.alive(actor) && ratio(actor) < PartyHeal.HEAL_BELOW && Threats.distance(bot, actor) <= 900)
+        .filter(actor => Intent.alive(actor) && ratio(actor) < PartyHeal.HEAL_BELOW)
         .sort((a, b) => ratio(a) - ratio(b));
     for (const target of wounded) {
         const nativeParty = !!session.hotBackgroundPartyId || session.partyCompanion === true
@@ -126,7 +126,8 @@ function support(session, bot, context, Generics, now) {
 
 function control(session, bot, context, primary, Generics, now, fleeing = false) {
     if (bot.state?.fetchCasts?.() || !Restrictions.canCast(bot)) return false;
-    const claims = context.owner.pvpControlClaims || (context.owner.pvpControlClaims = new Map());
+    const owner = invoke('GameServer/Bot/AI/ClanCommandParty').commanderFor(context.owner);
+    const claims = owner.pvpControlClaims || (owner.pvpControlClaims = new Map());
     for (const [key, expiry] of claims) if (expiry <= now) claims.delete(key);
     const skills = (bot.skillset?.fetchSkills?.() || bot.skillset?.skills || []).filter(skill => {
         const semantic = skill.fetchSemantic?.() || {};
@@ -159,4 +160,4 @@ function control(session, bot, context, primary, Generics, now, fleeing = false)
     return false;
 }
 
-module.exports = { usable, support, control, stop, followSummon };
+module.exports = { usable, support, control, stop, followSummon, alliedForHeal };

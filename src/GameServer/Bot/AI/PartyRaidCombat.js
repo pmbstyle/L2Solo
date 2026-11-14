@@ -136,7 +136,7 @@ function preserveControlledAdds(session, bot, raidPlan) {
 }
 
 function tick(session, bot, Generics, AI, context, now = Date.now()) {
-    const { owner, members, near = members, raidPlan, raidTank, partyId = null, playerLeader = null, combatBuffs, party } = context;
+    const { owner, supportOwner = owner, members, near = members, raidPlan, raidTank, partyId = null, playerLeader = null, combatBuffs, party, supportAnchor = raidTank } = context;
     const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
     preserveControlledAdds(session, bot, raidPlan);
     if (!Restrictions.canUseBasicAction(bot)) return true;
@@ -179,7 +179,7 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
         return true;
     }
 
-    if (!isRaidTank && combatBuffs?.(session, owner, near, Generics, now)) return true;
+    if (!isRaidTank && combatBuffs?.(session, supportOwner, near, Generics, now)) return true;
     if (!isRaidTank && session.hotRaidNeedsRebuff) {
         Tactics.stop(session, bot);
         session.currentTargetId = undefined;
@@ -244,14 +244,14 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
         if (session.currentTargetId || bot.fetchDestId?.()) bot.unselect?.();
         session.currentTargetId = undefined;
         Tactics.followSummon(session, bot);
-        if (raidTank && Threats.distance(bot, raidTank.actor) > 700 && Restrictions.canMove(bot)) {
+        if (supportAnchor && Threats.distance(bot, supportAnchor.actor) > 700 && Restrictions.canMove(bot)) {
             standForAction(session, bot);
             if (!bot.state.fetchTowards?.()) {
                 Tactics.stop(session, bot);
                 const point = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
-                bot.moveTo({ from: point(bot), to: point(raidTank.actor) });
+                bot.moveTo({ from: point(bot), to: point(supportAnchor.actor) });
             }
-            session.lastDecision = { action: 'raid_heal_approach', targetId: raidTank.actor.fetchId(), partyId, at: now };
+            session.lastDecision = { action: 'raid_heal_approach', targetId: supportAnchor.actor.fetchId(), partyId, at: now };
             return true;
         }
         // Regenerate seated only in a safe support position. Hysteresis avoids

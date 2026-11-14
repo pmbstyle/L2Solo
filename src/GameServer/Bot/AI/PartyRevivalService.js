@@ -176,6 +176,13 @@ function resurrectionSkill(actor) {
 }
 
 function combatResurrectionAllowed(leaderSession) {
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) {
+        const raid = invoke('GameServer/Bot/AI/BotRaidSafety').syncPlayerPartyRaid(group.commander);
+        const tank = raid && partySessions(group.commander).find(s => Number(s.actor.fetchId()) === Number(raid.mainTankId));
+        return raid?.phase === 'combat' && isAlive(tank)
+            && !partySessions(leaderSession).filter(isAlive).some(s => invoke('GameServer/Bot/AI/BotPvpThreats').context(s).threats.length > 0);
+    }
     if (!leaderSession?.hotBackgroundPartyId) {
         const raid = leaderSession?.partyRaidEngagement;
         if (raid?.phase !== 'combat') return false;

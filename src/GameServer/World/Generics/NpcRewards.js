@@ -32,13 +32,14 @@ function spawnGroundDrop(world, session, npc, selfId, amount) {
     // The scatter itself is ours: a 50 circle (C4: a box of 70 each way).
     const landing = GeodataEngine.straightMoveEnd(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
         Math.round(scattered.locX), Math.round(scattered.locY), npc.fetchLocZ());
-    const leaderSession = PartyCompanionService.groundLootLeader(session);
+    const lootOwner = PartyCompanionService.groundLootOwnerKey(session);
     world.spawnItem(session, selfId, amount, {
         locX: landing.locX, locY: landing.locY, locZ: landing.locZ,
         // Ground items have no native owner metadata in this runtime. Keep a
         // lightweight provenance marker so an idle party never treats another
         // group's nearby drop as its own recovery work.
-        partyLootLeaderId: Number(leaderSession?.actor?.fetchId?.() || 0)
+        partyLootLeaderId: PartyCompanionService.groundLootOwnerId(session),
+        ...(typeof lootOwner === 'string' ? { partyLootGroupKey: lootOwner } : {})
     }, (item) => {
         PartyCompanionService.queueRandomGroundPickup(session, item);
     });

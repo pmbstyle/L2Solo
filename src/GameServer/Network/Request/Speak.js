@@ -163,6 +163,8 @@ function dispatchLocalCommand(session, data) {
             .catch((error) => utils.infoWarn('AfkTrade', 'stop command failed: %s', error.message));
         return true;
     }
+    if (invoke('GameServer/Bot/AI/ClanCommandParty').handleCommand(session, data.text)) return true;
+
     if (data.text === '.leave') {
         const World = invoke('GameServer/World/World');
         World.dismissParty(session, session.actor);

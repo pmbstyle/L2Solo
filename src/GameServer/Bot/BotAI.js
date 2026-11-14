@@ -716,6 +716,20 @@ const BotAI = {
     },
 
     executeCombat(session, bot, npc, Generics, options = {}) {
+        if (npc && session?.partyCompanion
+            && invoke('GameServer/Bot/AI/PartyAwareness').isCombatAlly(session.followPlayerSession, npc)) {
+            invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, bot);
+            session.currentTargetId = undefined;
+            return false;
+        }
+        if (npc && !invoke('GameServer/Bot/AI/ClanCommandParty').canAttack(session, npc)) return false;
+        const Casts = invoke('GameServer/Bot/AI/HotPartyCastTracker');
+        const scope = Casts.scopeFor(session);
+        if (npc && scope && Casts.protectedControl(scope, npc)) {
+            invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, bot);
+            session.currentTargetId = undefined;
+            return false;
+        }
         if (!npc) {
             if (session) session.lastCombatDecision = { action: 'blocked', reason: 'target_dead_or_missing', at: Date.now() };
             return false;
@@ -884,6 +898,10 @@ const BotAI = {
         if (SummonerTactics.ownerWaits(session, bot, npc, summonAction, decision?.skill)) {
             session.lastCombatDecision = { action: 'summon_tanks', role, targetId: npc.fetchId(), at: Date.now() };
             return true;
+        }
+        if (decision && !Casts.mayCast(session, npc, decision.skill)) {
+            session.lastCombatDecision = { action: 'blocked', reason: 'party_cast_reserved', targetId: npc.fetchId(), at: Date.now() };
+            return false;
         }
         if (decision) {
             session.lastCombatDecision = {

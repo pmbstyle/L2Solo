@@ -117,9 +117,72 @@ async function main(distribution) {
         command('off');
         assert.strictEqual(bot.actor.automation.aborts, supportAborts, 'Off preserves a support cast that already owns automation');
         assert.deepStrictEqual(bot.partyGroundPickupQueue, []);
+
+        bot.actor.state.fetchCasts = () => false;
+        leader.commandParties = new Map();
+        function additionalParty(number, firstId) {
+            const members = [firstId, firstId + 1].map(id => ({ actor: actor(id), accountId: `bot_command_loot_${id}`,
+                partyCompanion: true, plan: 'following', dataSendToMe() {}, dataSendToMeAndOthers() {} }));
+            const group = { number, active: true, commander: leader, owner: members[0],
+                lootLeaderId: firstId, lootKey: `command:loot-toggle-${firstId}`, members: new Set(members) };
+            for (const member of members) {
+                member.clanCommandParty = group;
+                member.followPlayerSession = group.owner;
+            }
+            leader.commandParties.set(number, group);
+            BotManager.sessions.push(...members);
+            World.user.sessions.push(...members);
+            return group;
+        }
+        const groups = [additionalParty(1, 10), additionalParty(2, 20)];
+        assert(groups.every(group => [...group.members].every(member => !Party.canPickupLoot(member))),
+            'additional parties created while the main UI says Off inherit the disabled pickup');
+        command('on');
+        const additionalDrops = groups.map((group, index) => {
+            const drop = item(200 + index);
+            Object.assign(drop.model, { partyLootLeaderId: group.lootLeaderId, partyLootGroupKey: group.lootKey });
+            GroundItems.put(World.items, drop);
+            return drop;
+        });
+        // Exercise both a bot captain's pickup and an ordinary member's pickup.
+        groups[1].owner.actor.fetchLocX = () => 500;
+        const arrivalBase = arrivals.length, awardBase = awarded.length, animationBase = animations.length;
+        const pickers = groups.map((group, index) => Party.queueRandomGroundPickup(group.owner, additionalDrops[index]));
+        assert.strictEqual(pickers[0], groups[0].owner);
+        assert.notStrictEqual(pickers[1], groups[1].owner);
+        await flush();
+        assert.strictEqual(arrivals.length, arrivalBase + 2);
+        const pickupAborts = pickers.map(member => member.actor.automation.aborts);
+        command('off');
+        for (const group of groups) {
+            assert.strictEqual(Party.getSettings(group.owner).lootPickupEnabled, false);
+            assert.strictEqual(Party.distributionForLeader(group.owner), distribution);
+            for (const member of group.members) {
+                assert.strictEqual(Party.canPickupLoot(member), false, 'the main UI also disables the additional captain');
+                assert.deepStrictEqual(member.partyGroundPickupQueue, []);
+                assert.strictEqual(member.partyGroundPickupInProgress, false);
+            }
+        }
+        pickers.forEach((member, index) => {
+            assert.strictEqual(member.actor.automation.aborts, pickupAborts[index] + 1, 'main Off immediately cancels additional pickup runs');
+            arrivals[arrivalBase + index]();
+            assert.strictEqual(World.pickupItem(member, member.actor, additionalDrops[index]), false);
+        });
+        assert.strictEqual(awarded.length, awardBase, 'cancelled additional pickups cannot award loot');
+        assert.strictEqual(animations.length, animationBase);
+        assert(additionalDrops.every(drop => World.items.spawns.includes(drop)));
+        command('on');
+        groups.forEach(group => assert.strictEqual(Party.reconcileGroundLoot(group.owner), 1,
+            'main On resumes each additional party collecting its own drops'));
+        await flush();
+        assert.strictEqual(arrivals.length, arrivalBase + 4);
+        for (let index = 0; index < 2; index++) arrivals[arrivalBase + index]();
+        assert.strictEqual(awarded.length, awardBase, 'old additional callbacks stay invalid after main On');
+        for (let index = 2; index < 4; index++) arrivals[arrivalBase + index]();
+        assert(additionalDrops.every(drop => !World.items.spawns.includes(drop)));
     } finally { restore.reverse().forEach((fn) => fn()); }
 }
 (async () => {
     for (let distribution = 0; distribution <= 4; distribution++) await main(distribution);
-    console.log('Party loot toggle: all five distributions, real bypass, cancellation, stale callbacks, new members, re-enable and player pickup passed');
+    console.log('Party loot toggle: all five distributions, real bypass, main and additional parties, captain/member cancellation, stale callbacks, new parties, re-enable and player pickup passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -48,6 +48,11 @@ function isPartySession(session, leaderSession) {
 // first. Default keeps online, living members; includeDead keeps all of them.
 function partySessions(leaderSession, { includeDead = false } = {}) {
     if (!leaderSession) return [];
+    const group = leaderSession.clanCommandParty;
+    if (group?.active) {
+        const roster = invoke('GameServer/Bot/AI/ClanCommandParty').roster(group);
+        return includeDead ? roster : roster.filter(s => isOnlineActor(s.actor));
+    }
     if (leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion) {
         // lazy: cycle HotBackgroundParty loads PartyAwareness through its AI modules
         const roster = invoke('GameServer/Bot/AI/HotBackgroundParty').partyRoster(leaderSession);
@@ -62,8 +67,32 @@ function partySessions(leaderSession, { includeDead = false } = {}) {
     ));
 }
 
+function combatSessions(leaderSession, options = {}) {
+    return invoke('GameServer/Bot/AI/ClanCommandParty').combatSessions(leaderSession, options);
+}
+
+function combatActors(leaderSession) { return combatSessions(leaderSession).map(s => s.actor); }
+
 function partyActors(leaderSession) {
     return partySessions(leaderSession).map((session) => session.actor);
+}
+
+function isCombatAlly(leaderSession, target, targetSession = target?.session) {
+    if (!leaderSession || !target) return false;
+    if (target.fetchKind) {
+        if (!target.fetchOwnerId?.()) return false;
+        target = invoke('GameServer/Bot/AI/BotPvpThreats').character(target);
+        if (!target) return false;
+        targetSession = target.session;
+    }
+    const owner = leaderSession.partyCompanion ? leaderSession.followPlayerSession : leaderSession;
+    if (owner?.actor === target || leaderSession.actor === target) return true;
+    const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
+    if (Risk.sameClan(owner?.actor, target) || Risk.sameParty(leaderSession, targetSession)) return true;
+    if (!targetSession) return false;
+    const otherOwner = targetSession.partyCompanion ? targetSession.followPlayerSession : targetSession;
+    const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
+    return !!owner && Commands.commanderFor(owner) === Commands.commanderFor(otherOwner);
 }
 
 function isDistantQuestCourier(session, leaderSession) {
@@ -129,7 +158,7 @@ function hostilePlayer(actor) {
 // actor, not a member, targets a member, is attackable (karma or flag) and
 // stands within radius of a member. One spatial query around the leader covers
 // every member's circle; each candidate is then held to a member's radius.
-function playerTargetingMembers(members, memberIds, radius) {
+function playerTargetingMembers(members, memberIds, radius, leaderSession) {
     const center = members[0];
     let reach = 0;
     for (const member of members) {
@@ -139,7 +168,7 @@ function playerTargetingMembers(members, memberIds, radius) {
     return ActorQueries.near(world(), center, reach + radius, (session) => {
         const actor = session?.actor;
         const id = actorId(actor);
-        if (!isOnlineActor(actor) || memberIds.has(id)) return false;
+        if (!isOnlineActor(actor) || memberIds.has(id) || isCombatAlly(leaderSession, actor, session)) return false;
         if (!memberIds.has(actor.fetchDestId && actor.fetchDestId()) || !hostilePlayer(actor)) return false;
         const actorPoint = actorLoc(actor);
         return members.some((member) => distance2d(actorPoint, actorLoc(member)) <= radius);
@@ -264,10 +293,11 @@ function isControlledRaidMinion(leaderSession, npc) {
 }
 
 function findThreatTargetingParty(leaderSession, options = {}) {
+    leaderSession = invoke('GameServer/Bot/AI/ClanCommandParty').commanderFor(leaderSession);
     // Couriers defend themselves through npcThreateningActor. Their remote
     // quest fights must not send returned companions out of the camp and
     // into a repeated assist / catch-up teleport cycle.
-    const memberSessions = partySessions(leaderSession).filter(session => !isDistantQuestCourier(session, leaderSession));
+    const memberSessions = combatSessions(leaderSession).filter(session => !isDistantQuestCourier(session, leaderSession));
     const members = memberSessions.map((session) => session.actor);
     if (members.length === 0) return null;
 
@@ -317,7 +347,7 @@ function findThreatTargetingParty(leaderSession, options = {}) {
         };
     }
 
-    const playerThreatSession = playerTargetingMembers(members, memberIds, playerRadius);
+    const playerThreatSession = playerTargetingMembers(members, memberIds, playerRadius, leaderSession);
 
     if (playerThreatSession?.actor) {
         return {
@@ -331,6 +361,8 @@ function findThreatTargetingParty(leaderSession, options = {}) {
 }
 
 function projectionLeader(session) {
+    const commander = invoke('GameServer/Bot/AI/ClanCommandParty').commanderFor(session);
+    if (commander !== session) return commander;
     if (session?.partyCompanion === true && session.followPlayerSession) {
         return session.followPlayerSession;
     }
@@ -406,6 +438,7 @@ function invalidateThreatProjection(session) {
 }
 
 function leaderCombatTargetId(leaderSession, options = {}) {
+    leaderSession = invoke('GameServer/Bot/AI/ClanCommandParty').commanderFor(leaderSession);
     const leader = leaderSession?.actor;
     if (!isOnlineActor(leader)) return null;
 
@@ -428,7 +461,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
     const target = targetSession?.actor;
     if (target) {
         if (!isOnlineActor(target)) return null;
-        if (isPartySession(targetSession, leaderSession)) return null;
+        if (isCombatAlly(leaderSession, target, targetSession)) return null;
         return target.fetchKarma?.() > 0 || target.fetchPvpFlag?.() > 0 ? targetId : null;
     }
 
@@ -436,6 +469,8 @@ function leaderCombatTargetId(leaderSession, options = {}) {
 }
 
 module.exports = {
+    isCombatAlly,
+    combatSessions, combatActors,
     withinCombatHeight,
     underDirectNpcAttack,
     npcsAttackingActor,
