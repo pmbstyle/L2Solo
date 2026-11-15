@@ -15,6 +15,9 @@ const Rebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const Improvements = invoke('GameServer/Bot/Economy/BotImprovementService');
 const Chatter = invoke('GameServer/Bot/AI/TownChatter');
 const Journal = invoke('GameServer/Bot/AI/BotEventJournal');
+const Safety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const world = invoke('GameServer/World/World');
 
 let now = Date.now(), serial = 0, current, prepared = false, purchases = 0, failures = 0;
@@ -26,7 +29,7 @@ const bot = { fetchId: () => 920081, fetchName: () => 'ShopProgress', fetchClass
     fetchLevel: () => 24, fetchLocX: () => -12736, fetchLocY: () => 122816, fetchLocZ: () => -3112,
     isDead: () => false, state: { fetchTowards: () => false, inMotion: () => false },
     backpack: { fetchItemFromSelfId: () => ({ fetchAmount: () => 1000 }), fetchItems: () => [] },
-    moveTo() { this.moves++; }, moves: 0 };
+    automation: { abortAll() {} }, moveTo() { this.moves++; }, moves: 0 };
 
 Life.cachedState = () => current;
 Life.hotRow = () => ({ characterId: bot.fetchId(), phase: 'hot' });
@@ -109,7 +112,112 @@ async function run() {
         assert.equal(purchases, 1, 'meeting preparation blocks a restock retry');
         assert.equal(held.plan, 'hunting');
         assert.equal(timers.size, 0);
-        console.log('Hot shopping progress: stale custody, real custody, preparation, retry at once and farming return passed');
+
+        let raid = null;
+        Safety.syncPlayerPartyRaid = () => raid;
+        const leader = { actor: { fetchIsOnline: () => true } };
+        const companion = kind => ({ actor: bot, plan: 'shopping', partyCompanion: true,
+            followPlayerSession: leader, shoppingTarget: target, shoppingWarehouseDone: true,
+            companionShopping: { kind, target } });
+        const cancelForRaid = visit => {
+            raid = { phase: 'combat' };
+            Shopping.tick(visit, bot, null, ai);
+            assert.equal(visit.plan, 'following');
+            raid = null;
+        };
+
+        // A private improvement must not replace a companion's explicit errand.
+        let improvements = 0;
+        Improvements.chosen = () => ({ kind: 'crystallize' });
+        Improvements.stationTarget = () => ({ ...target, name: 'Smith' });
+        Improvements.reviewHot = () => { improvements++; return Promise.resolve(true); };
+        const restockVisit = companion('restock_shots');
+        Shopping.tick(restockVisit, bot, null, ai);
+        assert.equal(restockVisit.shoppingTarget, target);
+        assert.equal(improvements, 0, 'a restock errand cannot turn into a private improvement');
+
+        // An improvement started before joining a party cannot restore a solo plan
+        // after the commander's raid has taken over the actor.
+        invoke('GameServer/Bot/AI/TownNpcApproach').plan = () => ({ ready: true });
+        let finishImprovement;
+        Improvements.reviewHot = () => new Promise(resolve => { finishImprovement = resolve; });
+        const improvementVisit = { actor: bot, plan: 'shopping', shoppingWarehouseDone: true };
+        Shopping.tick(improvementVisit, bot, null, ai);
+        assert.equal(typeof finishImprovement, 'function');
+        improvementVisit.partyCompanion = true;
+        improvementVisit.followPlayerSession = leader;
+        cancelForRaid(improvementVisit);
+        finishImprovement(true);
+        await Promise.resolve();
+        assert.equal(improvementVisit.plan, 'following', 'an old improvement must not return the companion to solo hunting');
+        assert.equal(improvementVisit.shoppingTarget, undefined);
+
+        // A board transaction can finish after cancellation; it must not start the
+        // next NPC purchase or affect a later visit, even if shopping has resumed.
+        let finishBoard;
+        Shots.purchaseActorRestock = () => new Promise(resolve => { finishBoard = resolve; });
+        purchases = 0;
+        const boardVisit = companion('restock_shots');
+        Shopping.scheduleRestock(boardVisit, bot, null, ai);
+        const purchaseTimer = [...timers.entries()].find(([, timer]) => timer.at === now + 4000);
+        timers.delete(purchaseTimer[0]);
+        const boardWork = purchaseTimer[1].fn();
+        await Promise.resolve();
+        assert.equal(typeof finishBoard, 'function');
+        cancelForRaid(boardVisit);
+        boardVisit.plan = 'shopping';
+        boardVisit.companionShopping = { kind: 'restock_shots', target };
+        boardVisit.shoppingTarget = target;
+        Shopping.scheduleRestock(boardVisit, bot, null, ai);
+        const replacement = boardVisit.shoppingRestock;
+        finishBoard({ ok: true, delta: 0, cost: 0 });
+        await boardWork;
+        assert.equal(purchases, 0, 'a cancelled restock cannot issue another purchase');
+        assert.equal(boardVisit.shoppingRestock, replacement, 'the old restock cannot change the new visit');
+        cancelForRaid(boardVisit);
+        await elapse(9000);
+        assert.equal(timers.size, 0);
+
+        // An equipment purchase already in flight must not create a stale restock
+        // promise that would block the companion's next personal visit.
+        Improvements.chosen = () => null;
+        invoke('GameServer/Bot/Economy/BotAfkMarketService').freeStepBids = async () => {};
+        const offer = { sourceId: 123, price: 10, town: 'Gludio', itemName: 'Sword' };
+        Market.npcOffers = () => [offer];
+        let finishEquipment;
+        Restock.purchaseForActor = () => new Promise(resolve => { finishEquipment = resolve; });
+        const gearVisit = companion('npc_equipment_purchase');
+        Object.assign(gearVisit.companionShopping, { itemId: 1, sourceId: 123, price: 10 });
+        const gearWork = Shopping.sellAndRestock(gearVisit, bot, null, ai);
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.equal(typeof finishEquipment, 'function');
+        cancelForRaid(gearVisit);
+        finishEquipment({ ok: false, receipts: [] });
+        await gearWork;
+        assert.equal(gearVisit.shoppingRestock, undefined);
+        assert.equal(timers.size, 0, 'a cancelled equipment errand cannot schedule another town task');
+        Shopping.scheduleRestock(gearVisit, bot, null, ai);
+        assert.equal(timers.size, 0, 'a following companion cannot start a personal restock');
+
+        // A late warehouse receipt cannot clear the target or phase of a new visit.
+        let finishWarehouse;
+        Warehouse.depositActorAtWarehouse = () => new Promise(resolve => { finishWarehouse = resolve; });
+        const warehouseVisit = companion('sell_junk');
+        warehouseVisit.shoppingServicePhase = 'warehouse';
+        const warehouseWork = Shopping.depositAtWarehouse(warehouseVisit, bot, null, ai, target);
+        cancelForRaid(warehouseVisit);
+        const nextTarget = { ...target, name: 'New merchant' };
+        warehouseVisit.plan = 'shopping';
+        warehouseVisit.companionShopping = { kind: 'restock_shots', target: nextTarget };
+        warehouseVisit.shoppingTarget = nextTarget;
+        warehouseVisit.shoppingServicePhase = 'merchant';
+        finishWarehouse({ count: 0, items: [] });
+        await warehouseWork;
+        assert.equal(warehouseVisit.shoppingTarget, nextTarget);
+        assert.equal(warehouseVisit.shoppingServicePhase, 'merchant');
+        assert.equal(warehouseVisit.shoppingWarehouseDone, undefined);
+        console.log('Hot shopping progress: custody, retries, raid cancellation and late shopping receipts passed');
     } finally {
         Date.now = original.now;
         global.setTimeout = original.setTimeout;

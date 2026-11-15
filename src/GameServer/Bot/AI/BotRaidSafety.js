@@ -180,7 +180,8 @@ function currentCombatTargetId(actor) {
 }
 
 function raidHasPartyCombat(leaderSession, raid) {
-    const sessions = playerPartySessions(leaderSession).filter(session => session.actor.fetchIsOnline?.() === true
+    const sessions = invoke('GameServer/Bot/AI/ClanCommandParty').combatSessions(leaderSession, { includeDead: true })
+        .filter(session => session.actor.fetchIsOnline?.() === true
         && !session.actor.isDead?.() && !session.actor.state?.fetchDead?.());
     const memberIds = new Set(sessions.map((session) => objectId(session.actor)).filter(Boolean));
     if (memberIds.size === 0) return false;

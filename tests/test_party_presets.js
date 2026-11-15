@@ -6,6 +6,7 @@ require('./helpers/databaseIsolation');
 require('../src/Global');
 fixture.assertConfigured(options.default);
 const DB = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+const markHot = Life.markHot;
 const Manager = invoke('GameServer/Bot/BotManager'), World = invoke('GameServer/World/World');
 const Party = invoke('GameServer/Bot/AI/PartyCompanionService'), Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
@@ -33,6 +34,7 @@ async function seed(id) {
 function actor(id) {
     const value = { name:`Char${id}`, online:true, dead:false, fetchId:()=>id, fetchName:()=>value.name,
         fetchClanId:()=>77, fetchIsOnline:()=>value.online, fetchClassId:()=>0, fetchLevel:()=>20,
+        fetchExp:()=>0, fetchSp:()=>0,
         fetchLocX:()=>10, fetchLocY:()=>20, fetchLocZ:()=>30, fetchHead:()=>0,
         fetchHp:()=>100, fetchMaxHp:()=>100, setHp() {}, fetchMp:()=>100, fetchMaxMp:()=>100, setMp() {},
         fetchCp:()=>100, fetchMaxCp:()=>100, isDead:()=>value.dead, refreshVitalsRegeneration() {}, moveTo() {}, unselect() {},
@@ -115,11 +117,37 @@ async function main() {
     player = session(9001);
     registerSessions([player,other,...Manager.sessions]);
     Party.updateSettings(player,{lootPickupEnabled:false});
+    const reportStart = messages.length;
     let result = await command(player,'.partyrestore');
     assert(result.complete);
     assert.deepEqual(sorted(Party.membersForLeader(player)),mainIds);
     assert.deepEqual(activeGroups(player).map(group=>sorted(Commands.roster(group))),extraIds);
     assert(activeGroups(player).every(group=>Party.getSettings(group.owner).lootPickupEnabled===false),'restore preserves the main loot policy');
+    for (const group of activeGroups(player)) assert(messages.slice(reportStart).includes(
+        `Additional party ${group.number}: ${Commands.roster(group).length}/${Commands.roster(group).length}.`),
+    'restore reports the actual command-party number after previous groups were dismissed');
+
+    // Spawned/released companions explicitly clear craft snapshots to null.
+    // Exercise their real hot checkpoint rather than the fixture's shortcut.
+    const returningIds = new Set([207,208,302]);
+    for (const id of returningIds) {
+        const target = Manager.findSessionById(id);
+        const owner = target.followPlayerSession;
+        Party.detach(owner,target,{rebuildWindow:false,refreshPanel:false});
+        target.coldCraftState = null;
+        target.coldMarketState = null;
+    }
+    const fixtureMarkHot = Life.markHot;
+    patch(Life,'markHot',function(target,...args) {
+        return (returningIds.has(target.actor.fetchId()) ? markHot : fixtureMarkHot).call(this,target,...args);
+    });
+    result = await command(player,'.partyrestore');
+    assert(result.complete,'two main-party members and one additional-party member with null craft snapshots rejoin');
+    assert.deepEqual(result.unavailable,[]);
+    assert.deepEqual(sorted(Party.membersForLeader(player)),mainIds);
+    assert.deepEqual(activeGroups(player).map(group=>sorted(Commands.roster(group))),extraIds);
+    restores.pop()();
+
     const calls = invitationNames.length, spawnCount = spawns;
     assert((await command(player,'.partyrestore')).complete);
     assert.equal(invitationNames.length,calls,'repeat restore makes no duplicate native invitations');
@@ -150,6 +178,18 @@ async function main() {
     restores.pop()();
     assert((await command(player,'.partyrestore')).complete,'a repeated restore retries only missing members');
 
+    Commands.handleCommand(player,`.leader-p${first.number} Char302`);
+    Commands.handleCommand(player,`.kick-p${first.number} Char301`);
+    const beforeCaptainRefusal = World.inviteBotByName;
+    patch(World,'inviteBotByName',function(...args) { return args[2]==='Char301'?Promise.resolve(false):beforeCaptainRefusal.apply(this,args); });
+    const captainReportStart = messages.length;
+    result = await command(player,'.partyrestore');
+    assert.equal(result.complete,false);
+    assert.equal(result.additional.find(group=>group.leaderId===301).count,8,'an unavailable saved captain leaves the eight current members counted');
+    assert(messages.slice(captainReportStart).includes(`Additional party ${first.number}: 8/9.`));
+    restores.pop()();
+    assert((await command(player,'.partyrestore')).complete);
+
     Commands.dismiss(activeGroups(player).find(group=>group.owner.actor.fetchId()===501));
     const beforeLeaderRefusal = World.inviteBotByName;
     patch(World,'inviteBotByName',function(...args) { return args[2]==='Char501'?Promise.resolve(false):beforeLeaderRefusal.apply(this,args); });
@@ -157,6 +197,7 @@ async function main() {
     assert.equal(result.complete,false);
     assert(result.unavailable.some(member=>member.id===501&&member.reason==='leader_unavailable'));
     assert.equal(activeGroups(player).length,2,'an unavailable captain does not dissolve the other restored parties');
+    assert(messages.includes('Additional party (Char501): 0/1.'),'an uncreated party is identified by its saved captain without inventing a command number');
     restores.pop()();
     assert((await command(player,'.partyrestore')).complete,'a missing captain and its party can be retried later');
 

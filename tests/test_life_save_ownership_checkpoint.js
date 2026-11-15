@@ -42,7 +42,7 @@ async function run() {
         backpack: { fetchItems: () => [], fetchItemFromSelfId: () => null } },
     { get: (target, key) => key in target ? target[key]
         : typeof key === 'string' && key.startsWith('fetch') ? () => 0 : undefined });
-    const session = { actor, accountId: 'bot_save_ownership', coldLifeState: initial };
+    const session = { actor, accountId: 'bot_save_ownership', coldLifeState: initial, coldCraftState: null };
     assert.equal((await Life.markHot(session, 'retained_hot')).simulation.revision, await rowRevision());
     saved = await Life.markCold(session, 'retained_cooldown');
     assert.equal(saved.phase, 'cold');

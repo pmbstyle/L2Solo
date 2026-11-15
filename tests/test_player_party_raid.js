@@ -772,6 +772,52 @@ try {
         assert.equal(p.extra.lastDecision.action, 'raid_retreat_tank_lost');
         assert.equal(p.group.active, true);
     }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        f.tick(f.damage);
+        f.owner.actor.destId = null;
+        f.damage.actor.hitting = false;
+        f.boss.destId = p.extra.actor.fetchId();
+        f.owner.actor.fetchClanId = () => 77;
+        patch(invoke('GameServer/Clan/ClanService'), 'findById', id => id === 77 ? { leaderId: f.owner.actor.fetchId() } : null);
+        assert.equal(Safety.raidHasPartyCombat(f.owner, f.owner.partyRaidEngagement), true,
+            'a boss attacking an additional party keeps the shared raid active');
+        const later = Date.now() + 20000;
+        assert.equal(Safety.syncPlayerPartyRaid(f.owner, later)?.phase, 'combat',
+            'the raid must not expire while only the additional party is fighting');
+        f.boss.destId = null;
+        p.mage.actor.hitting = true;
+        p.mage.actor.actionTarget = f.add.fetchId();
+        assert.equal(Safety.raidHasPartyCombat(f.owner, f.owner.partyRaidEngagement), true,
+            'additional-party attacks on raid minions are also shared combat');
+
+        const Travel = invoke('GameServer/Bot/AI/BotTownTravel');
+        assert.equal(Travel.hasCombatThreat(p.extra, p.extra.actor), true,
+            'a quiet captain cannot leave while the shared raid is active');
+        assert.equal(Travel.request(p.extra, p.extra.actor, f.ai, 'Sell loot.', { allowCompanion: true }), 'deferred');
+        assert.equal(p.extra.plan, 'following');
+
+        // A town errand queued before the pull must yield even while its
+        // shop callback is waiting. Its old timer cannot reclaim the bot.
+        const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
+        p.extra.plan = 'shopping';
+        p.extra.companionShopping = { kind: 'sell_junk' };
+        p.extra.shoppingTarget = { town: 'Giran' };
+        p.extra.shoppingDoneAnnounced = true;
+        p.extra.shoppingRestock = Promise.resolve();
+        p.extra.resumeAfterShopping = { plan: 'following', followPlayerSession: p.extra };
+        p.extra.townEscape = { token: Symbol('queued-town-escape') };
+        p.extra.actor.casting = true;
+        Shopping.tick(p.extra, p.extra.actor, f.generics, f.ai);
+        assert.equal(p.extra.plan, 'following', 'raid combat preempts an already queued captain shopping visit');
+        assert.equal(p.extra.townEscape, undefined, 'the delayed escape cannot teleport the captain out of the raid');
+        assert.equal(p.extra.actor.casting, false, 'cancelling an escape releases its cast flag');
+        assert.equal(p.extra.shoppingRestock, undefined, 'a stale restock callback loses its ownership token');
+        assert.equal(p.extra.companionShopping, undefined);
+        assert.equal(p.extra.followPlayerSession, p.extra, 'the captain keeps its local party membership');
+        assert.equal(p.group.members.size, 3);
+    }
     console.log('Player party raid opening, shared tactics, healer stance, sleep, rescue, retreat and teleport checks passed');
 } finally {
     for (const restore of restores.reverse()) restore();

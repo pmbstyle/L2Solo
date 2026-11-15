@@ -182,6 +182,7 @@ async function run() {
     const session = {
         accountId: 'bot_hot_shop_probe',
         actor: bot,
+        plan: 'shopping',
         partyCompanion: true,
         coldLifeState: {
             characterId: bot.fetchId(),
