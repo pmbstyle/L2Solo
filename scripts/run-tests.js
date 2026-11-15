@@ -7,6 +7,8 @@ const path = require('node:path');
 const notRunTests = new Map([]);
 
 const tests = [
+    'tests/test_character_entry_recovery.js',
+    'tests/test_character_relogin.js',
     'tests/test_clan_leader_party_invite.js',
     'tests/test_clan_command_parties.js',
     'tests/test_party_presets.js',

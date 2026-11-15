@@ -229,6 +229,17 @@ class Session {
         this.questStates = new Map();
         this.questStatesLoaded = false;
         this.activeNpcTalk = null;
+        if (this.pvpFlagTimer) clearTimeout(this.pvpFlagTimer);
+        this.pvpFlagTimer = undefined;
+        this.pvpFlagUntil = 0;
+        this.hennas = [null, null, null];
+        this.knownNpcIds?.clear();
+        this.knownCharacterActors?.clear();
+        this.worldEntryActor = null;
+        this.characterHall = false;
+        this.characterLeaving = false;
+        this.characterId = properties.id;
+        this.characterName = properties.name;
         this.actor = new Actor(this, properties);
         World.updateUserLocation(this, this.actor);
     }
@@ -250,10 +261,14 @@ class Session {
     dataReceive(data) {
         const packet = Frame.body(data);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) this.tracePacket('in', packet, packetName(CLIENT_PACKET_NAMES, packetOpcode(packet)));
+        if (this.characterLeaving) return;
+        // World packets left in flight by the old scene cannot act on a
+        // retired character while the connection displays character selection.
+        if (this.characterHall && ![0x00, 0x08, 0x09, 0x0b, 0x0c, 0x0d, 0x0e].includes(packet[0])) return;
         if (this.enterWorldReady) {
             const actor = this.actor;
             return this.enterWorldReady.then(() => {
-                if (this.actor === actor) return Opcodes.table[packet[0]](this, packet);
+                if (this.actor === actor && !this.characterLeaving) return Opcodes.table[packet[0]](this, packet);
             }).catch(error => utils.infoWarn('Character', 'login packet deferred: %s', error.message));
         }
         return Opcodes.table[packet[0]](this, packet);

@@ -63,6 +63,9 @@ function release(order) {
             assert.deepStrictEqual(session.selected, [2], 'the selected character becomes the actor');
             assert.deepStrictEqual(session.sent, [{ packet: 'CharSelected', id: 2 }], 'the client is told once');
             assert.strictEqual(session.actor.name, 'Second');
+            await charSelected(session, slot(0));
+            assert.equal(reads.length, 0, 'a duplicate selection cannot start another load while an actor is attached');
+            assert.deepStrictEqual(session.selected, [2]);
         }
 
         {

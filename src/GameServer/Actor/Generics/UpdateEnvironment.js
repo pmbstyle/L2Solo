@@ -22,9 +22,14 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
         require('../../World/GardenOfEvaDoors').sync(session, actor, true);
         invoke('GameServer/AfkTrade/AfkTradeService').refreshVisibility(session, actor);
         const sourceIsBot = isBotSession(session);
+        const teleportSequence = actor.teleportSequence;
         // A bot's session discards packets (BotSession.dataSendToMe): no NpcInfo or timer for it.
         if (!sourceIsBot) npcs.forEach((npc) => {
-            const sendNpcInfo = () => session.dataSendToMe(ServerResponse.npcInfo(npc));
+            const sendNpcInfo = () => {
+                if (session.actor !== actor || session.characterLeaving || session.socket?.destroyed
+                    || actor.fetchIsOnline?.() === false || actor.teleportSequence !== teleportSequence) return;
+                session.dataSendToMe(ServerResponse.npcInfo(npc));
+            };
             if (immediateNpcInfo) {
                 sendNpcInfo();
             } else {
