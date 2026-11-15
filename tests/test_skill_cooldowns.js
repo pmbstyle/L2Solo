@@ -73,6 +73,8 @@ const dir = fixture.directory;
                     events.push('reset-ui');
                 } },
                 'GameServer/World/ArenaDuelService': { release() {} },
+                'GameServer/Bot/BotTradeService': { cleanup() {} },
+                'GameServer/Bot/AI/PartyCompanionService': { detachAll() {} },
                 'GameServer/World/World': { retireUserActor(session, currentActor) {
                     assert.strictEqual(currentActor, session.actor);
                     events.push('retire');

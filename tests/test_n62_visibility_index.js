@@ -83,6 +83,7 @@ function deathCleanupFor(actor) {
 
 async function terminalRequest(request) {
     const player = sessionAt(origin);
+    const previousActor = player.actor;
     deathCleanupFor(player.actor);
     player.persistCharacterStatus = () => Promise.reject(new Error('fixture_persist_failed'));
     await assert.rejects(request(player), /fixture_persist_failed/);
@@ -98,8 +99,8 @@ async function terminalRequest(request) {
         release();
         await pending;
         expectNear(origin, 9000, []);
-        player.actor.setLocXYZ(origin);
-        player.actor.setIsOnline(true);
+        previousActor.setLocXYZ(origin);
+        previousActor.setIsOnline(true);
         expectNear(origin, 9000, []);
     } finally { release(); Shared.fetchCharacters = fetchCharacters; }
 }

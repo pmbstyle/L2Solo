@@ -9,6 +9,8 @@ function mark(session, actor, durationMs = PvpRules.FLAG_MS, until = Date.now() 
     if (session.pvpFlagTimer) clearTimeout(session.pvpFlagTimer);
     session.pvpFlagUntil = until;
     session.pvpFlagTimer = setTimeout(() => {
+        if (session.actor !== actor || session.characterLeaving || session.socket?.destroyed
+            || actor.fetchIsOnline?.() === false) return;
         actor.setPvpFlag(0);
         session.dataSendToMe(Response.userInfo(actor));
         session.dataSendToOthers(Response.charInfo(actor), actor);

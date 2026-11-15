@@ -182,7 +182,9 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
         const ShotStock = invoke('GameServer/Inventory/ShotStock');
         const HennaService = invoke('GameServer/Henna/HennaService');
         const Database = invoke('Database');
-        const saved = [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts];
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const saved = [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts, ServerResponse.userInfo];
+        ServerResponse.userInfo = () => Buffer.from([0x04]);
         HennaService.restore = () => Promise.resolve();
         Database.fetchMacros = () => Promise.resolve([]);
         Database.fetchShortcuts = () => Promise.resolve([]);
@@ -202,7 +204,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
             assert.strictEqual(socket.destroyed, false, 'a failed world entry is logged and keeps the connection');
         } finally {
-            [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts] = saved;
+            [HennaService.restore, Database.fetchMacros, Database.fetchShortcuts, ServerResponse.userInfo] = saved;
         }
     }
 

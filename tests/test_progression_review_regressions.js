@@ -39,7 +39,8 @@ function load(file, dependencies, extra = '', globals = {}) {
         'GameServer/Recommendations/Runtime': { refresh: async () => {} }
     });
     let online = false;
-    const entry = entering({}, { setIsOnline() { online = true; throw new Error('online-after-load'); } });
+    const enteringActor = { setIsOnline() { online = true; throw new Error('online-after-load'); } };
+    const entry = entering({ actor: enteringActor }, enteringActor);
     assert.equal(online, false);
     finishLoad();
     await assert.rejects(entry, /online-after-load/);

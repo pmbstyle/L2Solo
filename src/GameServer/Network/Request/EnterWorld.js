@@ -13,31 +13,45 @@ function sendClanWindow(session) {
 }
 
 function enterWorld(session, buffer) {
+    const actor = session.actor;
+    if (!actor || session.characterLeaving || session.worldEntryActor === actor) return;
+    session.worldEntryActor = actor;
+    let failed = false;
+    const current = () => !failed && session.actor === actor && !session.characterLeaving && !session.socket?.destroyed;
     const continueEnter = async () => {
-        session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
-        invoke('GameServer/Henna/HennaService').restore(session)
+        if (!current()) return;
+        // C4 establishes the local player before inventory, skills or nearby
+        // objects. This is especially important after the client clears a scene.
+        session.dataSendToMe(ServerResponse.userInfo(actor));
+        session.dataSendToMe(ServerResponse.itemsList(actor.backpack.fetchItems()));
+        await invoke('GameServer/Henna/HennaService').restore(session, { recalculateStats: false })
             .catch((error) => utils.infoWarn('Henna', 'henna login restore failed: %s', error.message));
-        const shortcutsReady = Database.fetchMacros(session.actor.fetchId()).then((macros) => {
+        if (!current()) return;
+        const shortcutsReady = Database.fetchMacros(actor.fetchId()).then((macros) => {
+            if (!current()) return [];
             const revision = (session.macroRevision || 0) + 1;
             session.macroRevision = revision;
             ServerResponse.macroList(macros, revision).forEach((packet) => session.dataSendToMe(packet));
-            return Database.fetchShortcuts(session.actor.fetchId());
+            return Database.fetchShortcuts(actor.fetchId());
         });
 
-        const skillsReady = session.actor.enterWorld();
+        const skillsReady = actor.enterWorld();
         // Slot rows can arrive before the asynchronous skillbook load finishes.
         // Wait for both, otherwise every unresolved skill is sent as level one.
         Promise.all([shortcutsReady, skillsReady]).then(([shortcuts]) => {
-            session.dataSendToMe(ServerResponse.shortcutInit(shortcuts, session.actor.skillset));
-            session.dataSendToMe(ServerResponse.skillCoolTime(session.actor));
+            if (!current()) return;
+            session.dataSendToMe(ServerResponse.shortcutInit(shortcuts, actor.skillset));
+            session.dataSendToMe(ServerResponse.skillCoolTime(actor));
         }).catch(error => utils.infoWarn('Character', 'shortcut login initialization failed: %s', error.message));
         await skillsReady;
+        if (!current()) return;
+        // The C4 client can retain its old party window across a restart.
+        session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
         session.dataSendToMe(GameTime.isNight() ? ServerResponse.sunset() : ServerResponse.sunrise());
         sendClanWindow(session);
-        const questActor = session.actor;
         const quests = invoke('GameServer/Quest/QuestService');
         quests.ensureLoaded(session).then(() => {
-            if (session.actor === questActor)
+            if (current())
                 session.dataSendToMe(ServerResponse.questList(quests.active(session)));
         }).catch(error => utils.infoWarn('Quest', 'login load failed: %s', error.message));
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
@@ -55,7 +69,13 @@ function enterWorld(session, buffer) {
     // A player's shots are the starter stock of a new character (CreateNewChar.awardBaseShots); a
     // login does not top them up.
     const ready = Promise.resolve().then(continueEnter);
-    const tracked = ready.finally(() => {
+    const tracked = ready.catch(error => {
+        // Late reads belong to this failed attempt, even if the same actor
+        // retries. Only its own pending entry may release the actor gate.
+        failed = true;
+        if (session.enterWorldReady === tracked && session.worldEntryActor === actor) session.worldEntryActor = null;
+        throw error;
+    }).finally(() => {
         if (session.enterWorldReady === tracked) session.enterWorldReady = null;
     });
     session.enterWorldReady = tracked;

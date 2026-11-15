@@ -1,5 +1,6 @@
 const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
+const GameTime = invoke('GameServer/World/GameTime');
 
 function charSelected(actor) {
     const packet = new SendPacket(0x15);
@@ -38,7 +39,15 @@ function charSelected(actor) {
     }
 
     packet
-        .writeD(0x00); // Game time
+        .writeD(0x00)
+        .writeD(0x00)
+        .writeD(GameTime.gameMinute())
+        .writeD(0x00)
+        .writeD(actor.fetchClassId());
+
+    // C4 CharSelected ends with twelve more reserved integers. The client
+    // reads these even on a second login over the same connection.
+    for (let i = 0; i < 12; i++) packet.writeD(0x00);
 
     return packet.fetchBuffer();
 }
