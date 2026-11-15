@@ -84,6 +84,12 @@ CREATE INDEX IF NOT EXISTS characters_clan_level_id ON characters(clanId, level 
 -- The observer lists the persisted PKs on every world poll: only these rows are indexed.
 CREATE INDEX IF NOT EXISTS characters_karma_positive ON characters(karma) WHERE karma > 0;
 
+CREATE TABLE IF NOT EXISTS character_party_presets (
+    characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    rosterJson TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS character_death_experience (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     deathSequence INTEGER NOT NULL DEFAULT 1,

@@ -2133,6 +2133,13 @@ function applySchemaMigrations() {
         // where it is used (NeedsEvaluator): no saved copy, its rows are not migrated.
         ['drop-bot-goal-state', () => connection.exec(`
             DROP TABLE IF EXISTS bot_goal_state;
+        `)],
+        ['character-party-presets', () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS character_party_presets (
+                characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+                rosterJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
         `)]
     ];
     const migrate = (apply, record) => {
@@ -8203,6 +8210,14 @@ const Database = {
         });
     },
 
+    fetchPartyPreset(characterId) {
+        return selectOne('character_party_presets', ['*'], 'characterId = ?', [characterId], 'party-preset:load');
+    },
+    savePartyPreset(characterId, roster) {
+        return run(`INSERT INTO character_party_presets(characterId, rosterJson, updatedAt) VALUES (?, ?, ?)
+            ON CONFLICT(characterId) DO UPDATE SET rosterJson = excluded.rosterJson, updatedAt = excluded.updatedAt`,
+        [characterId, JSON.stringify(roster), now()], 'party-preset:save');
+    },
     fetchSavedLocations(characterId) {
         return run('SELECT * FROM character_saved_locations WHERE characterId = ? ORDER BY id DESC', [characterId], 'saved-location:list');
     },

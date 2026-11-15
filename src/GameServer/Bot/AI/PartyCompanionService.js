@@ -905,6 +905,9 @@ function renderPanel(leaderSession) {
 }
 
 function refreshLeaderView(leaderSession, options = {}) {
+    if (leaderSession?.partyPresetOperation && !membersForLeader(leaderSession).length) {
+        invoke('GameServer/Bot/AI/PlayerPartyPreset').cancel(leaderSession);
+    }
     if (leaderSession?.commandParties?.size && !membersForLeader(leaderSession).length) {
         invoke('GameServer/Bot/AI/ClanCommandParty').dismissAll(leaderSession);
     }
@@ -1348,6 +1351,7 @@ const PartyCompanionService = {
     },
 
     detachAll(leaderSession, options = {}) {
+        if (leaderSession?.partyPresetOperation) invoke('GameServer/Bot/AI/PlayerPartyPreset').cancel(leaderSession);
         invoke('GameServer/Bot/AI/ClanCommandParty').dismissAll(leaderSession);
         const members = membersForLeader(leaderSession);
         const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');

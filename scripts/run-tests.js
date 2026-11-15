@@ -9,6 +9,7 @@ const notRunTests = new Map([]);
 const tests = [
     'tests/test_clan_leader_party_invite.js',
     'tests/test_clan_command_parties.js',
+    'tests/test_party_presets.js',
     'tests/test_command_party_casts.js',
     'tests/test_command_party_allies.js',
     'tests/test_bot_buy_shop_free_wallet.js',

@@ -18,11 +18,29 @@ special two-party limit.
 | `.main hold`, `.main follow`, `.main regroup` | Address the main party |
 | `.all hold`, `.all follow`, `.all regroup` | Address the entire command |
 | `.parties` | List additional parties and their members |
+| `.partysave` | Save the main party and every additional party for this character |
+| `.partyrestore` | Assemble the saved main party and all additional parties |
 
 Use the same commands with p2, p3, and subsequent numbers. Recruiting a bot already
 in the player's main party requires removing it from that party first. Clan
 recruitment uses the existing activity handoff and activation path, including
 capacity reservations and cancellation when the commander leaves.
+
+## Saved composition
+
+A clan leader can use `.partysave` to replace their saved composition. It stores
+the main party's bot members, every additional party's members and designated
+leader in SQLite. The save survives logout and server restarts. Character IDs
+are stored, so renamed bots are restored by their current names.
+
+`.partyrestore` works when the player is alone too. It assembles the main party
+first, then the additional parties through the usual recruitment path. Existing
+members are skipped, and restored groups keep their current party numbers.
+If a member is unavailable, the others still assemble; the command reports the
+missing names and can be repeated to retry them. Existing parties that conflict
+with the saved member assignments must be adjusted first. Restore does not
+dismiss unrelated additional parties or change loot settings and movement
+orders. Leaving the main party or disconnecting cancels an unfinished restore.
 
 ## Combat and support
 
