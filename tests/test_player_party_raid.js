@@ -87,6 +87,17 @@ function fixture(playerClass = 12) {
     const tick = (s, now = Date.now()) => Raid.tick(s, s.actor, generics, ai, now);
     return { owner, tank, damage, healer, boss, add, second, field, sessions, attacks, casts, generics, ai, tick };
 }
+function commandParty(f) {
+    const extra = session(actor(21, 5));
+    const mage = session(actor(22, 12), extra);
+    const healer = session(actor(23, 15), extra);
+    Object.assign(extra, { partyCompanion: true, followPlayerSession: extra });
+    const group = { active: true, number: 1, commander: f.owner, commanderActor: f.owner.actor,
+        owner: extra, leaderAssigned: true, movement: 'follow', members: new Set([extra, mage, healer]) };
+    f.owner.commandParties = new Map([[1, group]]);
+    for (const member of group.members) { member.clanCommandParty = group; f.sessions.push(insertSession(member)); Manager.sessions.push(member); }
+    return { group, extra, mage, healer };
+}
 try {
     patch(World, 'user', {}); patch(World, 'npc', {}); patch(World, 'fetchNpcsInRadius', () => []);
     patch(Manager, 'sessions', []);
@@ -572,6 +583,194 @@ try {
             assert.equal(f.tank.pendingActorTeleport, undefined);
             assert.equal(f.tank.actor.x, 300);
         } finally { global.setTimeout = originalTimeout; }
+    }
+    {
+        const f = fixture();
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tank.actor.hp = 200;
+        f.healer.actor.mp = 80;
+        f.healer.actor.skills = [new Skill({ selfId: 1011, level: 1, passive: false, distance: 600, mp: 50, power: 100 })];
+        Tactics.support = realSupport;
+        f.tick(f.healer);
+        assert.equal(f.casts.at(-1)?.id, f.tank.actor.fetchId(),
+            'a healer must use its last affordable heal to rescue the main tank');
+    }
+    {
+        const f = fixture();
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tank.actor.hp = 200;
+        f.tank.actor.x = 950;
+        f.healer.actor.skills = [new Skill({ selfId: 1219, level: 1, passive: false, distance: 600, mp: 50, power: 100 })];
+        Tactics.support = realSupport;
+        f.tick(f.healer);
+        assert.equal(f.casts.at(-1)?.selfId, 1219,
+            'native 1000-range group healing must reach a main tank beyond the old hardcoded 900 range');
+    }
+    {
+        const f = fixture();
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tank.actor.hp = 200;
+        f.tank.actor.x = 1100;
+        f.healer.actor.skills = [new Skill({ selfId: 1219, level: 1, passive: false, distance: 600, mp: 50, power: 100 })];
+        Tactics.support = realSupport;
+        f.tick(f.healer);
+        assert.equal(f.healer.lastDecision.action, 'raid_heal_approach',
+            'a party-only healer must approach a wounded main tank outside the native heal radius');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        p.healer.actor.mp = 340;
+        f.tick(p.extra);
+        assert.equal(p.extra.lastDecision.action, 'raid_party_preparing', 'pre-pull preparation still waits for support recovery');
+        assert.equal(f.attacks.length, 0);
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tick(p.extra);
+        assert.equal(f.attacks.at(-1)?.s, p.extra,
+            'the main party combat trigger releases ready DDs even when their own healer has 34% MP');
+        assert.equal(p.group.raidReadyFor, f.boss.fetchId());
+        f.tick(p.healer);
+        assert.equal(p.healer.lastDecision.action, 'raid_healer_recovery', 'the local healer recovers without holding its DDs');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        const buff = new Skill({ selfId: 1086, level: 1, passive: false, distance: 400, mp: 30 });
+        let missing = true;
+        const queued = [];
+        patch(Support, 'nextPartyAction', (recipients, _providers, options) => {
+            if (!options.partyMusicLast) return null;
+            assert(recipients.every(member => p.group.members.has(member.actor.session)), 'preparation stays inside the additional party');
+            return missing ? { provider: p.healer.actor, target: p.extra.actor, skill: buff } : null;
+        });
+        patch(Support, 'queueSupportCast', (provider, action) => queued.push({ provider, action }));
+        try {
+            f.tick(p.extra);
+            assert.equal(f.attacks.length, 0, 'missing local buffs still hold the additional party before the main pull');
+            f.boss.destId = f.tank.actor.fetchId();
+            f.tick(p.extra);
+            assert.equal(f.attacks.at(-1)?.s, p.extra, 'a pending local buff no longer blocks other DDs during combat');
+            assert.equal(p.group.raidReadyFor, undefined, 'unfinished buffs remain scheduled after damage dealers join');
+            f.tick(p.healer);
+            assert.equal(f.casts.at(-1)?.selfId, 1086, 'the local provider still finishes preparation buffs during combat');
+            assert.equal(queued.at(-1)?.provider, p.healer);
+            p.healer.activeSupportCast = {};
+            p.healer.actor.casting = true;
+            p.extra.actor.hitting = false;
+            const attacks = f.attacks.length;
+            f.tick(p.extra);
+            assert.equal(f.attacks.length, attacks + 1, 'an accepted in-flight support cast does not reserve the whole party');
+            p.healer.actor.casting = false;
+            p.healer.activeSupportCast = null;
+            missing = false;
+            f.tick(p.extra);
+            assert.equal(p.group.raidReadyFor, f.boss.fetchId(), 'completed buffs hand over to ordinary combat support');
+        } finally { restores.pop()(); restores.pop()(); }
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        p.extra.actor.skills = [new Skill({ selfId: 28, level: 1, passive: false, mp: 10, distance: 600 })];
+        f.tick(p.extra);
+        assert.equal(f.attacks.length, 0, 'additional tanks cannot open the boss');
+        assert.equal(p.extra.lastDecision.action, 'raid_wait_main_party');
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tick(p.extra);
+        assert.equal(f.attacks.at(-1).s, p.extra, 'an additional tank participates as a damage dealer after the primary trigger');
+        assert.equal(f.casts.some(cast => cast.s === p.extra && cast.selfId === 28), false, 'additional tanks never taunt the boss');
+        const nativeAttack = Object.create(invoke('GameServer/Actor/Attack').prototype);
+        const hateAura = new Skill({ selfId: 18, level: 1, passive: false, mp: 10 });
+        assert.equal(nativeAttack.commandImpactAllowed(p.extra, p.extra.actor, f.boss, hateAura), false,
+            'an additional tank aura cannot taunt the boss as a secondary native target');
+        assert.equal(f.owner.partyRaidEngagement.mainTankId, f.tank.actor.fetchId());
+        p.extra.actor.hitting = false;
+        f.add.destId = p.healer.actor.fetchId();
+        f.tick(p.extra);
+        assert.equal(f.casts.at(-1)?.selfId, 28, 'an additional tank may still rescue its own healer from a minion');
+        assert.equal(f.casts.at(-1)?.id, f.add.fetchId(), 'the rescue taunt targets the minion, never the boss');
+        f.add.destId = p.extra.actor.fetchId();
+        p.mage.actor.dead = true;
+        f.tick(p.extra);
+        assert.equal(f.attacks.at(-1).s, p.extra, 'a casualty in an additional party must not stop surviving damage dealers');
+        p.mage.actor.dead = false;
+        p.healer.actor.skills = [new Skill({ selfId: 1011, level: 1, passive: false, distance: 600, mp: 50, power: 100 })];
+        f.tank.actor.hp = 100;
+        p.mage.actor.hp = 300;
+        Tactics.support = realSupport;
+        f.tick(p.healer);
+        assert.equal(f.casts.at(-1).id, p.mage.actor.fetchId(), 'additional healers treat only their own party even when the main tank has less HP');
+        p.mage.actor.hp = 1000;
+        const count = f.casts.length;
+        f.tick(p.healer);
+        assert.equal(f.casts.length, count, 'the additional healer does not leak healing into the main party');
+        f.tank.actor.dead = true;
+        f.tick(f.damage);
+        f.tick(p.extra);
+        assert.equal(p.extra.lastDecision.action, 'raid_retreat_tank_lost');
+        assert.equal(p.group.active, true, 'a failed raid preserves the additional party roster');
+        assert.equal(p.group.members.size, 3);
+        f.owner.partyRaidEngagement = undefined;
+        f.owner.partyRaidPullBlockedBossId = f.boss.fetchId();
+        f.boss.destId = null;
+        for (const member of p.group.members) member.actor.x = 4000;
+        f.tick(p.extra);
+        assert.equal(p.extra.lastDecision.action, 'raid_retreat_complete');
+        assert.equal(f.tick(p.extra), false, 'a completed retreat releases additional parties back to ordinary following');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        f.owner.actor.fetchClanId = () => 77;
+        patch(invoke('GameServer/Clan/ClanService'), 'findById', id => id === 77 ? { leaderId: f.owner.actor.fetchId() } : null);
+        const transit = invoke('GameServer/Bot/AI/CompanionTownTransit');
+        patch(transit, 'tick', () => ({ handled: false }));
+        patch(transit, 'sameTown', () => false);
+        const teleports = [];
+        invoke('GameServer/Actor/Generics/TeleportTo');
+        patch(require.cache[require.resolve('../src/GameServer/Actor/Generics/TeleportTo')], 'exports',
+            (_session, _actor, destination) => teleports.push(destination));
+        const Following = invoke('GameServer/Bot/AI/States/FollowingState');
+        f.owner.actor.x = 10000;
+        const ctx = { session: p.extra, bot: p.extra.actor, player: p.extra.actor,
+            role: 'tank', distance: 0, leaderSeated: false, restFormationDistance: 0,
+            pulling: { enabled: false }, partyThreat: null, leaderTargetId: null, impairments: {} };
+        assert.equal(Following.tickTravel(ctx), true);
+        assert(teleports[0].locX > 9000, 'the additional party leader catches up to the real commander, not to its own body');
+        p.extra.botStay = true;
+        assert.equal(Following.tickTravel(ctx), false, 'Hold keeps an additional leader in place when the commander travels away');
+        assert.equal(teleports.length, 1);
+        const memberContext = { ...ctx, session: p.mage, bot: p.mage.actor };
+        assert.equal(Following.tickTravel(memberContext), true);
+        assert(teleports[1].locX > 9000, 'members also catch up to the commander while their bot leader is away');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tick(f.damage);
+        p.group.raidReadyFor = f.boss.fetchId();
+        p.mage.actor.dead = true; p.mage.actor.hp = 0;
+        f.owner.actor.dead = true; f.owner.actor.hp = 0;
+        p.healer.actor.skills = [new Skill({ selfId: 1016, level: 1, passive: false, mp: 10, distance: 600 })];
+        Tactics.support = realSupport; Revival.tick = realRevival;
+        assert.equal(Revival.combatResurrectionAllowed(p.extra), true, 'additional parties can resurrect during a raid held by the main tank');
+        const rescue = Revival.tick(p.healer, p.extra, f.generics);
+        assert.equal(rescue.target, p.mage.actor, 'the additional party rescues its own casualty rather than the dead human in the main party');
+        f.tick(p.extra);
+        assert.equal(f.attacks.at(-1).s, p.extra, 'survivors keep fighting while their own healer resurrects a casualty');
+    }
+    {
+        const f = fixture(5);
+        const p = commandParty(f);
+        f.boss.destId = f.owner.actor.fetchId();
+        f.tick(p.extra);
+        const attacks = f.attacks.length;
+        for (const member of [f.owner, f.tank, f.damage, f.healer]) { member.actor.dead = true; member.actor.hp = 0; }
+        f.tick(p.extra);
+        assert.equal(f.owner.partyRaidEngagement.phase, 'retreat', 'an additional party detects a wiped main party without a living main-party AI tick');
+        assert.equal(f.attacks.length, attacks, 'surviving additional parties stop damage after the main tank and main party are lost');
+        assert.equal(p.extra.lastDecision.action, 'raid_retreat_tank_lost');
+        assert.equal(p.group.active, true);
     }
     console.log('Player party raid opening, shared tactics, healer stance, sleep, rescue, retreat and teleport checks passed');
 } finally {

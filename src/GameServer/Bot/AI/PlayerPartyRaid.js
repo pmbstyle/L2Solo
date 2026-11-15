@@ -40,6 +40,8 @@ function retreat(session, bot, owner, raid, boss, members, now) {
         owner.partyRaidPullBlockedBossId = raid.bossId;
         owner.partyRaidEngagement = undefined;
         owner.partyRevivalAttempt = null;
+        const group = owner.clanCommandParty;
+        if (group?.active) { group.lastRaid = null; group.raidReadyFor = null; }
         session.plan = 'following';
         session.raidSafetyResumePlan = undefined;
         return hold(session, bot, 'raid_retreat_complete', boss, now);
@@ -59,21 +61,33 @@ function retreat(session, bot, owner, raid, boss, members, now) {
 
 function tick(session, bot, Generics, AI, now = Date.now()) {
     const owner = session?.followPlayerSession;
+    const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
+    const group = Commands.groupFor(session);
+    const commander = group?.commander || owner;
     if (!owner?.actor || !session.partyCompanion || bot.isDead?.() || !owner.actor.fetchIsOnline?.()) return false;
-    const raid = Safety.syncPlayerPartyRaid(owner, now);
-    if (!raid) return false;
+    const liveRaid = Safety.syncPlayerPartyRaid(commander, now);
+    const raid = liveRaid || (group?.lastRaid?.phase === 'retreat' ? group.lastRaid : null);
+    if (!raid) {
+        if (group) { group.lastRaid = null; group.raidReadyFor = null; }
+        return false;
+    }
+    if (group) group.lastRaid = raid;
     const boss = Safety.raidBossByObjectId(raid.bossId);
-    if (!boss || boss.isDead?.()) return false;
+    if (!boss || boss.isDead?.()) {
+        if (group) { group.lastRaid = null; group.raidReadyFor = null; }
+        return false;
+    }
     const allMembers = State.partySessions(owner, { includeDead: true })
         .filter(member => !Awareness.isDistantQuestCourier(member, owner));
     if (!raid.mainTankId) {
-        raid.mainTankId = Roles.inferRole(owner.actor) === 'tank'
-            ? owner.actor.fetchId() : raid.openerId;
+        raid.mainTankId = Roles.inferRole(commander.actor) === 'tank'
+            ? commander.actor.fetchId() : raid.openerId;
     }
-    const mainTank = allMembers.find(member => Number(member.actor.fetchId()) === Number(raid.mainTankId));
+    const combatMembers = group ? State.partySessions(commander, { includeDead: true }) : allMembers;
+    const mainTank = combatMembers.find(member => Number(member.actor.fetchId()) === Number(raid.mainTankId));
     const members = allMembers.filter(member => Threats.alive(member.actor)
         && (member === owner || levelAllowed(member.actor, boss)));
-    if (raid.phase !== 'opening' && (!mainTank || !Threats.alive(mainTank.actor))) {
+    if (!group && raid.phase !== 'opening' && (!mainTank || !Threats.alive(mainTank.actor))) {
         const replacement = members.find(member => member !== owner && Roles.inferRole(member.actor) === 'tank'
             && Number(boss.fetchDestId?.()) === Number(member.actor.fetchId()));
         if (replacement) raid.mainTankId = replacement.actor.fetchId();
@@ -84,12 +98,12 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         Tactics.stop(session, bot);
         return hold(session, bot, 'raid_level_ineligible', boss, now);
     }
-    const assignedTank = members.find(member => Number(member.actor.fetchId()) === Number(raid.mainTankId));
+    const assignedTank = group ? mainTank : members.find(member => Number(member.actor.fetchId()) === Number(raid.mainTankId));
     if (!assignedTank) return hold(session, bot, 'raid_wait_tank', boss, now);
 
-    const plan = Safety.botClanRaidCombatPlan(owner, boss);
+    const plan = Safety.botClanRaidCombatPlan(commander, boss);
     Combat.preserveControlledAdds(session, bot, plan);
-    invoke('GameServer/Bot/AI/PartyPulling').beginRaid(owner, raid);
+    if (!group) invoke('GameServer/Bot/AI/PartyPulling').beginRaid(owner, raid);
     if (!Restrictions.canUseBasicAction(bot)) return true;
     if (bot.state.fetchCasts?.() && !Restrictions.canCast(bot)) bot.attack?.abortCast?.(session, bot);
     if (bot.state.fetchCasts?.() && owner.partyRevivalAttempt?.providerId === bot.fetchId()) {
@@ -114,8 +128,11 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (Roles.inferRole(bot) === 'healer' && !Awareness.underDirectNpcAttack(session) && Restrictions.canMove(bot)) {
         const wounded = [...near].sort((a, b) => ratio(a.actor) - ratio(b.actor))
             .find(member => ratio(member.actor) < 0.7);
-        const heal = wounded && invoke('GameServer/Bot/AI/BotSkillCapabilities')
-            .selectHealSkill(bot, { emergency: ratio(wounded.actor) < 0.45 });
+        const heal = wounded && invoke('GameServer/Bot/AI/BotSkillCapabilities').healSkills(bot)
+            .filter(skill => Tactics.usable(bot, skill))
+            .filter(skill => skill.fetchTargetKind() !== 'ally' || Tactics.alliedForHeal(bot, wounded.actor))
+            .filter(skill => !skill.fetchSemantic?.()?.hot || !invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(wounded.actor, skill))
+            .sort((a, b) => Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0))[0];
         const healRange = heal && (heal.fetchTargetKind() === 'friendly' ? Number(heal.fetchDistance())
             : Number(heal.fetchSemantic?.()?.radius || heal.fetchDistance() || 900));
         if (heal && Tactics.usable(bot, heal) && Threats.distance(bot, wounded.actor) > healRange) {
@@ -137,7 +154,13 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         decision(session, 'raid_resurrect', revival.target || Safety.raidEntityByObjectId(revival.targetId), now);
         return true;
     }
-    if (raid.phase === 'opening') {
+    if (group && Commands.handleMovement(session, bot)) return true;
+    if (group && Commands.prepareRaid(group, session, Generics, raid.bossId, { combat: raid.phase === 'combat' })) {
+        decision(session, 'raid_party_preparing', boss, now);
+        return true;
+    }
+    if (group && raid.phase !== 'combat') return hold(session, bot, 'raid_wait_main_party', boss, now);
+    if (!group && raid.phase === 'opening') {
         if (Revival.deadMembers(owner).length) return hold(session, bot, 'raid_wait_resurrection', boss, now);
         if (!Safety.isRaidOpenerReady(assignedTank.actor)) return hold(session, bot, 'raid_wait_tank_recovery', boss, now);
         if (assignedTank === owner || Roles.inferRole(assignedTank.actor) !== 'tank') {
@@ -176,8 +199,9 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         if (!bot.state.fetchTowards?.() && !bot.state.fetchHits?.()) AI.executeCombat(session, bot, incoming, Generics, { party: true });
         return true;
     }
-    Combat.tick(session, bot, Generics, AI, { owner, members, near, raidPlan: plan,
-        raidTank: assignedTank, playerLeader: owner, combatBuffs: Combat.combatRaidBuffs }, now);
+    Combat.tick(session, bot, Generics, AI, { owner: commander, supportOwner: owner, members, near, raidPlan: plan,
+        supportAnchor: group ? members.find(s => Threats.distance(s.actor, commander.actor) <= 1800) || members[0] : undefined,
+        raidTank: assignedTank, playerLeader: commander, combatBuffs: Combat.combatRaidBuffs }, now);
     session.roleDecision = { role: Roles.inferRole(bot), ...session.lastDecision, reason: session.lastDecision?.action };
     return true;
 }

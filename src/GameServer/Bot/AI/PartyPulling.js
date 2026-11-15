@@ -164,6 +164,7 @@ function beginRaid(leaderSession, raid) {
 }
 
 function observeLeaderTarget(leaderSession, settings, targetId) {
+    if (leaderSession?.clanCommandParty?.active) return null;
     const puller = resolvePuller(leaderSession, settings);
     if (!puller || puller.kind !== 'leader' || !targetId) return null;
     const target = npcById(targetId);
@@ -652,6 +653,8 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
 }
 
 function current(leaderSession, settings) {
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) return current(group.commander, invoke('GameServer/Bot/AI/PartyCompanionService').getSettings(group.commander));
     // Raid combat owns this state. Ordinary pull inspection must neither
     // discard its protected target nor recreate the encounter on every tick.
     if (leaderSession?.partyPullState?.type === 'raid'

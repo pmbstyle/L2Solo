@@ -23,14 +23,15 @@ function stop(session) {
     invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, session.actor);
 }
 
-async function invite(player, actor, subject, distribution, source, id) {
+async function invite(player, actor, subject, distribution, source, id, options = {}) {
+    const partyOwner = options.partyOwner || player;
     const Companion = invoke('GameServer/Bot/AI/PartyCompanionService');
-    const current = () => player.actor === actor && isLeaderFor(player, Manager().findSessionById(id) || Life().cachedState(id) || subject);
+    const current = () => player.actor === actor && (!options.isCurrent || options.isCurrent()) && isLeaderFor(player, Manager().findSessionById(id) || Life().cachedState(id) || subject);
     let session = Manager().findSessionById(id);
     if (!current()) return false;
-    const alreadyJoined = Companion.isActiveCompanion(session, player);
+    const alreadyJoined = Companion.isActiveCompanion(session, partyOwner);
     const reservation = { clanBotId: id };
-    if (!alreadyJoined && !Companion.reserveCapacity(player, reservation)) {
+    if (!alreadyJoined && !Companion.reserveCapacity(partyOwner, reservation)) {
         player.dataSendToMe(invoke('GameServer/Network/Response').joinParty(0));
         if (subject?.actor) Manager().botTell(subject, player, 'Your party is full. Make room, then call me again.');
         return false;
@@ -123,7 +124,7 @@ async function invite(player, actor, subject, distribution, source, id) {
         }
         require('../../World/PartyMembershipPublication')([...stopped], invoke);
         joined = await invoke('GameServer/World/World').inviteBotByName(player, actor,
-            state.name, distribution, source, { clanLeaderPrepared: true, capacityReservation: reservation });
+            state.name, distribution, source, { ...options, clanLeaderPrepared: true, capacityReservation: reservation });
         return joined;
     } catch (error) {
         utils.infoWarn('BotParty', 'clan leader invite failed for %s: %s', id, error.message);
@@ -140,7 +141,7 @@ async function invite(player, actor, subject, distribution, source, id) {
             if (lockedParty) HotParty.pending.delete(lockedParty);
             if (lockedEncounter) Pvp.pending.delete(lockedEncounter);
             releaseActivations?.();
-            Companion.releaseCapacity(player, reservation);
+            Companion.releaseCapacity(partyOwner, reservation);
             for (const memberId of fenced) Coordinator.releaseFence(memberId);
             for (const member of stopped) {
                 if (!member.actor || member.constActivityPaused) continue;
@@ -154,14 +155,14 @@ async function invite(player, actor, subject, distribution, source, id) {
 
 module.exports = {
     isLeaderFor,
-    request(player, actor, subject, distribution, source) {
+    request(player, actor, subject, distribution, source, options = {}) {
         const state = subject?.coldLifeState || subject;
         const id = Number(subject?.actor?.fetchId?.() || state.characterId);
         const key = subject?.hotBackgroundPartyId || state.party?.partyId || state.stats?.constPartySession?.groupId
             || state.stats?.playerPartyTakeover?.partyId || `bot:${subject?.actor?.fetchId?.() || state.characterId}`;
         const keys = [...new Set([key, `bot:${subject?.actor?.fetchId?.() || state.characterId}`])];
         const run = Promise.all(keys.map(key => (pending.get(key) || Promise.resolve()).catch(() => {})))
-            .then(() => invite(player, actor, subject, distribution, source, id));
+            .then(() => invite(player, actor, subject, distribution, source, id, options));
         keys.forEach(key => pending.set(key, run));
         return run.finally(() => { for (const key of keys) if (pending.get(key) === run) pending.delete(key); });
     }
