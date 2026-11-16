@@ -113,7 +113,7 @@ const auditedUnsupported = [
 assert.equal(auditedUnsupported.length, 392);
 for (const id of auditedUnsupported) assert(!Catalog.hasSource(id), `audited unsupported item ${id}`);
 for (const id of [97, 3, 736, 1835, 1864]) assert(Catalog.hasNonRaidSource(id), `ordinary native origin ${id}`);
-assert(!Catalog.hasNonRaidSource(6724), 'S Tateossian earring native raid-only provenance');
+assert(Catalog.hasNonRaidSource(6724), 'Helvetia gemstones allow the published Tateossian earring craft without raid loot');
 const version = Catalog.revision();
 assert.equal(Catalog.revision(), version);
 const originals = [Data.items, Data.npcRewards];
