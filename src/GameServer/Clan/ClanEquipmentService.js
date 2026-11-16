@@ -573,8 +573,11 @@ async function assignPlan(member, plan, clan, goal) {
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
     // The member's request for this goal closed (its party never formed): the goal's
     // route waits for the member's next build, no reassignment hands it back meanwhile.
+    // Stocked crafts need no farming party: the closed request must not prevent
+    // the warehouse handoff or the transition to the ready component/final craft.
+    const readyCraft = plan?.strategy === 'craft' && ['ready_to_craft', 'component_ready'].includes(plan.status);
     if (current.stats?.partyRequest?.clanGoalKey === goal.goalKey
-        && require('../Bot/Population/PartyRequestPlanner').closed(current)) {
+        && require('../Bot/Population/PartyRequestPlanner').closed(current) && !readyCraft) {
         return { ok: true, changed: false, closedRequest: true, memberId: id };
     }
 
@@ -599,6 +602,7 @@ async function assignPlan(member, plan, clan, goal) {
     if (samePlanTarget(currentPlan, plan)
         && number(currentPlan.clanGoal?.clanId) === number(clan.id)
         && String(currentPlan.clanGoal?.goalKey || '') === String(goal.goalKey)
+        && (!readyCraft || !currentState.stats?.partyRequest && !currentState.stats?.clanPartyObjective)
         && (!goal.fullRoster || stateHasSameClanObjective(currentState, clanPartyObjective(plan, goal, 'required', clan.id)))
         && samePlanRoute(currentPlan, plan)
         && ['status', 'strategy', 'recipeId', 'materials', 'craftProviders', 'componentRecipes', 'next'].every(key => (
