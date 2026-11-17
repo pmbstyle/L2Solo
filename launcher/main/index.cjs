@@ -100,6 +100,7 @@ else {
             }
             case 'settings': return controller.getSettings();
             case 'saveSettings': return controller.saveSettings(args[0]);
+            case 'testAi': return controller.testAi(args[0]);
             case 'news': return news();
             case 'openLink':
                 if (!safeLink(args[0])) throw new Error('This link is not supported.');

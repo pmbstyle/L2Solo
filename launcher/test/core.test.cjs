@@ -171,7 +171,7 @@ test('every bundled launcher setting has scoped help, with units and comment fal
     await put(root, 'config/default.ini', await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8'));
     const groups = settings(root);
     for (const group of groups) for (const field of group.fields) {
-        assert.ok(help[group.id]?.[field.key], `Missing explanation: ${group.id}.${field.key}`);
+        assert.ok(help[field.section]?.[field.key], `Missing explanation: ${field.section}.${field.key}`);
         assert.ok(field.description.length > 20);
     }
     const description = section => groups.find(group => group.id === section).fields.find(field => field.key === 'enabled').description;

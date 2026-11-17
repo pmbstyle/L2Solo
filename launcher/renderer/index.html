@@ -60,7 +60,15 @@
         <section id="view-settings" class="view" hidden>
             <div class="page-heading"><h1>Server settings</h1><button id="save-settings" class="primary-button compact" disabled>Save changes</button></div>
             <div id="settings-empty" class="empty-panel"><h2>No server selected</h2><p>Connect or install a server to edit its settings.</p><button class="quiet-button" data-view="home">Go to Home</button></div>
-            <div id="settings-workspace" class="settings-workspace" hidden><aside><label class="search-box"><input id="settings-search" placeholder="Find a setting…" aria-label="Search settings"></label><nav id="settings-nav" aria-label="Settings sections"></nav></aside><div><div id="settings-notice" class="settings-notice">Changes apply on the next server start.</div><div id="settings-fields"></div></div></div>
+            <div id="settings-workspace" class="settings-workspace" hidden><aside><label class="search-box"><input id="settings-search" placeholder="Find a setting…" aria-label="Search settings"></label><nav id="settings-nav" aria-label="Settings sections"></nav></aside><div><div id="settings-notice" class="settings-notice">Changes apply on the next server start.</div>
+                <section id="ai-test-panel" class="plain-panel ai-test-panel" hidden aria-labelledby="ai-test-title">
+                    <div class="section-heading"><h2 id="ai-test-title">AI compatibility test</h2><button id="test-ai" class="quiet-button">Test AI</button></div>
+                    <p class="muted">Sends a real chat, checks game tools and chat routing, and tests enabled clan AI features. Uses the current form values without saving. Tools use simulated data.</p>
+                    <p id="ai-test-summary" role="status" aria-live="polite">Ready to test.</p>
+                    <div id="ai-test-results" class="ai-test-results"></div>
+                    <p class="muted">Native API function calling is an additional compatibility check; the game uses JSON actions. Sample checks do not guarantee every game request will succeed.</p>
+                </section>
+                <div id="settings-fields"></div></div></div>
         </section>
         <section id="view-updates" class="view" hidden>
             <div class="page-heading"><h1>Updates</h1><button id="updates-check" class="quiet-button"><svg><use href="#i-updates"/></svg> Check for updates</button></div>

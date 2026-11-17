@@ -17,7 +17,7 @@ const hiddenFields = {
     GameServer: new Set(['maxOnline', 'pvp', 'id']),
     AuthServer: new Set(['protocol', 'blowfishKey']),
     Enchant: new Set(['crystalWeaponChance', 'crystalArmorChance', 'crystalAccessoryChance']),
-    ClanSimulation: new Set(['maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
+    ClanSimulation: new Set(['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
     ClanWars: new Set(['reviewMs', 'intelTtlMs'])
 };
 
@@ -45,7 +45,7 @@ const groups = {
         ['Clans & recruitment', ['enabled', 'maxBotClans', 'founderMinLevel', 'founderTopShare', 'founderQuorum', 'founderMinPartyHistory', 'existingClanSuitabilityThreshold']],
         ['Treasury & contributions', ['levelOneAdenaBase', 'levelTwoAdenaBase', 'adenaRateExponent', 'personalAdenaReserveMultiplier', 'contributionMaxFraction']],
         ['Warehouse & market', ['warehouseDepositBatchSize', 'bloodMarkMaxPrice']],
-        ['Strategy & goals', ['strategicManagementEnabled', 'llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'catastrophicFailureThreshold', 'strategyMinHoldMs', 'strategyStallMs', 'goalReviewMs']],
+        ['Strategy & goals', ['strategicManagementEnabled', 'catastrophicFailureThreshold', 'strategyMinHoldMs', 'strategyStallMs', 'goalReviewMs']],
         ['Equipment planning', ['equipmentReviewMs', 'equipmentPartyStallMs', 'equipmentHardStallMs', 'equipmentMaxExpectedKills']],
         ['Clan operations', ['operationMinMembers', 'operationMaxMembers', 'operationMaxTargetLevelGap']],
         ['Processing budgets', ['resolveIntervalMs', 'resolveBatchSize', 'resolveBudgetMs', 'actionPlayerBudgetMs', 'founderResolveBudgetMs', 'founderPlayerBudgetMs']]
@@ -58,6 +58,7 @@ const groups = {
     AI: [
         ['Provider connection', ['enabled', 'apiUrl', 'apiKey']],
         ['Models', ['model', 'partyRouterModel']],
+        ['Clan AI features', ['llmGoalManagementEnabled', 'llmTitleManagementEnabled']],
         ['Model responses', ['temperature', 'reasoningEffort', 'completionLimitParam', 'strictSchema']],
         ['Request limits', ['maxConcurrentRequests']]
     ],

@@ -8,6 +8,8 @@ let sections = [], selectedSection = 'Quick setup', currentView = 'home', settin
 const dirty = new Map();
 let renderedBackups = '';
 let renderedReleaseNotes;
+let aiTestFormKey = null;
+let aiTestPending = false;
 const releaseMarkdown = window.markdownit({ html: false, linkify: false, maxNesting: 20 });
 // Keep remote images from adding tracking requests or broken-image clutter.
 releaseMarkdown.renderer.rules.image = (tokens, index) => releaseMarkdown.utils.escapeHtml(tokens[index].content);
@@ -21,6 +23,8 @@ const labels = { progressionPreset: 'Progression preset', expRate: 'Experience m
     partyRouterModel: 'Party routing model', maxConcurrentRequests: 'Concurrent AI requests', advertisedHostname: 'Client connection address',
     hostname: 'Listen address', port: 'Port', maxOnline: 'Maximum players', pvp: 'PvP server', enabled: 'Enabled',
     path: 'World database path', reasoningEffort: 'Reasoning effort', completionLimitParam: 'Completion limit parameter' };
+labels.llmGoalManagementEnabled = 'AI clan goals';
+labels.llmTitleManagementEnabled = 'AI clan member titles';
 const humanize = key => labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
 
 function element(tag, className, text) {
@@ -134,6 +138,39 @@ function render(next) {
     renderUptime();
     if (state.launcherVersion) $('launcher-version').textContent = state.launcherVersion;
     if (state.root !== settingsRoot && sections.length) { sections = []; dirty.clear(); settingsRoot = null; }
+    renderAiTest();
+}
+
+function aiFormKey() {
+    return JSON.stringify([state.root, sections.flatMap(section => section.fields.filter(field => field.section === 'AI'
+        || field.section === 'ClanSimulation' && ['enabled', 'strategicManagementEnabled', 'llmGoalManagementEnabled', 'llmTitleManagementEnabled'].includes(field.key))
+        .map(field => [field.section, field.key, dirty.get(`${field.section}.${field.key}`)?.value ?? field.value]))]);
+}
+function renderAiTest() {
+    $('ai-test-panel').hidden = selectedSection !== 'AI' || !state.installed;
+    const testing = state.aiTest?.phase === 'testing';
+    $('test-ai').disabled = actionPending || aiTestPending || state.busy || testing || !state.installed;
+    $('test-ai').textContent = testing || aiTestPending ? 'Testing…' : 'Test AI';
+    const stale = aiTestFormKey !== null && aiTestFormKey !== aiFormKey();
+    const result = stale || aiTestPending && !testing ? null : state.aiTest;
+    $('ai-test-summary').textContent = stale ? 'Settings changed. Run the test again for these values.'
+        : aiTestPending && !result ? 'Starting AI checks…'
+            : result?.phase === 'testing' ? 'Testing… Results appear as each check finishes.' : result?.message || 'Ready to test.';
+    $('ai-test-summary').dataset.status = result?.phase || 'idle';
+    const target = $('ai-test-results');
+    target.replaceChildren();
+    for (const check of result?.checks || []) {
+        const row = element('div', 'ai-test-result');
+        row.dataset.status = check.status;
+        const heading = element('div', 'ai-test-result-heading');
+        heading.append(element('strong', '', check.label), element('span', 'ai-test-status', {
+            pending: 'Waiting', testing: 'Testing…', passed: 'Passed', failed: check.required ? 'Failed' : 'Unavailable · optional', skipped: 'Skipped'
+        }[check.status]));
+        row.append(heading, element('small', 'muted', `${check.model}${check.latencyMs === null ? '' : ` · ${(check.latencyMs / 1000).toFixed(2)} s`}`));
+        if (check.message && check.status !== 'passed') row.append(element('p', '', check.message));
+        if (check.reply) row.append(element('pre', 'ai-test-reply', check.reply));
+        target.append(row);
+    }
 }
 function renderLauncherUpdate(locked) {
     const update = state.launcherUpdate || { status: 'idle', currentVersion: state.launcherVersion };
@@ -307,6 +344,7 @@ async function loadSettings() {
     sections = await api.settings();
     settingsRoot = state.root;
     dirty.clear();
+    aiTestFormKey = state.aiTest ? aiFormKey() : null;
     renderSettingsNav();
     renderFields();
     render();
@@ -336,7 +374,7 @@ function renderFields() {
         for (const field of fields) {
             if (showSubgroups && previousGroup !== field.group) group.append(element('h4', 'settings-subheading', field.group));
             previousGroup = field.group;
-            const key = `${section.id}.${field.key}`;
+            const key = `${field.section}.${field.key}`;
             const value = dirty.get(key)?.value ?? field.value;
             const row = element('div', 'field-row');
             const text = element('div', 'field-label');
@@ -376,7 +414,7 @@ function renderFields() {
                 const next = field.type === 'boolean' ? String(input.checked) : input.value;
                 if (hint) hint.textContent = settingValueHint(next, field.unit);
                 if (next === field.value) dirty.delete(key);
-                else dirty.set(key, { section: section.id, key: field.key, value: next });
+                else dirty.set(key, { section: field.section, key: field.key, value: next });
                 render();
             });
             if (hint) {
@@ -389,6 +427,7 @@ function renderFields() {
         target.append(group);
     }
     if (!target.childElementCount) target.append(element('p', 'muted', 'No settings match your search.'));
+    renderAiTest();
 }
 async function chooseFolder() {
     if (dirty.size && !window.confirm('Discard unsaved settings and choose another server folder?')) return;
@@ -466,6 +505,16 @@ $('save-settings').addEventListener('click', () => run(async () => {
     sections = await api.saveSettings([...dirty.values()]);
     dirty.clear(); renderSettingsNav(); renderFields(); toast('Settings saved. They will apply on the next server start.');
 }));
+$('test-ai').addEventListener('click', async () => {
+    if ($('test-ai').disabled) return;
+    aiTestPending = true;
+    const previousFormKey = aiTestFormKey;
+    aiTestFormKey = aiFormKey();
+    renderAiTest();
+    try { render(await api.testAi([...dirty.values()])); }
+    catch (cause) { aiTestFormKey = previousFormKey; error(cause.message); }
+    finally { aiTestPending = false; renderAiTest(); }
+});
 $('dismiss-error').addEventListener('click', () => dismissNotification('error-banner'));
 $('quick-backup').addEventListener('click', () => run(() => createBackup()));
 $('backup-form').addEventListener('submit', event => { event.preventDefault(); if (!$('create-backup').disabled) run(() => createBackup($('backup-name').value)); });
