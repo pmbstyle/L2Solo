@@ -41,7 +41,8 @@ function buildProfiles() {
             name: npc.template?.name || spawn.name || `Raid Boss ${npc.selfId}`,
             center: { locX: number(center.locX), locY: number(center.locY), locZ: number(center.locZ) },
             minLevel: Math.max(1, level - 5),
-            maxLevel: level + 8,
+            maxLevel: require('./GrandBossRules').maxLevel(npc, level + 8),
+            grandBoss: require('./GrandBossRules').isGrandBoss(npc),
             avgLevel: level,
             density: 1,
             npcNames: [npc.template?.name || spawn.name].filter(Boolean),
@@ -72,8 +73,9 @@ function buildProfiles() {
             raidBoss: true,
             sharedEncounter: true,
             raidBossTemplateId: number(npc.selfId),
-            respawnSeconds: require('./RespawnPolicy').RESPAWN_DELAY_MS / 1000,
-            respawnBiasSeconds: 0
+            respawnSeconds: require('./GrandBossRules').isGrandBoss(npc) ? Number(spawn.respawn)
+                : require('./RespawnPolicy').RESPAWN_DELAY_MS / 1000,
+            respawnBiasSeconds: require('./GrandBossRules').isGrandBoss(npc) ? Number(spawn.bias || 0) : 0
         }];
     }).sort((left, right) => left.avgLevel - right.avgLevel
         || left.raidBossTemplateId - right.raidBossTemplateId);

@@ -9,7 +9,8 @@ const Shots = invoke('GameServer/Inventory/ShotStock');
 const F = invoke('GameServer/Formulas');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
-const Minions = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
+const Minions = [...require('../../../../data/Npcs/Minions/c4_raid_bosses.json'),
+    ...require('../../RaidBoss/GrandBossRules').data.minions.filter(row => !row.passive)];
 const Supply = require('./RaidSupplyPolicy');
 const Healing = require('./RaidHealingEstimate');
 const id = s => Number(s?.characterId ?? s?.id);
@@ -85,7 +86,8 @@ function tankArmor(state) {
 function guardProfiles(npc) {
     const data = invoke('GameServer/DataCache'), items = require('../../Item/ItemTemplateIndex');
     return (guards.get(Number(npc.selfId)) || []).map(r => ({
-        profile: Combat.npcCombatStats(items.find(data.npcs, r.minionId)), count: Number(r.max || r.min || 0) }));
+        profile: Combat.npcCombatStats(items.find(data.npcs, r.minionId)), count: Number(r.max || r.min || 0),
+        respawnSeconds: Number(r.respawnMs || 300000) / 1000 }));
 }
 
 function damageEstimate(damage, npc, { offenseFor = null, maxFightSeconds = 720 } = {}) {
@@ -108,13 +110,17 @@ function damageEstimate(damage, npc, { offenseFor = null, maxFightSeconds = 720 
         const grossDps = attacks.reduce((sum, a) => sum + a.dps * (a.fighter.contribution ?? 1), 0) * .85;
         let addSeconds = 0, seconds = Infinity;
         if (grossDps > regen) {
-            addSeconds = adds.reduce((sum, a) => {
-                if (!a.profile) return sum;
+            const durations = adds.map(a => {
+                if (!a.profile) return 0;
                 const dps = damage.reduce((value, f) => value + hit(f, a.profile).dps * (f.contribution ?? 1), 0) * .65;
-                return sum + a.profile.maxHp * a.count / Math.max(1, dps);
-            }, 0);
+                return a.profile.maxHp * a.count / Math.max(1, dps);
+            });
+            addSeconds = durations.reduce((sum, value) => sum + value, 0);
             seconds = boss.maxHp / (grossDps - regen) + addSeconds;
-            for (let i = 0; i < 4; i++) seconds = boss.maxHp / (grossDps - regen) + addSeconds * Math.max(1, Math.ceil(seconds / 300));
+            for (let i = 0; i < 4; i++) seconds = boss.maxHp / (grossDps - regen)
+                + (require('../../RaidBoss/GrandBossRules').isGrandBoss(npc)
+                    ? durations.reduce((sum, value, index) => sum + value * Math.max(1, Math.ceil(seconds / adds[index].respawnSeconds)), 0)
+                    : addSeconds * Math.max(1, Math.ceil(seconds / 300)));
         }
         return { attacks, grossDps, regen, adds, addSeconds, seconds, complete: adds.every(a => !!a.profile) };
     };

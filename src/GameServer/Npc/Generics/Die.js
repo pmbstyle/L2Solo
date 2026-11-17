@@ -22,6 +22,7 @@ function die(session, actor, npc) {
     npc.soulCrystalReward = invoke('GameServer/Items/SoulCrystalProgression').onDeath(session, actor, npc)
         .catch(error => FailureLog.note('kill.soul_crystal', error));
     npc.destructor(session);
+    killEffect('kill.grand_boss', () => invoke('GameServer/RaidBoss/GrandBossRuntime').died(invoke('GameServer/World/World'), npc));
     if (npc.fetchIsRaidBoss?.() === true) {
         killEffect('kill.raid_boss', () => RaidBossMinionManager.onBossDeath(invoke('GameServer/World/World'), npc, session));
     }

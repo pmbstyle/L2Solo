@@ -376,6 +376,9 @@ class Attack {
         // not shift impact past the original deadline or a pet's follow timer.
         // Cancellation clears both native timers, and casting stays active.
         this.queueTimer(land, castTime);
+        // Orfen may pull and interrupt the caster. Install both timers first
+        // so the native teleport cancellation also clears this cast's impact.
+        invoke('GameServer/RaidBoss/GrandBossRuntime').skillSeen(actor, skill, Math.random, session);
 
     }
 
@@ -795,7 +798,10 @@ class Attack {
                     && this.distance2d(actor, target) <= radius);
         }
         if (this.isNpcCombatant(actor)) {
-            return (World.user?.sessions || []).map((session) => session?.actor).filter(Boolean);
+            const players = (World.user?.sessions || []).map((session) => session?.actor).filter(Boolean);
+            return require('../RaidBoss/GrandBossRules').isGrandBoss(actor)
+                ? [...players, ...(World.npc?.spawns || []).filter(target => target.fetchIsSummon?.())]
+                : players;
         }
 
         return typeof World.fetchNpcsInRadius === 'function'
@@ -896,7 +902,9 @@ class Attack {
                 if (ArenaCombatRules.canInteract(actor, target)) return true;
             }
             if (this.isNpcCombatant(actor)) {
-                return target !== actor && !target.fetchKind && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+                const ownedSummon = target.fetchIsSummon?.() && require('../RaidBoss/GrandBossRules').isGrandBoss(actor);
+                return target !== actor && (!target.fetchKind || ownedSummon)
+                    && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
             }
             return target.fetchAttackable?.() === true && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
         }

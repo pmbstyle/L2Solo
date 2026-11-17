@@ -410,7 +410,7 @@ const BackgroundPartyResolver = {
         }
         if (party.stats?.assemblyAt) (Situations ||= require('../Situations')).note('party:assembly:done');
 
-        if (party.stats?.objective?.opportunisticRaid) {
+        if (party.stats?.objective?.opportunisticRaid || require('../../RaidBoss/GrandBossRules').isGrandBoss(spot)) {
             // Travel/rest are simulated; this roster opens its encounter only
             // as native actors, including actual adds, healing and shot use.
             // Main's raid director activates it (the members turn hot) or

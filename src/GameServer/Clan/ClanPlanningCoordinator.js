@@ -417,7 +417,7 @@ async function context() {
     // (FixedShotOffers.offers): the same array until one of them changes.
     const fixed = MarketOpportunity.fixedStoreOffers();
     const general = {};
-    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate', 'maxLevel']) {
+    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'epicDropChanceRate', 'spoilRate', 'maxLevel']) {
         general[key] = global.options.default.General?.[key];
     }
     const progression = { contentCap: global.options.default.Progression?.contentCap };

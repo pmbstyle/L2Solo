@@ -14,7 +14,7 @@ function sourceLevel(objective) {
 function raidLevelAllowed(member, objective) {
     if (!(objective?.sourceKind === 'raid' || objective?.raidBoss === true)) return true;
     const level = sourceLevel(objective);
-    return !level || Number(member?.level || 0) <= level + 8;
+    return !level || Number(member?.level || 0) <= require('../../RaidBoss/GrandBossRules').maxLevel(objective, level + 8);
 }
 function applies(objective) {
     return objective?.clanOperation === 'equipment' && Number(objective.clanId) > 0;

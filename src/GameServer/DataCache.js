@@ -4,6 +4,7 @@ const ItemTemplateIndex = require('./Item/ItemTemplateIndex');
 const validateSchema = require('jsonschema').validate;
 const ClassProgression = invoke('GameServer/ClassProgression');
 const RaidBossBalance = invoke('GameServer/RaidBoss/RaidBossBalance');
+const GrandBosses = require('./RaidBoss/GrandBossRules');
 
 const DataCache = {
     // validate: false loads the same files without the schema check, which only warns:
@@ -97,7 +98,10 @@ const DataCache = {
             ...validateModel(path + 'Npcs/clan_halls'),
             ...C4SevenSignsDungeonTeleports.npcs
         ], npcAiTypes);
-        DataCache.npcs = RaidBossBalance.weakenTemplates(DataCache.npcs);
+        const epicNpcIds = new Set(GrandBosses.data.npcs.map(row => row.selfId));
+        DataCache.npcs = RaidBossBalance.weakenTemplates([
+            ...DataCache.npcs.filter(row => !epicNpcIds.has(row.selfId)), ...GrandBosses.data.npcs
+        ]);
         DataCache.npcSpawns       = [
             ...validateModel(path + 'Npcs/Spawns/spawns'),
             ...validateModel(path + 'Npcs/Spawns/c4_mobius_monsters'),
@@ -168,6 +172,25 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_raid_boss_minions'),
             ...validateModel(path + 'Npcs/Rewards/c4_group_leader_minions')
         ];
+        const epicDrops = new Map(GrandBosses.data.epicDrops.map(drop => [drop.npcId, drop]));
+        // Build the final array before ItemTemplateIndex sees it. Replacing
+        // rows in an indexed array leaves its cached ID lookups on old rows.
+        DataCache.npcRewards = DataCache.npcRewards.map(reward => {
+            const drop = epicDrops.get(reward.selfId);
+            if (!drop) return reward;
+            return { ...reward, rewards: [...reward.rewards.filter(group =>
+                !group.items.some(item => item.selfId === drop.itemId)), { overall: drop.chance, epic: true,
+                items: [{ selfId: drop.itemId, min: drop.min, max: drop.max, chance: 100 }] }] };
+        });
+        // Script-owned groups and post-death cubes cannot also exist as
+        // ordinary always-on spawns. Ambient guards retain their source places.
+        const ownedIds = new Set([12053, ...GrandBosses.data.ambientSpawns.map(row => row.selfId)]);
+        DataCache.npcSpawns = DataCache.npcSpawns.map(area => ({ ...area,
+            spawns: area.spawns.filter(spawn => !ownedIds.has(spawn.selfId)).map(spawn => (
+                GrandBosses.isGrandBoss(spawn)
+                    ? { ...spawn, total: 1, coords: GrandBosses.data.locations[spawn.selfId] } : spawn
+            )) }));
+        DataCache.npcSpawns.push({ selfId: 'c4_grand_boss_ambient', bounds: [], spawns: GrandBosses.data.ambientSpawns });
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
 
         DataCache.items = [
@@ -244,6 +267,7 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_second_profession')
         ];
 
+        DataCache.items.push(...GrandBosses.data.items);
         DataCache.skills = invoke('GameServer/Skills/C4SkillRules').expandSourcedLevels([
             ...validateModel(path + 'Skills/Active/active'),
             ...validateModel(path + 'Skills/Passive/passive'),

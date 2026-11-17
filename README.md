@@ -152,6 +152,8 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Bots create clans, level clans up, form clan farm parties
 - Bots will fight over mobs on a farm spot
 - Bot clans can form raid boss farm parties
+- Queen Ant, Core and Orfen have C4 stats, scripted guards/healers, Orfen's retreat and pull, and epic jewelry drops. Player parties and autonomous clans fight them through native actors, including without a nearby player. These three bosses have no +8 Raid Curse limit; C4 deep-blue drop penalties still apply. The server's shared raid stat reduction and ordinary loot rates also apply. Epic jewelry keeps its 30% single-item roll independently of the leveling preset (`General.epicDropChanceRate`, default 1).
+- Their C4 respawn windows are 36 ± 17, 60 ± 23 and 48 ± 20 hours respectively. Queen Ant's ring, Core's ring and Orfen's earring are available in the admin shop; wearing two copies grants the passive once.
 - Players can join bot parties
 - Clan wars, including autonomous clan wars
 

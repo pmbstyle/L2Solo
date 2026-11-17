@@ -438563,7 +438563,7 @@
     }
   },
   {
-    "id": "spawn-12004-5c7a6451223e",
+    "id": "spawn-12004-0521c2f78704",
     "mobId": 12004,
     "period": "always",
     "possibleLocations": [
@@ -438571,165 +438571,549 @@
         "head": 0,
         "locX": -21562,
         "locY": 179041,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -21139,
-        "locY": 179392,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -21984,
-        "locY": 179183,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -22020,
-        "locY": 179689,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -21281,
-        "locY": 179733,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -21925,
-        "locY": 180003,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -21531,
-        "locY": 180046,
-        "locZ": -5846
-      },
-      {
-        "head": 0,
-        "locX": -22154,
-        "locY": 181958,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21672,
-        "locY": 181903,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -20992,
-        "locY": 181627,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21861,
-        "locY": 182279,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21693,
-        "locY": 182717,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -22070,
-        "locY": 182890,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -22262,
-        "locY": 183156,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21308,
-        "locY": 182278,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21113,
-        "locY": 182681,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21446,
-        "locY": 183135,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -21854,
-        "locY": 183450,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -20714,
-        "locY": 182103,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -20720,
-        "locY": 182775,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -20949,
-        "locY": 183233,
-        "locZ": -5734
-      },
-      {
-        "head": 0,
-        "locX": -22349,
-        "locY": 182333,
-        "locZ": -5734
-      },
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 4,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-1c7b4eda85b6",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
       {
         "head": 0,
         "locX": -22406,
         "locY": 182733,
-        "locZ": -5734
-      },
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 26,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-291dfe11083a",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21984,
+        "locY": 179183,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 6,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-35bdb043c9b8",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -20992,
+        "locY": 181627,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 13,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-3a762e80eabc",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21531,
+        "locY": 180046,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 10,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-477d221089a9",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -20714,
+        "locY": 182103,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 22,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-5341207604f9",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
       {
         "head": 0,
         "locX": -22700,
         "locY": 182486,
-        "locZ": -5734
-      },
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 27,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-56542d298228",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22349,
+        "locY": 182333,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 25,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-5758ccf5e67b",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -20720,
+        "locY": 182775,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 23,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-5ad2a396c8f1",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
       {
         "head": 0,
         "locX": -22015,
         "locY": 181518,
-        "locZ": -5734
+        "locZ": -5720
       }
     ],
     "randomBiasSeconds": 0,
-    "respawnSeconds": 360,
-    "sourceIndex": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 28,
     "total": 1,
     "zone": {
       "bounds": [],
-      "id": "mobius:Gludio/QueenAntGuards#QueenAntGuards",
-      "sourceIndex": 1968
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
     }
   },
   {
-    "id": "spawn-12052-ad91838e0d51",
+    "id": "spawn-12004-6f9ff0fdf21f",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22262,
+        "locY": 183156,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 17,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-72d65a2d83b7",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -20949,
+        "locY": 183233,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 24,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-75d64c9380ff",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21446,
+        "locY": 183135,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 20,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-7e29e02e2243",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21672,
+        "locY": 181903,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 12,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-84f8608abb45",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21925,
+        "locY": 180003,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 9,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-88161e162b97",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22070,
+        "locY": 182890,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 16,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-8cfe4df27cda",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22020,
+        "locY": 179689,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 7,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-8f07b1144d21",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21139,
+        "locY": 179392,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 5,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-9151d44409ac",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21308,
+        "locY": 182278,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 18,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-a0144bc73053",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21854,
+        "locY": 183450,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 21,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-a23545525979",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21281,
+        "locY": 179733,
+        "locZ": -5832
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 8,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-ba61a62356e4",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22154,
+        "locY": 181958,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 11,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-c2680d2440ce",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21693,
+        "locY": 182717,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 15,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-d8d27c93a5e7",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21113,
+        "locY": 182681,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 19,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12004-e6e499622dd9",
+    "mobId": 12004,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21861,
+        "locY": 182279,
+        "locZ": -5720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 14,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12052-609ec96a6926",
     "mobId": 12052,
     "period": "always",
     "possibleLocations": [
@@ -438737,7 +439121,7 @@
         "head": 0,
         "locX": 17726,
         "locY": 108915,
-        "locZ": -6480
+        "locZ": -6490
       }
     ],
     "randomBiasSeconds": 82800,
@@ -439526,7 +439910,7 @@
     }
   },
   {
-    "id": "spawn-12169-1f78b0a69d17",
+    "id": "spawn-12169-83b0238fac1b",
     "mobId": 12169,
     "period": "always",
     "possibleLocations": [
@@ -439540,13 +439924,13 @@
         "head": 0,
         "locX": 53504,
         "locY": 21248,
-        "locZ": -5496
+        "locZ": -5486
       },
       {
         "head": 0,
         "locX": 53248,
         "locY": 24576,
-        "locZ": -5272
+        "locZ": -5262
       }
     ],
     "randomBiasSeconds": 72000,
@@ -439649,6 +440033,72 @@
     }
   },
   {
+    "id": "spawn-12171-0b0c5a6378d4",
+    "mobId": 12171,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 23036,
+        "locX": 44773,
+        "locY": 17547,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 120,
+    "sourceIndex": 29,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12171-3060e453dcf2",
+    "mobId": 12171,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 12360,
+        "locX": 44648,
+        "locY": 18267,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 120,
+    "sourceIndex": 31,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12171-67f6771eb33a",
+    "mobId": 12171,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 28713,
+        "locX": 44794,
+        "locY": 17110,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 120,
+    "sourceIndex": 30,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
     "id": "spawn-12172-496fdfce55e7",
     "mobId": 12172,
     "period": "always",
@@ -439701,31 +440151,91 @@
     }
   },
   {
-    "id": "spawn-12173-0a2391cf05d9",
+    "id": "spawn-12173-2005eb252dfc",
     "mobId": 12173,
     "period": "always",
     "possibleLocations": [
       {
-        "head": 51150,
-        "locX": 43602,
-        "locY": 16055,
-        "locZ": -4392
-      },
-      {
-        "head": 12257,
-        "locX": 44681,
-        "locY": 18047,
-        "locZ": -4392
+        "head": 0,
+        "locX": 43656,
+        "locY": 17560,
+        "locZ": -4368
       }
     ],
     "randomBiasSeconds": 0,
-    "respawnSeconds": 360,
+    "respawnSeconds": 60,
+    "sourceIndex": 0,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12173-2567f1009bb1",
+    "mobId": 12173,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 43700,
+        "locY": 16900,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
     "sourceIndex": 3,
     "total": 1,
     "zone": {
       "bounds": [],
-      "id": "mobius:Others/21_18#21_18",
-      "sourceIndex": 3031
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12173-7d8edf1dbbcf",
+    "mobId": 12173,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 43444,
+        "locY": 17332,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 1,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
+    }
+  },
+  {
+    "id": "spawn-12173-af4dec383ffd",
+    "mobId": 12173,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 43464,
+        "locY": 17048,
+        "locZ": -4368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 2,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_grand_boss_ambient",
+      "sourceIndex": 3342
     }
   },
   {

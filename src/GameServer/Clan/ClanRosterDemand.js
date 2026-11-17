@@ -318,7 +318,7 @@ function prepare(clan, spots, prospects = [], previousGoal = null, readinessCach
             const kind = kinds.includes('healer') ? 'healing' : kinds.includes('mainBuffer') ? 'mainBuffer' : kinds.includes('tank') ? 'tank' : 'damage';
             const entry = requests.get(kind) || { kind, kinds, minLevel: Infinity, maxLevel: 0 };
             entry.minLevel = Math.min(entry.minLevel, Math.max(1, spot.avgLevel - Raid.MAX_LEVEL_BELOW_BOSS));
-            entry.maxLevel = Math.max(entry.maxLevel, spot.avgLevel + Raid.MAX_LEVEL_ABOVE_BOSS);
+            entry.maxLevel = Math.max(entry.maxLevel, require('../RaidBoss/GrandBossRules').maxLevel(spot, spot.avgLevel + Raid.MAX_LEVEL_ABOVE_BOSS));
             requests.set(kind, entry);
         }
     }
@@ -341,7 +341,7 @@ function buildDemand(clan, goal, team, section) {
         team.coreMemberIds ? require('./ClanRaidExpedition').groups({ memberIds: team.memberIds, coreMemberIds: team.coreMemberIds }) : null]);
     return { clanId: clan.id, ownerSection: section, goalKey: goal.goalKey, generation, desiredMembers: 9,
         source: team.source, minLevel: Math.max(1, team.source.avgLevel - Raid.MAX_LEVEL_BELOW_BOSS),
-        maxLevel: team.source.avgLevel + Raid.MAX_LEVEL_ABOVE_BOSS, neededKinds: kinds,
+        maxLevel: require('../RaidBoss/GrandBossRules').maxLevel(team.source, team.source.avgLevel + Raid.MAX_LEVEL_ABOVE_BOSS), neededKinds: kinds,
         classIds: Capabilities.classIdsForRequirements(kinds), requirements: team.requirements, deficits: team.deficits,
         newMemberIds: team.prospectiveIds, proof: { ownFingerprint: team.ownFingerprint, rows: team.rows },
         reason: team.reason, status: 'waiting' };

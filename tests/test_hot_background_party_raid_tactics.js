@@ -471,6 +471,33 @@ try {
     for (let count = 0; count < 8; count++) restores.pop()();
     owner.backgroundHuntTarget = boss;
 
+    // Orfen can start at any field point and return there after a lair heal.
+    // A raid gathered at the catalogue's first point must find the live boss.
+    const beforePursuit = restores.length;
+    const Index = invoke('GameServer/World/RaidEntityIndex');
+    const moves = [];
+    let bossX = 5000;
+    patch(Index, 'bossByTemplateId', (_world, id) => id === 12169 ? boss : null);
+    patch(boss, 'fetchLocX', () => bossX);
+    patch(tank, 'moveTo', data => moves.push(data.to));
+    patch(Restrictions, 'canMove', () => true);
+    party.stats.objective = { sourceKind: 'raid', raidBossTemplateId: 12169 };
+    owner.raidPreparationComplete = true;
+    try {
+        for (const [lair, x] of [[false, 5000], [true, 11000], [false, 7000]]) {
+            boss.grandBossLair = lair;
+            bossX = x;
+            owner.backgroundHuntTarget = null;
+            tick(owner, 20000);
+            assert.equal(moves.pop()?.locX, x, 'pursue the authoritative Orfen position at initial spawn, retreat and return');
+            assert.equal(owner.lastDecision.action, 'raid_follow_orfen');
+        }
+    } finally {
+        while (restores.length > beforePursuit) restores.pop()();
+        party.stats.objective = raidObjective;
+        delete boss.grandBossLair;
+    }
+
     // The servitor has its own native attack loop, even while its owner casts.
     const SummonControl = invoke('GameServer/Npc/SummonControl');
     const servitor = {

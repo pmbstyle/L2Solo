@@ -2044,6 +2044,14 @@ function applySchemaMigrations() {
     // number, so a branch's migration cannot collide with upstream's: append
     // [name, apply] here. They run after the numbered ones, in list order.
     const namedMigrations = [
+        // Only legacy five-hour grand-boss rows need rebasing. Keep their
+        // original death time; later randomized C4 deadlines survive restarts.
+        ['c4-grand-boss-respawn-windows', () => connection.exec(`
+            UPDATE raid_boss_state SET respawnTime = updatedAt + CASE npcId
+                WHEN 12001 THEN 129600000 WHEN 12052 THEN 216000000 WHEN 12169 THEN 172800000 END
+            WHERE npcId IN (12001, 12052, 12169) AND updatedAt > 0
+                AND respawnTime = updatedAt + 18000000;
+        `)],
         // Four bot row indexes no query needs (their readers left with the goal
         // reconcile and warehouse passes). Each holds updatedAt, which every save
         // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the

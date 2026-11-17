@@ -45,6 +45,8 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     }
     // Immortal town staff keep taking hits, but their HP floor stops at 1 so
     // the death pipeline below can only run for killable templates.
+    const epic = invoke('GameServer/RaidBoss/GrandBossRuntime');
+    epic.recordDamage(npc, actor, hit, session);
     npc.setHp(Math.max(npc.fetchImmortalMinHp?.() ?? 0, npc.fetchHp() - hit)); // HP bar would disappear if less than zero
     npc.broadcastVitals();
 
@@ -57,6 +59,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
 
     npc.automation.replenishVitals(npc);
     NpcAttacked(session, actor, npc, hit, options.npcAttacked);
+    epic.onAttack(invoke('GameServer/World/World'), npc, actor, hit, session);
 }
 
 module.exports = receivedHit;

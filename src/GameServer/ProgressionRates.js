@@ -46,6 +46,9 @@ function buildProfile(env, general) {
         sp: numberOr(general.spRate ?? general.expRate, 1) * multiplier,
         adena: numberOr(general.adenaRate, 1) * multiplier,
         drop: numberOr(general.dropChanceRate, 1) * multiplier,
+        // Epic jewelry keeps C4's one-item roll independently of the leveling
+        // preset. An explicit server setting can still change its rate.
+        epicDrop: numberOr(general.epicDropChanceRate, 1),
         spoil: numberOr(general.spoilRate ?? general.dropChanceRate, 1) * multiplier,
         // Quest objectives keep their authored item quantities at every preset.
         questDrop: 1,
@@ -58,6 +61,7 @@ function buildProfile(env, general) {
 
 function groupRate(group, kind = 'drop') {
     const current = profile();
+    if (kind === 'drop' && group.epic === true) return current.epicDrop;
     const hasAdena = (group.items || []).some((item) => Number(item.selfId) === 57);
     if (hasAdena) return current.adena;
     return kind === 'spoil' ? current.spoil : current.drop;

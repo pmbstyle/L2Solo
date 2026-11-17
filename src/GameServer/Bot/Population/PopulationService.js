@@ -971,6 +971,9 @@ const PopulationService = {
         this.startBackgroundJobRegistry();
         this.startLifecycleSafetySweep();
         this.startPartyAssemblyEvents();
+        Promise.resolve(this.lifeReadyPromise).then(() => {
+            if (this.started) require('./GrandBossRaidLifecycle').start();
+        }).catch(error => utils.infoWarn('GrandBoss', 'startup: %s', error.message));
         Promise.resolve(this.lifeReadyPromise).then(() => this.startOpportunisticRaids())
             .catch(error => utils.infoWarn('BotRaid', 'startup failed: %s', error.message));
         Promise.resolve(this.lifeReadyPromise).then(() => this.startClanWars())
@@ -1009,6 +1012,7 @@ const PopulationService = {
     },
 
     stop() {
+        require('./GrandBossRaidLifecycle').stop();
         this.opportunisticRaids?.stop();
         this.clanWars?.stop();
         this.clanWars = null;
@@ -1407,7 +1411,7 @@ const PopulationService = {
                 if (!this.started || this.partyFormationRunning || !bossFree(Catalog.findById(objective.spotId))) return null;
                 const current = await LifeState.statesByIds(members.map(s => s.characterId));
                 if (current.length !== 9 || current.some(s => !Policy.available(s, Date.now(), objective.preparationId))
-                    || !current.every(s => Policy.recruitLevelAllowed(s, objective.sourceLevel))
+                    || !current.every(s => Policy.recruitLevelAllowed(s, objective.sourceLevel, objective))
                     || !Policy.composition(current).ready) return null;
                 const checked = await assess(current, Catalog.findById(objective.spotId));
                 if (!checked.ready || !current.every((s, i) => current.slice(i + 1).every(peer =>
@@ -1892,6 +1896,8 @@ const PopulationService = {
                 // continue hunting and washing karma in the cold simulation.
                 if (session.pkProfile || session.plan === 'pk_hunting') return false;
                 if (session.clanAllianceQuest || session.partyCompanion === true || session.followPlayerSession) return false;
+                if (session.hotBackgroundPartyId && require('./GrandBossRaidLifecycle')
+                    .keepHot(BackgroundPartyState.find(session.hotBackgroundPartyId))) return false;
                 let distance = Infinity;
                 for (const playerSession of players) distance = Math.min(distance, distance2d(session.actor, playerSession.actor));
                 nearest.set(session, distance);
