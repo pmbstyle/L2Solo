@@ -279,14 +279,22 @@
                     <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="respawning">Respawning</button>
                     <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="missing">Missing</button>
                 </div>
-                <label class="raid-boss-search">
-                    <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
-                    <input id="raidBossSearch" type="search" placeholder="Find a raid boss…" autocomplete="off">
-                </label>
+                <div class="raid-boss-query">
+                    <div class="level-filter" role="group" aria-label="Raid boss level">
+                        <span>Lv</span>
+                        <input id="raidBossMinLevel" type="number" min="1" inputmode="numeric" placeholder="Min" aria-label="Minimum level">
+                        <i aria-hidden="true">–</i>
+                        <input id="raidBossMaxLevel" type="number" min="1" inputmode="numeric" placeholder="Max" aria-label="Maximum level">
+                    </div>
+                    <label class="raid-boss-search">
+                        <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
+                        <input id="raidBossSearch" type="search" aria-label="Find a raid boss" placeholder="Find a raid boss…" autocomplete="off">
+                    </label>
+                </div>
             </div>
 
             <div class="raid-boss-summary" id="raidBossSummary">Waiting for raid-boss data.</div>
-            <div class="raid-boss-list-head"><span id="raidBossScope">0 bosses</span><span>Click an in-world boss to center the map</span></div>
+            <div class="raid-boss-list-head" id="raidBossScope">0 bosses</div>
             <div class="raid-boss-list" id="raidBossList" role="list"></div>
         </section>
     </div>

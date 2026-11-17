@@ -550,7 +550,7 @@ body[data-view="profile"] .inspector-section:has(.inspector-empty) { display: bl
 .has-app-shell .kb-primary strong, .has-app-shell .kb-stat strong, .has-app-shell .kb-cell b { color: var(--text); }
 .has-app-shell .phase-badge { background: var(--accent-bg); color: var(--blue); border: 1px solid var(--line); }
 
-.has-app-shell .ranking-row:hover, .has-app-shell .ranking-row:focus-visible, .has-app-shell .raid-boss-row:hover, .has-app-shell .raid-boss-row:focus-visible { color: var(--text); background: var(--accent-bg); }
+.has-app-shell .ranking-row:hover, .has-app-shell .ranking-row:focus-visible, .has-app-shell .raid-boss-row:hover, .has-app-shell .raid-boss-row:focus-within { color: var(--text); background: var(--accent-bg); }
 
 .map-destination-marker { pointer-events: none; }
 .map-destination-marker circle { fill: #dfbd79; stroke: #22362e; }

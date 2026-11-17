@@ -373,6 +373,8 @@ const els = {
     closeRaidBosses: document.querySelector('#closeRaidBosses'),
     raidBossesModal: document.querySelector('#raidBossesModal'),
     raidBossFilters: document.querySelector('#raidBossFilters'),
+    raidBossMinLevel: document.querySelector('#raidBossMinLevel'),
+    raidBossMaxLevel: document.querySelector('#raidBossMaxLevel'),
     raidBossSearch: document.querySelector('#raidBossSearch'),
     raidBossSummary: document.querySelector('#raidBossSummary'),
     raidBossScope: document.querySelector('#raidBossScope'),
@@ -737,8 +739,11 @@ function raidBossStatusLabel(status) {
 
 function filteredRaidBosses() {
     const query = state.raidBossSearch.trim().toLowerCase();
+    const minLevel = Number(els.raidBossMinLevel.value || -Infinity);
+    const maxLevel = Number(els.raidBossMaxLevel.value || Infinity);
     return raidBossItems().filter((boss) => {
         if (state.raidBossFilter !== 'all' && boss.status !== state.raidBossFilter) return false;
+        if (boss.level < minLevel || boss.level > maxLevel) return false;
         if (!query) return true;
         return [boss.name, boss.location?.name, boss.level, boss.id]
             .filter((value) => value !== null && value !== undefined)
@@ -766,19 +771,20 @@ function renderRaidBosses() {
     els.raidBossScope.textContent = `${number(bosses.length)} boss${bosses.length === 1 ? '' : 'es'}`;
     els.raidBossList.innerHTML = bosses.length
         ? bosses.map((boss) => {
-            const clickable = boss.status === 'alive' && boss.loc;
+            const canShowOnMap = boss.status === 'alive' && boss.loc;
+            const detailHref = Router.href({ name: 'knowledge-npcs', id: boss.id });
             const timer = boss.status === 'alive'
                 ? 'In world'
                 : boss.status === 'respawning'
                     ? formatDuration(Math.max(0, Number(boss.respawnAt || 0) - Date.now()))
                     : 'Not found';
-            return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
-                <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
-                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')}</span></span>
+            return `<div class="raid-boss-row" role="listitem">
+                <i class="raid-boss-dot ${escapeHtml(boss.status)}" aria-hidden="true"></i>
+                <span class="raid-boss-identity"><a href="${detailHref}">${text(boss.name)}</a><span>Lv ${number(boss.level, '?')}</span></span>
                 <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${boss.location?.area?.mapAnchor ? 'Dungeon entrance on map' : 'Surface location'}</span></span>
                 <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
-                <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
-            </button>`;
+                ${canShowOnMap ? `<button class="raid-boss-map-button" type="button" data-raid-boss-map-id="${escapeHtml(boss.id)}" aria-label="Show ${escapeHtml(boss.name)} on map">Show on map</button>` : ''}
+            </div>`;
         }).join('')
         : '<div class="list-empty">No raid bosses match this filter.</div>';
     els.raidBossList.scrollTop = scrollTop;
@@ -3667,9 +3673,9 @@ els.rankingsModal?.addEventListener('click', (event) => {
 });
 
 els.raidBossesModal?.addEventListener('click', (event) => {
-    const row = event.target.closest('[data-raid-boss-id]');
-    if (row && !row.disabled) {
-        focusRaidBoss(row.dataset.raidBossId);
+    const mapButton = event.target.closest('[data-raid-boss-map-id]');
+    if (mapButton) {
+        focusRaidBoss(mapButton.dataset.raidBossMapId);
         return;
     }
     if (event.target === els.raidBossesModal) closeRaidBosses();
@@ -3921,6 +3927,13 @@ els.raidBossSearch?.addEventListener('input', (event) => {
     state.raidBossSearch = String(event.target.value || '').trim().toLowerCase();
     els.raidBossList.scrollTop = 0;
     renderRaidBosses();
+});
+
+[els.raidBossMinLevel, els.raidBossMaxLevel].forEach((input) => {
+    input?.addEventListener('input', () => {
+        els.raidBossList.scrollTop = 0;
+        renderRaidBosses();
+    });
 });
 
 els.rankingTabs?.addEventListener('click', (event) => {

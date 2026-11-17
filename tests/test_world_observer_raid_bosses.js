@@ -16,7 +16,11 @@ const World = invoke('GameServer/World/World');
     assert.strictEqual(Observer.loopbackRequest({ socket: { remoteAddress: '100.92.15.42' } }), false);
 
     const catalog = Observer.raidBossCatalog();
-    assert.strictEqual(catalog.length, 179, 'observer must expose all ordinary C4 raid bosses');
+    assert.strictEqual(catalog.length, 182, 'observer must expose the C4 raid catalogue, including Queen Ant, Core and Orfen');
+    const knowledgeBase = Observer.knowledgeBaseService();
+    for (const { id, name } of catalog) {
+        assert.ok(knowledgeBase.npcDetail(id), `the raid list must link to a database entry for ${name} (${id})`);
+    }
 
     const definition = catalog[0];
     const liveBoss = {

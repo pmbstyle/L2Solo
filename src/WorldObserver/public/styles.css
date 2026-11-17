@@ -1068,30 +1068,32 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .ranking-value small { display: block; margin-top: 2px; color: var(--faint); font-size: 8px; font-weight: 760; letter-spacing: 0.06em; text-transform: uppercase; }
 .ranking-list .list-empty { padding: 50px 12px; }
 
-.raid-boss-controls { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 28px; border-bottom: 1px solid var(--line-soft); }
-.raid-boss-search { display: flex; align-items: center; gap: 8px; width: min(270px, 100%); height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--gold); background: rgba(237, 240, 232, 0.025); }
+.raid-boss-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 28px; border-bottom: 1px solid var(--line-soft); }
+.raid-boss-query { display: flex; align-items: center; gap: 8px; width: min(370px, 100%); }
+.raid-boss-query .level-filter { height: 35px; }
+.raid-boss-search { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--gold); background: rgba(237, 240, 232, 0.025); }
 .raid-boss-search:focus-within { border-color: rgba(216, 185, 109, 0.58); }
 .raid-boss-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 11px; }
 .raid-boss-search input::placeholder { color: var(--faint); }
 .raid-boss-summary { margin: 0 28px; padding: 12px 0 5px; color: var(--muted); font-size: 11px; }
-.raid-boss-list-head { display: flex; justify-content: space-between; gap: 14px; padding: 10px 30px 9px; color: var(--faint); font-size: 10px; }
-.raid-boss-list-head span:first-child { color: var(--muted); font-weight: 780; }
+.raid-boss-list-head { padding: 10px 30px 9px; color: var(--muted); font-size: 10px; font-weight: 780; }
 .raid-boss-list { min-height: 0; overflow: auto; padding: 0 28px 24px; scrollbar-gutter: stable; }
-.raid-boss-row { display: grid; grid-template-columns: 10px minmax(150px, 1.25fr) minmax(145px, 1fr) minmax(105px, 0.8fr) 118px; align-items: center; gap: 12px; width: 100%; padding: 11px 8px; border: 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-align: left; background: transparent; cursor: pointer; transition: color 140ms ease, background 140ms ease, transform 140ms ease; }
-.raid-boss-row:hover, .raid-boss-row:focus-visible { color: #fff; background: rgba(216, 185, 109, 0.065); transform: translateX(3px); outline: none; }
-.raid-boss-row.is-missing { cursor: default; opacity: 0.64; }
+.raid-boss-row { display: grid; grid-template-columns: 10px minmax(150px, 1.25fr) minmax(145px, 1fr) minmax(105px, 0.8fr) 94px; align-items: center; gap: 12px; padding: 11px 8px; border-bottom: 1px solid var(--line-soft); }
+.raid-boss-row:hover, .raid-boss-row:focus-within { background: rgba(216, 185, 109, 0.065); }
 .raid-boss-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .raid-boss-dot.alive { background: var(--red); box-shadow: 0 0 12px rgba(230, 109, 97, 0.7); }
 .raid-boss-dot.respawning { background: var(--amber); }
 .raid-boss-identity, .raid-boss-location, .raid-boss-timer { min-width: 0; }
-.raid-boss-identity strong, .raid-boss-identity span, .raid-boss-location strong, .raid-boss-location span, .raid-boss-timer strong, .raid-boss-timer span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.raid-boss-identity strong { font-size: 12px; }
+.raid-boss-identity a, .raid-boss-identity span, .raid-boss-location strong, .raid-boss-location span, .raid-boss-timer strong, .raid-boss-timer span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raid-boss-identity a { width: fit-content; max-width: 100%; color: inherit; font-size: 12px; font-weight: 700; text-decoration: none; }
+.raid-boss-identity a:hover, .raid-boss-identity a:focus-visible { color: var(--gold); }
+.raid-boss-identity a:focus-visible, .raid-boss-map-button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .raid-boss-identity span, .raid-boss-location span, .raid-boss-timer span { margin-top: 3px; color: var(--faint); font-size: 9px; }
 .raid-boss-location strong { color: var(--muted); font-size: 10px; }
 .raid-boss-timer { text-align: right; }
 .raid-boss-timer strong { color: var(--gold); font-size: 12px; font-variant-numeric: tabular-nums; }
 .raid-boss-timer span { color: var(--muted); }
-.raid-boss-map-button { padding: 6px 8px; border: 1px solid rgba(216, 185, 109, 0.34); border-radius: 6px; color: var(--gold); background: rgba(216, 185, 109, 0.07); font-size: 9px; font-weight: 820; cursor: pointer; }
+.raid-boss-map-button { justify-self: end; padding: 6px 8px; border: 1px solid rgba(216, 185, 109, 0.34); border-radius: 6px; color: var(--gold); background: rgba(216, 185, 109, 0.07); font-size: 9px; font-weight: 820; white-space: nowrap; cursor: pointer; }
 .raid-boss-map-button:hover { background: rgba(216, 185, 109, 0.15); }
 
 .clans-view {
@@ -1480,13 +1482,12 @@ svg.empty-glyph { width: 38px; height: 38px; }
     .ranking-row { grid-template-columns: 31px minmax(110px, 1fr) 88px; gap: 8px; }
     .ranking-class, .ranking-kind { display: none; }
     .raid-boss-controls { align-items: stretch; flex-direction: column; padding: 12px 18px; }
-    .raid-boss-search { width: 100%; }
+    .raid-boss-query { width: 100%; }
     .raid-boss-summary { margin: 0 18px; }
     .raid-boss-list-head { padding-right: 20px; padding-left: 20px; }
-    .raid-boss-list-head span:last-child { display: none; }
     .raid-boss-list { padding-right: 18px; padding-left: 18px; }
-    .raid-boss-row { grid-template-columns: 10px minmax(110px, 1fr) 92px; gap: 8px; }
-    .raid-boss-location, .raid-boss-map-button, .raid-boss-row > span:last-child { display: none; }
+    .raid-boss-row { grid-template-columns: 8px minmax(0, 1fr) 62px 75px; gap: 8px; }
+    .raid-boss-location { display: none; }
     .clan-page-header { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; min-height: 0; padding: 12px 14px; }
     .clan-page-brand > span:last-child { display: none; }
     .clan-page-divider { height: 34px; margin: 0 12px; }
