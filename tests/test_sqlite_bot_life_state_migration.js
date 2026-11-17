@@ -561,7 +561,7 @@ if (process.argv[2] === '--bootstrap') {
         'v80 drops the build hint and the per-target lists and keeps every other value as stored');
 
     // Sorted, as the world reports them.
-    const namedMigrations = ['bot-economy-intents', 'bot-items-synced', 'character-party-presets', 'drop-bot-goal-state', 'drop-capacity-backoffs-and-solo-avoid',
+    const namedMigrations = ['bot-economy-intents', 'bot-items-synced', 'c4-grand-boss-respawn-windows', 'character-party-presets', 'drop-bot-goal-state', 'drop-capacity-backoffs-and-solo-avoid',
         'drop-kit-targets', 'drop-revenge-and-conflict-windows', 'drop-unused-bot-life-indexes', 'drop-war-supply-tickets'];
     const freshPath = path.join(outputDir, 'fresh.sqlite');
     bootstrap(freshPath);

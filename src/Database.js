@@ -782,6 +782,16 @@ function withCharacterFlushes(characterIds, work) {
 }
 
 function applySchemaMigrations() {
+    const ensureRaidBossState = () => connection.exec(`
+        CREATE TABLE IF NOT EXISTS raid_boss_state (
+            npcId INTEGER PRIMARY KEY,
+            respawnTime INTEGER NOT NULL DEFAULT 0,
+            hp REAL,
+            mp REAL,
+            updatedAt INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
+    `);
     const migrations = [
         [1, () => {}],
         [2, () => connection.exec(`
@@ -920,16 +930,7 @@ function applySchemaMigrations() {
                     ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
             `);
         }],
-        [9, () => connection.exec(`
-            CREATE TABLE IF NOT EXISTS raid_boss_state (
-                npcId INTEGER PRIMARY KEY,
-                respawnTime INTEGER NOT NULL DEFAULT 0,
-                hp REAL,
-                mp REAL,
-                updatedAt INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
-        `)],
+        [9, ensureRaidBossState],
         [10, () => {
             const addColumn = (table, name, definition) => {
                 const columns = connection.prepare(`PRAGMA table_info(${table})`).all();
@@ -2046,12 +2047,15 @@ function applySchemaMigrations() {
     const namedMigrations = [
         // Only legacy five-hour grand-boss rows need rebasing. Keep their
         // original death time; later randomized C4 deadlines survive restarts.
-        ['c4-grand-boss-respawn-windows', () => connection.exec(`
-            UPDATE raid_boss_state SET respawnTime = updatedAt + CASE npcId
-                WHEN 12001 THEN 129600000 WHEN 12052 THEN 216000000 WHEN 12169 THEN 172800000 END
-            WHERE npcId IN (12001, 12052, 12169) AND updatedAt > 0
-                AND respawnTime = updatedAt + 18000000;
-        `)],
+        ['c4-grand-boss-respawn-windows', () => {
+            ensureRaidBossState();
+            connection.exec(`
+                UPDATE raid_boss_state SET respawnTime = updatedAt + CASE npcId
+                    WHEN 12001 THEN 129600000 WHEN 12052 THEN 216000000 WHEN 12169 THEN 172800000 END
+                WHERE npcId IN (12001, 12052, 12169) AND updatedAt > 0
+                    AND respawnTime = updatedAt + 18000000;
+            `);
+        }],
         // Four bot row indexes no query needs (their readers left with the goal
         // reconcile and warehouse passes). Each holds updatedAt, which every save
         // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the

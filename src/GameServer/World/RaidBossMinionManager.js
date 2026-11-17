@@ -120,7 +120,7 @@ function spawnMinion(world, boss, group, place = null) {
         minionBossObjectId: Number(boss.fetchId?.() || 0),
         minionGroup: group
     } : { minionLeader: boss, minionGroup: group };
-    const slot = aliveMinions(world, group).length;
+    const slot = group.coords?.length || group.offsets?.length ? aliveMinions(world, group).length : 0;
     const offset = group.offsets?.[slot % group.offsets.length];
     const coords = place || group.coords?.[slot % group.coords.length] || (offset && {
         locX: boss.fetchLocX() + offset.locX, locY: boss.fetchLocY() + offset.locY,

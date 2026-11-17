@@ -17,6 +17,7 @@ const mocks = {
     'GameServer/Bot/AI/BotSocialMemory': { recordCombatHelp() {} },
     'GameServer/Social/CombatHelpMemory': { recordDefeat() {} },
     'GameServer/Effects/EffectRestrictions': { wakeOnDamage() {} },
+    'GameServer/RaidBoss/GrandBossRuntime': { recordDamage() {}, onAttack() {} },
     'GameServer/Npc/SocialAggro': { notifyClan() {} },
     'GameServer/Npc/NpcHate': require('../src/GameServer/Npc/NpcHate'),
     'GameServer/Npc/Attacked': invoke('GameServer/Npc/Attacked'),

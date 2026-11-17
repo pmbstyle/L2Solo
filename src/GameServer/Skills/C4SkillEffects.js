@@ -2,6 +2,7 @@
 // semantics come from C4SkillRules; NPC retaliation uses the shared hate owner.
 const FailureLog = require('../../FailureLog');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const { hasRequiredSkillItems } = require('./SkillItemRequirements');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const NpcAttacked = invoke('GameServer/Npc/Attacked');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -825,15 +826,6 @@ function summonFamilyFallbackIds(name) {
 function summonDisplayName(skill, fallbackName) {
     const skillName = String(skill.fetchName?.() || '').replace(/^Summon\s+/i, '').trim();
     return skillName || fallbackName;
-}
-
-function hasRequiredSkillItems(actor, skill) {
-    const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
-    const count = Number(skill.fetchItemConsumeCount?.()) || 0;
-    if (!itemId || count <= 0) return true;
-
-    const item = actor?.backpack?.fetchItemFromSelfId?.(itemId);
-    return (Number(item?.fetchAmount?.()) || 0) >= count;
 }
 
 function consumeSkillItems(session, actor, skill, callback) {

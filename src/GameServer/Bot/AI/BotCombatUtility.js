@@ -1,5 +1,5 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
-const { hasRequiredSkillItems } = invoke('GameServer/Skills/C4SkillEffects');
+const { hasRequiredSkillItems } = require('../../Skills/SkillItemRequirements');
 const Attack = invoke('GameServer/Skills/WeaponMask');
 const Formulas = invoke('GameServer/Formulas');
 const HitRules = invoke('GameServer/Combat/HitRules');
