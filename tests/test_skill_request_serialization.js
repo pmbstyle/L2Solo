@@ -11,13 +11,18 @@ const State = invoke('GameServer/Model/State');
 const Store = invoke('GameServer/Effects/EffectStore');
 const World = invoke('GameServer/World/World');
 const Skill = invoke('GameServer/Model/Skill');
+const PvpFlag = invoke('GameServer/Actor/PvpFlag');
+const Generics = invoke(path.actor);
+const { registerSessions } = require('./helpers/worldSessions');
 const activeSkills = require('../data/Skills/Active/active.json');
 
 (async () => {
-    const saved = { npc: World.fetchNpc, user: World.fetchUser, peace: utils.isInPeaceZone, random: Math.random };
+    const saved = { npc: World.fetchNpc, user: World.fetchUser, users: World.user,
+        peace: utils.isInPeaceZone, random: Math.random, mark: PvpFlag.mark };
     const drain = () => new Promise(setImmediate);
     const sessions = [];
     try {
+        PvpFlag.mark = () => {};
         utils.isInPeaceZone = () => false;
         for (const npc of [true, false]) {
             for (const rooted of [false, true]) {
@@ -194,7 +199,9 @@ const activeSkills = require('../data/Skills/Active/active.json');
         for (const [id, kind, distance, rooted] of [
             [1031, 'animal', 40, false], [1031, 'plant', 1000, false], [1031, 'beast', 1000, true],
             [1031, 'player', 40, false], [1031, 'undead', 40, false],
-            [1031, 'undead summon', 40, false], [1031, 'changed during approach', 1000, false],
+            [1031, 'undead summon', 40, false], [1031, 'party summon', 1000, false],
+            [1031, 'town summon', 1000, false], [1031, 'summon entering town', 40, false],
+            [1031, 'changed during approach', 1000, false],
             [1031, 'direct cast', 40, false],
             [49, 'beast', 40, false], [1028, 'beast', 40, false],
             [1034, 'beast', 40, false], [1042, 'beast', 40, false]
@@ -202,7 +209,9 @@ const activeSkills = require('../data/Skills/Active/active.json');
             const definition = activeSkills.find(row => row.selfId === id);
             const spell = new Skill({ selfId: id, ...definition.template, ...definition.time, ...definition.levels[0] });
             let mp = 100, reuse = false, casterX = 0, arrive, aggro = 0;
-            let undead = ['undead', 'undead summon', 'changed during approach'].includes(kind);
+            const summon = kind.includes('summon');
+            const protectedSummon = ['party summon', 'town summon'].includes(kind);
+            let undead = summon || ['undead', 'changed during approach'].includes(kind);
             const packets = [], timers = [];
             const actor = { effects: {}, state: new State(), automation: new Automation(), attack: new Attack(),
                 fetchId: () => 2000001, fetchName: () => 'Shillien Oracle', fetchLevel: () => 40,
@@ -218,19 +227,26 @@ const activeSkills = require('../data/Skills/Active/active.json');
             const target = { state: new State(), hp: 1000, fetchId: () => kind === 'player' ? 2000002 : 1000001,
                 fetchLocX: () => distance, fetchLocY: () => 0, fetchLocZ: () => 0, fetchHead: () => 0,
                 fetchRadius: () => 8, isDead() { return this.state.fetchDead(); },
-                fetchAttackable: () => !['player', 'undead summon'].includes(kind), fetchUndead: () => undead,
-                fetchIsSummon: () => kind === 'undead summon', fetchPvpFlag: () => 1,
+                fetchAttackable: () => kind !== 'player' && !summon, fetchUndead: () => undead,
+                fetchIsSummon: () => summon, fetchPvpFlag: () => 1,
                 fetchName: () => 'Target', fetchLevel: () => 20, fetchCollectiveMDef: () => 50,
                 fetchHp() { return this.hp; }, setHp(value) { this.hp = value; },
                 broadcastVitals() {}, automation: { replenishVitals() {} },
                 enterCombatState() { aggro++; } };
-            if (kind !== 'player') target.fetchKind = () => 'Monster';
+            if (kind !== 'player') target.fetchKind = () => summon ? 'Summon' : 'Monster';
             actor.fetchDestId = () => target.fetchId();
             const session = { actor, persistenceMode: 'ephemeral',
                 dataSendToMe(packet) { packets.push(packet); },
                 dataSendToMeAndOthers(packet) { packets.push(packet); } };
             actor.session = session;
             sessions.push(session);
+            if (summon) {
+                const owner = { fetchId: () => 2000002, fetchPvpFlag: () => 1 };
+                owner.session = { actor: owner, partyCompanion: kind === 'party summon', followPlayerSession: session };
+                target.fetchOwnerId = owner.fetchId;
+                registerSessions([session, owner.session]);
+            }
+            utils.isInPeaceZone = x => kind === 'town summon' && x === distance;
             actor.attack.queueTimer = callback => timers.push(callback);
             actor.automation.replenishVitals = () => {};
             if (rooted) Store.apply(actor, { key: 'root', id: 1201, type: 'debuff', durationMs: 60000 });
@@ -248,7 +264,31 @@ const activeSkills = require('../data/Skills/Active/active.json');
                 arrive();
             }
             const started = packets.some(packet => packet[0] === 0x48);
+            if (kind === 'summon entering town') {
+                Generics.moveTo(session, actor, {
+                    from: { locX: 0, locY: 0, locZ: 0 },
+                    to: { locX: -500, locY: 0, locZ: 0 }
+                });
+                assert.equal(actor.attack.queue.name, 'move');
+                utils.isInPeaceZone = x => x === distance;
+            }
             while (timers.length) timers.shift()();
+            if (protectedSummon || kind === 'summon entering town') {
+                assert.equal(started, !protectedSummon, `cast start must respect the protection on ${kind}`);
+                assert(!packets.some(packet => packet[0] === 0x60));
+                assert.equal(target.hp, 1000, `a hostile spell must leave the protected ${kind} unharmed`);
+                assert.equal(mp, 100, `a blocked spell against ${kind} must preserve MP`);
+                assert.equal(actor.state.fetchCasts(), false);
+                assert(packets.some(packet => packet[0] === 0x25));
+                if (protectedSummon) {
+                    assert(!packets.some(packet => packet[0] === 0x01));
+                } else {
+                    assert(packets.some(packet => packet[0] === 0x49), 'the C4 client must see the cast cancelled');
+                    assert(packets.some(packet => packet[0] === 0x01), 'a cancelled cast must release queued movement');
+                    assert.equal(actor.attack.queue.name, undefined);
+                }
+                continue;
+            }
             if (kind === 'undead' || kind === 'undead summon') {
                 assert.equal(started, true, `${spell.fetchName()} must animate on ${kind}`);
                 assert.equal(mp, 100 - spell.fetchConsumedMp(), 'a valid undead cast must consume its MP');
@@ -269,7 +309,9 @@ const activeSkills = require('../data/Skills/Active/active.json');
         }
     } finally {
         sessions.forEach(session => session.actor.automation.abortAll(session.actor, { notifyClient: false }));
-        World.fetchNpc = saved.npc; World.fetchUser = saved.user; utils.isInPeaceZone = saved.peace;
+        World.fetchNpc = saved.npc; World.fetchUser = saved.user; World.user = saved.users;
+        utils.isInPeaceZone = saved.peace;
+        PvpFlag.mark = saved.mark;
         Math.random = saved.random;
     }
     console.log('Async skill request serialization, queued casts and restricted target checks passed');
