@@ -257,9 +257,7 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
 }
 
 function fullRosterIdentity(marker) {
-    return marker ? [marker.clanId, marker.ownerSection, marker.goalKey, marker.generation,
-        [...(marker.memberIds || [])].map(number).sort((a, b) => a - b), marker.sourceId, marker.npcId, marker.raidInstanceId,
-        require('./ClanRaidExpedition').coreIds(marker), marker.unchargedHelperIds || []] : null;
+    return marker ? require('./ClanRaidRoster').identity(marker) : null;
 }
 function sameRosterRequirement(left, right) {
     return number(left?.minPartySize) === number(right?.minPartySize)

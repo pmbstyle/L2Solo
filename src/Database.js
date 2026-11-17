@@ -5025,7 +5025,8 @@ function recruitmentProofCurrent(clanId, level, state, proof) {
     if (rows.length > 40) return false;
     const members = rows.filter(member => !require('./GameServer/Clan/ClanSimulationPolicy').isStaticService(member));
     if (Demand.ownFingerprint({ id: clanId, level, state, physicalMemberCount: rows.length, members }) !== proof.ownFingerprint) return false;
-    if (proof.rows.length > 18 || !proof.rows.length || proof.rows.length > 9 && !String(proof.source.id || '').startsWith('raid:')) return false;
+    if (proof.rows.length > require('./GameServer/Clan/ClanRaidExpedition').MAX_MEMBERS || !proof.rows.length
+        || proof.rows.length > 9 && !String(proof.source.id || '').startsWith('raid:')) return false;
     const selected = recruitmentRows(`c.id IN (${proof.rows.map(() => '?').join(',')})`, proof.rows.map(row => row[0]));
     return proof.rows.every(row => selected.some(member => member.characterId === row[0] && Demand.memberFingerprint(member) === row[4]
         && (Number(member.clanId) === clanId || Number(member.clanId) === 0 && recruitmentAvailable(member))));
@@ -6534,7 +6535,7 @@ const Database = {
     stateRevisions,
 
     commitAndReleaseColdSimulationLeases(requests = []) {
-        const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
+        const batch = Array.isArray(requests) ? requests.slice(0, require('./GameServer/Clan/ClanRaidExpedition').MAX_MEMBERS) : [];
         if (!batch.length) return Promise.resolve([]);
         if (batch.reduce((count, request) => count + (request.memoryEvents?.length || 0), 0) > InteractionMemoryPolicy.MAX_BATCH) {
             return Promise.reject(new Error('interaction memory: cold transaction event budget exceeded'));

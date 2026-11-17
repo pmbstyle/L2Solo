@@ -589,6 +589,37 @@ function staleRefusal(result) {
     return `${result?.reason || ''} ${result?.detail || ''}`.includes('stale');
 }
 
+// Large expeditions share one admission, party change and boss snapshot. Keep
+// that object once on the wire instead of charging its JSON size per member.
+function compactAtomicGroups(proposals) {
+    const groups = new Map();
+    return proposals.map(proposal => {
+        const group = proposal.atomicGroup;
+        if (!group || typeof group.id !== 'string') return proposal;
+        if (groups.get(group.id) === group) {
+            const { atomicGroup, ...rest } = proposal;
+            return { ...rest, atomicGroupRef: group.id };
+        }
+        groups.set(group.id, group);
+        return proposal;
+    });
+}
+
+function expandAtomicGroups(proposals) {
+    const groups = new Map(proposals.filter(p => p.atomicGroup && typeof p.atomicGroup.id === 'string')
+        .map(p => [p.atomicGroup.id, p.atomicGroup]));
+    return proposals.map(proposal => {
+        if (proposal.atomicGroupRef === undefined) return proposal;
+        const group = groups.get(proposal.atomicGroupRef);
+        if (proposal.atomicGroup || typeof proposal.atomicGroupRef !== 'string'
+            || !group || !Array.isArray(group.memberIds) || !group.memberIds.includes(proposal.characterId)) {
+            throw new Error('invalid_atomic_group_reference');
+        }
+        const { atomicGroupRef, ...rest } = proposal;
+        return { ...rest, atomicGroup: group };
+    });
+}
+
 module.exports = {
     PROTOCOL_VERSION,
     MAX_BATCH,
@@ -609,6 +640,8 @@ module.exports = {
     meetingIdentity,
     fitMeetingAck,
     byteLength,
+    compactAtomicGroups,
+    expandAtomicGroups,
     omitPlannedStates,
     competitionEvent
 };

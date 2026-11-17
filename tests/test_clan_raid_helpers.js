@@ -27,16 +27,23 @@ const clan = members => ({ id: 77, members });
 const normal = Raid.assessment(clan(core), spot, null, { timestamp, desiredMembers: 9 });
 assert(normal.ready, JSON.stringify(normal.raidAssessment));
 const dd = core.find(member => Raid.raidRole(member) === 'damage');
-const helpers = Array.from({ length: 12 }, (_, i) => ({ ...structuredClone(dd), characterId: 8000000+i }));
+const helpers = Array.from({ length: 40 }, (_, i) => ({ ...structuredClone(dd), characterId: 8000000+i }));
 const limit = normal.raidAssessment.seconds * .85;
 const input = { timestamp, desiredMembers: 9, maxFightSeconds: limit };
 assert.equal(Raid.assessment(clan(core), spot, null, input).reason, 'raid_fight_too_long');
 const expanded = Raid.assessment(clan([...core,...helpers]), spot, null, input);
 assert(expanded.ready, JSON.stringify(expanded.raidAssessment));
-assert.equal(expanded.eligible.length, 18, 'one extra party is the fixed work bound');
+assert.equal(expanded.eligible.length, 40, 'one expedition is bounded by the largest C4 clan');
 assert.equal(expanded.coreMemberIds.length, 9);
 assert(expanded.raidAssessment.seconds < normal.raidAssessment.seconds);
 assert.equal(expanded.raidAssessment.defense.tankId, normal.raidAssessment.defense.tankId);
+const buffer = core.find(member => Raid.raidRole(member) === 'buffer');
+const spareBuffers = Array.from({ length: 3 }, (_, i) => ({ ...structuredClone(buffer), characterId: 8100000 + i }));
+const supported = Raid.assessment(clan([...core, ...helpers.slice(0,28), ...spareBuffers]), spot, null, input);
+assert.equal(supported.eligible.length, 40);
+const supportedGroups = Expedition.groups({ memberIds: supported.eligible.map(s => s.characterId), coreMemberIds: supported.coreMemberIds });
+for (const group of supportedGroups.slice(1,4)) assert.equal(group.filter(id => spareBuffers.some(s => s.characterId === id)).length, 1,
+    'available support is distributed between helper parties instead of piling into the final group');
 const purchased = expanded.eligible.map(state => {
     const next = structuredClone(state);
     next.adena = 0; next.stats.money = [0,0,0,0];
@@ -51,15 +58,56 @@ assert.equal(physical.assessment.grossDps, expanded.raidAssessment.grossDps,
     'spending the wallet on the planned stock cannot downgrade charged helpers at physical opening');
 const marker = { clanId: 77, ownerSection: 'goal', goalKey: 'raid:test', generation: 'test',
     sourceId: spot.id, npcId: spot.raidBossTemplateId, raidInstanceId: 'instance',
-    memberIds: expanded.eligible.map(s => s.characterId), coreMemberIds: expanded.coreMemberIds, minPartySize: 18, maxPartySize: 18 };
+    memberIds: expanded.eligible.map(s => s.characterId), coreMemberIds: expanded.coreMemberIds, minPartySize: 40, maxPartySize: 40 };
 assert(Roster.valid(marker));
+assert.deepEqual(Expedition.groups(marker).map(group => group.length), [9, 9, 9, 9, 4]);
+assert(!Roster.valid({ ...marker, memberIds: [...marker.memberIds, 9000000], minPartySize: 41, maxPartySize: 41 }));
+assert(Roster.valid({ ...marker, unchargedHelperIds: marker.memberIds.filter(id => !marker.coreMemberIds.includes(id)) }));
 assert(!Roster.valid({ ...marker, coreMemberIds: marker.coreMemberIds.slice(1) }));
 assert(!Roster.same(marker, { ...marker, coreMemberIds: [...marker.coreMemberIds.slice(1),helpers[0].characterId] }));
+const regrouped = structuredClone(marker);
+[regrouped.memberIds[9], regrouped.memberIds[18]] = [regrouped.memberIds[18], regrouped.memberIds[9]];
+assert(!Roster.same(marker, regrouped), 'the same participants assigned to different parties require a new admission');
 const helper = expanded.eligible.find(member => !marker.coreMemberIds.includes(member.characterId));
 const owned = expanded.eligible.map(s => ({ ...s, stats: { ...s.stats, clanPartyObjective: { fullRoster: marker } } }));
 assert.equal(Expedition.partyMembers(owned, marker, helper).length, 9);
 assert.equal(Expedition.partyMembers(owned, marker, core[0]).length, 9);
 assert(Expedition.partyMembers(owned, marker, helper).every(s => !marker.coreMemberIds.includes(s.characterId)));
+for (const group of Expedition.groups(marker)) for (const id of group) {
+    assert.deepEqual(Expedition.partyMembers(owned, marker, id).map(s => s.characterId), group,
+        'support never crosses a helper party boundary, including the final four');
+}
+const retained = Raid.assessment(clan([...core, ...helpers].reverse()), spot, { assignedMemberIds: marker.memberIds },
+    { ...input, coreMemberIds: marker.coreMemberIds, preferredMemberIds: marker.memberIds });
+assert.deepEqual(retained.eligible.filter(s => !marker.coreMemberIds.includes(s.characterId)).map(s => s.characterId),
+    marker.memberIds.filter(id => !marker.coreMemberIds.includes(id)), 'revalidation preserves helper party membership');
+const Forecast = require('../src/GameServer/Bot/Population/RaidCombatAssessment');
+const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const preparedGroups = Expedition.groups(marker).map(ids => Forecast.prepared(owned.filter(s => ids.includes(s.characterId)), timestamp));
+assert(preparedGroups.every(group => group.ready));
+const combatAt = Math.max(...preparedGroups.map(group => group.at));
+const fighters = preparedGroups.flatMap(group => group.states);
+const npc = Data.npcs.find(npc => npc.selfId === fixture.bossId);
+const mob = { ...Combat.npcCombatStats(npc), maxHp: 1000000000, raidBossMaxHp: 1000000000 };
+const fight = count => Resolver.resolvePartyFight({ members: fighters.slice(0, count), spot,
+    targetNpcId: fixture.bossId, timestamp: combatAt, rng: () => .5, sharedEncounter: true, encounterKey: 'raid:budget',
+    encounter: { version: 1, key: 'raid:budget', hp: mob.maxHp, mob, at: combatAt, slices: 1 } });
+for (const count of [9, 18, 27, 36, 40]) {
+    const result = fight(count);
+    assert.equal(result.debug.durationMs, 15000, `${count} participants receive a whole combat interval`);
+    assert(!result.debug.actionBound);
+    assert(result.debug.actions > 96, 'raid actions no longer share one ordinary-party allowance');
+    assert(result.members.every(member => member.actions > 0), 'later helper parties receive turns too');
+}
+const Formulas = invoke('GameServer/Formulas');
+const originalAttackMs = Formulas.normalAttackMs;
+try {
+    Formulas.normalAttackMs = () => 1;
+    const fast = fight(40);
+    assert(fast.debug.actionBound, 'a pathological rotation still has a finite action bound');
+    assert.equal(fast.debug.actions, fast.debug.actionLimit);
+    assert(fast.debug.durationMs < 15000);
+} finally { Formulas.normalAttackMs = originalAttackMs; }
 const helperHealer = { ...owned.find(s => s.characterId === helper.characterId), classId: 16,
     stats: { ...owned.find(s => s.characterId === helper.characterId).stats, classId: 16 } };
 assert.equal(Casualty.disposition(helperHealer, { previousDamageCasualties: 50 }), 'continue');
@@ -109,5 +157,5 @@ const lifecycle = require('node:child_process').spawnSync(process.execPath, ['--
 assert.equal(lifecycle.status, 0, 'the expanded native roster passes atomic cold/hot opening and single reward regressions');
 const forming = require('node:child_process').spawnSync(process.execPath, ['--require', require.resolve('./helpers/databaseIsolation'),
     require.resolve('./test_clan_full_raid_roster'), '--forms'], { stdio: 'inherit', env: process.env });
-assert.equal(forming.status, 0, 'an expedition of eighteen far members forms through the worker');
+assert.equal(forming.status, 0, 'an expedition of forty far members forms through the worker');
 console.log('PASS clan helper selection, party scope, ordinary attacks, recovery, main tank and expanded native lifecycle');

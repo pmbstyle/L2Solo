@@ -156,7 +156,7 @@ function commitBatch(entries = [], options = {}) {
     const rejected = [];
     const accepted = [];
     const groupedEntries = new Map();
-    (entries || []).slice(0, 32).forEach((entry) => {
+    (entries || []).slice(0, require('../../Clan/ClanRaidExpedition').MAX_MEMBERS).forEach((entry) => {
         const nextState = entry.nextState;
         const partition = eligibility(nextState, entry.options || options);
         const groupId = entry.atomicGroup?.id ? String(entry.atomicGroup.id) : null;

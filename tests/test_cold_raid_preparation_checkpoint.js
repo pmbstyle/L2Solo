@@ -120,23 +120,26 @@ async function seed(index, classId) {
     return id;
 }
 
-async function prepareBatch(deadlineOverride) {
+async function prepareBatch(deadlineOverride, overrides = {}) {
     const members = ids.map(id => Life.cachedState(id));
+    const currentParty = overrides.party || party, timestamp = overrides.timestamp ?? at;
     const stageId = `raid-deadline:${++stages}`;
     const stage = await Raid.stage({ key: 'raid:10372', id: stageId, memberIds: ids }, () =>
-        Resolver.resolve({ party, members, spot, targetNpcId: 10372, elapsedMs: 60000, timestamp: at }));
+        Resolver.resolve({ party: currentParty, members, spot, targetNpcId: 10372, elapsedMs: 60000, timestamp }));
     const resolution = stage.result;
-    assert.equal(resolution.debug.reason, 'raid_prepared');
-    const nextParty = { ...party, ...resolution.partyPatch, stats: { ...party.stats, ...resolution.partyPatch.stats },
-        nextResolveAt: deadlineOverride ?? resolution.nextResolveAt, updatedAt: Math.max(at, party.updatedAt + 1) };
+    if (!overrides.combat) assert.equal(resolution.debug.reason, 'raid_prepared');
+    const nextParty = { ...currentParty, ...resolution.partyPatch, stats: { ...currentParty.stats, ...resolution.partyPatch.stats },
+        nextResolveAt: deadlineOverride ?? resolution.nextResolveAt, updatedAt: Math.max(timestamp, currentParty.updatedAt + 1) };
+    const [saved] = await Database.execute(['SELECT revision FROM bot_raid_encounters WHERE raidKey=?', ['raid:10372']]);
+    const revision = Number(saved?.revision || 0);
     const atomicGroup = { id: stageId, memberIds: ids,
-        partyChanges: [{ partyId: party.partyId, memberIds: ids, expectedPartyRevision: party.revision,
+        partyChanges: [{ partyId: currentParty.partyId, memberIds: ids, expectedPartyRevision: currentParty.revision,
             updatedAt: nextParty.updatedAt, nextResolveAt: nextParty.nextResolveAt,
             statsJson: JSON.stringify(nextParty.stats), status: 'active' }],
-        raidCommit: { key: 'raid:10372', expectedRevision: 0, revision: 1, snapshot: stage.snapshot } };
+        raidCommit: { key: 'raid:10372', expectedRevision: revision, revision: revision + 1, snapshot: stage.snapshot } };
     const entries = await Promise.all(resolution.memberResults.map(async ({ state, result }) => {
         const nextState = await Life.prepareResolve(state, result,
-            { persist: false, projectClassProgression: true, timestamp: at });
+            { persist: false, projectClassProgression: true, timestamp });
         if (deadlineOverride !== undefined) nextState.timing.nextResolveAt = deadlineOverride;
         return { revision: state.simulation.revision, nextState, atomicGroup,
             options: { allowParty: true, allowLifecycle: true }, proposal: { ...InventorySummary.bagChange(state.inventory, nextState.inventory), result } };
@@ -256,6 +259,35 @@ async function main() {
         assert(replay.every(result => !result.ok));
         assert.deepEqual(image(), after, 'replay pays no MP twice and grants no reward');
         batch = null;
+    });
+    await check('fractional action-limited combat commits integral party and member deadlines', async () => {
+        const Formulas = invoke('GameServer/Formulas');
+        const originalAttackMs = Formulas.normalAttackMs, originalFight = Background.resolvePartyFight;
+        let fight;
+        try {
+            Formulas.normalAttackMs = () => Formulas.calcMeleeAtkTime(1500);
+            Background.resolvePartyFight = input => (fight = originalFight(input));
+            const [row] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', [party.partyId]]);
+            party = Parties.acceptRow(row);
+            const timestamp = Math.max(expectedDeadline + 1, Date.now()), key = 'raid:10372';
+            const mob = { ...Profile.npcCombatStats(Data.npcs.find(npc => npc.selfId === 10372)),
+                maxHp: 1000000000, raidBossMaxHp: 1000000000, pAtk: 1, mAtk: 1, raidMinionCount: 0 };
+            const active = { ...party, stats: { ...party.stats, raidEncounter: { version: 1, key,
+                raidInstanceId: spot.raidInstanceId, status: 'active', hp: mob.maxHp, updatedAt: timestamp,
+                encounter: { version: 1, key, hp: mob.maxHp, mob, at: timestamp, slices: 1 } } } };
+            batch = await prepareBatch(undefined, { party: active, timestamp, combat: true });
+            assert(fight.debug.actionBound && !Number.isInteger(fight.debug.durationMs));
+            const deadline = Math.ceil(timestamp + fight.debug.durationMs);
+            assert.equal(batch.resolution.nextResolveAt, deadline);
+            const results = await Owner.commitBatch(batch.entries, { timestamp, journalReason: 'raid' });
+            assert.equal(results.length, ids.length);
+            assert(results.every(result => result.ok), JSON.stringify(results));
+            const after = image();
+            assert.equal(after.tables.bot_background_parties[0].nextResolveAt, deadline);
+            assert(after.tables.bot_life_state.every(row => row.nextResolveAt === deadline && Number.isSafeInteger(row.nextResolveAt)));
+            for (const result of results) Raid.acknowledge(batch.stageId, result.characterId, true);
+            batch = null;
+        } finally { Formulas.normalAttackMs = originalAttackMs; Background.resolvePartyFight = originalFight; }
     });
 }
 

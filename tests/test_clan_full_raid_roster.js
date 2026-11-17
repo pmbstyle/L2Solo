@@ -23,11 +23,12 @@ const Hot = require('../src/GameServer/Bot/AI/HotBackgroundParty');
 const World = invoke('GameServer/World/World'), Index = invoke('GameServer/World/RaidEntityIndex');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog'), Scope = invoke('GameServer/RaidBoss/RaidEncounterScope');
 const Runtime = require('../src/GameServer/Clan/ClanPlanningCoordinator');
-// --forms: an expedition of two full parties, every member far and waiting for its
+// --forms: a forty-member expedition, every member far and waiting for its
 // party with a bag too large for one worker message, forms through the real worker.
 const formsMode = process.argv.includes('--forms');
 const helperMode = formsMode || process.argv.includes('--helpers');
-const base = 840000, ids = Array.from({ length: formsMode ? 18 : helperMode ? 10 : 9 }, (_, i) => base + i);
+const requestedSize = Number(process.argv.find(value => value.startsWith('--members='))?.split('=')[1]);
+const base = 840000, ids = Array.from({ length: helperMode ? requestedSize || 40 : 9 }, (_, i) => base + i);
 const spot = { id: 'raid:full-fixture', avgLevel: 50, raidBoss: true, raidBossTemplateId: 9900137,
     raidInstanceId: 'full-instance', raidWorldAvailable: true, raidAuthorityRevision: 0 };
 function body(id, classId, skills = []) {
@@ -244,8 +245,9 @@ async function nativeImpactCases(sessions, registry) {
             assert.notEqual(Parties.find(party.partyId).stats.raidEncounter?.status, 'failed');
             helper.actor.state.setDead(false); helper.actor.setHp(helper.actor.fetchMaxHp());
             helper.hotRaidCasualtyAt = null; helper.coldLifeState = previousState;
-            assert.equal(Hot.partyRoster(helper).length, 1, 'native party skills see the helper subgroup');
+            assert.equal(Hot.partyRoster(helper).length, Math.min(9, ids.length - 9), 'native party skills see the helper subgroup');
             assert.equal(Hot.partyRoster(sessions[0]).length, 9, 'main party skills retain the core');
+            assert.equal(Hot.partyRoster(sessions.at(-1)).length, (ids.length - 1) % 9 + 1, 'the final helper party can be incomplete');
             const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
             const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
             const Safety = invoke('GameServer/Bot/AI/BotRaidSafety');
@@ -282,7 +284,7 @@ async function nativeImpactCases(sessions, registry) {
                 }
                 assert.equal(targets.length, 4, 'hot support is checked during combat and between pulls');
                 for (const context of targets) {
-                    const expected = context.caster === base + 9 ? [base + 9] : ids.slice(0,9);
+                    const expected = context.caster === base + 9 ? ids.slice(9,18) : ids.slice(0,9);
                     assert(Roster.exact(context.members, expected), 'native support selection cannot borrow recipients from the other party');
                     assert(expected.includes(context.owner), 'support owner belongs to the caster party');
                 }
@@ -476,6 +478,7 @@ async function formsThroughWorker() {
     for (const member of seeded) await query(`UPDATE bot_life_state SET activity='party_wait', nextResolveAt=?, statsJson=? WHERE characterId=?`,
         [Date.now() + 3600000, JSON.stringify({ ...member.stats, clanId: marker.clanId, clanPartyObjective: objective, partyRequest: objective }), member.characterId]);
     assert(await Life.init()); await Parties.init();
+    Config.coldWorkerBatchSize = 32;
     await Coordinator.start({ executeWorkerLifecycleCommand() {} });
     try {
         for (const deadline = Date.now() + 20000; Date.now() < deadline && !(Coordinator.ready && Coordinator.snapshotsLoaded);) await new Promise(resolve => setTimeout(resolve, 50));
@@ -484,13 +487,62 @@ async function formsThroughWorker() {
         const waiting = await Life.statesByIds(ids);
         assert(Buffer.byteLength(JSON.stringify(waiting)) > 256 * 1024, 'the roster does not fit one worker message');
         const formed = await Population.formBackgroundParties(waiting);
-        assert.equal(formed.length, 1, 'an expedition of eighteen far members forms');
+        assert.equal(formed.length, 1, 'the entire expedition forms');
         assert.deepEqual([...formed[0].memberIds].sort(), ids, 'with its core party and every helper');
         assert(ids.slice(0, 9).includes(formed[0].leaderId), 'led from its core party');
         const rows = await query('SELECT activity, partyId FROM bot_life_state');
         assert(rows.every(row => row.partyId === formed[0].partyId && row.activity !== 'party_wait'), 'no member is left waiting for a party');
-        console.log('Clan raid expedition: eighteen far members form one party through the worker');
+        console.log(`Clan raid expedition: ${ids.length} far members form one expedition through the worker`);
     } finally { await Coordinator.stop(); }
+}
+async function nativeColdTransport(members, proof) {
+    const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+    const Encounters = require('../src/GameServer/Bot/Population/ColdRaidEncounter');
+    const Resolver = require('../src/GameServer/Bot/Population/BackgroundPartyResolver');
+    const at = Date.now(), key = `raid:${spot.raidBossTemplateId}`, messages = [];
+    const mob = { ...Combat.npcCombatStats(Data.npcs.find(npc => npc.selfId === spot.raidBossTemplateId)),
+        maxHp: 1000000000, raidBossMaxHp: 1000000000 };
+    const active = { ...party, stats: { ...party.stats, raidAdmission: { ...proof, startedAt: at - 1 },
+        raidEncounter: { version: 1, key, raidInstanceId: spot.raidInstanceId, status: 'active', hp: mob.maxHp,
+            updatedAt: at, encounter: { version: 1, key, hp: mob.maxHp, mob, at, slices: 1 } } } };
+    const kernel = new ColdSimulationKernel({ now: () => at, maxBatch: 32, maxInFlight: 32,
+        emit: (type, data) => messages.push({ type, data }),
+        resolveSolo: () => ({}), resolveParty: input => Resolver.resolve(input),
+        projectResolve: (state, result) => ({ ...state, ...result.patch,
+            timing: { ...state.timing, nextResolveAt: result.nextResolveAt } }) });
+    try {
+        for (const member of members) {
+            kernel.upsert({ state: member });
+            kernel.inFlight.set(member.characterId, { state: member, startedAt: at, partyId: active.partyId });
+        }
+        kernel.partyRuns.set(active.partyId, { party: active, members, spot, startedAt: at, raidOwner: owner() });
+        await kernel.resolvePartyStep(active.partyId);
+        const batches = messages.filter(message => message.type === 'proposal_batch');
+        const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+        const proposals = batches.flatMap(message => Protocol.expandAtomicGroups(message.data.proposals));
+        assert.equal(proposals.length, members.length, 'real combat state for every member fits atomic worker transport');
+        assert(proposals.some(proposal => proposal.result.debug.combatActions > 96), 'the transport test executes native raid combat');
+        assert(batches.every(message => Buffer.byteLength(JSON.stringify(message.data)) <= 256 * 1024));
+        if (members.length === 40) assert(batches.some(message => message.data.proposals.some(p => p.atomicGroupRef)),
+            'large shared admission and boss state are sent once, not forty times');
+        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const queued = [], rejected = [];
+        const receiver = { queue: { enqueue(proposal, bytes) {
+            queued.push(proposal);
+            assert.equal(bytes, Protocol.byteLength(proposal), 'main accounts for the expanded queue entry');
+            return { ok: true };
+        } }, trackCommitAcknowledgement() {}, handleCommitResults: async results => rejected.push(...results), recordError: error => { throw error; } };
+        for (const batch of batches) ColdSimulationCoordinator.prototype.handleProposalBatch.call(receiver, { payload: batch.data }, null, 'fixture');
+        assert.equal(queued.length, members.length);
+        assert(queued.every(proposal => proposal.atomicGroup?.raidCommit && proposal.atomicGroup.memberIds.length === members.length));
+        ColdSimulationCoordinator.prototype.handleProposalBatch.call(receiver,
+            { payload: { proposals: [{ characterId: base, revision: 1, atomicGroupRef: 'missing' }] } }, null, 'fixture');
+        assert.equal(queued.length, members.length, 'an unresolved group reference cannot enter the commit queue');
+        assert.equal(rejected[0].reason, 'invalid_atomic_group_reference');
+        console.log(`Native raid transport: ${members.length} members, ${batches.reduce((sum, batch) => sum + Protocol.byteLength(batch.data), 0)} wire bytes`);
+        kernel.onCommitAck({ results: proposals.map(proposal => ({ characterId: proposal.characterId, raidStepId: proposal.raidStepId,
+            ok: false, proposalId: proposal.proposalId })) });
+    } finally { await kernel.shutdown(); Encounters.resetForTests(); }
 }
 async function main() {
     Database.init();
@@ -533,7 +585,8 @@ async function main() {
                 {assignedMemberIds:ids},{desiredMembers:9, coreMemberIds:marker.coreMemberIds, preferredMemberIds:ids})})); const proof = checked.proof;
         assert.equal(Roster.admission(party, members, spot, { owner: { ...owner(), raidBlocked: true }, arrived: true }).reason,
             'raid_failure_blocked', 'a ready nine cannot open a boss blocked by its clan failure memory');
-        assert(Buffer.byteLength(JSON.stringify(proof)) <= 1024);
+        assert(Buffer.byteLength(JSON.stringify(proof)) <= 1024 * Math.ceil(ids.length / 9),
+            'admission carries compact identity rows, not full member snapshots');
         for (const count of [7, 8]) assert(!admission(members.slice(0, count)).ok);
         assert(!admission([...members.slice(0, 8), members[0]]).ok);
         const changed = (index, patch) => members.map((member, i) => i === index ? { ...member, ...patch } : member);
@@ -588,6 +641,7 @@ async function main() {
             kernel.onCommitAck({ results: proposals.map(proposal => ({ characterId: proposal.characterId, raidStepId: proposal.raidStepId,
                 ok: false, proposalId: proposal.proposalId })) });
         } finally { await kernel.shutdown(); EncounterWire.resetForTests(); }
+        if (helperMode) await nativeColdTransport(members, proof);
         await reject(proof, () => query('UPDATE characters SET classId=21 WHERE id=?', [base + 2]),
             () => query('UPDATE characters SET classId=15 WHERE id=?', [base + 2]), 'raid_roster_member_changed');
         await reject(proof, () => query('UPDATE characters SET clanId=0 WHERE id=?', [base + 8]),
@@ -604,13 +658,14 @@ async function main() {
         }, 'raid_failure_blocked');
         const stale = await propose(proof);
         const noReward = await query('SELECT characterId,exp FROM bot_life_state ORDER BY characterId');
-        stale.entries[0].revision -= 1;
+        stale.entries.at(-1).revision -= 1;
         assert((await Owner.commitBatch(stale.entries)).every(row => !row.ok && row.detail === 'stale_revision'));
         assert.deepEqual(await query('SELECT characterId,exp FROM bot_life_state ORDER BY characterId'), noReward);
         // No prior native opening provenance: a held-looking proof alone is rejected.
         const forged = await propose(proof); delete forged.entries[0].atomicGroup.raidCommit.snapshot.participants;
         assert((await Owner.commitBatch(forged.entries)).every(row => !row.ok && row.detail === 'raid_roster_not_opened'));
         const success = await propose(proof); const result = await Owner.commitBatch(success.entries);
+        assert.equal(result.length, ids.length, 'every expedition member receives a commit result');
         assert(result.every(row => row.ok), JSON.stringify(result.map(row => [row.reason, row.detail])));
         party = Parties.acceptRow(result[0].raidPartyRow); assert(Roster.held(party, spot));
         assert.equal(await Parties.createOrUpdate({ ...party, stats: { ...party.stats, raidAdmission: null } }), null,

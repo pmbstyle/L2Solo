@@ -326,7 +326,8 @@ class ColdCommitQueue {
         const timestamp = this.now();
         for (const group of this.laneGroups(lane, groups)) {
             if (groupReadyAt(group) > timestamp) continue;
-            // A party cannot be split: one larger than the batch goes alone (a C4 party has at most nine members).
+            // An atomic expedition cannot be split: one larger than the
+            // ordinary batching target goes alone, up to its roster bound.
             if (selected.length && selected.length + group.length > limit) break;
             const groupMemoryEvents = group.reduce((count, candidate) =>
                 count + (candidate.result?.memoryEvents?.length || 0), 0);

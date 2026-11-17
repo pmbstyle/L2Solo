@@ -150,6 +150,22 @@ async function run() {
     assert.equal(kernel.dirty.size, 0);
     await win('after-oversized'); Raid.abort('after-oversized');
 
+    // The worker's current ownership window may be below the expedition's
+    // size. Its complete result must still reach main in one bounded batch.
+    kernel.maxBatch = 32;
+    for (const size of [27, 36, 40]) {
+        const ids = Array.from({ length: size }, (_, i) => 9000 + i);
+        const atomicGroup = { id: `capacity-${size}`, memberIds: ids };
+        for (const characterId of ids) kernel.dirty.set(characterId,
+            { characterId, priority: 'P1', enqueuedAt: at, atomicGroup });
+        assert.equal(kernel.flush(null, true, { limit: 8 }), size);
+        assert.equal(kernel.dirty.size, 0);
+    }
+    for (let characterId = 9000; characterId < 9040; characterId++) kernel.dirty.set(characterId,
+        { characterId, priority: 'P1', enqueuedAt: at });
+    assert.equal(kernel.flush(null, true, { limit: 8 }), 8, 'ordinary independent proposals retain their window limit');
+    kernel.dirty.clear();
+
     const Index = invoke('GameServer/World/RaidEntityIndex');
     const originalBoss = Index.bossByTemplateId;
     try {
