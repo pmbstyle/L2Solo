@@ -2551,6 +2551,14 @@ function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100,
         throw Object.assign(new Error('UNIQUE constraint failed: clan_actions.actionKey'),
             { code: 'ERR_SQLITE_ERROR', errcode: 2067, errstr: 'constraint failed' });
     }
+    if (coalescePending && actionType === 'member_titles') {
+        // Each title batch reads the current roster. Other wake-ups can use the
+        // existing job without bringing an inference retry forward.
+        const active = one(`SELECT id FROM clan_actions
+            WHERE clanId = ? AND actionType = ? AND status IN ('pending', 'running')
+            ORDER BY id LIMIT 1`, [clanId, actionType]);
+        if (active) return { affectedRows: 0, insertId: active.id, coalesced: true };
+    }
     // These actions read the clan's current state when claimed. New inputs
     // advance one pending action, never another execution chain. A running
     // action retains its captured inputs and may have one pending successor.
@@ -10054,7 +10062,7 @@ const Database = {
         }, 'clan-action:claim-one');
     },
     releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null,
-        continuation = false, unstarted = false } = {}) {
+        continuation = false, unstarted = false, reasonCode = null } = {}) {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
@@ -10077,9 +10085,9 @@ const Database = {
                 ? Number(expectedLeaseUntil)
                 : Number(action.leaseUntil);
             const updated = write(`UPDATE clan_actions
-                SET status = 'pending', leaseUntil = NULL, availableAt = ?, updatedAt = ?
+                SET status = 'pending', leaseUntil = NULL, availableAt = ?, updatedAt = ?, reasonCode = COALESCE(?, reasonCode)
                 WHERE id = ? AND status = 'running' AND attempt = ? AND leaseUntil = ?`, [
-                dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
+                dueAt, timestamp, reasonCode, id, expectedAttemptValue, expectedLeaseValue
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
             if (unstarted === true) {
