@@ -85,6 +85,8 @@ assert.strictEqual(Observer.compactClanCraftPlan(automaticCraftGoal, [{ ...craft
     'a carrier working in a party must not be presented as already crafting at the station');
 assert.strictEqual(automaticCraft.craft.materials.find(row => row.selfId === 1870).available, 5,
     'automatic previews must exclude reserved warehouse stock');
+assert.strictEqual(automaticCraft.craft.materials.find(row => row.selfId === 1870).iconUrl, '/observer/item-icons/etc_coal_i00.png',
+    'automatic previews must resolve material icons from the catalog');
 assert.strictEqual(automaticCraft.craft.materials.find(row => row.selfId === 1871).available, 3,
     'automatic previews must combine warehouse and assigned carrier inventory');
 assert.strictEqual(Observer.compactClanCraftPlan(automaticCraftGoal, craftMembers, craftStock,
@@ -395,7 +397,7 @@ async function clanOrderUiChecks() {
     });
     for (const name of ['escapeHtml', 'text', 'number', 'clanGoalSummary', 'clanAutomaticGoalMarkup', 'resetClanOrderDraft', 'clanOrderDraft',
         'clanOrderSettings', 'startClanOrderEditor', 'clanGoalExplanation', 'clanOrderStatusLabel', 'clanOrderStrategyLabel',
-        'clanOrderDelivery', 'clanCraftReason', 'clanCraftPreviewMarkup', 'clanOrderItemResultsMarkup', 'clanOrderMarkup', 'clanOrderErrorMessage', 'clanOrderResponse', 'loadClanCraftPreview', 'createClanOrder', 'transitionClanOrder']) {
+        'clanOrderDelivery', 'clanCraftReason', 'clanTableItem', 'clanCraftPreviewMarkup', 'clanOrderItemResultsMarkup', 'clanOrderMarkup', 'clanOrderErrorMessage', 'clanOrderResponse', 'loadClanCraftPreview', 'createClanOrder', 'transitionClanOrder']) {
         const declaration = new RegExp(`^(?:async )?function ${name}\\(`, 'm').exec(observerApp);
         assert(declaration, `UI function ${name} must be available`);
         const start = declaration.index;
@@ -422,6 +424,8 @@ async function clanOrderUiChecks() {
     assert(automaticMarkup.includes('aria-label="Automatic goal progress"'), 'automatic goals must expose progress just like manual goals');
     assert(automaticMarkup.includes('ClanDwarf') && automaticMarkup.includes('Inputs for the next batch'),
         'the automatic goal screen itself must show the assigned crafter and material table');
+    assert(automaticMarkup.includes('<img src="/observer/item-icons/etc_coal_i00.png"'),
+        'the material thumbnail must be visible in the crafting table');
     assert(automaticMarkup.includes('Material carrier: Carrier'));
     const adenaMarkup = context.clanAutomaticGoalMarkup(overview.goal, automaticClan);
     assert(adenaMarkup.includes('data-icon="coins"'), 'currency goals must have an icon even without an item thumbnail');

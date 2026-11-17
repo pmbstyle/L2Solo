@@ -198,6 +198,8 @@ button { cursor: pointer; }
 .clan-manager-dialog th { color: var(--faint); font-size: 11px; font-weight: 550; }
 .clan-manager-dialog th:first-child, .clan-manager-dialog td:first-child { text-align: left; }
 .clan-manager-dialog td small { display: block; max-width: 260px; margin-top: 4px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.observer-table-item { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; }
+.observer-table-item > img { flex: none; object-fit: contain; image-rendering: pixelated; }
 .clan-manager-activity .clan-event-row { padding: 14px 0; }
 .clan-craft-preview { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-strong); font-size: 12px; }
 .clan-craft-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
