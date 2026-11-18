@@ -218,6 +218,8 @@ async function checkPhantomActions(session, summon, summonSkillId) {
             await cast(0x2f);
             assert.strictEqual(summon.fetchMp(), mp, 'Steal Blood must reject a cast during reuse');
         } else if (summonSkillId === 1333) {
+            // Keep the real hate ledger while isolating HP costs from retaliation.
+            for (const enemy of [target, nearby]) enemy.meleeHit = () => {};
             const partyMember = sessionFor(null, null, { id: 2000002, hp: 100, maxHp: 2000 });
             partyMember.partyCompanion = true;
             partyMember.followPlayerSession = session;
