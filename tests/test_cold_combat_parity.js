@@ -179,7 +179,8 @@ const SOLO_GOLDEN = {
     'bishop': { won: true, died: false, hp: 2023, mp: 2243, charges: 0, actions: 16, durationMs: 16435, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T135: the warlock heals its pet once (one more skill use, its MP), so the pet strikes twice more.
     // T140: the mob hits whoever holds its hate, and the owner strikes only under the pet's hate.
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2074, charges: 0, actions: 42, durationMs: 38677, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 21, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // #239: the level 60 Warlock's Queen of Cat is its sourced level 60 Cat Queen, not the level 22 fallback.
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2157, charges: 0, actions: 31, durationMs: 34885, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 13, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
     'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
