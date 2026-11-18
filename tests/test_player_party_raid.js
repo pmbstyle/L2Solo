@@ -12,6 +12,7 @@ const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Effects = invoke('GameServer/Effects/EffectStore');
 const Visibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
+const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const Skill = invoke('GameServer/Model/Skill');
 const Revive = invoke('GameServer/Actor/Generics/Revive');
@@ -209,6 +210,94 @@ try {
         assert.equal(f.healer.actor.seated, false);
         assert.equal(f.healer.lastDecision.action, 'raid_healer_ready');
         assert.equal(f.attacks.length, 0);
+    }
+    {
+        const f = fixture(12);
+        const archer = session(actor(5, 9), f.owner);
+        const secondHealer = session(actor(6, 30), f.owner);
+        [archer, secondHealer].forEach(member => { f.sessions.push(insertSession(member)); Manager.sessions.push(member); });
+        const recharge = new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 });
+        f.healer.actor.skills = [recharge, new Skill({ selfId: 1011, level: 1, passive: false, mp: 30, distance: 600 })];
+        secondHealer.actor.skills = [recharge];
+        secondHealer.actor.mp = 150;
+        archer.actor.mp = 280;
+        f.owner.actor.mp = 380;
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tank.actor.hp = 400;
+        Tactics.support = realSupport;
+        const now = Date.now();
+        f.tick(f.healer, now);
+        assert.equal(f.casts.at(-1).selfId, 1011, 'HP healing comes before raid Recharge');
+        f.tank.actor.hp = 1000;
+        f.tick(f.healer, now + 1);
+        assert.equal(f.casts.at(-1).id, secondHealer.actor.fetchId(), 'a drained healer gets mana first');
+        secondHealer.actor.mp = 1000;
+        archer.actor.hitting = true;
+        f.tick(f.healer, now + 2);
+        assert.equal(f.casts.at(-1).id, archer.actor.fetchId(), 'the lowest-MP ranged DD gets Recharge');
+        assert.equal(f.healer.lastDecision.action, 'raid_recharge');
+        assert.equal(archer.actor.hitting, true, 'support leaves the recipient’s attack cycle running');
+        f.healer.actor.attack.activeCast = { skill: recharge, target: archer.actor };
+        f.healer.actor.casting = true;
+        f.tick(secondHealer, now + 1500);
+        assert.equal(f.casts.at(-1).id, f.owner.actor.fetchId(), 'another recharger skips the in-flight target');
+        f.healer.actor.casting = false;
+        secondHealer.actor.mp = 650;
+        const count = f.casts.length;
+        f.tick(secondHealer, now + 3000);
+        assert.equal(f.casts.length, count, 'Recharge keeps the casting healer’s MP reserve after the cost');
+        secondHealer.actor.mp = 1000;
+        f.tick(secondHealer, now + 3100);
+        assert.equal(f.casts.at(-1).id, archer.actor.fetchId(), 'an interrupted cast releases its recipient');
+        archer.actor.level = f.boss.level = 60;
+        f.tick(secondHealer, now + 5500);
+        assert.equal(f.casts.at(-1).id, f.owner.actor.fetchId(), 'skip Recharge targets that would gain zero MP at their level');
+    }
+    {
+        const f = fixture(9);
+        f.healer.actor.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 })];
+        f.owner.actor.mp = 300;
+        f.owner.actor.x = 650;
+        f.boss.destId = f.tank.actor.fetchId();
+        const now = Date.now();
+        f.tick(f.healer, now);
+        assert.equal(f.healer.lastDecision.action, 'raid_recharge_approach');
+        assert.equal(f.casts.length, 0, 'a healer must move into native Recharge range first');
+        const goal = f.healer.actor.moves.at(-1).to;
+        assert(goal.locX > 250 && goal.locX < f.owner.actor.x, 'approach only as far as cast range requires');
+        f.healer.actor.moving = true;
+        f.tick(f.healer);
+        assert.equal(f.healer.actor.moves.length, 1, 'keep the pending approach between ticks');
+        f.healer.actor.moving = false;
+        f.healer.actor.x = goal.locX;
+        f.tick(f.healer);
+        assert.equal(f.casts.at(-1).id, f.owner.actor.fetchId());
+        assert.equal(f.casts.at(-1).selfId, 1013);
+        f.owner.actor.x = 1400;
+        f.tick(f.healer, now + 4000);
+        assert.equal(f.casts.length, 1, 'the distant target is outside Recharge range');
+        assert.equal(f.healer.actor.moves.length, 1, 'the healer stays within support range of the tank');
+    }
+    {
+        const f = fixture(9);
+        f.healer.actor.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 })];
+        f.owner.actor.mp = 300;
+        f.owner.actor.x = 300;
+        f.boss.destId = f.tank.actor.fetchId();
+        patch(Geodata, 'canWalkStraight', (fromX, _fromY, _fromZ, toX) => fromX === toX);
+        try {
+            f.tick(f.healer);
+            assert.equal(f.healer.lastDecision.action, 'raid_recharge_approach',
+                'a wall can require an approach even within nominal cast range');
+            assert.equal(f.casts.length, 0);
+            const move = f.healer.actor.moves.at(-1);
+            assert.equal(move.routeGuard([{ ...move.to, locX: 1000 }, move.to], { complete: true }), false,
+                'a detour must stay within support range');
+            assert.equal(move.routeGuard([move.to], { complete: true }), true);
+            f.healer.actor.x = move.to.locX;
+            f.tick(f.healer);
+            assert.equal(f.casts.at(-1).id, f.owner.actor.fetchId());
+        } finally { restores.pop()(); }
     }
     {
         const f = fixture(5);
@@ -620,6 +709,34 @@ try {
     {
         const f = fixture();
         const p = commandParty(f);
+        p.extra.actor.fetchClassId = () => 30;
+        p.extra.actor.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 })];
+        p.extra.actor.x = 500;
+        p.mage.actor.x = 1380;
+        p.mage.actor.mp = 300;
+        f.boss.destId = f.tank.actor.fetchId();
+        f.tick(p.extra);
+        assert.equal(p.extra.actor.moves.length, 0, 'a recharging party leader must stay in range of its nearby party members');
+        p.mage.actor.x = 750;
+        f.tick(p.extra);
+        assert.equal(f.casts.at(-1).id, p.mage.actor.fetchId(), 'the party leader can still Recharge without moving');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
+        const recharge = new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 });
+        p.extra.actor.skills = [recharge];
+        p.healer.actor.mp = 100;
+        p.mage.actor.mp = 50;
+        f.tick(p.extra);
+        assert.equal(f.casts.at(-1).id, p.healer.actor.fetchId(), 'before a pull, a depleted local healer can receive Recharge');
+        p.healer.actor.mp = 1000;
+        f.tick(p.extra);
+        assert.equal(f.casts.length, 1, 'damage dealers start receiving raid Recharge after the pull');
+    }
+    {
+        const f = fixture();
+        const p = commandParty(f);
         p.healer.actor.mp = 340;
         f.tick(p.extra);
         assert.equal(p.extra.lastDecision.action, 'raid_party_preparing', 'pre-pull preparation still waits for support recovery');
@@ -703,6 +820,12 @@ try {
         const count = f.casts.length;
         f.tick(p.healer);
         assert.equal(f.casts.length, count, 'the additional healer does not leak healing into the main party');
+        p.healer.actor.skills.push(new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 400, power: 49 }));
+        f.owner.actor.mp = 10;
+        p.mage.actor.mp = 350;
+        f.tick(p.healer);
+        assert.equal(f.casts.at(-1).selfId, 1013);
+        assert.equal(f.casts.at(-1).id, p.mage.actor.fetchId(), 'Recharge stays within the local party');
         f.tank.actor.dead = true;
         f.tick(f.damage);
         f.tick(p.extra);

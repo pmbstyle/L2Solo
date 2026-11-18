@@ -111,15 +111,15 @@ function support(session, bot, context, Generics, now) {
             return true;
         }
     }
-    const recharge = Capabilities.manaRechargeSkill(bot);
-    const raid = context.raid === true;
-    const drained = context.members.map(member => member.actor).filter(actor => actor !== bot && Intent.alive(actor) &&
-        Roles.shouldRestForMana(actor) && actor.fetchMp() / Math.max(1, actor.fetchMaxMp()) < 0.2 &&
-        (!raid || Roles.inferRole(bot) !== 'healer' || Roles.inferRole(actor) === 'healer') &&
-        recharge && Intent.inRange(bot,actor,recharge))
-        .sort((a, b) => Number(Roles.inferRole(b) === 'healer') - Number(Roles.inferRole(a) === 'healer'))[0];
-    if (drained && (bot.fetchMp() - Number(recharge.fetchConsumedMp?.() || 0)) / Math.max(1, bot.fetchMaxMp()) > (raid ? 0.6 : 0.35) &&
-        cast(session, bot, drained, recharge, Generics, 'party_mana')) return true;
+    if (!context.raid) {
+        const recharge = Capabilities.manaRechargeSkill(bot);
+        const drained = recharge && context.members.map(member => member.actor).filter(actor =>
+            actor !== bot && Intent.alive(actor) && Roles.shouldRestForMana(actor) &&
+            actor.fetchMp() / Math.max(1, actor.fetchMaxMp()) < 0.2 && Intent.inRange(bot, actor, recharge))
+            .sort((a, b) => Number(Roles.inferRole(b) === 'healer') - Number(Roles.inferRole(a) === 'healer'))[0];
+        if (drained && (bot.fetchMp() - Number(recharge.fetchConsumedMp?.() || 0)) / Math.max(1, bot.fetchMaxMp()) > 0.35 &&
+            cast(session, bot, drained, recharge, Generics, 'party_mana')) return true;
+    }
     const self = ClassTactics.selfAction(bot, { role: Roles.inferRole(bot), activeMobs: context.threats.length });
     return !!self && cast(session, bot, bot, self.skill, Generics, self.reason);
 }

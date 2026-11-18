@@ -14,6 +14,8 @@ const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const SkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const Effects = invoke('GameServer/Effects/EffectStore');
+const Skill = invoke('GameServer/Model/Skill');
+const realSupport = PvpTactics.support;
 
 const restores = [];
 function patch(object, key, value) {
@@ -346,6 +348,29 @@ try {
     assert.equal(attacks.length, 0, 'an autonomous raid healer also waits with full mana');
     attacks.length = 0;
     delete focusMinion.destId;
+    damage.role = 'archer';
+    damage.fetchMp = () => 30;
+    controller.role = 'healer';
+    controller.skillset.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 20, distance: 400, power: 49 })];
+    tick(sessions[3], 46100);
+    assert.deepEqual(casts.pop(), [controller.fetchId(), damage.fetchId(), 1013],
+        'autonomous rechargers support a low-MP archer during boss combat');
+    assert.equal(sessions[3].lastDecision.action, 'raid_recharge');
+    patch(tank, 'fetchLocX', () => 650);
+    patch(tank, 'fetchHp', () => 40);
+    controller.skillset.skills.push(new Skill({ selfId: 1011, level: 1, passive: false, mp: 20, distance: 600, power: 100 }));
+    const healMoves = [];
+    patch(controller, 'moveTo', move => healMoves.push(move));
+    patch(ClassTactics, 'supportCrowdControl', () => null);
+    patch(PvpTactics, 'support', realSupport);
+    try {
+        tick(sessions[3], 47500);
+        assert.equal(casts.length, 0, 'an autonomous healer must recover contact with its wounded tank before Recharge');
+        assert.equal(sessions[3].lastDecision.action, 'raid_heal_approach');
+        assert.equal(healMoves[0].to.locX, tank.fetchLocX());
+    } finally { for (let i = 0; i < 5; i++) restores.pop()(); }
+    controller.skillset.skills = [];
+    controller.role = 'mage';
     damage.role = 'dps';
     damage.fetchMp = () => 100;
 

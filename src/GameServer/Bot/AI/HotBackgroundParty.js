@@ -635,7 +635,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const autonomousRaid = RaidSafety.canEngageBotClanRaid(session, target);
     const raidPlan = autonomousRaid ? RaidSafety.botClanRaidCombatPlan(owner, target) : null;
     if (raidPlan) return RaidCombat.tick(session, bot, Generics, AI, {
-        owner, members, near, raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
+        owner, supportOwner: groupOwner, members, near, supportMembers: nearGroup,
+        raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
         partyId: party.partyId, party,
         combatBuffs: (member, _owner, _near, generics, at) => combatRaidBuffs(member, groupOwner, group, generics, at)
     }, now);
