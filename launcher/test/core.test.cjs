@@ -195,7 +195,8 @@ test('presentation hides the requested settings, groups related fields and prese
     const keys = section => fields(section).map(field => field.key);
     assert.deepEqual(keys('BotPopulation'), ['maxPlayingPopulation','starterBotsPerRace','generatedColdBatchSize','generatedColdSeedDelayMs',
         'pvpAggression','knowledgeErrorsEnabled','ambientScenesEnabled','ambientSceneCooldownMs','ambientPairCooldownMs','ambientSceneTtlMs','devLogPlayerChat']);
-    assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
+    assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','epicDropChanceRate',
+        'spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
     assert.deepEqual(keys('GameServer'), ['hostname','port','advertisedHostname','playerWarehouseSlots']);
     assert.deepEqual(keys('AuthServer'), ['hostname','port','autoCreate']);
     assert.deepEqual(keys('Database'), ['path']);

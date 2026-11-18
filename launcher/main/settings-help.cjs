@@ -36,6 +36,7 @@ const help = {
         spRate: 'Base skill-point multiplier before the progression preset. When this key is absent, it follows the experience multiplier.',
         adenaRate: 'Base multiplier for adena drops before the progression preset. It changes currency income, not shop prices.',
         dropChanceRate: 'Base multiplier for ordinary monster drops before the progression preset. Scaling can increase drop quantity when the resulting chance exceeds 100%.',
+        epicDropChanceRate: 'Multiplier for Queen Ant, Core and Orfen jewelry drops, independent of the progression preset. The base chance is 30%.',
         spoilRate: 'Base multiplier for spoil rewards before the progression preset. When this key is absent, it follows the ordinary drop multiplier.',
         pkDeathDropChance: 'Chance that a death of a red character with at least 5 PKs drops items (C4). Enter a fraction from 0 to 1: 0.7 means 70%.',
         showMonsterLevel: 'Adds monster levels to the information shown to the game client.',

@@ -17,7 +17,8 @@ const names = { General: 'Rates & gameplay', BotPopulation: 'Bot population', AI
     WorldObserver: 'World Observer', GameServer: 'Game server', AuthServer: 'Login server', Database: 'Database',
     ClanSimulation: 'Clan simulation', ClanWars: 'Clan wars', Enchant: 'Enchanting' };
 const labels = { progressionPreset: 'Progression preset', expRate: 'Experience multiplier', spRate: 'Skill point multiplier',
-    adenaRate: 'Adena multiplier', dropChanceRate: 'Drop multiplier', spoilRate: 'Spoil multiplier', maxLevel: 'Maximum level',
+    adenaRate: 'Adena multiplier', dropChanceRate: 'Drop multiplier', epicDropChanceRate: 'Epic jewelry drop multiplier',
+    spoilRate: 'Spoil multiplier', maxLevel: 'Maximum level',
     maxPlayingPopulation: 'Maximum bot population', pvpAggression: 'PvP aggression', knowledgeErrorsEnabled: 'Bots learn from mistakes',
     apiUrl: 'API endpoint', apiKey: 'API key', model: 'Model',
     partyRouterModel: 'Party routing model', maxConcurrentRequests: 'Concurrent AI requests', advertisedHostname: 'Client connection address',

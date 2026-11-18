@@ -994,7 +994,8 @@ test('the server package reads numbered and named migrations from the database s
     assert.throws(() => databaseSchema('migrations.push([1, () => a()]);'), /Cannot determine/);
     const real = databaseSchema(fs.readFileSync(path.resolve(__dirname, '../../src/Database.js'), 'utf8'));
     assert.equal(real.databaseSchemaVersion, 83, 'numbered migrations end at 83');
-    assert.equal(real.databaseMigrationNames[0], 'drop-unused-bot-life-indexes');
+    assert.ok(real.databaseMigrationNames.includes('drop-unused-bot-life-indexes'));
+    assert.ok(real.databaseMigrationNames.includes('c4-grand-boss-respawn-windows'));
     const manifest = { schemaVersion: 2, component: 'server', tag: 'server-v0.2.0', version: '0.2.0', minimumLauncherVersion: '0.2.0',
         databaseSchemaVersion: 83, startupProtocolVersion: 2, runtime: { version: process.versions.node },
         archive: { name: 'L2Solo-Server-v0.2.0.zip', bytes: 1, sha256: 'a'.repeat(64) }, files: requiredServerFiles.map(file => ({ path: file, bytes: 1, sha256: 'a'.repeat(64) })) };

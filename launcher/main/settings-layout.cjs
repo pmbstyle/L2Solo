@@ -26,7 +26,7 @@ const groups = {
     General: [
         ['Progression', ['maxLevel', 'progressionPreset']],
         ['Experience & skills', ['expRate', 'spRate', 'questExpRate', 'questSpRate']],
-        ['Economy & drops', ['adenaRate', 'dropChanceRate', 'spoilRate', 'questRewardRate', 'questAdenaRate']],
+        ['Economy & drops', ['adenaRate', 'dropChanceRate', 'epicDropChanceRate', 'spoilRate', 'questRewardRate', 'questAdenaRate']],
         ['Character rules & display', ['newbieRewardPolicy', 'pkDeathDropChance', 'showMonsterLevel']]
     ],
     Enchant: [
