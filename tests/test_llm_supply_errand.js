@@ -134,6 +134,7 @@ async function main() {
         BotTownTravel.request = (_session, _bot, _ai, _reason, options) => {
             assert.strictEqual(options.allowCompanion, true);
             assert.strictEqual(options.forceScrollOfEscape, true);
+            _session.plan = 'shopping';
             arrivalCallback = options.onArrival;
             return travelMode;
         };

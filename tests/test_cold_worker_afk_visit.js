@@ -237,7 +237,8 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             forcedMarketCleanup: { cleanupReason: 'inventory_capacity', itemCount: 18, npcOnlySlots: 0, startedAt } });
         assert.equal(cleanup.runs, 1, 'a forced cleanup keeps the worker showcase (the author path)');
         console.log('PASS sale visit controls: finished and other-town sale markers, forced cleanup keeps the showcase');
-        const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit', {}, 9,
+        const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit',
+            { townVisit: { town: 'Elven Village', startedAt, reason: 'restock' } }, 9,
             [{ selfId: 1341, amount: 5000 }, { selfId: 1343, amount: 100 }]);
         assert.equal(invoke('GameServer/Inventory/ArrowStock').keptAmounts(arrows.visitState)[1341], 2000);
         assert.equal(arrows.runs, 1, 'unused arrows do not cost the visit its worker showcase');

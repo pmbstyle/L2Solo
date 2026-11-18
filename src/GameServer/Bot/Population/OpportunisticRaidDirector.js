@@ -226,7 +226,7 @@ class OpportunisticRaidDirector {
             const ids = roster.map(s => s.characterId), priority = ids.join(':') === shortlist.priorityKey;
             const key = `${priority ? 'priority:' : ''}${Math.min(...roster.map(s => s.level))}:${Math.max(...roster.map(s => s.level))}`;
             const all = catalog.filter(s => alive.has(s.raidBossTemplateId) && !claimed.has(s.raidBossTemplateId)
-                && !this.unreachableBosses.has(s.raidBossTemplateId) && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel)))
+                && !this.unreachableBosses.has(s.raidBossTemplateId) && roster.every(m => Policy.recruitLevelAllowed(m, s.avgLevel, s)))
                 .sort((a,b) => score(a) - score(b) || a.avgLevel - b.avgLevel || a.raidBossTemplateId - b.raidBossTemplateId);
             const offset = (this.bossCursors.get(key) || 0) % Math.max(1, all.length);
             if (!all.length) { this.searchCounters.reject('target', 'raid_no_eligible_boss'); this.retireRoster(ids); }
@@ -264,7 +264,7 @@ class OpportunisticRaidDirector {
                     if (!current()) return;
                 }
                 if (!alive.has(next.raidBossTemplateId) || claimed.has(next.raidBossTemplateId)
-                    || !roster.every(m => Policy.recruitLevelAllowed(m, next.avgLevel))) continue;
+                    || !roster.every(m => Policy.recruitLevelAllowed(m, next.avgLevel, next))) continue;
                 if (!this.room(next, catalog, alive, admitted)) { this.searchCounters.reject('target', 'raid_alive_reserve'); continue; }
                 if (!this.bossFree(next)) { this.searchCounters.reject('target', 'raid_boss_busy'); continue; }
                 targets.push(next);
@@ -429,7 +429,7 @@ class OpportunisticRaidDirector {
                 if (!this.canWork()) continue;
                 const states = await this.life.statesByIds(party.memberIds);
                 if (objective.expiresAt <= timestamp || states.length !== 9
-                    || states.some(s => s.level > objective.sourceLevel + 8)) {
+                    || states.some(s => !Policy.levelAllowed(s, objective.sourceLevel, objective))) {
                     await this.dissolve(party, 'raid_unavailable'); continue;
                 }
                 const spot = this.catalog.findById(objective.spotId);
@@ -483,7 +483,7 @@ class OpportunisticRaidDirector {
             // In the fight only the stall insurance: 8 min with no boss, minion or buff progress.
             const stalled = timestamp - progress.progressAt > 8 * 60000;
             if (stalled || objective.expiresAt <= timestamp
-                || sessions.some(s => s.actor.fetchLevel() > objective.sourceLevel + 8
+                || sessions.some(s => !Policy.levelAllowed({ level: s.actor.fetchLevel() }, objective.sourceLevel, objective)
                     || Number(s.actor.fetchKarma?.()) > 0 || Number(s.actor.fetchPk?.()) > 0)) {
                 if (sessions[0]) await this.hot.abandonRaid(sessions[0], stalled ? 'raid_no_progress' : 'raid_admission_expired', timestamp);
                 continue;

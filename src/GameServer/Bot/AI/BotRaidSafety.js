@@ -1,5 +1,6 @@
 const RAID_MINION_TEMPLATE_IDS = new Set(
-    require('../../../../data/Npcs/Minions/c4_raid_bosses.json')
+    [...require('../../../../data/Npcs/Minions/c4_raid_bosses.json'),
+        ...require('../../RaidBoss/GrandBossRules').data.minions]
         .map((entry) => Number(entry.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );
@@ -180,7 +181,8 @@ function currentCombatTargetId(actor) {
 }
 
 function raidHasPartyCombat(leaderSession, raid) {
-    const sessions = playerPartySessions(leaderSession).filter(session => session.actor.fetchIsOnline?.() === true
+    const sessions = invoke('GameServer/Bot/AI/ClanCommandParty').combatSessions(leaderSession, { includeDead: true })
+        .filter(session => session.actor.fetchIsOnline?.() === true
         && !session.actor.isDead?.() && !session.actor.state?.fetchDead?.());
     const memberIds = new Set(sessions.map((session) => objectId(session.actor)).filter(Boolean));
     if (memberIds.size === 0) return false;
@@ -401,7 +403,8 @@ function botClanRaidCombatPlan(ownerSession, target) {
     const raid = { bossId: objectId(boss), bossTemplateId: templateId(boss) };
     const EffectStore = invoke('GameServer/Effects/EffectStore');
     const minions = raidEntities(raid)
-        .filter((npc) => isRaidMinion(npc) && !npc.isDead?.())
+        .filter((npc) => isRaidMinion(npc) && !npc.isDead?.()
+            && !require('../../RaidBoss/GrandBossRules').isPassive(npc))
         .sort((left, right) => Number(objectId(left) || 0) - Number(objectId(right) || 0));
     let state = ownerSession?.backgroundRaidTactics;
     if (!state || Number(state.bossId || 0) !== Number(raid.bossId || 0)) {

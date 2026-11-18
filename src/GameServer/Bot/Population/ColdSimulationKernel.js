@@ -1414,8 +1414,9 @@ class ColdSimulationKernel {
                 const atomicPartyLimit = marker && require('../../Clan/ClanRaidRoster').valid(marker)
                     ? Math.max(this.maxAtomicPartySize, marker.memberIds.length) : this.maxAtomicPartySize;
                 const occupiedOwnership = this.inFlight.size + this.commanding.size;
-                const atomicCapacityBurst = candidateMemberIds.length > this.maxInFlight
+                const atomicCapacityBurst = candidateMemberIds.length > Math.min(this.maxInFlight, this.maxBatch)
                     && candidateMemberIds.length <= atomicPartyLimit
+                    && candidateMemberIds.length <= Protocol.MAX_BATCH
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     this.partyCapacityBlocked = true;
@@ -2631,7 +2632,13 @@ class ColdSimulationKernel {
             if (visited.has(proposal.characterId)) continue;
             const group = proposal.atomicGroup?.id
                 ? eligible.filter(entry => entry.atomicGroup?.id === proposal.atomicGroup.id) : [proposal];
-            if (proposals.length + group.length > limit) break;
+            // The ownership window can be smaller than one marked expedition.
+            // Flush that complete group alone, as its atomic admission did;
+            // waiting for an ordinary 32-row window would strand 36/40 owners.
+            const atomicBurst = proposals.length === 0 && group.length <= Protocol.MAX_BATCH
+                && group.length <= require('../../Clan/ClanRaidExpedition').MAX_MEMBERS
+                && group[0]?.atomicGroup?.memberIds?.length === group.length;
+            if (proposals.length + group.length > limit && !atomicBurst) break;
             group.forEach(entry => { visited.add(entry.characterId); proposed.set(Number(entry.characterId), entry.nextState); });
             let transportGroup = group;
             let transportSizes = proposalSizes(group);
@@ -2648,6 +2655,10 @@ class ColdSimulationKernel {
                     return { ...transport, nextStateDelta: ColdStateDelta.create(base, nextState) };
                 });
                 transportSizes = proposalSizes(transportGroup);
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportGroup = Protocol.compactAtomicGroups(transportGroup);
+                    transportSizes = proposalSizes(transportGroup);
+                }
                 if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     oversized.push(...group);
                     continue;

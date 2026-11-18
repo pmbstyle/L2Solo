@@ -373,6 +373,8 @@ const els = {
     closeRaidBosses: document.querySelector('#closeRaidBosses'),
     raidBossesModal: document.querySelector('#raidBossesModal'),
     raidBossFilters: document.querySelector('#raidBossFilters'),
+    raidBossMinLevel: document.querySelector('#raidBossMinLevel'),
+    raidBossMaxLevel: document.querySelector('#raidBossMaxLevel'),
     raidBossSearch: document.querySelector('#raidBossSearch'),
     raidBossSummary: document.querySelector('#raidBossSummary'),
     raidBossScope: document.querySelector('#raidBossScope'),
@@ -737,8 +739,11 @@ function raidBossStatusLabel(status) {
 
 function filteredRaidBosses() {
     const query = state.raidBossSearch.trim().toLowerCase();
+    const minLevel = Number(els.raidBossMinLevel.value || -Infinity);
+    const maxLevel = Number(els.raidBossMaxLevel.value || Infinity);
     return raidBossItems().filter((boss) => {
         if (state.raidBossFilter !== 'all' && boss.status !== state.raidBossFilter) return false;
+        if (boss.level < minLevel || boss.level > maxLevel) return false;
         if (!query) return true;
         return [boss.name, boss.location?.name, boss.level, boss.id]
             .filter((value) => value !== null && value !== undefined)
@@ -766,19 +771,20 @@ function renderRaidBosses() {
     els.raidBossScope.textContent = `${number(bosses.length)} boss${bosses.length === 1 ? '' : 'es'}`;
     els.raidBossList.innerHTML = bosses.length
         ? bosses.map((boss) => {
-            const clickable = boss.status === 'alive' && boss.loc;
+            const canShowOnMap = boss.status === 'alive' && boss.loc;
+            const detailHref = Router.href({ name: 'knowledge-npcs', id: boss.id });
             const timer = boss.status === 'alive'
                 ? 'In world'
                 : boss.status === 'respawning'
                     ? formatDuration(Math.max(0, Number(boss.respawnAt || 0) - Date.now()))
                     : 'Not found';
-            return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
-                <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
-                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')}</span></span>
+            return `<div class="raid-boss-row" role="listitem">
+                <i class="raid-boss-dot ${escapeHtml(boss.status)}" aria-hidden="true"></i>
+                <span class="raid-boss-identity"><a href="${detailHref}">${text(boss.name)}</a><span>Lv ${number(boss.level, '?')}</span></span>
                 <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${boss.location?.area?.mapAnchor ? 'Dungeon entrance on map' : 'Surface location'}</span></span>
                 <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
-                <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
-            </button>`;
+                ${canShowOnMap ? `<button class="raid-boss-map-button" type="button" data-raid-boss-map-id="${escapeHtml(boss.id)}" aria-label="Show ${escapeHtml(boss.name)} on map">Show on map</button>` : ''}
+            </div>`;
         }).join('')
         : '<div class="list-empty">No raid bosses match this filter.</div>';
     els.raidBossList.scrollTop = scrollTop;
@@ -1378,6 +1384,10 @@ function clanCraftReason(code) {
         clan_craft_component_ready: 'Crafting an intermediate component first.' })[code] || readableToken(code);
 }
 
+function clanTableItem(item, detail = '') {
+    return `<span class="observer-table-item">${item.iconUrl ? `<img src="${text(item.iconUrl)}" width="24" height="24" alt="" loading="lazy" decoding="async">` : ''}<span>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}${detail ? `<small>${text(detail)}</small>` : ''}</span></span>`;
+}
+
 function clanCraftPreviewMarkup(plan, loading = false, error = null) {
     if (loading) return '<section class="clan-craft-preview" data-clan-craft-preview role="status">Checking recipe, selected dwarves and shared materials…</section>';
     if (error) return `<section class="clan-craft-preview is-error" data-clan-craft-preview role="alert">${text(error)}</section>`;
@@ -1385,13 +1395,18 @@ function clanCraftPreviewMarkup(plan, loading = false, error = null) {
     const craft = plan.craft;
     if (!craft) return `<section class="clan-craft-preview" data-clan-craft-preview>${text(clanCraftReason(plan.reasonCode))}</section>`;
     const stage = ({ resources: 0, components: 1, crafting: 1, delivery: 2, blocked: -1 })[craft.stage] ?? -1;
+    const materialRows = craft.materials.map(material => {
+        const detail = material.component
+            ? (material.missing ? 'Craftable component; inputs are listed below' : 'Component already available') : '';
+        return `<tr><td>${clanTableItem(material, detail)}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`;
+    }).join('');
     return `<section class="clan-craft-preview" data-clan-craft-preview aria-label="Crafting plan">
         <div class="clan-craft-title"><strong>Crafting plan</strong><span>${number(craft.successRate)}% success · ${number(craft.productCount)} per batch</span></div>
         <ol class="clan-craft-stages">${['Gather resources', 'Craft', 'Deliver'].map((label, index) => `<li class="${index === stage ? 'is-current' : index < stage ? 'is-done' : ''}"><span>${index + 1}</span>${label}</li>`).join('')}</ol>
         <p>${text(clanCraftReason(plan.reasonCode))}${craft.nextItemName ? ` Next: ${text(craft.nextItemName)}.` : ''}</p>
         ${craft.customerName ? `<p>Material carrier: ${text(craft.customerName)}${craft.activity ? ` · ${text(activityLabel(craft.activity))}` : ''}${craft.sourceName ? `<br>Current source: ${text(craft.sourceName)}${craft.sourceKind === 'spoil' ? ' · Spoil' : ''}` : ''}</p>` : ''}
         <div class="clan-craft-meta"><span><small>Recipe skill</small><strong>Level ${number(craft.level)}</strong></span><span><small>Crafter</small><strong>${text(craft.crafterName || 'Unavailable')}</strong></span><span><small>Recipe knowledge</small><strong>${craft.learned ? 'Learned' : craft.materials.some(material => material.selfId === craft.recipeItemId && !material.missing) ? 'Ready to learn' : 'Recipe scroll needed'}</strong></span></div>
-        ${craft.materials.length ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${craft.materials.map(material => `<tr><td>${text(material.name)}${material.component ? '<small>Craftable component; its missing inputs are listed below</small>' : ''}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+        ${materialRows ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${materialRows}</tbody></table></div></details>` : ''}
         <small>Crafting repeats until the total goal is met. Failed attempts consume inputs. Crystals and gemstones are supplied automatically.</small>
     </section>`;
 }
@@ -1446,7 +1461,7 @@ function renderClanManager() {
         <nav class="clan-manager-tabs" aria-label="Clan management sections">${[['goal', 'target', 'Goal'], ['members', 'users', 'Members'], ['warehouse', 'warehouse', 'Warehouse'], ['activity', 'history', 'Activity'], ['appearance', 'shield', 'Appearance']].map(([id, icon, label]) => `<button type="button" data-clan-manager-tab="${id}" aria-current="${tab === id ? 'page' : 'false'}">${uiIcon(icon)}${label}${id === 'members' ? `<span>${number(detail.members.length)}</span>` : ''}</button>`).join('')}</nav>
         <div class="clan-manager-body">${clanManagementMarkup(clan)}
         ${tab === 'members' ? `<section><div class="clan-manager-section-heading"><h3>Clan members</h3><p>Open a profile to inspect equipment and current activity. Goal executors are chosen in the Goal tab.</p></div><div class="clan-member-list">${detail.members.map(member => `<button type="button" class="clan-member-row" data-clan-member-id="${member.id}" data-clan-member-kind="${text(member.kind)}"><span class="clan-member-main"><strong>${text(member.name)}</strong><span>${text(member.className)} · Lv ${number(member.level)}</span></span><span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase))}</strong><span>${text(member.region)}</span></span></button>`).join('')}</div></section>` : ''}
-        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
+        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${clanTableItem(item)}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
         ${tab === 'activity' ? `<section class="clan-manager-activity"><div class="clan-manager-section-heading"><h3>Recent activity</h3><p>Goal changes, gathering, crafting and delivery.</p></div>${(detail.events || []).map(event => `<div class="clan-event-row"><strong>${text(uiLabel('event', event.eventType, 'Clan update'))}</strong><span>${text(uiLabel('reason', event.reasonCode, null) || readableToken(event.reasonCode))}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') || '<p>No activity yet.</p>'}</section>` : ''}
         </div><footer class="clan-manager-footer"><span>${state.clanOrderDraft || state.clanCrestDraft ? 'Unsaved edits stay here when you close this window.' : 'Saved goals keep running when you leave Observer.'}</span><button type="button" data-clan-manager-close>Done</button></footer>`;
     content.querySelector('.clan-manager-body').scrollTop = previousScroll;
@@ -3658,9 +3673,9 @@ els.rankingsModal?.addEventListener('click', (event) => {
 });
 
 els.raidBossesModal?.addEventListener('click', (event) => {
-    const row = event.target.closest('[data-raid-boss-id]');
-    if (row && !row.disabled) {
-        focusRaidBoss(row.dataset.raidBossId);
+    const mapButton = event.target.closest('[data-raid-boss-map-id]');
+    if (mapButton) {
+        focusRaidBoss(mapButton.dataset.raidBossMapId);
         return;
     }
     if (event.target === els.raidBossesModal) closeRaidBosses();
@@ -3912,6 +3927,13 @@ els.raidBossSearch?.addEventListener('input', (event) => {
     state.raidBossSearch = String(event.target.value || '').trim().toLowerCase();
     els.raidBossList.scrollTop = 0;
     renderRaidBosses();
+});
+
+[els.raidBossMinLevel, els.raidBossMaxLevel].forEach((input) => {
+    input?.addEventListener('input', () => {
+        els.raidBossList.scrollTop = 0;
+        renderRaidBosses();
+    });
 });
 
 els.rankingTabs?.addEventListener('click', (event) => {

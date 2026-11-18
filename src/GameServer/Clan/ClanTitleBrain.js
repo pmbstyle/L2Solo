@@ -4,8 +4,11 @@ const ContextAssembler = invoke('GameServer/Clan/ClanContextAssembler');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 
-const MAX_COMPLETION_TOKENS = 700;
-const PENDING_TTL_MS = 30 * 1000;
+const MAX_COMPLETION_TOKENS = 400;
+const REQUEST_TIMEOUT_MS = 30 * 1000;
+// The gateway can retry a malformed or truncated response once.
+const PENDING_TTL_MS = REQUEST_TIMEOUT_MS * 2 + 5000;
+const FAILED_TTL_MS = 30 * 1000;
 const RESOLVED_TTL_MS = 5 * 60 * 1000;
 const decisions = new Map();
 
@@ -43,7 +46,7 @@ function systemPrompt() {
 }
 
 function completionTokenLimit(memberCount) {
-    return Math.min(MAX_COMPLETION_TOKENS, Math.max(120, 60 + Math.max(1, number(memberCount)) * 28));
+    return Math.min(MAX_COMPLETION_TOKENS, Math.max(120, 80 + number(memberCount) * 40));
 }
 
 function responseSchema(memberIds = []) {
@@ -73,7 +76,7 @@ function responseSchema(memberIds = []) {
 function configured() {
     const cfg = OpenRouterGateway.config({
         maxTokens: MAX_COMPLETION_TOKENS,
-        timeoutMs: 10000,
+        timeoutMs: REQUEST_TIMEOUT_MS,
         reasoningEffort: 'off'
     });
     return Config.llmTitleManagementEnabled !== false && OpenRouterGateway.isConfigured(cfg)
@@ -83,12 +86,13 @@ function configured() {
 
 function prune(now = Date.now()) {
     for (const [key, entry] of decisions) {
-        const ttl = entry.state === 'pending' ? PENDING_TTL_MS : RESOLVED_TTL_MS;
-        if (now - entry.createdAt > ttl) decisions.delete(key);
+        const ttl = entry.state === 'pending' ? PENDING_TTL_MS
+            : entry.result.ok ? RESOLVED_TTL_MS : FAILED_TTL_MS;
+        if (now - entry.updatedAt >= ttl) decisions.delete(key);
     }
 }
 
-async function resolveDecision(entry, clan, snapshot, cfg) {
+async function resolveDecision(clan, snapshot, cfg) {
     const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     let reservation = null;
     let settledUsage = null;
@@ -114,6 +118,7 @@ async function resolveDecision(entry, clan, snapshot, cfg) {
             return { ok: false, retryable: true, code: admission.reason, inferenceDenied: true };
         }
         reservation = admission.reservation;
+        BotInferenceBudget.markStarted(reservation);
         const result = await OpenRouterGateway.request({
             config: { ...cfg, maxTokens: maxCompletionTokens },
             circuitKey: 'clan-titles',
@@ -175,16 +180,17 @@ function choose(clan, snapshot, options = {}) {
     }
     const entry = {
         key: snapshot.key,
-        createdAt: Date.now(),
+        updatedAt: Date.now(),
         state: 'pending',
         result: null,
         promise: null
     };
     decisions.set(snapshot.key, entry);
     DiagnosticConfig.developerDiagnostics && (metrics.requested += 1);
-    entry.promise = resolveDecision(entry, clan, snapshot, cfg).then((result) => {
+    entry.promise = resolveDecision(clan, snapshot, cfg).then((result) => {
         entry.state = 'resolved';
         entry.result = result;
+        entry.updatedAt = Date.now();
         if (!result.ok) DiagnosticConfig.developerDiagnostics && (metrics.invalid += result.code === 'invalid_clan_titles' ? 1 : 0);
         return result;
     });

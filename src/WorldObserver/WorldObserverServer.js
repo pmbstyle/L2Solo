@@ -587,7 +587,7 @@ function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
     const reasonCode = blocked ? 'clan_craft_route_blocked' : traveling ? 'clan_craft_traveling' : crafting ? 'clan_craft_in_progress' : gathering ? 'clan_craft_party_resources'
         : ready?.recipeId === recipe.recipeId ? 'clan_craft_ready' : ready ? 'clan_craft_component_ready' : 'clan_craft_collecting_materials';
     const itemName = id => ClanOrderService.itemSnapshot(ClanOrderService.itemTemplate(id))?.itemName || `Item ${id}`;
-    return { kind: 'craft', reasonCode, craft: {
+    return { kind: 'craft', reasonCode, craft: compactClanCraft({
         recipeId: recipe.recipeId, recipeItemId: recipe.recipeItemId, level: recipe.level,
         successRate: recipe.successRate, productCount: recipe.productCount,
         crafterName: crafter?.name || (provider ? 'Unavailable' : 'Public crafting service'),
@@ -600,7 +600,7 @@ function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
         materials: [...demand].map(([selfId, required]) => ({ selfId, name: itemName(selfId), required,
             available: Number(inventory[selfId]?.amount || 0), missing: Math.max(0, required - Number(inventory[selfId]?.amount || 0)),
             component: !!plan.componentRecipes?.[selfId] }))
-    } };
+    }) };
 }
 
 function clanOverviewQuery() {
@@ -938,14 +938,24 @@ function compactClanEvent(row) {
     };
 }
 
+function compactClanCraft(craft) {
+    if (!craft) return null;
+    const summary = {
+        ...craft,
+        materials: (craft.materials || []).map((material) => ({
+            ...material,
+            iconUrl: itemIconFor(null, material.selfId, material.name, null)?.url || null
+        }))
+    };
+    delete summary.nativePlan;
+    return summary;
+}
+
 function compactClanOrder(order) {
     if (!order) return null;
     const icon = itemIconFor(null, order.itemId, order.itemName, null);
     const plan = { ...(order.plan || {}) };
-    if (plan.craft) {
-        plan.craft = { ...plan.craft };
-        delete plan.craft.nativePlan;
-    }
+    if (plan.craft) plan.craft = compactClanCraft(plan.craft);
     return {
         id: clanNumber(order.id),
         revision: clanNumber(order.revision),
@@ -1070,6 +1080,7 @@ async function clanDetail(clanId) {
             selfId: clanNumber(item.selfId),
             name: item.name || `Item ${item.selfId}`,
             kind: item.kind || null,
+            iconUrl: itemIconFor(null, item.selfId, item.name, item.kind)?.url || null,
             amount: clanNumber(item.amount),
             enchant: clanNumber(item.enchant),
             reservedAmount: clanNumber(item.reservedAmount)
@@ -1292,6 +1303,7 @@ function loadItemIconCatalog() {
     try {
         const manifest = JSON.parse(fs.readFileSync(ITEM_ICON_MANIFEST_PATH, 'utf8'));
         const supplemental = JSON.parse(fs.readFileSync(path.join(ITEM_ICON_CATALOG_DIR, 'supplemental.json'), 'utf8'));
+        const client = JSON.parse(fs.readFileSync(path.join(ITEM_ICON_CATALOG_DIR, 'c4-client.json'), 'utf8'));
         const entries = Object.values({ ...manifest.items, ...supplemental.items })
             .filter((entry) => entry && entry.localFile);
         const bySelfId = new Map();
@@ -1314,9 +1326,15 @@ function loadItemIconCatalog() {
             }
         });
 
+        for (const [selfId, localFile] of Object.entries(client.items)) {
+            const entry = { localFile, localSource: 'c4-client' };
+            bySelfId.set(Number(selfId), entry);
+            byFile.set(path.basename(localFile), entry);
+        }
+
         itemIconCatalogCache = {
             available: true,
-            itemCount: entries.length,
+            itemCount: bySelfId.size,
             bySelfId,
             byNameAndCategory,
             byFile
@@ -1342,8 +1360,10 @@ function itemIconFor(item, selfId, name, kind) {
     const normalizedName = normalizeItemName(name);
     const category = itemIconCategory(kind);
     const exact = catalog.bySelfId.get(Number(selfId));
-    const exactNameMatches = exact && (!normalizedName || normalizeItemName(exact.normalizedName || exact.name) === normalizedName);
-    let entry = exactNameMatches ? exact : null;
+    // Client group tables define icons by ID, including items renamed in the datapack.
+    const exactMatches = exact && (exact.localSource === 'c4-client' || !normalizedName
+        || normalizeItemName(exact.normalizedName || exact.name) === normalizedName);
+    let entry = exactMatches ? exact : null;
     let match = entry ? 'selfId' : null;
 
     if (!entry && normalizedName) {
@@ -2948,8 +2968,7 @@ function handleClanOrderRoutes(request, response, url) {
             const order = { id: current && current.id === payload.orderId && current.itemId === payload.itemId ? current.id : 0,
                 itemId: payload.itemId, amount: payload.amount, strategy: 'craft', memberIds: [...new Set(memberIds)] };
             const plan = await require('../GameServer/Clan/ClanOrderCrafting').planFor(order, clan, payload.amount);
-            const craft = plan.craft ? { ...plan.craft } : null;
-            if (craft) delete craft.nativePlan;
+            const craft = compactClanCraft(plan.craft);
             return { ok: true, plan: { kind: plan.kind, reasonCode: plan.reasonCode, craft } };
         }).then(result => sendJson(response, result, result.ok ? 200 : 400))
             .catch(err => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));

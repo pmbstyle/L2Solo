@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('launcher', Object.freeze({
     openBackups: () => invoke('openBackups'),
     settings: () => invoke('settings'),
     saveSettings: changes => invoke('saveSettings', changes),
+    testAi: changes => invoke('testAi', changes),
     news: () => invoke('news'),
     openLink: url => invoke('openLink', url),
     openFolder: () => invoke('openFolder'),

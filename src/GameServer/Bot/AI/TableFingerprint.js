@@ -43,10 +43,11 @@ const REFERENCE_BOT = ['src/GameServer/Bot/AI/BotGear.js', 'src/GameServer/Bot/A
 // by: the cell size, the dungeon areas (an id's `:area`, a spot's tags) and the
 // assist height that splits a cell into floors.
 const CATALOGUE = ['src/GameServer/World/Generics/SpawnNpcs.js', 'src/GameServer/Bot/AI/SpotService.js',
+    'src/GameServer/RaidBoss/GrandBossRules.js', 'data/RaidBoss',
     'src/GameServer/Bot/AI/SpotIndex.js', 'src/GameServer/Bot/Population/SpotProfiles.js', 'scripts/geodata-release.json',
     'src/GameServer/World/WorldConstants.js', 'src/GameServer/World/WorldAreaCatalog.js',
     'src/GameServer/World/C4SevenSignsDungeonTeleports.js', 'src/GameServer/Npc/SocialAggro.js'];
-const GAME_DATA = ['data/Npcs', 'data/Items', 'data/Skills', 'data/Templates'];
+const GAME_DATA = ['data/Npcs', 'data/Items', 'data/Skills', 'data/Templates', 'data/RaidBoss'];
 // Gear ladders, item sources and hennas (hunt gear/sources/henna; the spot table's kit surface reads gear.json).
 const GEAR_LADDERS = ['src/GameServer/Bot/AI/GearAcquisitionPlanner.js', 'src/GameServer/Bot/AI/BotEquipmentCompatibility.js',
     'src/GameServer/World/Generics/NpcShopBuyLists.js', 'src/GameServer/Bot/Economy/BotLuxuryExchange.js',

@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const GrandBossRules = invoke('GameServer/RaidBoss/GrandBossRules');
 const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 const mobiusGroups = require('../data/Npcs/Spawns/c4_mobius_monsters.json');
 
@@ -31,19 +32,25 @@ mobiusGroups.forEach((group) => {
     });
 });
 
-// Every spawned monster has a loaded template, and nothing outside Mobius places an ordinary monster
-// or a monster Mobius already places (no double population).
+// Every spawned monster has a loaded template. Script-owned ambient guards
+// use their encounter coordinates, and ordinary monsters come from Mobius.
 const spawnedByMobius = new Set();
-const spawnedElsewhere = new Map();
+const spawnedElsewhere = new Set();
+const ordinaryElsewhere = new Set();
+const encounterSpawns = DataCache.npcSpawns.find(area => area.selfId === 'c4_grand_boss_ambient');
+assert.deepStrictEqual(encounterSpawns.spawns, GrandBossRules.data.ambientSpawns);
 DataCache.npcSpawns.forEach((area) => area.spawns.forEach((row) => {
     const id = Number(row.selfId);
     if (isMobius(area)) spawnedByMobius.add(id);
-    else spawnedElsewhere.set(id, area.selfId);
+    else {
+        spawnedElsewhere.add(id);
+        if (area !== encounterSpawns || !GrandBossRules.isEncounterNpc(id)) ordinaryElsewhere.add(id);
+    }
 }));
 assert.deepStrictEqual([...spawnedByMobius].filter((id) => !templates.has(id)), [], 'every Mobius monster has a template');
 assert.deepStrictEqual([...spawnedByMobius].filter((id) => spawnedElsewhere.has(id)), [],
     'a Mobius monster is spawned only by Mobius');
-assert.deepStrictEqual([...spawnedElsewhere.keys()].filter((id) => {
+assert.deepStrictEqual([...ordinaryElsewhere].filter((id) => {
     const template = templates.get(id)?.template;
     return template?.kind === 'Monster' && template.raidBoss !== true;
 }), [], 'ordinary monsters come only from Mobius');

@@ -171,7 +171,7 @@ test('every bundled launcher setting has scoped help, with units and comment fal
     await put(root, 'config/default.ini', await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8'));
     const groups = settings(root);
     for (const group of groups) for (const field of group.fields) {
-        assert.ok(help[group.id]?.[field.key], `Missing explanation: ${group.id}.${field.key}`);
+        assert.ok(help[field.section]?.[field.key], `Missing explanation: ${field.section}.${field.key}`);
         assert.ok(field.description.length > 20);
     }
     const description = section => groups.find(group => group.id === section).fields.find(field => field.key === 'enabled').description;
@@ -195,7 +195,8 @@ test('presentation hides the requested settings, groups related fields and prese
     const keys = section => fields(section).map(field => field.key);
     assert.deepEqual(keys('BotPopulation'), ['maxPlayingPopulation','starterBotsPerRace','generatedColdBatchSize','generatedColdSeedDelayMs',
         'pvpAggression','knowledgeErrorsEnabled','ambientScenesEnabled','ambientSceneCooldownMs','ambientPairCooldownMs','ambientSceneTtlMs','devLogPlayerChat']);
-    assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
+    assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','epicDropChanceRate',
+        'spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
     assert.deepEqual(keys('GameServer'), ['hostname','port','advertisedHostname','playerWarehouseSlots']);
     assert.deepEqual(keys('AuthServer'), ['hostname','port','autoCreate']);
     assert.deepEqual(keys('Database'), ['path']);

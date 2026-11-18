@@ -72,8 +72,24 @@ async function main() {
     assert.strictEqual(SpawnNpcs.respawnDelayForDefinitionMs(definition), fiveHours);
     const profiles = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').all();
     assert(profiles.length > 100);
-    assert(profiles.every(profile => profile.respawnSeconds === 18000 && profile.respawnBiasSeconds === 0),
+    assert(profiles.filter(profile => !profile.grandBoss).every(profile => profile.respawnSeconds === 18000 && profile.respawnBiasSeconds === 0),
         'bot planning metadata must reflect the actual fixed respawn window');
+    await Database.execute(["DELETE FROM named_migrations WHERE name = 'c4-grand-boss-respawn-windows'", []]);
+    for (const npcId of [12001, 12052, 12169]) {
+        await Database.execute([`INSERT INTO raid_boss_state(npcId, respawnTime, hp, mp, updatedAt)
+            VALUES (?, ?, 0, 0, ?)`, [npcId, killedAt + fiveHours, killedAt]]);
+    }
+    await Database.close(); Database.init();
+    RaidBossState.resetForTests(); await RaidBossState.load();
+    for (const [id, hours] of [[12001, 36], [12052, 60], [12169, 48]]) {
+        assert.strictEqual(RaidBossState.get(id).respawnTime, killedAt + hours * 3600000);
+        assert.strictEqual(RaidBossState.get(id).updatedAt, killedAt);
+    }
+    const epicDeadline = killedAt + 31 * 3600000;
+    await RaidBossState.markDefeated(12001, epicDeadline);
+    await Database.close(); Database.init();
+    RaidBossState.resetForTests(); await RaidBossState.load();
+    assert.strictEqual(RaidBossState.get(12001).respawnTime, epicDeadline, 'a randomized C4 deadline survives another restart');
     await Database.close();
     console.log('Raid boss respawn persistence ok');
 }

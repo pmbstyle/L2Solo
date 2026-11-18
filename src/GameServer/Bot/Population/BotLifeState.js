@@ -607,7 +607,7 @@ function marketPurchaseBlocker(state = {}, offer = {}, qty = 1, { commanded = fa
 }
 
 function refreshCraftShop(state = {}) {
-    if (!state.stats?.craftShop) return state;
+    if (!state?.stats?.craftShop) return state;
     const craftShop = CraftShopService.profileFor(state);
     return {
         ...state,

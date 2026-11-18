@@ -110,8 +110,14 @@ function pauseRaidWorld(party, sourceSession) {
 function resetRaidWorld(party, boss, maxHp, sourceSession) {
     if (!boss) return;
     if (invoke('GameServer/RaidBoss/RaidEncounterScope').otherParticipants(World, boss, party.memberIds)) return;
+    if (require('../../RaidBoss/GrandBossRules').isGrandBoss(boss)) {
+        // A failed expedition leaves the scripted encounter alive. Its native
+        // regeneration and individual minion respawns continue after a wipe.
+        boss.abortCombatState?.(sourceSession);
+        return;
+    }
     const minions = invoke('GameServer/World/RaidBossMinionManager');
-    minions.onBossDeath(World, boss, sourceSession);
+    minions.removeMinions(World, boss, sourceSession);
     boss.abortCombatState?.(sourceSession);
     boss.setHp?.(maxHp);
     boss.statusUpdateVitals?.(boss);
@@ -540,6 +546,8 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
         let party = Parties.find(partyId);
         const states = members(party);
         if (party?.status !== 'hot' || !states) return { ok: false, reason: 'not_hot_party' };
+        if (!options.ignoreVisibility && require('./GrandBossRaidLifecycle').keepHot(party))
+            return { ok: false, reason: 'grand_boss_native_encounter' };
         const Manager = invoke('GameServer/Bot/BotManager');
         sessions = party.memberIds.map(memberId => Manager.sessions.find(s => id(s) === memberId));
         const Cooldown = invoke('GameServer/Bot/Population/Cooldown');

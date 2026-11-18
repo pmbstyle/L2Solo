@@ -49,7 +49,7 @@ function npcRewards(session, npc) {
     DataCache.fetchNpcRewardsFromSelfId(npc.fetchSelfId(), (result) => {
         const rewards = result.rewards ?? [];
         const dropState = npc.model ?? npc;
-        const rewardContext = {
+        const rewardContext = invoke('GameServer/RaidBoss/GrandBossRuntime').dropContext(npc, session?.actor) || {
             npcLevel: npc.fetchLevel?.() ?? npc.model?.level,
             killerLevel: dropState.dropLastAttackerLevel ?? session?.actor?.fetchLevel?.(),
             attackerLevels: dropState.dropAttackerLevels ?? []

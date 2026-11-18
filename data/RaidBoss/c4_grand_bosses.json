@@ -1,0 +1,2343 @@
+{
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "source": "https://gitlab.com/TheDnR/l2j-lisvus",
+  "sourceHashes": {
+    "4000-4099.xml": "0201da7601d74afe387d3b12b46e4af328a3e6b2f1ed8661f46d1f64d7e2cfab",
+    "4500-4599.xml": "0e4758d354d6e0f4277e58d894efbadd419ee1604ebae6628c448415e8e03b3e",
+    "6600-6699.xml": "7294680230fa309af5e88b1134ea487a1007aa846b36d4909b6fcbe01a5032ad",
+    "droplist.sql": "c7b0436afef66af8ab3a3f0030d1c49976e1a6392f8b23b25f4367d0d34603b5",
+    "npc.sql": "fa33458eab63e843c6b163b8e7110ddeb7448aacbd48611c41d7eaf8e0ba5f53",
+    "npcskills.sql": "5d42d74acd1666a9a5bee91ffbb51156186c3c3f4857f4b4c432ef73c37c4ff9",
+    "spawnlist.sql": "15ad0891f474232b48cac427809cb5f0b968412f81cc83bee570b5c563f386aa"
+  },
+  "npcs": [
+    {
+      "selfId": 12001,
+      "template": {
+        "kind": "Boss",
+        "name": "Queen Ant",
+        "title": "",
+        "level": 40,
+        "hostile": false,
+        "raidBoss": true,
+        "grandBoss": true,
+        "raidCurse": false,
+        "ai": "BALANCED"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 60.0,
+        "con": 57.0,
+        "dex": 73.0,
+        "int": 76.0,
+        "wit": 70.0,
+        "men": 80.0
+      },
+      "stats": {
+        "pAtk": 329.0,
+        "pAtkRnd": 30,
+        "pDef": 1615.0,
+        "mAtk": 77.0,
+        "mDef": 655.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 1972.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 129.0,
+        "run": 372.0
+      },
+      "vitals": {
+        "maxHp": 229898.0,
+        "maxMp": 667.0,
+        "revHp": 495.04,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 45.0,
+        "size": 53.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "queen_ant_clan",
+        "helpRadius": 1000.0
+      },
+      "rewards": {
+        "exp": 1362.209375,
+        "sp": 140740
+      }
+    },
+    {
+      "selfId": 12002,
+      "template": {
+        "kind": "Monster",
+        "name": "Queen Ant Larva",
+        "title": "",
+        "level": 29,
+        "hostile": false,
+        "grandBossOwnerId": 12001,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 21.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 126.0,
+        "pAtkRnd": 30,
+        "pDef": 140.0,
+        "mAtk": 53.0,
+        "mDef": 110.0,
+        "accur": 4.75,
+        "atkSpd": 282.0,
+        "castSpd": 257.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 44.0,
+        "run": 66.0
+      },
+      "vitals": {
+        "maxHp": 935.0,
+        "maxMp": 349.0,
+        "revHp": 5.53,
+        "revMp": 1.53,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 12.0,
+        "size": 8.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "queen_ant_clan",
+        "helpRadius": 4500.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12003,
+      "template": {
+        "kind": "Monster",
+        "name": "Nurse Ant",
+        "title": "",
+        "level": 35,
+        "hostile": false,
+        "grandBossOwnerId": 12001,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 947.0,
+        "pAtkRnd": 30,
+        "pDef": 678.0,
+        "mAtk": 889.0,
+        "mDef": 275.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 44.0,
+        "run": 143.0
+      },
+      "vitals": {
+        "maxHp": 6320.0,
+        "maxMp": 446.0,
+        "revHp": 170.64,
+        "revMp": 1.84,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 26.0,
+        "size": 15.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12004,
+      "template": {
+        "kind": "Monster",
+        "name": "Guard Ant",
+        "title": "",
+        "level": 37,
+        "hostile": true,
+        "grandBossOwnerId": 12001,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 269.0,
+        "pAtkRnd": 30,
+        "pDef": 728.0,
+        "mAtk": 62.0,
+        "mDef": 295.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 44.0,
+        "run": 253.0
+      },
+      "vitals": {
+        "maxHp": 6861.0,
+        "maxMp": 480.0,
+        "revHp": 181.7,
+        "revMp": 1.84,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 26.0,
+        "size": 15.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12005,
+      "template": {
+        "kind": "Monster",
+        "name": "Royal Guard Ant",
+        "title": "",
+        "level": 39,
+        "hostile": false,
+        "grandBossOwnerId": 12001,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 1827.0,
+        "pAtkRnd": 30,
+        "pDef": 780.0,
+        "mAtk": 2576.0,
+        "mDef": 316.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 44.0,
+        "run": 253.0
+      },
+      "vitals": {
+        "maxHp": 11140.0,
+        "maxMp": 514.0,
+        "revHp": 192.76,
+        "revMp": 1.84,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 26.0,
+        "size": 15.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12052,
+      "template": {
+        "kind": "Boss",
+        "name": "Core",
+        "title": "",
+        "level": 50,
+        "hostile": false,
+        "raidBoss": true,
+        "grandBoss": true,
+        "raidCurse": false,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "construct"
+      },
+      "base": {
+        "str": 60.0,
+        "con": 57.0,
+        "dex": 73.0,
+        "int": 76.0,
+        "wit": 70.0,
+        "men": 80.0
+      },
+      "stats": {
+        "pAtk": 535.0,
+        "pAtkRnd": 30,
+        "pDef": 2226.0,
+        "mAtk": 500.0,
+        "mDef": 904.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 1972.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 0.0,
+        "run": 0.0
+      },
+      "vitals": {
+        "maxHp": 162561.0,
+        "maxMp": 575.0,
+        "revHp": 649.74,
+        "revMp": 1.53,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 140.0,
+        "size": 75.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "curma_core_clan",
+        "helpRadius": 2500.0
+      },
+      "rewards": {
+        "exp": 816.5628,
+        "sp": 153786
+      }
+    },
+    {
+      "selfId": 12054,
+      "template": {
+        "kind": "Monster",
+        "name": "Death Knight",
+        "title": "",
+        "level": 50,
+        "hostile": true,
+        "grandBossOwnerId": 12052,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "undead"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 683.0,
+        "pAtkRnd": 30,
+        "pDef": 1113.0,
+        "mAtk": 195.0,
+        "mDef": 452.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 29.0,
+        "run": 121.0
+      },
+      "vitals": {
+        "maxHp": 21830.0,
+        "maxMp": 830.0,
+        "revHp": 262.28,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 12.0,
+        "size": 31.0
+      },
+      "equipment": {
+        "weapon": 75,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "curma_core_clan",
+        "helpRadius": 2300.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12055,
+      "template": {
+        "kind": "Monster",
+        "name": "Death Wraith",
+        "title": "",
+        "level": 55,
+        "hostile": true,
+        "grandBossOwnerId": 12052,
+        "ai": "BALANCED"
+      },
+      "traits": {
+        "race": "undead"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 812.0,
+        "pAtkRnd": 30,
+        "pDef": 1288.0,
+        "mAtk": 2170.0,
+        "mDef": 522.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 110.0,
+        "run": 253.0
+      },
+      "vitals": {
+        "maxHp": 25298.0,
+        "maxMp": 987.0,
+        "revHp": 292.3,
+        "revMp": 2.45,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 15.0,
+        "size": 45.0
+      },
+      "equipment": {
+        "weapon": 1472,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "curma_core_clan",
+        "helpRadius": 700.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12058,
+      "template": {
+        "kind": "Monster",
+        "name": "Susceptor",
+        "title": "",
+        "level": 49,
+        "hostile": true,
+        "grandBossOwnerId": 12052,
+        "ai": "BALANCED"
+      },
+      "traits": {
+        "race": "construct"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 647.0,
+        "pAtkRnd": 30,
+        "pDef": 1080.0,
+        "mAtk": 184.0,
+        "mDef": 438.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 29.0,
+        "run": 165.0
+      },
+      "vitals": {
+        "maxHp": 21154.0,
+        "maxMp": 799.0,
+        "revHp": 255.96,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 20.0,
+        "size": 35.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "curma_core_clan",
+        "helpRadius": 1500.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12169,
+      "template": {
+        "kind": "Boss",
+        "name": "Orfen",
+        "title": "",
+        "level": 50,
+        "hostile": true,
+        "raidBoss": true,
+        "grandBoss": true,
+        "raidCurse": false,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "spirit"
+      },
+      "base": {
+        "str": 60.0,
+        "con": 57.0,
+        "dex": 73.0,
+        "int": 76.0,
+        "wit": 70.0,
+        "men": 80.0
+      },
+      "stats": {
+        "pAtk": 553.0,
+        "pAtkRnd": 30,
+        "pDef": 2226.0,
+        "mAtk": 124.0,
+        "mDef": 904.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 1972.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 97.0,
+        "run": 372.0
+      },
+      "vitals": {
+        "maxHp": 325124.0,
+        "maxMp": 1660.0,
+        "revHp": 649.74,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 35.0,
+        "size": 143.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "orfen_clan",
+        "helpRadius": 3000.0
+      },
+      "rewards": {
+        "exp": 816.5628,
+        "sp": 153786
+      }
+    },
+    {
+      "selfId": 12171,
+      "template": {
+        "kind": "Monster",
+        "name": "Raikel Leos",
+        "title": "",
+        "level": 49,
+        "hostile": false,
+        "grandBossOwnerId": 12169,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "beast"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 1752.0,
+        "pAtkRnd": 30,
+        "pDef": 1080.0,
+        "mAtk": 4358.0,
+        "mDef": 438.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 66.0,
+        "run": 253.0
+      },
+      "vitals": {
+        "maxHp": 10576.0,
+        "maxMp": 799.0,
+        "revHp": 255.96,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 37.0,
+        "size": 64.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "orfen_clan",
+        "helpRadius": 2700.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    },
+    {
+      "selfId": 12173,
+      "template": {
+        "kind": "Monster",
+        "name": "Riba Iren",
+        "title": "",
+        "level": 49,
+        "hostile": false,
+        "grandBossOwnerId": 12169,
+        "ai": "FIGHTER"
+      },
+      "traits": {
+        "race": "insect"
+      },
+      "base": {
+        "str": 40.0,
+        "con": 43.0,
+        "dex": 30.0,
+        "int": 41.0,
+        "wit": 20.0,
+        "men": 10.0
+      },
+      "stats": {
+        "pAtk": 1752.0,
+        "pAtkRnd": 30,
+        "pDef": 1080.0,
+        "mAtk": 4358.0,
+        "mDef": 438.0,
+        "accur": 4.75,
+        "atkSpd": 278.0,
+        "castSpd": 253.0,
+        "atkRadius": 40.0
+      },
+      "speed": {
+        "walk": 66.0,
+        "run": 253.0
+      },
+      "vitals": {
+        "maxHp": 21154.0,
+        "maxMp": 799.0,
+        "revHp": 255.96,
+        "revMp": 2.14,
+        "corpseTime": 20000
+      },
+      "collision": {
+        "radius": 25.0,
+        "size": 72.0
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "orfen_clan",
+        "helpRadius": 2900.0
+      },
+      "rewards": {
+        "exp": 0.0,
+        "sp": 1
+      }
+    }
+  ],
+  "items": [
+    {
+      "selfId": 6660,
+      "template": {
+        "kind": "Armor.Jewel",
+        "name": "Ring of Queen Ant",
+        "class1": 1,
+        "class2": 1,
+        "mass": 150,
+        "price": 616000
+      },
+      "stats": {
+        "pDef": 0,
+        "mDef": 48.0,
+        "evasion": 0,
+        "maxMp": 21.0
+      },
+      "etc": {
+        "slot": 4,
+        "rank": "b",
+        "cristals": 82
+      }
+    },
+    {
+      "selfId": 6661,
+      "template": {
+        "kind": "Armor.Jewel",
+        "name": "Earring of Orfen",
+        "class1": 1,
+        "class2": 1,
+        "mass": 150,
+        "price": 1300000
+      },
+      "stats": {
+        "pDef": 0,
+        "mDef": 71.0,
+        "evasion": 0,
+        "maxMp": 31.0
+      },
+      "etc": {
+        "slot": 1,
+        "rank": "a",
+        "cristals": 104
+      }
+    },
+    {
+      "selfId": 6662,
+      "template": {
+        "kind": "Armor.Jewel",
+        "name": "Ring of Core",
+        "class1": 1,
+        "class2": 1,
+        "mass": 150,
+        "price": 870000
+      },
+      "stats": {
+        "pDef": 0,
+        "mDef": 48.0,
+        "evasion": 0,
+        "maxMp": 21.0
+      },
+      "etc": {
+        "slot": 4,
+        "rank": "a",
+        "cristals": 69
+      }
+    }
+  ],
+  "skillRows": [
+    {
+      "npcId": 12001,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12001,
+      "skillId": 4021,
+      "level": 1
+    },
+    {
+      "npcId": 12001,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12001,
+      "skillId": 4017,
+      "level": 1
+    },
+    {
+      "npcId": 12001,
+      "skillId": 4018,
+      "level": 1
+    },
+    {
+      "npcId": 12001,
+      "skillId": 4019,
+      "level": 1
+    },
+    {
+      "npcId": 12002,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12002,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12003,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12003,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12004,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12004,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12005,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12005,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12052,
+      "skillId": 4291,
+      "level": 1
+    },
+    {
+      "npcId": 12052,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12054,
+      "skillId": 4290,
+      "level": 1
+    },
+    {
+      "npcId": 12054,
+      "skillId": 4275,
+      "level": 3
+    },
+    {
+      "npcId": 12054,
+      "skillId": 4278,
+      "level": 1
+    },
+    {
+      "npcId": 12054,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12055,
+      "skillId": 4290,
+      "level": 1
+    },
+    {
+      "npcId": 12055,
+      "skillId": 4275,
+      "level": 3
+    },
+    {
+      "npcId": 12055,
+      "skillId": 4278,
+      "level": 1
+    },
+    {
+      "npcId": 12055,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12055,
+      "skillId": 4001,
+      "level": 5
+    },
+    {
+      "npcId": 12058,
+      "skillId": 4291,
+      "level": 1
+    },
+    {
+      "npcId": 12058,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12058,
+      "skillId": 4001,
+      "level": 4
+    },
+    {
+      "npcId": 12169,
+      "skillId": 4296,
+      "level": 1
+    },
+    {
+      "npcId": 12169,
+      "skillId": 4062,
+      "level": 1
+    },
+    {
+      "npcId": 12169,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12169,
+      "skillId": 4063,
+      "level": 1
+    },
+    {
+      "npcId": 12171,
+      "skillId": 4292,
+      "level": 1
+    },
+    {
+      "npcId": 12171,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12173,
+      "skillId": 4301,
+      "level": 1
+    },
+    {
+      "npcId": 12173,
+      "skillId": 4045,
+      "level": 1
+    },
+    {
+      "npcId": 12003,
+      "skillId": 4020,
+      "level": 1
+    },
+    {
+      "npcId": 12003,
+      "skillId": 4024,
+      "level": 1
+    },
+    {
+      "npcId": 12173,
+      "skillId": 4516,
+      "level": 1
+    }
+  ],
+  "skillTemplates": [
+    {
+      "selfId": 4017,
+      "template": {
+        "name": "Brandish Queen Ant",
+        "passive": false,
+        "spell": false,
+        "distance": 0.0
+      },
+      "time": {
+        "hitTime": 1300.0,
+        "reuse": 500.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 271.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4018,
+      "template": {
+        "name": "Decrease Speed",
+        "passive": false,
+        "spell": false,
+        "distance": 500.0
+      },
+      "time": {
+        "hitTime": 2200.0,
+        "reuse": 500.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 542.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4019,
+      "template": {
+        "name": "Decrease Speed",
+        "passive": false,
+        "spell": false,
+        "distance": 800.0
+      },
+      "time": {
+        "hitTime": 1700.0,
+        "reuse": 500.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 40.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4020,
+      "template": {
+        "name": "Heal Queen Ant 1",
+        "passive": false,
+        "spell": true,
+        "distance": 600.0
+      },
+      "time": {
+        "hitTime": 3000.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 10845.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4021,
+      "template": {
+        "name": "Body Of Queent Ant",
+        "passive": true,
+        "spell": false,
+        "distance": 0.0
+      },
+      "time": {
+        "hitTime": 0.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4024,
+      "template": {
+        "name": "Heal Queen Ant 2",
+        "passive": false,
+        "spell": true,
+        "distance": 600.0
+      },
+      "time": {
+        "hitTime": 3000.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 10845.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4062,
+      "template": {
+        "name": "Orfen",
+        "passive": true,
+        "spell": false,
+        "distance": 0.0
+      },
+      "time": {
+        "hitTime": 0.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4063,
+      "template": {
+        "name": "Paralysis",
+        "passive": false,
+        "spell": false,
+        "distance": 50.0
+      },
+      "time": {
+        "hitTime": 3500.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 916.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4064,
+      "template": {
+        "name": "Paralysis",
+        "passive": false,
+        "spell": false,
+        "distance": 800.0
+      },
+      "time": {
+        "hitTime": 4000.0,
+        "reuse": 0.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 30.0,
+          "mp": 0.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4067,
+      "template": {
+        "name": "NPC Mortal Blow",
+        "passive": false,
+        "spell": false,
+        "distance": 40.0
+      },
+      "time": {
+        "hitTime": 1000.0,
+        "reuse": 6000.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 137.0,
+          "mp": 14.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 314.0,
+          "mp": 22.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 656.0,
+          "mp": 31.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 1249.0,
+          "mp": 43.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 2164.0,
+          "mp": 55.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 3408.0,
+          "mp": 68.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 4878.0,
+          "mp": 79.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 5627.0,
+          "mp": 84.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 6335.0,
+          "mp": 89.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 6960.0,
+          "mp": 92.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 7461.0,
+          "mp": 94.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 7850.0,
+          "mp": 95.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4516,
+      "template": {
+        "name": "Orfen Heal",
+        "passive": false,
+        "spell": true,
+        "distance": 600.0
+      },
+      "time": {
+        "hitTime": 2000.0,
+        "reuse": 8000.0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 5600.0,
+          "mp": 80.0,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    }
+  ],
+  "epicDrops": [
+    {
+      "npcId": 12001,
+      "itemId": 6660,
+      "min": 1,
+      "max": 1,
+      "category": 13,
+      "chance": 30.0
+    },
+    {
+      "npcId": 12052,
+      "itemId": 6662,
+      "min": 1,
+      "max": 1,
+      "category": 9,
+      "chance": 30.0
+    },
+    {
+      "npcId": 12169,
+      "itemId": 6661,
+      "min": 1,
+      "max": 1,
+      "category": 10,
+      "chance": 30.0
+    }
+  ],
+  "minions": [
+    {
+      "bossId": 12001,
+      "minionId": 12002,
+      "min": 1,
+      "max": 1,
+      "respawnMs": 0,
+      "coords": [
+        {
+          "locX": -21600,
+          "locY": 179482,
+          "locZ": -5846,
+          "head": 0
+        }
+      ],
+      "passive": true
+    },
+    {
+      "bossId": 12001,
+      "minionId": 12003,
+      "min": 8,
+      "max": 8,
+      "respawnMs": 10000,
+      "healer": true,
+      "coords": [
+        {
+          "locX": -22000,
+          "locY": 179482,
+          "locZ": -5846,
+          "head": 0
+        },
+        {
+          "locX": -21200,
+          "locY": 179482,
+          "locZ": -5846,
+          "head": 0
+        },
+        {
+          "locX": -21210,
+          "locY": 181594,
+          "locZ": -5734,
+          "head": 0
+        },
+        {
+          "locX": -21545,
+          "locY": 181988,
+          "locZ": -5734,
+          "head": 0
+        },
+        {
+          "locX": -21988,
+          "locY": 181722,
+          "locZ": -5734,
+          "head": 0
+        },
+        {
+          "locX": -21798,
+          "locY": 181242,
+          "locZ": -5734,
+          "head": 0
+        },
+        {
+          "locX": -21293,
+          "locY": 181351,
+          "locZ": -5734,
+          "head": 0
+        },
+        {
+          "locX": -21318,
+          "locY": 181867,
+          "locZ": -5734,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12001,
+      "minionId": 12005,
+      "min": 8,
+      "max": 8,
+      "respawnMs": 300000,
+      "respawnJitterMs": 20000,
+      "offsets": [
+        {
+          "locX": 400,
+          "locY": 0,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": 282,
+          "locY": 282,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": 0,
+          "locY": 399,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": -282,
+          "locY": 282,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": -399,
+          "locY": 0,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": -282,
+          "locY": -282,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": 0,
+          "locY": -399,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": 282,
+          "locY": -282,
+          "locZ": 0,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12052,
+      "minionId": 12054,
+      "min": 10,
+      "max": 10,
+      "respawnMs": 60000,
+      "coords": [
+        {
+          "locX": 16800,
+          "locY": 110000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 16800,
+          "locY": 109000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17160,
+          "locY": 110000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17160,
+          "locY": 109000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17520,
+          "locY": 110000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17520,
+          "locY": 109000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17880,
+          "locY": 110000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17880,
+          "locY": 109000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 18240,
+          "locY": 110000,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 18240,
+          "locY": 109000,
+          "locZ": -6490,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12052,
+      "minionId": 12055,
+      "min": 5,
+      "max": 5,
+      "respawnMs": 60000,
+      "coords": [
+        {
+          "locX": 16800,
+          "locY": 109300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17400,
+          "locY": 109300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 18000,
+          "locY": 109300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 18600,
+          "locY": 109300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 19200,
+          "locY": 109300,
+          "locZ": -6490,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12052,
+      "minionId": 12058,
+      "min": 4,
+      "max": 4,
+      "respawnMs": 60000,
+      "coords": [
+        {
+          "locX": 16800,
+          "locY": 110300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17250,
+          "locY": 110300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 17700,
+          "locY": 110300,
+          "locZ": -6490,
+          "head": 0
+        },
+        {
+          "locX": 18150,
+          "locY": 110300,
+          "locZ": -6490,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12169,
+      "minionId": 12171,
+      "min": 4,
+      "max": 4,
+      "respawnMs": 360000,
+      "offsets": [
+        {
+          "locX": 100,
+          "locY": 100,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": 100,
+          "locY": -100,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": -100,
+          "locY": 100,
+          "locZ": 0,
+          "head": 0
+        },
+        {
+          "locX": -100,
+          "locY": -100,
+          "locZ": 0,
+          "head": 0
+        }
+      ]
+    },
+    {
+      "bossId": 12001,
+      "minionId": 12004,
+      "min": 25,
+      "max": 25,
+      "ambient": true,
+      "healer": false,
+      "respawnMs": 60000
+    },
+    {
+      "bossId": 12169,
+      "minionId": 12171,
+      "min": 3,
+      "max": 3,
+      "ambient": true,
+      "healer": false,
+      "respawnMs": 120000
+    },
+    {
+      "bossId": 12169,
+      "minionId": 12173,
+      "min": 4,
+      "max": 4,
+      "ambient": true,
+      "healer": true,
+      "respawnMs": 60000
+    }
+  ],
+  "ambientSpawns": [
+    {
+      "selfId": 12173,
+      "name": "Riba Iren",
+      "coords": [
+        {
+          "locX": 43656,
+          "locY": 17560,
+          "locZ": -4368,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12173,
+      "name": "Riba Iren",
+      "coords": [
+        {
+          "locX": 43444,
+          "locY": 17332,
+          "locZ": -4368,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12173,
+      "name": "Riba Iren",
+      "coords": [
+        {
+          "locX": 43464,
+          "locY": 17048,
+          "locZ": -4368,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12173,
+      "name": "Riba Iren",
+      "coords": [
+        {
+          "locX": 43700,
+          "locY": 16900,
+          "locZ": -4368,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21562,
+          "locY": 179041,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21139,
+          "locY": 179392,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21984,
+          "locY": 179183,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22020,
+          "locY": 179689,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21281,
+          "locY": 179733,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21925,
+          "locY": 180003,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21531,
+          "locY": 180046,
+          "locZ": -5832,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22154,
+          "locY": 181958,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21672,
+          "locY": 181903,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -20992,
+          "locY": 181627,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21861,
+          "locY": 182279,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21693,
+          "locY": 182717,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22070,
+          "locY": 182890,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22262,
+          "locY": 183156,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21308,
+          "locY": 182278,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21113,
+          "locY": 182681,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21446,
+          "locY": 183135,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -21854,
+          "locY": 183450,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -20714,
+          "locY": 182103,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -20720,
+          "locY": 182775,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -20949,
+          "locY": 183233,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22349,
+          "locY": 182333,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22406,
+          "locY": 182733,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22700,
+          "locY": 182486,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12004,
+      "name": "Guard Ant",
+      "coords": [
+        {
+          "locX": -22015,
+          "locY": 181518,
+          "locZ": -5720,
+          "head": 0
+        }
+      ],
+      "total": 1,
+      "respawn": 60,
+      "bias": 0
+    },
+    {
+      "selfId": 12171,
+      "name": "Raikel Leos",
+      "coords": [
+        {
+          "locX": 44773,
+          "locY": 17547,
+          "locZ": -4368,
+          "head": 23036
+        }
+      ],
+      "total": 1,
+      "respawn": 120,
+      "bias": 0
+    },
+    {
+      "selfId": 12171,
+      "name": "Raikel Leos",
+      "coords": [
+        {
+          "locX": 44794,
+          "locY": 17110,
+          "locZ": -4368,
+          "head": 28713
+        }
+      ],
+      "total": 1,
+      "respawn": 120,
+      "bias": 0
+    },
+    {
+      "selfId": 12171,
+      "name": "Raikel Leos",
+      "coords": [
+        {
+          "locX": 44648,
+          "locY": 18267,
+          "locZ": -4368,
+          "head": 12360
+        }
+      ],
+      "total": 1,
+      "respawn": 120,
+      "bias": 0
+    }
+  ],
+  "respawnHours": {
+    "12001": [
+      36,
+      17
+    ],
+    "12052": [
+      60,
+      23
+    ],
+    "12169": [
+      48,
+      20
+    ]
+  },
+  "locations": {
+    "12001": [
+      {
+        "locX": -21610,
+        "locY": 181594,
+        "locZ": -5734,
+        "head": 0
+      }
+    ],
+    "12052": [
+      {
+        "locX": 17726,
+        "locY": 108915,
+        "locZ": -6490,
+        "head": 0
+      }
+    ],
+    "12169": [
+      {
+        "locX": 55024,
+        "locY": 17368,
+        "locZ": -5412,
+        "head": 0
+      },
+      {
+        "locX": 53504,
+        "locY": 21248,
+        "locZ": -5486,
+        "head": 0
+      },
+      {
+        "locX": 53248,
+        "locY": 24576,
+        "locZ": -5262,
+        "head": 0
+      }
+    ]
+  },
+  "orfenLair": {
+    "locX": 43728,
+    "locY": 17220,
+    "locZ": -4342,
+    "head": 0
+  },
+  "orfenZone": [
+    [
+      43976,
+      24664
+    ],
+    [
+      43284,
+      18952
+    ],
+    [
+      42476,
+      18164
+    ],
+    [
+      42480,
+      16448
+    ],
+    [
+      43084,
+      15944
+    ],
+    [
+      45140,
+      15816
+    ],
+    [
+      48800,
+      15112
+    ],
+    [
+      56556,
+      12040
+    ],
+    [
+      59068,
+      14288
+    ],
+    [
+      61064,
+      18492
+    ],
+    [
+      60380,
+      23672
+    ],
+    [
+      58724,
+      27412
+    ],
+    [
+      55696,
+      28496
+    ],
+    [
+      43976,
+      24664
+    ]
+  ]
+}

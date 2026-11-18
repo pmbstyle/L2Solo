@@ -2943,7 +2943,8 @@ function effectForItem(item, context = {}) {
     if (!skill || Object.keys(skill.stats).length === 0) return null;
 
     return {
-        key: `equipment_item_skill:${itemId}:${skill.skillId}:${skill.level}`,
+        // C4 grants an epic's skill once, even with two identical rings/earrings.
+        key: `equipment_item_skill:${[6660, 6661, 6662].includes(itemSelfId) ? 'epic' : itemId}:${skill.skillId}:${skill.level}`,
         id: skill.skillId,
         level: skill.level,
         type: 'item_passive',

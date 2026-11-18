@@ -22,6 +22,17 @@ const Observer = invoke('WorldObserver/WorldObserverServer');
         assert.strictEqual(map.headers.get('content-type'), 'image/webp');
         const bytes = Buffer.from(await map.arrayBuffer());
         assert.strictEqual(bytes.toString('ascii', 8, 12), 'WEBP');
+        for (const [id, file] of [[1869, 'etc_lump_gray_i00.png'], [2133, 'etc_bead_red_i00.png'],
+            [2389, 'armor_t75_l_i00.png'], [6592, 'weapon_angel_slayer_i01.png']]) {
+            const detail = await fetch(`${origin}/observer/api/knowledge/items/${id}`);
+            assert.strictEqual(detail.status, 200);
+            const { iconUrl } = await detail.json();
+            assert.strictEqual(iconUrl, `/observer/item-icons/${file}`, `item ${id} must resolve its C4 texture`);
+            const texture = await fetch(origin + iconUrl);
+            assert.strictEqual(texture.status, 200);
+            assert.strictEqual(texture.headers.get('content-type'), 'image/png');
+            assert.strictEqual(Buffer.from(await texture.arrayBuffer()).toString('ascii', 1, 4), 'PNG');
+        }
         for (const [route, script] of [['/observer/market', 'market.js'], ['/observer/database/items/71', 'knowledge-base.js']]) {
             const response = await fetch(origin + route);
             assert.strictEqual(response.status, 200);

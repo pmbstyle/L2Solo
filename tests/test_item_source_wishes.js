@@ -84,7 +84,7 @@ assert(Planner.isRealCatalogItem(Data.items.find(item => item.selfId === 2369)),
 assert.equal(Wishes.worn(starter, 7).selfId, 2369);
 assert.equal(Planner.combatReadiness(starter).hasWeapon, true, 'owned starter still participates in combat readiness');
 // A raid is a real world origin but is not a solo acquisition forecast.
-const raidId = 6364;
+const raidId = 6365; // Basalt Battlehammer. Forgotten Blade now has a crafting route.
 assert(Catalog.hasSource(raidId)); assert.equal(Catalog.hasNonRaidSource(raidId), false);
 assert(FirstPrice.firstPrice(raidId, { spots: [] }), 'raid loot retains a legal market valuation');
 function raidReview(supply) {

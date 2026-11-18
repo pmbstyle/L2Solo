@@ -28,7 +28,9 @@ function distance2d(bot, target) {
 function hasCombatThreat(session, bot) {
     const recentIncoming = !!session.incomingThreatId &&
         Date.now() - Number(session.incomingThreatAt || 0) <= 5000;
-    return !!session.pvpDefense || !!session.currentTargetId || recentIncoming || !!bot.state.fetchHits?.();
+    return !!session.pvpDefense || !!session.currentTargetId || recentIncoming || !!bot.state.fetchHits?.()
+        || !!(session.partyCompanion === true && session.followPlayerSession
+            && invoke('GameServer/Bot/AI/BotRaidSafety').syncPlayerPartyRaid(session.followPlayerSession));
 }
 
 function inCombat(session, bot) {
@@ -153,7 +155,7 @@ function interruptEscape(session, bot) {
     session.meetingTravel = undefined;
     session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now(),
         forced: session.townTripForced === true };
-    session.plan = 'hunting';
+    session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
     bot.state.setCasts(false);
     restoreSupplyHot(session, bot, 'supply_errand_interrupted');
     return true;
@@ -179,7 +181,7 @@ function beginEscape(session, bot, town, options = {}) {
             bot.state.setCasts(false);
             session.townEscape = undefined;
             session.meetingTravel = undefined;
-            session.plan = 'hunting';
+            session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
             restoreSupplyHot(session, bot, 'supply_errand_interrupted');
             return;
         }

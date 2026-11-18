@@ -1,10 +1,7 @@
 const World = invoke('GameServer/World/World');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
 const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
-
-function canAttackNpc(npc, data = {}) {
-    return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
-}
+const SummonPvp = require('../SummonPvp');
 
 function attackExec(session, actor, data) {
     const attackRange = AttackRange.fetchNormalAttackRange(actor, data);
@@ -35,14 +32,23 @@ function attackExec(session, actor, data) {
     }
 
     World.fetchNpc(data.id).then((npc) => {
+        if (SummonPvp.isSummon(npc)) {
+            if (!canStartAttack() || !SummonPvp.allowRequest(session, actor, npc, data.ctrl)) return;
+            scheduleAttack(npc, () => {
+                if (SummonPvp.allowRequest(session, actor, npc, data.ctrl)) actor.attack.meleeHit(session, npc);
+            });
+            return;
+        }
+
+        const attackable = npc.fetchAttackable?.() === true || data.ctrl === true;
         scheduleAttack(npc, () => {
-            if (canAttackNpc(npc, data)) {
+            if (attackable) {
                 actor.attack.meleeHit(session, npc);
             }
             else {
                 World.npcTalk(session, npc);
             }
-        }, canAttackNpc(npc, data) ? attackRange : AttackRange.TALK_RANGE);
+        }, attackable ? attackRange : AttackRange.TALK_RANGE);
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             scheduleAttack(user, () => {
@@ -63,4 +69,3 @@ function attackExec(session, actor, data) {
 }
 
 module.exports = attackExec;
-module.exports.canAttackNpc = canAttackNpc;

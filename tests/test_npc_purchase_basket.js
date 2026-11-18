@@ -195,7 +195,7 @@ async function run() {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     Economy.configure({ spots: [], knowledgeEnabled: false });
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
-    state = { ...state, level: 33 };
+    state = { ...state, level: 28 };
     const packet = Economy.forState(state).statsPacket;
     // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
     state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');

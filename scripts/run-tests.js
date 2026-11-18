@@ -885,6 +885,8 @@ const tests = [
     'tests/test_c4_group_leader_minions.js',
     'tests/test_raid_boss_curse.js',
     'tests/test_raid_boss_minions.js',
+    'tests/test_c4_grand_bosses.js',
+    'tests/test_grand_boss_raid_lifecycle.js',
     'tests/test_group_leader_minions.js',
     'tests/test_raid_boss_respawn_persistence.js',
     'tests/test_item_skill_use.js',
@@ -1356,6 +1358,8 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_bot_background_drops.js',
+    'tests/test_spot_value_table.js',
     'tests/test_opportunistic_raids.js',
     'tests/test_raid_search_coverage.js',
     'tests/test_raid_target_selection.js',

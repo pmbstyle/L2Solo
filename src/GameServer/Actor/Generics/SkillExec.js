@@ -2,10 +2,7 @@
 
 const World = invoke('GameServer/World/World');
 const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
-
-function canTargetEnemyNpc(npc, data = {}) {
-    return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
-}
+const SummonPvp = require('../SummonPvp');
 
 function cancelFailedSupportTarget(session, actor, data, skill) {
     const target = { fetchId: () => Number(data?.id || 0) };
@@ -76,7 +73,12 @@ function skillExec(session, actor, data) {
     }
 
     World.fetchNpc(data.id).then((npc) => {
+        const enemySummon = skill.fetchTargetKind() === 'enemy' && SummonPvp.isSummon(npc);
+        if (enemySummon && !SummonPvp.allowRequest(session, actor, npc, data.ctrl)) return;
+
         scheduleCast(npc, () => {
+            if (enemySummon && !SummonPvp.allowRequest(session, actor, npc, data.ctrl)) return;
+
             if (SpoilSweep.isSpoilSkill(data.selfId)) {
                 SpoilSweep.castSpoil(session, actor, npc, skill);
                 return;
@@ -99,7 +101,7 @@ function skillExec(session, actor, data) {
             if (skill.fetchTargetKind() === 'corpse_mob' && npc.fetchAttackable?.() && npc.isDead?.()) {
                 actor.attack.remoteHit(session, npc, skill);
             }
-            else if (skill.fetchTargetKind() === 'enemy' && canTargetEnemyNpc(npc, data)) {
+            else if (skill.fetchTargetKind() === 'enemy' && (enemySummon || npc.fetchAttackable?.() === true || data.ctrl === true)) {
                 actor.attack.remoteHit(session, npc, skill);
             }
         }, { allowDeadTarget: SpoilSweep.isSweepSkill(data.selfId)
@@ -128,5 +130,4 @@ function skillExec(session, actor, data) {
 }
 
 module.exports = skillExec;
-module.exports.canTargetEnemyNpc = canTargetEnemyNpc;
 module.exports.cancelFailedSupportTarget = cancelFailedSupportTarget;

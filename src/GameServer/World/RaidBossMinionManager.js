@@ -39,10 +39,12 @@ const telemetry = {
 
 [
     ...require('../../../data/Npcs/Minions/c4_raid_bosses.json'),
-    ...require('../../../data/Npcs/Minions/c4_group_leaders.json')
+    ...require('../../../data/Npcs/Minions/c4_group_leaders.json'),
+    ...require('../RaidBoss/GrandBossRules').data.minions.filter(row => !row.ambient)
 ].forEach((row) => {
     if (!groupsByBoss.has(Number(row.bossId))) groupsByBoss.set(Number(row.bossId), []);
     groupsByBoss.get(Number(row.bossId)).push({
+        ...row,
         minionId: Number(row.minionId),
         min: Number(row.min),
         max: Number(row.max)
@@ -106,7 +108,7 @@ function catalogueMinions(leader, random) {
     return minions;
 }
 
-function spawnMinion(world, boss, group) {
+function spawnMinion(world, boss, group, place = null) {
     const template = templateFor(group.minionId);
     if (!template || !bossAlive(boss)) return null;
 
@@ -118,7 +120,13 @@ function spawnMinion(world, boss, group) {
         minionBossObjectId: Number(boss.fetchId?.() || 0),
         minionGroup: group
     } : { minionLeader: boss, minionGroup: group };
-    const minion = SpawnNpcs.spawnChildNpc(world, template, minionCoords(boss), link);
+    const slot = group.coords?.length || group.offsets?.length ? aliveMinions(world, group).length : 0;
+    const offset = group.offsets?.[slot % group.offsets.length];
+    const coords = place || group.coords?.[slot % group.coords.length] || (offset && {
+        locX: boss.fetchLocX() + offset.locX, locY: boss.fetchLocY() + offset.locY,
+        locZ: boss.fetchLocZ() + offset.locZ, head: offset.head
+    }) || minionCoords(boss);
+    const minion = SpawnNpcs.spawnChildNpc(world, template, coords, link);
     if (minion) group.members.push(minion);
     return minion;
 }
@@ -154,6 +162,9 @@ function attachBoss(world, boss) {
 
 function onBossAttacked(world, boss, attacker, sourceSession) {
     if (!boss || !attacker || !bossAlive(boss) || attacker.isDead?.() === true) return 0;
+    // Grand-boss guards are script spawns, not an ordinary raid's global
+    // assistance group. Their sourced faction radius and AI call nearby aid.
+    if (require('../RaidBoss/GrandBossRules').isGrandBoss(boss)) return 0;
     const state = boss.minionState || attachBoss(world, boss);
     if (!state) return 0;
 
@@ -164,6 +175,7 @@ function onBossAttacked(world, boss, attacker, sourceSession) {
     let alerted = 0;
     state.groups.forEach((group) => {
         aliveMinions(world, group).forEach((minion) => {
+            if (group.healer || group.passive) return;
             if (minion.state?.fetchCombats?.() === true) return;
             try {
                 minion.enterCombatState?.(session, attacker);
@@ -209,6 +221,7 @@ function onMinionAttacked(world, minion, attacker, sourceSession) {
     if (!minion || !attacker || minion.state?.fetchDead?.() === true || attacker.isDead?.() === true) return 0;
 
     const boss = bossForMinion(world, minion);
+    if (require('../RaidBoss/GrandBossRules').isGrandBoss(boss)) return 0;
     if (!boss || !bossAlive(boss) || boss.state?.fetchCombats?.() === true) return 0;
 
     const session = sourceSession || {
@@ -221,8 +234,21 @@ function onMinionAttacked(world, minion, attacker, sourceSession) {
 }
 
 // A group that lost a minion waits one respawn delay from the first loss.
-function markShort(boss, group) {
+function markShort(boss, group, minion) {
     if (!boss?.minionState || !group) return false;
+    if (group.respawnMs !== undefined) {
+        if (!(group.respawnMs > 0)) return false;
+        group.announced ||= new WeakSet();
+        if (!minion || group.announced.has(minion)) return false;
+        group.announced.add(minion);
+        group.pendingRespawns ||= [];
+        const jitter = Number(group.respawnJitterMs || 0);
+        const at = Date.now() + group.respawnMs - jitter + Math.floor(Math.random() * jitter * 2 / 1000) * 1000;
+        group.pendingRespawns.push({ at, coords: { locX: minion.fetchLocX(), locY: minion.fetchLocY(), locZ: minion.fetchLocZ(), head: 0 } });
+        group.respawnAt = Math.min(...group.pendingRespawns.map(row => row.at));
+        refillDue.set(group, boss); armRefill();
+        return true;
+    }
     if (!group.respawnAt) group.respawnAt = Date.now() + MINION_RESPAWN_DELAY_MS;
     refillDue.set(group, boss);
     armRefill();
@@ -230,7 +256,7 @@ function markShort(boss, group) {
 }
 
 function onMinionDeath(world, minion) {
-    return markShort(RaidEntityIndex.bossFor(world, minion), minion?.minionGroup);
+    return markShort(RaidEntityIndex.bossFor(world, minion), minion?.minionGroup, minion);
 }
 
 // Every removal of a live raid minion (despawn, cleanup) passes
@@ -241,7 +267,7 @@ function onMinionDeath(world, minion) {
 RaidEntityIndex.onMinionRemoved((minion, boss) => {
     const group = minion.minionGroup;
     const announced = refillDue.has(group);
-    if (markShort(boss, group) && !announced) {
+    if (markShort(boss, group, minion) && !announced) {
         DiagnosticConfig.developerDiagnostics && (telemetry.removalFeeds += 1);
     }
 });
@@ -283,6 +309,18 @@ function stats() {
 // One group of a live boss: refill it when its respawn time came. Returns the
 // minions spawned; leaves the group in refillDue while it waits.
 function maintainGroup(world, boss, group, now) {
+    if (group.pendingRespawns) {
+        let spawned = 0;
+        group.pendingRespawns = group.pendingRespawns.filter(row => {
+            if (row.at > now) return true;
+            if (aliveMinions(world, group).length >= group.desired) return false;
+            if (spawnMinion(world, boss, group, row.coords)) { spawned++; return false; }
+            row.at = now + 1000; return true;
+        });
+        group.respawnAt = group.pendingRespawns.length ? Math.min(...group.pendingRespawns.map(row => row.at)) : 0;
+        if (!group.pendingRespawns.length) refillDue.delete(group);
+        return spawned;
+    }
     const alive = aliveMinions(world, group).length;
     if (alive >= group.desired) {
         group.respawnAt = 0;
@@ -369,7 +407,18 @@ module.exports = {
     onBossAttacked,
     onMinionAttacked,
     onMinionDeath,
-    onBossDeath: removeMinions,
+    onBossDeath(world, boss, sourceSession) {
+        if (!require('../RaidBoss/GrandBossRules').isGrandBoss(boss)) return removeMinions(world, boss, sourceSession);
+        const state = boss.minionState;
+        if (!state) return 0;
+        boss.minionState = null;
+        state.groups.forEach(group => refillDue.delete(group));
+        armRefill();
+        const timer = setTimeout(() => state.groups.forEach(group =>
+            group.members.forEach(minion => cleanupMinion(world, minion, sourceSession))), 20000);
+        timer.unref?.();
+        return state.groups.reduce((n, group) => n + group.members.length, 0);
+    },
     removeMinions,
     leaderGroup,
     maintain,

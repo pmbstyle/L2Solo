@@ -39,18 +39,18 @@
     ]
   },
   "counts": {
-    "dropEntries": 16751,
-    "items": 5722,
-    "knownReachableMobs": 1770,
-    "knownReachableSourcedItems": 1706,
+    "dropEntries": 16754,
+    "items": 5725,
+    "knownReachableMobs": 1776,
+    "knownReachableSourcedItems": 1709,
     "mobs": 2321,
-    "mobsWithDirectSpawns": 1387,
-    "skills": 1065,
-    "sourcedItems": 1721,
-    "spawnDefinitions": 9121,
-    "spawnLocations": 8496,
+    "mobsWithDirectSpawns": 1388,
+    "skills": 1070,
+    "sourcedItems": 1724,
+    "spawnDefinitions": 9151,
+    "spawnLocations": 8501,
     "spoilEntries": 3709,
-    "unresolvedMobAvailability": 551
+    "unresolvedMobAvailability": 545
   },
   "deterministic": true,
   "files": {
@@ -71,6 +71,7 @@
     "x1": {
       "adena": 1,
       "drop": 1,
+      "epicDrop": 1,
       "exp": 1,
       "multiplier": 1,
       "preset": "x1",
@@ -85,6 +86,7 @@
     "x10": {
       "adena": 10,
       "drop": 10,
+      "epicDrop": 1,
       "exp": 10,
       "multiplier": 10,
       "preset": "x10",
@@ -99,6 +101,7 @@
     "x50": {
       "adena": 50,
       "drop": 50,
+      "epicDrop": 1,
       "exp": 50,
       "multiplier": 50,
       "preset": "x50",
@@ -113,9 +116,9 @@
   },
   "schemaVersion": 1,
   "sha256": {
-    "items.json": "2b09073897b0cca0b35862bc743dc1a83ff54d930d1f65bdd51f3552a1e23049",
-    "mobs.json": "88297aa15cf11e5ad7f9b85c97c2a8643be29880d1d4f54d0ad9b43ccf9ff552",
-    "skills.json": "7fb3955bb887d4acc20827eae3f6164a84a2282fdb4733aa3cc7a7aa79b016e8",
-    "spawns.json": "718f466e9a3eab4d76935bdbcc3235c53a106f549f0ae36b92dcdf7261a8445a"
+    "items.json": "a687eeb17ccfb3c47decd2b5a1600deb77371bf85a2861badec0bb76cad3bca9",
+    "mobs.json": "b94e081cc37ee68a6e87cc234ca8d1259c1a3add0d905105c6bd561c81be90a6",
+    "skills.json": "0f41bb8bf89eedada0cf8dd4851b56a18103eeebb7eb51116645673c120ae488",
+    "spawns.json": "c5b610e26345eda14d01e1f5ea99619186f7ff69bf1a2ecaff23eec338129af1"
   }
 }

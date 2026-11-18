@@ -45,7 +45,8 @@ function estimate(members, spot, cache = new Map(), options = {}) {
             return held.preparation;
         };
         if (coreIds) {
-            const groups = [members.filter(core), members.filter(member => !core(member))].filter(group => group.length);
+            const groups = Expedition.groups({ memberIds: members.map(Expedition.id), coreMemberIds: coreIds })
+                .map(ids => members.filter(member => ids.includes(Expedition.id(member))));
             const preparations = groups.map(prepareGroup);
             entry.preparation = { states: preparations.flatMap(p => p.states), at: Math.max(...preparations.map(p => p.at)),
                 ready: preparations.every(p => p.ready) };

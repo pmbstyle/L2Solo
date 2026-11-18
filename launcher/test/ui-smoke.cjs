@@ -145,6 +145,66 @@ module.exports = async function smoke({ window, controller, directory }) {
     assert.match(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), /reasoningEffort = high/);
     await js("document.getElementById('setting-AI.reasoningEffort').scrollIntoView({block:'center'})");
     await capture('enum-settings');
+    assert.equal(await js("document.getElementById('setting-ClanSimulation.llmGoalManagementEnabled')?.closest('.settings-group').querySelector('h3').textContent"), 'AI');
+    assert.equal(await js("document.getElementById('setting-ClanSimulation.llmTitleManagementEnabled')?.closest('.settings-group').querySelector('h3').textContent"), 'AI');
+    const beforeAiTest = await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8');
+    const originalFetcher = controller.fetcher;
+    const diagnostic = require('./ai-fixture.cjs').transport(async body => {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        return require('./ai-fixture.cjs').answer(body);
+    });
+    controller.fetcher = diagnostic.fetcher;
+    try {
+        await js(`(() => {
+            for (const [id, value] of [['AI.enabled', true], ['AI.apiUrl', 'http://127.0.0.1:1234/v1/chat/completions'], ['ClanSimulation.llmTitleManagementEnabled', true]]) {
+                const input = document.getElementById('setting-' + id);
+                if (input.type === 'checkbox') input.checked = value; else input.value = value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            document.getElementById('test-ai').click();
+        })()`);
+        await wait("document.getElementById('test-ai').textContent === 'Testing…'");
+        assert.equal(await js("document.getElementById('test-ai').disabled"), true);
+        assert.equal(await js("document.getElementById('primary-action').disabled"), false, 'inference checks must not block server controls');
+        await wait("document.getElementById('ai-test-summary').dataset.status === 'passed' && !document.getElementById('test-ai').disabled");
+        assert.equal(await js("document.querySelectorAll('.ai-test-result[data-status=passed]').length"), 6);
+        assert.equal(await js("document.querySelectorAll('.ai-test-result[data-status=skipped]').length"), 1);
+        assert.equal(await js("document.querySelectorAll('.ai-test-reply').length"), 6);
+        assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), beforeAiTest);
+        await js("document.getElementById('ai-test-panel').scrollIntoView({block:'start'})");
+        await capture('settings-ai-test');
+        await js(`(() => {
+            const input = document.getElementById('setting-AI.apiUrl');
+            input.value = 'invalid-endpoint';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById('test-ai').click();
+        })()`);
+        await wait("document.getElementById('error-message').textContent.includes('Enter a complete AI endpoint URL.') && !document.getElementById('test-ai').disabled");
+        assert.notEqual(await js("document.getElementById('ai-test-summary').dataset.status"), 'passed', 'a rejected test must not reuse the previous passing result for different settings');
+        assert.equal(await js("document.querySelectorAll('.ai-test-result').length"), 0);
+        assert.match(await js("document.getElementById('ai-test-summary').textContent"), /Settings changed/);
+        await js(`(() => {
+            const input = document.getElementById('setting-AI.apiUrl');
+            input.value = 'http://127.0.0.1:1234/v1/chat/completions';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        })()`);
+        controller.fetcher = require('./ai-fixture.cjs').transport(body => {
+            const payload = require('./ai-fixture.cjs').answer(body);
+            if (body.response_format?.json_schema.name !== 'bot_brain_decision') return payload;
+            const decision = JSON.parse(payload.choices[0].message.content);
+            return require('./ai-fixture.cjs').reply({ ...decision, topic: null, reply: 'Inventory read unavailable <b>sample</b>.' });
+        }).fetcher;
+        await js("document.getElementById('test-ai').click()");
+        await wait("document.getElementById('ai-test-summary').dataset.status === 'failed' && !document.getElementById('test-ai').disabled");
+        assert.match(await js("document.querySelector('.ai-test-result[data-status=failed]').textContent"), /Expected inspect_self.*topic=\(missing\)/);
+        assert.match(await js("document.querySelector('.ai-test-result[data-status=failed] .ai-test-reply').textContent"), /Inventory read unavailable <b>sample<\/b>/);
+        assert.equal(await js("document.querySelector('.ai-test-result[data-status=failed] b') === null"), true, 'provider replies must remain plain text');
+        await capture('settings-ai-test-failed');
+        await js("const model=document.getElementById('setting-AI.model');model.value='another-model';model.dispatchEvent(new Event('input',{bubbles:true}))");
+        assert.match(await js("document.getElementById('ai-test-summary').textContent"), /Settings changed/);
+        assert.equal(await js("document.querySelectorAll('.ai-test-result').length"), 0);
+        await js('loadSettings()');
+    } finally { controller.fetcher = originalFetcher; }
     await js("document.querySelector('[data-view=home]').click();document.getElementById('primary-action').click()");
     await wait("document.getElementById('status-pill').textContent.includes('Server online')");
     assert.equal(await js("document.getElementById('observer-button').disabled"), false);

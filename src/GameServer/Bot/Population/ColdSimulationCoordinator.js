@@ -1576,17 +1576,36 @@ class ColdSimulationCoordinator {
 
     handleProposalBatch(message, worker = this.worker, epoch = this.workerEpoch) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
+        const received = message.payload.proposals || [];
+        const source = Object.freeze({ worker, epoch });
+        let proposals;
+        try { proposals = Protocol.expandAtomicGroups(received); }
+        catch (_) {
+            this.handleCommitResults(received.map(proposal => {
+                proposal[PROPOSAL_SOURCE] = source;
+                return { ok: false, characterId: proposal.characterId, reason: 'invalid_atomic_group_reference', proposal };
+            })).catch(error => this.recordError(error));
+            return;
+        }
         const rejected = [];
         const sizes = message.payload.proposalBytes;
-        const source = Object.freeze({ worker, epoch });
-        (message.payload.proposals || []).forEach((proposal, index) => {
+        const groupBytes = new Map();
+        proposals.forEach((proposal, index) => {
             proposal[PROPOSAL_SOURCE] = source;
             // The step's base revision: the commit's only fence.
             if (!Number.isSafeInteger(proposal.revision) || proposal.revision < 0) {
                 rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: 'invalid_revision', proposal });
                 return;
             }
-            const queued = this.queue.enqueue(proposal, Array.isArray(sizes) ? sizes[index] : null);
+            let bytes = Array.isArray(sizes) ? sizes[index] : null;
+            // Queue pressure counts the expanded proposal, while the incoming
+            // frame's size counts the single shared wire copy.
+            if (received[index].atomicGroupRef !== undefined && Number.isFinite(bytes)) {
+                const group = proposal.atomicGroup;
+                if (!groupBytes.has(group.id)) groupBytes.set(group.id, Protocol.byteLength({ atomicGroup: group }));
+                bytes += groupBytes.get(group.id) - Protocol.byteLength({ atomicGroupRef: group.id });
+            }
+            const queued = this.queue.enqueue(proposal, bytes);
             if (!queued.ok) rejected.push({ ok: false, characterId: proposal.characterId, reason: queued.reason, proposal });
             else this.trackCommitAcknowledgement(proposal, source);
         });

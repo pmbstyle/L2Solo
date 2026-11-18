@@ -6,6 +6,7 @@ const ClanTitleBrain = invoke('GameServer/Clan/ClanTitleBrain');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const MAX_HISTORY_EVENTS = 5;
+const TITLE_BATCH_SIZE = 8;
 const TITLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 '&+.,:!?-]{1,31}$/;
 
 const metrics = {
@@ -57,7 +58,8 @@ async function snapshotFor(clan) {
         }))
         .filter((member) => member.characterId > 0)
         .sort((left, right) => Number(right.leader) - Number(left.leader) || left.characterId - right.characterId);
-    const missingMemberIds = members.filter((member) => !member.title).map((member) => member.characterId);
+    const untitled = members.filter((member) => !member.title);
+    const missingMemberIds = untitled.slice(0, TITLE_BATCH_SIZE).map((member) => member.characterId);
     const events = missingMemberIds.length
         ? await Database.fetchClanGoalEvents(clan.id, MAX_HISTORY_EVENTS)
         : [];
@@ -65,6 +67,7 @@ async function snapshotFor(clan) {
     return {
         key: `clan:${number(clan.id)}:titles:v1:${missingMemberIds.join(',')}`,
         missingMemberIds,
+        hasMoreTitles: untitled.length > missingMemberIds.length,
         context: {
             clan: {
                 name: String(clan.name || ''),
@@ -110,7 +113,7 @@ async function resolveClan(clan, options = {}) {
         DiagnosticConfig.developerDiagnostics && (metrics.skipped += 1);
         return { ok: true, skipped: true, code: 'llm_titles_disabled' };
     }
-    if (!clan || number(clan.level) < 3) {
+    if (!clan || number(clan.level) < 3 || clan.state?.mode === 'player_managed') {
         DiagnosticConfig.developerDiagnostics && (metrics.skipped += 1);
         return { ok: true, skipped: true, code: 'clan_titles_unavailable' };
     }
@@ -150,6 +153,7 @@ async function resolveClan(clan, options = {}) {
     }
     return {
         ok: true,
+        ...(snapshot.hasMoreTitles ? { pending: true, code: 'clan_titles_remaining' } : {}),
         changed: (applied.updated?.length || 0) > 0,
         updated: applied.updated || [],
         source: 'llm',

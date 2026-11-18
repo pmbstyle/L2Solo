@@ -782,6 +782,16 @@ function withCharacterFlushes(characterIds, work) {
 }
 
 function applySchemaMigrations() {
+    const ensureRaidBossState = () => connection.exec(`
+        CREATE TABLE IF NOT EXISTS raid_boss_state (
+            npcId INTEGER PRIMARY KEY,
+            respawnTime INTEGER NOT NULL DEFAULT 0,
+            hp REAL,
+            mp REAL,
+            updatedAt INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
+    `);
     const migrations = [
         [1, () => {}],
         [2, () => connection.exec(`
@@ -920,16 +930,7 @@ function applySchemaMigrations() {
                     ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
             `);
         }],
-        [9, () => connection.exec(`
-            CREATE TABLE IF NOT EXISTS raid_boss_state (
-                npcId INTEGER PRIMARY KEY,
-                respawnTime INTEGER NOT NULL DEFAULT 0,
-                hp REAL,
-                mp REAL,
-                updatedAt INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
-        `)],
+        [9, ensureRaidBossState],
         [10, () => {
             const addColumn = (table, name, definition) => {
                 const columns = connection.prepare(`PRAGMA table_info(${table})`).all();
@@ -2044,6 +2045,17 @@ function applySchemaMigrations() {
     // number, so a branch's migration cannot collide with upstream's: append
     // [name, apply] here. They run after the numbered ones, in list order.
     const namedMigrations = [
+        // Only legacy five-hour grand-boss rows need rebasing. Keep their
+        // original death time; later randomized C4 deadlines survive restarts.
+        ['c4-grand-boss-respawn-windows', () => {
+            ensureRaidBossState();
+            connection.exec(`
+                UPDATE raid_boss_state SET respawnTime = updatedAt + CASE npcId
+                    WHEN 12001 THEN 129600000 WHEN 12052 THEN 216000000 WHEN 12169 THEN 172800000 END
+                WHERE npcId IN (12001, 12052, 12169) AND updatedAt > 0
+                    AND respawnTime = updatedAt + 18000000;
+            `);
+        }],
         // Four bot row indexes no query needs (their readers left with the goal
         // reconcile and warehouse passes). Each holds updatedAt, which every save
         // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
@@ -2542,6 +2554,14 @@ function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100,
         if (ignoreDuplicate) return { affectedRows: 0, insertId: 0 };
         throw Object.assign(new Error('UNIQUE constraint failed: clan_actions.actionKey'),
             { code: 'ERR_SQLITE_ERROR', errcode: 2067, errstr: 'constraint failed' });
+    }
+    if (coalescePending && actionType === 'member_titles') {
+        // Each title batch reads the current roster. Other wake-ups can use the
+        // existing job without bringing an inference retry forward.
+        const active = one(`SELECT id FROM clan_actions
+            WHERE clanId = ? AND actionType = ? AND status IN ('pending', 'running')
+            ORDER BY id LIMIT 1`, [clanId, actionType]);
+        if (active) return { affectedRows: 0, insertId: active.id, coalesced: true };
     }
     // These actions read the clan's current state when claimed. New inputs
     // advance one pending action, never another execution chain. A running
@@ -5025,7 +5045,8 @@ function recruitmentProofCurrent(clanId, level, state, proof) {
     if (rows.length > 40) return false;
     const members = rows.filter(member => !require('./GameServer/Clan/ClanSimulationPolicy').isStaticService(member));
     if (Demand.ownFingerprint({ id: clanId, level, state, physicalMemberCount: rows.length, members }) !== proof.ownFingerprint) return false;
-    if (proof.rows.length > 18 || !proof.rows.length || proof.rows.length > 9 && !String(proof.source.id || '').startsWith('raid:')) return false;
+    if (proof.rows.length > require('./GameServer/Clan/ClanRaidExpedition').MAX_MEMBERS || !proof.rows.length
+        || proof.rows.length > 9 && !String(proof.source.id || '').startsWith('raid:')) return false;
     const selected = recruitmentRows(`c.id IN (${proof.rows.map(() => '?').join(',')})`, proof.rows.map(row => row[0]));
     return proof.rows.every(row => selected.some(member => member.characterId === row[0] && Demand.memberFingerprint(member) === row[4]
         && (Number(member.clanId) === clanId || Number(member.clanId) === 0 && recruitmentAvailable(member))));
@@ -6534,7 +6555,7 @@ const Database = {
     stateRevisions,
 
     commitAndReleaseColdSimulationLeases(requests = []) {
-        const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
+        const batch = Array.isArray(requests) ? requests.slice(0, require('./GameServer/Clan/ClanRaidExpedition').MAX_MEMBERS) : [];
         if (!batch.length) return Promise.resolve([]);
         if (batch.reduce((count, request) => count + (request.memoryEvents?.length || 0), 0) > InteractionMemoryPolicy.MAX_BATCH) {
             return Promise.reject(new Error('interaction memory: cold transaction event budget exceeded'));
@@ -10045,7 +10066,7 @@ const Database = {
         }, 'clan-action:claim-one');
     },
     releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null,
-        continuation = false, unstarted = false } = {}) {
+        continuation = false, unstarted = false, reasonCode = null } = {}) {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
@@ -10068,9 +10089,9 @@ const Database = {
                 ? Number(expectedLeaseUntil)
                 : Number(action.leaseUntil);
             const updated = write(`UPDATE clan_actions
-                SET status = 'pending', leaseUntil = NULL, availableAt = ?, updatedAt = ?
+                SET status = 'pending', leaseUntil = NULL, availableAt = ?, updatedAt = ?, reasonCode = COALESCE(?, reasonCode)
                 WHERE id = ? AND status = 'running' AND attempt = ? AND leaseUntil = ?`, [
-                dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
+                dueAt, timestamp, reasonCode, id, expectedAttemptValue, expectedLeaseValue
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
             if (unstarted === true) {

@@ -855,7 +855,8 @@ const LISTS = {
     giranBodyArmor: withTax(GIRAN_BODY_ARMOR_BASE, 1.1),
     giranRobeAndAccessoryArmor: withTax(GIRAN_ROBE_AND_ACCESSORY_ARMOR_BASE, 1.1),
     giranJewelry: withTax(GIRAN_JEWELRY_BASE, 1.1),
-    giranGrocer: withTax(C_GROCER_BASE, 1.1),
+    // Helvetia also supplies A/S gemstones for the public crafting stations.
+    giranGrocer: withTax([...C_GROCER_BASE, [2133, 30000], [2134, 100000]], 1.1),
     giranDyes: withTax(GIRAN_DYE_BASE, 1.1),
     giranMagicBooks: withTax(GIRAN_MAGIC_BOOK_BASE, 1.1),
     orenWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.15),

@@ -77,7 +77,7 @@ function catalogueSpawns(world) {
     const spawns = [];
     for (let at = 0; at < definitions.length; at++) {
         const definition = definitions[at];
-        if (isRaidBossDefinition(definition)) continue;
+        if (isRaidBossDefinition(definition) || definition.npc?.template?.grandBossOwnerId) continue;
         const random = TendencyRoll.seeded(`spot-catalogue:${at}`);
         const coords = utils.size(definition.spawn.coords) > 0 ? { ...definition.spawn.coords[0] }
             : { ...territoryPoint(definition.bounds, random), head: 0 };
@@ -117,6 +117,10 @@ function isPeriodActive(spawn, mode = 'day') {
 
 function randomCoords(definition) {
     const { spawn, bounds } = definition;
+    if (Number(spawn.selfId) === 12169) {
+        const roll = Math.random();
+        return { ...spawn.coords[roll < .4 ? 0 : roll < .7 ? 1 : 2] };
+    }
     if (utils.size(spawn.coords) > 0) {
         const info = spawn.coords[Math.floor(Math.random() * spawn.coords.length)];
         return {
@@ -209,6 +213,7 @@ function spawnDefinition(world, definition, coords, { ignoreRaidBossState = fals
     const npc = createNpc(world, definition.npc, coords, definition);
     // Raid bosses and ordinary group leaders bring their minion groups.
     MinionManager.attachBoss(world, npc);
+    invoke('GameServer/RaidBoss/GrandBossRuntime').spawned(world, npc);
     if (isRaidBossDefinition(definition) && RaidBossState.get(raidBossId(definition))) {
         RaidBossState.markSpawned(raidBossId(definition));
     }
@@ -318,6 +323,12 @@ function spawnNpcs() {
             const definition = { npc, spawn, bounds };
 
             for (let i = 0; i < spawn.total; i++) {
+                if (Number(spawn.selfId) === 12169) {
+                    this.npc.definitions.push(definition);
+                    definitions++;
+                    spawnNpc(this, definition);
+                    continue;
+                }
                 if (utils.size(spawn.coords) > 0) { // Explicit location
                     spawn.coords.forEach((info) => {
                         const fixedDefinition = { ...definition, spawn: { ...spawn, coords: [info] } };
@@ -369,6 +380,8 @@ module.exports.respawnDelayMs = function respawnDelayMs(spawn, random = Math.ran
     return Math.round((seconds - bias + (random() * bias * 2)) * 1000);
 };
 module.exports.respawnDelayForDefinitionMs = function respawnDelayForDefinitionMs(definition, random = Math.random) {
+    const epicDelay = require('../../RaidBoss/GrandBossRules').respawnDelayMs(definition?.npc, random);
+    if (epicDelay !== null) return epicDelay;
     return isRaidBossDefinition(definition)
         ? require('../../RaidBoss/RespawnPolicy').RESPAWN_DELAY_MS
         : module.exports.respawnDelayMs(definition?.spawn, random);

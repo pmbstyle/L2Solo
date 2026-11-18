@@ -28,7 +28,7 @@ function assess(members, candidates, options = {}) {
     const reject = reason => { meta.rejected[reason] = (meta.rejected[reason] || 0) + 1; };
     for (const spot of targets) {
         meta.considered++;
-        if (!members.every(s => Policy.levelAllowed(s, spot.avgLevel))) { reject('raid_level'); continue; }
+        if (!members.every(s => Policy.levelAllowed(s, spot.avgLevel, spot))) { reject('raid_level'); continue; }
         const npc = Items.find(npcs, spot.raidBossTemplateId);
         const estimate = npc && Policy.damageEstimate(damage, npc);
         // Unknown or incomplete data keeps access to full admission. It must

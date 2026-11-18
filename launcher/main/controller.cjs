@@ -5,8 +5,10 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const { networkInterfaces } = require('node:os');
+const { createHash } = require('node:crypto');
 const { readJson, writeJson, acquireLock, canonicalPath } = require('./files.cjs');
-const { readConfig, settings, saveSettings } = require('./config.cjs');
+const { readConfig, settings, saveSettings, previewConfig } = require('./config.cjs');
+const { testConfig, runAiTest } = require('./ai-test.cjs');
 const { latestRelease, newerVersion, versionOf, channelOf, ReleaseNotFoundError } = require('./releases.cjs');
 const { markerPath, journalPath, recover, commitRelease, stageRelease, installRelease } = require('./installer.cjs');
 const { ReleaseCatalog } = require('./release-catalog.cjs');
@@ -51,7 +53,7 @@ class Controller extends EventEmitter {
         this.latest = null;
         this.state = { root: null, installed: false, version: null, releaseChannel: channel, phase: 'stopped', startedAt: null, latest: null,
             updateCheckStatus: 'idle', updateCheckError: null,
-            geodata: null, world: null, connection: null, population: null, progress: { percent: 0, label: 'Choose a server folder' }, logs: [], error: null };
+            geodata: null, world: null, connection: null, population: null, aiTest: null, progress: { percent: 0, label: 'Choose a server folder' }, logs: [], error: null };
     }
     snapshot() { return { ...this.state, busy: this.busy || Boolean(this.appUpdating) || Boolean(this.launching) }; }
     publish() { this.emit('state', this.snapshot()); }
@@ -144,6 +146,7 @@ class Controller extends EventEmitter {
         const root = this.state.root;
         this.state.installed = fs.existsSync(path.join(root, 'scripts/run-server.js')) && fs.existsSync(path.join(root, 'config/default.ini'));
         this.state.connection = this.state.installed ? loginConnection(readConfig(root)) : null;
+        this.syncAiTest();
         this.state.population = null;
         const marker = await readJson(markerPath(root));
         this.state.updatePending = (await readJson(journalPath(root)))?.phase === 'awaiting-start';
@@ -306,7 +309,37 @@ class Controller extends EventEmitter {
         });
         return this.snapshot();
     }
-    getSettings() { if (!this.state.installed) return []; return settings(this.state.root); }
+    aiFingerprint(config) { return createHash('sha256').update(`${this.state.root}\n${JSON.stringify(config)}`).digest('hex'); }
+    syncAiTest() {
+        const fingerprint = this.state.installed ? this.aiFingerprint(testConfig(readConfig(this.state.root))) : null;
+        if (fingerprint !== this.aiTestFingerprint) {
+            this.aiTestAbort?.abort();
+            this.aiTestRun = null;
+            this.state.aiTest = null;
+        }
+    }
+    getSettings() {
+        if (!this.state.installed) return [];
+        this.syncAiTest();
+        this.publish();
+        return settings(this.state.root);
+    }
+    async testAi(changes = []) {
+        if (!this.state.installed) throw new Error('Choose an installed server first.');
+        if (this.busy || this.appUpdating || this.launching) throw new Error('Wait for the current operation to finish.');
+        if (this.aiTestPromise) return this.aiTestPromise;
+        const config = testConfig(previewConfig(this.state.root, changes));
+        const run = {};
+        this.aiTestRun = run;
+        this.aiTestAbort = new AbortController();
+        this.aiTestFingerprint = this.aiFingerprint(config);
+        this.aiTestPromise = runAiTest(config, { fetcher: this.fetcher, signal: this.aiTestAbort.signal, onProgress: result => {
+            if (this.aiTestRun !== run) return;
+            this.state.aiTest = result;
+            this.publish();
+        } }).then(() => this.snapshot()).finally(() => { this.aiTestPromise = null; });
+        return this.aiTestPromise;
+    }
     worldOptions() {
         const config = readConfig(this.state.root).Database || {};
         return { databasePath: path.resolve(this.state.root, config.path || 'tmp/nodel2.sqlite'), historyPath: config.historyPath || '' };
@@ -369,6 +402,7 @@ class Controller extends EventEmitter {
         let result;
         await this.operation(async () => {
             result = await saveSettings(this.state.root, changes);
+            this.syncAiTest();
             this.state.connection = loginConnection(readConfig(this.state.root));
             if (changes.some(change => change.section === 'Database' && ['path', 'historyPath'].includes(change.key))) await this.refreshWorld();
         }, 'settings');

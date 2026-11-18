@@ -2201,6 +2201,10 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     let actions = 0;
     let overhitContext = null;
     const fightLimitMs = 15000;
+    // A raid slice represents the whole expedition's time, not 96 actions
+    // shared between every party. Keep a finite per-member allowance; unusually
+    // fast rotations that still exhaust it resume at their actual covered time.
+    const actionLimit = sharedEncounter ? Math.max(96, 32 * Math.min(Expedition.MAX_MEMBERS, fighters.length)) : 96;
     const raidControlCapacity = coldRaidControlCapacity(fighters, mob);
     const Help = invoke('GameServer/Social/CombatHelpPolicy');
     const help = new Map();
@@ -2214,7 +2218,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         }
     };
 
-    while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
+    while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < actionLimit) {
         const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
         const next = alive.sort((a, b) => a.readyAt - b.readyAt)[0];
         const nextSummon = alive
@@ -2358,6 +2362,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         help: [...help.values()],
         debug: {
             actions,
+            actionLimit,
+            actionBound: actions >= actionLimit && time < fightLimitMs && mobHp > 0,
             durationMs: time,
             skillUses: fighters.reduce((sum, fighter) => sum + fighter.skillUses, 0),
             musicUses: fighters.reduce((sum, fighter) => sum + fighter.musicUses, 0),

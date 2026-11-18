@@ -20,6 +20,49 @@ function response(body, status = 200) {
     };
 }
 
+async function verifyFullRoster(config, fullClan, applied) {
+    const sizes = [];
+    let attempts = 0;
+    OpenRouterGateway.setTransport(async (_url, init) => {
+        attempts += 1;
+        if (attempts === 1) return response({}, 503);
+        const ids = JSON.parse(JSON.parse(init.body).messages[1].content).assignOnlyMemberIds;
+        sizes.push(ids.length);
+        const assignments = ids.map((characterId) => ({ characterId, title: `Order Sigil ${characterId}` }));
+        return response({ choices: [{ message: { content: JSON.stringify({ assignments }) } }] });
+    });
+
+    const realNow = Date.now;
+    let time = realNow();
+    Date.now = () => time;
+    try {
+        const pending = await ClanTitleService.resolveClan(fullClan, { config });
+        await ClanTitleBrain.waitFor(pending.decisionKey);
+        const failed = await ClanTitleService.resolveClan(fullClan, { config });
+        assert.strictEqual(failed.retryable, true);
+        assert.strictEqual(failed.code, 'provider_error');
+        assert.strictEqual(attempts, 1);
+        assert.strictEqual(applied.length, 0);
+
+        for (const remaining of [21, 13, 5, 0]) {
+            time += 61000;
+            const next = await ClanTitleService.resolveClan(fullClan, { config });
+            assert.strictEqual(next.pending, true);
+            await ClanTitleBrain.waitFor(next.decisionKey);
+            const batch = await ClanTitleService.resolveClan(fullClan, { config });
+            assert.strictEqual(batch.changed, true);
+            assert.strictEqual(batch.pending === true, remaining > 0);
+            assert.strictEqual(fullClan.members.filter((member) => !member.title).length, remaining);
+        }
+        assert.deepStrictEqual(sizes, [8, 8, 8, 5]);
+        assert.strictEqual(new Set(fullClan.members.map((member) => member.title)).size, 30);
+        assert.strictEqual(fullClan.members.at(-1).title, 'Oathkeeper');
+        assert.strictEqual((await ClanTitleService.resolveClan(fullClan, { config })).code, 'clan_titles_complete');
+    } finally {
+        Date.now = realNow;
+    }
+}
+
 async function main() {
     const originalFetchEvents = Database.fetchClanGoalEvents;
     const originalRecordEvent = Database.recordClanGoalEvent;
@@ -50,6 +93,16 @@ async function main() {
                 { id: 803, name: 'Rook', title: 'Oathkeeper', classId: 22, level: 41 }
             ]
         };
+        const fullClan = {
+            ...clan,
+            id: 89,
+            leaderId: 901,
+            members: Array.from({ length: 30 }, (_, index) => ({
+                id: 901 + index, name: `Roster${index}`, classId: 16, level: 40,
+                title: index === 29 ? 'Oathkeeper' : ''
+            }))
+        };
+        const clans = new Map([[clan.id, clan], [fullClan.id, fullClan]]);
         Database.fetchClanGoalEvents = async () => [{
             eventType: 'goal_completed',
             goalType: 'item',
@@ -114,7 +167,7 @@ async function main() {
         ClanService.applyAutonomousMemberTitles = async (clanId, assignments) => {
             applied.push({ clanId, assignments });
             assignments.forEach((assignment) => {
-                const member = clan.members.find((entry) => entry.id === assignment.characterId);
+                const member = clans.get(clanId).members.find((entry) => entry.id === assignment.characterId);
                 member.title = assignment.title;
             });
             return { ok: true, updated: assignments.map((assignment) => ({ ...assignment, hot: false })) };
@@ -155,6 +208,14 @@ async function main() {
             [801, 802]
         );
         assert.strictEqual(ClanTitleService.metrics().appliedTitles, 2);
+
+        const playerManaged = { ...fullClan, state: { mode: 'player_managed' } };
+        const skipped = await ClanTitleService.resolveClan(playerManaged, { config: testConfig });
+        assert.strictEqual(skipped.code, 'clan_titles_unavailable');
+        assert.strictEqual(skipped.skipped, true);
+
+        applied.length = 0;
+        await verifyFullRoster(testConfig, fullClan, applied);
 
         console.log('Clan LLM title management tests passed');
     } finally {
