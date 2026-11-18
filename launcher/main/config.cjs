@@ -19,7 +19,8 @@ const extras = {
     AI: { enabled: 'false', apiUrl: '', apiKey: '', model: '', partyRouterModel: '', temperature: '', reasoningEffort: 'off', completionLimitParam: 'max_tokens', strictSchema: 'false', maxConcurrentRequests: '32' }
 };
 const clanAiDefaults = { llmGoalManagementEnabled: 'true', llmTitleManagementEnabled: 'false' };
-const sourceSection = (section, key) => section === 'AI' && Object.hasOwn(clanAiDefaults, key) ? 'ClanSimulation' : section;
+const clanAiKeys = new Set([...Object.keys(clanAiDefaults), 'localCrestGenerationEnabled']);
+const sourceSection = (section, key) => section === 'AI' && clanAiKeys.has(key) ? 'ClanSimulation' : section;
 // Keep enum choices in the settings schema so rendering and validation agree.
 const enumOptions = {
     'General.progressionPreset': ['x1', 'x10', 'x50'],
@@ -76,6 +77,9 @@ function settings(root) {
     const sections = { ...config };
     sections.AI = Object.fromEntries(Object.entries(aiConfig(config)).filter(([key]) => Object.hasOwn(extras.AI, key)));
     for (const [key, fallback] of Object.entries(clanAiDefaults)) sections.AI[key] = config.ClanSimulation?.[key] ?? fallback;
+    if (config.ClanSimulation?.localCrestGenerationEnabled !== undefined) {
+        sections.AI.localCrestGenerationEnabled = config.ClanSimulation.localCrestGenerationEnabled;
+    }
     delete sections.OpenRouter;
     delete sections.Langfuse;
     return Object.entries(sections).sort(([a], [b]) => (sectionOrder.includes(a) ? sectionOrder.indexOf(a) : 99) - (sectionOrder.includes(b) ? sectionOrder.indexOf(b) : 99)).map(([section, values]) => ({

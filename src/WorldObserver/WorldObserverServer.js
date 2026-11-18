@@ -26,6 +26,8 @@ const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanCrestGeneration = invoke('GameServer/Clan/CrestGeneration/Runtime');
+const { monogramColors } = require('../GameServer/Clan/CrestGeneration/Monogram');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 const ClanService = invoke('GameServer/Clan/ClanService');
@@ -1070,6 +1072,8 @@ async function clanDetail(clanId) {
     return {
         generatedAt: Date.now(),
         clan: overview,
+        crestGenerationEnabled: ClanCrestGeneration.enabled(),
+        crestMonogramColors: monogramColors,
         automaticCraft: compactClanCraftPlan(clanState.goal, members, warehouse, craftKnowledge),
         productionCraft: overview.productionGoal ? compactClanCraftPlan(clanState.productionGoal, members, warehouse, craftKnowledge) : null,
         clanHall: await Database.fetchClanHallFinance(id),
@@ -2683,9 +2687,31 @@ async function deletePlayerManagedClanCrest(clanId) {
     return result.ok ? { ok: true, clanId: id, crestId: 0, crestUrl: null, deleted: true } : result;
 }
 
+async function generatePlayerManagedClanCrests(clanId, payload) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, code: 'invalid_clan' };
+    if (!ClanCrestGeneration.enabled()) return { ok: false, code: 'crest_generation_disabled' };
+    const [clan] = await Database.execute([`
+        SELECT clans.level FROM clans
+        JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+        WHERE clans.id = ? AND simulated.mode = 'player_managed'
+    `, [id], { read: true }], 'observer:clan-crest-generation');
+    if (!clan) return { ok: false, code: 'target_not_player_managed' };
+    if (Number(clan.level) < 3) return { ok: false, code: 'level_too_low' };
+    const result = await ClanCrestGeneration.generate(payload?.prompt, payload?.monogram, payload?.monogramColor);
+    if (!result.ok) return result;
+    return { ok: true, candidates: result.pixels.map((pixels) => {
+        const dds = ClanCrestService.rgbaToDxt1Dds(Buffer.from(pixels, 'base64'));
+        const preview = browserClanCrestData(dds).toString('base64');
+        return { pixels, preview };
+    }) };
+}
+
 function clanCrestMutationStatus(result) {
     if (result?.ok) return 200;
-    if (result?.code === 'target_not_player_managed' || result?.code === 'level_too_low') return 409;
+    if (['target_not_player_managed', 'level_too_low', 'crest_generation_disabled'].includes(result?.code)) return 409;
+    if (result?.code === 'crest_generation_busy') return 429;
+    if (['crest_runtime_unavailable', 'crest_model_unavailable', 'crest_generation_failed'].includes(result?.code)) return 503;
     return 400;
 }
 
@@ -3030,6 +3056,25 @@ function handleClanOrderRoutes(request, response, url) {
 
 // Clan crest: read (GET), replace (POST) and delete (DELETE) on one path. Returns true when it answered the request.
 function handleClanCrest(request, response, url) {
+    const generation = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest\/generate$/);
+    if (generation) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return true;
+        }
+        // Requiring JSON keeps cross-origin browser writes behind the CORS preflight.
+        const contentType = String(request.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+        if (contentType !== 'application/json') {
+            sendJson(response, { ok: false, code: 'invalid_crest_content_type' }, 415);
+            return true;
+        }
+        readJsonBody(request, 2048)
+            .then((payload) => generatePlayerManagedClanCrests(generation[1], payload))
+            .then((result) => sendJson(response, result, clanCrestMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return true;
+    }
     const clanCrestMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest$/);
     if (clanCrestMatch) {
         if (request.method === 'POST') {
@@ -3264,12 +3309,15 @@ const WorldObserverServer = {
         this.server = http.createServer(route);
         this.server.listen(port, hostname, () => {
             utils.infoSuccess('Observer', 'world observer ready at http://%s:%d/observer/', hostname, port);
+            ClanCrestGeneration.warmup();
         });
 
         this.server.on('error', (err) => {
             utils.infoWarn('Observer', 'world observer failed: %s', err.message);
         });
-    }
+    },
+
+    stopCrestGeneration: ClanCrestGeneration.stop
 };
 
 module.exports = WorldObserverServer;

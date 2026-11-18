@@ -1339,6 +1339,32 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .clan-crest-remove:disabled, .clan-management-save button:disabled { opacity: 0.38; cursor: default; }
 .clan-crest-dropzone { margin-top: 9px; padding: 7px 9px; border: 1px dashed var(--line); border-radius: 6px; color: var(--faint); font-size: 9px; text-align: center; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
 .clan-crest-dropzone.is-dragging { border-color: var(--gold); color: var(--text); background: rgba(216, 185, 109, 0.07); }
+.clan-crest-generation { grid-column: 1 / -1; min-width: 0; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.clan-crest-generation label { display: block; margin-bottom: 8px; color: var(--text); font-size: 12px; font-weight: 750; }
+.clan-crest-generation-input { display: grid; grid-template-columns: minmax(0, 1fr) max-content auto; align-items: end; gap: 8px; }
+.clan-crest-generation label small { color: var(--faint); font-size: 10px; font-weight: 500; }
+.clan-crest-monogram { display: flex; align-items: stretch; gap: 6px; }
+.clan-crest-generation-input input, .clan-crest-monogram select, .clan-crest-generation button { min-width: 0; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--surface); font: inherit; font-size: 12px; }
+.clan-crest-generation-input input { min-height: 34px; width: 100%; padding: 6px 10px; }
+.clan-crest-monogram input { width: 40px; text-align: center; text-transform: uppercase; }
+.clan-crest-monogram select { padding: 0 6px; }
+.clan-crest-generation-input button { min-height: 34px; padding: 0 11px; color: var(--gold); cursor: pointer; }
+.clan-crest-generation button:disabled, .clan-crest-monogram select:disabled { opacity: 0.55; cursor: default; }
+.clan-crest-candidates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.clan-crest-candidates button { display: grid; place-items: center; padding: 8px 4px; background: var(--surface-soft); cursor: pointer; }
+.clan-crest-candidates button:hover:not(:disabled), .clan-crest-candidates button[aria-pressed="true"] { border-color: var(--gold); }
+.clan-crest-candidates button[aria-pressed="true"] { background: var(--accent-bg, var(--surface-strong)); }
+.clan-crest-candidates img { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
+.clan-crest-generation-message { margin-top: 8px; color: var(--faint); font-size: 10px; }
+.clan-crest-generation-message.is-error { color: var(--red); }
+@media (max-width: 540px) {
+    .clan-crest-generation-input { grid-template-columns: max-content auto; justify-content: space-between; }
+    .clan-crest-prompt-field { grid-column: 1 / -1; }
+}
+@media (max-width: 380px) {
+    .clan-crest-generation-input { grid-template-columns: minmax(0, 1fr); }
+    .clan-crest-generation-input > button { justify-self: end; }
+}
 .clan-crest-locked { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 74px; padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(237, 240, 232, 0.018); }
 .clan-crest-locked .ui-icon { width: 25px; height: 25px; color: var(--faint); }
 .clan-crest-locked strong, .clan-crest-locked span { display: block; }

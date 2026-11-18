@@ -17,7 +17,7 @@ const hiddenFields = {
     GameServer: new Set(['maxOnline', 'pvp', 'id']),
     AuthServer: new Set(['protocol', 'blowfishKey']),
     Enchant: new Set(['crystalWeaponChance', 'crystalArmorChance', 'crystalAccessoryChance']),
-    ClanSimulation: new Set(['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
+    ClanSimulation: new Set(['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'localCrestGenerationEnabled', 'maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
     ClanWars: new Set(['reviewMs', 'intelTtlMs'])
 };
 
@@ -58,7 +58,7 @@ const groups = {
     AI: [
         ['Provider connection', ['enabled', 'apiUrl', 'apiKey']],
         ['Models', ['model', 'partyRouterModel']],
-        ['Clan AI features', ['llmGoalManagementEnabled', 'llmTitleManagementEnabled']],
+        ['Clan AI features', ['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'localCrestGenerationEnabled']],
         ['Model responses', ['temperature', 'reasoningEffort', 'completionLimitParam', 'strictSchema']],
         ['Request limits', ['maxConcurrentRequests']]
     ],

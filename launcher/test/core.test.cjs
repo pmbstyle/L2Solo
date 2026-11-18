@@ -204,7 +204,9 @@ test('presentation hides the requested settings, groups related fields and prese
         'accessoryChance','blessedAccessoryChance','maxAccessory','safeMax','safeMaxFull']);
     assert.deepEqual(keys('ClanWars'), ['enabled','hostilityThreshold','minHarmEpisodes','quietWithdrawMs','redeclareCooldownMs',
         'minMembers','maxMembers','maxActiveOperations','operationMs','operationCooldownMs','lossWindowMs','counterattackCooldownMs']);
-    for (const key of ['maxBotMemberShare','bloodMarkItemId','bloodMarkSourceNpcId','strategyRetryMs','actionBatchSize','actionLeaseMs','actionRetryMs']) {
+    const crest = fields('AI').find(field => field.key === 'localCrestGenerationEnabled');
+    assert.deepEqual([crest.section, crest.type, crest.value, crest.group], ['ClanSimulation', 'boolean', 'false', 'Clan AI features']);
+    for (const key of ['localCrestGenerationEnabled','maxBotMemberShare','bloodMarkItemId','bloodMarkSourceNpcId','strategyRetryMs','actionBatchSize','actionLeaseMs','actionRetryMs']) {
         assert.equal(keys('ClanSimulation').includes(key), false, key);
     }
     assert.deepEqual([...new Set(fields('BotPopulation').map(field => field.group))], ['Population & seeding','Behavior & travel','Social scenes','Logging']);
