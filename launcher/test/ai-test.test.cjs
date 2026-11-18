@@ -299,7 +299,7 @@ test('game, router and clan probe schemas and strict-schema conversion match the
     assert.deepEqual(schema('clan_goal_decision'), normalize(goals.responseSchema([{ id: 'gear-1', route: { kind: 'spoil' } }, { id: 'gear-2', route: { kind: 'farm' } }])));
     const titles = serverModule('GameServer/Clan/ClanTitleBrain.js');
     assert.deepEqual(schema('clan_title_assignments'), normalize(titles.responseSchema([101, 102])));
-    const router = serverModule('GameServer/Bot/AI/PartyLlmRouter.js');
+    const router = serverModule('GameServer/Bot/AI/PartyLLMRouter.js');
     assert.deepEqual(schema('party_chat_route'), normalize(router.ROUTER_SCHEMA.schema));
     const brain = serverModule('GameServer/Bot/AI/BotBrain.js');
     const withoutDescriptions = value => JSON.parse(JSON.stringify(value, (key, entry) => key === 'description' ? undefined : entry));
