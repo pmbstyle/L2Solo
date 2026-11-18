@@ -10,7 +10,7 @@ if (execFileSync('git', ['rev-parse', 'HEAD'], { cwd: vendor, encoding: 'utf8' }
     throw new Error('Unexpected Lisvus reference revision');
 }
 const range = (first, last) => Array.from({ length: last - first + 1 }, (_, i) => first + i);
-const ids = new Set([...range(12447, 12464), ...range(12503, 12515), 12538]);
+const ids = new Set([...range(12447, 12464), ...range(12503, 12515), 12538, ...range(13137, 13146), ...range(13151, 13160), ...range(13165, 13174)]);
 const sql = fs.readFileSync(path.join(vendor, 'datapack/sql/npc.sql'), 'utf8');
 const npcs = [];
 for (const line of sql.split(/\r?\n/)) {
@@ -22,7 +22,7 @@ for (const line of sql.split(/\r?\n/)) {
     const [selfId,,name,,title,,,radius,size,level,,type,atkRadius,maxHp,maxMp,revHp,revMp,
         str,con,dex,int,wit,men,exp,sp,pAtk,pDef,mAtk,mDef,atkSpd,aggro,castSpd,
         weapon,shield,,walk,run,clanName,helpRadius] = values;
-    if (type !== 'L2Pet' || !['Shadow', 'Silhouette', 'Soulless'].includes(name)) {
+    if (type !== 'L2Pet' || !['Shadow', 'Silhouette', 'Soulless', 'Nightshade', 'Cat Queen', 'Unicorn Seraphim'].includes(name)) {
         throw new Error(`Unexpected summon reference ${selfId}`);
     }
     npcs.push({
@@ -57,14 +57,14 @@ fs.writeFileSync(output, '[\n' + merged.map(npc => '    {\n'
 console.log(`Imported ${npcs.length} Phantom Summoner templates from Lisvus ${revision}`);
 
 const summonIds = new Set(require('../data/Skills/Active/active.json')
-    .filter(skill => [1128, 1228, 1278].includes(skill.selfId))
+    .filter(skill => [1128, 1228, 1278, 1331, 1332, 1333].includes(skill.selfId))
     .flatMap(skill => skill.levels.map(level => level.npcId)));
-const skillIds = new Set([4121, 4138, 4233, 4259, 4260]);
+const skillIds = new Set([4121, 4138, 4233, 4259, 4260, 4699, 4700, 4701, 4702, 4703, 4704, 4705, 4706, 4707]);
 const skillSql = fs.readFileSync(path.join(vendor, 'datapack/sql/npcskills.sql'), 'utf8');
 const rows = [...skillSql.matchAll(/^\((\d+),\s*(\d+),\s*(\d+)\)/gm)]
     .map(match => ({ npcId: Number(match[1]), skillId: Number(match[2]), level: Number(match[3]) }))
     .filter(row => summonIds.has(row.npcId) && skillIds.has(row.skillId));
-if (summonIds.size !== 50 || rows.length !== 114) throw new Error('Incomplete Phantom Summoner skill reference');
+if (summonIds.size !== 80 || rows.length !== 234) throw new Error('Incomplete Phantom Summoner skill reference');
 const templates = [];
 for (const selfId of skillIds) {
     const bucket = Math.floor(selfId / 100) * 100;
@@ -82,7 +82,7 @@ for (const selfId of skillIds) {
         template: { name: match[2], passive: settings.operateType === 'OP_PASSIVE', spell: settings.isMagic === 'true', distance: value('castRange') },
         time: { hitTime: value('hitTime'), reuse: value('reuseDelay'), buff: selfId === 4259 ? 30000 : 0 },
         levels: Array.from({ length: Number(match[1]) }, (_, i) => ({
-            level: i + 1, power: value('power', i), mp: value('mpConsume', i), hp: 0,
+            level: i + 1, power: value('power', i), mp: value('mpConsume', i), hp: value('hpConsume', i),
             itemId: 0, itemCount: 0, distance: value('castRange', i)
         }))
     });

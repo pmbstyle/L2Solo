@@ -214,6 +214,57 @@ async function checkPhantomActions(session, summon, summonSkillId) {
             const mp = summon.fetchMp();
             await cast(0x2f);
             assert.strictEqual(summon.fetchMp(), mp, 'Steal Blood must reject a cast during reuse');
+        } else if (summonSkillId === 1331 || summonSkillId === 1332) {
+            // Rank 3 at level 76 (Lisvus npcskills): two buffs sharing one stack and a cure by effect type.
+            const queen = summonSkillId === 1331;
+            const owner = session.actor;
+            const [blessing, gift, cure] = queen ? [1007, 1008, 1009] : [1010, 1011, 1012];
+            const key = queen ? 'queen_buff' : 'seraphim_buff';
+            const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+            const mate = sessionFor(new Backpack({ items: [] }), null).actor;
+            mate.fetchId = () => 2000099;
+            const partyActors = PartyAwareness.partyActors;
+            PartyAwareness.partyActors = (leader) => leader === session ? [owner, mate] : partyActors(leader);
+            try {
+                await cast(blessing);
+            } finally {
+                PartyAwareness.partyActors = partyActors;
+            }
+            assert.deepStrictEqual(owner.effects?.[key]?.stats, queen ? { pCritRateMul: 1.3, pCritDamageMul: 1.25 } : { regMp: 1.35 },
+                `${key} blessing must buff the summoner`);
+            assert(mate.effects?.[key], `${key} blessing must reach the summoner's party`);
+            assert(summon.effects?.[key], `${key} blessing must reach the servitor itself`);
+            await cast(gift);
+            assert.deepStrictEqual(owner.effects[key].stats, queen ? { pAccuracyCombatAdd: 3, pAtkMul: 1.1 } : { mReuseMul: 0.65 },
+                `${key} gift must replace the blessing in the shared stack`);
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            EffectStore.apply(owner, { key: 'poison', id: 4035, level: 1, type: 'debuff', category: 'poison', durationMs: 60000 });
+            // Root, not stun: a stunned summoner cannot press the action at all.
+            EffectStore.apply(owner, { key: 'root', id: 4047, level: 1, type: 'debuff', category: 'root', durationMs: 60000 });
+            await cast(cure);
+            assert.strictEqual(!!owner.effects.poison, !queen, 'only Cure of Queen must remove poison');
+            assert.strictEqual(!!owner.effects.root, queen, 'only Cure of Seraphim must remove root');
+            assert(owner.effects[key], 'a cure must keep the buff');
+            EffectStore.remove(owner, 'poison');
+            EffectStore.remove(owner, 'root');
+            EffectStore.remove(owner, key);
+        } else if (summonSkillId === 1333) {
+            // Issue #239: rank 3 at level 76 (Lisvus npcskills): Curse of Shade, Mass Curse of Shade, Shade Sacrifice.
+            await cast(1013);
+            assert.deepStrictEqual(target.effects.curse_of_shade?.stats, { pDefMul: 0.9, mDefMul: 0.9 }, 'Curse of Shade must curse the selected enemy');
+            assert(!nearby.effects?.curse_of_shade, 'Curse of Shade must hit only its target');
+            assert.strictEqual(summon.fetchMp(), 1000 - 69, 'Curse of Shade rank 3 must consume 69 MP');
+            await cast(1014);
+            assert(nearby.effects?.curse_of_shade, 'Mass Curse of Shade must curse enemies around the Nightshade');
+            assert(!distant.effects?.curse_of_shade, 'Mass Curse of Shade must respect its 200-unit radius');
+            let ownerHp = 100;
+            session.actor.fetchHp = () => ownerHp;
+            session.actor.setHp = (value) => { ownerHp = value; };
+            session.actor.fetchMaxHp = () => 5000;
+            summon.setHp(summon.fetchMaxHp());
+            await cast(1015);
+            assert(ownerHp > 100, 'Shade Sacrifice must heal the summoner');
+            assert.strictEqual(summon.fetchMaxHp() - summon.fetchHp(), 946, 'Shade Sacrifice rank 3 must cost the Nightshade 946 HP');
         } else {
             await cast(0x24);
             for (const enemy of [target, nearby]) {
@@ -472,11 +523,17 @@ async function checkPhantomActions(session, summon, summonSkillId) {
         [12456, [60, 4887, 1327, 860, 368, 478, 345]],
         [12464, [76, 6876, 1972, 1614, 534, 994, 500]],
         [12503, [42, 1992, 679, 342, 215, 152, 202]],
-        [12538, [76, 5157, 1972, 1775, 534, 994, 500]]
+        [12538, [76, 5157, 1972, 1775, 534, 994, 500]],
+        [13137, [58, 2889, 1251, 313, 349, 428, 327]],
+        [13146, [76, 4297, 1972, 577, 534, 994, 500]],
+        [13151, [58, 2889, 1251, 313, 349, 428, 327]],
+        [13160, [76, 4297, 1972, 577, 534, 994, 500]],
+        [13165, [58, 5778, 1251, 313, 349, 428, 327]],
+        [13174, [76, 8595, 1972, 577, 534, 994, 500]]
     ]);
-    for (const selfId of [1128, 1228, 1278]) {
+    for (const selfId of [1128, 1228, 1278, 1331, 1332, 1333]) {
         const skillData = DataCache.skills.find((entry) => entry.selfId === selfId);
-        assert.strictEqual(skillData.levels.length, selfId === 1278 ? 14 : 18);
+        assert.strictEqual(skillData.levels.length, selfId === 1278 ? 14 : selfId >= 1331 ? 10 : 18);
         for (const levelData of skillData.levels) {
             const label = `summon skill ${selfId} level ${levelData.level}`;
             const templates = DataCache.npcs.filter((entry) => entry.selfId === levelData.npcId);
@@ -495,11 +552,14 @@ async function checkPhantomActions(session, summon, summonSkillId) {
                 assert.strictEqual(summoned.fetchSelfId(), levelData.npcId, label);
                 assert.strictEqual(summoned.fetchName(), template.template.name, label);
                 const skills = NpcSkills.forNpc(summoned);
-                const expectedSkills = selfId === 1128 ? [4233] : selfId === 1228 ? [4260] : [4138, 4259];
+                const expectedSkills = selfId === 1128 ? [4233] : selfId === 1228 ? [4260] : selfId === 1331 ? [4699, 4700, 4701] : selfId === 1332 ? [4702, 4703, 4704]
+                    : selfId === 1333 ? [4705, 4706, 4707] : [4138, 4259];
+                const level = summoned.fetchLevel();
+                const tierRank = level < 64 ? 1 : level < 70 ? 2 : 3;
                 for (const id of expectedSkills) {
                     const ability = skills.find(entry => entry.fetchSelfId() === id);
                     assert(ability, `${label} must have skill ${id}`);
-                    assert.strictEqual(ability.fetchLevel(), id === 4233 ? 1 : Math.floor(summoned.fetchLevel() / 10),
+                    assert.strictEqual(ability.fetchLevel(), id === 4233 ? 1 : selfId >= 1331 ? tierRank : Math.floor(level / 10),
                         `${label} must have the sourced rank of skill ${id}`);
                 }
                 if (selfId === 1128) assert.strictEqual(EffectStats.add(summoned, 'absorbDam'), 15, label);
@@ -632,9 +692,10 @@ async function checkPhantomActions(session, summon, summonSkillId) {
         realSetTimeout(resolve, 20);
     }));
 
-    assert.strictEqual(World.npc.spawns.length, 1, 'third-class cat servitor should spawn even when exact stats template is missing');
+    assert.strictEqual(World.npc.spawns.length, 1, 'third-class cat servitor should spawn');
     assert.strictEqual(World.npc.spawns[0].fetchSelfId(), 13137, 'Summon Queen of Cat should preserve sourced requested npcId');
-    assert.strictEqual(World.npc.spawns[0].fetchName(), 'Queen of Cat', 'fallback summon should use skill-derived display name');
+    assert.strictEqual(World.npc.spawns[0].fetchName(), 'Cat Queen', 'Summon Queen of Cat should use its sourced template, not a fallback');
+    assert.strictEqual(World.npc.spawns[0].fetchLevel(), 58, 'Summon Queen of Cat rank 1 should be level 58');
     assert.strictEqual(queenBackpack.fetchItemFromSelfId(1459), undefined, 'Summon Queen of Cat should consume sourced B crystal count');
     World.npc.spawns[0].destructor(queenSession);
 

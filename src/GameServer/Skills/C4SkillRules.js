@@ -206,6 +206,17 @@ const RULES = {
     4713: { skillType: HEAL, trait: 'heal', target: 'self', isMagic: true, ssBoost: 1, castRange: -1 },
     4717: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
     4718: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
+    // Cat Queen and Unicorn Seraphim (Lisvus BUFF/NEGATE, TARGET_PARTY): each pair of buffs shares one stack (QueenBuff, SeraphimBuff).
+    4699: { skillType: EFFECT, trait: 'buff', effect: 'queen_buff', effectType: 'buff', target: 'party', radius: 1000, isMagic: true, baseLandRate: 100, durationMs: 120000, statsByLevel: { pCritRateMul: [1.25, 1.27, 1.3], pCritDamageMul: [1.2, 1.22, 1.25] } },
+    4700: { skillType: EFFECT, trait: 'buff', effect: 'queen_buff', effectType: 'buff', target: 'party', radius: 1000, isMagic: true, baseLandRate: 100, durationMs: 120000, stats: { pAccuracyCombatAdd: 3 }, statsByLevel: { pAtkMul: [1.06, 1.08, 1.1] } },
+    4701: { skillType: CLEANSE, trait: 'cleanse', target: 'party', radius: 1000, isMagic: true, ssBoost: 0, negateStats: ['MUTE', 'FEAR', 'CONFUSION', 'POISON', 'BLEED', 'DEBUFF', 'WEAKNESS'] },
+    4702: { skillType: EFFECT, trait: 'buff', effect: 'seraphim_buff', effectType: 'buff', target: 'party', radius: 1000, isMagic: true, baseLandRate: 100, durationMs: 120000, statsByLevel: { regMp: [1.3, 1.32, 1.35] } },
+    4703: { skillType: EFFECT, trait: 'buff', effect: 'seraphim_buff', effectType: 'buff', target: 'party', radius: 1000, isMagic: true, baseLandRate: 100, durationMs: 120000, statsByLevel: { mReuseMul: [0.7, 0.68, 0.65] } },
+    4704: { skillType: CLEANSE, trait: 'cleanse', target: 'party', radius: 900, isMagic: true, ssBoost: 0, negateStats: ['SLEEP', 'STUN', 'MUTE', 'PARALYZE', 'ROOT'] },
+    // Nightshade (Lisvus AGGDEBUFF power 100 and HEAL): both curses share the CurseShade stack.
+    4705: { skillType: EFFECT, trait: 'debuff', effect: 'curse_of_shade', effectType: 'debuff', target: 'enemy', isMagic: true, baseLandRate: 100, durationMs: 30000, castRange: 400, effectRange: 900, statsByLevel: { pDefMul: [0.94, 0.92, 0.9], mDefMul: [0.95, 0.92, 0.9] } },
+    4706: { skillType: EFFECT, trait: 'debuff', effect: 'curse_of_shade', effectType: 'debuff', target: 'enemy', isMagic: true, baseLandRate: 100, durationMs: 30000, sourceTarget: 'aura', radius: 200, statsByLevel: { pDefMul: [0.94, 0.92, 0.9], mDefMul: [0.95, 0.92, 0.9] } },
+    4707: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 0, castRange: 600, effectRange: 1100 },
     // Native C4 raid-boss guards. These are applied by RaidCurse at the
     // combat boundary, but keeping the sourced skill semantics here preserves
     // the canonical skill ids for packets/effect tooling.

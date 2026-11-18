@@ -681,9 +681,11 @@ class Attack {
         if (targetKind === 'party') {
             const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
             const SummonControl = invoke('GameServer/Npc/SummonControl');
-            const leaderSession = session?.partyCompanion === true && session.followPlayerSession
-                ? session.followPlayerSession
-                : session;
+            // A servitor's party is its owner's (Lisvus TARGET_PARTY of a summon).
+            const caster = session?.summonOwnerSession || session;
+            const leaderSession = caster?.partyCompanion === true && caster.followPlayerSession
+                ? caster.followPlayerSession
+                : caster;
             const partyActors = PartyAwareness.partyActors(leaderSession)
                 .filter((target) => (
                     this.isValidSkillTarget(target, skill, actor) &&

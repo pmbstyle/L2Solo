@@ -570,6 +570,606 @@
       "npcId": 12538,
       "skillId": 4259,
       "level": 7
+    },
+    {
+      "npcId": 13137,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13137,
+      "skillId": 4699,
+      "level": 1
+    },
+    {
+      "npcId": 13137,
+      "skillId": 4700,
+      "level": 1
+    },
+    {
+      "npcId": 13137,
+      "skillId": 4701,
+      "level": 1
+    },
+    {
+      "npcId": 13138,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13138,
+      "skillId": 4699,
+      "level": 1
+    },
+    {
+      "npcId": 13138,
+      "skillId": 4700,
+      "level": 1
+    },
+    {
+      "npcId": 13138,
+      "skillId": 4701,
+      "level": 1
+    },
+    {
+      "npcId": 13139,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13139,
+      "skillId": 4699,
+      "level": 1
+    },
+    {
+      "npcId": 13139,
+      "skillId": 4700,
+      "level": 1
+    },
+    {
+      "npcId": 13139,
+      "skillId": 4701,
+      "level": 1
+    },
+    {
+      "npcId": 13140,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13140,
+      "skillId": 4699,
+      "level": 2
+    },
+    {
+      "npcId": 13140,
+      "skillId": 4700,
+      "level": 2
+    },
+    {
+      "npcId": 13140,
+      "skillId": 4701,
+      "level": 2
+    },
+    {
+      "npcId": 13141,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13141,
+      "skillId": 4699,
+      "level": 2
+    },
+    {
+      "npcId": 13141,
+      "skillId": 4700,
+      "level": 2
+    },
+    {
+      "npcId": 13141,
+      "skillId": 4701,
+      "level": 2
+    },
+    {
+      "npcId": 13142,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13142,
+      "skillId": 4699,
+      "level": 2
+    },
+    {
+      "npcId": 13142,
+      "skillId": 4700,
+      "level": 2
+    },
+    {
+      "npcId": 13142,
+      "skillId": 4701,
+      "level": 2
+    },
+    {
+      "npcId": 13143,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13143,
+      "skillId": 4699,
+      "level": 3
+    },
+    {
+      "npcId": 13143,
+      "skillId": 4700,
+      "level": 3
+    },
+    {
+      "npcId": 13143,
+      "skillId": 4701,
+      "level": 3
+    },
+    {
+      "npcId": 13144,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13144,
+      "skillId": 4699,
+      "level": 3
+    },
+    {
+      "npcId": 13144,
+      "skillId": 4700,
+      "level": 3
+    },
+    {
+      "npcId": 13144,
+      "skillId": 4701,
+      "level": 3
+    },
+    {
+      "npcId": 13145,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13145,
+      "skillId": 4699,
+      "level": 3
+    },
+    {
+      "npcId": 13145,
+      "skillId": 4700,
+      "level": 3
+    },
+    {
+      "npcId": 13145,
+      "skillId": 4701,
+      "level": 3
+    },
+    {
+      "npcId": 13146,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13146,
+      "skillId": 4699,
+      "level": 3
+    },
+    {
+      "npcId": 13146,
+      "skillId": 4700,
+      "level": 3
+    },
+    {
+      "npcId": 13146,
+      "skillId": 4701,
+      "level": 3
+    },
+    {
+      "npcId": 13151,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13151,
+      "skillId": 4702,
+      "level": 1
+    },
+    {
+      "npcId": 13151,
+      "skillId": 4703,
+      "level": 1
+    },
+    {
+      "npcId": 13151,
+      "skillId": 4704,
+      "level": 1
+    },
+    {
+      "npcId": 13152,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13152,
+      "skillId": 4702,
+      "level": 1
+    },
+    {
+      "npcId": 13152,
+      "skillId": 4703,
+      "level": 1
+    },
+    {
+      "npcId": 13152,
+      "skillId": 4704,
+      "level": 1
+    },
+    {
+      "npcId": 13153,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13153,
+      "skillId": 4702,
+      "level": 1
+    },
+    {
+      "npcId": 13153,
+      "skillId": 4703,
+      "level": 1
+    },
+    {
+      "npcId": 13153,
+      "skillId": 4704,
+      "level": 1
+    },
+    {
+      "npcId": 13154,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13154,
+      "skillId": 4702,
+      "level": 2
+    },
+    {
+      "npcId": 13154,
+      "skillId": 4703,
+      "level": 2
+    },
+    {
+      "npcId": 13154,
+      "skillId": 4704,
+      "level": 2
+    },
+    {
+      "npcId": 13155,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13155,
+      "skillId": 4702,
+      "level": 2
+    },
+    {
+      "npcId": 13155,
+      "skillId": 4703,
+      "level": 2
+    },
+    {
+      "npcId": 13155,
+      "skillId": 4704,
+      "level": 2
+    },
+    {
+      "npcId": 13156,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13156,
+      "skillId": 4702,
+      "level": 2
+    },
+    {
+      "npcId": 13156,
+      "skillId": 4703,
+      "level": 2
+    },
+    {
+      "npcId": 13156,
+      "skillId": 4704,
+      "level": 2
+    },
+    {
+      "npcId": 13157,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13157,
+      "skillId": 4702,
+      "level": 3
+    },
+    {
+      "npcId": 13157,
+      "skillId": 4703,
+      "level": 3
+    },
+    {
+      "npcId": 13157,
+      "skillId": 4704,
+      "level": 3
+    },
+    {
+      "npcId": 13158,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13158,
+      "skillId": 4702,
+      "level": 3
+    },
+    {
+      "npcId": 13158,
+      "skillId": 4703,
+      "level": 3
+    },
+    {
+      "npcId": 13158,
+      "skillId": 4704,
+      "level": 3
+    },
+    {
+      "npcId": 13159,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13159,
+      "skillId": 4702,
+      "level": 3
+    },
+    {
+      "npcId": 13159,
+      "skillId": 4703,
+      "level": 3
+    },
+    {
+      "npcId": 13159,
+      "skillId": 4704,
+      "level": 3
+    },
+    {
+      "npcId": 13160,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13160,
+      "skillId": 4702,
+      "level": 3
+    },
+    {
+      "npcId": 13160,
+      "skillId": 4703,
+      "level": 3
+    },
+    {
+      "npcId": 13160,
+      "skillId": 4704,
+      "level": 3
+    },
+    {
+      "npcId": 13165,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13165,
+      "skillId": 4705,
+      "level": 1
+    },
+    {
+      "npcId": 13165,
+      "skillId": 4706,
+      "level": 1
+    },
+    {
+      "npcId": 13165,
+      "skillId": 4707,
+      "level": 1
+    },
+    {
+      "npcId": 13166,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13166,
+      "skillId": 4705,
+      "level": 1
+    },
+    {
+      "npcId": 13166,
+      "skillId": 4706,
+      "level": 1
+    },
+    {
+      "npcId": 13166,
+      "skillId": 4707,
+      "level": 1
+    },
+    {
+      "npcId": 13167,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13167,
+      "skillId": 4705,
+      "level": 1
+    },
+    {
+      "npcId": 13167,
+      "skillId": 4706,
+      "level": 1
+    },
+    {
+      "npcId": 13167,
+      "skillId": 4707,
+      "level": 1
+    },
+    {
+      "npcId": 13168,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13168,
+      "skillId": 4705,
+      "level": 2
+    },
+    {
+      "npcId": 13168,
+      "skillId": 4706,
+      "level": 2
+    },
+    {
+      "npcId": 13168,
+      "skillId": 4707,
+      "level": 2
+    },
+    {
+      "npcId": 13169,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13169,
+      "skillId": 4705,
+      "level": 2
+    },
+    {
+      "npcId": 13169,
+      "skillId": 4706,
+      "level": 2
+    },
+    {
+      "npcId": 13169,
+      "skillId": 4707,
+      "level": 2
+    },
+    {
+      "npcId": 13170,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13170,
+      "skillId": 4705,
+      "level": 2
+    },
+    {
+      "npcId": 13170,
+      "skillId": 4706,
+      "level": 2
+    },
+    {
+      "npcId": 13170,
+      "skillId": 4707,
+      "level": 2
+    },
+    {
+      "npcId": 13171,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13171,
+      "skillId": 4705,
+      "level": 3
+    },
+    {
+      "npcId": 13171,
+      "skillId": 4706,
+      "level": 3
+    },
+    {
+      "npcId": 13171,
+      "skillId": 4707,
+      "level": 3
+    },
+    {
+      "npcId": 13172,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13172,
+      "skillId": 4705,
+      "level": 3
+    },
+    {
+      "npcId": 13172,
+      "skillId": 4706,
+      "level": 3
+    },
+    {
+      "npcId": 13172,
+      "skillId": 4707,
+      "level": 3
+    },
+    {
+      "npcId": 13173,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13173,
+      "skillId": 4705,
+      "level": 3
+    },
+    {
+      "npcId": 13173,
+      "skillId": 4706,
+      "level": 3
+    },
+    {
+      "npcId": 13173,
+      "skillId": 4707,
+      "level": 3
+    },
+    {
+      "npcId": 13174,
+      "skillId": 4121,
+      "level": 1
+    },
+    {
+      "npcId": 13174,
+      "skillId": 4705,
+      "level": 3
+    },
+    {
+      "npcId": 13174,
+      "skillId": 4706,
+      "level": 3
+    },
+    {
+      "npcId": 13174,
+      "skillId": 4707,
+      "level": 3
     }
   ],
   "templates": [
@@ -992,6 +1592,1203 @@
           "itemId": 0,
           "itemCount": 0,
           "distance": 900
+        }
+      ]
+    },
+    {
+      "selfId": 4699,
+      "template": {
+        "name": "Blessing of Queen",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 8000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 157,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 194,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 202,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 207,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 212,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 215,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 220,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 224,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 229,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 233,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 237,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 242,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4700,
+      "template": {
+        "name": "Gift of Queen",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 8000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 157,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 194,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 202,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 207,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 212,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 215,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 220,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 224,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 229,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 233,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 237,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 242,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4701,
+      "template": {
+        "name": "Cure of Queen",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 2000,
+        "reuse": 8000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 62,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 79,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 98,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 102,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 104,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 107,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 108,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 110,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 113,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 115,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 117,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 119,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4702,
+      "template": {
+        "name": "Blessing of Seraphim",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 30000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 157,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 194,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 202,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 207,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 212,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 215,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 220,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 224,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 229,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 233,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 237,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 242,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4703,
+      "template": {
+        "name": "Gift of Seraphim",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 30000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 157,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 194,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 202,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 207,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 212,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 215,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 220,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 224,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 229,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 233,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 237,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 242,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4704,
+      "template": {
+        "name": "Cure of Seraphim",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 2000,
+        "reuse": 30000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 62,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 79,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 98,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 102,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 104,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 107,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 108,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 110,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 113,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 115,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 117,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 119,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 0,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4705,
+      "template": {
+        "name": "Curse of Shade",
+        "passive": false,
+        "spell": true,
+        "distance": 400
+      },
+      "time": {
+        "hitTime": 2000,
+        "reuse": 15000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 100,
+          "mp": 53,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 2,
+          "power": 100,
+          "mp": 62,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 3,
+          "power": 100,
+          "mp": 69,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 4,
+          "power": 100,
+          "mp": 70,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 5,
+          "power": 100,
+          "mp": 72,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 6,
+          "power": 100,
+          "mp": 73,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 7,
+          "power": 100,
+          "mp": 73,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 8,
+          "power": 100,
+          "mp": 73,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 9,
+          "power": 100,
+          "mp": 74,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 10,
+          "power": 100,
+          "mp": 74,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 11,
+          "power": 100,
+          "mp": 75,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 12,
+          "power": 100,
+          "mp": 75,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        },
+        {
+          "level": 13,
+          "power": 100,
+          "mp": 75,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 400
+        }
+      ]
+    },
+    {
+      "selfId": 4706,
+      "template": {
+        "name": "Mass Curse of Shade",
+        "passive": false,
+        "spell": true,
+        "distance": 0
+      },
+      "time": {
+        "hitTime": 2000,
+        "reuse": 15000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 100,
+          "mp": 79,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 2,
+          "power": 100,
+          "mp": 93,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 3,
+          "power": 100,
+          "mp": 104,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 4,
+          "power": 100,
+          "mp": 105,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 5,
+          "power": 100,
+          "mp": 107,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 6,
+          "power": 100,
+          "mp": 108,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 7,
+          "power": 100,
+          "mp": 109,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 8,
+          "power": 100,
+          "mp": 109,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 9,
+          "power": 100,
+          "mp": 110,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 10,
+          "power": 100,
+          "mp": 112,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 11,
+          "power": 100,
+          "mp": 112,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 12,
+          "power": 100,
+          "mp": 113,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        },
+        {
+          "level": 13,
+          "power": 100,
+          "mp": 113,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4707,
+      "template": {
+        "name": "Shade Sacrifice",
+        "passive": false,
+        "spell": true,
+        "distance": 600
+      },
+      "time": {
+        "hitTime": 2000,
+        "reuse": 0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 541,
+          "mp": 0,
+          "hp": 706,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 2,
+          "power": 611,
+          "mp": 0,
+          "hp": 840,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 3,
+          "power": 659,
+          "mp": 0,
+          "hp": 946,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 4,
+          "power": 666,
+          "mp": 0,
+          "hp": 964,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 5,
+          "power": 669,
+          "mp": 0,
+          "hp": 973,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 6,
+          "power": 673,
+          "mp": 0,
+          "hp": 980,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 7,
+          "power": 676,
+          "mp": 0,
+          "hp": 988,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 8,
+          "power": 679,
+          "mp": 0,
+          "hp": 994,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 9,
+          "power": 681,
+          "mp": 0,
+          "hp": 1000,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 10,
+          "power": 684,
+          "mp": 0,
+          "hp": 1005,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 11,
+          "power": 687,
+          "mp": 0,
+          "hp": 1010,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 12,
+          "power": 689,
+          "mp": 0,
+          "hp": 1014,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
+        },
+        {
+          "level": 13,
+          "power": 692,
+          "mp": 0,
+          "hp": 1017,
+          "itemId": 0,
+          "itemCount": 0,
+          "distance": 600
         }
       ]
     }

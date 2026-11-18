@@ -534,6 +534,7 @@ function useSkillAction(session, actor, summon, actionId) {
 
         summon.attack.remoteHit({
             actor: summon,
+            summonOwnerSession: session,
             dataSendToMe: (packet) => session.dataSendToMe(packet),
             dataSendToMeAndOthers: (packet) => session.dataSendToMeAndOthers(packet, summon)
         }, target, skill);

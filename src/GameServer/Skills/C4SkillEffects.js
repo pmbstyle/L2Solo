@@ -157,7 +157,8 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.CLEANSE) {
-        result.cleansed = applyCleanse(session, target, semantic);
+        // A Lisvus NEGATE with no level cap removes by effect type, not by category.
+        result.cleansed = semantic.cleanse?.length || !semantic.negateStats ? applyCleanse(session, target, semantic) : applyNegate(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return finish();
     }
