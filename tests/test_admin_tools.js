@@ -191,6 +191,20 @@ for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
         `weapon-${rank} should expose every ${rank} weapon item id`
     );
 }
+// Grand boss jewels: admin-only for the bosses this world lacks, never in a generated bot kit.
+const epicIds = [6656, 6657, 6658, 6659, 6660, 6661, 6662];
+assert.ok(adminShopHtml.includes('admin-shop armor-epic'), 'armor shop should expose epic jewelry');
+assert.deepStrictEqual(AdminShop.itemIdsForSource(adminShop['armor-epic']).slice().sort(), epicIds);
+for (const id of epicIds) {
+    const template = armors.find((item) => item.selfId === id);
+    assert.strictEqual(template?.template.kind, 'Armor.Jewel', `epic jewel ${id} should have an armor template`);
+    assert.ok(invoke('GameServer/Items/C4EquipmentItemSkills').resolveItem(id), `epic jewel ${id} should carry its item skill`);
+}
+const BotGear = invoke('GameServer/Bot/AI/BotGear');
+for (const [classId, level] of [[3, 45], [8, 55], [9, 76], [12, 76], [16, 65]]) {
+    const kit = BotGear.planFor({ classId, level }).items.map((row) => row.selfId);
+    assert.ok(!kit.some((id) => epicIds.includes(id)), `generated kit of class ${classId} lv${level} should hold no epic jewel`);
+}
 // The B-grade shop must sell complete wearable sets, including specialized gloves/boots.
 const C4ArmorSets = invoke('GameServer/Items/C4ArmorSets');
 const Item = invoke('GameServer/Item/Item');

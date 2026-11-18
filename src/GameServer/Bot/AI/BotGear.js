@@ -167,8 +167,11 @@ function validRank(item, rank) {
     return RANK_ORDER.indexOf(item.rank) >= 0 && item.rank === rank;
 }
 
+// Grand boss jewels come only from their boss: a generated kit never holds one.
+const EPIC_JEWELS = new Set([6656, 6657, 6658, 6659, 6660, 6661, 6662]);
+
 function notQuestOddity(item) {
-    return item.price > 0 && item.pAtk < 1000 && item.mAtk < 1000;
+    return item.price > 0 && item.pAtk < 1000 && item.mAtk < 1000 && !EPIC_JEWELS.has(item.selfId);
 }
 
 function priceCapFor(rank, level) {

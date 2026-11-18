@@ -3418,4 +3418,39 @@
     "template": { "kind": "Armor.Wear", "name": "Ubiquitous Boots", "class1": 1, "class2": 1, "mass": 1310, "price": 12300 },
     "stats": { "pDef": 17, "mDef": 0, "evasion": 0, "maxMp": 0 },
     "etc": { "slot": 12, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 6656,
+    "template": { "kind": "Armor.Jewel", "name": "Earring of Antharas", "class1": 0, "class2": 2, "mass": 150, "price": 3700000 },
+    "stats": { "pDef": 0, "mDef": 71, "evasion": 0, "maxMp": 31 },
+    "etc": { "slot": 1, "rank": "s", "cristals": 185 }
+},{
+    "selfId": 6657,
+    "template": { "kind": "Armor.Jewel", "name": "Necklace of Valakas", "class1": 0, "class2": 2, "mass": 150, "price": 4940000 },
+    "stats": { "pDef": 0, "mDef": 95, "evasion": 0, "maxMp": 42 },
+    "etc": { "slot": 3, "rank": "s", "cristals": 247 }
+},{
+    "selfId": 6658,
+    "template": { "kind": "Armor.Jewel", "name": "Ring of Baium", "class1": 0, "class2": 2, "mass": 150, "price": 1730000 },
+    "stats": { "pDef": 0, "mDef": 48, "evasion": 0, "maxMp": 21 },
+    "etc": { "slot": 4, "rank": "s", "cristals": 86 }
+},{
+    "selfId": 6659,
+    "template": { "kind": "Armor.Jewel", "name": "Zaken's Earring", "class1": 0, "class2": 2, "mass": 150, "price": 2590000 },
+    "stats": { "pDef": 0, "mDef": 71, "evasion": 0, "maxMp": 31 },
+    "etc": { "slot": 1, "rank": "s", "cristals": 129 }
+},{
+    "selfId": 6660,
+    "template": { "kind": "Armor.Jewel", "name": "Ring of Queen Ant", "class1": 0, "class2": 2, "mass": 150, "price": 616000 },
+    "stats": { "pDef": 0, "mDef": 48, "evasion": 0, "maxMp": 21 },
+    "etc": { "slot": 4, "rank": "b", "cristals": 82 }
+},{
+    "selfId": 6661,
+    "template": { "kind": "Armor.Jewel", "name": "Earring of Orfen", "class1": 0, "class2": 2, "mass": 150, "price": 1300000 },
+    "stats": { "pDef": 0, "mDef": 71, "evasion": 0, "maxMp": 31 },
+    "etc": { "slot": 1, "rank": "a", "cristals": 104 }
+},{
+    "selfId": 6662,
+    "template": { "kind": "Armor.Jewel", "name": "Ring of Core", "class1": 0, "class2": 2, "mass": 150, "price": 870000 },
+    "stats": { "pDef": 0, "mDef": 48, "evasion": 0, "maxMp": 21 },
+    "etc": { "slot": 4, "rank": "a", "cristals": 69 }
 }]

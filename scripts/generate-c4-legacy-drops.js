@@ -15,14 +15,14 @@ const rewardsPath = path.join(root, 'data', 'Npcs', 'Rewards', 'rewards.json');
 
 // Lisvus rows of these monsters whose item has no template here, `monster:item`:
 // compressed C soulshot recipes 5154/5269, a Zweihander 5284, spellbooks and amulets
-// 5014/5015/6395-6398, the grand boss jewels 6656/6660-6662.
+// 5014/5015/6395-6398.
 const expectedSkippedRows = [
     '214:5269', '216:5269', '352:5284', '357:5284', '556:5154', '557:5154', '559:5154', '587:6397',
     '591:6395', '592:6396', '593:6398', '601:5269', '602:5154', '651:5014', '651:5015', '769:5269',
-    '770:5269', '12001:6660', '12052:6662', '12169:6661', '12211:6656'
+    '770:5269'
 ];
 const expectedReplacedTables = 560;
-const expectedRows = 7445;
+const expectedRows = 7449;
 // Monster tables that keep their NodeL2 groups: Lisvus has no drop row for them.
 const expectedKeptMonstersWithDrops = 67;
 
