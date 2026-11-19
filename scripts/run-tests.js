@@ -1323,6 +1323,8 @@ const tests = [
     'tests/test_kit_profile_gear_gain.js',
     'tests/test_hunt_cycle.js',
     'tests/test_wish_quantity_allocation.js',
+    'tests/test_economy_ledger.js',
+    'tests/test_economy_ledger_cli.js',
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
