@@ -408,7 +408,7 @@ function buildProjection(state, ctx, deps) {
     // it is noted too).
     const offerBoard = ctx.board || deps.board;
     const offerRefs = id => ({ npc: need('./ProductionPolicy').allowsNpcShot(id) ? deps.npcOffersFor?.(id) || null : null,
-        fixed: need('./ProductionPolicy').allowsFixedShot(id) ? need('./FixedShotOffers').offers(id) : null });
+        fixed: need('./FixedShotOffers').offers(id) });
     const arrowRoom = id => need('../../Inventory/ArrowStock').admitted(state, id, Infinity);
     // An item's offer as a first ask reads it now (reader: the build's, else a
     // check's that notes no read).
@@ -765,7 +765,7 @@ function buildProjection(state, ctx, deps) {
             const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
             const shot = need('./ShotTradeDemand').isShot(id);
             const publicBids = ctx.board.list(id, 3);
-            const fixedBids = material ? deps.fixedProductionOffersFor?.(id) || [] : [];
+            const fixedBids = material ? deps.fixedProductionOffersFor?.(id, state) || [] : [];
             let best = exitCeiling(publicBids, ownSales, 0);
             if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
@@ -798,7 +798,7 @@ function buildProjection(state, ctx, deps) {
         for (const { recipe, count, id, ownSales, oldUnits, material, shot, earningPreference } of admitted) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
-        const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
+        const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id, state) || []).slice(0, 5) : [];
         const listingOffers = need('./WealthCraftPolicy').drain(need('./ProductionSalePolicy').exits(state, recipe, {
             board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits }));
         for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {

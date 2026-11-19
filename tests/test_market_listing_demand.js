@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+// Pins the x50 demand window (an hour).
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Listing = require('../src/GameServer/Bot/Economy/MarketListingPolicy');

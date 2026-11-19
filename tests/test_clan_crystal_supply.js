@@ -55,6 +55,29 @@ async function run() {
     Data.init(); await DB.init(); await Life.init();
     invoke('GameServer/Bot/Population/ColdOccupationSources').initialise();
     await q("INSERT INTO clans(id,name,level,leaderId) VALUES(701,'CrystalSupply',3,98101)");
+    // A store sells the exchange target for less than its crystal chain (a
+    // 1.4M D staff to crystallize into 310 D crystals): the clan owner buys the
+    // gloves and spends nothing on crystals.
+    let direct = await seed(98107, 608);
+    const directEconomy = context(direct), directLeaf = directEconomy.network.activity;
+    assert.deepEqual([directLeaf?.kind, directLeaf?.activity, directLeaf?.itemId], ['buy', 'shopping', 608],
+        `the clan target's direct offer beats its crystal chain: ${JSON.stringify(directLeaf)}`);
+    const directNeed = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(direct, { economy: directEconomy })[0];
+    assert.equal(directNeed.target.itemId, 608, JSON.stringify(directNeed));
+    direct = await Life.upsertState({ ...direct, stats: { ...direct.stats, ...directEconomy.statsPacket,
+        equipmentPlan: Providers.personalCraftPlan(direct, directEconomy) } }, 'clan_crystal_direct');
+    const directPurchase = Market.planPurchase(direct, 608, 1, { money: direct.adena,
+        r: invoke('GameServer/Bot/Economy/PurchaseFunding').leafRatio(directLeaf,
+            directEconomy.network.queue.find(row => row.key === directLeaf.rootKey)) });
+    assert(directPurchase && directPurchase.cost < 1400000, `the store gloves cost less than the staff: ${JSON.stringify(directPurchase)}`);
+    direct = (await Market.buyHere(direct, directPurchase)).state;
+    assert.equal(direct.inventory[608]?.amount, 1, 'the clan owner holds the bought gloves');
+    assert.equal(direct.adena, 30000000 - directPurchase.cost, 'only the gloves are paid for');
+    assert(!direct.inventory[90] && !direct.inventory[1458], 'no crystal input is bought for a target the store sells cheaper');
+    assert(!Supply.requirement(direct), 'the held target releases the crystal supply request');
+    // Without a store selling the target the exchange and its crystal chain
+    // are the cheapest way (the city reserve switched off).
+    invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = true;
     for (const [id, targetId] of [[98101, 608], [98102, 2406]]) {
         let state = await seed(id, targetId);
         const original = structuredClone(state.stats.equipmentPlan);

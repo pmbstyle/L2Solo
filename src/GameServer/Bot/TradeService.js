@@ -49,21 +49,22 @@ function refreshStorePrices(store, actor = null) {
 
 // Native C4 store windows cannot quote a price wider than their D field.
 // Keep the exact price for HTML and execution; omitted native rows have no quote.
+// The gear reserve lines sell bots only: the player's window (and so his
+// purchase, which buys only quoted rows) leaves them out.
 function nativeStoreItems(store) {
     const WireD = invoke('Packet/WireD');
-    return (store?.items || []).filter(item => WireD.isRepresentable(item.price));
+    return (store?.items || []).filter(item => item.reserve !== true && WireD.isRepresentable(item.price));
 }
 
-// The retained static-buyer route until 3.6 is only for bot materials.
-// Preview and queued execution share this gate so neither buyer selection
-// nor a direct/stale arrival can liquidate gear through a static buyer.
+// A static buyer takes anything a player sells it; a bot passes the fixed
+// buyers' one seller gate (ProductionPolicy.sellsToFixedBuyer: a gnome's
+// materials). Preview and queued execution share this gate so neither buyer
+// selection nor a direct/stale arrival bypasses it.
 function acceptsSellerItem(actor, storeItem, inventoryItem) {
     if (BeginnerShots.isRestricted(storeItem.selfId)) return false;
-    if (storeItem[staticPriceSource] && isBotActor(actor)
-        && require('./Economy/ProductionPolicy').buyersDisabled()) return false;
     return !storeItem[staticPriceSource] || !isBotActor(actor)
-        || String(inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind || '')
-            .startsWith('Other.Material');
+        || require('./Economy/ProductionPolicy').sellsToFixedBuyer(actor,
+            inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind);
 }
 
 async function withTradeQueues(store, selfId, actors, operation) {
@@ -160,6 +161,7 @@ function normalizeStoreItems(storeCfg, { staticStore = false } = {}) {
         selfId: item.selfId,
         price: pricing ? pricing.priceFor(storeCfg, item) : item.price ?? ratedPrice(item.selfId, item.priceRate ?? 1),
         count: item.count ?? 1,
+        ...(pricing && item.reserve === true ? { reserve: true } : {}),
         ...(pricing ? { [staticPriceSource]: { store: storeCfg, line: item } } : {})
     })).filter((item) => !staticStore || item.price > 0);
 }
@@ -378,13 +380,16 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
             if (options.expectedRevision !== undefined && Number(store.revision || 1) !== Number(options.expectedRevision)) {
                 throw new Error("Store listing changed.");
             }
-            const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId));
+            // A reserve piece has a crafter row (sold to named classes only) and a valve
+            // row: a bot takes the first row of the item sold to it.
+            const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId)
+                && !(isBotActor(actor) && item[staticPriceSource]?.line?.buyerClasses
+                    && !require('./Economy/ProductionPolicy').allowsFixed(item[staticPriceSource].line, actor)));
             if (!storeItem) {
                 throw new Error("Item is not available.");
             }
             if (storeItem[staticPriceSource] && isBotActor(actor)
-                && (!invoke('GameServer/Inventory/ShotStock').SHOT_IDS.includes(Number(selfId))
-                    || !require('./Economy/ProductionPolicy').allowsFixedShot(selfId))) {
+                && !require('./Economy/ProductionPolicy').allowsFixed(storeItem[staticPriceSource].line, actor)) {
                 throw new Error('Static merchant item is unavailable to bots.');
             }
             const unitPrice = storeItemPrice(store, storeItem, actor);

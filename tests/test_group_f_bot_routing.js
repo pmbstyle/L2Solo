@@ -56,8 +56,10 @@ function privateSession(name, id, selfId) {
         await check('fixed table and cold/supply queries do not inspect world sessions', () => {
             World.user = { get sessions() { throw new Error('world session scan'); } };
             const fixed = Market.fixedStoreOffers();
-            assert(fixed.length > 0 && fixed.every((offer) => [1835, 1463, 1464, 1465, 1466, 1467,
+            // A bot buys its shots and the reserve gear lines from the configured stores.
+            assert(fixed.length > 0 && fixed.every((offer) => offer.reserve === true || [1835, 1463, 1464, 1465, 1466, 1467,
                 2509, 2510, 2511, 2512, 2513, 2514, 3947, 3948, 3949, 3950, 3951, 3952].includes(offer.selfId)));
+            assert(fixed.some((offer) => offer.selfId === SHOT), 'the shot lines stay in the table');
             assert(fixed.every((offer) => offer.sourceName && offer.sellerKind === 'fixed'));
             assert.strictEqual(Market.fixedStoreOffers(), fixed, 'reuse the static table');
             record(987101, STEM, 10, 3);
@@ -136,21 +138,22 @@ function privateSession(name, id, selfId) {
                 World.user = { sessions: [] };
             }
         });
-        await check('fixed bot shot table follows effective Adena at the same progression multiplier', () => {
+        // Store prices are x1 at every preset: the Adena rate multiplies hunt adena only.
+        await check('fixed bot shot table keeps the x1 store price at every effective Adena', () => {
             const progression = invoke('GameServer/ProgressionRates');
             const pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
             const originalProfile = progression.profile;
             const profile = originalProfile();
             try {
                 progression.profile = () => ({ ...profile, multiplier: 1, adena: 1 });
-                const first = Market.fixedStoreOffers(SHOT);
+                const first = Market.fixedStoreOffers(SHOT).map(row => [row.sourceName, row.price]);
                 progression.profile = () => ({ ...profile, multiplier: 1, adena: 2 });
                 const second = Market.fixedStoreOffers(SHOT);
-                assert.notStrictEqual(second, first, 'effective Adena invalidates the immutable table');
+                assert(second.length > 0);
+                assert.deepStrictEqual(second.map(row => [row.sourceName, row.price]), first, 'the Adena rate leaves store prices');
                 for (const row of second) {
                     assert.strictEqual(row.price, pricing.sellersOf(SHOT).find(offer => offer.sourceName === row.sourceName).price);
                 }
-                assert.strictEqual(Market.fixedStoreOffers(SHOT), second, 'unchanged rate reuses the rebuilt table');
             } finally { progression.profile = originalProfile; }
         });
         await check('stale configured non-shot direct purchases are rejected before paying', async () => {

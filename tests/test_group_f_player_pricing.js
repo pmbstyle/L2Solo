@@ -23,6 +23,7 @@ const World = invoke('GameServer/World/World');
 
 const MATERIAL = 1864;
 const SHOT = 1835;
+const ARTISAN = 56;
 const board = AfkTrade.boardIndex();
 fs.mkdirSync(path.join(process.cwd(), 'tmp'), { recursive: true });
 const fixtureDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-group-f-player-pricing-'));
@@ -55,10 +56,11 @@ function merchant(store, id = 82000, name = 'IslandMats') {
         fetchLocY: () => 148000, fetchLocZ: () => -3400 };
 }
 
-async function player(name, { bot = false } = {}) {
+async function player(name, { bot = false, classId = 0 } = {}) {
     const account = `${bot ? 'bot_' : ''}f_player_${name}`;
     await Database.createAccount(account, 'pw');
-    const id = Number((await Database.createCharacter(account, { name, race: 0, classId: 0, maxHp: 100, maxMp: 100,
+    const race = classId === 0 ? 0 : 4;
+    const id = Number((await Database.createCharacter(account, { name, race, classId, maxHp: 100, maxMp: 100,
         sex: 0, face: 0, hair: 0, hairColor: 0, locX: 83000, locY: 148000, locZ: -3400 })).insertId);
     for (const [selfId, amount] of [[57, 1000000], [MATERIAL, 20], [SHOT, 20]]) {
         await Database.setItem(id, { selfId, amount, name: `Item ${selfId}`, equipped: false, slot: 0 });
@@ -66,7 +68,7 @@ async function player(name, { bot = false } = {}) {
     const session = { accountId: account, botSession: bot, sent: [], socket: { write() {} },
         dataSendToMe(packet) { this.sent.push(packet); }, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
     const row = (await Database.fetchCharacters(account))[0];
-    const classInfo = DataCache.classTemplates.find(entry => Number(entry.classId) === 0);
+    const classInfo = DataCache.classTemplates.find(entry => Number(entry.classId) === classId);
     session.actor = new Actor(session, { ...row, ...utils.crushOb(classInfo), items: await Database.fetchItems(id),
         paperdoll: utils.tupleAlloc(16, {}) });
     World.user.sessions.push(session);
@@ -294,7 +296,8 @@ test('bot static buy-back remains old price; a failing player write restores sto
     line(60, 3, 888);
     const item = session.actor.backpack.fetchItemFromSelfId(MATERIAL);
     const oldPrice = Pricing.botPriceFor(Configs['4manda'], materialLine(Configs['4manda']));
-    const bot = await player('FBotLiquidation', { bot: true });
+    // The fixed buyers take a bot's materials from a gnome only: an Artisan sells here.
+    const bot = await player('FBotLiquidation', { bot: true, classId: ARTISAN });
     const botMoney = wallet(bot);
     TradeService.refreshStorePrices(store);
     const botSale = await TradeService.sellToStore(bot.actor, store, MATERIAL, 1);
@@ -337,7 +340,7 @@ test('fixed supply is cached by configuration/rate without world session reads',
         assert.strictEqual(reads, 2, 'a newly loaded config invalidates the supply table');
         ProgressionRates.profile = () => ({ multiplier: 1, adena: 2 });
         assert.strictEqual(Pricing.sellersOf(990001)[0].price, 19, 'explicit author price stays absolute');
-        assert.strictEqual(reads, 3, 'effective Adena rate invalidates the supply table');
+        assert.strictEqual(reads, 2, 'store prices are x1 at every preset: the Adena rate keeps the supply table');
         line(70, 1, 1234);
         assert(Pricing.priceFor(Configs.IslandMats, materialLine(Configs.IslandMats)) >= 1234);
     } finally {
@@ -379,7 +382,7 @@ test('bot gear sale to a static buyer is rejected before mutation; player and or
 });
 
 test('hot buyer selection and inventory sale keep only static materials at the old bot price', async () => {
-    const bot = await player('FHotMixedSeller', { bot: true });
+    const bot = await player('FHotMixedSeller', { bot: true, classId: ARTISAN });
     await giveGear(bot);
     const gear = staticStore(Configs.Veteranas, 219);
     const gearBuyer = merchant(gear, 83001, 'Veteranas');

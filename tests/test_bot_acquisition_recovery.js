@@ -134,23 +134,23 @@ async function run() {
     // A craft route stalls after STALL_KILLS kills that collect nothing, whatever the time.
     const killed = (value, kills) => ({ ...value, stats: { ...value.stats, fightsWon: kills } });
     const stamped = Planner.finalizePlan(state, null, plan, {}, now);
-    assert.deepStrictEqual(stamped.stall, { kills: Stall.STALL_KILLS, kind: 'craft' });
-    assert.strictEqual(Planner.replanContextFor(killed(state, Stall.STALL_KILLS - 1), stamped, now + 50 * 3600000).failure, null,
+    assert.deepStrictEqual(stamped.stall, { kills: Stall.stallBudget(), kind: 'craft' });
+    assert.strictEqual(Planner.replanContextFor(killed(state, Stall.stallBudget() - 1), stamped, now + 50 * 3600000).failure, null,
         'fewer kills than the stall: no failure, however long');
-    const stalled = Planner.replanContextFor(killed(state, Stall.STALL_KILLS), stamped, now + 1);
+    const stalled = Planner.replanContextFor(killed(state, Stall.stallBudget()), stamped, now + 1);
     assert.strictEqual(stalled.failure.reason, 'craft_stalled');
     assert(stalled.excludedMaterialIds.includes(75));
     // The far step that crosses the stall raises source_stalled once (the build judges it).
     const Situations = invoke('GameServer/Bot/Situations');
     const planned = value => ({ ...value, activity: 'hunting', stats: { ...value.stats, equipmentPlan: stamped } });
     const step = (from, to) => Situations.detect(planned(killed(state, from)), planned(killed(state, to)));
-    assert(step(Stall.STALL_KILLS - 5, Stall.STALL_KILLS).includes('source_stalled'), 'the crossing raises source_stalled');
-    assert(!step(Stall.STALL_KILLS, Stall.STALL_KILLS + 5).includes('source_stalled'), 'past the crossing nothing more');
+    assert(step(Stall.stallBudget() - 5, Stall.stallBudget()).includes('source_stalled'), 'the crossing raises source_stalled');
+    assert(!step(Stall.stallBudget(), Stall.stallBudget() + 5).includes('source_stalled'), 'past the crossing nothing more');
     assert(!step(0, 5).includes('source_stalled'), 'before it nothing');
     // Near a player the body's kills count too (NpcDied: one kill count): its post crosses the stall.
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-    const posted = Sections.semanticFacts(planned(killed(state, Stall.STALL_KILLS - 1)));
-    assert(Situations.detect({}, planned(killed(state, Stall.STALL_KILLS)), { facts: posted, body: true }).includes('source_stalled'),
+    const posted = Sections.semanticFacts(planned(killed(state, Stall.stallBudget() - 1)));
+    assert(Situations.detect({}, planned(killed(state, Stall.stallBudget())), { facts: posted, body: true }).includes('source_stalled'),
         'a body\'s post that crosses it raises source_stalled');
     // A bot that levels past the band of the source its route took (Death Knight, level 50:
     // a hunter goes at most seven levels below itself) is not sent there again: the step that
@@ -197,20 +197,20 @@ async function run() {
         assert(!Situations.detect(elsewhere(57), elsewhere(58)).includes('source_stalled'),
             'a plan whose verdict names another spot raises nothing');
     }
-    const progressState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 1 } } }, Stall.STALL_KILLS);
+    const progressState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 1 } } }, Stall.stallBudget());
     assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 1).failure, null,
         'actually acquiring a component must prevent a no-progress stall');
     const refreshed = Planner.finalizePlan(progressState, stamped, plan, {}, now + 5 * 3600000);
     assert.strictEqual(refreshed.acquisitionProgress.at, now + 5 * 3600000);
-    assert.strictEqual(refreshed.stall.kills, 2 * Stall.STALL_KILLS, 'progress moves the stall on by its kills');
+    assert.strictEqual(refreshed.stall.kills, 2 * Stall.stallBudget(), 'progress moves the stall on by its kills');
     const cappedBaseline = Planner.finalizePlan(progressState, null, plan, {}, now);
-    const excessState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 2 } } }, 2 * Stall.STALL_KILLS);
+    const excessState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 2 } } }, 2 * Stall.stallBudget());
     assert.strictEqual(Planner.replanContextFor(excessState, cappedBaseline, now + 1).failure?.reason,
         'craft_stalled', 'extra copies beyond recipe needs must not hide a missing component');
     const acquiredPlan = { ...plan, next: { itemId: 75, amount: 1, requiredTotal: 1 } };
     assert.strictEqual(Planner.bestSourceForPlan(progressState, acquiredPlan, []), null,
         'an acquired ingredient must stop retaining its old farming route');
-    const legacy = Planner.replanContextFor(killed(state, 10 * Stall.STALL_KILLS), plan, now + 5 * 3600000);
+    const legacy = Planner.replanContextFor(killed(state, 10 * Stall.stallBudget()), plan, now + 5 * 3600000);
     assert.strictEqual(legacy.failure, null, 'legacy craft plans need a progress baseline first');
 
     // A ready intermediate recipe is cheaper than farming its rare full drop.
@@ -219,10 +219,17 @@ async function run() {
     const stocked = { ...state, inventory: Object.fromEntries(component.materials.map((m) => [m.selfId,
         { selfId: m.selfId, amount: m.amount }])) };
     const spots = [{ id: 'death-knight', avgLevel: 50, npcEntries: [{ selfId: 136, name: 'Death Knight', count: 8 }] }];
-    const route = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]));
+    // The C reserve store sells bots the C blade: a bot that holds its price
+    // buys it before any craft or drop.
+    const bought = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]));
+    assert.strictEqual(bought.kind, 'material_market', 'a funded bot buys the reserve store blade');
+    assert.strictEqual(bought.effort, 4, 'a payable offer costs the bot one shopping trip');
+    // Where no seller offers the blade, the ready craft beats its rare drop.
+    const unsold = { findMarketOffer: () => null };
+    const route = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]), 1, new Set(), unsold);
     assert.strictEqual(route.effort, 8, 'a ready craft must beat a rare direct drop');
     assert(!route.spotId, 'ready ingredients must not send the bot to farm a finished blade');
-    const missingRoutes = Planner.farmSourceForMaterial(75, state, [], new Set([component.recipeId]));
+    const missingRoutes = Planner.farmSourceForMaterial(75, state, [], new Set([component.recipeId]), 1, new Set(), unsold);
     assert.strictEqual(missingRoutes, null, 'a recipe with unavailable pieces is not an available route');
     const needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
     const nestedState = { ...state, activity: 'hunting', inventory: { 1869: { selfId: 1869, amount: 2 } },

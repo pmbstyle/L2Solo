@@ -160,8 +160,10 @@ async function parityAndIntegration() {
                 swordInventory[entry.selfId] = { ...entry, amount: Number(old?.amount || 0) + 1,
                     equipped: true, equippedCount: equippedSlots.length, equippedSlots };
             }
+            // 15M pays neither the 78.6M listing nor the city reserve store's 19.65M sword line (1.5x datapack);
+            // the 7.86M crafter row sells to the Artisan/Warsmith line only, never to this class 21 member.
             const swordMember = { characterId: 990003, level: 55, classId: 21, phase: 'cold',
-                adena: 20000000, inventory: swordInventory, stats: { classId: 21, equipmentPlan: {
+                adena: 15000000, inventory: swordInventory, stats: { classId: 21, equipmentPlan: {
                     status: 'active', strategy: 'market', target: { selfId: 79, slot: 7 },
                     market: { town: 'Heine', price: 78600000, sourceType: 'afk_player_store' },
                     clanGoal: { clanId: 77, goalKey: 'clan-equipment:77:990003:79:7' }

@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+// Pins the x50 window (an hour); the x1 window is checked below.
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Counters = require('../src/GameServer/Bot/Economy/MarketCounters');
@@ -45,6 +47,14 @@ assert(Flow.forecast(1881, 'Giran', now), 'completed material purchases inform o
 assert.equal(Shots.forecast(1881, 'Giran', now), null, 'material flow never authorizes shot production');
 assert.equal(Flow.forecast(2275, 'Giran', now), null, 'listing an unpopular recipe creates no buyer flow');
 assert.equal(Flow.forecast(1881, 'Giran', now + 24 * 3600000), null, 'old purchases decay out');
+// At x1 deals come about fifty times slower and the window stretches to fifty hours.
+process.env.L2NODE_PROGRESSION_RATE = 'x1';
+invoke('GameServer/ProgressionRates').reset();
+assert(Flow.forecast(1881, 'Giran', now + 24 * 3600000), 'x1: a day-old purchase still counts');
+assert.equal(Flow.forecast(1881, 'Giran', now + 50 * 24 * 3600000), null, 'x1: it decays out over weeks');
+assert.equal(Flow.replayMs(), 50 * 24 * 3600000, 'x1: a start replays the last 50 days');
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
+invoke('GameServer/ProgressionRates').reset();
 const native = Flow.forecast(1881, 'Giran', now);
 Flow.useTable(() => rows);
 assert.deepEqual(Flow.forecast(1881, 'Giran', now), native, 'worker and main see the same public aggregate');

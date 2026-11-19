@@ -30,10 +30,10 @@ const LINE_PRICE = 70;
 let sequence = 0;
 const previousUser = World.user;
 
-async function character({ bot = false, skins = 0 } = {}) {
+async function character({ bot = false, skins = 0, classId = 0 } = {}) {
     const number = ++sequence, account = `${bot ? 'bot_' : ''}static_ads_${number}`;
     await Database.createAccount(account, 'fixture');
-    const id = Number((await Database.createCharacter(account, { name: `SkinTrader${number}`, race: 0, classId: 0,
+    const id = Number((await Database.createCharacter(account, { name: `SkinTrader${number}`, race: classId >= 53 ? 4 : 0, classId,
         maxHp: 100, maxMp: 100, sex: 0, face: 0, hair: 0, hairColor: 0,
         locX: 83000, locY: 148000, locZ: -3400 })).insertId);
     await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 100000, equipped: false, slot: 0 });
@@ -41,7 +41,7 @@ async function character({ bot = false, skins = 0 } = {}) {
     const session = { accountId: account, botSession: bot, socket: { write() {} }, packets: [],
         dataSendToMe(packet) { this.packets.push(packet); }, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
     session.actor = new Actor(session, { ...(await Database.fetchCharacters(account))[0],
-        ...utils.crushOb(Data.classTemplates.find(row => row.classId === 0)),
+        ...utils.crushOb(Data.classTemplates.find(row => row.classId === classId)),
         items: await Database.fetchItems(id), paperdoll: utils.tupleAlloc(16, {}) });
     World.user.sessions.push(session);
     return session;
@@ -288,8 +288,11 @@ async function run() {
             assert.equal(await remaining(first.shop), 0); assert.equal(await remaining(second.shop), 2);
         } finally { Afk.sellToShop = original; }
     });
-    await check('a bot is paid the line price without filling an ad', async () => {
-        const bot = await character({ bot: true, skins: 1 }), bid = await order(1000, 1), store = buyer();
+    await check('a gnome bot is paid the line price without filling an ad; another bot is refused', async () => {
+        // The fixed buyers take materials only from a gnome (classes 54-57; here a Scavenger).
+        const other = await character({ bot: true, skins: 1 });
+        await assert.rejects(Trade.sellToStore(other.actor, buyer(), ITEM, 1), /unavailable to bots/);
+        const bot = await character({ bot: true, skins: 1, classId: 54 }), bid = await order(1000, 1), store = buyer();
         const source = { storeType: 3, items: [{ selfId: ITEM, count: 999999, price: LINE_PRICE }] };
         const price = Pricing.botPriceFor(source, source.items[0]);
         const before = await worldAdena();

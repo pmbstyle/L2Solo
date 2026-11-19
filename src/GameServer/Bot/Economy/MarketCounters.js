@@ -243,7 +243,7 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0,
     notifyChanged({ key, deals: counter.deals });
 }
 
-// The journal of the last day at start (oldest first): the same deals again.
+// The journal of the last demand replay window at start (oldest first): the same deals again.
 function load(rows = [], supplyRows = []) {
     loading = true;
     try {
@@ -254,7 +254,7 @@ function load(rows = [], supplyRows = []) {
         const receipts = [...rows, ...supplyRows];
         const latest = receipts.reduce((at, row) => Math.max(at, Number(row.occurredAt) || 0), 0);
         TradeDemand.reset();
-        TradeDemand.load(receipts.filter(row => row.occurredAt >= latest - 24 * HOUR_MS)
+        TradeDemand.load(receipts.filter(row => row.occurredAt >= latest - TradeDemand.replayMs())
             .map(row => ({ ...row, enchant: flowEnchant(row.selfId, row.enchant) }))
             .sort((a, b) => a.occurredAt - b.occurredAt));
         flowCounts.clear();

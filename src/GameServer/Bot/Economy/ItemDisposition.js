@@ -153,6 +153,19 @@ function isGradeCrystal(item) {
     return CRYSTALS.has(Number(item?.selfId));
 }
 
+// A crafter's board stock of an item (CrafterStock: bought from its reserve row for
+// resale), { cost, ceiling } or null: every unequipped copy it holds is listed, never
+// deposited or sold to an NPC, at an ask between its unit cost and the valve price.
+function gnomeStock(state, selfId) {
+    const row = state?.stats?.gnomeStock?.[Number(selfId)];
+    return row && Number(row.cost) > 0 ? row : null;
+}
+// An ask for a crafter's stock: clamped to [cost, ceiling]; any other item's as asked.
+function gnomeAsk(state, selfId, price) {
+    const row = gnomeStock(state, selfId);
+    return row ? Math.min(Math.max(Number(price), Number(row.cost)), Math.max(Number(row.cost), Number(row.ceiling) || Infinity)) : price;
+}
+
 // Consumables a bot sells to the NPC beyond its working stock: wrong-grade
 // and surplus arrows, scrolls other than enchant
 // scrolls (the Scrolls of Escape a bot reads for town trips are reserved up to
@@ -1050,7 +1063,8 @@ function warehouseCandidates(state) {
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const equipped = Math.max(0, Number(item.equippedCount ?? (item.equipped ? 1 : 0)) || 0);
         // Reservations include equipped copies, as in unreservedActorItems.
-        const keep = Math.max(equipped, Number(reserved[Number(item.selfId)] || 0));
+        const keep = gnomeStock(state, item.selfId) ? Number(item.amount || 0)
+            : Math.max(equipped, Number(reserved[Number(item.selfId)] || 0));
         const amount = Math.max(0, Number(item.amount || 0) - keep);
         const candidate = { ...item, amount, equipped: false, equippedCount: 0, equippedSlots: [], slot: 0 };
         return amount > 0 && isWarehouseCandidate(candidate) ? [candidate] : [];
@@ -1080,6 +1094,8 @@ module.exports = {
     isBelowCGrade,
     isClanProgressionItem,
     isGradeCrystal,
+    gnomeStock,
+    gnomeAsk,
     isNpcOnlyItem,
     isQuestItem,
     isRecipeItem,

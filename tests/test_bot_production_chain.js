@@ -57,7 +57,7 @@ async function run() {
     assert(Number.isFinite(playerDPrice)); assert(Buyers.buyersInTown('Giran').length > 0);
     Config.staticBuyersDisabled = true; Config.staticShotsDisabled = true;
     assert.equal(Buyers.buyersInTown('Giran').length, 0);
-    assert.equal(Policy.allowsFixedShot(1463), false);
+    assert.equal(Policy.allowsFixed({ selfId: 1463 }), false);
     assert.equal(Pricing.botPurchasePrice(1463), Infinity);
     assert.equal(Pricing.cheapestPurchase(1463), playerDPrice, 'player authored price unchanged');
     assert(Opportunity.npcOffersAll(1835).length > 0); assert.equal(Opportunity.npcOffersAll(1463).length, 0);

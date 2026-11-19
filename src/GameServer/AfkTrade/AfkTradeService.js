@@ -1144,8 +1144,9 @@ async function init() {
     // The market counters learn the board's last deals again.
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
-    MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }),
-        await Database.fetchRecentFixedStoreDeals());
+    const rangeMs = invoke('GameServer/Bot/Economy/MarketTradeDemand').replayMs();
+    MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS, rangeMs }),
+        await Database.fetchRecentFixedStoreDeals({ rangeMs }));
     boardReady = true;
     await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });

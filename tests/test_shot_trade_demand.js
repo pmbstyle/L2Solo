@@ -1,5 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
+// Pins the x50 demand window (an hour; it stretches with the drop rate).
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
+require('../src/Global');
 const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
 const now = Date.now();
 assert.equal(Demand.forecast(1463, 'Dion', now), null);

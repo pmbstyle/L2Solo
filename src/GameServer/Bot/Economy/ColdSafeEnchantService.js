@@ -3,6 +3,7 @@ const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantRules = invoke('GameServer/Items/C4EnchantRules');
+const GearGrade = invoke('GameServer/Bot/AI/GearGradeRule');
 
 const MAX_OPERATIONS = 64;
 
@@ -18,28 +19,45 @@ function itemRank(item, template = templateFor(item?.selfId)) {
     return String(item?.rank || template?.etc?.rank || 'none');
 }
 
-function hasPotential(state = {}) {
-    const items = Object.values(state.inventory || {});
-    const hasScroll = items.some((item) => {
-        const scroll = EnchantRules.resolveScroll(item?.selfId);
-        return scroll?.grade === 'D' && Number(item?.amount || 0) > 0;
-    });
-    if (!hasScroll) return false;
-    return items.some((item) => item?.equipped
-        && itemRank(item).toUpperCase() === 'D'
-        && (itemKind(item).startsWith('Weapon.') || itemKind(item).startsWith('Armor.')));
+// What a cold bot enchants up to the safe level: its worn D weapon and armour,
+// and its worn C, B or A weapon (the economy's enchant sink, our cheat: the hunt
+// reads no enchant; the scroll is bought at a town visit, scrollPurchase).
+const BOUGHT_WEAPON_GRADES = new Set(['C', 'B', 'A']);
+function enchantable(rank, kind) {
+    return rank === 'D' ? kind.startsWith('Weapon.') || kind.startsWith('Armor.')
+        : BOUGHT_WEAPON_GRADES.has(rank) && kind.startsWith('Weapon.');
+}
+function scrollEnchants(scroll) {
+    return scroll?.grade === 'D' ? ['weapon', 'armor'].includes(scroll.target)
+        : BOUGHT_WEAPON_GRADES.has(scroll?.grade) && scroll.target === 'weapon';
 }
 
+function hasPotential(state = {}) {
+    const items = Object.values(state.inventory || {});
+    const grades = new Set(items.filter((item) => Number(item?.amount || 0) > 0)
+        .map((item) => EnchantRules.resolveScroll(item?.selfId))
+        .filter(scrollEnchants).map((scroll) => scroll.grade));
+    if (!grades.size) return false;
+    return items.some((item) => {
+        const rank = itemRank(item).toUpperCase();
+        return item?.equipped && grades.has(rank) && enchantable(rank, itemKind(item));
+    });
+}
+
+// The scrolls the worn gear takes to its safe level, by `${grade}:${target}`.
+// A C, B or A weapon counts only at its level's kit grade (an S level wears A:
+// no store sells an S weapon).
 function targetNeeds(state = {}, options = {}) {
     const config = EnchantRules.configWith({
         ...(globalThis.options?.default?.Enchant || {}),
         ...(options.config || {})
     });
+    const kitGrade = ({ s: 'A' })[GearGrade.gradeForLevel(state.level)] || GearGrade.gradeForLevel(state.level).toUpperCase();
     return Object.values(state.inventory || {}).reduce((needs, item) => {
-        const kind = itemKind(item);
-        if (!item?.equipped || itemRank(item).toUpperCase() !== 'D'
-            || (!kind.startsWith('Weapon.') && !kind.startsWith('Armor.'))) return needs;
+        const kind = itemKind(item), rank = itemRank(item).toUpperCase();
+        if (!item?.equipped || !enchantable(rank, kind) || (rank !== 'D' && rank !== kitGrade)) return needs;
         const target = kind.startsWith('Weapon.') ? 'weapon' : 'armor';
+        const key = `${rank}:${target}`;
         const equippedSlots = Array.isArray(item.equippedSlots) && item.equippedSlots.length
             ? item.equippedSlots
             : [item.slot];
@@ -54,20 +72,46 @@ function targetNeeds(state = {}, options = {}) {
             const cap = category === 'armor' && Number(instance.slot || item.slot || 0) === 15
                 ? Number(config.safeMaxFull || 4)
                 : Number(config.safeMax || 3);
-            needs[target] += Math.max(0, cap - Math.max(0, Number(instance.enchant || 0)));
+            needs[key] = Number(needs[key] || 0) + Math.max(0, cap - Math.max(0, Number(instance.enchant || 0)));
         });
         return needs;
-    }, { weapon: 0, armor: 0 });
+    }, {});
 }
 
+// The held scrolls by `${grade}:${target}` (targetNeeds' keys).
 function inventoryScrolls(state = {}) {
     return Object.values(state.inventory || {}).reduce((amounts, item) => {
         const scroll = EnchantRules.resolveScroll(item?.selfId);
-        if (scroll?.grade === 'D' && ['weapon', 'armor'].includes(scroll.target)) {
-            amounts[scroll.target] += Math.max(0, Number(item.amount || 0));
+        if (scrollEnchants(scroll)) {
+            const key = `${scroll.grade}:${scroll.target}`;
+            amounts[key] = Number(amounts[key] || 0) + Math.max(0, Number(item.amount || 0));
         }
         return amounts;
-    }, { weapon: 0, armor: 0 });
+    }, {});
+}
+
+// The weapon scrolls a cold bot buys at a town visit, or null: the normal Scroll:
+// Enchant Weapon of its worn C, B or A weapon's grade, for the tries to the safe
+// level its held scrolls do not cover, paid from at most `money`: what keeps its
+// money after the scrolls above ENCHANT_WALLET_WEAPONS times the weapon's price.
+// weaponPrice(selfId): the weapon's cheapest fixed price (0: not sold, no
+// purchase). No store sells the scroll (C4: drop, spoil and raid bosses only):
+// the purchase reads the board's asks. Our rule (the model's weaponEnchant).
+const ENCHANT_WALLET_WEAPONS = 3;
+const NORMAL_WEAPON_SCROLL = Object.freeze({ C: 951, B: 947, A: 729 });
+function scrollPurchase(state = {}, weaponPrice = () => 0) {
+    const needs = targetNeeds(state), held = inventoryScrolls(state);
+    for (const grade of BOUGHT_WEAPON_GRADES) {
+        const missing = Math.max(0, Number(needs[`${grade}:weapon`] || 0) - Number(held[`${grade}:weapon`] || 0));
+        if (!missing) continue;
+        const weapon = Object.values(state.inventory || {}).find((item) => item?.equipped
+            && itemRank(item).toUpperCase() === grade && itemKind(item).startsWith('Weapon.'));
+        const floor = ENCHANT_WALLET_WEAPONS * Number(weaponPrice(Number(weapon?.selfId)) || 0);
+        const money = Math.floor(Number(state.adena || 0) - floor - 1);
+        return floor > 0 && money > 0 ? { selfId: NORMAL_WEAPON_SCROLL[grade], amount: missing, money,
+            weaponSelfId: Number(weapon.selfId) } : null;
+    }
+    return null;
 }
 
 function warehouseRequests(state = {}, warehouseItems = [], options = {}) {
@@ -86,21 +130,21 @@ function warehouseRequests(state = {}, warehouseItems = [], options = {}) {
     }
     const needs = targetNeeds(state, options);
     const inventory = inventoryScrolls(state);
-    const missing = {
-        weapon: Math.max(0, needs.weapon - inventory.weapon),
-        armor: Math.max(0, needs.armor - inventory.armor)
-    };
+    const missing = Object.fromEntries(Object.entries(needs)
+        .map(([key, need]) => [key, Math.max(0, need - Number(inventory[key] || 0))]));
     const priority = { normal: 0, crystal: 1, blessed: 2 };
     return (warehouseItems || []).map((item) => ({
         ...item,
         rule: EnchantRules.resolveScroll(item.selfId)
-    })).filter((item) => item.rule?.grade === 'D' && missing[item.rule.target] > 0 && Number(item.amount || 0) > 0)
+    })).filter((item) => scrollEnchants(item.rule) && missing[`${item.rule.grade}:${item.rule.target}`] > 0
+        && Number(item.amount || 0) > 0)
         .sort((left, right) => (
             Number(priority[left.rule.scrollType] ?? 9) - Number(priority[right.rule.scrollType] ?? 9)
             || Number(left.selfId) - Number(right.selfId)
         )).flatMap((item) => {
-            const amount = Math.min(missing[item.rule.target], Math.max(0, Number(item.amount || 0)));
-            missing[item.rule.target] -= amount;
+            const key = `${item.rule.grade}:${item.rule.target}`;
+            const amount = Math.min(missing[key], Math.max(0, Number(item.amount || 0)));
+            missing[key] -= amount;
             return amount > 0 ? [{ selfId: Number(item.selfId), amount, reason: 'enchant' }] : [];
         });
 }
@@ -146,10 +190,10 @@ function plan(rows = [], options = {}) {
         ...row,
         amount: Math.max(0, Number(row.amount || 0)),
         rule: EnchantRules.resolveScroll(row.selfId)
-    })).filter((row) => row.rule?.grade === 'D' && row.amount > 0);
+    })).filter((row) => scrollEnchants(row.rule) && row.amount > 0);
     const targets = rows.filter((row) => Number(row.equipped) === 1 && Number(row.amount) === 1)
         .map((row) => ({ row: { ...row }, item: adapterFor(row) }))
-        .filter(({ item }) => item.rank.toUpperCase() === 'D' && (item.isWeapon() || item.isArmor()));
+        .filter(({ item }) => enchantable(item.rank.toUpperCase(), item.kind));
     const operations = [];
 
     while (operations.length < limit) {
@@ -225,6 +269,28 @@ function consumedInventory(state = {}, operations = []) {
     return inventory;
 }
 
+// The weapon scrolls a bot the reserve sells them to (the spoiler line,
+// MerchantStoreConfigs enchantReserve) stocks for the board at a town visit, as
+// [{ selfId, amount, money }]: up to RESTOCK_HELD of each normal weapon scroll of a
+// grade its level wears or has passed (C 40, B 52, A 61) that it holds fewer of,
+// sold here (sold(selfId): the reserve admits it in this town) at price(selfId)
+// (0: none), as many as leave its money after the purchase at least
+// RESTOCK_WALLET_COSTS times the purchase's cost; money: that cost. Stock for
+// resale: the floor follows its own cost, not the worn weapon. Its sale listing
+// puts them on the board as a dropper's (ItemDisposition.saleCandidates). Our rule.
+const RESTOCK_HELD = 3;
+const RESTOCK_WALLET_COSTS = 2;
+function scrollRestock(state = {}, sold = () => false, price = () => 0) {
+    const adena = Math.max(0, Number(state.adena || 0));
+    return Object.entries(NORMAL_WEAPON_SCROLL).flatMap(([grade, selfId]) => {
+        const unit = Number(price(selfId) || 0);
+        if (!(unit > 0) || Number(state.level || 0) < GearGrade.levelForGrade(grade.toLowerCase()) || !sold(selfId)) return [];
+        const missing = RESTOCK_HELD - Math.max(0, Number(state.inventory?.[selfId]?.amount || 0));
+        const amount = Math.min(missing, Math.floor(adena / ((1 + RESTOCK_WALLET_COSTS) * unit)));
+        return amount > 0 ? [{ selfId, amount, money: amount * unit }] : [];
+    });
+}
+
 async function enchantSafe(state, options = {}) {
     if (!state || state.phase === 'hot' || !state.characterId || !hasPotential(state)) {
         return { state, enchanted: false, operations: [] };
@@ -262,10 +328,13 @@ async function enchantSafe(state, options = {}) {
 
 module.exports = {
     MAX_OPERATIONS,
+    ENCHANT_WALLET_WEAPONS,
     enchantSafe,
     hasPotential,
     inventoryScrolls,
     plan,
+    scrollPurchase,
+    scrollRestock,
     summary,
     targetNeeds,
     warehouseRequests

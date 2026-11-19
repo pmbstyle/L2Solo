@@ -3,6 +3,10 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
+// The reserve store sells a bot every C piece, and a funded purchase comes before
+// a craft (WishNetwork acquisitionOrder): closed here (with the store shots, one
+// switch), the C craft is the plan whose selection is tested.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 require('./helpers/isolatedSocialDatabase')('personal-craft-selection');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache');

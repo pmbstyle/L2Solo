@@ -60,8 +60,8 @@ function eligible(state) {
     return true;
 }
 
-function staticExits(recipe, template) {
-    return require('./WealthCraftDecision').staticExits(recipe, template);
+function staticExits(recipe, template, seller) {
+    return require('./WealthCraftDecision').staticExits(recipe, template, seller);
 }
 
 

@@ -8,8 +8,11 @@ const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const OfferQuery = require('./OfferQuery');
 // Loaded once: a require() per cheapestPurchase resolved the path on disk each call (~55% of it).
 const production = require('./ProductionPolicy');
+const FixedShotOffers = require('./FixedShotOffers');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const { isMainThread } = require('node:worker_threads');
+const NpcShopPriceScale = require('../../World/Generics/NpcShopPriceScale');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 const BUYBACK_RATIO = 0.9;
 let boardSource = null;
@@ -20,10 +23,11 @@ function basePrice(selfId) {
 
 // A configured store sells at the datapack price, x1 at every preset (the
 // maintainer's rule, econ decision 450: shop prices do not follow the server's
-// adena rate).
+// adena rate). The gear reserve (npcRate) sells at npcRate x the datapack price.
 function configuredPrice(line) {
     if (line.price !== undefined) return Number(line.price);
     const base = basePrice(line.selfId);
+    if (line.npcRate !== undefined) return Math.max(1, Math.round(base * line.npcRate));
     return Math.max(1, Math.round(base > 0 ? base * (line.priceRate ?? 1) : 1));
 }
 
@@ -50,41 +54,54 @@ function botPriceFor(store, line) {
 }
 
 // Configured supply is independent of the board: bots keep its original
-// price until 3.6. Index it once per loaded config and effective Adena rate.
+// price until 3.6. Index it once per loaded config, effective Adena rate and
+// progression multiplier (the NPC price scale of npcRate lines).
 let fixedConfig = null;
 let fixedRate = null;
+let fixedMultiplier = null;
 let sellers = new Map();
 let fixedMinimums = new Map();
 function refreshFixedOffers() {
     const config = invoke('GameServer/Bot/MerchantStoreConfigs');
     const rate = BotEconomyPricing.economyRate();
-    if (fixedConfig === config && fixedRate === rate) return;
+    const multiplier = ProgressionRates.profile().multiplier;
+    if (fixedConfig === config && fixedRate === rate && fixedMultiplier === multiplier) return;
     fixedConfig = config;
     fixedRate = rate;
+    fixedMultiplier = multiplier;
     sellers = new Map();
     fixedMinimums = new Map();
+    const openMinimums = new Map();
     for (const [name, store] of Object.entries(config)) {
         if (Number(store?.storeType) !== SELL) continue;
         for (const line of store.items || []) {
             if (!(Number(line.count ?? 1) > 0)) continue;
             const id = Number(line.selfId);
             const price = configuredPrice(line);
+            // A row sold to named classes only (a crafter's gear row) is no buyer's price
+            // where an open row sells the item; a scroll sold to the spoiler line only keeps its.
+            if (!line.buyerClasses) openMinimums.set(id, Math.min(openMinimums.get(id) ?? Infinity, price));
             fixedMinimums.set(id, Math.min(fixedMinimums.get(id) ?? Infinity, price));
             if (store.town) {
                 if (!sellers.has(id)) sellers.set(id, []);
-                sellers.get(id).push({ town: store.town, price, sourceName: name });
+                sellers.get(id).push({ town: store.town, price, sourceName: name, reserve: line.reserve === true,
+                    ...(line.buyerClasses ? { buyerClasses: line.buyerClasses, hourlyStock: Number(line.hourlyStock) } : {}),
+                    ...(line.valve ? { valve: line.valve } : {}),
+                    ...(line.boardMarkup ? { boardMarkup: Number(line.boardMarkup) } : {}) });
             }
         }
     }
+    for (const [id, price] of openMinimums) fixedMinimums.set(id, price);
 }
 
 // The cheapest repeatable supply of an item: NPC shops and the configured city
-// stores. forBot: only where a bot may buy it (ProductionPolicy: a city store
-// sells a bot only shots), the one price every bot purchase path reads.
+// stores. forBot: only where a bot may buy it (the configured reserve rows,
+// FixedShotOffers: a city store sells a bot its shots and its reserve gear
+// lines), the one price every bot purchase path reads.
 function cheapestPurchase(selfId, { forBot = false } = {}) {
     refreshFixedOffers();
     const id = Number(selfId);
-    const minimum = !forBot || production.allowsFixedShot(id) ? fixedMinimums.get(id) ?? Infinity : Infinity;
+    const minimum = forBot ? FixedShotOffers.lowestPrice(id) : fixedMinimums.get(id) ?? Infinity;
     return forBot && !production.allowsNpcShot(id) ? minimum : Math.min(minimum, npcPriceOf(id));
 }
 
@@ -147,8 +164,8 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
 }
 
 // An NPC shop's price of an item for a bot: the NPC price table's (the
-// configured city stores excluded: they sell a bot only shots,
-// ProductionPolicy.allowsFixedShot); a dearer town's tax quotes above it.
+// configured city stores excluded: their reserve is its own offer rows,
+// FixedShotOffers); a dearer town's tax quotes above it.
 // Infinity where no town NPC sells it to bots. The survival kit's price
 // (EconomyContext.survivalPrice).
 function botNpcListPrice(selfId) {
