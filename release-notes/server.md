@@ -1,3 +1,11 @@
+💰 **Bot economy**
+
+- Shop prices follow C4 at any server rate; the rate speeds up drops and Adena, not prices.
+- Dwarven crafters sell C-grade and higher gear and D-grade and higher soulshots and spiritshots in their private stores.
+- Market prices stay reasonable, and bots gear up step by step as their Adena allows.
+- Bots head out with enough potions and shots and return to town to sell loot and restock.
+- Bots choose hunting grounds that suit their level and gear.
+
 ⚔️ **Clan parties and raids**
 
 - Clan leaders can command several bot parties against the same raid boss. The parties share targets and loot distribution, and each party handles its own healing, buffs and resurrection.
