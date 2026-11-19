@@ -49,7 +49,10 @@ assert.strictEqual(Fixed.lowestPrice(weapon.selfId), valveRow.price, 'a price wi
 const craftLevel = invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(warsmith());
 assert.strictEqual(craftLevel, 6, 'a level-50 Warsmith has Create Item 6');
 const t0 = 10 * HOUR_MS;
-const first = Stock.restock(warsmith(), { offers, now: t0 });
+const shotIds = new Set(offers.filter(offer => offer.group === 'Shot').map(offer => offer.selfId));
+const gear = plan => plan.rows.filter(row => !shotIds.has(row.selfId));
+const first = { ...Stock.restock(warsmith(), { offers, now: t0 }) };
+first.rows = gear(first);
 // Giran sells every C, B and A reserve row: a Create Item 6 Warsmith stocks the B
 // weapons it crafts there (their types' top unlocked level), six an hour.
 const gradeOf = row => offers.find(offer => offer.selfId === row.selfId).grade;
@@ -62,9 +65,9 @@ assert(groups.every(group => group.startsWith('Weapon.')), 'weapons first');
 process.env.L2NODE_PROGRESSION_RATE = 'x1';
 invoke('GameServer/ProgressionRates').reset();
 const slow = Stock.restock(warsmith(), { offers, now: t0 });
-assert.strictEqual(slow.rows.length, 0, 'x1: nothing in the first hour');
+assert.strictEqual(gear(slow).length, 0, 'x1: no gear in the first hour');
 const later = Stock.restock(warsmith({ stats: { classId: 57, generatedCold: true, gnomeAllowance: slow.allowance } }), { offers, now: t0 + 9 * HOUR_MS });
-assert.strictEqual(later.rows.filter(row => gradeOf(row) === 'b').length, 1, 'x1: one B piece after nine hours');
+assert.strictEqual(gear(later).filter(row => gradeOf(row) === 'b').length, 1, 'x1: one B piece after nine hours');
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
 invoke('GameServer/ProgressionRates').reset();
 for (const row of first.rows) {
@@ -78,14 +81,14 @@ for (const row of first.rows) {
 // Held display pieces are not bought again.
 const held = new Set(first.rows.map(row => row.selfId));
 const again = Stock.restock(warsmith(), { offers, now: t0 + 5 * HOUR_MS, heldFor: id => held.has(id) ? 1 : 0 });
-assert(again.rows.every(row => !held.has(row.selfId)), 'a held display piece is not restocked');
+assert(gear(again).every(row => !held.has(row.selfId)), 'a held display piece is not restocked');
 
 // 3. The allowance: six pieces a grade a game hour, refilled at the read, two hours held.
 const demanded = Stock.restock(warsmith(), { offers, now: t0, demandFor: id => id === weapon.selfId ? 20 : 0 });
-assert.deepStrictEqual(demanded.rows.filter(row => gradeOf(row) === 'c').map(row => [row.selfId, row.amount]), [[weapon.selfId, 6]],
+assert.deepStrictEqual(gear(demanded).filter(row => gradeOf(row) === 'c').map(row => [row.selfId, row.amount]), [[weapon.selfId, 6]],
     'town demand first, six a grade an hour');
 const spent = warsmith({ stats: { classId: 57, gnomeAllowance: demanded.allowance } });
-assert.strictEqual(Stock.restock(spent, { offers, now: t0, demandFor: () => 20 }).rows.length, 0, 'the seventh piece in the hour is refused');
+assert.strictEqual(gear(Stock.restock(spent, { offers, now: t0, demandFor: () => 20 })).length, 0, 'the seventh piece in the hour is refused');
 assert.strictEqual(Stock.restock(spent, { offers, now: t0 + HOUR_MS / 2, demandFor: id => id === weapon.selfId ? 20 : 0 }).rows[0].amount, 3,
     'half an hour refills three');
 assert.strictEqual(Stock.restock(spent, { offers, now: t0 + 5 * HOUR_MS, demandFor: id => id === weapon.selfId ? 20 : 0 }).rows[0].amount, 12,
@@ -111,6 +114,46 @@ const listing = market.listings.find(entry => Number(entry.selfId) === weapon.se
 assert(listing.price >= weapon.price && listing.price <= weapon.ceiling,
     `ask ${listing.price} within [cost ${weapon.price}, valve ${weapon.ceiling}]`);
 assert(!market.npc.some(entry => Number(entry.selfId) === weapon.selfId), 'never sold to an NPC');
+
+// 5. Shots: a crafter in Giran (no D or B shot store there) stocks each graded shot its
+// Create Item level crafts at the cheapest store price a bot pays, its town's demand
+// plus the display units, never a grade above its craft level, at any drop rate.
+const D_SS = 1463, C_SS = 1464, B_SS = 1465, D_BSPS = 3948;
+const shotRows = plan => new Map(plan.rows.filter(row => shotIds.has(row.selfId)).map(row => [row.selfId, row]));
+const journeyman = warsmith({ level: 40 });
+assert.strictEqual(invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(journeyman), 4, 'a level-40 Warsmith has Create Item 4');
+const stockedShots = shotRows(Stock.restock(journeyman, { offers, now: t0, demandFor: id => id === D_SS ? 500 : 0 }));
+assert.deepStrictEqual([...stockedShots.keys()].sort((a, b) => a - b), [1463, 1464, 2510, 2511, 3948, 3949],
+    'Create Item 4: the D and C soulshots, spiritshots and blessed spiritshots, no B');
+assert(Fixed.offers(B_SS).length > 0 && !stockedShots.has(B_SS), 'a B shot a store sells is still not stocked below its recipe level');
+assert.strictEqual(stockedShots.get(D_SS).amount, 500 + Stock.SHOT_DISPLAY_UNITS, 'the town demand plus the display units');
+assert.strictEqual(stockedShots.get(C_SS).amount, Stock.SHOT_DISPLAY_UNITS, 'the display units without demand');
+assert.strictEqual(shotRows(Stock.restock(journeyman, { offers, now: t0, demandFor: id => id === D_SS ? 1000000 : 0 })).get(D_SS).amount,
+    Stock.SHOT_STOCK_UNITS, 'a store town\'s whole demand is not one crafter\'s lot: the stock is capped');
+assert.deepStrictEqual([stockedShots.get(D_SS).unit, stockedShots.get(D_SS).ceiling], [10, 15],
+    'a D soulshot at the store price a bot pays in Gludin, Gludio or Dion, ceiling half again');
+assert.strictEqual(stockedShots.get(D_BSPS).unit, invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(D_BSPS, { forBot: true }));
+assert(!Fixed.offers(D_SS).some(row => row.town === 'Giran'), 'Giran has no D shot store row');
+assert(shotRows(Stock.restock(warsmith(), { offers, now: t0 })).has(B_SS), 'Create Item 6 stocks the B shots');
+// Held units count against the target.
+assert.strictEqual(shotRows(Stock.restock(journeyman, { offers, now: t0, heldFor: id => id === C_SS ? 1500 : 0 })).get(C_SS).amount, 500,
+    'a crafter holding 1500 C soulshots tops up to the display units');
+// Neither the gear allowance nor the drop rate paces shots.
+process.env.L2NODE_PROGRESSION_RATE = 'x1';
+invoke('GameServer/ProgressionRates').reset();
+assert.strictEqual(shotRows(Stock.restock(journeyman, { offers, now: t0 })).get(D_SS).amount, Stock.SHOT_DISPLAY_UNITS, 'x1: the same shot units');
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
+invoke('GameServer/ProgressionRates').reset();
+// Owed: shot units are not gear pieces; the owed adena bounds them.
+const owesGear = warsmith({ level: 40, stats: { classId: 57, gnomeStock: { 1: { cost: 1, ceiling: 2, owed: Stock.OWED_PIECES } } } });
+const owedPlan = Stock.restock(owesGear, { offers, now: t0 });
+assert(shotRows(owedPlan).size === 6 && gear(owedPlan).length === 0, 'at the gear owed limit it still stocks shots, no gear');
+const owesShots = warsmith({ stats: { classId: 57, gnomeStock: { [D_SS]: { cost: 10, ceiling: 15, owed: 100000 } } } });
+assert.strictEqual(Stock.owed(owesShots).pieces, 0, '100000 owed shots are no gear piece');
+assert(gear(Stock.restock(owesShots, { offers, now: t0 })).length > 0, 'owed shots leave the gear restock open');
+const nearMoney = warsmith({ level: 40, stats: { classId: 57, gnomeStock: { 1: { cost: Stock.OWED_MONEY - 1000, ceiling: 1, owed: 1 } } } });
+assert.deepStrictEqual([...shotRows(Stock.restock(nearMoney, { offers, now: t0 })).values()].map(row => [row.selfId, row.amount]), [[D_SS, 100]],
+    '1000 adena below the owed money: 100 D soulshots, then nothing');
 
 console.log('crafter stock: ok');
 process.exit(0);

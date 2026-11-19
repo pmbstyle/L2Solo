@@ -462,12 +462,13 @@ function endVisit(current) {
         townVisit: current.stats?.townVisit ? { ...current.stats.townVisit, completed: true } : null } };
 }
 
-// A crafter's board stock of C/B/A gear (CrafterStock) at a town visit. First it pays
+// A crafter's board stock of C/B/A gear and graded shots (CrafterStock) at a town visit. First it pays
 // the store the cost of the consigned units it no longer holds (sold on the board, in a
 // meeting or while hot), each payment journalled as the fixed_wts purchase it stands
-// for; then it restocks from the reserve rows sold to its line on consignment (no
-// adena; stats.gnomeStock owes the units; its listing sells them between their cost
-// and the valve), each grade within its hourly allowance. Returns the state.
+// for; then it restocks on consignment (no adena; stats.gnomeStock owes the units; its
+// listing sells them between their cost and their ceiling) from the reserve rows sold
+// to its line, each grade within its hourly allowance, and the shots it crafts at the
+// cheapest store price. Returns the state.
 async function crafterStock(state) {
     const Stock = require('./CrafterStock');
     let current = state;
@@ -490,7 +491,10 @@ async function crafterStock(state) {
             break;
         }
         current = require('./NpcPurchaseBasket').acceptResult(current, result);
-        const rows = require('./FixedShotOffers').offers(pay.selfId).filter(entry => Array.isArray(entry.buyerClasses));
+        // The store row paid: the crafter row of its town, else any store row of the item
+        // (a shot is stocked in every town).
+        const stores = require('./FixedShotOffers').offers(pay.selfId), crafterRows = stores.filter(entry => Array.isArray(entry.buyerClasses));
+        const rows = crafterRows.length ? crafterRows : stores;
         observePurchase({ ...(rows.find(entry => entry.town === current.currentRegion) || rows[0]),
             selfId: pay.selfId, price: pay.cost, sellerKind: 'fixed' }, pay.units, current);
     }
@@ -611,8 +615,11 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
     if (!seller) {
         // Configured town merchants retain their native singleton owner;
         // they cannot be attributed to a physical NPC's shop list.
-        const configured = () => MarketOpportunity.fixedStoreOffers(selfId, state).find(offer =>
-            offer.town === state.currentRegion && Number(offer.price) === unitPrice);
+        // A consigned restock executes against the crafter's own offer (a shot has no
+        // store row in most towns).
+        const configured = () => consigned ? require('./CrafterStock').consignOffer(state, selfId, unitPrice)
+            : MarketOpportunity.fixedStoreOffers(selfId, state).find(offer =>
+                offer.town === state.currentRegion && Number(offer.price) === unitPrice);
         const offer = configured();
         if (!offer) return null;
         // A valve row sells the bot what is left of its pieces of the grade, counted

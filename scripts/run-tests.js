@@ -559,6 +559,7 @@ const tests = [
     'tests/test_cold_safe_enchant.js',
     'tests/test_crafter_consignment.js',
     'tests/test_crafter_stock.js',
+    'tests/test_crafter_shot_stock.js',
     'tests/test_gnome_material_bids.js',
     'tests/test_valve_gear.js',
     'tests/test_bot_static_buyer_sale.js',

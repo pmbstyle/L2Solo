@@ -20,15 +20,29 @@
 //   visit (settlement), as far as its adena reaches (the rest stays owed). Its wallet
 //   no longer limits its range (run 6eb3afb37: no B/A weapon on the board, a B weapon
 //   cost a crafter 5.2-7.9M against 4M wallets).
-// - Owed limit (our choice): at most OWED_PIECES units and OWED_MONEY adena owed per
-//   crafter (one crafter never holds an unbounded share of the store); a restock row
+// - Owed limit (our choice): at most OWED_PIECES gear units and OWED_MONEY adena owed
+//   per crafter (one crafter never holds an unbounded share of the store); a restock row
 //   past it is cut (hit: a crafter at the limit stocks nothing until it pays).
+// Shots (C4: dwarves craft soulshots and spiritshots and sell them in private stores;
+// the consignment stands for that craft, our choice): the graded soulshots,
+// spiritshots and blessed spiritshots whose recipe level its Create Item level reaches
+// (no-grade shots: the NPC sells them), in every town (no store row needed there), on
+// the same consignment at the cheapest store price a bot pays
+// (StaticMerchantPricing.cheapestPurchase), listed up to SHOT_ASK_RATE x that price
+// (our choice: the premium for not walking to a store town). Units: its town's demand
+// plus SHOT_DISPLAY_UNITS of each (our choice: about an hour of a town's use), at most
+// SHOT_STOCK_UNITS of each (our choice: a town's demand counts every hunter's hour, and
+// each crafter there stocks it; ten hunters' hour is a private store's lot), one stack
+// one listing line; a bot fires its shots each fight at any drop rate, so neither the
+// hourly allowance nor the rate scales them, and OWED_MONEY alone bounds them.
 // Held = its bag's unequipped units plus its own board sell lines (listed items leave the bag).
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 
 const CRAFTER_CLASSES = Object.freeze([56, 57]);
 const GEAR_GRADES = new Set(['c', 'b', 'a']);
 const PIECES_PER_HOUR = 6, STOCK_HOURS = 2, HOUR_MS = 3600000, OWED_PIECES = 12, OWED_MONEY = 60000000;
+const SHOT_GROUP = 'Shot', SHOT_DISPLAY_UNITS = 2000, SHOT_STOCK_UNITS = 20000, SHOT_ASK_RATE = 1.5;
+const isShot = selfId => require('./ProductionPolicy').GRADED_SHOTS.has(Number(selfId));
 
 function isCrafter(state) {
     return CRAFTER_CLASSES.includes(Number(invoke('GameServer/Bot/AI/BotRoles').classIdOf(state)));
@@ -45,13 +59,16 @@ function allowance(state, grade, now) {
     return { pieces: Math.min(Math.max(1, pace * STOCK_HOURS), Number(held.pieces || 0) + pace * hours), at: now };
 }
 
-// The crafter rows of the reserve in the crafter's town, as plain offers:
-// { selfId, price, ceiling, recipeLevel, grade, group }.
+// The crafter's offers in its town, as plain offers { selfId, price, ceiling,
+// recipeLevel, grade, group }: the reserve's crafter rows there (ceiling: the price
+// without a buyer, the valve row) and the graded shots (group SHOT_GROUP, no grade
+// allowance; price: the cheapest store price a bot pays, ceiling SHOT_ASK_RATE x it;
+// none while the store sells no such shot to bots).
 function townOffers(state) {
     const Fixed = require('./FixedShotOffers');
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
     const items = invoke('GameServer/DataCache').items;
-    return Fixed.offers(null, state).filter(row => Array.isArray(row.buyerClasses) && row.town === state.currentRegion)
+    const gear = Fixed.offers(null, state).filter(row => Array.isArray(row.buyerClasses) && row.town === state.currentRegion)
         .flatMap(row => {
             const found = ItemTemplateIndex.find(items, row.selfId);
             const grade = String(found?.etc?.rank || '').toLowerCase(), kind = String(found?.template?.kind || '');
@@ -61,25 +78,41 @@ function townOffers(state) {
                 recipeLevel: Number(Recipes.resolveByProductId(row.selfId)?.level || 0), grade,
                 group: kind.startsWith('Weapon.') ? kind : `Armor:${Number(found?.etc?.slot || 0)}` }];
         });
+    const Pricing = require('./StaticMerchantPricing');
+    const shots = [...require('./ProductionPolicy').GRADED_SHOTS].flatMap(id => {
+        const price = Pricing.cheapestPurchase(id, { forBot: true });
+        if (!(Number.isFinite(price) && price > 0)) return [];
+        return [{ selfId: id, price, ceiling: Math.floor(price * SHOT_ASK_RATE),
+            recipeLevel: Number(Recipes.resolveByProductId(id)?.level || 0), group: SHOT_GROUP }];
+    });
+    return [...gear, ...shots];
 }
 
-// The units and adena a crafter owes the store: { pieces, money }.
+// The crafter's offer a consigned purchase of `selfId` at `unitPrice` executes
+// against while it still stands in its town, else null (the quote changed).
+function consignOffer(state, selfId, unitPrice) {
+    return townOffers(state).find(offer => offer.selfId === Number(selfId) && offer.price === Number(unitPrice)) || null;
+}
+
+// The gear units and adena a crafter owes the store: { pieces, money } (shot units
+// count in the money only).
 function owed(state) {
     let pieces = 0, money = 0;
-    for (const row of Object.values(state?.stats?.gnomeStock || {})) {
+    for (const [id, row] of Object.entries(state?.stats?.gnomeStock || {})) {
         const units = Math.max(0, Number(row?.owed || 0));
-        pieces += units;
+        if (!isShot(id)) pieces += units;
         money += units * Number(row.cost || 0);
     }
     return { pieces, money };
 }
 
-// The stats a consigned purchase of `units` from a crafter row (`offer`: its selfId and
-// price) writes with it: its gnomeStock row with the units added to what it owes.
+// The stats a consigned purchase of `units` from a crafter offer (consignOffer's: its
+// selfId, price and ceiling) writes with it: its gnomeStock row with the units added
+// to what it owes.
 function consignPatch(state, offer, units) {
-    const id = Number(offer.selfId), ceiling = require('./FixedShotOffers').lowestPrice(id);
+    const id = Number(offer.selfId);
     const owedUnits = Math.max(0, Number(state?.stats?.gnomeStock?.[id]?.owed || 0));
-    return { gnomeStock: { [id]: { cost: Number(offer.price), ceiling: Number.isFinite(ceiling) ? ceiling : Number(offer.price),
+    return { gnomeStock: { [id]: { cost: Number(offer.price), ceiling: Number(offer.ceiling) || Number(offer.price),
         owed: owedUnits + Number(units) } } };
 }
 
@@ -100,13 +133,15 @@ function settlement(state, heldFor = () => 0) {
     return rows;
 }
 
-// The purchases of one visit: [{ selfId, amount, money, unit, ceiling }] and the
-// allowance after them. offers: townOffers'; demandFor(selfId): units its town wants;
-// heldFor(selfId): units it holds (bag and own sell lines).
+// The purchases of one visit: [{ selfId, amount, money, unit, ceiling, grade }] (a shot
+// row has no grade) and the gear allowance after them. offers: townOffers';
+// demandFor(selfId): units its town wants; heldFor(selfId): units it holds (bag and own
+// sell lines).
 function restock(state, { offers = [], demandFor = () => 0, heldFor = () => 0, now = Date.now() } = {}) {
     if (!isCrafter(state)) return { rows: [], allowance: null };
     const craftLevel = Number(invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(state) || 0);
-    const unlocked = offers.filter(offer => offer.recipeLevel > 0 && offer.recipeLevel <= craftLevel && offer.price > 0);
+    const reached = offers.filter(offer => offer.recipeLevel > 0 && offer.recipeLevel <= craftLevel && offer.price > 0);
+    const unlocked = reached.filter(offer => offer.group !== SHOT_GROUP);
     const targets = [];
     const wanted = new Set();
     for (const offer of unlocked) {
@@ -126,18 +161,23 @@ function restock(state, { offers = [], demandFor = () => 0, heldFor = () => 0, n
     // Weapons first (most of the board's gear demand), then armour, by item id.
     const armour = offer => Number(offer.group.startsWith('Armor:'));
     for (const offer of [...top.values()].sort((a, b) => armour(a) - armour(b) || a.selfId - b.selfId)) targets.push({ offer, units: 1 });
+    // Shots after the gear, by item id: its town's demand plus the display units.
+    for (const offer of reached.filter(entry => entry.group === SHOT_GROUP).sort((a, b) => a.selfId - b.selfId))
+        targets.push({ offer, units: Math.min(SHOT_STOCK_UNITS, Math.max(0, Math.floor(Number(demandFor(offer.selfId) || 0))) + SHOT_DISPLAY_UNITS) });
     const allowances = {};
     let { pieces, money } = owed(state);
     const rows = [];
     for (const { offer, units } of targets) {
-        const pool = allowances[offer.grade] ||= allowance(state, offer.grade, now);
-        const amount = Math.min(units - Math.max(0, Number(heldFor(offer.selfId) || 0)), Math.floor(pool.pieces),
-            OWED_PIECES - pieces, Math.floor((OWED_MONEY - money) / offer.price));
+        const shot = offer.group === SHOT_GROUP;
+        const pool = shot ? null : allowances[offer.grade] ||= allowance(state, offer.grade, now);
+        const amount = Math.min(units - Math.max(0, Number(heldFor(offer.selfId) || 0)), shot ? Infinity : Math.floor(pool.pieces),
+            shot ? Infinity : OWED_PIECES - pieces, Math.floor((OWED_MONEY - money) / offer.price));
         if (!(amount > 0)) continue;
         rows.push({ selfId: offer.selfId, amount, money: amount * offer.price, unit: offer.price, ceiling: offer.ceiling, grade: offer.grade });
+        money += amount * offer.price;
+        if (shot) continue;
         pool.pieces -= amount;
         pieces += amount;
-        money += amount * offer.price;
     }
     return { rows, allowance: { ...(state.stats?.gnomeAllowance || {}), ...allowances } };
 }
@@ -197,5 +237,5 @@ function materialBids(state) {
     });
 }
 
-module.exports = { isCrafter, allowance, townOffers, restock, owed, consignPatch, settlement, materialBids, CRAFTER_CLASSES, PIECES_PER_HOUR, STOCK_HOURS,
-    OWED_PIECES, OWED_MONEY, MATERIAL_BID_RATE, MATERIAL_BID_UNITS };
+module.exports = { isCrafter, allowance, townOffers, consignOffer, restock, owed, consignPatch, settlement, materialBids, CRAFTER_CLASSES, PIECES_PER_HOUR, STOCK_HOURS,
+    OWED_PIECES, OWED_MONEY, SHOT_DISPLAY_UNITS, SHOT_STOCK_UNITS, SHOT_ASK_RATE, MATERIAL_BID_RATE, MATERIAL_BID_UNITS };

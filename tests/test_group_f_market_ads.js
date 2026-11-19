@@ -90,8 +90,12 @@ async function run() {
         const kit = require('./fixtures/profitable_stock_state').kitFor(0, level);
         const missing = kit.entries.find(item => Number(item.slot) === 6);
         assert(missing, 'the native kit has a helmet slot');
+        // A new level's kit replaces the old one, its shots too: the stock wishes
+        // below refill the shots this kit buys (a level-10 body cannot carry the
+        // level-30 D shot stock without overweight).
         for (const item of await Database.fetchItems(id)) {
-            if (item.equipped && /^(Weapon|Armor)\./.test(DataCache.items.find(row => Number(row.selfId) === Number(item.selfId))?.template?.kind)) {
+            const kind = DataCache.items.find(row => Number(row.selfId) === Number(item.selfId))?.template?.kind;
+            if (item.equipped && /^(Weapon|Armor)\./.test(kind) || kind === 'Other.Shot') {
                 await Database.deleteItem(id, item.id);
             }
         }

@@ -85,10 +85,12 @@ const Cold = invoke('GameServer/Bot/Economy/ColdMarketService');
     assert.deepStrictEqual(trades.map(trade => [Number(trade.selfId), Number(trade.quantity), Number(trade.unitPrice)]),
         [[weapon.selfId, 1, weapon.price]], 'one fixed_wts purchase journalled at the cost, at the payment');
 
-    // 4. The owed limit: a crafter owing OWED_PIECES units stocks nothing more.
+    // 4. The owed limit: a crafter owing OWED_PIECES units stocks no more gear.
     const full = { ...state, stats: { ...state.stats, gnomeAllowance: undefined,
         gnomeStock: { [weapon.selfId]: { cost: 1, ceiling: 2, owed: Stock.OWED_PIECES } } } };
-    assert.strictEqual(Stock.restock(full, { offers, now: Date.now(), demandFor: () => 5 }).rows.length, 0, 'at the owed limit nothing is stocked');
+    const gearRows = Stock.restock(full, { offers, now: Date.now(), demandFor: () => 5 }).rows
+        .filter(row => offers.find(offer => offer.selfId === row.selfId)?.group !== 'Shot');
+    assert.strictEqual(gearRows.length, 0, 'at the owed limit no gear is stocked');
 
     console.log('crafter consignment: ok');
 })().catch((error) => {

@@ -584,12 +584,12 @@ function kitBag(state, known = {}) {
 // bot's hour, no build). A new potion (a level crossing) keeps the survival
 // drinks per hour and drops the rest bottles judged for the old one until the
 // next build. Unchanged items keep the rates object (its scroll memo).
-function ratesNow(rates, state, bag, price) {
+function ratesNow(rates, state, bag) {
     if (!rates || bag.shotId === rates.shotId && bag.potionId === rates.potionId) return rates;
     let now = rates;
     if (bag.shotId !== rates.shotId) {
         const policy = invoke('GameServer/Inventory/ShotStock').usePolicy(state, { plan: bag.plan,
-            bestTable: { shots: rates.shotUse }, hourAdena: bag.hour, unitPrice: price(bag.shotId) });
+            bestTable: { shots: rates.shotUse }, hourAdena: bag.hour });
         now = { ...now, shotId: bag.shotId, shotsPay: policy.usePerHour > 0, shotsCanRestock: policy.purchaseUsePerHour > 0,
             shotBenefit: policy.rawUse > 0 ? policy.benefit / policy.rawUse : 0, policy: undefined };
     }
@@ -736,7 +736,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const potion = HealingPotionStock.purchasePotionFor(state), potionItemId = potion.selfId;
     const hourAdena = Hunt.huntHour(hunt, state);
     const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable,
-        hourAdena, unitPrice: price(shotItemId) });
+        hourAdena });
     const shotBenefit = shotPolicy.benefit;
     const beginnerCurrent = ShotStock.beginnerAmount(state, shotPlan);
     const shotUse = positive(state.inventory?.[shotItemId]?.amount) + beginnerCurrent > 0
@@ -833,7 +833,7 @@ function bagDecisions(state, base, deps, now) {
 // and wallet (kitReader).
 function foundationFromPlan(state, plan, deps, price) {
     const bag = kitBag(state, { hour: plan.hourAdena });
-    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(plan.rates, state, bag, price), bag, Funding.budget(state), price,
+    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
         () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     const scrollHours = () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId, false);
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, refillReserve: reserve,
@@ -1541,7 +1541,7 @@ function view(state, plan, deps, built = {}) {
     let kit = built.kit;
     if (!kit) {
         const bag = kitBag(state, { hour: plan.hourAdena });
-        const read = KitRule.kitReader(ratesNow(plan.rates, state, bag, price), bag, Funding.budget(state), price,
+        const read = KitRule.kitReader(ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
             () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
         kit = { stock: read.stock, kitCost: read.kitCost, refillReserve: read.reserve };
     }
@@ -1671,7 +1671,7 @@ function keptKit(state = {}, deps = {}, options = {}) {
     const price = !quote ? own : id => { const local = Number(quote(id)); return local > 0 ? local : own(id); };
     const bag = kitBag(state);
     const rates = options.rates !== undefined ? options.rates : ratesOf(state);
-    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(rates, state, bag, price), bag, Funding.budget(state), price);
+    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(rates, state, bag), bag, Funding.budget(state), price);
     return { stock, kitCost, refillReserve: reserve, price };
 }
 // A restock's stock row of a kind: its amounts from the visit's kit (kit: at the
@@ -1687,7 +1687,7 @@ function visitStock(context, kit, kind) {
 const NO_PRICE = () => 0;
 function keptTargets(state = {}) {
     const bag = kitBag(state);
-    const { stock } = KitRule.kitReader(ratesNow(ratesOf(state), state, bag, NO_PRICE), bag, Infinity, NO_PRICE);
+    const { stock } = KitRule.kitReader(ratesNow(ratesOf(state), state, bag), bag, Infinity, NO_PRICE);
     return { potions: stock('potions'), shots: stock('shots') };
 }
 // Whether the sale keeps the rated kit (keptTargets reads its rates, not the

@@ -9,7 +9,8 @@ const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
 const Cold = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Profiles = invoke('GameServer/Bot/Population/ColdCombatProfile');
-const saved = { value: Table.value, best: Table.best, income: Hunt.huntIncome, prior: Belief.prior, npc: Profiles.npcForSpot };
+const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+const saved = { value: Table.value, best: Table.best, income: Hunt.huntIncome, prior: Belief.prior, npc: Profiles.npcForSpot, buy: Pricing.botBuyPrice };
 const state = { characterId: 77, name: 'Shot policy', phase: 'cold', activity: 'hunting', level: 7, spotId: 'policy',
     adena: 100000, inventory: { 2369: { selfId: 2369, amount: 1, equipped: true, slot: 7 },
         1835: { selfId: 1835, amount: 1000 }, 736: { selfId: 736, amount: 1 } }, stats: { classId: 31, role: 'dps' },
@@ -18,7 +19,10 @@ let benefit = .05;
 Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1000 * (1-benefit), shots: shots ? 100 : 0, potions: 0, deaths: 0 });
 Table.best = (role, level, shots) => Table.value('policy', role, level, shots);
 Hunt.huntIncome = () => ({ perHour: 10000, expPerHour: 1000, source: 'own', spotId: 'policy' });
-Belief.prior = id => ({ mu: Math.log(Number(id) === 1835 ? 14 : 1), K: 1 });
+// The shot a bot buys costs 14 (its cheapest store or ask); the bot's belief reads
+// it cheap, so a purchase judged at the belief would buy what does not pay.
+Pricing.botBuyPrice = id => Number(id) === 1835 ? 14 : saved.buy(id);
+Belief.prior = () => ({ mu: 0, K: 1 });
 const deps = { board: { first: () => null }, spots: [], workshops: null, knownRecipes: [],
     npcOffersFor: () => [], timestamp: 1800000000000, persona: { traits: {}, understanding: 1 } };
 try {
@@ -120,14 +124,18 @@ try {
     assert.equal(Shots.keptAmounts(state, { stock: () => stock })[1835], 1000,
         'temporarily disabling shot use keeps compatible stock for a future hunt');
     const cheap = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        hourAdena: 10000, unitPrice: .1 });
+        hourAdena: 10000 });
     assert.equal(cheap.purchaseUsePerHour, 0, 'a consumption wish cannot buy shots it would immediately reject for use');
-    // The hour is net of the shots at the shop price (7 x 100): priced once,
-    // 14 x 100 against 10000 + 700, not against 10000.
-    benefit = .135;
+    // The hour is net of the shots at the shop price (14 x 100): priced once,
+    // 1400 against 10000 + 1400 (0.1228), not against 10000 (0.14). The
+    // purchase is judged at that shop price, whatever the bot believes it is worth.
+    benefit = .13;
     const once = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        hourAdena: 10000, unitPrice: 14 });
-    assert.equal(once.purchaseUsePerHour, 100, 'the shot cost is not subtracted twice');
+        hourAdena: 10000 });
+    assert.equal(once.purchaseUsePerHour, 100, 'the shot cost is not subtracted twice and the purchase pays at the shop price');
+    benefit = .12;
+    assert.equal(Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
+        hourAdena: 10000 }).purchaseUsePerHour, 0, 'shots whose farm does not pay their shop price are not bought');
     benefit = .01;
     Shots.enableAutoShot(actor, { stock });
     assert.equal(actor.autoSoulshots.size, 0, 'a denied use clears a previously enabled compatible shot');
@@ -213,5 +221,5 @@ try {
     console.log('PASS owned use / expensive replacement / retention / hot enable / cold solo-party choice');
 } finally {
     Table.value = saved.value; Table.best = saved.best; Hunt.huntIncome = saved.income;
-    Belief.prior = saved.prior; Profiles.npcForSpot = saved.npc;
+    Belief.prior = saved.prior; Profiles.npcForSpot = saved.npc; Pricing.botBuyPrice = saved.buy;
 }
