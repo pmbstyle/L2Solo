@@ -155,6 +155,7 @@ try {
         // 3600 / kph - fight - rest) is never clamped and the kills an hour a
         // reader charges are the cell's own, within the rows' 4-digit rounding.
         const { ROUNDING } = require('../scripts/generate-spot-table');
+        const Invariants = require('../scripts/economy-model/fight/invariants');
         const Table = invoke('GameServer/Bot/AI/SpotValueTable');
         const ProgressionRates = invoke('GameServer/ProgressionRates');
         const built = JSON.parse(fs.readFileSync(path.join(root, 'data', 'Bots', 'spot-table.json'), 'utf8'));
@@ -172,7 +173,7 @@ try {
                 const cell = Table.cycle(spotId, role, level, shots === 2 ? 2 : shots === 1);
                 if (!cell) continue;
                 read += 1;
-                if (cell.fight + cell.rest > 3600 / cell.kph * (1 + ROUNDING)) over.push(`${spotId} ${role} level ${level} shots ${shots}: ${cell.fight + cell.rest} s over ${3600 / cell.kph} s`);
+                if (Invariants.overHour(cell, ROUNDING)) over.push(`${spotId} ${role} level ${level} shots ${shots}: ${cell.fight + cell.rest} s over ${3600 / cell.kph} s`);
             }
         }));
         console.log(`the reader read ${read} cells of the built table, ${over.length} over their hour per kill`);

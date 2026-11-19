@@ -10,6 +10,9 @@ name: Tables
 # tables/pick/<name>/<spot ids>[/<class lines>] (ids by comma, ':' in an id
 # written '@'; pick-full: the table's hours, pick: probe hours) measures only
 # those spots' rows and curves: the artifact spot-pick, never a spot table.
+# tables/model-hunt/<name> builds the economy model's own hunt table
+# (scripts/economy-model/hunt-table.js, levels 1-19): the artifact
+# model-hunt-table. Not part of all.
 
 on:
   push:
@@ -32,6 +35,7 @@ jobs:
       args: ${{ steps.plan.outputs.args }}
       merge: ${{ steps.plan.outputs.merge }}
       pick: ${{ steps.plan.outputs.pick }}
+      model: ${{ steps.plan.outputs.model }}
     steps:
       - id: plan
         env:
@@ -54,7 +58,8 @@ jobs:
                    [ "$what" = pick ] && args="$args --hours=0.25 --curve-hours=0.25"
                    echo "spot=true" >> $GITHUB_OUTPUT; echo "pick=true" >> $GITHUB_OUTPUT
                    echo "args=$args" >> $GITHUB_OUTPUT; echo "merge=--out=pick/spot-pick.json" >> $GITHUB_OUTPUT ;;
-            *) echo "unknown tables '$what' (all, spot, hunt, ways, probe, pick, pick-full)"; exit 1 ;;
+            model-hunt) echo "model=true" >> $GITHUB_OUTPUT ;;
+            *) echo "unknown tables '$what' (all, spot, hunt, ways, probe, pick, pick-full, model-hunt)"; exit 1 ;;
           esac
 
   spot-rows:
@@ -189,6 +194,106 @@ jobs:
         with:
           name: hunt-tables
           path: data/Bots/hunt/
+          retention-days: 14
+
+  # The economy model's own hunt table (scripts/economy-model/hunt-table.js):
+  # two rounds of hunts, the species and then the whole-spot check that reads
+  # the species cells, each split in 20 shares. A stage's parts come back as
+  # artifacts and the next stage resumes from them.
+  model-species:
+    name: Model hunts, species (${{ matrix.shard }}/20)
+    needs: plan
+    if: needs.plan.outputs.model == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
+      - run: node scripts/economy-model/hunt-table.js --levels 1-19 --children 4 --shard ${{ matrix.shard }}/20 --out model/hunt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-species-${{ matrix.shard }}
+          path: model/hunt.json.parts
+          retention-days: 3
+
+  model-check:
+    name: Model hunts, check (${{ matrix.shard }}/20)
+    needs: [plan, model-species]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: model-species-*
+          path: model/hunt.json.parts
+          merge-multiple: true
+      - run: node scripts/economy-model/hunt-table.js --levels 1-19 --children 4 --shard ${{ matrix.shard }}/20 --out model/hunt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-check-${{ matrix.shard }}
+          path: |
+            model/hunt.json.parts/*-check-s${{ matrix.shard }}-*.jsonl
+            model/hunt.json.parts/meta.json
+          if-no-files-found: error
+          retention-days: 3
+
+  model-table:
+    name: Model hunt table
+    needs: [plan, model-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: model-species-*
+          path: model/hunt.json.parts
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: model-check-*
+          path: model/hunt.json.parts
+          merge-multiple: true
+      - run: node scripts/economy-model/hunt-table.js --levels 1-19 --children 4 --join --out model/hunt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-hunt-table
+          path: model/hunt.json
           retention-days: 14
 
   # ~450 spots within 25 km of their town, one A* each (p50 ~0.4M nodes, cap
