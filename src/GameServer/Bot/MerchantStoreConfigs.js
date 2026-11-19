@@ -1,15 +1,15 @@
 const BUY_CAP = 999999;
 
 const s = (selfId, priceRate, count) => ({ selfId, priceRate, count });
-const b = (selfId, priceRate, count = BUY_CAP) => ({ selfId, priceRate, count });
+// A buy line names only the item and the count: every buy line pays the one
+// buy line price (StaticMerchantPricing.buyLinePrice).
+const b = (selfId, count = BUY_CAP) => ({ selfId, count });
 // Resource sellers carry raw and refined stock; permanent resource buyers
 // take raw materials only. Crafted intermediates need actual market demand,
 // otherwise their guaranteed payouts displace shot production.
 // The active Adena rate is applied by TradeService.
 const RESOURCE_SELL_RATE = 1.20;
-const RESOURCE_BUY_RATE = 0.80;
 const rs = (selfId, count) => s(selfId, RESOURCE_SELL_RATE, count);
-const rb = (selfId, count = BUY_CAP) => b(selfId, RESOURCE_BUY_RATE, count);
 
 const SHOT_IDS_BY_GRADE = [
     [1835, 2509, 3947], // No Grade: Soulshot, Spiritshot, Blessed Spiritshot
@@ -52,9 +52,9 @@ module.exports = {
         storeType: 3,
         locX: -84120, locY: 244760, locZ: -3730,
         items: [
-            rb(1864), rb(1865), rb(1866), rb(1867),
-            rb(1868), rb(1869), rb(1870), rb(1871),
-            rb(1872), b(17, 0.55)
+            b(1864), b(1865), b(1866), b(1867),
+            b(1868), b(1869), b(1870), b(1871),
+            b(1872), b(17)
         ]
     },
     "Addicted": {
@@ -63,9 +63,9 @@ module.exports = {
         storeType: 3,
         locX: -84062, locY: 244688, locZ: -3730,
         items: [
-            b(1121, 0.62), b(1119, 0.62), b(1122, 0.62), b(1129, 0.62),
-            b(112, 0.66), b(116, 0.66), b(118, 0.66), b(19, 0.64),
-            b(42, 0.64), b(2006, 0.55), b(2007, 0.55), b(1788, 0.64)
+            b(1121), b(1119), b(1122), b(1129),
+            b(112), b(116), b(118), b(19),
+            b(42), b(2006), b(2007), b(1788)
         ]
     },
 
@@ -98,8 +98,8 @@ module.exports = {
         storeType: 3,
         locX: -14590, locY: 123360, locZ: -3117,
         items: [
-            rb(1867), rb(1868), rb(1869), rb(1870),
-            rb(1871), rb(1872), rb(1873), b(1341, 0.55)
+            b(1867), b(1868), b(1869), b(1870),
+            b(1871), b(1872), b(1873), b(1341)
         ]
     },
     "FriendShip": {
@@ -108,9 +108,9 @@ module.exports = {
         storeType: 3,
         locX: -14370, locY: 123360, locZ: -3117,
         items: [
-            b(1921, 0.55), b(1922, 0.55), b(1923, 0.55), b(1924, 0.70),
-            b(1925, 0.70), b(2011, 0.68), b(2012, 0.68), b(2013, 0.68),
-            b(1792, 0.66), b(1793, 0.66), b(1794, 0.66), b(1798, 0.66)
+            b(1921), b(1922), b(1923), b(1924),
+            b(1925), b(2011), b(2012), b(2013),
+            b(1792), b(1793), b(1794), b(1798)
         ]
     },
 
@@ -142,7 +142,7 @@ module.exports = {
         town: "Dion",
         storeType: 3,
         locX: 15860, locY: 143100, locZ: -2707,
-        items: [rb(1873)]
+        items: [b(1873)]
     },
     "Sunday": {
         title: "Buy Dion drops",
@@ -150,9 +150,9 @@ module.exports = {
         storeType: 3,
         locX: 15725, locY: 143055, locZ: -2707,
         items: [
-            b(2015, 0.68), b(2009, 0.68), b(2150, 0.66), b(2252, 0.66),
-            b(2253, 0.66), b(2254, 0.66), b(956, 0.62), b(955, 0.62),
-            b(37, 0.62), b(49, 0.62), b(44, 0.62), b(102, 0.62)
+            b(2015), b(2009), b(2150), b(2252),
+            b(2253), b(2254), b(956), b(955),
+            b(37), b(49), b(44), b(102)
         ]
     },
 
@@ -185,9 +185,9 @@ module.exports = {
         storeType: 3,
         locX: 83385, locY: 148035, locZ: -3406,
         items: [
-            b(2140, 0.66), b(2142, 0.66), b(2143, 0.56), b(2144, 0.56),
-            b(2173, 0.66), b(2174, 0.66), b(2175, 0.66), b(956, 0.62),
-            b(955, 0.62), b(219, 0.58), b(272, 0.58), b(309, 0.58)
+            b(2140), b(2142), b(2143), b(2144),
+            b(2173), b(2174), b(2175), b(956),
+            b(955), b(219), b(272), b(309)
         ]
     },
 
@@ -220,7 +220,7 @@ module.exports = {
         storeType: 3,
         locX: 82800, locY: 53400, locZ: -1488,
         items: [
-            rb(1874), rb(1875)
+            b(1874), b(1875)
         ]
     },
     "NastyDream": {
@@ -229,9 +229,9 @@ module.exports = {
         storeType: 3,
         locX: 82900, locY: 53400, locZ: -1488,
         items: [
-            b(1830, 0.60), b(1343, 0.55), b(1539, 0.62), b(91, 0.56),
-            b(212, 0.56), b(284, 0.56), b(79, 0.56), b(97, 0.56),
-            b(856, 0.58), b(887, 0.58), b(918, 0.58)
+            b(1830), b(1343), b(1539), b(91),
+            b(212), b(284), b(79), b(97),
+            b(856), b(887), b(918)
         ]
     },
 
@@ -265,10 +265,10 @@ module.exports = {
         storeType: 3,
         locX: 111520, locY: 219034, locZ: -3536,
         items: [
-            rb(1874), rb(1875),
-            b(1830, 0.60), b(1343, 0.55), b(1539, 0.62),
-            b(91, 0.56), b(212, 0.56), b(284, 0.56),
-            b(79, 0.56), b(97, 0.56), b(856, 0.58), b(887, 0.58), b(918, 0.58)
+            b(1874), b(1875),
+            b(1830), b(1343), b(1539),
+            b(91), b(212), b(284),
+            b(79), b(97), b(856), b(887), b(918)
         ]
     },
 
@@ -292,9 +292,9 @@ module.exports = {
         storeType: 3,
         locX: 46720, locY: 49720, locZ: -3060,
         items: [
-            rb(1864), rb(1865), rb(1866), rb(1867),
-            rb(1868), rb(1869), rb(1870), rb(1871),
-            b(1119, 0.62), b(1121, 0.62), b(1122, 0.62), b(1129, 0.62)
+            b(1864), b(1865), b(1866), b(1867),
+            b(1868), b(1869), b(1870), b(1871),
+            b(1119), b(1121), b(1122), b(1129)
         ]
     },
     "Kayser": {
@@ -314,9 +314,9 @@ module.exports = {
         storeType: 3,
         locX: 12820, locY: 16580, locZ: -4585,
         items: [
-            rb(1864), rb(1865), rb(1866), rb(1867),
-            rb(1868), rb(1869), rb(1870), rb(1872),
-            b(945, 0.60), b(946, 0.60), b(907, 0.58), b(989, 0.58)
+            b(1864), b(1865), b(1866), b(1867),
+            b(1868), b(1869), b(1870), b(1872),
+            b(945), b(946), b(907), b(989)
         ]
     },
     "PedingBear": {
@@ -336,9 +336,9 @@ module.exports = {
         storeType: 3,
         locX: -44480, locY: -112390, locZ: -240,
         items: [
-            rb(1864), rb(1865), rb(1866), rb(1867),
-            rb(1868), rb(1869), rb(1870), rb(1872),
-            b(1510, 0.58), b(2371, 0.58), b(67, 0.56), b(154, 0.56)
+            b(1864), b(1865), b(1866), b(1867),
+            b(1868), b(1869), b(1870), b(1872),
+            b(1510), b(2371), b(67), b(154)
         ]
     },
     "MineSupplies": {
@@ -358,9 +358,9 @@ module.exports = {
         storeType: 3,
         locX: 115620, locY: -178520, locZ: -920,
         items: [
-            rb(1864), rb(1865), rb(1866), rb(1867),
-            rb(1868), rb(1869), rb(1870), rb(1872),
-            b(1511, 0.60), b(152, 0.56), b(154, 0.56), b(2006, 0.62)
+            b(1864), b(1865), b(1866), b(1867),
+            b(1868), b(1869), b(1870), b(1872),
+            b(1511), b(152), b(154), b(2006)
         ]
     },
 

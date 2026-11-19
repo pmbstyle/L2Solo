@@ -53,7 +53,7 @@ async function run() {
     const preview = StaticBuyerService.candidatesFor(state, 'Talking Island');
     assert.strictEqual(preview.length, 1, 'the local buyer should accept listed materials');
     assert.strictEqual(preview[0].selfId, 1864);
-    assert.strictEqual(preview[0].npcPrice, 80, 'the bot retains its exact authored x1 Stem payout until 3.6');
+    assert.strictEqual(preview[0].npcPrice, 75, 'the bot is paid the x1 Stem line price (1.5x the NPC buy-back), not the board bid');
     assert.strictEqual(StaticBuyerService.bestTownFor(state).town, 'Talking Island', 'market travel should target a town that buys the held material');
 
     const result = await StaticBuyerService.sell(state, 'Talking Island');

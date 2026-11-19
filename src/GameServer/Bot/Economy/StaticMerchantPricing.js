@@ -18,18 +18,35 @@ function basePrice(selfId) {
     return Number(ItemTemplateIndex.find(DataCache.items, selfId)?.template?.price || 0);
 }
 
+// A configured store sells at the datapack price, x1 at every preset (the
+// maintainer's rule, econ decision 450: shop prices do not follow the server's
+// adena rate).
 function configuredPrice(line) {
     if (line.price !== undefined) return Number(line.price);
     const base = basePrice(line.selfId);
-    return BotEconomyPricing.scalePrice(base > 0 ? base * (line.priceRate ?? 1) : 1);
+    return Math.max(1, Math.round(base > 0 ? base * (line.priceRate ?? 1) : 1));
 }
 
+// What a fixed buy line pays, one price for a bot and a player. Our choice,
+// not C4 (C4 gives only the NPC buy-back at half the datapack price): the
+// merchant pays half again the NPC buy-back, or a quarter of the datapack
+// price at the adena rate where that is more, so a buy store reads as a
+// plausible buyer at x1 and at x50 alike. An explicit line price replaces
+// both. It stays under 0.9 of the cheapest repeatable NPC or fixed-store
+// supply, so nobody buys an item to sell it straight back here.
+const BUY_OVER_NPC = 1.5;
+const BUY_BASE_SHARE = 0.25;
+function buyLinePrice(line) {
+    const base = basePrice(line.selfId);
+    const price = line.price !== undefined ? Number(line.price)
+        : Math.max(Math.floor(NpcSellRules.npcBuyPrice(base) * BUY_OVER_NPC), BotEconomyPricing.scalePrice(base * BUY_BASE_SHARE));
+    return Math.min(price, Math.floor(cheapestPurchase(line.selfId) * BUYBACK_RATIO));
+}
+
+// A bot is paid the line price alone: it reaches a board bid through its own
+// sale decision, which answers bids before the fixed buyers.
 function botPriceFor(store, line) {
-    const price = configuredPrice(line);
-    if (Number(store.storeType) !== BUY) return price;
-    // Bound fixed-buyer payouts below repeatable NPC and fixed-store supply.
-    const ceiling = Math.floor(cheapestPurchase(line.selfId) * BUYBACK_RATIO);
-    return Math.min(price, ceiling);
+    return Number(store.storeType) === BUY ? buyLinePrice(line) : configuredPrice(line);
 }
 
 // Configured supply is independent of the board: bots keep its original
@@ -96,14 +113,15 @@ function buyOffers(selfId, { actor, viewerId = 0, enchant = 0 } = {}) {
     });
 }
 
+// The player's quote: the line price, or the best board bid above it.
 function buyQuote(store, line, options = {}) {
-    const npcPrice = NpcSellRules.npcBuyPrice(basePrice(line.selfId));
+    const linePrice = buyLinePrice(line);
     const offers = buyOffers(line.selfId, options);
-    const price = Math.max(npcPrice, ...offers.map(offer => Number(offer.price)));
-    const count = price === npcPrice ? Number(line.count ?? 1)
+    const price = Math.max(linePrice, ...offers.map(offer => Number(offer.price)));
+    const count = price === linePrice ? Number(line.count ?? 1)
         : offers.filter(offer => Number(offer.price) === price)
             .reduce((sum, offer) => sum + Number(offer.storeItem.count), 0);
-    return { price, count: Math.min(Number(line.count ?? 1), count), npcPrice,
+    return { price, count: Math.min(Number(line.count ?? 1), count), linePrice,
         offers: offers.filter(offer => Number(offer.price) === price) };
 }
 
@@ -118,7 +136,7 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
             excludeOwner: Number(viewerId) || 0,
             accept: candidate => ['shop', 'buy_ad'].includes(candidate.kind) && validPrice(candidate)
         });
-        return bid ? bid.price : NpcSellRules.npcBuyPrice(basePrice(line.selfId));
+        return Math.max(buyLinePrice(line), Number(bid?.price || 0));
     }
     const price = configuredPrice(line);
     if (Number(store.storeType) !== SELL) return price;
@@ -163,5 +181,5 @@ function botBuyPrice(id) {
     return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
+module.exports = { BUYBACK_RATIO, botPriceFor, configuredPrice, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
     priceFor, sellersOf, useBoard: source => { boardSource = source; } };

@@ -12,7 +12,6 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
-const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const Purchase = invoke('GameServer/Network/Request/Purchase');
@@ -124,10 +123,10 @@ async function giveGear(session) {
     session.actor.backpack.insertItem(Number(row.insertId), 219, { amount: 1 });
 }
 
-test('BUY follows current shared board, excludes orders, falls back to C4 buy-back', () => {
+test('BUY follows a higher current shared board bid, excludes orders, falls back to the bots\' line price', () => {
     const config = Configs['4manda'];
     const source = materialLine(config);
-    const fallback = NpcSellRules.npcBuyPrice(TradeService.itemBasePrice(MATERIAL));
+    const fallback = Pricing.botPriceFor(config, source);
     assert.strictEqual(Pricing.priceFor(config, source), fallback);
     line(1, 3, 333, { kind: 'buy_ad' });
     line(2, 3, 444, { kind: 'shop', town: 'Gludio' });
@@ -162,7 +161,7 @@ test('zero executable SELL is the best ask while zero BUY never establishes a bi
         'a free executable offer keeps the authored floor rather than using the next expensive ask');
     line(14, 3, 0);
     assert.strictEqual(Pricing.priceFor(Configs['4manda'], materialLine(Configs['4manda'])),
-        NpcSellRules.npcBuyPrice(TradeService.itemBasePrice(MATERIAL)));
+        Pricing.botPriceFor(Configs['4manda'], materialLine(Configs['4manda'])));
 });
 
 test('native packet omits an oversized quote and cannot execute it', async () => {

@@ -270,8 +270,9 @@ try {
         const rich = { ...state, adena: 1000000000 };
         const native = purchaseFor(rich);
         const item = pricingItem(439);
-        assert.strictEqual(Pricing.referencePrice(item), Math.floor(item.basePrice
-            * invoke('GameServer/ProgressionRates').profile().adena), `${rate}: the separate reference API follows the server rate`);
+        // Prices are x1 at every preset: the server rate multiplies hunt adena only.
+        assert.strictEqual(Pricing.referencePrice(item), item.basePrice,
+            `${rate}: the separate reference API is the datapack price at every rate`);
         checkBid(native, native.buyer, native.goal, true);
 
         const npcItem = pricingItem(178);
@@ -283,14 +284,14 @@ try {
 
     useRate('x10');
     const native = purchaseFor(state);
-    assert.strictEqual(Pricing.referencePrice(pricingItem(439)), 3790000,
+    assert.strictEqual(Pricing.referencePrice(pricingItem(439)), 379000,
         'Karmian Tunic reference has no ordinary NPC alternative');
     // ARCH-NOTE: E1/E3 and the one-leaf goal rule replace the 10% reserve and
     // saved target/quote priority. All native bids below consume a real hot
     // packet; this test never supplies a selected leaf or money numbers.
     const bid = checkBid(native, native.buyer, native.goal, true);
-    const legacyGoal = { ...native.goal, target: { ...native.goal.target, adena: 379000 },
-        plan: { estimatedCost: 379000, marketTown: null } };
+    const legacyGoal = { ...native.goal, target: { ...native.goal.target, adena: 37900 },
+        plan: { estimatedCost: 37900, marketTown: null } };
     const legacyBid = checkBid(native, native.buyer, legacyGoal, true);
     assert.strictEqual(legacyBid.price, bid.price, 'a saved estimate does not override the native marginal value');
     assert.strictEqual(legacyBid.count, bid.count);
@@ -394,7 +395,10 @@ try {
     assert.deepStrictEqual(inventoryState, inventoryBefore, 'sale valuation cannot mutate either physical copy');
     assert.strictEqual(inventoryState.inventory[178].instances[0].equipped, true, 'the equipped +0 copy stays equipped');
     assert.strictEqual(Pricing.npcPrice(candidate), Infinity);
-    assert(candidate.price > Pricing.npcPrice(pricingItem(178)));
+    // Prices are x1 at every preset, so the +0 NPC price is no floor of the
+    // nominal value: the enchanted lot is valued on its own datapack price.
+    assert.strictEqual(Pricing.referencePrice(candidate), candidate.basePrice,
+        'the enchanted lot is valued on its datapack price, uncapped by NPC stock');
 
     // Gear the NPC also sells is the market's like any other: the NPC price is
     // one more offer the buyers weigh, not a clamp (group E).
@@ -405,7 +409,7 @@ try {
     DataCache.npcSpawns = [];
     assert.strictEqual(Pricing.npcPrice(npcItem), Infinity, 'unspawned catalog shops are not available alternatives');
     DataCache.npcSpawns = originalSpawns;
-    assert.strictEqual(Pricing.npcPrice(npcItem), 899800, 'NPC price cache must refresh when spawns reload');
+    assert.strictEqual(Pricing.npcPrice(npcItem), 449900, 'NPC price cache must refresh when spawns reload (x1 NPC price at every preset)');
 
     // The cold worker prices every NPC-sold item as main does, not only the gear
     // it plans to buy: Soul Ore's NPC price is a crafted D soulshot's cost
@@ -424,11 +428,12 @@ try {
         Pricing.useNpcOfferSnapshot(coldCatalog);
         assert.deepStrictEqual(shopIds.map(selfId => Pricing.npcPrice({ selfId })), mainPrices,
             'the cold worker reads the NPC price main reads, for a craft input as for gear');
-        Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 490800 }, { selfId: 178, price: 449900 }]);
+        // Snapshot rows under the x1 datapack price (409000), so the NPC side sets the reference.
+        Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 400000 }, { selfId: 178, price: 380000 }]);
         DataCache.npcSpawns = [];
-        assert.strictEqual(Pricing.referencePrice(npcItem), 449900, 'worker snapshots must use the same cheapest NPC price');
-        Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 480000 }]);
-        assert.strictEqual(Pricing.referencePrice(npcItem), 480000, 'a replaced worker catalog must replace cached prices');
+        assert.strictEqual(Pricing.referencePrice(npcItem), 380000, 'worker snapshots must use the same cheapest NPC price');
+        Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 390000 }]);
+        assert.strictEqual(Pricing.referencePrice(npcItem), 390000, 'a replaced worker catalog must replace cached prices');
     } finally {
         global.invoke = originalInvoke;
     }

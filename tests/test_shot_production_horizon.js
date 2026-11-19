@@ -116,8 +116,11 @@ const originalBoard = Afk.boardIndex;
     assert(thinBid, 'the native market can price a missing scroll for the lower-priced C series');
     assert(thinBid.price <= thinIntent.worth && thinBid.price > 10000,
         'the scroll gets a viable price within the series investment');
+    // The reviewed wallet (300k) sits under the higher-priority power wish
+    // (about 450k: configured stores sell at the datapack price at every
+    // preset), so the review cannot fund that wish and money grows dearer.
     const lowerWallet = await probe(thin, { ...thinInput,
-        fundingReview: { adena: 1000000, rivalPrice: 200000 },
+        fundingReview: { adena: 300000, rivalPrice: 200000 },
         tables: [...thinInput.tables, ...['personal_warehouse', 'clan_supplies'].map(name => ({ name,
             from: null, to: 0, full: true, removed: [], rows: [] }))] });
     assert(lowerWallet.bid?.price > 0 && lowerWallet.moneyPrice > lowerWallet.oldMoneyPrice,

@@ -1,10 +1,8 @@
-const ProgressionRates = invoke('GameServer/ProgressionRates');
 
+// Prices are x1 at every preset: the adena
+// rate multiplies hunt adena only, never a store, fee or buyer price.
 function economyRate() {
-    // Adena is the common currency for every bot-to-bot transaction.  Its
-    // active server rate keeps private stores and manufacture fees in the same
-    // economy as the rewards funding those purchases.
-    return Math.max(0.01, Number(ProgressionRates.profile().adena || 1));
+    return 1;
 }
 
 function scalePrice(value, minimum = 1) {

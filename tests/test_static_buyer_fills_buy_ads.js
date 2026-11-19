@@ -19,12 +19,14 @@ const World = invoke('GameServer/World/World');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Trade = invoke('GameServer/Bot/TradeService');
 const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
-const Npc = invoke('GameServer/Items/NpcSellRules');
 const Sell = invoke('GameServer/Network/Request/Sell');
 const Response = invoke('GameServer/Network/Response');
 const Select = invoke('GameServer/Actor/Generics/Select');
 const PrivateSell = invoke('GameServer/Network/Request/PrivateStoreSell');
 const ITEM = 1867;
+// The fixed buyer's explicit line price, under the bot bids below: a player and a bot
+// are paid it when no bid is higher.
+const LINE_PRICE = 70;
 let sequence = 0;
 const previousUser = World.user;
 
@@ -56,7 +58,7 @@ async function order(price, count, owner = null, options = {}) {
     return { session, shop: created.shop };
 }
 function buyer() {
-    const source = { storeType: 3, town: 'Giran', items: [{ selfId: ITEM, count: 999999, price: 1 }] };
+    const source = { storeType: 3, town: 'Giran', items: [{ selfId: ITEM, count: 999999, price: LINE_PRICE }] };
     return { storeType: 3, town: 'Giran', items: Trade.normalizeStoreItems(source, { staticStore: true }) };
 }
 function money(session) { return session.actor.backpack.fetchTotalAdena(); }
@@ -113,7 +115,6 @@ async function run() {
     Database.init();
     assert(Database.isReady());
     World.user = { sessions: [], revision: 0 };
-    const buyback = Npc.npcBuyPrice(Trade.itemBasePrice(ITEM));
     await check('the window quotes only three funded units; the remainder requires a new sale', async () => {
         const player = await character({ skins: 5 }), bid = await order(100, 3);
         const before = await worldAdena(), balance = money(player);
@@ -134,10 +135,10 @@ async function run() {
         assert.equal(await held(player.actor.fetchId()), 2, 'the lower-priced remainder stays with the seller');
         assert.equal(await worldAdena(), before);
         const nextRows = Sell.merchantSellRows(player.actor, buyer());
-        assert.equal(nextRows[0].amount, 2); assert.equal(nextRows[0].price, buyback);
+        assert.equal(nextRows[0].amount, 2); assert.equal(nextRows[0].price, LINE_PRICE);
         const next = await sale(player, 2);
-        assert.equal(next.npcQty, 2); assert.equal(next.totalAdena, 2 * buyback);
-        assert.equal(await worldAdena() - before, 2 * buyback);
+        assert.equal(next.npcQty, 2); assert.equal(next.totalAdena, 2 * LINE_PRICE);
+        assert.equal(await worldAdena() - before, 2 * LINE_PRICE);
     });
     await check('a pending agreement preserves earlier backed sales without NPC payout', async () => {
         const player = await character({ skins: 3 });
@@ -185,9 +186,9 @@ async function run() {
         await privateSale(player, 3, 100);
         assert.equal(money(player) - balance, 300); assert.equal(await held(player.actor.fetchId()), 2);
         const refreshed = player.packets.findLast(row => row[0] === 0xb8);
-        assert.equal(refreshed.readInt32LE(23), 2); assert.equal(refreshed.readInt32LE(39), buyback);
-        await privateSale(player, 2, buyback);
-        assert.equal(money(player) - balance, 300 + 2 * buyback); assert.equal(await held(player.actor.fetchId()), 0);
+        assert.equal(refreshed.readInt32LE(23), 2); assert.equal(refreshed.readInt32LE(39), LINE_PRICE);
+        await privateSale(player, 2, LINE_PRICE);
+        assert.equal(money(player) - balance, 300 + 2 * LINE_PRICE); assert.equal(await held(player.actor.fetchId()), 0);
     });
     await check('one click fills at most five orders', async () => {
         const player = await character({ skins: 6 }), bids = [];
@@ -202,8 +203,8 @@ async function run() {
     await check('no order uses the native buy-back', async () => {
         const player = await character({ skins: 5 }), before = await worldAdena();
         const result = await sale(player, 5);
-        assert.equal(result.adQty, 0); assert.equal(result.totalAdena, 5 * buyback);
-        assert.equal(await worldAdena() - before, 5 * buyback);
+        assert.equal(result.adQty, 0); assert.equal(result.totalAdena, 5 * LINE_PRICE);
+        assert.equal(await worldAdena() - before, 5 * LINE_PRICE);
     });
     await check('viewer quote and fill exclude his own best order', async () => {
         const player = await character({ skins: 5 }), own = await order(200, 5, player), bot = await order(100, 2);
@@ -252,7 +253,7 @@ async function run() {
         assert.equal(result.adQty, 2); assert.equal(result.totalAdena, 200);
         assert.equal(await remaining(remote.shop), 3); assert.equal(await remaining(local.shop), 0);
         const rest = await sale(player, 1);
-        assert.equal(rest.npcQty, 1); assert.equal(rest.totalAdena, buyback, 'remote-only board still permits NPC buyback');
+        assert.equal(rest.npcQty, 1); assert.equal(rest.totalAdena, LINE_PRICE, 'remote-only board still pays the line price');
     });
     await check('a meeting point invalidated during preparation skips to an equally priced order', async () => {
         const player = await character({ skins: 3 });
@@ -287,9 +288,9 @@ async function run() {
             assert.equal(await remaining(first.shop), 0); assert.equal(await remaining(second.shop), 2);
         } finally { Afk.sellToShop = original; }
     });
-    await check('a bot keeps the capped authored static price without filling an ad', async () => {
+    await check('a bot is paid the line price without filling an ad', async () => {
         const bot = await character({ bot: true, skins: 1 }), bid = await order(1000, 1), store = buyer();
-        const source = { storeType: 3, items: [{ selfId: ITEM, count: 999999, price: 1 }] };
+        const source = { storeType: 3, items: [{ selfId: ITEM, count: 999999, price: LINE_PRICE }] };
         const price = Pricing.botPriceFor(source, source.items[0]);
         const before = await worldAdena();
         const result = await Trade.sellToStore(bot.actor, store, ITEM, 1);

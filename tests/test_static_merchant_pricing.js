@@ -23,15 +23,14 @@ const templates = new Map(DataCache.items.map((item) => [item.selfId, item]));
 const normalize = (store) => TradeService.normalizeStoreItems(store, { staticStore: true });
 const botLines = store => store.items.map(line => ({ selfId: line.selfId, count: line.count ?? 1,
     price: Pricing.botPriceFor(store, line) })).filter(line => line.price > 0);
-// The 330 retained lines after removing permanent refined-material buyback:
-// moving player prices must not change any retained bot payout or shot price.
-// x10/x50 moved once when the payout cap read the one NPC table (town
-// sellers): 4 jewelry payouts no longer sit under fallback lists no NPC sells.
-const baselineBotPrices = {
-    1: '650518d7b76a4b21e7dc71255cad60543aee1ca6e291dda45783cfad1cb4f794',
-    10: 'a5f70e02681bb4a84613486029ab153743db24808598334544b08dc7c90057b6',
-    50: '848b3d3cd1d1391201a1df73179ad3653862a2bbf1d80472346e8b8af4e9fa24'
+// The 189 sell lines (shots, resources, gear): moving the buy line price
+// must not change any sell price a bot or a player pays on an empty board.
+const baselineSellPrices = {
+    1: 'd2267fbdc81292e79ef67d3f34215a22edb32bcde1a4657427b6d14b86296a63',
+    10: '1141fb310c2c178197d0a32e18c8a09b5f3da1b7abca0750e38e7a1a0cffe0fb',
+    50: '06f3f6da12599d87ed10ccf6b8c6a2695b90c3fd22c0d33eb6aa172f21e30224'
 };
+const sha = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 function inventoryItem(selfId, amount) {
     return {
@@ -47,11 +46,13 @@ function inventoryItem(selfId, amount) {
 async function run() {
     for (const rate of [1, 10, 50]) {
         ProgressionRates.profile = () => ({ adena: rate, multiplier: rate });
-        const retainedPrices = Object.entries(Configs).flatMap(([name, store]) => (
-            store.items.map(line => [name, line.selfId, Pricing.botPriceFor(store, line)])
-        ));
-        assert.strictEqual(crypto.createHash('sha256').update(JSON.stringify(retainedPrices)).digest('hex'),
-            baselineBotPrices[rate], `every retained bot price matches the baseline at x${rate}`);
+        const sellStores = Object.entries(Configs).filter(([, store]) => store.storeType !== 3);
+        assert.strictEqual(sha(sellStores.flatMap(([name, store]) => (
+            store.items.map(line => [name, line.selfId, Pricing.botPriceFor(store, line)])))),
+        baselineSellPrices[rate], `every bot sell price matches the baseline at x${rate}`);
+        assert.strictEqual(sha(sellStores.flatMap(([name, store]) => (
+            normalize(store).map(line => [name, line.selfId, line.price])))),
+        baselineSellPrices[rate], `every player sell price on an empty board matches the baseline at x${rate}`);
         const cheapest = new Map();
         const addOffer = (id, price) => cheapest.set(id, Math.min(cheapest.get(id) ?? Infinity, price));
         // Enumerate actual NPC lists independently of the policy's NPC price table.
@@ -83,13 +84,14 @@ async function run() {
                     assert(line.price <= Math.floor(purchase * 0.9), `${name}: missing buyback margin`);
                 }
             }
-            for (const line of actual) {
-                assert.strictEqual(line.price, NpcSellRules.npcBuyPrice(templates.get(line.selfId).template.price),
-                    `${name}: empty player board uses C4 buy-back at x${rate}`);
-            }
+            assert.deepStrictEqual(actual.map(({ selfId, price }) => ({ selfId, price })),
+                botLines(store).map(({ selfId, price }) => ({ selfId, price })),
+                `${name}: on an empty board a player and a bot are paid one line price at x${rate}`);
         }
+        const base = templates.get(1864).template.price;
         assert.strictEqual(botLines(Configs['4manda']).find((line) => line.selfId === 1864).price,
-            TradeService.ratedPrice(1864, 0.8), 'resource liquidity without a cheaper NPC source keeps its authored price');
+            Math.max(Math.floor(NpcSellRules.npcBuyPrice(base) * 1.5), Math.floor(base * 0.25 * rate)),
+            `a raw material no NPC sells pays 1.5x the NPC buy-back or 0.25x its price at the adena rate at x${rate}`);
     }
 
     ProgressionRates.profile = () => ({ adena: 1, multiplier: 1 });
@@ -97,12 +99,12 @@ async function run() {
     const inflated = { selfId: 2006, price: 99999999, count: 10 };
     const cap = Math.floor(normalize(Configs.TomRiddle).find((line) => line.selfId === 2006).price * 0.9);
     assert.strictEqual(Pricing.botPriceFor(Configs.Addicted, inflated), cap);
-    assert.strictEqual(normalize({ storeType: 3, items: [inflated] })[0].price,
-        NpcSellRules.npcBuyPrice(templates.get(inflated.selfId).template.price));
+    assert.strictEqual(normalize({ storeType: 3, items: [inflated] })[0].price, cap,
+        'an explicit buy line price is the player\'s line price too, under the same ceiling');
     assert.strictEqual(TradeService.normalizeStoreItems({ storeType: 3, items: [inflated] })[0].price,
         inflated.price, 'dynamic stores retain their negotiated prices');
     ProgressionRates.profile = () => ({ adena: 10, multiplier: 10 });
-    assert.strictEqual(Pricing.botPriceFor(Configs.Veteranas, { selfId: 219, priceRate: 100 }), 483120,
+    assert.strictEqual(Pricing.botPriceFor(Configs.Veteranas, { selfId: 219 }), 483120,
         'at x10 use Graham at 536800, not an earlier NPC list at 585600');
     ProgressionRates.profile = () => ({ adena: 1, multiplier: 1 });
 
@@ -129,12 +131,13 @@ async function run() {
     assert.strictEqual(adena.fetchAmount(), 731600);
     const store = { storeType: 3, items: normalize(Configs.Veteranas) };
     const sale = await TradeService.sellToStore(actor, store, 219, 1);
-    const buyback = NpcSellRules.npcBuyPrice(templates.get(219).template.price);
+    // 0.9 of the cheapest NPC row of Sword Breaker (153720), under the 268400 paid here.
+    const buyback = 138348;
     assert.strictEqual(sale.totalAdena, buyback);
-    assert.strictEqual(adena.fetchAmount(), 731600 + buyback, 'the player round trip uses ordinary C4 buy-back');
+    assert.strictEqual(adena.fetchAmount(), 731600 + buyback, 'the player round trip is paid the line price under the purchase');
     assert.strictEqual(backpack.fetchItemFromSelfId(219), undefined);
     assert.strictEqual(store.items.find((line) => line.selfId === 219).count, 999998);
-    console.log('Static merchant pricing: bot ceilings, player C4/observer parity at x1/x10/x50 and Sword Breaker round trip passed');
+    console.log('Static merchant pricing: sell prices, one capped buy line price for bots and players, observer parity at x1/x10/x50 and Sword Breaker round trip passed');
 }
 
 run().catch((error) => {

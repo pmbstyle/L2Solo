@@ -41,6 +41,24 @@ const originalBoard = Afk.boardIndex;
     }
     const timestamp = Date.now(), board = new BoardIndex();
     Afk.boardIndex = () => board;
+    // A player and a bot selling Iron Ore to SoulLess are quoted one price: with no
+    // bid 0.25x its price at the adena rate at x50, 1.5x the NPC buy-back at x1.
+    // A higher bot bid raises the player's quote only.
+    const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+    const Rates = invoke('GameServer/ProgressionRates');
+    const ore = Configs.SoulLess.items.find(line => line.selfId === 1869);
+    const quotes = () => ({ bot: Pricing.botPriceFor(Configs.SoulLess, ore), player: Pricing.priceFor(Configs.SoulLess, ore) });
+    assert.deepEqual(quotes(), { bot: 2500, player: 2500 }, 'x50: a player and a bot get one Iron Ore price');
+    const profile = Rates.profile;
+    try {
+        Rates.profile = () => ({ adena: 1, multiplier: 1 });
+        assert.deepEqual(quotes(), { bot: 150, player: 150 }, 'x1: a player and a bot get one Iron Ore price');
+    } finally { Rates.profile = profile; }
+    const oreBid = { id: 910825, ownerId: 910826, storeType: 3, kind: 'shop', custodyPolicy: 0, town: 'Gludio',
+        revision: 1, escrowAdena: 3000000, lines: [{ id: 9108250, lineId: 9108250, selfId: 1869, count: 1000, price: 3000, enchant: 0 }] };
+    board.put(oreBid);
+    assert.deepEqual(quotes(), { bot: 2500, player: 3000 }, 'a higher bot bid raises only the player quote');
+    board.remove(oreBid.id);
     Market.reset();
     const material = Recipes.resolveByRecipeId(35), shot = Recipes.resolveByRecipeId(20);
     const state = { characterId: 910820, accountName: 'bot_pop_raw_buyers', name: 'MarketSmith',
@@ -76,7 +94,7 @@ const originalBoard = Afk.boardIndex;
     board.put(materialBuyer);
     assert.equal((await probe(state, options())).selected?.wealth?.recipeId, material.recipeId,
         'a real profitable material order still supports ordinary production');
-    console.log('PASS raw material liquidity, shot recipe investment, absent demand and actual material orders');
+    console.log('PASS one Iron Ore quote for a player and a bot, raw material liquidity, shot recipe investment, absent demand and actual material orders');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; }).finally(() => {
     Afk.boardIndex = originalBoard;
     Market.reset();
