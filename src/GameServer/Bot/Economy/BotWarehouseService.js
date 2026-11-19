@@ -168,7 +168,7 @@ function storableActorItems(actor, state = null, npcSale = null, { unload = fals
 function weightExcess(actor, state, chosen) {
     const backpack = actor?.backpack, maximum = actor?.fetchMaxLoad?.();
     if (!backpack || !(maximum > 0)) return [];
-    let excess = Number(backpack.fetchTotalLoad?.() || 0) - (Math.ceil(maximum / 2) - 1)
+    let excess = Number(backpack.fetchTotalLoad?.() || 0) - invoke('GameServer/Bot/Population/SurvivalFloor').loadLimit(maximum)
         - chosen.reduce((sum, row) => sum + row.storable * Number(row.source.fetchMass?.() || 0), 0);
     if (!(excess > 0)) return [];
     const Shot = invoke('GameServer/Inventory/ShotStock');

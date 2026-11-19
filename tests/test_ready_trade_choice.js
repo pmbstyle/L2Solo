@@ -123,12 +123,12 @@ try {
 console.log('PASS trade detour preserves and resumes the selected purchase');
 
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-// The personal shot target is an outing of the build's published use (stats.kitRates,
-// EconomyContext.keptTargets), the same the listing keeps.
+// The personal shot target is a full bag's use plus the reserve at the build's published use and
+// bag hours (stats.kitRates, EconomyContext.keptTargets: ceil(30 x 2 x 1.1) = 66), the same the listing keeps.
 const stockBare = { ...state, level: 30, activity: 'hunting' };
 const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
 const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
-    stats: { earning: { shotsPerHour: 30, potionsPerHour: 0 }, kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, outingHours: 2, gapHorizonHours: 0,
+    stats: { earning: { shotsPerHour: 30, potionsPerHour: 0 }, kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, bagHours: 2, gapHorizonHours: 0,
         potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId, potionUse: 0, potionRestUse: 0,
         potionBenefit: 0, scrollHours: 0 }) } };
 // A review's own stock reader (here a different target) does not decide it.
@@ -137,7 +137,7 @@ const stockEconomy = { hourAdena: 1000, moneyPrice: .001, persona: { traits: {},
 const trip = () => 0; trip.details = () => ({ known: true, fees: 0, hours: 0 });
 const context = input => Pricing.traderContext(input, { economy: stockEconomy, board, tripCost: trip });
 const advertised = { storeType: 1, custodyPolicy: 1, selfId: shotId, count: 100, enchant: 0 };
-assert.equal(context(stockState).saleCount(advertised), 40, 'the board offers only surplus over personal ammunition');
+assert.equal(context(stockState).saleCount(advertised), 34, 'the board offers only surplus over personal ammunition (100 - 66)');
 assert.equal(context({ ...stockState, inventory: { [shotId]: { ...stockState.inventory[shotId], amount: 20 } } })
     .saleCount(advertised), 0, 'consumed stock below the personal reserve has no saleable remainder');
 assert.equal(context({ ...stockState, stats: { tradeMeeting: [1, 1] } }).saleCount(advertised), 100,

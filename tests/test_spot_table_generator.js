@@ -188,3 +188,65 @@ try {
     fs.rmSync(dir, { recursive: true, force: true });
     throw error;
 }
+
+// A row hunts on the stock the game buys: a full bag's use plus the reserve
+// (ConsumableTarget), restocked and its drops sold each time the bag would be
+// full. The reference bot (human, solo) turns back at its 40-slot half bag; it
+// wears one piece and drinks 10 Lesser Healing Potions every half hour (20 an
+// hour), and each round offers two new kinds of material (4 new slots an
+// hour). On the use pass its endless bottles weigh past maxLoad, so the
+// pickup rule refuses every drop; the slots are counted on the loot as rolled
+// all the same: 40 - the piece - the planned bottles = 38 free / 4 an hour =
+// 9.5 h, before the weight step ((9999 - 2 - 5) / (20 x 5 x 1.1) = 90.8 h).
+// A spot of Vrykolakas (lvl 15) kills 20 an hour at the kill mix's expected
+// drop weight of 52.76 a kill (SpotRewardExpectation, the datapack's drop
+// list): the load bounds the hours first, 9992 / (20 x 52.76 + 110) = 8.58 h.
+function stockRow(spot, killedNpcs) {
+    require('../src/Global');
+    const Data = invoke('GameServer/DataCache'); Data.init();
+    const RoundLoot = invoke('GameServer/Bot/Population/RoundLoot');
+    const Generator = require('../scripts/generate-spot-table');
+    const kinds = Data.items.filter(item => item.etc?.stackable && item.template?.kind === 'Other.Material'
+        && item.template?.mass > 0 && item.selfId !== 1864).map(item => item.selfId);
+    const seen = [];
+    let offered = 0;
+    const simulation = { items: Data.items,
+        BotGear: { planFor: () => ({ items: [{ selfId: 1864, slot: 0 }] }) },
+        Potions: { purchasePotionFor: () => ({ selfId: 1060 }) },
+        CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100, maxLoad: 20000 }), attackReach: () => 0,
+            skillRecordsFromTree: () => [], skillSnapshotsFromRecords: () => [] },
+        HuntEfficiency: { lootValue: () => 0 },
+        BR: { admittedShares: () => null, admittedDensity: spot => spot.density, soloFightCount: () => 1,
+            resolveSolo({ state, timestamp }) {
+                const potions = Number(state.inventory['1060']?.amount || 0), used = Math.min(10, potions);
+                seen.push({ timestamp, potions, drops: Object.keys(state.inventory).filter(id => kinds.includes(Number(id))).length });
+                const loot = [{ selfId: kinds[offered++], amount: 1 }, { selfId: kinds[offered++], amount: 1 }];
+                const inventory = { ...state.inventory, 1060: { ...state.inventory['1060'], amount: potions - used } };
+                const { kept } = RoundLoot.keep(inventory, loot, 80, 20000);
+                return { materialize: { items: kept }, debug: { wins: 10, mobsKilled: 10, killedNpcs, combatMs: 1000, potionsUsed: used },
+                    patch: { inventory: RoundLoot.addTo(inventory, kept) }, nextResolveAt: timestamp + 1800000 };
+            } } };
+    let pass = null;
+    Generator.hunt(spot, 'dps', 20, false, 12, simulation, null, undefined, name => {
+        pass = name; seen.length = 0; offered = 0;
+    });
+    assert.strictEqual(pass, 'row');
+    return seen;
+}
+function stockFixture() {
+    const seen = stockRow({ id: 'stock', center: {}, density: 1 }, {});
+    const start = seen[0].timestamp;
+    assert.strictEqual(seen[0].potions, 204, 'the row sets out with a full bag\'s use plus the reserve: 20 x 9.25 x 1.1, the bag less the scroll the visit buys (old: 40, two hours\' use)');
+    // Restocked at the round that fills the bag (9.5 h), not every two hours, and the visit sells the drops.
+    const restocks = seen.filter((step, index) => index > 0 && step.potions > seen[index - 1].potions - 10);
+    assert.deepStrictEqual(restocks.map(step => (step.timestamp - start) / 3600000), [9.5], 'the stock is restocked as the bag would be full');
+    assert.strictEqual(restocks[0].drops, 0, 'the visit sold the drops: the outing after it starts with an empty bag');
+    assert.strictEqual(seen[seen.indexOf(restocks[0]) - 1].drops, 36, 'the round before the visit set out with 18 rounds of drops; its own fill the 38 free slots');
+    // The drop's weight: the row restocks at the load bound, before the slots fill.
+    const heavy = stockRow({ id: 'stock-drop', center: {}, density: 1, npcEntries: [{ selfId: 398, count: 1 }] }, { 398: 10 });
+    assert.strictEqual(heavy[0].potions, 187, 'the stock is a full bag\'s use by the drop\'s weight less the scroll\'s: 20 x 8.5 x 1.1 (the slots alone: 204)');
+    const heavyRestocks = heavy.filter((step, index) => index > 0 && step.potions > heavy[index - 1].potions - 10);
+    assert.deepStrictEqual(heavyRestocks.map(step => (step.timestamp - heavy[0].timestamp) / 3600000), [8.5],
+        'the stock is restocked as the drop\'s weight reaches the first weight step (8.5 h), before the slots fill (9.25 h)');
+}
+stockFixture();

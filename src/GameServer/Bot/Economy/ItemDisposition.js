@@ -27,7 +27,7 @@ const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
 // A half-full bag sends the bot to sell, as a player would: on the cold path the forced
 // trip is the only thing that takes a hunting bot to town, and the thresholds above
 // alone stopped every sale for hours (live, 2026-10-03: 2,513 -> 21 static sales in 2 h).
-const HALF_FULL_CLEANUP_SLOTS = 40;
+const { SOLO_BAG_SLOTS } = require('../Population/SurvivalFloor');
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
 const SHOT_PRODUCT_RANK = Object.freeze({
@@ -251,20 +251,42 @@ function liquidationSlotCount(state, predicate, candidates = saleCandidates(stat
     }, 0);
 }
 
-// The bag slots a sale of these candidates empties (the kit's bag hours,
-// EconomyContext.foundation): a stack only when it is sold whole, a piece of
-// gear one slot each, never a kind the last sale visit could not place
-// (stats.marketSellSeen: the next sale leaves it in the bag).
+// The bag slots and load a sale of these candidates empties (the kit's bag
+// hours, EconomyContext.foundation): a stack's slot only when it is sold
+// whole, a piece of gear one slot each, every sold unit its mass; never a
+// kind the last sale visit could not place (stats.marketSellSeen: the next
+// sale leaves it in the bag).
 function saleSlots(state, candidates) {
     const tried = new Set(state.stats?.marketSellSeen?.items || []), sold = new Map();
     for (const item of candidates) if (!tried.has(Number(item.selfId)))
         sold.set(Number(item.selfId), (sold.get(Number(item.selfId)) || 0) + Number(item.count || 0));
-    let slots = 0;
+    let slots = 0, load = 0;
     for (const [selfId, count] of sold) {
-        const row = state.inventory?.[selfId], stackable = row?.stackable ?? templateFor(selfId)?.etc?.stackable;
-        slots += Array.isArray(row?.instances) || stackable === false ? count : count >= Number(row?.amount || 0) ? 1 : 0;
+        slots += freedSlots(state, selfId, count);
+        load += count * Math.max(0, Number(templateFor(selfId)?.template?.mass) || 0);
     }
-    return slots;
+    return { slots, load };
+}
+// The slots count items of selfId leave empty: a stack only when all of it goes, a
+// piece of gear one slot each (a sale's, saleSlots).
+function freedSlots(state, selfId, count) {
+    const row = state.inventory?.[selfId], stackable = row?.stackable ?? templateFor(selfId)?.etc?.stackable;
+    return Array.isArray(row?.instances) || stackable === false ? count : count >= Number(row?.amount || 0) ? 1 : 0;
+}
+// The rows a full bag may destroy (BagClearing): the sale set, so every class a sale keeps
+// (worn, quest, reserved, kit stock, the personal and beginner shots, Adena) is kept here
+// too, each with the slots it frees and its nominal worth. A kind the last sale visit
+// could not place stays in: it is the first one a player destroys. The slots are those the
+// destroy itself empties (RoundLoot.removeFrom: the row's named or unworn copies), so a
+// copy the sale counts but the destroy cannot take frees none.
+function clearingRows(state) {
+    const { removeFrom } = invoke('GameServer/Bot/Population/RoundLoot');
+    return saleCandidates(state, { unlimited: true }).map(item => {
+        const row = { selfId: item.selfId, enchant: item.enchant, count: item.count, ...(item.objectIds ? { objectIds: item.objectIds } : {}) };
+        const held = { [item.selfId]: state.inventory?.[item.selfId] };
+        const slots = inventorySlotCount({ inventory: held }) - inventorySlotCount({ inventory: removeFrom(held, [row]) });
+        return { ...row, slots, value: item.price * item.count };
+    }).filter(row => row.slots > 0);
 }
 
 function npcOnlySlotCount(state = {}, candidates) {
@@ -305,8 +327,8 @@ function buyersOf(board, ids, characterId) {
 // not walk back to try X because he picked up Y; he sells Y, and X only when someone new
 // shouts WTB X. Before the worker's board is ready only the kinds are compared.
 // The kinds are read with the whole kit kept (its potions, its Scroll of
-// Escape; shots are the bot's own), not the kit targets, which read this retry:
-// restocking the kit in town is no new goods to sell.
+// Escape; shots are the bot's own), not the kit targets: restocking the kit
+// in town is no new goods to sell.
 function retryKinds(state) {
     const keptAmounts = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
         736: Number(state.inventory?.[736]?.amount || 0) };
@@ -339,7 +361,7 @@ function saleRetryHolds(state) {
 }
 
 function soloSaleSlotLimit(state = {}, retry) {
-    return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
+    return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? SOLO_BAG_SLOTS : null;
 }
 
 // The cleanup thresholds, one rule for the bag fact's counts (cleanupCounted, over what
@@ -373,7 +395,7 @@ function cleanupCounted(state = {}) {
         if (lowGradeGear(kindFor(item, template), template?.etc?.rank, basePrice(item, template))) surplus += loose;
     }
     const over = cleanupThresholds({ slots, npcOnly, surplus });
-    return !(state.party?.partyId || state.partyId) && slots >= HALF_FULL_CLEANUP_SLOTS || over.npcOnly || over.surplus;
+    return !(state.party?.partyId || state.partyId) && slots >= SOLO_BAG_SLOTS || over.npcOnly || over.surplus;
 }
 
 function inventoryCleanupNeed(state = {}) {
@@ -1070,6 +1092,7 @@ module.exports = {
     inventorySlotCount,
     soloSaleSlotLimit,
     saleSlots,
+    clearingRows,
     saleSeen,
     openSaleKinds,
     saleRetryHolds,

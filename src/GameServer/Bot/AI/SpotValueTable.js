@@ -186,12 +186,12 @@ const valueMemo = new Map();
 const valueMemoOrder = [];
 let valueMemoTail = 0;
 function clearValueMemo() { valueMemo.clear(); valueMemoOrder.length = 0; valueMemoTail = 0; }
-// The Map holds a key's slot; the row lives at that slot as 13 numbers in a slab and a flag
+// The Map holds a key's slot; the row lives at that slot as 14 numbers in a slab and a flag
 // byte. A new row drops the key filed at its slot, so a slot holds its key's row while the key
 // lives. At the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
 // with object rows, 1.0 MB so, plus the slab's 3 MB outside the JS heap (arrayBuffers). The ring fills
 // its slots in order before it wraps, so the slab grows by doubling and a small memo stays small.
-const ROW_NUMBERS = 13;
+const ROW_NUMBERS = 14;
 const NO_ROW = 1, NO_STACKS = 2, NO_REWARDS = 4;
 const ADENA = 4, LOOT = 7, SHOTS = 8, POTIONS = 9, PRODUCTION = 12;
 let memoNumbers = new Float64Array(0), memoFlags = new Uint8Array(0);
@@ -210,7 +210,7 @@ function storeRow(slot, row) {
     n[at] = row.kills; n[at + 1] = row.deaths; n[at + 2] = row.exp; n[at + 3] = row.sp; n[at + ADENA] = row.adena;
     n[at + 5] = row.dropLoot; n[at + 6] = row.spoilLoot; n[at + LOOT] = row.loot; n[at + SHOTS] = row.shots;
     n[at + POTIONS] = row.potions; n[at + 10] = row.stacks ?? 0; n[at + 11] = row.busyShare;
-    n[at + PRODUCTION] = row.production ?? NaN;
+    n[at + PRODUCTION] = row.production ?? NaN; n[at + 13] = row.load;
     memoFlags[slot] = (row.stacks === null ? NO_STACKS : 0) | (row.rewardSource === 'npc_rewards' ? 0 : NO_REWARDS);
 }
 // A fresh row of computeValue's shape and key order, or null.
@@ -220,8 +220,8 @@ function rowAt(slot) {
     const n = memoNumbers, at = slot * ROW_NUMBERS;
     return { kills: n[at], deaths: n[at + 1], exp: n[at + 2], sp: n[at + 3], adena: n[at + ADENA], dropLoot: n[at + 5],
         spoilLoot: n[at + 6], loot: n[at + LOOT], rewardSource: flags & NO_REWARDS ? 'unavailable' : 'npc_rewards',
-        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], busyShare: n[at + 11],
-        production: Number.isNaN(n[at + PRODUCTION]) ? null : n[at + PRODUCTION] };
+        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], load: n[at + 13],
+        busyShare: n[at + 11], production: Number.isNaN(n[at + PRODUCTION]) ? null : n[at + PRODUCTION] };
 }
 let valueMemoTable = null, valueMemoRates = null;
 function refreshValueMemo(t, rates) {
@@ -651,13 +651,7 @@ function killSpot(t, row, spotId, mask = ALL_SPECIES) {
     const key = `${spotId}|${maskedMixKey(mix, mask, true)}|${base.npcEntries?.length || 0}`;
     let held = boundedGet(killSpots, key);
     if (!held || held.base !== base) {
-        const present = new Set((base.npcEntries || []).map(entry => Number(entry.selfId)));
-        const npcEntries = [];
-        for (let at = 0; at < mix.length; at += 2) {
-            if (!(mask & (1 << (at / 2))) || !present.has(Number(mix[at]))) continue;
-            npcEntries.push({ selfId: mix[at], count: Math.max(1, Math.round(mix[at + 1] * 1000)) });
-        }
-        held = { base, spot: npcEntries.length ? { ...base, npcEntries, npcSelfIds: undefined } : base };
+        held = { base, spot: Rewards.mixSpot(base, mix, mask) };
         boundedSet(killSpots, key, held);
     }
     return held.spot;
@@ -846,6 +840,9 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
         potions: kills * row[t.f.potions] * busyRatio,
         stacks: t.f.stacks < 0 || Number.isNaN(row[t.f.stacks]) ? null
             : kills * row[t.f.stacks] * lootFactor,
+        // The kill mix's expected drop (and a spoiler's landed spoil) weight an
+        // hour; an NPC without reward data drops only the fallback adena, so 0.
+        load: kills * (rewards?.load || 0),
         busyShare: Math.min(1, kills * busy / 3600),
         production: c.production
     };

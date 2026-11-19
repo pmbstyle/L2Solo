@@ -90,4 +90,32 @@ function addTo(bag, items) {
     return inventory;
 }
 
-module.exports = { addTo, keep, itemTemplate, itemName, itemStackable };
+// The bag with items taken out (a new object; the stacks it changes are new too): each
+// { selfId, enchant, count, objectIds? } leaves by its named copies, else by unworn copies
+// of its enchant, up to count; a stack loses count. An emptied stack stays at amount 0, as
+// every bag edit leaves it: the physical sync deletes its rows by it, and the summary and
+// slot counts skip it. Worn copies never leave.
+function removeFrom(bag, items) {
+    const inventory = { ...(bag || {}) };
+    for (const item of items || []) {
+        const key = String(item.selfId), row = inventory[key];
+        if (!row) continue;
+        let count = Math.max(0, Number(item.count) || 0);
+        if (Array.isArray(row.instances) && row.instances.length) {
+            const named = item.objectIds?.length ? new Set(item.objectIds.map(Number)) : null;
+            const instances = row.instances.filter(instance => {
+                if (count <= 0 || instance.equipped || Number(instance.enchant || 0) !== Number(item.enchant || 0)
+                    || named && !named.has(Number(instance.id))) return true;
+                count -= 1;
+                return false;
+            });
+            inventory[key] = { ...row, amount: Number(row.amount || 0) - (row.instances.length - instances.length), instances };
+            continue;
+        }
+        inventory[key] = { ...row, amount: Number(row.amount || 0) - Math.min(count, Math.max(0, Number(row.amount || 0)
+            - Number(row.equippedCount ?? (row.equipped ? 1 : 0)))) };
+    }
+    return inventory;
+}
+
+module.exports = { addTo, removeFrom, keep, itemTemplate, itemName, itemStackable };

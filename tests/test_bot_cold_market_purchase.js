@@ -430,9 +430,11 @@ async function run() {
         ...state,
         characterId: 86,
         level: 40,
-        adena: 100000,
+        // The wallet holds the kit's reserve (the hours to a full bag at its spot) and the
+        // shield, so the loadout, not the purse, refuses it.
+        adena: 1000000,
         inventory: {
-            57: { selfId: 57, name: 'Adena', amount: 100000 },
+            57: { selfId: 57, name: 'Adena', amount: 1000000 },
             93: { selfId: 93, name: 'Winged Spear', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, rank: 'd', kind: 'Weapon.Pole' }
         },
         stats: {

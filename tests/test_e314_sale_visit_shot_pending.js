@@ -31,7 +31,7 @@ function record(ownerId, selfId, price, count) {
 }
 const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', level: 20, adena: 100000,
     inventory: {}, phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
-    stats: { classId: 0, money: [100, 0, 1000, 0], playedHours: 10, visitEvery: [8, 4], ...stats,
+    stats: { classId: 0, money: [100, 0, 1000, 0], playedHours: 10, ...stats,
         townVisit: { town: 'Giran', startedAt: Date.now() - 60000, reason } } });
 
 (async () => {
@@ -68,14 +68,12 @@ const bot = (reason, stats = {}) => ({ characterId: 731410, name: 'E314Buyer', l
         assert.equal(baskets, 0, 'the staging pass ends with the meeting: no NPC basket on it');
         assert.deepEqual(savedBeforeBuy, [true], 'the ended visit is saved before the meeting is staged');
         assert.equal(saved.stats.townVisit.completed, true, 'the saved row is the ended visit');
-        assert.deepEqual(first.stats.visitEvery, [10, 3], 'the arrival counts once');
         // The next pass (the meeting refused later) does not plan it again; the basket restocks the shots.
         const later = { ...first, stats: { ...first.stats, playedHours: 10.2 } };
         const second = await ColdMarket.finishTownErrands(later, { saleVisit: false });
         assert.equal(meetings.length, 1, 'E314: the next pass does not plan the shot purchase again');
         assert.equal(baskets, 1, 'the next pass runs the NPC basket');
         assert.equal(second.stats.townVisit.completed, true, 'the visit stays ended');
-        assert.deepEqual(second.stats.visitEvery, [10, 3], 'E314: a held pass does not count a second arrival (no halved interval)');
         // A busy seller stages no meeting: the visit ends and the NPC basket buys the shots.
         busy = true;
         const refused = await ColdMarket.finishTownErrands(bot('sell_inventory'), { saleVisit: true });

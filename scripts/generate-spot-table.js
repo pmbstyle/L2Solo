@@ -425,9 +425,12 @@ function countNewStacks(items, seen, definitions = invoke('GameServer/DataCache'
 // carries. The stock rule reads this table (EconomyContext.kitRates: use = the
 // row's shots and potions per hour), so the use is measured first, on an
 // endless supply; the row is the hunt again on what the game buys for that
-// use: an outing's (EconomyContext.kitReader at TownVisitInterval.targetHours,
-// the reference bot's 2 h; the game buys one outing's refill whatever the
-// deaths), topped up at each outing. Its loot is then kept or
+// use: a full bag's use plus the reserve (KitRule.kitReader at the reference
+// bot's hours to a full bag after a sale, KitRule.bagHours: the use pass's new
+// slots an hour on the solo half bag, and its kills an hour times the kill
+// mix's expected drop weight, SpotRewardExpectation, under the first weight
+// step; the game buys that whatever the deaths), restocked and its drops sold
+// at each full bag. Its loot is then kept or
 // refused by the bag that supply really weighs. The bottles that save rest are
 // not here: the reference bot has no hour (RestPotion.betweenFights), the
 // reader adds them at the bot's own (RestPotion.stockUse). onPass(name): told
@@ -436,14 +439,33 @@ function countNewStacks(items, seen, definitions = invoke('GameServer/DataCache'
 function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, classId = classFor(role, level), onPass = null) {
     if (onPass) onPass('use');
     const use = huntOn(null, spot, role, level, shots, hours, simulation, kit, classId);
-    const { stock } = invoke('GameServer/Bot/Economy/EconomyContext').kitReader({ shotUse: use.shots / hours, shotsPay: true,
-        shotsCanRestock: true, potionUse: use.potions / hours, potionRestUse: 0,
-        outingHours: invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours() }, { shots: 0, potions: 0 }, Infinity, () => 0);
-    // The game buys one outing's refill whatever the deaths (EconomyContext.kitReader,
+    const shotUse = use.shots / hours, potionUse = use.potions / hours;
+    const KitRule = invoke('GameServer/Bot/Economy/KitRule');
+    const Rewards = invoke('GameServer/Bot/Economy/SpotRewardExpectation');
+    // The drop's weight a kill: the kill mix's expected drop (and a spoiler's
+    // landed spoil), the number the game's row reads (SpotValueTable), not a
+    // sample of rare heavy drops.
+    const loadPerKill = use.mobs > 0 ? Rewards.value(Rewards.mixSpot(spot, killMix(use.mix, use.mobs)), level,
+        { spoilSkillLevel: Rewards.spoilSkillLevel({ level, stats: { classId } }) })?.load || 0 : 0;
+    // The reference bot after a sale: its gear, no drops, the kit being sized.
+    const made = newBot(classId, level, shots, simulation, kit, lineClassFor(role));
+    const shotItemId = made.shotId, potionItemId = Number(simulation.Potions.purchasePotionFor({ level }).selfId);
+    const gear = Object.fromEntries(Object.entries(made.bot.inventory)
+        .filter(([id]) => Number(id) !== shotItemId && Number(id) !== potionItemId));
+    const bagHours = KitRule.bagHours({ ...made.bot, stats: { ...made.bot.stats, classId }, inventory: gear }, {
+        row: { stacks: use.stacks / hours, load: use.mobs / hours * loadPerKill },
+        kit: { shotItemId, potionItemId, shotUse, potionUse },
+        maxLoad: simulation.CCP.profileFor(made.bot, START).maxLoad });
+    // Nothing bounds the hours (weightless kit, no new slots): the line, one
+    // hour's use restocked every hour, as the game holds it.
+    const restockHours = Number.isFinite(bagHours) ? bagHours : 1;
+    const { stock } = KitRule.kitReader({ shotUse, shotsPay: true, shotsCanRestock: true, potionUse, potionRestUse: 0,
+        bagHours: restockHours }, { shots: 0, potions: 0 }, Infinity, () => 0);
+    // The game buys a full bag's stock whatever the deaths (KitRule.kitReader,
     // PurchaseFunding, HealingPotionStock), so the row carries the stock's target.
     const supply = { shots: stock('shots').target, potions: stock('potions').target };
     if (onPass) onPass('row');
-    return huntOn(supply, spot, role, level, shots, hours, simulation, kit, classId);
+    return huntOn(supply, spot, role, level, shots, hours, simulation, kit, classId, restockHours);
 }
 
 // The author's cold combat for `hours` of game time. A death costs the time
@@ -456,14 +478,21 @@ function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, cla
 // reference bot's worn gear before the hunt (scripts/hunt-cycle-check.js);
 // classId: another class than the role's (scripts/hunt-tables);
 // supply: the shots and bottles it carries each outing ({ shots, potions };
-// null: it never runs out).
-function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classId) {
+// null: it never runs out), restocked every restockHours, the visit that also
+// sells its drops (Infinity: never in the run).
+function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classId, restockHours = Infinity) {
     // One seed with and without shots: the two rows' difference is the shots'
     // (common random numbers), not two draws' (T106 audit).
     const seed = hash(`${spot.id}|${classId}|${level}`);
     const rng = mulberry(seed);
     const random = Math.random;
     Math.random = mulberry(seed ^ 0x9e3779b9);
+    // ARCH-NOTE: the pass bag is not a hunting bot's bag (an endless kit
+    // refuses every drop with weight), so the new slots are counted on the
+    // loot as rolled: every list the round offers the pickup rule.
+    const Loot = invoke('GameServer/Bot/Population/RoundLoot'), keep = Loot.keep;
+    let offered = [];
+    Loot.keep = (bag, loot, ...rest) => { offered.push(...(loot || [])); return keep(bag, loot, ...rest); };
     const sum = { kills: 0, mobs: 0, busyMs: 0, spanMs: 0, deaths: 0, exp: 0, sp: 0, adena: 0, loot: 0, shots: 0, potions: 0, stacks: 0,
         fightMs: 0, walkMs: 0, buffCasts: 0, heals: 0, actions: 0, shotActions: 0, skillUses: 0, pulls: 0, pullMobs: 0, gapHeals: 0, petHeals: 0, petTaken: 0, summonUses: 0, summonDeaths: 0, restMs: 0, taken: 0, spellTaken: 0, hpLost: 0, mpLost: 0, mix: {}, density: 0, runSpd: 0 };
     try {
@@ -475,6 +504,8 @@ function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classI
             inventory[potionId] = { ...inventory[potionId], amount: supply.potions };
             if (made.shotId) inventory[shotId] = { ...inventory[shotId], amount: supply.shots };
         };
+        // The bag a visit leaves: the gear and the kit, its drops sold.
+        const visitBag = { ...made.bot.inventory };
         restock(made.bot.inventory);
         const seen = new Set(Object.values(made.bot.inventory).filter(item => item.amount > 0).map(item => Number(item.selfId)));
         let state = { ...made.bot, spotId: spot.id, loc: { ...spot.center } };
@@ -485,7 +516,7 @@ function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classI
         sum.area = spot.spawnArea;
         const target = atSpot(spot);
         const end = START + hours * 3600000;
-        const outingMs = invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours() * 3600000;
+        const outingMs = restockHours * 3600000;
         let nextVisit = START + outingMs;
         // The bot's clock, a live cold bot's (ColdClock): each step resolves where
         // the clock puts it and credits the time since the bot's last action (a
@@ -497,8 +528,13 @@ function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classI
         let due = START;
         while (due < end) {
             const { timestamp: t, elapsedMs } = Clock.step(state, due);
-            if (t >= nextVisit) { restock(state.inventory); nextVisit += outingMs; }
+            if (t >= nextVisit) {
+                state = { ...state, inventory: { ...visitBag } };
+                restock(state.inventory);
+                nextVisit += outingMs;
+            }
             const shotsHeld = Number(state.inventory[shotId]?.amount || 0);
+            offered = [];
             const result = simulation.BR.resolveSolo({ state, spot: target, elapsedMs, timestamp: t, rng });
             const gained = result.materialize || {};
             const debug = result.debug || {};
@@ -510,7 +546,7 @@ function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classI
             sum.sp += Number(gained.sp || 0);
             sum.adena += Number(gained.adena || 0);
             sum.loot += simulation.HuntEfficiency.lootValue(gained.items || []);
-            sum.stacks += countNewStacks(gained.items || [], seen, simulation.items);
+            sum.stacks += countNewStacks(offered, seen, simulation.items);
             sum.potions += Number(debug.potionsUsed || 0);
             // The bots' records count a cycle's combat and the rest it calls for, a rest
             // step's extension of it too (a dead bot's step rests it to its respawn: death time):
@@ -558,6 +594,7 @@ function huntOn(supply, spot, role, level, shots, hours, simulation, kit, classI
         sum.spanMs = through - started;
     } finally {
         Math.random = random;
+        Loot.keep = keep;
     }
     return sum;
 }

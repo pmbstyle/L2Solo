@@ -269,15 +269,10 @@ async function acceptMutation(result, fallback, reason) {
     return persist(await LifeState.refreshInventory(fallback) || fallback, reason);
 }
 
+// The bag the native craft or crystallize left: the spent rows taken out (RoundLoot.removeFrom).
 function consumeMaterials(state, materials) {
-    const inventory = { ...(state.inventory || {}) };
-    for (const material of materials || []) {
-        const key = String(material.selfId);
-        const previous = inventory[key] || { selfId: Number(material.selfId) };
-        inventory[key] = { ...previous,
-            amount: Math.max(0, Number(previous.amount || 0) - Number(material.amount || 0)) };
-    }
-    return { ...state, inventory };
+    return { ...state, inventory: invoke('GameServer/Bot/Population/RoundLoot').removeFrom(state.inventory,
+        (materials || []).map(material => ({ selfId: material.selfId, count: material.amount, ...(material.objectIds ? { objectIds: material.objectIds } : {}) }))) };
 }
 
 // Buys what is missing of a craft input on the one purchase path
@@ -371,7 +366,7 @@ async function obtainCrystals(state, candidate, batches) {
         sourceId: Number(row.id), sourceSelfId: gear.selfId, crystalId: candidate.crystalId,
         crystalName: crystal?.template?.name || '', crystalAmount: gear.crystals, coldState: state
     });
-    state = consumeMaterials(state, [{ selfId: gear.selfId, amount: 1 }]);
+    state = consumeMaterials(state, [{ selfId: gear.selfId, amount: 1, objectIds: [Number(row.id)] }]);
     return { state: await acceptMutation(result, state, 'shot_crystallized'), ready: true };
 }
 

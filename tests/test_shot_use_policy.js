@@ -25,7 +25,8 @@ try {
     let stock = Economy.basics(state, deps).stock('shots');
     assert.equal(Shots.usePolicy(state).usePerHour, 100, 'own use loses only NPC buyback3, not retail14');
     assert.equal(stock.usePerHour, 100);
-    assert.equal(stock.target, 200);
+    // The row has no bag forecast: one hour of use plus the reserve, ceil(100 x 1 h x 1.1).
+    assert.equal(stock.target, 110);
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const offers = Disposition.saleCandidates(state, { keptAmounts: Shots.keptAmounts(state, { stock: () => stock }), unlimited: true });
     assert.equal(offers.find(row => row.selfId === 1835), undefined,

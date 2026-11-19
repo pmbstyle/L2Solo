@@ -158,7 +158,7 @@ function onWorker() {
         // keeps the supply lines it was taken on, so the next post does not raise it again until a build.
         const shotId = invoke('GameServer/Inventory/ShotStock').planForState(turned).selfId;
         const rates = Packet.kitRates({ shotId, shotUse: 100, shotBenefit: 1, shotsCanRestock: true, potionId: 1060,
-            potionUse: 0, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+            potionUse: 0, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, bagHours: 1, gapHorizonHours: 0 });
         const shots = amount => ({ ...turned, spotId: turned.stats.earning.spotId, inventory: { ...turned.inventory, [shotId]: { selfId: shotId, amount } },
             stats: { ...turned.stats, kitRates: rates, earning: { ...turned.stats.earning, shotsPerHour: 100, potionsPerHour: 0 } } });
         // The build kept its lines with the shots above their line.
@@ -181,7 +181,7 @@ function onWorker() {
         Table.cycle = (id, ...rest) => id === 'rich' ? { ...(native.cycle(id, ...rest) || {}), taken: 1000, pull: 1 } : native.cycle(id, ...rest);
         try {
             const rates = Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 1060,
-                potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+                potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, bagHours: 1, gapHorizonHours: 0 });
             // It stands on its held spot: the line is its answer's use there (EquipmentIncomeRoute.spotUseOf).
             const kit = (adena, reserve, name = 'died') => ({ ...raised(held, name), adena, spotId: 'rich',
                 inventory: { ...held.inventory, 57: { selfId: 57, amount: adena } },
@@ -219,17 +219,17 @@ function onWorker() {
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS - 1, 0), answer), false, 'too few kills to tell');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, true), answer), false, 'once a stay');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, false, 'poor'), answer), false, 'only on the answer\'s spot');
-        // The stay lasts while the spot does (a new answer, a level up, a town trip keep it); another spot starts
+        // The stay lasts while the spot does (a new answer, a level up keep it); another spot starts
         // a new one; a party round counts into none.
         const round = { debug: { wins: 10, combatMs: 60000, fights: 10, spotId: 'rich' }, materialize: { adena: 100, items: [] },
             nextResolveAt: started + 60000, patch: {} };
         const on = (state, spotId = 'rich') => Hunt.recordRound(state, round, { spotId, timestamp: started }).stay;
-        const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 }, visitEvery: [5, 2] } };
+        const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 } } };
         const first = on(solo), second = on({ ...solo, stats: { ...solo.stats, stay: { ...first, judged: true } } });
         assert.equal(second.kills, 20, 'one stay counts its rounds');
         assert.equal(second.judged, true, 'and stays judged');
         for (const [what, moved] of [['a new answer', { ...solo, stats: { ...solo.stats, earning: { ...answer, at: 2 } } }],
-            ['a town trip', { ...solo, stats: { ...solo.stats, visitEvery: [6, 2] } }], ['a level up', { ...solo, level: solo.level + 1 }]]) {
+            ['a level up', { ...solo, level: solo.level + 1 }]]) {
             const kept = on({ ...moved, stats: { ...moved.stats, stay: { ...second } } });
             assert.equal(kept.kills, 30, `${what} keeps the stay on its spot`); assert.equal(kept.judged, true);
         }

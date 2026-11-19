@@ -111,12 +111,14 @@ assert.strictEqual(Gear.equipmentBridgeReason(paidWarrior), 'weapon_bridge', 'a 
 
 // An unfunded weapon bridge does not hide a funded armour one: a Gladiator
 // with neither a dual sword nor a Warrior weapon, in light armour, cannot pay
-// for the two blades yet but can buy its heavy body armour now.
-const gladiator = { characterId: 9400003, level: 30, adena: 150000, stats: { classId: 2, role: 'dps' },
+// for the two blades yet but can buy its heavy body armour now. The wallet
+// covers the 100,200 Ring Mail Breastplate above the kit reserve (~90k at 30:
+// the consumables for the hours to a full bag).
+const gladiator = { characterId: 9400003, level: 30, adena: 250000, stats: { classId: 2, role: 'dps' },
     inventory: {
         2: { selfId: 2, amount: 1, equipped: true, equippedSlots: [7], slot: 7 },
         391: { selfId: 391, amount: 1, equipped: true, equippedSlots: [10], slot: 10 }, // Puma Skin Shirt
-        57: { selfId: 57, amount: 150000 }
+        57: { selfId: 57, amount: 250000 }
     } };
 const dualBridge = Gear.npcWeaponBridgePlan(gladiator);
 assert(dualBridge?.combine && Number(dualBridge.bridgeCost) > gladiator.adena, 'fixture: an unfunded dual-sword bridge');

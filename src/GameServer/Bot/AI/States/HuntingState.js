@@ -153,6 +153,28 @@ function sellTripDue(session, bot) {
 // visit's end (the departure to a spot) writes it again on what the bot could
 // not place (ItemDisposition.saleSeen): a bag the town could not empty does not
 // send the bot back on its next loot, only on goods or a buyer it has not tried.
+// The slots a build chose to destroy at the full bag (stats.bagClear, EconomyContext.bagDecisions),
+// destroyed from the live bag as a player destroys an item (Network/Request/TrashItem: Backpack.deleteItem):
+// unworn copies of each row's kind and enchant, its named copies when it names them, up to its count.
+// A copy the live bag no longer holds is skipped (the body's bag moved since the build read it),
+// counted: the decision is then executed only in part (ai.bag_clear_missing).
+function destroySlots(session, bot, items) {
+    for (const row of items || []) {
+        const named = row.objectIds?.length ? new Set(row.objectIds.map(Number)) : null;
+        let count = Number(row.count) || 0;
+        for (const item of [...bot.backpack.fetchItems()]) {
+            if (count <= 0) break;
+            if (Number(item.fetchSelfId()) !== Number(row.selfId) || item.fetchEquipped()
+                || Number(item.fetchEnchantLevel?.() || 0) !== Number(row.enchant || 0)
+                || named && !named.has(Number(item.fetchId()))) continue;
+            const amount = Math.min(count, Number(item.fetchAmount()));
+            bot.backpack.deleteItem(session, item.fetchId(), amount);
+            count -= amount;
+        }
+        if (count > 0) FailureLog.note('ai.bag_clear_missing', new Error(`bag clear of ${row.selfId}+${row.enchant || 0}: ${count} not in the bag`));
+    }
+}
+
 function pauseSelling(session, departing = false) {
     const life = session.coldLifeState;
     // A departure after a buff, clan hall or buy-only visit tried no sale.
@@ -778,6 +800,14 @@ module.exports = {
             bot.automation.abortAll(bot);
             session.plan = 'resting';
             return;
+        }
+        // The build's clearing of a full bag (stats.bagClear, EconomyContext.bagDecisions) replaces its town trip: its slots are
+        // destroyed now and the bot hunts on (counted bag_clear:hot beside the trips).
+        const bagClear = isSoloHunter(session) ? DecisionEvents.statsFor(session).bagClear : null;
+        if (bagClear) {
+            destroySlots(session, bot, bagClear.items);
+            require('../../Situations').note('bag_clear:hot');
+            DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session), bagClear: null });
         }
         // The bag's town trip a build decided (stats.cleanupDue, EconomyContext: one rule with
         // the far bot's), held until it starts (a trip deferred by a fight waits in

@@ -20,6 +20,7 @@ const { lifecycleKind, ColdSimulationKernel } = require('../src/GameServer/Bot/P
 const ColdClock = require('../src/GameServer/Bot/Population/ColdClock');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
 const at = Date.now();
+// A member's wallet holds its kit's reserve (the hours to a full bag at its spot) and its raid supplies.
 function member(id, classId, level, weapon, healer = false) {
     const gear = [weapon, 40, 45, 50, ...(healer ? [432, 465] : [347, 376, 625])];
     const slot = [7, 12, 6, 9, 10, 11, 8];
@@ -29,7 +30,7 @@ function member(id, classId, level, weapon, healer = false) {
         slot: i + 1, name: Data.items.find(t => t.selfId === selfId).template.name }));
     items.push({ selfId: weapon === 3 ? 1835 : 1463, amount: 2500, slot: 0, equipped: 0 });
     const s = { characterId: id, name: `adventurer_${id}`, accountName: `bot_${id}`, level, classId,
-        adena: 100000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
+        adena: 300000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
         stats: { classId, coldCombat: { classId, skills: Combat.skillsFor({ classId, level }) } },
         inventory: Life.inventorySummaryFromItems(items) };
     const p = Combat.profileFor(s); s.vitals = { hp: p.maxHp, maxHp: p.maxHp, mp: p.maxMp, maxMp: p.maxMp };

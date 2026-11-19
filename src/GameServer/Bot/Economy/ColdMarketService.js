@@ -10,7 +10,6 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
-const TownVisitInterval = require('./TownVisitInterval');
 const NpcRestock = require('./NpcRestockPlan');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const EconomicTrip = require('./EconomicTrip');
@@ -456,13 +455,9 @@ function worthwhileTravel(state, plan, options = {}) {
     } };
     return EconomicValuation.tripPays(valuation, plan, route, options);
 }
-// The visit ended: completed, its arrival counted once on the visit clock
-// (a visit already ended counts no second arrival).
+// The visit ended: completed.
 function endVisit(current) {
-    const ended = current.stats?.townVisit?.completed === true;
     return { ...current, stats: { ...current.stats,
-        // The completed cold visit uses the same clock as the hot town event.
-        visitEvery: ended ? current.stats.visitEvery : TownVisitInterval.arrived(current.stats),
         townVisit: current.stats?.townVisit ? { ...current.stats.townVisit, completed: true } : null } };
 }
 

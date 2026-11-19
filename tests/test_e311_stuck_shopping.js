@@ -63,8 +63,8 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 
         // The seller's own worker consents to the answer again (ColdSimulationWorker
         // 'meeting' mode). The sale retry saved with the pending deal is in that
-        // snapshot: it must not take the answer away (it turns off
-        // ItemDisposition.soloSaleSlotLimit inside EconomyContext). Same economy
+        // snapshot: it must not take the answer away (the build's sale leaf
+        // offers only the kinds open for sale, ItemDisposition.openSaleKinds). Same economy
         // build and the same MarketListingPolicy.evaluate as the worker consent.
         const consentAnswer = (state, retry, now) => {
             const probe = { ...state, stats: { ...state.stats,

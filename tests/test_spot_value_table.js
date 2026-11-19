@@ -339,6 +339,24 @@ assert(raw.rows.flat().every((row) => row === null || row.length === raw.rowFiel
 assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.huntableRows, 'header counts the huntable rows');
 assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
 assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
+// The kit's bag hours read every row's new slots and drop load an hour: the
+// reader gives a finite stacks >= 0 (or null, unknown) and a finite load >= 0 on
+// every built row at its reference level.
+{
+    const minGap = raw.rowFields.indexOf('minGap'), refGap = raw.rowFields.indexOf('refGap');
+    const bad = [];
+    raw.rows.forEach((rows, s) => rows.forEach((row, index) => {
+        if (!row) return;
+        const [spotId, spotLevel] = raw.spots[s], shots = raw.shots[index % raw.shots.length];
+        const role = raw.roles[Math.floor(index / raw.shots.length)];
+        const level = Math.max(1, Math.ceil(spotLevel + row[refGap >= 0 ? refGap : minGap]));
+        const value = Table.value(spotId, role, level, shots === 2 ? 2 : shots === 1);
+        if (!value) return;
+        const finite = number => Number.isFinite(number) && number >= 0;
+        if (!(value.stacks === null || finite(value.stacks)) || !finite(value.load)) bad.push(`${spotId} ${role} ${level} ${shots}`);
+    }));
+    assert.deepStrictEqual(bad.slice(0, 10), [], `every built row reads a bag forecast (${bad.length} do not)`);
+}
 // The reader applies the C4 exp level-gap penalty; the measured curves must not carry it too
 // (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap;
 // the gaps now end at the deep-blue gap, so the farthest one is read).

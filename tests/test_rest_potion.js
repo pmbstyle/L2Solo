@@ -35,7 +35,7 @@ function bot(classId, { hp = 1, mp = 1, bottles = 10, hour = 600000, keep = 0 } 
     state.vitals = { hp: profile.maxHp * hp, maxHp: profile.maxHp, mp: profile.maxMp * mp, maxMp: profile.maxMp };
     state.inventory[POTION] = { selfId: POTION, amount: bottles };
     state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], earning: { shotsPerHour: 0, potionsPerHour: keep }, kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: POTION,
-        potionUse: keep, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 }) } : {}) };
+        potionUse: keep, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, bagHours: 1, gapHorizonHours: 0 }) } : {}) };
     return { state, profile };
 }
 
@@ -150,9 +150,10 @@ try {
     assert(stock.benefitPerUnit > 0, 'a bottle is worth the rest it saves');
     assert(stock.benefitPerUnit * rich.hourAdena > stock.unitPrice, 'more than it costs');
     const cycle = Table.cycle(rich.bestSpotId, rich.tableRole, 62, rich.hunt.useShots !== false);
-    const seconds = cycle.rest * cycle.kph * 2;
+    // The stock covers the hours to a full bag plus the reserve (ConsumableTarget): the rest of those hours.
+    const seconds = cycle.rest * cycle.kph * stock.targetHours * 1.1;
     assert(stock.target * 336 / seatedPerSecond < seconds * 1.2,
-        `the outing's stock saves no more than the outing's rest (${stock.target} bottles, ${seconds} s)`);
+        `the bag's stock saves no more than the rest of its hours (${stock.target} bottles, ${stock.targetHours} h, ${seconds} s)`);
     // A field wish for bottles is the survival tranche's (what the fights drink at the best cell): the
     // hunter holds none, so it has one exactly when that tranche is above 0. Past it, the rest bottles
     // are no field wish: the town visit buys them. The row's drink rate is the table's, so the
@@ -160,10 +161,14 @@ try {
     const wish = Economy.forState(hunter(1e7), { timestamp: T }).network.queue.find(entry => entry.key === 'stock:potions');
     assert.equal(wish !== undefined, stock.survivalTarget > 0, 'a field wish for bottles only for the survival tranche; the rest bottles wait for the visit');
     assert(stock.missing > 0 && stock.benefitPerUnit > 0, 'the visit\'s amount is worth buying');
-    const poor = Economy.basics(hunter(price * 3), { timestamp: T }).stock('potions');
-    assert(poor.target <= stock.survivalTarget + 3, `the wallet bounds the stock (${poor.target})`);
+    // The survival drink's stock is a full bag's use plus the reserve whatever the wallet; the rest
+    // bottles above it only what the wallet buys.
     const walletless = Economy.basics(hunter(0), { timestamp: T }).stock('potions');
-    assert.equal(walletless.target, Math.ceil(walletless.usePerHour * walletless.targetHours), 'no money, only the survival drink\'s stock');
+    assert.equal(walletless.target, Math.max(Math.ceil(walletless.usePerHour),
+        invoke('GameServer/Bot/Economy/ConsumableTarget').target(walletless.usePerHour, walletless.targetHours)),
+    'no money, only the survival drink\'s stock');
+    const poor = Economy.basics(hunter(price * 3), { timestamp: T }).stock('potions');
+    assert(poor.target <= walletless.target + 3, `the wallet bounds the stock (${poor.target} over ${walletless.target})`);
     // A build that keeps its foundation (a money build: the wallet is no
     // foundation section) bounds the stock by the wallet it has now.
     {

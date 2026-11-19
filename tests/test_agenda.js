@@ -49,9 +49,11 @@ async function run() {
         return id;
     };
     // Shots at half a D-grade soulshot's usual board price: a unit's worth beats a gear
-    // piece's priority on any table, so the shots' steps come first.
-    const SHOTS = 1463, POTIONS = 1061;
-    sell(SHOTS, 5000, 6); sell(POTIONS, 5000, 120);
+    // piece's priority on any table, so the shots' steps come first. A fair shots seller
+    // holds more than a bot stocks for its hours to a full bag (DEEP), so the next seller
+    // takes the whole rest; the potion seller holds less than the potion stock.
+    const SHOTS = 1463, POTIONS = 1061, DEEP = 20000;
+    sell(SHOTS, DEEP, 6); sell(POTIONS, 50, 120);
     // One bot's review on a visit and the state its plan was published on.
     let nextId = 9000;
     const review = (over = {}) => {
@@ -125,23 +127,26 @@ async function run() {
         // The whole step in the bag: the agenda moves on, to the next seller of what it still wants.
         const whole = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + shots.amount } } }, deps());
         const rest = Number(shots.wanted || shots.amount) - shots.amount;
-        if (rest > 0) assert.deepEqual([whole.network.activity?.itemId, whole.network.activity?.amount], [ITEM, rest], 'its rest from the next seller');
+        // The next seller (the board here still offers the line the step took) sells
+        // at most what it holds: the step wants the rest and buys what the line has of it.
+        if (rest > 0) assert.deepEqual([whole.network.activity?.itemId, whole.network.activity?.wanted, whole.network.activity?.amount],
+            [ITEM, rest, Math.min(rest, shots.amount)], 'its rest from the next seller');
         else assert.notEqual(whole.network.activity?.itemId, ITEM, 'a step that arrived drops');
     }
     { // A seller that fell short: the next seller of the town, up to the value per unit.
         const bid = { status: 'deferred', reason: 'wish_focus', target: { selfId: 1 } };
         clear(SHOTS);
         let thin = sell(SHOTS, 1, 4);
-        const fairLine = sell(SHOTS, 5000, 6);
+        const fairLine = sell(SHOTS, DEEP, 6);
         const dear = shotsFirst({ ...stocked(), stats: { equipmentPlan: bid } }), leaf = dear.plan.network.activity;
         assert.equal(leaf.amount, 1, 'fixture: the cheapest seller holds one');
         assert(leaf.wanted > 1, 'fixture: the bot wanted more of it');
-        board.remove(thin); board.remove(fairLine); sell(SHOTS, 5000, 100000);
+        board.remove(thin); board.remove(fairLine); sell(SHOTS, DEEP, 100000);
         const stopped = Economy.forState(bought(dear.state, leaf), deps());
         assert.notEqual(stopped.network.activity?.itemId, SHOTS, 'a dearer seller stops at the value per unit');
         const before = dear.plan.watchList.find(row => row.itemId === SHOTS)?.amount;
         assert.equal(stopped.watchList.find(row => row.itemId === SHOTS)?.amount, before - 1, 'filled goods left the bids a re-projection read');
-        clear(SHOTS); thin = sell(SHOTS, 1, 4); sell(SHOTS, 5000, 5);
+        clear(SHOTS); thin = sell(SHOTS, 1, 4); sell(SHOTS, DEEP, 5);
         const fair = shotsFirst(stocked()), one = fair.plan.network.activity;
         board.remove(thin);
         const moved = Economy.forState(bought(fair.state, one), deps()), next = moved.network.activity;
@@ -154,10 +159,10 @@ async function run() {
             'a retained project reads today\'s bag, the goods are counted there');
         assert.equal(invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(next, bought(fair.state, one)), one.wanted - 1,
             'nothing it bought is ordered again');
-        clear(SHOTS); sell(SHOTS, 5000, 6);
+        clear(SHOTS); sell(SHOTS, DEEP, 6);
     }
     { // A bot that held some at its decision: the next seller counts from the bag it holds now.
-        clear(SHOTS); const thin = sell(SHOTS, 1, 4); sell(SHOTS, 5000, 5);
+        clear(SHOTS); const thin = sell(SHOTS, 1, 4); sell(SHOTS, DEEP, 5);
         const fair = shotsFirst(stocked({ [SHOTS]: { selfId: SHOTS, amount: 3 } })), one = fair.plan.network.activity;
         assert.deepEqual([one.itemId, one.amount], [SHOTS, 1], 'fixture: the cheapest seller holds one');
         assert(one.wanted > 4, 'fixture: the bot wants more than it held');
@@ -166,10 +171,10 @@ async function run() {
         assert.equal(next?.itemId, SHOTS, 'the next seller takes the rest');
         assert.equal(invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(next, after), one.wanted - 1,
             'what the bot held before is no progress of the next seller');
-        clear(SHOTS); sell(SHOTS, 5000, 6);
+        clear(SHOTS); sell(SHOTS, DEEP, 6);
     }
     { // A seller lost after a part: the part leaves the bids once, the next seller takes the rest.
-        clear(SHOTS); const part = 15, short = sell(SHOTS, 40, 4); sell(SHOTS, 5000, 5);
+        clear(SHOTS); const part = 15, short = sell(SHOTS, 40, 4); sell(SHOTS, DEEP, 5);
         const fair = shotsFirst(stocked()), one = fair.plan.network.activity;
         assert.deepEqual([one.itemId, one.amount], [SHOTS, 40], 'fixture: the cheapest seller holds 40');
         assert(one.wanted > 40, 'fixture: the bot wants more than that seller has');
@@ -178,7 +183,7 @@ async function run() {
         assert.deepEqual([next.network.activity?.itemId, next.network.activity?.amount], [SHOTS, one.wanted - part], 'the next seller takes the rest');
         const bids = view => view.watchList.find(row => row.itemId === SHOTS)?.amount ?? 0;
         assert.equal(bids(next), Math.max(0, bids(fair.plan) - part), 'what the bot bought is bid for no more');
-        clear(SHOTS); sell(SHOTS, 5000, 6);
+        clear(SHOTS); sell(SHOTS, DEEP, 6);
     }
     { // A step pays its trip: one unit elsewhere is not worth the road.
         const { plan, state } = shotsFirst();
@@ -187,19 +192,19 @@ async function run() {
         const lone = sell(SHOTS, 1, 5, 'Dion');
         const next = Economy.forState(state, deps()).network.activity;
         assert(next?.itemId !== SHOTS || next.town !== 'Dion', 'the road costs more than the unit brings');
-        board.remove(lone); sell(SHOTS, 5000, 6);
+        board.remove(lone); sell(SHOTS, DEEP, 6);
     }
     { // A seller lost: the next one elsewhere, after what this town still has.
         const { plan, state } = shotsFirst();
         assert.equal(plan.network.activity.itemId, SHOTS, 'fixture: shots are the step');
         clear(SHOTS);
-        const away = sell(SHOTS, 5000, 5, 'Dion');
+        const away = sell(SHOTS, DEEP, 5, 'Dion');
         const next = Economy.forState(state, deps()).network;
         assert.equal(next.activity.itemId, plan.network.agenda[0].itemId, 'this town goes first');
         const seller = next.agenda.find(step => step.itemId === SHOTS);
         assert.equal(seller?.town, 'Dion', 'the lost item waits at its next seller');
         assert.equal(next.agenda.findIndex(step => step.town !== 'Giran'), next.agenda.indexOf(seller), 'the trip comes after this town');
-        board.remove(away); sell(SHOTS, 5000, 6);
+        board.remove(away); sell(SHOTS, DEEP, 6);
     }
     { // A tight purse is read by the step's place in the money queue.
         const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -225,7 +230,7 @@ async function run() {
         const next = Economy.forState(state, deps());
         assert.equal(next.network.activity?.itemId, plan.network.agenda[0].itemId, 'a gone offer moves on');
         assert.equal(next.network.queue.some(wish => wish.key === first.rootKey), true, 'its root stands');
-        sell(SHOTS, 5000, 6);
+        sell(SHOTS, DEEP, 6);
     }
     { // A native plan that failed or moved is heard at once: a real review.
         const { plan, state } = review();

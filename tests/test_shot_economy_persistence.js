@@ -101,7 +101,9 @@ async function run() {
     assert(!noMp.crafted);
     assert.strictEqual(JSON.stringify(await DB.fetchItems(tired.characterId)), before, 'zero MP cannot trigger a scrap purchase');
 
-    const crafter = await bot({ town: 'Giran' });
+    // Its wallet stands above its kit reserve (D shots for the 9 h to the first
+    // weight step: ~1.16M at the list price), so the gear route below is affordable.
+    const crafter = await bot({ town: 'Giran', money: 2000000 });
 
     Shots._resetForTests();
     const beforeCraftBag = JSON.stringify(await DB.fetchItems(crafter.characterId));

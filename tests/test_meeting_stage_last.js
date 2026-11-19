@@ -34,7 +34,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         await Database.setItem(buyerId, { selfId: SHORT_SWORD, amount: 1, equipped: 1, slot: 7 });
         for (const [id, name, activity, stats] of [
             [sellerId, 'StageSeller', 'hunting', { classId: 0, generatedCold: true, money: [100, 0, 1000, 0] }],
-            [buyerId, 'StageBuyer', 'shopping', { classId: 0, generatedCold: true, money: [100, 0, 1000, 0], visitEvery: [8, 4],
+            [buyerId, 'StageBuyer', 'shopping', { classId: 0, generatedCold: true, money: [100, 0, 1000, 0],
                 townVisit: { town: 'Giran', startedAt: Date.now() - 60000, reason: 'sell_inventory' } }]
         ]) {
             await Life.upsertState({ characterId: id, accountName: 'bot_stage_last', name, level: 20,
