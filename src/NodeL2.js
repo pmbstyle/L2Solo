@@ -122,6 +122,7 @@ function sessionFactory(Session) {
 function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
+    WorldObserver.stopCrestGeneration();
     utils.infoWarn('DB', 'flushing buffered character state before %s', signal);
     const started = Date.now();
     exitAfterFinalWrites();
@@ -146,6 +147,7 @@ function exitAfterFailure() {
     exitCode = 1;
     if (shuttingDown) return; // the running shutdown writes and exits with this code
     shuttingDown = true;
+    WorldObserver.stopCrestGeneration();
     exitAfterFinalWrites();
     writeFinalState().finally(() => {
         FailureLog.report();

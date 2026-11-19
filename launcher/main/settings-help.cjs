@@ -131,6 +131,7 @@ const help = {
         strategyStallMs: 'Time without strategy progress before a normal stall review becomes eligible, in milliseconds.',
         strategyRetryMs: 'Wait before retrying or reviewing a strategy whose execution is blocked, in milliseconds.',
         llmTitleManagementEnabled: 'Allows AI-assisted clan title generation when inference is configured. This can add model requests.',
+        localCrestGenerationEnabled: 'Downloads a 272 MB model bundle from l2solo.com on the next server start. Crest prompts are processed locally in World Observer. Tessera by Jagrat Patel (TheJagStudio), CC BY-NC 4.0.',
         goalReviewMs: 'Interval between autonomous clan-goal reviews, in milliseconds.',
         equipmentReviewMs: 'Interval between clan equipment-planning reviews, in milliseconds. The runtime keeps this at least as long as the goal-review interval.',
         equipmentPartyStallMs: 'Time without equipment progress before party-based acquisition is considered stalled, in milliseconds.',

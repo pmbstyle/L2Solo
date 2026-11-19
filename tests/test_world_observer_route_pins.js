@@ -144,6 +144,17 @@ async function expectFile(url, contentType, includes) {
     await expectExact('POST', '/observer/api/clan/1/crest', jsonReply(400, { ok: false, code: 'invalid_crest_pixels' }), { body: '{}' });
     await expectExact('DELETE', '/observer/api/clan/0/crest', jsonReply(400, { ok: false, code: 'invalid_clan' }));
     await expectExact('GET', '/observer/api/clan/1/crest', jsonReply(404, { error: 'Clan crest not found' }));
+    const generate = '/observer/api/clan/1/crest/generate';
+    const crestRequest = { body: '{"prompt":"gold crown"}', headers: { 'content-type': 'application/json; charset=utf-8' } };
+    const crestGenerationEnabled = options.default.ClanSimulation.localCrestGenerationEnabled;
+    options.default.ClanSimulation.localCrestGenerationEnabled = false;
+    await expectExact('GET', generate, methodNotAllowed('POST'));
+    await expectExact('OPTIONS', generate, methodNotAllowed('POST'));
+    await expectExact('POST', generate, jsonReply(415, { ok: false, code: 'invalid_crest_content_type' }), { body: crestRequest.body });
+    await expectExact('POST', generate, jsonReply(409, { ok: false, code: 'crest_generation_disabled' }), crestRequest);
+    options.default.ClanSimulation.localCrestGenerationEnabled = true;
+    await expectExact('POST', generate, jsonReply(409, { ok: false, code: 'target_not_player_managed' }), crestRequest);
+    options.default.ClanSimulation.localCrestGenerationEnabled = crestGenerationEnabled;
 
     // Detail reads.
     await expectExact('POST', '/observer/api/bot/1/relationships', methodNotAllowed('GET'));

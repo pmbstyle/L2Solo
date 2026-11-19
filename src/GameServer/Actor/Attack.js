@@ -19,6 +19,7 @@ const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
 const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
 const SummonPvp = require('./SummonPvp');
+const ActorSpatialQueries = require('../World/ActorSpatialQueries');
 
 const { weaponMaskFor } = invoke('GameServer/Skills/WeaponMask');
 
@@ -764,8 +765,19 @@ class Attack {
         }
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && targetKind === 'enemy') {
-            return this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
+            const targets = this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
                 .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.isWithinSkillArea(actor, target, radius));
+            if (!actor.fetchOwnerId?.() || semantic.skillType !== C4SkillRules.AGGRO_DAMAGE || semantic.effectType !== 'debuff') return targets;
+
+            const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+            if (Threats.inPeace(actor)) return targets;
+            const World = invoke('GameServer/World/World');
+            const owner = Threats.character(actor);
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
+            const players = ActorSpatialQueries.near(World, actor, radius, ({ actor: target }) => (
+                SummonControl.isValidEnemyTarget(owner, target) && this.isWithinSkillArea(actor, target, radius)
+            ));
+            return this.uniqueSkillTargets([...targets, ...players.map(session => session.actor)]);
         }
 
         if (
@@ -1005,6 +1017,8 @@ class Attack {
         }
         const semantic = skill.fetchSemantic?.() || {};
         const condition = semantic.condition || null;
+        const hpCost = Number(skill.fetchConsumedHp?.()) || 0;
+        if (hpCost > 0 && actor.fetchIsSummon?.() && actor.fetchHp() <= hpCost) return 'Not enough HP.';
         if ((actor.fetchMounted?.() || actor.mounted) && !skill.fetchSpell?.() && skill.fetchSelfId() !== 325) return 'Physical skills cannot be used while riding a strider.';
         const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill, session);
         if (summonFailure) {
@@ -1447,8 +1461,9 @@ class Attack {
         }
         if (actor?.fetchOwnerId?.() && target && !target.fetchKind && actor !== target &&
             (!skill || skill.fetchTargetKind?.() === 'enemy')) {
-            const owner = invoke('GameServer/Bot/AI/BotPvpThreats').character(actor);
-            if (!invoke('GameServer/Npc/SummonControl').isValidEnemyTarget(owner, target)) {
+            const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+            const owner = Threats.character(actor);
+            if (Threats.inPeace(actor) || !invoke('GameServer/Npc/SummonControl').isValidEnemyTarget(owner, target)) {
                 this.clearTimers();
                 actor.state?.setHits?.(false);
                 actor.state?.setCasts?.(false);

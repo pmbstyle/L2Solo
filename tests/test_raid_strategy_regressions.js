@@ -90,17 +90,11 @@ assert(Heal.score({ ...economical, missingHp: 900 }) > Heal.score({ ...economica
 const recharger = actor(10, 43), archer = actor(11, 9), secondHealer = actor(12, 16);
 recharger.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 100, distance: 600 })];
 archer.fetchMp = secondHealer.fetchMp = () => 10;
-let recharges = 0;
-const rechargeContext = { owner: {}, raid: true, threats: [], members: [recharger, archer].map(actor => ({ actor })) };
-const castRecharge = { skillExec() { recharges++; } };
-assert.equal(Tactics.support({ actor: recharger }, recharger, rechargeContext, castRecharge, 1000), false,
-    'a raid healer must not spend the healing reserve on archer mana');
-rechargeContext.members.push({ actor: secondHealer });
+const rechargeContext = { owner: {}, threats: [], members: [recharger, archer, secondHealer].map(actor => ({ actor })) };
+const recharges = [];
+const castRecharge = { skillExec(_s, _a, data) { recharges.push(data.id); } };
 assert(Tactics.support({ actor: recharger }, recharger, rechargeContext, castRecharge, 1100));
-assert.equal(recharges, 1);
-recharger.fetchMp = () => 650;
-assert.equal(Tactics.support({ actor: recharger }, recharger, rechargeContext, castRecharge, 1200), false,
-    'recharge cannot cross the raid healing reserve after paying its cost');
+assert.deepEqual(recharges, [secondHealer.fetchId()], 'ordinary party support still picks the drained healer first');
 
 const a = { partyId: 'a' }, b = { partyId: 'b' }, spot = { raidBossTemplateId: 10484, raidInstanceId: 'spawn-one' };
 let shared = Cold.begin(a, spot, 10484, 100);

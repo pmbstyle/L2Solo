@@ -270,12 +270,28 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.AGGRO_DAMAGE) {
-        result.aggroDamage = calcAggroDamage(skill, target);
-        if (typeof target?.addDamageHate === 'function') {
-            target.addDamageHate(session, actor, 0, result.aggroDamage);
-        }
-        else {
-            target?.enterCombatState?.(session, actor);
+        if (semantic.effectType === 'debuff') {
+            if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
+                result.effectResisted = true;
+            } else {
+                const victim = reflectsSkill(actor, target, magicSkill, rng) ? actor : target;
+                result.reflected = victim === actor && target !== actor;
+                if (isAttackableNpc(victim)) {
+                    result.aggroDamage = Math.max(0, Number(skill.fetchPower()) || 0);
+                    victim.addDamageHate?.(session, actor, 0, result.aggroDamage);
+                } else if (victim !== actor) {
+                    victim.setDestId?.(actor.fetchId());
+                    victim.session?.dataSendToMe?.(ServerResponse.destSelected(actor.fetchId()));
+                }
+                result.effect = applyEffect(session, victim, skill, semantic, actor);
+            }
+        } else {
+            result.aggroDamage = calcAggroDamage(skill, target);
+            if (typeof target?.addDamageHate === 'function') {
+                target.addDamageHate(session, actor, 0, result.aggroDamage);
+            } else {
+                target?.enterCombatState?.(session, actor);
+            }
         }
         if (semantic.selfEffect && !EffectStore.list(actor).some((effect) => (
             Number(effect.id) === Number(skill.fetchSelfId()) && effect.key === semantic.selfEffect.effect
@@ -816,7 +832,7 @@ function fetchSummonNpcFallback(DataCache, skill) {
 function summonFamilyFallbackIds(name) {
     if (name.includes('panther')) return [12184, 12183, 12182, 12181];
     if (name.includes('unicorn') || name.includes('seraphim')) return [12064, 12357, 12065, 12358];
-    if (name.includes('nightshade') || name.includes('shadow') || name.includes('silhouette')) return [12070, 12366, 12071, 12367];
+    if (name.includes('shadow') || name.includes('silhouette')) return [12070, 12366, 12071, 12367];
     if (name.includes('soulless') || name.includes('reanimated') || name.includes('corrupted') || name.includes('cursed man')) return [12070, 12366, 12071, 12367];
     if (name.includes('cat') || name.includes('mew') || name.includes('kat')) return [12006, 12348, 12007, 12349];
     if (name.includes('golem') || name.includes('hog cannon') || name.includes('big boom')) return [12187, 12188, 12189, 12021, 22421];

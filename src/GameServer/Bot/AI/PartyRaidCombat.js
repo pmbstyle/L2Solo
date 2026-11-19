@@ -5,11 +5,24 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const SkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const Intent = invoke('GameServer/Bot/AI/BotSkillIntent');
+const Feedback = invoke('GameServer/Bot/AI/BotActionFeedback');
+const PartyHeal = invoke('GameServer/Bot/AI/PartyHealPolicy');
+const Automation = invoke('GameServer/Automation');
+const Geodata = invoke('GameServer/Geodata/GeodataEngine');
+const Formulas = invoke('GameServer/Formulas');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
+const SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const { castPosition, CAST_RANGE_MARGIN } = invoke('GameServer/Bot/AI/PartySupportMovement');
 
 const RAID_ACTION_RETRY_MS = 8000;
 const RAID_AGGRESSION_RETRY_MS = 5000;
 const RAID_RECOVERY_BUFF_WAIT_MS = 8000;
+const RAID_RECHARGE_APPROACH_RETRY_MS = 3000;
+const RAID_HEALER_HOLD_RANGE = 700;
 const ratio = (value, max) => Number(value || 0) / Math.max(1, Number(max || 1));
+const point = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
+const distance = (a, b) => Math.hypot(a.locX - b.locX, a.locY - b.locY, a.locZ - b.locZ);
 
 function mainRaidTank(members, party) {
     members = members.filter(member => !require('../../Clan/ClanRaidExpedition').helper(party, member));
@@ -135,8 +148,82 @@ function preserveControlledAdds(session, bot, raidPlan) {
     }
 }
 
+function raidHealingRange(bot) {
+    return Math.min(RAID_HEALER_HOLD_RANGE, SkillCapabilities.healSkill(bot)?.fetchDistance() || RAID_HEALER_HOLD_RANGE);
+}
+
+function rechargeParty(session, bot, Generics, { owner, members, anchor, partyId = null, underAttack, combat = true }, now) {
+    const skill = SkillCapabilities.manaRechargeSkill(bot);
+    if (!skill || skill.fetchTargetKind() !== 'friendly' || !Intent.usable(bot, skill, 0.6)) return false;
+    const anchorReady = () => Intent.alive(anchor) && ratio(anchor.fetchHp(), anchor.fetchMaxHp()) >= PartyHeal.HEAL_BELOW;
+    if (combat && anchor && !anchorReady()) return false;
+
+    const skillId = skill.fetchSelfId();
+    const semantic = skill.fetchSemantic();
+    const restoresMana = actor => semantic.skillType !== SkillRules.MANA_RECHARGE || Formulas.calcManaRechargeAmount({
+        power: semantic.manaPower ?? skill.fetchPower(), gainMp: EffectStats.add(actor, 'gainMp'),
+        casterLevel: bot.fetchLevel?.(), targetLevel: actor.fetchLevel?.()
+    }) > 0;
+    const pending = new Set(members.filter(member => member.actor.state?.fetchCasts?.())
+        .map(member => member.actor.attack?.activeCast)
+        .filter(cast => cast?.skill?.fetchSelfId() === skillId).map(cast => cast.target));
+    const candidates = members.map(member => member.actor)
+        .filter(actor => actor !== bot && Intent.alive(actor) && !pending.has(actor) && !Feedback.blocked(bot, actor, skill))
+        .map(actor => ({ actor, role: Roles.inferRole(actor), mp: ratio(actor.fetchMp(), actor.fetchMaxMp()) }))
+        .filter(({ role, mp }) => role === 'healer' ? mp < 0.2 : combat && Roles.isRanged(role) && mp < 0.5)
+        .filter(({ actor }) => restoresMana(actor))
+        .sort((a, b) => Number(b.role === 'healer') - Number(a.role === 'healer') || a.mp - b.mp
+            || a.actor.fetchId() - b.actor.fetchId());
+
+    const canCastHere = actor => Intent.inRange(bot, actor, skill) && !Automation.needsGeodataApproach(session, bot, actor);
+    const inRange = candidates.find(({ actor }) => canAttemptRaidAction(owner, actor, skill, now) && canCastHere(actor));
+    if (inRange) {
+        const targetId = inRange.actor.fetchId();
+        Tactics.stop(session, bot);
+        standForAction(session, bot);
+        // Cover the asynchronous target lookup until the native cast becomes active.
+        rememberRaidAction(owner, inRange.actor, skill, now, 1000);
+        Generics.skillExec(session, bot, { id: targetId, selfId: skillId, ctrl: false });
+        session.lastDecision = { action: 'raid_recharge', targetId, skillId, partyId, at: now };
+        return true;
+    }
+
+    if (!combat || !candidates.length || !anchorReady() || underAttack || !Restrictions.canMove(bot)
+        || invoke('GameServer/Bot/AI/PartyAwareness').underDirectNpcAttack(session)) return false;
+    if (session.pendingPathRequest || bot.state.fetchTowards?.()) return session.lastDecision?.action === 'raid_recharge_approach';
+    if (now - (session.lastRaidRechargeApproachAt ?? -Infinity) < RAID_RECHARGE_APPROACH_RETRY_MS) return false;
+
+    const from = point(bot), anchorPoint = point(anchor);
+    const range = Math.max(0, Number(skill.fetchDistance()) - CAST_RANGE_MARGIN);
+    const healRange = raidHealingRange(bot);
+    for (const { actor } of candidates) {
+        if (canCastHere(actor)) continue;
+        const target = point(actor);
+        // Reach the casting edge without giving up healing range of the main tank or local party anchor.
+        const to = [castPosition(from, target, range), castPosition(anchorPoint, target, range), target]
+            .find(goal => distance(goal, anchorPoint) <= healRange && distance(goal, from) > 0
+                && Geodata.canWalkStraight(goal.locX, goal.locY, goal.locZ, target.locX, target.locY, target.locZ));
+        if (!to) continue;
+        const routeGuard = (route, { complete }) => {
+            if (!anchorReady()) return false;
+            const center = point(anchor);
+            const limit = Math.max(healRange, distance(point(bot), center));
+            return (!complete || route.length > 0 && distance(route.at(-1), center) <= healRange)
+                && route.every(waypoint => distance(waypoint, center) <= limit);
+        };
+        Tactics.stop(session, bot);
+        standForAction(session, bot);
+        bot.moveTo({ from, to, routeGuard });
+        session.lastRaidRechargeApproachAt = now;
+        session.lastDecision = { action: 'raid_recharge_approach', targetId: actor.fetchId(), skillId, partyId, at: now };
+        return true;
+    }
+    return false;
+}
+
 function tick(session, bot, Generics, AI, context, now = Date.now()) {
-    const { owner, supportOwner = owner, members, near = members, raidPlan, raidTank, partyId = null, playerLeader = null, combatBuffs, party, supportAnchor = raidTank } = context;
+    const { owner, supportOwner = owner, members, near = members, supportMembers = near, raidPlan, raidTank,
+        partyId = null, playerLeader = null, combatBuffs, party, supportAnchor = raidTank } = context;
     const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
     preserveControlledAdds(session, bot, raidPlan);
     if (!Restrictions.canUseBasicAction(bot)) return true;
@@ -170,6 +257,9 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
     }
     if (!isRaidTank && !bossHeldByTank && (owner.raidOpenedBossId !== raidPlan.boss.fetchId()
         || Number(raidPlan.boss.fetchDestId?.()) === Number(bot.fetchId()))) {
+        if (!playerLeader && !attackers.length && rechargeParty(session, bot, Generics, {
+            owner: supportOwner, members: supportMembers, partyId, combat: false
+        }, now)) return true;
         Tactics.stop(session, bot);
         Tactics.followSummon(session, bot);
         session.currentTargetId = undefined;
@@ -187,6 +277,17 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
         session.lastDecision = { action: 'raid_wait_minimal_rebuff', until: session.hotRaidRebuffUntil,
             partyId, at: now };
         return true;
+    }
+    if (!isRaidTank) {
+        let anchor = supportMembers.includes(supportAnchor) ? supportAnchor : supportOwner;
+        if (anchor === session) {
+            anchor = supportMembers.find(member => member !== session && Intent.alive(member.actor)
+                && Threats.distance(bot, member.actor) <= RAID_HEALER_HOLD_RANGE);
+        }
+        if (rechargeParty(session, bot, Generics, {
+            owner: supportOwner, members: supportMembers, partyId, anchor: anchor?.actor,
+            underAttack: attackers.length > 0
+        }, now)) return true;
     }
     combatTarget = isRaidTank
         ? raidPlan.boss
@@ -244,11 +345,13 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
         if (session.currentTargetId || bot.fetchDestId?.()) bot.unselect?.();
         session.currentTargetId = undefined;
         Tactics.followSummon(session, bot);
-        if (supportAnchor && Threats.distance(bot, supportAnchor.actor) > 700 && Restrictions.canMove(bot)) {
+        const woundedAnchor = supportAnchor && supportMembers.includes(supportAnchor)
+            && ratio(supportAnchor.actor.fetchHp(), supportAnchor.actor.fetchMaxHp()) < PartyHeal.HEAL_BELOW;
+        const holdRange = woundedAnchor ? raidHealingRange(bot) : RAID_HEALER_HOLD_RANGE;
+        if (supportAnchor && Threats.distance(bot, supportAnchor.actor) > holdRange && Restrictions.canMove(bot)) {
             standForAction(session, bot);
             if (!bot.state.fetchTowards?.()) {
                 Tactics.stop(session, bot);
-                const point = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
                 bot.moveTo({ from: point(bot), to: point(supportAnchor.actor) });
             }
             session.lastDecision = { action: 'raid_heal_approach', targetId: supportAnchor.actor.fetchId(), partyId, at: now };
@@ -298,4 +401,4 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
     return true;
 }
 
-module.exports = { mainRaidTank, standForAction, combatRaidBuffs, preserveControlledAdds, tick };
+module.exports = { mainRaidTank, standForAction, combatRaidBuffs, preserveControlledAdds, rechargeParty, tick };

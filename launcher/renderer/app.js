@@ -26,6 +26,7 @@ const labels = { progressionPreset: 'Progression preset', expRate: 'Experience m
     path: 'World database path', reasoningEffort: 'Reasoning effort', completionLimitParam: 'Completion limit parameter' };
 labels.llmGoalManagementEnabled = 'AI clan goals';
 labels.llmTitleManagementEnabled = 'AI clan member titles';
+labels.localCrestGenerationEnabled = 'Local clan crest generation';
 const humanize = key => labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
 
 function element(tag, className, text) {

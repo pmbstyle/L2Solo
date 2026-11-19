@@ -4,7 +4,7 @@
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The next stable versions are server `0.2.0` and launcher `0.2.4`. Schema-2 server packages require launcher `0.2.0` or newer. Integrate the reviewed changes into `develop` to build and validate a preview, then merge the release source into `main`. Publish the launcher first and wait for its native jobs and complete public release before publishing the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable versions are server `0.2.0` and launcher `0.2.4`. Schema-2 server packages require launcher `0.2.0` or newer. Integrate the reviewed changes into `develop`, then merge the release source into `main`. Publish the launcher first and wait for its native jobs and complete public release before publishing the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
 # After review, commit and integration of the intended release source:
@@ -15,29 +15,19 @@ git tag server-v0.2.0
 git push origin server-v0.2.0
 ```
 
-Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI requires the tagged commit to be in `main`. Future server-only releases reuse the same launcher binaries until a new launcher version is published. PRs never publish releases. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases, but no longer trigger new publications.
+Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI builds and publishes when a new component tag is pushed for a commit in `main`. Server-only releases reuse published launcher installers. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases.
 
-## Preview builds from develop
+## Existing preview releases
 
-Every push to `develop` runs `.github/workflows/preview.yml`. It can also be dispatched against `develop` once the workflow is available for manual dispatch. No merge into `main` is needed. The workflow runs all twelve server test shards, launcher tests and packaged checks on Windows x64, Linux x64 and both macOS architectures before publishing.
-
-Each run stamps disposable build copies with `server-v<base>-preview.<run number>` and `launcher-v<base>-preview.<run number>`. Source package versions in `develop` stay numeric. Both manifests carry the same source commit; the preview server requires the exact launcher build from that commit. Preview publication creates complete GitHub prereleases, never changes Latest, and never replaces an already published version. Retrying an incomplete draft retains its source commit; an already published preview is verified and reused without replacing files. A new build needs a new workflow run number.
-
-Configure the repository Actions secret `PREVIEW_RELEASE_TOKEN` before automatic publication. Use a fine-grained token restricted to this repository with **Contents: write** and **Workflows: write**, or an equivalent GitHub App token. GitHub requires workflow authorization when a release target changes `.github/workflows/` relative to the default branch; the built-in `GITHUB_TOKEN` cannot provide it. See [GitHub's release API requirements](https://docs.github.com/en/rest/releases/releases#create-a-release). Without the secret, build/test jobs still produce downloadable Actions artifacts and the publication job stops with a setup message. After adding the secret, rerun the failed publication job for the same run. Never put tokens in source files or release assets.
-
-Download a **L2Solo Launcher Preview** installer from the preview server or launcher release. It has a separate application identity and user profile. Choose an empty test server folder. Managed stable and preview server folders cannot be opened through the other channel, including folders reserved before installation. The preview client only discovers preview tags marked as prereleases; stable clients only discover stable tags. Preview updater metadata uses `preview-<arch>` channels and stable metadata uses `latest-<arch>`. macOS still uses manual DMG replacement within its channel.
-
-To exercise the entire update path, install preview N, create a test world and backup, then use a later develop build N+1. Check server migration/rollback, world/history preservation, offline start and interrupted downloads. On Windows NSIS and Linux AppImage, check the application update and restart too; on macOS, replace the closed Preview app using its next DMG. CI package tests do not substitute for an installed previous-to-next application walkthrough. After validation, merge the reviewed source into `main` and publish stable component tags.
-
-The preview publisher resolves known component tags through the authenticated exact-tag API, including the server's companion launcher and an already published preview being retried. It does not discover them through the anonymous release list, whose cached response can lag publication. Drafts and mismatched tags are rejected; the normal version, source commit, installer and checksum checks still apply.
+Previously published **L2Solo Launcher Preview** installers have a separate application identity and user profile. Use an empty test server folder for a new installation. A managed server folder can only be opened by a launcher from the same channel. Preview clients discover preview tags marked as prereleases and use the `preview-<arch>` updater feeds. Stable clients discover stable tags and use the `latest-<arch>` feeds.
 
 ## Release notes
 
-Write player-facing changes in `release-notes/server.md` and `release-notes/launcher.md` as part of the update PR. The publisher uses these reviewed files for both preview and stable release bodies, adds component versions/download guidance, and labels previews with their source commit. Empty notes prevent publication. GitHub-generated PR lists are no longer the user-facing description. Updates has one Markdown notes panel: server release notes take priority, with launcher notes as a fallback when server notes are unavailable. Headings, lists, emphasis, code and tables are formatted locally. Raw HTML is escaped, images remain text, and links use the existing main-process URL checks before opening externally.
+Write player-facing changes in `release-notes/server.md` and `release-notes/launcher.md` as part of the update PR. The publisher adds component versions and download guidance to the reviewed release notes. Empty notes prevent publication. GitHub-generated PR lists are no longer the user-facing description. Updates has one Markdown notes panel: server release notes take priority, with launcher notes as a fallback when server notes are unavailable. Headings, lists, emphasis, code and tables are formatted locally. Raw HTML is escaped, images remain text, and links use the existing main-process URL checks before opening externally.
 
 ## CI and artifacts
 
-`.github/workflows/release.yml` validates the component tag before building. Server releases run all twelve server test shards plus launcher updater/rollback tests and package a ready-to-run ZIP with production dependencies. Launcher releases run launcher tests, prepare the pinned runtime, build on native runners and run packaged application smoke checks.
+`.github/workflows/launcher.yml` runs launcher unit tests and UI smoke checks on pull requests that affect the launcher. `.github/workflows/release.yml` validates each new component tag before building. Server releases run all twelve server test shards plus launcher updater/rollback tests and package a ready-to-run ZIP with production dependencies. Launcher releases run launcher tests, prepare the pinned runtime, build on native runners and run packaged application smoke checks. The Windows job also exercises the NSIS installer checks.
 
 | Target | Installer/download | Update metadata |
 | --- | --- | --- |

@@ -180,4 +180,4 @@ function routeGuard(session, bot, destination) {
     };
 }
 
-module.exports = { PARTY_RADIUS, TARGET_DRIFT, followDestination, supportDestination, routeGuard };
+module.exports = { PARTY_RADIUS, TARGET_DRIFT, CAST_RANGE_MARGIN, castPosition, followDestination, supportDestination, routeGuard };

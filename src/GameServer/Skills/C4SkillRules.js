@@ -146,6 +146,13 @@ const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
     paralyze: 'paralyze'
 });
 
+// Curse of Shade and its aura share one debuff slot in Lisvus C4.
+const curseOfShade = {
+    skillType: AGGRO_DAMAGE, trait: 'debuff', target: 'enemy', effect: 'curse_of_shade', effectType: 'debuff',
+    baseLandRate: 100, stackFamily: 'CurseShade', stackOrder: 100,
+    statsByLevel: { pDefMul: [0.94, 0.92, 0.90], mDefMul: [0.95, 0.92, 0.90] }
+};
+
 const RULES = {
     // Lisvus effect time is one period; lifetime is count * time. NPC support
     // skills also need their periodic payload/stat bonuses, not name inference.
@@ -209,6 +216,10 @@ const RULES = {
     4200: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_atk_spd', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 90, levelDepend: 1, durationMs: 15000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250, stackFamily: 'pAtkSpdDown', stackOrderByLevel: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77], statsByLevel: { pAtkSpdMul: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77] } },
     4203: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 50, levelDepend: 1, durationMs: 120000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250, stackFamily: 'RunSpeedDown', stackOrderByLevel: [0.85, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], statsByLevel: { runSpdMul: [0.85, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     4205: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 30, levelDepend: 1, durationMs: 120000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250 },
+    4705: { ...curseOfShade, effectRange: 900 },
+    4706: { ...curseOfShade, sourceTarget: 'aura', radius: 200 },
+    4707: { skillType: HEAL, trait: 'heal', target: 'friendly', effectRange: 1100,
+        aggroPointsByLevel: [541, 611, 659, 666, 669, 673, 676, 679, 681, 684, 687, 689, 692] },
     4713: { skillType: HEAL, trait: 'heal', target: 'self', isMagic: true, ssBoost: 1, castRange: -1 },
     4717: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
     4718: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },

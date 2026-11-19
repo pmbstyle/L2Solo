@@ -155,6 +155,12 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         return true;
     }
     if (group && Commands.handleMovement(session, bot)) return true;
+    if (raid.phase === 'opening' && Combat.rechargeParty(session, bot, Generics, {
+        owner, members: near, combat: false
+    }, now)) {
+        session.roleDecision = { role: Roles.inferRole(bot), ...session.lastDecision, reason: 'raid_recharge' };
+        return true;
+    }
     if (group && Commands.prepareRaid(group, session, Generics, raid.bossId, { combat: raid.phase === 'combat' })) {
         decision(session, 'raid_party_preparing', boss, now);
         return true;
