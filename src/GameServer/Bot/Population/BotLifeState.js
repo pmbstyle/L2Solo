@@ -1277,6 +1277,29 @@ function shiftDueTimesByDowntime() {
     });
 }
 
+// The progression rate the world runs at (the rates profile, recorded in world_meta) is part
+// of every spot's hour. A boot at another rate than the recorded one raises rate_changed on
+// every bot row, so each takes its earning answer and its build again, once, at the new rate;
+// the same rate raises nothing. A world saved before the rate was recorded holds none: its
+// rate is unknown, so it is taken as moved once. One UPDATE before the cache reads the table,
+// as the boot repairs beside it: no turn of a running world waits on it.
+function raiseOnRateChange() {
+    const rate = JSON.stringify(invoke('GameServer/ProgressionRates').profile());
+    return Database.execute(["SELECT value FROM world_meta WHERE key = 'progressionRate'", []]).then(([row] = []) => {
+        if (row?.value === rate) return 0;
+        const mind = "COALESCE(NULLIF(mindJson, ''), '{}')";
+        return Database.execute([`UPDATE ${TABLE} SET mindJson = json_set(${mind},
+            '$.woken', COALESCE(json_extract(${mind}, '$.woken'), ?) | ?,
+            '$.situationSeq', COALESCE(json_extract(${mind}, '$.situationSeq'), 0) + 1)`,
+        [Situations.FIRST, Situations.delta('rate_changed').woken]]).then((result) => {
+            const raised = Number(result?.affectedRows || 0);
+            utils.infoWarn('BotLife', 'progression rate %s (was %s): rate_changed raised on %d bots', rate, row?.value || 'unrecorded', raised);
+            return Database.execute([`INSERT INTO world_meta (key, value) VALUES ('progressionRate', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [rate]]).then(() => raised);
+        });
+    });
+}
+
 // Clocks are whole milliseconds (the command checkpoint and the native write
 // fence refuse a fraction). A row saved before the rest deadlines were ceiled
 // can hold one, and a bot with a fractional clock takes no command. Before the
@@ -2008,6 +2031,7 @@ const BotLifeState = {
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
             .then(() => wholeClocks(TABLE, ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt', 'updatedAt']))
             .then(() => shiftDueTimesByDowntime())
+            .then(() => raiseOnRateChange())
             .then(() => Database.fetchBotMarketCounts()).then((rows) => {
                 marketCounts.clear();
                 for (const row of rows) {

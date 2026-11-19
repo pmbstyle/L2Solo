@@ -1127,13 +1127,18 @@ function buildProjection(state, ctx, deps) {
     const statusOf = (wish, node) => !wish.plan ? 'no_path'
         : wish.valueHours > 0 && positive(wish.plan.hours) < node.horizonHours ? 'evaluated'
             : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
+    const spendable = Math.max(0, positive(solverOptions.wallet) - positive(solverOptions.refillReserve));
+    // A wish the wallet pays now: its whole path (a craft and an unseal, too)
+    // has a step now and its cash fits the spendable wallet, the money
+    // queue's funded test for one root.
+    const fundedNow = wish => Network.fundable(wish) && Network.cashCharge(wish) <= spendable;
     const readyGear = row => {
         const acquisition = row.wish.plan?.requirements?.find(requirement => requirement.key === `item:${row.candidate.item.selfId}`)?.plan
             || row.wish.plan;
         const command = acquisition?.execution || acquisition;
         return !!command?.executable && !command.awaitingIncoming && !command.requirements?.length
             && Number(command.availableUnits ?? Infinity) >= 1
-            && Number(command.price || 0) <= Math.max(0, positive(solverOptions.wallet) - positive(solverOptions.refillReserve));
+            && Number(command.price || 0) <= spendable;
     };
     const evaluate = (row, used) => {
         admission.evaluations++; row.evaluations = (row.evaluations || 0) + 1;
@@ -1149,6 +1154,7 @@ function buildProjection(state, ctx, deps) {
             if (solverOptions.stockFor) { const claims = solver.allocate(wish, used); if (wish.plan) row.claims = claims; }
             row.wish = wish;
             row.readyGear = readyGear(row);
+            row.fundedNow = fundedNow(wish);
             row.status = statusOf(wish, row.node);
         } catch (error) {
             if (!SOLVER_LIMITS.has(error?.message)) throw error;
@@ -1161,6 +1167,13 @@ function buildProjection(state, ctx, deps) {
         // once it closes, the ordinary C weapon/armour/jewellery order resumes.
         if (a.candidate.firstWeaponGrade && b.candidate.firstWeaponGrade && a.readyGear !== b.readyGear)
             return a.readyGear;
+        // Within one progression priority a piece the wallet pays now comes
+        // before a dearer one it waits for (a C bot with 3.5M took the 4.3M
+        // weapon and waited, a 3.2M one was in reach). Paid now is the whole
+        // path, not its step count: a funded craft-and-unseal is not outranked
+        // by a funded one-step craft of its sealed base.
+        if (a.node.progressionPriority > 0 && a.node.progressionPriority === b.node.progressionPriority && a.fundedNow !== b.fundedNow)
+            return a.fundedNow;
         return a.node.progressionPriority !== b.node.progressionPriority
             ? a.node.progressionPriority > b.node.progressionPriority
             : (a.node.key === ctx.completionKey) !== (b.node.key === ctx.completionKey)
@@ -1251,6 +1264,8 @@ function buildProjection(state, ctx, deps) {
                 const claims = solver.allocate(wish, used);
                 row.wish = wish; row.claims = wish.plan ? claims : null;
                 row.readyGear = readyGear(row);
+                row.fundedNow = fundedNow(wish);
+            row.fundedNow = fundedNow(wish);
                 row.status = statusOf(wish, row.node);
                 // Only a root that stays admitted keeps its claim on held stock.
                 if (row.status === 'evaluated') used = claims;

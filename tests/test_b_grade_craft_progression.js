@@ -17,6 +17,10 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
 const { BoardIndex } = invoke('GameServer/AfkTrade/BoardIndex');
+// The craft cases run with no seller of B gear (the city reserve store off): a
+// funded bot buys the B piece that store sells before any craft input.
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig'), storeWasOff = PopulationConfig.staticShotsDisabled;
+PopulationConfig.staticShotsDisabled = true;
 const timestamp = 1791813240000;
 const readyFixtures = new Map();
 
@@ -488,5 +492,6 @@ if (isMainThread) {
     });
     Promise.all([workerCheck, verifyNativeCrafts()])
         .catch(error => { console.error(error); process.exitCode = 1; })
-        .finally(() => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
-} else parentPort.postMessage({ type: 'b_grade_craft_result', results });
+        .finally(() => { PopulationConfig.staticShotsDisabled = storeWasOff;
+            require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }); });
+} else { PopulationConfig.staticShotsDisabled = storeWasOff; parentPort.postMessage({ type: 'b_grade_craft_result', results }); }

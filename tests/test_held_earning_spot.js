@@ -131,8 +131,10 @@ function onWorker() {
         assert.equal(read.searches, 1, `${name} wakes one search`);
         assert.equal(published(woken, read.result).stats.earning.spotId, 'poor', `${name}: the bot moves to the better spot`);
     }
-    // Woken alone (a contest lost, the recovery lifted), the decision is taken alone: one search, no build
-    // (its new answer wakes none; the hunting leaf reads the answer's spot).
+    // Woken alone (a contest lost, the recovery lifted), the decision is taken alone: one search, no
+    // wish network. Its answer moved (another spot, another hour there): the build hears it, and the money
+    // packet it publishes, which every purchase, potion and trip is priced by, carries the new answer's hour.
+    // An answer that did not move wakes no build.
     {
         const lost = raised(turned, 'contest_lost');
         assert.equal(Situations.woken(lost.stats, 'build'), false, 'fixture: the build sleeps');
@@ -141,8 +143,19 @@ function onWorker() {
         assert.equal(alone.result.earning.spotId, 'poor', 'the bot moves to the better spot');
         const after = { ...lost, stats: { ...lost.stats, ...alone.result } };
         assert.equal(Situations.woken(after.stats, 'earning_spot'), false, 'its bit cleared');
-        assert.equal(Situations.woken(after.stats, 'build'), false, 'and no build woken');
+        assert.equal(Situations.woken(after.stats, 'build'), true, 'its moved answer wakes the build');
         assert.equal(count(() => Economy.decideEarning(after, deps(8))).result, null, 'nothing left to take');
+        const heldHour = Packet.hourAdena(turned.stats.money);
+        const rebuilt = count(() => Economy.forState(after, deps(8)));
+        assert.equal(rebuilt.searches, 0, 'the build reads the answer taken: no second search');
+        const hour = Packet.hourAdena(rebuilt.result.statsPacket.money);
+        assert.notEqual(hour, heldHour, 'fixture: the two spots pay different hours');
+        assert(Math.abs(hour - alone.result.earning.earning * Hunt.onSpotShare(after)) <= 1,
+            `the money packet prices in the new answer's hour (${hour} vs ${alone.result.earning.earning})`);
+        const moved = published(after, rebuilt.result);
+        const same = count(() => Economy.decideEarning(raised(moved, 'contest_lost'), deps(9)));
+        assert.equal(same.result.earning.spotId, 'poor', 'fixture: the same answer again');
+        assert.equal(Situations.woken({ ...moved.stats, ...same.result }, 'build'), false, 'an answer that did not move wakes no build');
         // A fact of its own situations moved since the build (a death on its spot: spot_dangerous) is answered by
         // the decision taken alone: the next step does not raise it again until a build.
         const died = { ...turned, stats: { ...turned.stats, spotRisk: { ...turned.stats.spotRisk, windowDeaths: 1 } } };

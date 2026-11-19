@@ -657,19 +657,19 @@ function earningDue(state, deps = {}) {
 }
 // The earning spot taken alone, when its own situations woke it and not the build's
 // (a contest lost, the recovery lifted, a spot outleveled): the search a build runs
-// (foundation's incomeRouteFor), at the bot's own prices, no wish network. Its answer
-// wakes no dependant (where the bot hunts changes no purchase or trip its build holds):
-// the held build serves on, its hunting leaf reads the held answer's spot and so
-// does the spot it goes to when sent to hunt (BotRoute.huntSpotHeld). Far steps and near posts alike. Returns the mind keys it writes (the
-// answer and the bits left; the spot marks stay, they last the outing), or null when it is not due here (main, a party member, an incoming projection waiting).
+// (foundation's incomeRouteFor), at the bot's own prices, no wish network. An answer
+// that moved (another spot or another hour there) wakes the build (Situations.earningTaken:
+// earning_moved), whose money packet prices every purchase and trip in that hour; one
+// that did not leaves the held build serving, its hunting leaf reading the held answer's
+// spot and so does the spot it goes to when sent to hunt (BotRoute.huntSpotHeld). Far steps and near posts alike. Returns the mind keys it writes (the
+// answer and the bits; the spot marks stay, they last the outing), or null when it is not due here (main, a party member, an incoming projection waiting).
 function decideEarning(state, deps = {}) {
     if (!earningDue(state, deps) || state.incomingPending) return null;
     deps = resolved(state, deps, false);
     const { price, timestamp } = personal(state, deps);
     const found = IncomeRoute.search(state, { ...deps, timestamp, required: true, price });
     const earning = Situations.withOwnFacts(state, IncomeRoute.answerOf(found.route, timestamp, found.error, state));
-    return { earning, woken: Situations.decided(state.stats, 'earning_spot', { caller: deps.caller || 'economy_context',
-        subject: state.characterId, answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' }) };
+    return { earning, ...Situations.earningTaken(state, earning, deps.caller || 'economy_context') };
 }
 // The bot's own fit for the spot of its hunting leaf:
 // the route's one test, BotRoute.leafFitReader, as a yes or no per

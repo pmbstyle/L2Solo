@@ -54,7 +54,11 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     const forcedInventoryCleanup = sellingInventory && !!cleanupReason && cleanupReason !== 'inventory_half_full';
     const improving = goal.type === 'improving' && goal.target?.improvement?.kind !== 'enchant';
     if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory && !improving) return null;
-    if (!improving && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
+    // A purchase the bot can bid for from afar is not travelled for. A sale trip
+    // goes even with a shop open: it sells to the NPC buyback (the build's
+    // liquidation leaf), which no shop makes.
+    if (!improving && !sellingInventory
+        && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if (sellingInventory && !forcedInventoryCleanup
         && invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds(state)) return null;
 
