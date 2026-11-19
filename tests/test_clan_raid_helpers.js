@@ -133,17 +133,17 @@ assert.equal(ColdCombat.coldRaidControlCapacity([controller], guarded), 0, 'fall
 const nativeHelper = owned.find(s => s.characterId === helper.characterId);
 const profile = Combat.profileFor(nativeHelper, timestamp);
 const dead = { ...nativeHelper, vitals: { hp: 0, maxHp: profile.maxHp, mp: 0, maxMp: profile.maxMp } };
-const first = Recovery.recover(marker, [core[0],dead], timestamp, 15000).get(dead.characterId);
+const first = Recovery.recover(marker, [core[0],dead], timestamp).get(dead.characterId);
 assert.equal(first.nextResolveAt, timestamp + Recovery.RESTART_MS);
 const waiting = { ...dead, stats: first.patch.stats };
-const recovered = Recovery.recover(marker, [core[0],waiting], first.nextResolveAt, 15000);
+const recovered = Recovery.recover(marker, [core[0],waiting], first.nextResolveAt);
 assert.equal(recovered.size, 1, 'helper recovery never rests/heals the core for free');
 const restarted = recovered.get(dead.characterId);
 assert.equal(restarted.patch.clearDeathExperience, 'restart_to_town');
 assert(restarted.patch.vitals.hp > 0);
 let returning = { ...waiting, ...restarted.patch }, previousAt = first.nextResolveAt, at = restarted.nextResolveAt;
 for (let step = 0; step < 20 && returning.stats.raidHelperRecovery; step++) {
-    const rested = Recovery.recover(marker, [returning], at, at - previousAt).get(dead.characterId);
+    const rested = Recovery.recover(marker, [{ ...returning, timing: { ...returning.timing, lastResolvedAt: previousAt } }], at).get(dead.characterId);
     returning = { ...returning, ...rested.patch };
     previousAt = at; at = Math.max(at + 15000, rested.nextResolveAt);
 }

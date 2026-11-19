@@ -1,5 +1,6 @@
 'use strict';
 
+const RoundLoot = require('./RoundLoot');
 const MODES = ['need', 'random', 'turn'];
 const positive = value => Math.max(0, Number(value) || 0);
 const trait = (persona, key) => Math.max(0, Math.min(1, Number(persona?.traits?.[key] ?? 0.5)));
@@ -22,11 +23,20 @@ function propose(leader, members, objective, { persona, rng = Math.random, affin
 
 // This policy only moves the encounter's actual rewards. It cannot create
 // currency or pay an order: the native party transaction settles its escrow.
-function allocate(memberResults, agreement, { rng = Math.random, needScore = () => -Infinity } = {}) {
+// A drop goes only to a member whose bag takes it (takes(state, bag, item), the
+// C4 pickup rule on bags[index], its running bag; none: its state's): random and
+// turn pass it to a member who can take it, as C4 L2Party.getCheckedRandomMember /
+// getCheckedNextLooter check validateCapacityByItemId (L2J Lisvus e9532c7). A drop
+// no member takes stays on the ground (refused: how many); Lisvus then forces it on
+// the picker past its capacity, our choice is the pickup rule's ground.
+function allocate(memberResults, agreement, { rng = Math.random, needScore = () => -Infinity,
+    bags = [], takes = () => true } = {}) {
     if (!agreement || !MODES.includes(agreement.mode) || !memberResults.length) return null;
     const copies = memberResults.map(entry => ({ ...entry, result: { ...entry.result,
         materialize: { ...entry.result.materialize, items: [] } } }));
-    const projected = new Map(copies.map(entry => [Number(entry.state.characterId), { ...entry.state.inventory }]));
+    const projected = new Map(copies.map((entry, index) => [Number(entry.state.characterId), { ...(bags[index] || entry.state.inventory) }]));
+    const fits = (entry, item) => takes(entry.state, projected.get(Number(entry.state.characterId)), item);
+    let refused = 0;
     const transfers = [];
     const materialNeeds = agreement.materialNeeds?.slice(0, require('./CraftMaterialParty').MAX_MEMBERS).map(row => ({ ...row }));
     let cursor = Math.max(0, Math.floor(positive(agreement.cursor)));
@@ -43,12 +53,11 @@ function allocate(memberResults, agreement, { rng = Math.random, needScore = () 
                 if (!owner || !unassigned) continue;
                 const inventory = projected.get(Number(owner.state.characterId));
                 const count = Math.min(unassigned, Material.remaining(owner.state, goal, inventory));
-                if (!(count > 0)) continue;
+                if (!(count > 0) || !fits(owner, { ...item, amount: count })) continue;
                 const reward = { ...item, amount: count }; delete reward.partySpoil;
                 owner.result.materialize.items.push(reward);
                 goal.collected = positive(goal.collected) + count;
-                inventory[item.selfId] = { ...inventory[item.selfId], ...reward,
-                    amount: positive(inventory[item.selfId]?.amount) + count };
+                projected.set(Number(owner.state.characterId), RoundLoot.addTo(inventory, [reward]));
                 if (Number(owner.state.characterId) !== Number(source.state.characterId))
                     transfers.push({ from: source.state, to: owner.state, item: reward });
                 unassigned -= count;
@@ -56,30 +65,39 @@ function allocate(memberResults, agreement, { rng = Math.random, needScore = () 
             if (!unassigned) continue;
         }
         const distributedItem = unassigned === positive(item.amount) ? item : { ...item, amount: unassigned };
+        const pick = rows => rows[Math.min(rows.length - 1, Math.floor(rng() * rows.length))];
+        const fitting = copies.filter(entry => fits(entry, distributedItem));
         let recipient = copies.find(entry => Number(entry.state.characterId) === Number(source.state.characterId));
         const helpOwner = agreement.help?.status === 'funded' && Number(item.selfId) === Number(agreement.help.itemId)
             ? copies.find(entry => Number(entry.state.characterId) === Number(agreement.help.payerId)) : null;
         if (helpOwner) recipient = helpOwner;
         else if (item.partySpoil && (agreement.spoil === 'spoiler' || agreement.materialNeeds)) { /* The original spoiler keeps unreserved spoil. */ }
-        else if (agreement.materialNeeds) recipient = copies[cursor++ % copies.length];
-        else if (agreement.mode === 'turn') recipient = copies[cursor++ % copies.length];
-        else if (agreement.mode === 'random') recipient = copies[Math.min(copies.length - 1, Math.floor(rng() * copies.length))];
+        else if (agreement.materialNeeds || agreement.mode === 'turn') {
+            recipient = null;
+            for (let tries = 0; tries < copies.length && !recipient; tries++) {
+                const next = copies[cursor++ % copies.length];
+                if (fitting.includes(next)) recipient = next;
+            }
+        } else if (agreement.mode === 'random') recipient = fitting.length ? pick(fitting) : null;
         else {
-            const scores = copies.map(entry => ({ entry, score: needScore(entry.state, item, projected) }));
+            const scores = fitting.map(entry => ({ entry, score: needScore(entry.state, item, projected) }));
             const best = Math.max(...scores.map(row => row.score));
             const tied = scores.filter(row => Number.isFinite(row.score) && row.score === best);
-            if (tied.length) recipient = tied[Math.min(tied.length - 1, Math.floor(rng() * tied.length))].entry;
+            if (tied.length) recipient = pick(tied).entry;
+            else if (!fitting.includes(recipient)) recipient = fitting.length ? pick(fitting) : null;
+        }
+        if (!recipient || !fitting.includes(recipient)) {
+            refused += 1;
+            continue;
         }
         const reward = { ...distributedItem }; delete reward.partySpoil;
         recipient.result.materialize.items.push(reward);
-        const inventory = projected.get(Number(recipient.state.characterId));
-        projected.set(Number(recipient.state.characterId), { ...inventory, [item.selfId]: { ...inventory[item.selfId], ...item,
-            amount: positive(inventory[item.selfId]?.amount) + positive(distributedItem.amount) } });
+        projected.set(Number(recipient.state.characterId), RoundLoot.addTo(projected.get(Number(recipient.state.characterId)), [reward]));
         if (Number(recipient.state.characterId) !== Number(source.state.characterId)) {
             transfers.push({ from: source.state, to: recipient.state, item: distributedItem });
         }
     }
-    return { memberResults: copies, transfers, agreement: { ...agreement, cursor, ...(materialNeeds ? { materialNeeds } : {}) } };
+    return { memberResults: copies, transfers, refused, agreement: { ...agreement, cursor, ...(materialNeeds ? { materialNeeds } : {}) } };
 }
 
 function feeText(value) {

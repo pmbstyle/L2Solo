@@ -746,6 +746,30 @@ function needsOpened(before, bagMoved, now, was = null) {
     }
     return opened;
 }
+// The facts a far solo round's fights move, read on its running state after a fight
+// (BackgroundResolver.resolveSolo): its view's (DecisionSections.roundView), the lines
+// fact and the wallet (PurchaseFunding.budget, without the buy orders' escrow). was: the
+// round's previous facts, whose parts an input that did not move keeps (moved: { supply,
+// bag, money }); none: all read.
+function roundFacts(state, was = null, moved = null) {
+    const S = readers(), view = S.roundView(state, null, was, moved);
+    return { grade: view.grade, outleveled: view.outleveled, kills: view.kills, stall: view.stall,
+        supply: view.supply, lines: S.linesOf(view.supply), bagNeed: view.bagNeed,
+        wallet: was && !moved?.money ? was.wallet : invoke('GameServer/Bot/Economy/PurchaseFunding').budget(state) };
+}
+// The situation a round crossed since its start (start, now: roundFacts), by the step's
+// own rules (factNames, needsOpened, moneyCrossings against the build's thresholds,
+// stats.wishSections): the first one heard NOW that wakes a decision the bot hears
+// (stats: the bot's), else null. Against the round's start, not the decision's baseline:
+// a raise already standing when the round began ends no round (the step's diff raises
+// it). grade_changed is heard at a stop: a level up waits for the rest.
+function roundCrossing(stats, start, now) {
+    const S = readers(), baseline = stats?.wishSections, heard = heardBy(stats);
+    const had = S.moneyCrossings(start.wallet, baseline);
+    const names = factNames(key => start[key], now).concat(needsOpened(null, start.bagNeed !== now.bagNeed, now, start),
+        S.moneyCrossings(now.wallet, baseline).filter(name => !had.includes(name)));
+    return names.find(name => SITUATIONS[name]?.heard === NOW && (WAKES[name] & heard)) || null;
+}
 // The party's decisions (subject: the party, decided on the worker at its step, hot
 // parties at their first cold step): one bit each in party.stats.woken, heard at the
 // party step (its round end is its stop). party_spot: where the party hunts, held in
@@ -833,4 +857,4 @@ module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, arrivesInTown,
     DECISIONS, ALL, FIRST, raise, offerWoke, stepMind, landMind, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
-    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };
+    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, roundFacts, roundCrossing, movesSpot };

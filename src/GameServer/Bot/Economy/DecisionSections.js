@@ -284,17 +284,25 @@ function stateView(state, recipes = null) {
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
     view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     view.karma = Number(Number(stats.karma) > 0);
-    view.grade = GradeRule.gradeForLevel(state.level);
-    view.outleveled = outleveledOn(state, stats.earning);
-    // The kill count and the gear plan's stall (GearStall: source_stalled at the crossing).
-    view.kills = Stall.killsOf(state); view.stall = Stall.stallKills(state);
+    Object.assign(view, roundView(state, view.kitHashes));
     view.outgrown = outgrownOf(state);
-    view.supply = supplyOf(state);
     view.stores = storesOf(state);
-    // What the bag holds against its floor and its cleanup counts (the bag fact,
-    // PartyMarketBreak.bagFact: no price, board or clock); its rise raises bag_full.
-    view.bagNeed = (MarketBreak ||= invoke('GameServer/Bot/Population/PartyMarketBreak')).bagFact(state, view.kitHashes);
     return view;
+}
+// The facts a hunting round's fights move, one reading for the step's view (stateView)
+// and the round's own while it runs (Situations.roundFacts): grade and outleveled (the
+// level), the kill count and the gear plan's stall (GearStall: source_stalled at the
+// crossing), supply (the shots and bottles a fight spends) and the bag fact (what the bag
+// holds against its floor and its cleanup counts, PartyMarketBreak.bagFact: no price,
+// board or clock; its rise raises bag_full). kitHashes: the state's kit events when the
+// caller holds them. was: the round's previous view, whose supply and bag parts a fight
+// that moved neither keeps (moved: { supply, bag }).
+function roundView(state, kitHashes = null, was = null, moved = null) {
+    const read = key => !was || moved?.[key];
+    return { grade: GradeRule.gradeForLevel(state.level), outleveled: outleveledOn(state, state.stats?.earning),
+        kills: Stall.killsOf(state), stall: Stall.stallKills(state),
+        supply: read('supply') ? supplyOf(state) : was.supply,
+        bagNeed: read('bag') ? (MarketBreak ||= invoke('GameServer/Bot/Population/PartyMarketBreak')).bagFact(state, kitHashes) : was.bagNeed };
 }
 // What the bot's clan asks of it and holds for it: the clan's material demand, the clan
 // supply, whether the clan has a warehouse, the clan goal's crystals. The personal
@@ -400,5 +408,5 @@ function sameSpot(spotId, planned) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, routedSourceOf, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, kit, kitMoved, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, routedSourceOf, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, stateView, roundView, kit, kitMoved, incomeError,
     baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, leafTrip, hash, decisionRefusal };

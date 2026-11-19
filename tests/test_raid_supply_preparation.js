@@ -17,7 +17,7 @@ Supply.useMarket(() => ({ board: invoke('GameServer/AfkTrade/AfkTradeService').b
 const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const { RaidSupplyPreparation } = require('../src/GameServer/Bot/Population/RaidSupplyPreparation');
 const { lifecycleKind, ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
-const { stepElapsedMs } = require('../src/GameServer/Bot/Population/ColdSoloWindow');
+const ColdClock = require('../src/GameServer/Bot/Population/ColdClock');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
 const at = Date.now();
 function member(id, classId, level, weapon, healer = false) {
@@ -83,7 +83,7 @@ async function run() {
         timing:{...waiting.timing,nextResolveAt:at+61000},simulation:{revision:2}};
     kernel.upsert({state:cancelled});
     assert.deepEqual(kernel.dueCandidates(at+61000,4).map(c=>c.characterId),[4],'main\'s cancel wakes it on its due');
-    assert.equal(stepElapsedMs(cancelled,at+61000),1000,'the minute it waited is not hunted');
+    assert.equal(ColdClock.step(cancelled,at+61000).elapsedMs,0,'the minute it waited is not hunted');
     const expired=new ColdSimulationKernel({now:()=>plan.expiresAt,resolveSolo:()=>null});
     expired.upsert({state:waiting});
     assert.deepEqual(expired.dueCandidates(plan.expiresAt,4).map(c=>c.characterId),[4],'a missed write still ends at the expiry');

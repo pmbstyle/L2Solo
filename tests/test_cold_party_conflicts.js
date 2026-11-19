@@ -158,6 +158,17 @@ async function run() {
         assert.strictEqual(chained.pvpReason, 'pvp_outmatched', 'an even look declines only on the rare roll (0.99 >= 0.98)');
         assert.strictEqual(chained.outcome, 'displaced', 'the willing actor pushes the unwilling peer (0.9 > 0.2 roll)');
     }
+    {
+        // A PvP that starts while a bot's last cold round runs past the moment (its
+        // clock ahead of now) keeps that clock: the round's run-past is not credited again.
+        await Database.execute(['UPDATE bot_life_state SET lastResolvedAt=? WHERE characterId=?', [at + 20000, 49]]);
+        Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [49]]))[0]);
+        const fight = await apply(49, 50, { pvpEnabled: () => true, event: { ...event(49, 50), pvpIntent: true, willing: [true, true] } });
+        assert(fight.ok, JSON.stringify(fight));
+        assert(fight.outcome.startsWith('pvp_'), `the PvP starts (${fight.outcome})`);
+        assert.strictEqual(state(49).timing.lastResolvedAt, at + 20000, 'a clock ahead of the PvP\'s start is kept');
+        assert.strictEqual(state(50).timing.lastResolvedAt, at, 'a clock behind it moves to the PvP\'s start');
+    }
     assert.strictEqual(bystander.participants.find(p => p.id === 32).role, 'stand_aside');
     assert.strictEqual(bystander.memoryEvents, 1);
     assert.deepStrictEqual(Memory.snapshot(33).relations.map(r => r.targetId), [31]);

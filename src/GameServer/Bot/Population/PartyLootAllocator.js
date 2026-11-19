@@ -1,5 +1,6 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
+const RoundLoot = require('./RoundLoot');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -58,21 +59,17 @@ function recipientScore(state, item, projected) {
     return targetBonus + slotPriority(template) * improvement + fairness;
 }
 
+// The member's projected bag with the drop added (RoundLoot.addTo, the one bag-add rule).
 function addProjectedItem(state, item, projected) {
-    const inventory = { ...projectedInventory(state, projected) };
-    const key = String(item.selfId);
-    inventory[key] = {
-        ...(inventory[key] || {}),
-        selfId: Number(item.selfId),
-        name: item.name || inventory[key]?.name || '',
-        amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0),
-        kind: item.kind || inventory[key]?.kind || '',
-        rank: item.rank || inventory[key]?.rank || 'none'
-    };
-    projected.set(Number(state.characterId), inventory);
+    projected.set(Number(state.characterId), RoundLoot.addTo(projectedInventory(state, projected), [item]));
 }
 
-function transferGearDrops(memberResults = []) {
+// A party with no agreement: each member keeps its own drops (C4 finders keepers:
+// L2PcInstance.doPickupItem checks the picker's own capacity), a drop its bag does not
+// take (takes(state, bag, item), the C4 pickup rule on bags[index], its running bag;
+// none: its state's) stays on the ground (refused: how many), and a gear drop passes
+// to the member it upgrades most among those whose bag takes it.
+function transferGearDrops(memberResults = [], { bags = [], takes = () => true } = {}) {
     const copies = memberResults.map((entry) => ({
         ...entry,
         result: {
@@ -84,21 +81,30 @@ function transferGearDrops(memberResults = []) {
             }
         }
     }));
-    const projected = new Map(copies.map(({ state }) => [Number(state.characterId), { ...(state.inventory || {}) }]));
+    const projected = new Map(copies.map(({ state }, index) => [Number(state.characterId), { ...(bags[index] || state.inventory || {}) }]));
+    const fits = (state, item) => takes(state, projected.get(Number(state.characterId)), item);
     const transfers = [];
+    let refused = 0;
 
     const originalDrops = copies.flatMap((source) => (
         source.result.materialize.items.map((item) => ({ source, item }))
     ));
     originalDrops.forEach(({ source, item }) => {
         const sourceItems = source.result.materialize.items;
-        if (!equipmentDrop(item)) return;
-        const recipient = copies
+        const recipient = equipmentDrop(item) ? copies
             .map((entry) => ({ entry, score: recipientScore(entry.state, item, projected) }))
-            .filter((candidate) => Number.isFinite(candidate.score))
+            .filter((candidate) => Number.isFinite(candidate.score) && fits(candidate.entry.state, item))
             .sort((left, right) => right.score - left.score
-                || Number(left.entry.state.characterId) - Number(right.entry.state.characterId))[0]?.entry;
-        if (!recipient) return;
+                || Number(left.entry.state.characterId) - Number(right.entry.state.characterId))[0]?.entry : null;
+        if (!recipient) {
+            if (fits(source.state, item)) addProjectedItem(source.state, item, projected);
+            else {
+                const at = sourceItems.indexOf(item);
+                if (at >= 0) sourceItems.splice(at, 1);
+                refused += 1;
+            }
+            return;
+        }
 
         addProjectedItem(recipient.state, item, projected);
         if (Number(recipient.state.characterId) === Number(source.state.characterId)) return;
@@ -116,7 +122,7 @@ function transferGearDrops(memberResults = []) {
         });
     });
 
-    return { memberResults: copies, transfers };
+    return { memberResults: copies, transfers, refused };
 }
 
 module.exports = { equipmentDrop, recipientScore, transferGearDrops };

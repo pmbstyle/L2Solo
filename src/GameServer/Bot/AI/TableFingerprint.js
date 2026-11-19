@@ -22,6 +22,7 @@ const ROOT = path.resolve(__dirname, '../../../..');
 // Cold solo combat and what it calls.
 const COLD_COMBAT = ['src/GameServer/Bot/Population/BackgroundResolver.js', 'src/GameServer/Bot/Population/ColdCombatProfile.js',
     'src/GameServer/Bot/Population/ColdMobAction.js', 'src/GameServer/Bot/Population/ColdRest.js',
+    'src/GameServer/Bot/Population/ColdClock.js',
     'src/GameServer/Bot/Population/ColdKillRewards.js', 'src/GameServer/Bot/Population/BackgroundDropResolver.js',
     'src/GameServer/Bot/Population/ColdClassPolicy.js',
     'src/GameServer/Bot/Population/ColdSummonProfile.js', 'src/GameServer/Bot/Population/ColdPveEncounter.js',

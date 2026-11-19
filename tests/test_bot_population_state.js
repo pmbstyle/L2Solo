@@ -479,8 +479,9 @@ try {
                         assert.strictEqual(deadState.stats.expEarned, 140, 'a lethal resolve must retain earned EXP telemetry');
                         assert.strictEqual(deadState.stats.spEarned, 25, 'a lethal resolve must retain earned SP telemetry');
                         assert.strictEqual(deadState.stats.adenaEarned, 80, 'a lethal resolve must retain earned Adena telemetry');
+                        // The respawn step resolves at the death, where the dying round ended.
                         const respawnAt = Date.now() + 1000;
-                        const recovery = BackgroundResolver.resolveSolo({ state: deadState, timestamp: respawnAt });
+                        const recovery = BackgroundResolver.resolveSolo({ state: deadState, timestamp: respawnAt, elapsedMs: 0 });
                         return BotLifeState.applyResolve(deadState, recovery).then((recoveredState) => {
                             assert.strictEqual(recoveredState.stats.deaths, 3, 'death recovery must preserve the cumulative death count');
                             assert.strictEqual(recoveredState.stats.fightsWon, 11, 'death recovery must preserve cumulative wins');

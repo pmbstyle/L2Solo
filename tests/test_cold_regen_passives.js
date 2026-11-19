@@ -26,9 +26,12 @@ const seated = Rest.coldRestRegenPerTick(sorcerer).mp, standing = Rest.coldRestR
 near(seated, 10.63, 'a Sorcerer seated: Clear Mind does not count');
 near(standing, 11.31, 'a Sorcerer standing: x1.1 and Clear Mind');
 
-// The resolver's hunt-time regeneration is the standing tick.
+// The cold round's hunt-time regeneration (ColdClock) is the standing tick.
 const BR = invoke('GameServer/Bot/Population/BackgroundResolver');
-const vitals = BR.applyStandingRegen({ ...sorcerer, vitals: { hp: 1, mp: 0 } }, { hp: 1, mp: 0 }, 30000, 0);
+const ColdClock = invoke('GameServer/Bot/Population/ColdClock');
+const sorcererProfile = Profile.fightProfile(sorcerer, 0);
+const { vitals } = ColdClock.regen({ vitals: { hp: 1, maxHp: sorcererProfile.maxHp, mp: 0, maxMp: sorcererProfile.maxMp }, stats: sorcerer.stats },
+    30000, ColdClock.rates(sorcerer, sorcererProfile, 0).standing, sorcererProfile);
 near(vitals.mp, standing * 10, 'ten standing ticks on the hunt');
 // The rest's posture (RestPolicy.sitsToRest): a Sorcerer short
 // of MP rests standing (Clear Mind), a Wizard sits; HP short, both sit.

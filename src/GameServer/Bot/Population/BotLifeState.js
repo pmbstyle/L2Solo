@@ -1,11 +1,11 @@
 const FailureLog = require('../../../FailureLog');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
+const ColdClock = require('./ColdClock');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const RefreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const { isMainThread } = require('node:worker_threads');
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -34,6 +34,7 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+const RoundLoot = invoke('GameServer/Bot/Population/RoundLoot');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
@@ -261,20 +262,7 @@ function levelBand(level) {
 }
 
 
-function itemTemplate(selfId) {
-    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
-}
-
-function itemName(selfId, fallback = '') {
-    return itemTemplate(selfId)?.template?.name || fallback || `Item ${selfId}`;
-}
-
-function itemStackable(selfId, item = {}) {
-    const template = itemTemplate(selfId);
-    if (template) return template.etc?.stackable === true;
-    if (typeof item.fetchStackable === 'function') return !!item.fetchStackable();
-    return item.stackable === true;
-}
+const { itemTemplate, itemName, itemStackable } = RoundLoot;
 
 function normalizeInventoryStackability(inventory = {}) {
     const normalizedInventory = Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
@@ -2313,8 +2301,9 @@ const BotLifeState = {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
                     nextResolveAt: null,
-                    // The hot time is lived: the first cold step starts now.
-                    lastResolvedAt: now()
+                    // The hot time is lived: the first cold step starts now, or at
+                    // the end of a cold round that ran past the hand-over.
+                    lastResolvedAt: ColdClock.handedAt(craftState, now())
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
                 inventory: InventorySummary.read(row.inventorySummary)
@@ -2332,8 +2321,9 @@ const BotLifeState = {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
-                // The hot time is lived: the first cold step's length starts now.
-                lastResolvedAt: now()
+                // The hot time is lived: the first cold step's length starts now,
+                // or at the end of a cold round that ran past the hand-over.
+                lastResolvedAt: ColdClock.handedAt(preserved, now())
             });
             const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
             session.coldLifeState = nextState;
@@ -2857,7 +2847,7 @@ const BotLifeState = {
         if (patchedStats.travel && state.activity !== 'traveling'
             && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
         // A hold that waits for an event names it (result.eventWait); any other
-        // round ends the wait (ColdSoloWindow.livedClock reads it).
+        // round ends the wait (ColdClock.since reads it).
         if (result.eventWait) patchedStats.eventWait = result.eventWait;
         else delete patchedStats.eventWait;
         const stats = {
@@ -2874,7 +2864,7 @@ const BotLifeState = {
             route: result.debug?.route || state.stats?.route || null,
             ...(targetCombat ? { targetCombat } : {})
         };
-        const inventory = { ...(state.inventory || {}) };
+        let inventory = { ...(state.inventory || {}) };
         // ARCH-NOTE: the resolver already consumed authored summon materials
         // from its private combat inventory. Lifecycle normally rebuilds from
         // the input (shots/potions have separate counters), so carry only these
@@ -2894,41 +2884,7 @@ const BotLifeState = {
                 }
             }
         }
-        materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
-            const key = String(item.selfId);
-            const previous = inventory[key] || {};
-            const template = itemTemplate(item.selfId);
-            const amount = Number(item.amount || 0);
-            const kind = item.kind || previous.kind || template?.template?.kind || '';
-            const protectedStarterLoot = Number(item.sourceMobLevel || 0) > 0
-                && Number(item.sourceMobLevel) <= 5
-                && !String(kind).startsWith('Other.Material')
-                ? amount
-                : 0;
-            const nextAmount = Number(previous.amount || 0) + amount;
-            const starterMobLootAmount = Math.min(
-                nextAmount,
-                Number(previous.starterMobLootAmount || 0) + protectedStarterLoot
-            );
-            // Loot adds to the stack the bag holds: its worn copies, instances and
-            // reserves stay (a looted second dagger must not unequip the first).
-            const acquired = {
-                ...previous,
-                selfId: item.selfId,
-                name: item.name || previous.name || itemName(item.selfId),
-                amount: nextAmount,
-                kind,
-                rank: item.rank || previous.rank || template?.etc?.rank || 'none',
-                stackable: itemStackable(item.selfId, item),
-                slot: Number(previous.slot || template?.etc?.slot || 0),
-                ...(starterMobLootAmount > 0 ? { starterMobLootAmount } : {})
-            };
-            // Loot grows the bag without replacing its physical copies or worn
-            // slots. New gear gets anonymous +0 copies until the native sync.
-            if (acquired.stackable) delete acquired.instances;
-            else acquired.instances = previous.instances || [];
-            inventory[key] = InventorySummary.completeInstances(acquired);
-        });
+        inventory = RoundLoot.addTo(inventory, materializedItems);
         if (adena > 0) {
             inventory['57'] = {
                 selfId: 57,
@@ -2980,6 +2936,14 @@ const BotLifeState = {
             stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
         }, inventory);
         const nextActivity = result.patch?.activity || state.activity;
+        const vitals = { ...(state.vitals || {}), ...(result.patch?.vitals || {}) };
+        // C4: a level up fills HP and MP to the new level's maxima (hot LevelUp's fillupVitals);
+        // a level a far round gained is applied here, after it. A dead body stays at none.
+        if (level > Number(state.level || 1) && nextActivity !== 'dead') {
+            const profile = ColdCombatProfile.fightProfile({ ...state, level, inventory: equippedInventory,
+                stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) } }, timestamp);
+            Object.assign(vitals, { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp });
+        }
         const nextState = {
             ...state,
             level,
@@ -2994,10 +2958,7 @@ const BotLifeState = {
                 ...(state.loc || {}),
                 ...(result.patch?.loc || {})
             },
-            vitals: {
-                ...(state.vitals || {}),
-                ...(result.patch?.vitals || {})
-            },
+            vitals,
             timing: {
                 ...(state.timing || {}),
                 ...(state.timing?.lastHotAt == null ? {} : { lastHotAt: Math.ceil(state.timing.lastHotAt) }),
@@ -3005,7 +2966,9 @@ const BotLifeState = {
                     ? (state.timing?.activityStartedAt == null
                         ? state.timing?.activityStartedAt : Math.ceil(state.timing.activityStartedAt))
                     : timestamp,
-                lastResolvedAt: timestamp,
+                // The bot's clock: where its round's last action ended (doneAt: before the step's
+                // timestamp when a crossing ended the round), else the step's.
+                lastResolvedAt: ColdClock.doneAt(result) ?? timestamp,
                 nextResolveAt: Math.ceil(result.nextResolveAt || timestamp + 60000)
             },
             stats: {

@@ -153,9 +153,12 @@ try {
     const seconds = cycle.rest * cycle.kph * 2;
     assert(stock.target * 336 / seatedPerSecond < seconds * 1.2,
         `the outing's stock saves no more than the outing's rest (${stock.target} bottles, ${seconds} s)`);
-    // Above its line (no survival drinks at 0 deaths) the stock is no field wish: the town visit buys it.
+    // A field wish for bottles is the survival tranche's (what the fights drink at the best cell): the
+    // hunter holds none, so it has one exactly when that tranche is above 0. Past it, the rest bottles
+    // are no field wish: the town visit buys them. The row's drink rate is the table's, so the
+    // expectation reads the tranche, not a rate.
     const wish = Economy.forState(hunter(1e7), { timestamp: T }).network.queue.find(entry => entry.key === 'stock:potions');
-    assert.equal(wish, undefined, 'no field wish for the rest bottles: the visit buys them');
+    assert.equal(wish !== undefined, stock.survivalTarget > 0, 'a field wish for bottles only for the survival tranche; the rest bottles wait for the visit');
     assert(stock.missing > 0 && stock.benefitPerUnit > 0, 'the visit\'s amount is worth buying');
     const poor = Economy.basics(hunter(price * 3), { timestamp: T }).stock('potions');
     assert(poor.target <= stock.survivalTarget + 3, `the wallet bounds the stock (${poor.target})`);

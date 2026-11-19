@@ -7,6 +7,7 @@ const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
 const World = invoke('GameServer/World/World');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const Database = invoke('Database');
+const ColdClock = require('./ColdClock');
 const pending = new Set();
 const raidFailures = new Set();
 const RAID_FAILURE_RETREAT_MS = 15000;
@@ -318,9 +319,10 @@ async function transition(party, states, next, phase, reason) {
     const stats = { ...party.stats, hotLifecycle: phase === 'hot'
         ? { startedAt: party.stats?.hotLifecycle?.startedAt || at, reason }
         : null };
-    // Hot time has already been played. It is never another cold reward window.
+    // Hot time has already been played. It is never another cold reward window,
+    // and a cold round's time already credited past it is not credited again.
     const nextStates = next.map(s => ({ ...s, phase, activity: 'grouped',
-        timing: { ...s.timing, nextResolveAt, lastResolvedAt: at }, updatedAt: at }));
+        timing: { ...s.timing, nextResolveAt, lastResolvedAt: ColdClock.handedAt(s, at) }, updatedAt: at }));
     const result = await Database.transitionBackgroundParty({ partyId: party.partyId,
         expectedStatus: party.status, expectedPartyRevision: party.revision, expectedPhase: states[0].phase,
         phase, nextResolveAt, statsJson: JSON.stringify(stats),

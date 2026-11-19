@@ -73,7 +73,10 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     assert.equal(Wishes.personalCraftPlan(context.state, context), null, 'stock orders do not replace equipment plans');
     const target = Shopping.stockWorkshopTarget(customer, customer.actor, near(context));
     assert.equal(target?.actorId, crafter.actor.fetchId()); assert.equal(target.interactionDistance, 150);
-    assert.equal(target.state.stats.equipmentPlan.outputAmount, heldShots + leaf.amount,
+    // The plan stops at the stock wish's amount (what the bag misses of the
+    // target) beside the shots held; this visit's leaf may acquire only part of it.
+    const wish = context.network.queue.find(row => row.key === 'stock:shots');
+    assert.equal(target.state.stats.equipmentPlan.outputAmount, heldShots + wish.object.amount,
         'the refill target includes shots already held exactly once');
     const closed = { ...context, state: { ...context.state, phase: 'cold' } };
     assert.equal(Shopping.stockWorkshopTarget(customer, customer.actor, near(closed)), null, 'cold bots cannot place remote player orders');
@@ -106,7 +109,8 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     const deadline = Date.now() + 5000;
     while (customer.workshopCrafting && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
     assert.equal(customer.workshopCrafting, false, 'the visible shopping tick completes its native craft');
-    const batches = leaf.batches, fee = 50 * batches, output = heldShots + recipe.productCount * batches;
+    // The visit crafts the whole batches of the units its leaf acquires.
+    const batches = Math.ceil(leaf.amount / recipe.productCount), fee = 50 * batches, output = heldShots + recipe.productCount * batches;
     assert.equal(await sqlAmount(customer, 1463), output); assert.equal(memoryAmount(customer, 1463), output);
     assert.equal(await sqlAmount(customer, 57), cash - fee); assert.equal(await sqlAmount(crafter, 57), feeWallet + fee);
     assert.equal(crafter.actor.mp, mp - recipe.mpCost * batches);

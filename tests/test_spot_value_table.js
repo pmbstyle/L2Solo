@@ -187,6 +187,48 @@ try {
     fs.rmSync(walkScratch, { recursive: true, force: true });
 }
 
+// One time budget per kill: the row's 18 s a kill (kph 200) is 10 s of fight,
+// 6 s of rest and 2 s no step counts. Two levels lower the level curve gives
+// 0.75 of the kills (24 s a kill) and the fight curve 1.2 of the fight (12 s):
+// the rest is what the kill's time leaves (10 s), not the rest curve's 3.0
+// (18 s, a kill of 32 s in an hour of 24 s kills). A fight longer than the
+// kill's time lengthens the kill: 25 s of fight, no rest, 27 s a kill.
+const budgetScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-budget-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.rowFields.push('fight', 'rest', 'taken', 'hpLost', 'mpLost');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(10, 6, 0, 0, 0);
+    fixture.curveFields.push('fight', 'rest', 'taken');
+    const write = (name, fightAtGap2) => {
+        const copy = structuredClone(fixture);
+        copy.curves.dps['9'].fight = copy.gaps.map(gap => gap === 2 ? fightAtGap2 : 1);
+        copy.curves.dps['9'].rest = copy.gaps.map(gap => gap === 2 ? 3 : 1);
+        copy.curves.dps['9'].taken = copy.gaps.map(() => 1);
+        const file = path.join(budgetScratch, name);
+        fs.writeFileSync(file, JSON.stringify(copy));
+        return file;
+    };
+    Table.useFile(write('budget.json', 1.2));
+    const reference = Table.cycle('S', 'dps', 24, true);
+    near(reference.kph, 200, 'at the reference the row\'s kills');
+    near(reference.fight, 10, 'at the reference the row\'s fight');
+    near(reference.rest, 6, 'at the reference the row\'s rest');
+    const lower = Table.cycle('S', 'dps', 20, true);
+    near(lower.kph, 150, 'the level curve\'s kills');
+    near(lower.fight, 12, 'the fight curve\'s fight');
+    near(lower.rest, 10, 'the rest is what the kill\'s time leaves');
+    near(Table.value('S', 'dps', 20, true).busyShare, 150 * 22 / 3600, 'the hour busy: fight and rest of every kill');
+    Table.useFile(write('long-fight.json', 2.5));
+    const long = Table.cycle('S', 'dps', 20, true);
+    near(long.fight, 25, 'the longer fight');
+    near(long.rest, 0, 'no time left to rest');
+    near(long.kph, 3600 / 27, 'the longer fight lengthens the kill');
+    near(Table.value('S', 'dps', 20, true).kills, 3600 / 27, 'the value reads the same kills');
+} finally {
+    Table.useFile();
+    fs.rmSync(budgetScratch, { recursive: true, force: true });
+}
+
 // The admitted part of the spawns' production (the fight's soloShareMobs: a
 // group's production times its admitted share): a bot that takes 4 in 10 of
 // the pulls of both species keeps 0.4 of their 200 mobs an hour.

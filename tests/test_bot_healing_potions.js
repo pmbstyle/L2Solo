@@ -38,8 +38,9 @@ assert.strictEqual(
     'Quick Healing Potion must remain reserved for genuinely critical HP'
 );
 
-// A wallet that is all survival reserve (the kit's own price: the scroll, the
-// potions and shots for an hour) buys only the survival bottles, at the NPC's
+// A wallet that is all survival reserve (the kit's own price: an outing's
+// refill of potions and shots, never under an hour's use) buys only the
+// survival bottles the reserve holds (the refill the bag misses), at the NPC's
 // price the reserve held (one price for the reserve and the counter).
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const reserveOf = state => Economy.basics(state).refillReserve;
@@ -55,7 +56,7 @@ assert.strictEqual(reserveOf(cautiousState), reserve, 'fixture: the reserve does
 assert.strictEqual(reserve, basics.kitCost(736) + basics.kitCost(stock.itemId) + basics.kitCost(shots.itemId));
 const cautiousRestock = HealingPotionStock.restockPlan(cautiousState, { unitPrice: stock.survivalPrice });
 assert.strictEqual(cautiousRestock.reserve, reserve);
-assert.strictEqual(cautiousRestock.amount, stock.survivalMissing, 'restocking spends of the operational wallet reserve only its survival bottles');
+assert.strictEqual(cautiousRestock.amount, stock.refill - stock.current, 'restocking spends of the operational wallet reserve only its survival bottles');
 assert.strictEqual(cautiousRestock.cost, basics.kitCost(stock.itemId));
 
 const affordableState = rated({ level: 20, adena: 10000, stats: { classId: 0 }, inventory: inventory([[57, 10000], [1061, 2]]) });

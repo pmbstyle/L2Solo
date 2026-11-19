@@ -263,8 +263,11 @@ try {
         }
         const party = BackgroundPartyResolver.resolve({
             party: { partyId: 'pin', cohesion: 1, risk: 0, roleCoverage: {} },
-            // No spoiler, so every item is a drop.
-            members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => member(91 + index, classId, level, 'pin_orcs')),
+            // No spoiler, so every item is a drop. Their clocks elapsedMs back:
+            // the party round starts at its members' clocks.
+            members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => ({
+                ...member(91 + index, classId, level, 'pin_orcs'), timing: { lastResolvedAt: TIMESTAMP - elapsedMs }
+            })),
             spot: orcs,
             elapsedMs,
             rng: seeded(elapsedMs),
@@ -283,9 +286,12 @@ try {
 
 // One party resolve lives at most the longest resolve interval (135 s): a party
 // does not catch up on a long gap such as a server stop, as a solo bot does not.
+// The members' clocks lie the gap back.
 const gapWins = [135000, 8 * 3600000].map((elapsedMs) => BackgroundPartyResolver.resolve({
     party: { partyId: 'pin', cohesion: 1, risk: 0, roleCoverage: {} },
-    members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => member(91 + index, classId, level, 'pin_orcs')),
+    members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => ({
+        ...member(91 + index, classId, level, 'pin_orcs'), timing: { lastResolvedAt: TIMESTAMP - elapsedMs }
+    })),
     spot: orcs,
     elapsedMs,
     rng: seeded(21),
