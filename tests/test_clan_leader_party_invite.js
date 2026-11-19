@@ -306,6 +306,28 @@ async function main() {
     releaseConst();
     assert.equal(await oldConstInvite, false, 'a cancelled const invitation cannot reclaim a bot after the clan leader has summoned it');
     assert.equal(Manager.findSessionById(1501).followPlayerSession, constLeader);
+
+    const claimBotForClanLeader = DB.claimBotForClanLeader;
+    for (const [id, phase] of [[1601, 'hot'], [1602, 'cold']]) {
+        await seed(id, 'hunting', phase);
+        if (phase === 'hot') body(id);
+        const leader = { actor: actor(9001), dataSendToMe() {} };
+        let current = true, enteredClaim, resumeClaim;
+        const reached = new Promise(resolve => { enteredClaim = resolve; });
+        const gate = new Promise(resolve => { resumeClaim = resolve; });
+        patch(DB, 'claimBotForClanLeader', async function (options) {
+            enteredClaim();
+            await gate;
+            return claimBotForClanLeader.call(this, options);
+        });
+        const invite = World.inviteBotByName(leader, leader.actor, `ClanBot${id}`, 1, 'party_hub', { isCurrent: () => current });
+        await Promise.race([reached, invite.then(() => { throw Error('clan invitation ended before its claim'); })]);
+        current = false;
+        resumeClaim();
+        assert.equal(await invite, false, `cancellation crosses the ${phase} clan handoff while the actor remains assigned`);
+        assert.equal(Party.membersForLeader(leader).length, 0);
+        restores.pop()();
+    }
     assert(arrivals.length >= 8);
     console.log('Clan leader invitations: authority, hot/cold activation, party handoff, activities, capacity, stale actors and raid cancellation passed');
 }

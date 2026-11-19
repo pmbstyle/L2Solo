@@ -17,6 +17,10 @@ function requestReasonText(reason) {
 function render(session, mode = 'friends', currentPage = 0, notice = null, options = {}) {
     const actor = session.actor;
     if (!actor) return;
+    if (session.nativePartyHubVersion) {
+        const Hub = invoke('GameServer/World/Generics/NpcBypasses/NativePartyHub');
+        return options.open ? Hub.open(session, mode === 'add' ? 'add' : 'friends') : Hub.render(session, notice?.message || '');
+    }
     session.botFriendsView = { mode: mode === 'add' ? 'add' : 'friends', page: Math.max(0, Math.floor(Number(currentPage) || 0)) };
     if (session.nativeFriendsVersion === 1) {
         if (options.open) session.nativeFriendsOpen = true;

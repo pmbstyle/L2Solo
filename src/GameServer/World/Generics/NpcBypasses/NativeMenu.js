@@ -15,16 +15,21 @@ const COMMANDS = Object.freeze([
     [10, 'actions', 'Dismiss companions', '.leave', 'Release bots from your party.'],
     [11, 'actions', 'Start arena duel', '.go', 'Prepared opponent; enter arena first.']
 ].map(([id, group, label, command, hint]) => Object.freeze({ id, group, label, command, hint })));
+const HUB_COMMANDS = Object.freeze([
+    Object.freeze({ ...COMMANDS[0], label: 'Party', hint: 'Party, friends and recruitment.' }),
+    ...COMMANDS.slice(3)
+]);
 const GROUPS = { windows: 'Windows', trade: 'Trade', actions: 'Party / Arena' };
 function render(session) {
+    const commands = session.nativeMenuCommands = session.nativePartyHubVersion ? HUB_COMMANDS : COMMANDS;
     if (session.nativeMenuVersion === 1) {
-        const lines = [['state', session.nativeMenuEpoch, ++session.nativeMenuRevision, COMMANDS.length].join('\t')];
-        for (const r of COMMANDS) lines.push(['command', r.id, r.group, r.label, r.command, r.hint].join('\t'));
+        const lines = [['state', session.nativeMenuEpoch, ++session.nativeMenuRevision, commands.length].join('\t')];
+        for (const r of commands) lines.push(['command', r.id, r.group, r.label, r.command, r.hint].join('\t'));
         session.dataSendToMe(Response.npcHtml(0, PREFIX + lines.join('\n')));
     } else {
         let html = '<html><title>Server Menu</title><body>';
         let group;
-        for (const r of COMMANDS) {
+        for (const r of commands) {
             if (group !== r.group) { group = r.group; html += `<br><font color="LEVEL">${GROUPS[group]}</font><br>`; }
             html += `<button value="${r.label}" action="bypass -h native-menu run ${session.nativeMenuEpoch} ${r.id}" width=200 height=23 back="L2UI_ch3.Btn1_normalOn" fore="L2UI_ch3.Btn1_normal"><br1>${r.command} - ${r.hint}<br>`;
         }
@@ -49,7 +54,7 @@ function handler(session, parts) {
         return;
     }
     if (parts[1] !== 'run' || parts.length !== 4 || String(session.nativeMenuEpoch) !== parts[2]) return;
-    const entry = COMMANDS.find((r) => String(r.id) === parts[3]);
+    const entry = session.nativeMenuCommands?.find((r) => String(r.id) === parts[3]);
     if (!entry) return;
     // Consume this menu before executing: duplicated/late clicks cannot repeat
     // a sale or release companions again. A fresh .menu creates a new epoch.
