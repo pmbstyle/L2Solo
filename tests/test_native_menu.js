@@ -18,11 +18,12 @@ speak(' .MeNu ');assert(body().includes('<title>Server Menu</title>'));
 for (const entry of Menu.COMMANDS) assert(body().includes(entry.command) && body().includes(entry.label));
 assert(!body().includes('.admin') && !body().includes('.trade<') && !body().includes('.bpath'));
 assert.strictEqual(Menu.COMMANDS.length, 11);
-bypass('open 1');assert(body().startsWith(Menu.PREFIX));fixtures.push(body());
+bypass('open 1');assert(body().startsWith(Menu.PREFIX));
 assert.strictEqual(body().split('\n').length, 13);
+assert(body().includes('\t.bp\t') && body().includes('\t.bf\t'), 'legacy native shortcuts remain available');
 const epoch = session.nativeMenuEpoch;
 bypass(`close ${epoch}`);const before = packets.length;bypass('open 1');assert.strictEqual(packets.length, before);
-speak('.menu');assert(session.nativeMenuEpoch > epoch && body().startsWith(Menu.PREFIX));fixtures.push(body());
+speak('.menu');assert(session.nativeMenuEpoch > epoch && body().startsWith(Menu.PREFIX));
 // The menu may dispatch only a fixed no-argument command through the same
 // chat consumer. Do not sell inventory or start stores in this routing test.
 const consume = Speak.consume;
@@ -54,5 +55,14 @@ try {
     for (const id of [1, 5]) { speak('.menu');bypass(`run ${session.nativeMenuEpoch} ${id}`); }
     assert.deepStrictEqual(opened, ['party', 'items']);
 } finally { Items.open = itemsOpen;Party.render = partyRender; }
+const Hub = invoke('GameServer/World/Generics/NpcBypasses/NativePartyHub');
+Hub(session, ['native-party-hub', 'open', '2', 'party']);
+speak('.menu');bypass('open 1');
+assert.strictEqual(body().split('\n').length, 11);
+assert(!body().includes('\t.bp\t') && !body().includes('\t.bf\t'), 'negotiated hub uses a single Party entry');
+fixtures.push(body());
+bypass(`run ${session.nativeMenuEpoch} 2`);
+assert(session.nativeMenuOpen, 'hidden shortcuts cannot consume the menu opening');
+speak('.menu');fixtures.push(body());
 if (process.argv[2]) fs.writeFileSync(process.argv[2], Buffer.from(fixtures.join('\0'), 'utf16le'));
-console.log('Server menu: .menu wire command, HTML/native negotiation, 11 canonical routes, no-target window dispatch, stale/duplicate/unknown actions passed');
+console.log('Server menu: stock, legacy native and Party Hub menus, canonical routes and stale/hidden/duplicate actions passed');

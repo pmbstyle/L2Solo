@@ -403,6 +403,11 @@ function companionControl(session, parts) {
 function renderCompanionPanel(session, requestedPage = 0, options = {}) {
     const actor = session.actor;
     if (!actor) return;
+    if (session.nativePartyHubVersion) {
+        const Hub = invoke('GameServer/World/Generics/NpcBypasses/NativePartyHub');
+        if (options.open) return Hub.open(session, 'party');
+        return Hub.render(session);
+    }
 
     const myCompanions = orderedCompanionSessions(session);
     const settings = PartyCompanionService.getSettings(session);
@@ -454,5 +459,7 @@ function renderCompanionPanel(session, requestedPage = 0, options = {}) {
 }
 
 companionControl.render = renderCompanionPanel;
+companionControl.views = (session) => orderedCompanionSessions(session)
+    .map((member) => companionView(member, PartyCompanionService.getSettings(session)));
 
 module.exports = companionControl;

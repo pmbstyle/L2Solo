@@ -142,7 +142,9 @@ function prepare(state, playerId) {
     return serialize(key, () => prepareActivity(state, playerId), preparations);
 }
 
-async function invite(player, actor, state, distribution) {
+async function invite(player, actor, state, distribution, isCurrent) {
+    const current = () => player.actor === actor && (!isCurrent || isCurrent());
+    if (!current()) return false;
     const id = Number(state.characterId), playerId = Number(actor.fetchId());
     const companion = invoke('GameServer/Bot/AI/PartyCompanionService');
     const existing = manager().findSessionById(id);
@@ -153,7 +155,7 @@ async function invite(player, actor, state, distribution) {
         return true;
     }
     const reservation = { constBotId: id };
-    if (player.actor !== actor || (!alreadyJoined && !companion.reserveCapacity(player, reservation))) return false;
+    if (!alreadyJoined && !companion.reserveCapacity(player, reservation)) return false;
     let joined = false;
     try {
         // Moving a friend between player sessions keeps its first autonomous
@@ -162,12 +164,12 @@ async function invite(player, actor, state, distribution) {
             companion.detach(existing.followPlayerSession, existing, { source: 'const_party_transfer', preserveConstActivity: true });
         }
         await prepare(state, playerId);
-        if (player.actor !== actor) return false;
+        if (!current()) return false;
         const hot = manager().findSessionById(id);
         if (hot) { hot.constActivityPaused = false; hot.aiActive = true; }
         if (alreadyJoined) { joined = true; ai().wakeup(hot, { urgent: true }); return true; }
         joined = await invoke('GameServer/World/World').inviteBotByName(player, actor, state.name,
-            distribution, 'friend_const', { constParty: true, capacityReservation: reservation });
+            distribution, 'friend_const', { constParty: true, capacityReservation: reservation, isCurrent: current });
         return joined;
     } finally {
         companion.releaseCapacity(player, reservation);
@@ -239,7 +241,7 @@ module.exports = {
         session.constPartyResumePromise = promise;
         return promise;
     },
-    invite(player, actor, state, distribution) {
-        return serialize(Number(state.characterId), () => invite(player, actor, state, distribution));
+    invite(player, actor, state, distribution, isCurrent) {
+        return serialize(Number(state.characterId), () => invite(player, actor, state, distribution, isCurrent));
     }
 };

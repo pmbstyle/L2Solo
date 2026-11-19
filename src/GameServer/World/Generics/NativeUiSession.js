@@ -10,7 +10,7 @@ function reset(session, { clearDirection = false } = {}) {
         // epochs/revisions so old menu actions cannot match a fresh opening.
         if (families.test(key) && !/(?:Version|Epoch|Revision)$/.test(key)) delete session[key];
     }
-    for (const key of ['botFriendsView', 'botStatusName', 'botPartyCatalogState']) delete session[key];
+    for (const key of ['botFriendsView', 'botStatusName', 'botPartyCatalogState', 'partyHub', 'partyHubOperation', 'partyPresetOperation']) delete session[key];
     // Party dialogue turns and the active responder belong to the character.
     invoke('GameServer/Bot/AI/PartyDialogueState').reset(session);
     if (session.playerBoardPreparation?.preparationId) require('../../AfkTrade/TradeMeetingService').discard(session.playerBoardPreparation.preparationId);

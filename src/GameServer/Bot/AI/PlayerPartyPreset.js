@@ -52,6 +52,29 @@ function normalize(value, ownerId) {
     return { version: 1, main, additional };
 }
 
+function matchAdditionalGroup(groups, wanted) {
+    const matches = groups.filter(group => commands().roster(group).some(member => wanted.has(id(member))));
+    const conflict = matches.length > 1 || matches.some(group => commands().roster(group).some(member => !wanted.has(id(member))));
+    return { group: conflict ? null : matches[0] || null, conflict };
+}
+
+function describe(player, value) {
+    const roster = normalize(value, id(player));
+    const groups = [...(player.commandParties?.values() || [])].filter(group => group.leaderAssigned && commands().current(group));
+    const describeParty = (name, leaderName, members, present, includePlayer = false) => {
+        const presentIds = new Set(present.map(id));
+        return { name, leaderName, expected: members.length + Number(includePlayer),
+            missing: members.filter(member => !presentIds.has(member.id)) };
+    };
+    return [describeParty('Main', player.actor.fetchName(), roster.main, party().membersForLeader(player), true),
+        ...roster.additional.map((saved, index) => {
+            const wanted = new Set(saved.members.map(member => member.id));
+            const { group } = matchAdditionalGroup(groups, wanted);
+            const leader = saved.members.find(member => member.id === saved.leaderId);
+            return describeParty(`Party ${index + 1}`, leader.name, saved.members, group ? commands().roster(group) : []);
+        })];
+}
+
 async function settleParties(operation) {
     const groups = [...(operation.player.commandParties?.values() || [])].filter(group => group.active);
     await Promise.all(groups.map(group => group.pending));
@@ -88,10 +111,10 @@ function existingGroups(player, roster) {
         const wanted = new Set(saved.members.map(member => member.id));
         if (main.some(member => wanted.has(id(member))))
             fail('A saved additional-party member is in the main party. Remove that member before .partyrestore.');
-        const matches = groups.filter(group => commands().roster(group).some(member => wanted.has(id(member))));
-        if (matches.length > 1 || matches.some(group => commands().roster(group).some(member => !wanted.has(id(member)))))
+        const { group, conflict } = matchAdditionalGroup(groups, wanted);
+        if (conflict)
             fail('Current additional parties conflict with the saved composition. Adjust them before .partyrestore.');
-        return matches[0] || null;
+        return group;
     });
 }
 
@@ -116,6 +139,7 @@ async function restoreComposition(operation) {
             unavailable.push({ ...member, name: names.get(member.id) || member.name, reason });
     };
     const world = invoke('GameServer/World/World');
+    const operationCurrent = () => current(operation);
     tell(operation, 'Restoring saved parties...');
     for (const member of roster.main) {
         check(operation);
@@ -123,7 +147,7 @@ async function restoreComposition(operation) {
         const name = names.get(member.id);
         if (!name) { missing(member, 'character_missing'); continue; }
         const accepted = await world.inviteBotByName(player, operation.actor, name, undefined, 'party_restore',
-            { isCurrent: () => current(operation) });
+            { isCurrent: operationCurrent });
         check(operation);
         if (!accepted || !party().membersForLeader(player).some(session => id(session) === member.id)) missing(member, 'invite_refused');
     }
@@ -140,7 +164,7 @@ async function restoreComposition(operation) {
         let group = groups[index];
         if (!group) {
             const before = new Set(player.commandParties?.keys() || []);
-            commands().handleCommand(player, `.createparty ${leaderName}`);
+            commands().handleCommand(player, `.createparty ${leaderName}`, operationCurrent);
             group = [...(player.commandParties?.values() || [])].find(candidate => !before.has(candidate.number));
             groups[index] = group;
             if (group) await group.pending;
@@ -151,7 +175,7 @@ async function restoreComposition(operation) {
             }
         } else {
             if (!commands().roster(group).some(session => id(session) === saved.leaderId)) {
-                await commands().recruit(group, leaderName);
+                await commands().recruit(group, leaderName, operationCurrent);
                 check(operation);
             }
             if (!group.active || !commands().current(group) || !commands().roster(group).some(session => id(session) === saved.leaderId)) {
@@ -166,7 +190,7 @@ async function restoreComposition(operation) {
             if (commands().roster(group).some(session => id(session) === member.id)) continue;
             const name = names.get(member.id);
             if (!name) { missing(member, 'character_missing'); continue; }
-            await commands().recruit(group, name);
+            await commands().recruit(group, name, operationCurrent);
             check(operation);
             if (!commands().roster(group).some(session => id(session) === member.id)) missing(member, 'invite_refused');
         }
@@ -184,7 +208,10 @@ async function restoreComposition(operation) {
     for (let index = 0; index < roster.additional.length; index++) {
         const saved = roster.additional[index];
         const group = groups[index];
-        if (!group || !commands().current(group)) continue;
+        if (!group || !commands().current(group)) {
+            for (const member of saved.members) missing(member, 'party_unavailable');
+            continue;
+        }
         const result = { number: group.number, leaderId: saved.leaderId };
         const members = commands().roster(group);
         result.count = 0;
@@ -199,16 +226,22 @@ async function restoreComposition(operation) {
     const stillUnavailable = unavailable.filter(member => !present.has(member.id));
     const complete = main === roster.main.length && mainMembers.length === roster.main.length
         && restored.length === roster.additional.length && restored.every(group => group.complete);
+    const missingIds = new Set(stillUnavailable.map(member => member.id));
+    const reportMissing = (label, members) => {
+        const missingNames = members.filter(member => missingIds.has(member.id)).map(member => names.get(member.id) || member.name);
+        if (missingNames.length) tell(operation, `${label} unavailable: ${missingNames.join(', ')}. Use .partyrestore to retry.`);
+    };
     tell(operation, `Main party: ${main + 1}/${roster.main.length + 1}.`);
+    reportMissing('Main party', roster.main);
     for (let index = 0; index < roster.additional.length; index++) {
         const saved = roster.additional[index];
         const result = restored.find(group => group.leaderId === saved.leaderId);
         const leader = saved.members.find(member => member.id === saved.leaderId);
         const label = result ? `Additional party ${result.number}` : `Additional party (${names.get(saved.leaderId) || leader.name})`;
         tell(operation, `${label}: ${result?.count || 0}/${saved.members.length}.`);
+        reportMissing(label, saved.members);
     }
-    if (stillUnavailable.length) tell(operation, `Unavailable: ${stillUnavailable.map(member => member.name).join(', ')}. Use .partyrestore to retry.`);
-    else if (!complete) tell(operation, 'Party composition changed during assembly. Use .partyrestore to retry.');
+    if (!stillUnavailable.length && !complete) tell(operation, 'Party composition changed during assembly. Use .partyrestore to retry.');
     return { ok: true, complete, main, additional: restored, unavailable: stillUnavailable };
 }
 
@@ -227,7 +260,8 @@ function start(player, action) {
         try { return await (action === 'save' ? saveComposition(operation) : restoreComposition(operation)); }
         catch (error) {
             const cancelled = !current(operation);
-            tell(operation, cancelled ? 'Party operation cancelled.' : error.playerMessage || 'Could not save or restore parties. Try again.');
+            if (player.partyPresetOperation === operation)
+                tell(operation, cancelled ? 'Party operation cancelled.' : error.playerMessage || 'Could not save or restore parties. Try again.');
             if (!cancelled && !error.playerMessage) utils.infoWarn('PartySave', '%s failed: %s', action, error.message);
             return { ok: false, reason: cancelled ? 'cancelled' : error.playerMessage ? 'unavailable' : 'error' };
         } finally {
@@ -244,4 +278,4 @@ function handleCommand(player, text) {
     return true;
 }
 
-module.exports = { save: player => start(player, 'save'), restore: player => start(player, 'restore'), cancel, handleCommand };
+module.exports = { save: player => start(player, 'save'), restore: player => start(player, 'restore'), describe, cancel, handleCommand };
