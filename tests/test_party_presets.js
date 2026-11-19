@@ -187,6 +187,7 @@ async function main() {
     assert.equal(result.complete,false);
     assert.equal(result.additional.find(group=>group.leaderId===301).count,8,'an unavailable saved captain leaves the eight current members counted');
     assert(messages.slice(captainReportStart).includes(`Additional party ${first.number}: 8/9.`));
+    assert.deepEqual(Preset.describe(player, saved.roster)[1].missing.map(member => member.id), [301]);
     restores.pop()();
     assert((await command(player,'.partyrestore')).complete);
 
@@ -227,7 +228,20 @@ async function main() {
         assert((await command(player,'.partyrestore')).complete,'retry repairs the concurrently changed party');
     }
 
-    const second = activeGroups(player)[1];
+    Commands.dismiss(first);
+    const inviteWithoutCaptain = World.inviteBotByName;
+    patch(World,'inviteBotByName',function(...args) { return args[2]==='Char301'?Promise.resolve(false):inviteWithoutCaptain.apply(this,args); });
+    const fullReportStart = messages.length;
+    result = await command(player,'.partyrestore');
+    assert.equal(result.complete,false);
+    const missingGroup = extraIds[0].map(id => `Char${id}`).join(', ');
+    assert(missingGroup.length > 64);
+    assert(messages.slice(fullReportStart).some(message => message.includes(missingGroup)), 'chat lists the entire group when the Saved row cannot fit every name');
+    assert(extraIds[0].every(id => result.unavailable.some(member => member.id === id)));
+    restores.pop()();
+    assert((await command(player,'.partyrestore')).complete);
+
+    const second = activeGroups(player).find(group => group.owner.actor.fetchId() === 401);
     Commands.handleCommand(player,`.kick-p${second.number} Char402`);
     await query('DELETE FROM characters WHERE id=?',[402]);
     result = await command(player,'.partyrestore');

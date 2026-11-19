@@ -641,7 +641,7 @@ const World = {
         const bot = targetSession.actor;
 
         if (availability.available && availability.clanLeader && !options.clanLeaderPrepared && !options.constParty) {
-            return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, targetSession, distribution, source);
+            return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, targetSession, distribution, source, options);
         }
 
         // Load remembered grievances before answering a hot invitation, just
@@ -807,7 +807,7 @@ const World = {
 
             const preview = BotAvailability.evaluateState(session, state, { ...options, loadMemory: false });
             if (preview.available && preview.clanLeader && !options.clanLeaderPrepared && !options.constParty) {
-                return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, state, distribution, source);
+                return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(session, actor, state, distribution, source, options);
             }
 
             if (!preview.clanLeader) await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
@@ -1041,23 +1041,24 @@ const World = {
         );
     },
 
-    inviteFriendByName(session, actor, name, distribution, source = 'friend_invite') {
+    inviteFriendByName(session, actor, name, distribution, source = 'friend_invite', options = {}) {
         const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
-        if (!actor || session?.actor !== actor) return Promise.resolve(false);
+        const current = () => session?.actor === actor && (!options.isCurrent || options.isCurrent());
+        if (!actor || !current()) return Promise.resolve(false);
         if (source !== 'friend_const' && !PartyCompanionService.hasCapacity(session)) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return Promise.resolve(false);
         }
         return LifeState.findByName(name).then((state) => {
-            if (!state || session.actor !== actor) return false;
+            if (!state || !current()) return false;
             return BotFriendship.isFriend(session, state.characterId).then((friend) => {
-                if (!friend || session.actor !== actor) return false;
+                if (!friend || !current()) return false;
                 if (source === 'friend_const') {
-                    return invoke('GameServer/Bot/AI/ConstPartySession').invite(session, actor, state, distribution);
+                    return invoke('GameServer/Bot/AI/ConstPartySession').invite(session, actor, state, distribution, current);
                 }
-                return this.inviteBotByName(session, actor, name, distribution, source);
+                return this.inviteBotByName(session, actor, name, distribution, source, options);
             });
         });
     },

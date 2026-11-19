@@ -114,18 +114,19 @@ function dismissAll(commander) {
     for (const group of [...(commander?.commandParties?.values() || [])]) dismiss(group);
 }
 
-async function recruit(group, name) {
-    if (!current(group)) return false;
+async function recruit(group, name, isCurrent) {
     const commander = group.commander;
     const partyOwner = group.owner;
+    const invitationCurrent = () => current(group) && group.owner === partyOwner && (!isCurrent || isCurrent());
+    if (!invitationCurrent()) return false;
     const Manager = invoke('GameServer/Bot/BotManager');
     const subject = Manager.findSessionByName(name) || await invoke('GameServer/Bot/Population/BotLifeState').findByName(name);
-    if (!current(group) || !subject || !invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').isLeaderFor(commander, subject)) return false;
+    if (!invitationCurrent() || !subject || !invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').isLeaderFor(commander, subject)) return false;
     if (groupFor(subject) === group) return true;
     // A main-party member must be removed explicitly before being reassigned.
     if (subject.partyCompanion && subject.followPlayerSession === commander) return false;
     return invoke('GameServer/Bot/AI/ClanLeaderPartyInvite').request(commander, commander.actor, subject,
-        undefined, 'command_party_invite', { partyOwner, isCurrent: () => current(group) && group.owner === partyOwner });
+        undefined, 'command_party_invite', { partyOwner, isCurrent: invitationCurrent });
 }
 
 function movement(group, order) {
@@ -276,7 +277,7 @@ function reply(player, text) {
     player.dataSendToMe(invoke('GameServer/Network/Response').speak(player.actor, { kind: 0, text }));
 }
 
-function handleCommand(player, text) {
+function handleCommand(player, text, isCurrent) {
     const input = String(text || '').trim();
     const match = /^(?:\.(createparty|parties)(?:\s+(.*))?|\.(invite|intive|kick|leader|dismiss)-p([1-9]\d*)(?:\s+(.*))?|\.(p[1-9]\d*|all|main)\s+(hold|follow|regroup))$/i.exec(input);
     if (!match) return false;
@@ -303,21 +304,23 @@ function handleCommand(player, text) {
         group.owner = { actor: player.actor, clanCommandParty: group,
             dataSendToMe() {}, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
         player.commandParties.set(number, group);
-        group.pending = recruit(group, name).then(ok => {
+        group.pending = recruit(group, name, isCurrent).then(ok => {
             if (!ok || !current(group)) {
                 dismiss(group);
-                if (player.actor === group.commanderActor) reply(player, `Could not create p${number}.`);
-            } else reply(player, `Created p${number}, leader ${group.owner.actor.fetchName()}.`);
+                if (player.actor === group.commanderActor && (!isCurrent || isCurrent())) reply(player, `Could not create p${number}.`);
+            } else if (!isCurrent || isCurrent()) reply(player, `Created p${number}, leader ${group.owner.actor.fetchName()}.`);
         }).catch(error => { dismiss(group); utils.infoWarn('ClanParty', 'create failed: %s', error.message); });
         return true;
     }
     if (match[6]) {
         const selector = match[6].toLowerCase(), order = match[7].toLowerCase();
         if (selector === 'main' || selector === 'all') {
-            if (order === 'hold') companion().holdParty(player);
-            else if (order === 'regroup') companion().beginRegroup(player);
+            if (order === 'hold') {
+                if (companion().holdParty(player).ok) companion().updateSettings(player, { movementMode: 'hold' });
+            } else if (order === 'regroup') companion().beginRegroup(player);
             else {
                 delete player.partyRegroupDirective;
+                companion().updateSettings(player, { movementMode: 'follow' });
                 companion().membersForLeader(player).forEach(s => {
                     s.botStay = false; s.stayLocation = null;
                     for (const key of ['resumeAfterBuff', 'resumeAfterShopping']) {
@@ -343,8 +346,11 @@ function handleCommand(player, text) {
     const name = match[5]?.trim();
     if (action === 'invite' || action === 'intive') {
         if (!name) { reply(player, 'Specify a character name.'); return true; }
-        group.pending = (group.pending || Promise.resolve()).then(() => recruit(group, name))
-            .then(ok => { if (player.actor === group.commanderActor) reply(player, ok ? `Joined p${group.number}: ${name}.` : `Could not invite ${name}.`); })
+        group.pending = (group.pending || Promise.resolve()).then(() => recruit(group, name, isCurrent))
+            .then(ok => {
+                if (player.actor === group.commanderActor && (!isCurrent || isCurrent()))
+                    reply(player, ok ? `Joined p${group.number}: ${name}.` : `Could not invite ${name}.`);
+            })
             .catch(error => utils.infoWarn('ClanParty', 'invite failed: %s', error.message));
     } else {
         const member = roster(group).find(s => s.actor.fetchName().toLowerCase() === name?.toLowerCase());

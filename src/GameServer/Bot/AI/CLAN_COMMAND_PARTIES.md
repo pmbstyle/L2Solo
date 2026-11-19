@@ -5,6 +5,15 @@ Each party has at most nine members, including its designated leader. Parties
 have stable session-local numbers; removing p1 does not rename p2. There is no
 special two-party limit.
 
+Updated C4 clients manage these parties in the unified Party window (`.b`).
+Clan leaders get Main/p1/p2 navigation, New party, All parties and Saved; ordinary
+players and clan members get only their own Party and Recruit pages. `.bf` and
+`.bp` open the same window's Friends and Search sections. The server enforces
+clan leadership, clan-only additional recruitment, current membership and scoped
+orders independently of the client presentation. Saved shows actual restoration
+counts and missing names, including when an additional party's leader is absent.
+Restore also lists all missing names by party in chat so longer lists are readable.
+
 | Command | Result |
 | --- | --- |
 | `.createparty <leader>` | Create the next additional party with that clan bot |
