@@ -171,10 +171,7 @@ function setMemberPuller(session, targetSession) {
 }
 
 function regroup(session) {
-    let slot = 0;
-    companionSessions(session).forEach((memberSession) => {
-        if (summonNear(session, memberSession, 60 + (slot * 20))) slot += 1;
-    });
+    PartyCompanionService.beginRegroup(session, { requestedBy: session.actor?.fetchId?.() });
 }
 
 function handleMemberCommand(session, subCommand, botName) {
@@ -190,6 +187,9 @@ function handleMemberCommand(session, subCommand, botName) {
         if (isAssignedPuller(targetSession)) clearAssignedPuller(session);
         if (stayHere(targetSession)) BotManager.botSay(targetSession, "Holding this position.");
     } else if (subCommand === 'summon') {
+        if (!invoke('GameServer/Bot/AI/BotSupplyErrand').ownsCompanion(targetSession)) {
+            PartyCompanionService.endTownErrand(targetSession);
+        }
         if (summonNear(session, targetSession)) {
             BotManager.botSay(targetSession, "Summoned to your side!");
         }

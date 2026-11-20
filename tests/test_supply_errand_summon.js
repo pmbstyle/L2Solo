@@ -160,12 +160,25 @@ async function runCase(phaseWanted, failures) {
         check(counters.said.includes('bot_2:Summoned to your side!'), `summon ordinary: reply is '${counters.said}'`);
         check(a.stayLocation.locX === 1060 && a.stayLocation.locY === 2060, `summon ordinary: Hold anchor is ${JSON.stringify(a.stayLocation)}`);
 
-        // Regroup: the errand companion is skipped, the others get the first two slots.
+        // Panel Regroup is the leader's Regroup order (beginRegroup): the supply
+        // errand companion is left alone, the others are called to the formation.
         log.length = 0;
-        CompanionControl(leader, ['companion-control', 'regroup']);
+        const realRecordPanel = BotEventJournal.record;
+        BotEventJournal.record = async () => ({});
+        const realPanelRoster = HotBackgroundParty.roster;
+        leader.hotBackgroundPartyId = 'party';
+        HotBackgroundParty.roster = () => [leader, errand, a, b];
+        try {
+            CompanionControl(leader, ['companion-control', 'regroup']);
+        } finally {
+            BotEventJournal.record = realRecordPanel;
+            HotBackgroundParty.roster = realPanelRoster;
+            delete leader.hotBackgroundPartyId;
+        }
         stateKept('regroup');
-        check(log.includes('teleport:Ardis') && log.includes('teleport:Brun'), `regroup: the ordinary companions were not both summoned (${log})`);
-        check(a.stayLocation.locX === 1060 && a.stayLocation.locY === 2060, `regroup: first ordinary slot is ${JSON.stringify(a.stayLocation)} (expected 1060,2060)`);
+        const panelIds = (leader.partyRegroupDirective?.memberIds || []).slice().sort();
+        check(JSON.stringify(panelIds) === JSON.stringify([2, 3]), `regroup: directive memberIds are ${JSON.stringify(panelIds)} (expected [2,3])`);
+        delete leader.partyRegroupDirective;
 
         // Hold. A Hold set before the errand stays as it is (clearing it is out
         // of scope); these cases start from a companion without one.
@@ -231,7 +244,18 @@ async function runCase(phaseWanted, failures) {
         leader.hotBackgroundPartyId = 'party';
         HotBackgroundParty.roster = () => [leader, errand, a, b];
         try {
+            // Companions on a town errand and on a guide visit answer the Regroup
+            // and stop their errand; the supply errand one stays on its own.
+            a.plan = 'shopping';
+            a.companionShopping = { kind: 'restock_shots' };
+            a.shoppingTarget = { name: 'Squeesh' };
+            b.plan = 'getting_buffed';
+            b.resumeAfterBuff = { plan: 'hunting' };
             const regrouped = PartyCompanionService.beginRegroup(leader, {});
+            check(a.plan === 'following' && a.companionShopping === undefined && a.shoppingTarget === undefined,
+                `beginRegroup: the shopping companion is '${a.plan}' with errand ${JSON.stringify(a.companionShopping)} (expected following, none)`);
+            check(b.plan === 'following' && b.resumeAfterBuff === undefined,
+                `beginRegroup: the guide-visit companion is '${b.plan}' (expected following)`);
             check(regrouped.ok === true && regrouped.affected === 2, `beginRegroup: result is ${JSON.stringify(regrouped)} (expected 2 affected)`);
             stateKept('beginRegroup');
             check(castsCleared === 0, `beginRegroup: the cast flag of the errand companion was cleared ${castsCleared} time(s) (breaks the escape cast)`);

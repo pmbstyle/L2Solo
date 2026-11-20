@@ -137,7 +137,17 @@ function chosenGuide(session, bot, BotAI) {
     return resume.newbieGuide;
 }
 
+// A companion's guide visit ends at once (the leader's Regroup) and the
+// companion goes back to following.
+function endCompanionVisit(session, bot) {
+    resumePreviousPlan(session, bot);
+    TownNpcApproach.reset(session);
+    CompanionNavigationRecovery.clear(session);
+    bot.automation?.abortAll?.(bot);
+}
+
 module.exports = {
+    endCompanionVisit,
     tick(session, bot, Generics, BotAI) {
         const resume = session.resumeAfterBuff;
         if (Number(resume?.readyAt || 0) > Date.now()) return;

@@ -170,20 +170,10 @@ function companionTownErrand(session, bot, player, BotAI) {
     if (!townContext) return null;
     const { town, inTown } = townContext;
 
-    // In town, every companion may settle its own short task.  In the field,
-    // leaving the leader is reserved for an immediately useful resupply;
-    // shopping and selling can wait until the party actually reaches town.
-    if (!inTown) {
-        if (errandOnCooldown) return null;
-        if (!ShotStock.needsActorRestock(bot, 0)) return null;
-        const shotPlan = ShotStock.planForActor(bot);
-        const target = townNpcTarget(town, bot, shotPlan.selfId);
-        if (!target) return null;
-        return {
-            kind: 'restock_shots',
-            target
-        };
-    }
+    // A player-led companion leaves its leader on its own only while the
+    // leader is in town; in the field it fights without what it lacks until
+    // the party goes to town.
+    if (!inTown) return null;
 
     if (timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
         session.lastCompanionEquipmentCheckAt = timestamp;
@@ -755,14 +745,6 @@ function markPartyRecharge(leaderSession, bot, target, skill) {
         targetId: target.fetchId(),
         expiresAt: Date.now() + Math.max(1000, castMs + 1000)
     };
-}
-
-function partyHasBuffer(leaderSession, exceptActor = null) {
-    return PartyAwareness.partySessions(leaderSession)
-        .some((memberSession) => (
-            memberSession.actor !== exceptActor &&
-            BotRoles.inferRole(memberSession.actor) === 'buffer'
-        ));
 }
 
 function returnToPartyAfterSupport(session, bot, player, target) {
@@ -1371,21 +1353,15 @@ const FollowingState = {
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
             const unsafeToRefresh = unsafeSupportMoment(bot, currentPartyAggroMonsters().length);
-            const inTown = TownPathfinder.isInsideTown({
-                locX: player.fetchLocX(),
-                locY: player.fetchLocY(),
-                locZ: player.fetchLocZ()
-            });
-            const expired = BotBuffs.needsNewbieRefresh(bot, 0);
+            const leaderInTown = townForCompanionErrand(player, BotAI)?.inTown === true;
             const nearbyGuide = !!HotTownRebuff.nearGuide(player, BotAI);
-            const canMakeFieldBuffTrip = !inTown && expired && nearbyGuide && !partyHasBuffer(playerSession, bot);
 
             if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 keepRoleDecision = true;
-            } else if (!nearbyGuide || (!inTown && !canMakeFieldBuffTrip)) {
+            } else if (!nearbyGuide || !leaderInTown) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_newbie_guide_town', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });

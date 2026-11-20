@@ -515,25 +515,31 @@ function shoppingMeetingPending(session, bot) {
     return TradeMeetings.hasPreparation(id) || currentLife?.stats?.tradeMeeting;
 }
 
+// A companion's town errand ends at once (the leader's raid or Regroup) and
+// the companion goes back to following.
+function endCompanionErrand(session, bot) {
+    if (session.townEscape) bot.state.setCasts(false);
+    BotTownTravel.clearCombatTrip(session);
+    bot.automation.abortAll(bot);
+    session.plan = 'following';
+    session.companionShopping = undefined;
+    session.shoppingTarget = undefined;
+    session.shoppingDoneAnnounced = false;
+    session.shoppingRestock = undefined;
+    session.resumeAfterShopping = undefined;
+    session.preShopLocation = undefined;
+    clearShoppingServiceState(session);
+}
+
 module.exports = {
-    workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
+    endCompanionErrand, workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
     tick(session, bot, Generics, BotAI) {
         // A companion's personal visit yields to the commander's raid even
         // when this local party has no incoming hits or selected target.
         if (session.partyCompanion === true && session.followPlayerSession
             && session.companionShopping?.kind !== 'player_resource_purchase'
             && invoke('GameServer/Bot/AI/BotRaidSafety').syncPlayerPartyRaid(session.followPlayerSession)) {
-            if (session.townEscape) bot.state.setCasts(false);
-            BotTownTravel.clearCombatTrip(session);
-            bot.automation.abortAll(bot);
-            session.plan = 'following';
-            session.companionShopping = undefined;
-            session.shoppingTarget = undefined;
-            session.shoppingDoneAnnounced = false;
-            session.shoppingRestock = undefined;
-            session.resumeAfterShopping = undefined;
-            session.preShopLocation = undefined;
-            clearShoppingServiceState(session);
+            endCompanionErrand(session, bot);
             return;
         }
         arrive(session, bot);
