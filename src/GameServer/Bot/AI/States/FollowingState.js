@@ -173,7 +173,9 @@ function companionTownErrand(session, bot, player, BotAI) {
     // A player-led companion leaves its leader on its own only while the
     // leader is in town; in the field it fights without what it lacks until
     // the party goes to town.
-    if (!inTown) return null;
+    // A recalled companion (Regroup) does not restart its errand while the
+    // formation holds.
+    if (!inTown || PartyCompanionService.regroupActive(session.followPlayerSession)) return null;
 
     if (timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
         session.lastCompanionEquipmentCheckAt = timestamp;

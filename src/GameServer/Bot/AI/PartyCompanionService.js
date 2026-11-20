@@ -742,11 +742,29 @@ function regroupActive(leaderSession, now = Date.now()) {
     return true;
 }
 
+// A guide visit that is the return from a death respawn walks back by its own
+// safe-teleport gate; a recall does not cut it.
+function returnsByItself(member) {
+    return member.plan === 'getting_buffed' && member.resumeAfterBuff?.waitForSafePartyReturn === true;
+}
+
 // A town errand or guide visit of a companion ends where it stands; the
 // leader's recall (Regroup, summon) is answered by following again.
 function endTownErrand(member) {
+    if (returnsByItself(member)) return;
+    const kind = member.companionShopping?.kind || (member.plan === 'getting_buffed' ? 'newbie_guide' : undefined);
+    const ended = member.plan === 'shopping' || member.plan === 'getting_buffed';
     if (member.plan === 'shopping') invoke('GameServer/Bot/AI/States/ShoppingState').endCompanionErrand(member, member.actor);
     else if (member.plan === 'getting_buffed') invoke('GameServer/Bot/AI/States/GettingBuffedState').endCompanionVisit(member, member.actor);
+    if (ended) {
+        member.roleDecision = {
+            role: BotRoles.inferRole(member.actor),
+            action: 'recall',
+            reason: 'recalled_by_leader',
+            errand: kind,
+            at: Date.now()
+        };
+    }
 }
 
 function beginRegroup(leaderSession, options = {}) {
@@ -759,7 +777,7 @@ function beginRegroup(leaderSession, options = {}) {
     // player-requested supply errand or keeping a store; a town errand or
     // guide visit ends and the companion comes back.
     const allMembers = membersForLeader(leaderSession).filter((member) => !SupplyErrand.ownsCompanion(member));
-    const members = allMembers.filter((member) => member.plan !== 'merchant');
+    const members = allMembers.filter((member) => member.plan !== 'merchant' && !returnsByItself(member));
     if (members.length === 0) return { ok: false, reason: 'no_party_companions' };
     const requestedRadius = Number(options.radius);
     const radius = Math.max(MIN_REGROUP_RADIUS, Math.min(

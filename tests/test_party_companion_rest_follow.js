@@ -2585,10 +2585,22 @@ try {
     assert.strictEqual(errandSession.plan, 'shopping');
     BotManager.sessions = [errandSession];
     CompanionControl(errandLeaderSession, ['companion-control', 'regroup']);
-    BotManager.sessions = [];
     assert.strictEqual(errandSession.plan, 'following', 'the panel Regroup must end the companion town errand');
     assert.strictEqual(errandSession.companionShopping, undefined, 'the recalled companion drops its errand');
     assert.strictEqual(errandLeaderSession.partyRegroupDirective?.active, true, 'the panel Regroup sets the regroup formation');
+    // In town, a recalled companion whose errand cooldown expired stays following
+    // while the formation holds (it does not restart the errand).
+    errandSession.lastCompanionTownErrandAt = 0;
+    const recalledX = errandBot.locX;
+    errandBot.locX = recalledX + 300;
+    FollowingState.tick(errandSession, errandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(errandSession.plan, 'following', 'a recalled companion must not restart its town errand during the Regroup');
+    errandBot.locX = recalledX;
+    BotManager.sessions = [];
     delete errandLeaderSession.partyRegroupDirective;
 
     // The same short-of-shots companion keeps following while the party hunts

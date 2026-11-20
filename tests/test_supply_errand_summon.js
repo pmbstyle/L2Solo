@@ -263,7 +263,19 @@ async function runCase(phaseWanted, failures) {
             const ids = (leader.partyRegroupDirective?.memberIds || []).slice().sort();
             check(JSON.stringify(ids) === JSON.stringify([2, 3]), `beginRegroup: directive memberIds are ${JSON.stringify(ids)} (expected [2,3])`);
             check(a.botStay === false && a.stayLocation === null, 'beginRegroup: an ordinary companion kept its Hold');
+            check(a.roleDecision?.reason === 'recalled_by_leader' && a.roleDecision?.errand === 'restock_shots',
+                `beginRegroup: recall trace is ${JSON.stringify(a.roleDecision)}`);
+            check(b.roleDecision?.reason === 'recalled_by_leader', `beginRegroup: guide-visit recall trace is ${JSON.stringify(b.roleDecision)}`);
             delete leader.partyRegroupDirective;
+            // A guide visit that is the return from a death respawn keeps its own safe-teleport gate.
+            b.plan = 'getting_buffed';
+            b.resumeAfterBuff = { plan: 'following', waitForSafePartyReturn: true };
+            HotBackgroundParty.roster = () => [leader, errand, b];
+            const safe = PartyCompanionService.beginRegroup(leader, {});
+            check(safe.ok === false && b.plan === 'getting_buffed' && b.resumeAfterBuff?.waitForSafePartyReturn === true,
+                `beginRegroup: the respawn return was cut (${JSON.stringify(safe)}, plan ${b.plan})`);
+            b.plan = 'following';
+            b.resumeAfterBuff = undefined;
             HotBackgroundParty.roster = () => [leader, errand];
             const none = PartyCompanionService.beginRegroup(leader, {});
             check(none.ok === false && none.reason === 'no_party_companions', `beginRegroup only errand: result is ${JSON.stringify(none)}`);

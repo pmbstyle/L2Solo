@@ -187,10 +187,8 @@ function handleMemberCommand(session, subCommand, botName) {
         if (isAssignedPuller(targetSession)) clearAssignedPuller(session);
         if (stayHere(targetSession)) BotManager.botSay(targetSession, "Holding this position.");
     } else if (subCommand === 'summon') {
-        if (!invoke('GameServer/Bot/AI/BotSupplyErrand').ownsCompanion(targetSession)) {
-            PartyCompanionService.endTownErrand(targetSession);
-        }
         if (summonNear(session, targetSession)) {
+            PartyCompanionService.endTownErrand(targetSession);
             BotManager.botSay(targetSession, "Summoned to your side!");
         }
     } else if (subCommand === 'dismiss') {
