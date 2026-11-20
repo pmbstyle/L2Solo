@@ -11,6 +11,7 @@
 - Clan leaders can command several bot parties against the same raid boss. The parties share targets and loot distribution, and each party handles its own healing, buffs and resurrection.
 - Save your main and additional parties with `.partysave` and assemble them again with `.partyrestore`, including after a server restart. Restoring reports how many members actually joined each party.
 - Autonomous clans can field raid expeditions of up to 40 bots. Companions in player-led raids stay with their party during combat.
+- Party companions no longer leave the party in the field to buy shots or visit the newbie buffer; they restock when you bring the party to town. Regroup now recalls companions on a town errand, and the Regroup button still brings them to your side.
 - Queen Ant, Core and Orfen now use C4 encounter mechanics, including guards, healers, Orfen's retreat and pull, and their original respawn windows. They drop epic jewelry and can be fought by player parties and autonomous clans.
 
 🛠️ **Crafting, combat and travel**
