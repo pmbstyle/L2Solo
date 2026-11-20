@@ -2584,7 +2584,12 @@ try {
     // under the regroup order instead of walking on to the merchant.
     assert.strictEqual(errandSession.plan, 'shopping');
     BotManager.sessions = [errandSession];
-    CompanionControl(errandLeaderSession, ['companion-control', 'regroup']);
+    errandBot.clearDestId ??= () => {};
+    const realTimeoutRegroup = global.setTimeout;
+    global.setTimeout = () => 0;
+    try {
+        CompanionControl(errandLeaderSession, ['companion-control', 'regroup']);
+    } finally { global.setTimeout = realTimeoutRegroup; }
     assert.strictEqual(errandSession.plan, 'following', 'the panel Regroup must end the companion town errand');
     assert.strictEqual(errandSession.companionShopping, undefined, 'the recalled companion drops its errand');
     assert.strictEqual(errandLeaderSession.partyRegroupDirective?.active, true, 'the panel Regroup sets the regroup formation');

@@ -6,6 +6,7 @@ const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/Companion
 const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const NpcTalkResponse = invoke('GameServer/World/Generics/NpcTalkResponse');
 const Speak = invoke('GameServer/Network/Request/Speak');
 const SendPacket = invoke('Packet/Send');
@@ -100,6 +101,10 @@ try {
         teleportCallbacks.shift()();
         assert.deepStrictEqual(teleports[0], { session: members[0], coords: { locX: 70, locY: 80, locZ: 30 } },
             'Call invokes the real teleport handler for the selected companion');
+        // The order is the leader's Regroup (beginRegroup reads the bot sessions).
+        members.forEach((m) => { m.followPlayerSession = leader; m.partyCompanion = true; m.plan = 'following'; });
+        replace(BotManager, 'sessions', members);
+        replace(BotEventJournal, 'record', async () => ({}));
         command('action regroup');
         teleportCallbacks.splice(0).forEach((callback) => callback());
         assert.strictEqual(teleports.length, 9, 'Regroup teleports all eight current companions');

@@ -170,8 +170,18 @@ function setMemberPuller(session, targetSession) {
     return true;
 }
 
+// The panel Regroup is the leader's Regroup order (errands end, the formation
+// directive is set) and moves the answering companions to the leader's side.
 function regroup(session) {
-    PartyCompanionService.beginRegroup(session, { requestedBy: session.actor?.fetchId?.() });
+    const result = PartyCompanionService.beginRegroup(session, { requestedBy: session.actor?.fetchId?.() });
+    if (!result.ok) return;
+    const answered = new Set(session.partyRegroupDirective?.memberIds || []);
+    let slot = 0;
+    companionSessions(session)
+        .filter((memberSession) => answered.has(Number(memberSession.actor.fetchId())))
+        .forEach((memberSession) => {
+            if (summonNear(session, memberSession, 60 + (slot * 20))) slot += 1;
+        });
 }
 
 function handleMemberCommand(session, subCommand, botName) {
