@@ -996,6 +996,7 @@ try {
 
     FollowingState.tick(selectedTargetRefreshSession, selectedTargetRefreshBot, {}, {
         getClosestNewbieGuide: () => ({ locX: 0, locY: 0 }),
+        getClosestTown: () => ({ name: 'Test', x: 0, y: 0 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
 
@@ -2400,6 +2401,23 @@ try {
     assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
     assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
 
+    // The guide lies within reach of the leader but the leader is in the field
+    // (3000 from the guide, no town): the buffs wait for the party to reach town.
+    const nearGuideBot = fakeActor(2000096, { locX: 80, locY: 0, level: 10 });
+    Object.keys(nearGuideBot.activeBuffs).forEach((key) => { nearGuideBot.activeBuffs[key] = 0; });
+    const nearGuideSession = fakeSession('bot_field_near_guide_party', nearGuideBot);
+    nearGuideSession.followPlayerSession = fieldRefreshLeaderSession;
+    nearGuideSession.partyCompanion = true;
+    nearGuideSession.plan = 'following';
+    publishSessions([fieldRefreshLeaderSession, nearGuideSession]);
+    FollowingState.tick(nearGuideSession, nearGuideBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 3000, locY: 0, locZ: 0 }),
+        getClosestTown: () => ({ name: 'Test', x: 3000, y: 0 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.notStrictEqual(nearGuideSession.plan, 'getting_buffed', 'a field companion must not leave for a guide near the party');
+    assert.strictEqual(nearGuideSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'it says it waits for town');
+
     const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 26 });
     Object.keys(overleveledRefreshBot.activeBuffs).forEach((key) => { overleveledRefreshBot.activeBuffs[key] = 0; });
     const overleveledRefreshSession = fakeSession('bot_overleveled_refresh_party', overleveledRefreshBot);
@@ -2561,6 +2579,66 @@ try {
     assert(errandLines.some((line) => line.includes('returning') || line.includes('back to camp')), 'companion should announce its return before shopping');
     assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
     assertFundedStockKitUnchanged();
+
+    // The panel Regroup recalls a companion on a town errand: it follows again
+    // under the regroup order instead of walking on to the merchant.
+    assert.strictEqual(errandSession.plan, 'shopping');
+    BotManager.sessions = [errandSession];
+    errandBot.clearDestId ??= () => {};
+    const realTimeoutRegroup = global.setTimeout;
+    global.setTimeout = () => 0;
+    try {
+        CompanionControl(errandLeaderSession, ['companion-control', 'regroup']);
+    } finally { global.setTimeout = realTimeoutRegroup; }
+    assert.strictEqual(errandSession.plan, 'following', 'the panel Regroup must end the companion town errand');
+    assert.strictEqual(errandSession.companionShopping, undefined, 'the recalled companion drops its errand');
+    assert.strictEqual(errandLeaderSession.partyRegroupDirective?.active, true, 'the panel Regroup sets the regroup formation');
+    // In town, a recalled companion whose errand cooldown expired stays following
+    // while the formation holds (it does not restart the errand).
+    errandSession.lastCompanionTownErrandAt = 0;
+    const recalledX = errandBot.locX;
+    errandBot.locX = recalledX + 300;
+    FollowingState.tick(errandSession, errandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(errandSession.plan, 'following', 'a recalled companion must not restart its town errand during the Regroup');
+    errandBot.locX = recalledX;
+    BotManager.sessions = [];
+    delete errandLeaderSession.partyRegroupDirective;
+
+    // The same short-of-shots companion keeps following while the party hunts
+    // in the field near the town (the leader outside it): no town errand.
+    {
+        const TownPathfinderField = invoke('GameServer/Bot/AI/TownPathfinder');
+        let field = null;
+        for (const r of [3000, 4000, 5000, 6000, 7000]) for (let a = 0; a < 16 && !field; a++) {
+            const c = { locX: Math.round(83396 + Math.cos(a * Math.PI / 8) * r), locY: Math.round(147904 + Math.sin(a * Math.PI / 8) * r), locZ: -3404 };
+            if (!TownPathfinderField.isInsideTown(c)) field = c;
+        }
+        assert(field, 'the scene needs a field point near Giran');
+        const townLeaderLoc = { locX: errandLeader.locX, locY: errandLeader.locY, locZ: errandLeader.locZ };
+        const townBotLoc = { locX: errandBot.locX, locY: errandBot.locY, locZ: errandBot.locZ };
+        Object.assign(errandLeader, field);
+        Object.assign(errandBot, { ...field, locX: field.locX + 40 });
+        Object.assign(errandSession, { plan: 'following', companionShopping: undefined, shoppingTarget: undefined,
+            resumeAfterShopping: undefined, shoppingDoneAnnounced: false, lastCompanionTownErrandAt: 0 });
+        publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+        deliverNearDecision(errandSession);
+        assert(invoke('GameServer/Inventory/ShotStock').needsActorRestock(errandBot), 'the field scene keeps the companion short of shots');
+        FollowingState.tick(errandSession, errandBot, {}, {
+            getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+            getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+            say() {}, executeCombat() {}, executePvPCombat() {}
+        });
+        assert.strictEqual(errandSession.plan, 'following', 'a companion short of shots keeps following while the party hunts in the field');
+        assert.strictEqual(errandSession.companionShopping, undefined, 'no town errand is started from the field');
+        Object.assign(errandLeader, townLeaderLoc);
+        Object.assign(errandBot, townBotLoc);
+        Object.assign(errandSession, { lastCompanionTownErrandAt: 0 });
+        publishSessions([errandLeaderSession, errandSession]);
+    }
 
     let marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
     const marketBot = fakeActor(2000040, { locX: 83456, locY: 147904, locZ: -3404 });

@@ -170,11 +170,18 @@ function setMemberPuller(session, targetSession) {
     return true;
 }
 
+// The panel Regroup is the leader's Regroup order (errands end, the formation
+// directive is set) and moves the answering companions to the leader's side.
 function regroup(session) {
+    const result = PartyCompanionService.beginRegroup(session, { requestedBy: session.actor?.fetchId?.() });
+    if (!result.ok) return;
+    const answered = new Set(session.partyRegroupDirective?.memberIds || []);
     let slot = 0;
-    companionSessions(session).forEach((memberSession) => {
-        if (summonNear(session, memberSession, 60 + (slot * 20))) slot += 1;
-    });
+    companionSessions(session)
+        .filter((memberSession) => answered.has(Number(memberSession.actor.fetchId())))
+        .forEach((memberSession) => {
+            if (summonNear(session, memberSession, 60 + (slot * 20))) slot += 1;
+        });
 }
 
 function handleMemberCommand(session, subCommand, botName) {
@@ -191,6 +198,7 @@ function handleMemberCommand(session, subCommand, botName) {
         if (stayHere(targetSession)) BotManager.botSay(targetSession, "Holding this position.");
     } else if (subCommand === 'summon') {
         if (summonNear(session, targetSession)) {
+            PartyCompanionService.endTownErrand(targetSession);
             BotManager.botSay(targetSession, "Summoned to your side!");
         }
     } else if (subCommand === 'dismiss') {

@@ -742,14 +742,42 @@ function regroupActive(leaderSession, now = Date.now()) {
     return true;
 }
 
+// A guide visit that is the return from a death respawn walks back by its own
+// safe-teleport gate; a recall does not cut it.
+function returnsByItself(member) {
+    return member.plan === 'getting_buffed' && member.resumeAfterBuff?.waitForSafePartyReturn === true;
+}
+
+// A town errand or guide visit of a companion ends where it stands; the
+// leader's recall (Regroup, summon) is answered by following again.
+function endTownErrand(member) {
+    if (returnsByItself(member)) return;
+    const kind = member.companionShopping?.kind || (member.plan === 'getting_buffed' ? 'newbie_guide' : undefined);
+    const ended = member.plan === 'shopping' || member.plan === 'getting_buffed';
+    if (member.plan === 'shopping') invoke('GameServer/Bot/AI/States/ShoppingState').endCompanionErrand(member, member.actor);
+    else if (member.plan === 'getting_buffed') invoke('GameServer/Bot/AI/States/GettingBuffedState').endCompanionVisit(member, member.actor);
+    if (ended) {
+        member.roleDecision = {
+            role: BotRoles.inferRole(member.actor),
+            action: 'recall',
+            reason: 'recalled_by_leader',
+            errand: kind,
+            at: Date.now()
+        };
+    }
+}
+
 function beginRegroup(leaderSession, options = {}) {
     const leader = leaderSession?.actor;
     if (!leader) return { ok: false, reason: 'missing_party_leader' };
     // A companion on a hidden supply errand is left alone (its escape cast
     // would break on the action cancel); the regroup does not wait for it.
     const SupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
+    // The leader's Regroup is answered by every companion except one on a
+    // player-requested supply errand or keeping a store; a town errand or
+    // guide visit ends and the companion comes back.
     const allMembers = membersForLeader(leaderSession).filter((member) => !SupplyErrand.ownsCompanion(member));
-    const members = allMembers.filter((member) => !['shopping', 'getting_buffed', 'merchant'].includes(member.plan));
+    const members = allMembers.filter((member) => member.plan !== 'merchant' && !returnsByItself(member));
     if (members.length === 0) return { ok: false, reason: 'no_party_companions' };
     const requestedRadius = Number(options.radius);
     const radius = Math.max(MIN_REGROUP_RADIUS, Math.min(
@@ -769,6 +797,7 @@ function beginRegroup(leaderSession, options = {}) {
     // compact formation is reached (or expires), normal pulling may resume.
     leaderSession.partyPullState = {};
     members.forEach((member) => {
+        endTownErrand(member);
         cancelCompanionAction(member);
         member.botStay = false;
         member.stayLocation = null;
@@ -988,6 +1017,7 @@ const PartyCompanionService = {
     staysOutOfTown,
 
     beginRegroup,
+    endTownErrand,
     holdParty,
 
     regroupActive,

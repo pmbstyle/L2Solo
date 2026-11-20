@@ -29,7 +29,7 @@ function returnLocation(session) {
     return session.preBuffLocation || session.initialSpawnCoord || null;
 }
 
-function resumePreviousPlan(session, bot) {
+function resumePreviousPlan(session, bot, cutShort = false) {
     const resume = session.resumeAfterBuff;
     if (resume?.plan === 'following' && resume.followPlayerSession?.actor?.fetchIsOnline()) {
         session.plan = 'following';
@@ -37,12 +37,14 @@ function resumePreviousPlan(session, bot) {
         session.partyCompanion = true;
         session.botStay = resume.botStay;
         session.stayLocation = resume.stayLocation;
-        session.roleDecision = {
-            role: resume.role,
-            action: 'refresh_buffs',
-            reason: 'newbie_blessing_done',
-            at: Date.now()
-        };
+        if (!cutShort) {
+            session.roleDecision = {
+                role: resume.role,
+                action: 'refresh_buffs',
+                reason: 'newbie_blessing_done',
+                at: Date.now()
+            };
+        }
         refreshPartyMemberships([session], invoke);
     } else {
         session.plan = session.preBuffPlan || 'hunting';
@@ -137,7 +139,17 @@ function chosenGuide(session, bot, BotAI) {
     return resume.newbieGuide;
 }
 
+// A companion's guide visit ends at once (the leader's Regroup) and the
+// companion goes back to following.
+function endCompanionVisit(session, bot) {
+    resumePreviousPlan(session, bot, true);
+    TownNpcApproach.reset(session);
+    CompanionNavigationRecovery.clear(session);
+    bot.automation?.abortAll?.(bot);
+}
+
 module.exports = {
+    endCompanionVisit,
     tick(session, bot, Generics, BotAI) {
         const resume = session.resumeAfterBuff;
         if (Number(resume?.readyAt || 0) > Date.now()) return;
